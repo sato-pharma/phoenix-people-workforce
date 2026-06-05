@@ -40,6 +40,9 @@ export function runTitlePermissionGovernanceTests() {
     "R&D Manager",
     "R and D Manager",
     "Research and Development Manager",
+    "District Sales Manager",
+    "Medical Representative",
+    "Regional Sales Manager",
   ]) {
     assert.equal(
       normalizeRole(title),
@@ -81,11 +84,13 @@ export function runTitlePermissionGovernanceTests() {
   // The "HR Manager" title yields neither Manager nor HR Specialist automatically.
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "HR Manager" }), "Employee");
   assert.notEqual(normalizeRole("HR Manager"), "HR Specialist");
+  assert.notEqual(normalizeRole("HR Manager"), "Manager");
 
   // --- Finance Manager: payroll/employee access comes from role+matrix, not the
   // title. The title provisions as Employee; the Employee role cannot read the
   // employee directory and only sees its own payroll. ------------------------
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "Finance Manager" }), "Employee");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "Finance Manager" }), "Employee");
   assert.equal(permissionMatrix.Employee.employees, undefined);
   assert.equal(getPayrollScope({ role: "Employee" }), "SELF");
   // The explicitly-assigned Finance Manager role is what carries payroll reach.
@@ -97,10 +102,14 @@ export function runTitlePermissionGovernanceTests() {
   assert.equal(scopeForRole("Product Manager"), "line");
   assert.equal(scopeForRole("Group Product Manager"), "line");
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "Product Manager" }), "Employee");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "Group Product Manager" }), "Employee");
 
   // --- District Sales Manager title does not grant District Manager access. --
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "District Sales Manager" }), "Employee");
   assert.equal(resolveEmployeeAccessRole({ positionTitle: "District Sales Manager" }), "Employee");
+  assert.equal(normalizeRole("District Sales Manager"), "Employee");
+  assert.equal(normalizeRole("DSM"), "Employee");
+  assert.equal(normalizeRole("Medical Representative"), "Employee");
 
   // --- Notification recipient resolution is identity/scope based, never
   // title-text based. These structural guarantees prove that:

@@ -279,3 +279,52 @@ export async function disconnectTelegram(access: Pick<AccessContext, "hrId" | "l
 
   return getNotificationSettings(access);
 }
+
+export async function disableTelegramForIdentity(input: {
+  actorLoginId?: string | null;
+  hrId?: string | null;
+  reason?: string | null;
+  userId?: string | null;
+}) {
+  const userId = userIdFromAccess({ hrId: input.hrId ?? null, loginId: input.userId ?? null });
+  const hrId = input.hrId ?? null;
+  if (!userId && !hrId) return { skipped: true as const };
+
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+  try {
+    let query = supabase
+      .from("telegram_connections")
+      .update({
+        disabled_at: now,
+        failure_reason: input.reason ?? "User or employee was deactivated.",
+        status: "disabled",
+        telegram_chat_id: null,
+        updated_at: now,
+      });
+    query = userId ? query.eq("user_id", userId) : query.eq("hr_id", hrId);
+    const { error } = await query;
+    if (error) throw error;
+
+    await supabase
+      .from("notification_preferences")
+      .upsert({
+        hr_id: hrId,
+        telegram_enabled: false,
+        updated_at: now,
+        user_id: userId ?? hrId,
+      }, { onConflict: "user_id" });
+
+    await writeAuditLog({
+      actorLoginId: input.actorLoginId ?? "system",
+      entityId: userId ?? hrId ?? "",
+      entityType: "notification",
+      summary: "Telegram disabled during deactivation.",
+    });
+
+    return { skipped: false as const };
+  } catch (error) {
+    if (tableMissing(error)) return { reason: "Telegram notification tables unavailable.", skipped: true as const };
+    throw error;
+  }
+}

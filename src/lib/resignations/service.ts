@@ -3,7 +3,8 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
+import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
@@ -365,20 +366,36 @@ async function notifyResignationWorkflow(
   title: string,
   tone: "success" | "warning" | "danger" | "neutral" = "warning",
 ) {
-  await safeSendNotificationEmail({
-    ctaHref: "/resignations",
-    ctaLabel: "Open resignations",
-    employeeHrId: record.employeeHrId,
-    metrics: [
-      { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
-      { label: "Status", value: record.status },
-      { label: "Effective date", value: record.effectiveDate },
-    ],
-    notificationType: "resignation",
-    subject: `Phoenix ${title} - ${record.employeeName}`,
-    summary: `Resignation workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+  await createSystemNotification({
+    actionUrl: "/resignations",
+    actorId: "system",
+    email: {
+      ctaHref: "/resignations",
+      ctaLabel: "Open resignations",
+      employeeHrId: record.employeeHrId,
+      metrics: [
+        { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+        { label: "Status", value: record.status },
+        { label: "Effective date", value: record.effectiveDate },
+      ],
+      notificationType: "resignation",
+      subject: `Phoenix ${title} - ${record.employeeName}`,
+      summary: `Resignation workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      title,
+      tone,
+    },
+    eventType: "workflow_updated",
+    message: `Resignation workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+    metadata: {
+      effectiveDate: record.effectiveDate,
+      employeeHrId: record.employeeHrId,
+      idempotencyKey: `resignation:${record.employeeHrId}:${record.status}:${record.effectiveDate}`,
+      status: record.status,
+    },
+    module: "resignations",
+    priority: tone === "danger" ? "critical" : "high",
+    subjectHrId: record.employeeHrId,
     title,
-    tone,
   });
 }
 
@@ -874,6 +891,12 @@ async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, emp
   if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
     throw accessProfileResult.error;
   }
+
+  await disableTelegramForIdentity({
+    actorLoginId: "system",
+    hrId: employeeHrId,
+    reason: "Employee resigned, terminated, or deactivated.",
+  });
 }
 
 async function resignEmployeeWithFallback(

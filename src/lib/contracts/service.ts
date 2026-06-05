@@ -7,7 +7,7 @@ import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
-import { safeSendNotificationEmail } from "@/lib/notifications/email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -410,18 +410,35 @@ async function notifyContractWorkflow(
   title: string,
   tone: "success" | "warning" | "danger" | "neutral",
 ) {
-  await safeSendNotificationEmail({
-    employeeHrId: record.employeeHrId,
-    metrics: [
-      { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
-      { label: "Status", value: record.status },
-      { label: "Renewal date", value: record.requestedRenewalDate },
-    ],
-    notificationType: "contract_renewal",
-    subject: `Phoenix ${title} - ${record.employeeName}`,
-    summary: `Contract renewal workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+  await createSystemNotification({
+    actionUrl: "/contracts/renewals",
+    actorId: "system",
+    email: {
+      employeeHrId: record.employeeHrId,
+      metrics: [
+        { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+        { label: "Status", value: record.status },
+        { label: "Renewal date", value: record.requestedRenewalDate },
+      ],
+      notificationType: "contract_renewal",
+      subject: `Phoenix ${title} - ${record.employeeName}`,
+      summary: `Contract renewal workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      title,
+      tone,
+    },
+    eventType: "workflow_updated",
+    message: `Contract renewal workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+    metadata: {
+      employeeHrId: record.employeeHrId,
+      idempotencyKey: `contract-renewal:${record.id}:${record.status}`,
+      renewalDate: record.requestedRenewalDate,
+      status: record.status,
+    },
+    module: "contract_renewal",
+    priority: tone === "danger" ? "critical" : "high",
+    recordId: record.id,
+    subjectHrId: record.employeeHrId,
     title,
-    tone,
   });
 }
 
