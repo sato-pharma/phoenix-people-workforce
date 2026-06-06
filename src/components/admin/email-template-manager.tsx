@@ -296,7 +296,7 @@ export function EmailTemplateManager({
     });
   }
 
-  function saveTemplate(mode: "draft" | "publish") {
+  function saveTemplate(mode: "draft" | "publish" | "save") {
     if (!draft) return;
     setError(null);
     setMessage(null);
@@ -309,7 +309,7 @@ export function EmailTemplateManager({
       const response = await fetch(`/api/admin/email-templates/${encodeURIComponent(draft.templateKey)}`, {
         body: JSON.stringify({
           ...templatePayload(nextDraft),
-          action: mode === "publish" ? "publish" : "draft",
+          action: mode === "publish" ? "publish" : mode === "save" ? "save" : "draft",
           changeReason: changeReason.trim(),
         }),
         headers: { "Content-Type": "application/json" },
@@ -325,7 +325,7 @@ export function EmailTemplateManager({
       setDraft(cloneTemplate(saved));
       setChangeReason("");
       setValidation(null);
-      setMessage(mode === "publish" ? "Template published with backend validation." : "Draft saved safely.");
+      setMessage(mode === "publish" ? "Template published with backend validation." : mode === "save" ? `Template saved. Status is ${saved.isActive ? "Active" : "Inactive"}.` : "Draft saved safely.");
     });
   }
 
@@ -406,8 +406,12 @@ export function EmailTemplateManager({
                 <Eye className="h-4 w-4" />
                 Backend Preview
               </Button>
-              <Button className="gap-2 rounded-xl bg-[#F97316] px-4 py-2.5 font-black text-white" disabled={isPending || !canPublish} onClick={() => saveTemplate("publish")} type="button">
+              <Button className="gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2.5 font-black text-[#0F172A]" disabled={isPending} onClick={() => saveTemplate("save")} type="button" variant="secondary">
                 <Save className="h-4 w-4" />
+                Save Changes
+              </Button>
+              <Button className="gap-2 rounded-xl bg-[#F97316] px-4 py-2.5 font-black text-white" disabled={isPending || !canPublish} onClick={() => saveTemplate("publish")} type="button">
+                <Send className="h-4 w-4" />
                 Publish
               </Button>
             </>
@@ -509,9 +513,15 @@ export function EmailTemplateManager({
                   <h2 className="mt-1 text-xl font-black text-[#0F172A]">{draft.templateName}</h2>
                   <p className="mt-1 text-sm font-bold text-[#64748B]">{draft.category} - {publicationLabel(draft.publicationState)}</p>
                 </div>
-                <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
-                  <span className="text-xs font-bold text-[#475569]">{draft.isActive ? "Active" : "Inactive"}</span>
-                  <Switch checked={draft.isActive} label="Template active status" onChange={(checked) => updateDraft("isActive", checked)} />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+                    <span className="text-xs font-bold text-[#475569]">{draft.isActive ? "Active" : "Inactive"}</span>
+                    <Switch checked={draft.isActive} label="Template active status" onChange={(checked) => updateDraft("isActive", checked)} />
+                  </div>
+                  <Button className="h-10 gap-2 rounded-xl border border-[#CBD5E1] bg-white px-3 text-xs font-black text-[#0F172A]" disabled={isPending} onClick={() => saveTemplate("save")} type="button" variant="secondary">
+                    <Save className="h-4 w-4" />
+                    Save Changes
+                  </Button>
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">

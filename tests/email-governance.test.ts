@@ -133,6 +133,12 @@ export async function runEmailGovernanceTests() {
   const validateDraftRouteSource = readFileSync("app/api/admin/email-templates/validate-draft/route.ts", "utf8");
   assert.match(validateDraftRouteSource, /validateEmailTemplateDraft/);
 
+  const templateManagerSource = readFileSync("src/components/admin/email-template-manager.tsx", "utf8");
+  assert.match(templateManagerSource, /saveTemplate\(mode: "draft" \| "publish" \| "save"\)/);
+  assert.match(templateManagerSource, /Save Changes/);
+  assert.match(templateManagerSource, /action: mode === "publish" \? "publish" : mode === "save" \? "save" : "draft"/);
+  assert.match(templateManagerSource, /isActive: mode === "publish" \? true : draft\.isActive/);
+
   const composerOptionsRouteSource = readFileSync("app/api/admin/email-composer/options/route.ts", "utf8");
   assert.match(composerOptionsRouteSource, /getEmailComposerOptions/);
 
