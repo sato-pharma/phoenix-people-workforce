@@ -5,7 +5,9 @@ import {
   CalendarCheck,
   CheckCircle2,
   CircleAlert,
+  Download,
   Edit3,
+  RefreshCw,
   RotateCcw,
   Send,
   XCircle,
@@ -24,7 +26,10 @@ type PlansWorkspaceProps = {
   selectedPlanId?: string | null;
 };
 
-type DraftItem = EmployeePlanItemInput & { key: string };
+type DraftItem = EmployeePlanItemInput & {
+  key: string;
+  returnNotes?: EmployeePlan["items"][number]["returnNotes"];
+};
 
 const statusLabels: Record<EmployeePlanStatus, string> = {
   cancelled: "Cancelled",
@@ -90,7 +95,8 @@ function rowPayload(rows: DraftItem[]): EmployeePlanItemInput[] {
       activityType: row.activityType,
       area: row.area,
       attendees: row.attendees,
-      doubleVisitMedicalRepHrId: row.doubleVisitMedicalRepHrId,
+      doubleVisitMedicalRepHrId: row.activityType === "Double Visit" ? row.doubleVisitMedicalRepHrId : null,
+      doubleVisitMedicalRepName: row.activityType === "Double Visit" ? row.doubleVisitMedicalRepName : null,
       endTime: row.endTime,
       locationText: row.locationText,
       notes: row.notes,
@@ -125,6 +131,7 @@ export function PlansWorkspace({
   const [rows, setRows] = useState<DraftItem[]>(() => defaultRows("weekly", today()));
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
   const [isPending, startTransition] = useTransition();
 
   const period = useMemo(() => buildEmployeePlanPeriod(activeKind, anchorDate), [activeKind, anchorDate]);
@@ -141,7 +148,28 @@ export function PlansWorkspace({
   }
 
   function updateRow(key: string, field: keyof EmployeePlanItemInput, value: string) {
-    setRows((current) => current.map((row) => row.key === key ? { ...row, [field]: value } : row));
+    setRows((current) => current.map((row) => {
+      if (row.key !== key) return row;
+      if (field === "activityType" && value !== "Double Visit") {
+        return {
+          ...row,
+          activityType: value as EmployeePlanItemInput["activityType"],
+          doubleVisitMedicalRepHrId: "",
+          doubleVisitMedicalRepName: "",
+        };
+      }
+      return { ...row, [field]: value };
+    }));
+  }
+
+  function updateReturnNote(planId: string, itemId: string, value: string) {
+    setReturnNotes((current) => ({
+      ...current,
+      [planId]: {
+        ...(current[planId] ?? {}),
+        [itemId]: value,
+      },
+    }));
   }
 
   function addRow(date = period.periodStartDate) {
@@ -204,14 +232,22 @@ export function PlansWorkspace({
   }
 
   async function decide(planId: string, action: string) {
+    const rowNotes = action.includes("return")
+      ? Object.entries(returnNotes[planId] ?? {})
+          .map(([itemId, note]) => ({ itemId, note: note.trim() }))
+          .filter((note) => note.note)
+      : [];
     const response = await fetch(`/api/weekly-plans/${planId}/decision`, {
-      body: JSON.stringify({ action, comment }),
+      body: JSON.stringify({ action, comment, returnNotes: rowNotes }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
     setComment("");
+    if (action.includes("return")) {
+      setReturnNotes((current) => ({ ...current, [planId]: {} }));
+    }
     setMessage("Decision recorded.");
   }
 
@@ -225,6 +261,17 @@ export function PlansWorkspace({
     if (!response.ok || !result.success) throw new Error(result.message ?? "Acknowledgement failed.");
     setComment("");
     setMessage("HR acknowledgement recorded.");
+  }
+
+  async function retryCalendarSync(planId: string) {
+    const response = await fetch(`/api/weekly-plans/${planId}/calendar-sync/retry`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message ?? "Calendar sync retry failed.");
+    setMessage("Google Calendar sync retry requested.");
+  }
+
+  function downloadExport(url: string) {
+    window.location.assign(url);
   }
 
   function loadPlanForEdit(target: EmployeePlan) {
@@ -244,6 +291,7 @@ export function PlansWorkspace({
       locationText: item.locationText ?? "",
       notes: item.notes,
       objective: item.objective ?? "",
+      returnNotes: item.returnNotes,
       sortOrder: index,
       startTime: item.startTime ?? "",
     })));
@@ -287,6 +335,58 @@ export function PlansWorkspace({
             </a>
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <SummaryTile label="Drafts" value={workspace.summary.drafts} />
+        <SummaryTile label="Manager pending" value={workspace.summary.managerPending} />
+        <SummaryTile label="CEO pending" value={workspace.summary.ceoPending} />
+        <SummaryTile label="Final approved" value={workspace.summary.finalApproved} />
+        <SummaryTile label="HR acknowledged" value={workspace.summary.hrAcknowledged} />
+        <SummaryTile label="Returned" value={workspace.summary.returned} tone="amber" />
+        <SummaryTile label="Rejected" value={workspace.summary.rejected} tone="red" />
+        <SummaryTile label="Calendar pending" value={workspace.summary.calendarPending} tone="sky" />
+        <SummaryTile label="Calendar blocked" value={workspace.summary.calendarBlocked} tone="amber" />
+        <SummaryTile label="Calendar failed" value={workspace.summary.calendarFailed} tone="red" />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          onClick={() => downloadExport("/api/weekly-plans/export?format=xlsx")}
+          type="button"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Export visible XLSX
+        </button>
+        <button
+          className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          onClick={() => downloadExport("/api/weekly-plans/export?format=pdf")}
+          type="button"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Export visible PDF
+        </button>
+        {plan ? (
+          <>
+            <button
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 px-3 text-sm font-bold text-orange-800 hover:bg-orange-100"
+              onClick={() => downloadExport(`/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`)}
+              type="button"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Selected XLSX
+            </button>
+            <button
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 px-3 text-sm font-bold text-orange-800 hover:bg-orange-100"
+              onClick={() => downloadExport(`/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`)}
+              type="button"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Selected PDF
+            </button>
+          </>
+        ) : null}
       </div>
 
       {message ? (
@@ -375,8 +475,10 @@ export function PlansWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <tr className="border-t border-slate-100" key={row.key}>
+                  {rows.map((row) => {
+                    const hasReturnNotes = Boolean(row.returnNotes?.length);
+                    return (
+                    <tr className={`border-t ${hasReturnNotes ? "border-amber-200 bg-amber-50/40" : "border-slate-100"}`} key={row.key}>
                       <td className="px-3 py-3">
                         <input className="h-9 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "activityDate", event.target.value)} type="date" value={row.activityDate} />
                       </td>
@@ -405,30 +507,41 @@ export function PlansWorkspace({
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "area", event.target.value)} placeholder="Area" value={row.area ?? ""} />
                       </td>
                       <td className="px-3 py-3">
-                        <select
-                          className="h-9 w-full rounded-md border border-slate-200 px-2"
-                          disabled={!planCanEdit(plan) || workspace.medicalRepOptions.length === 0}
-                          onChange={(event) => updateRow(row.key, "doubleVisitMedicalRepHrId", event.target.value)}
-                          value={row.doubleVisitMedicalRepHrId ?? ""}
-                        >
-                          <option value="">No double visit</option>
-                          {row.doubleVisitMedicalRepHrId && !workspace.medicalRepOptions.some((rep) => rep.hrId === row.doubleVisitMedicalRepHrId) ? (
-                            <option value={row.doubleVisitMedicalRepHrId}>
-                              {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
-                            </option>
-                          ) : null}
-                          {workspace.medicalRepOptions.map((rep) => (
-                            <option key={rep.hrId} value={rep.hrId}>
-                              {rep.fullName}{rep.areaName ? ` - ${rep.areaName}` : ""}
-                            </option>
-                          ))}
-                        </select>
+                        {row.activityType === "Double Visit" ? (
+                          <select
+                            className="h-9 w-full rounded-md border border-slate-200 px-2"
+                            disabled={!planCanEdit(plan) || workspace.medicalRepOptions.length === 0}
+                            onChange={(event) => updateRow(row.key, "doubleVisitMedicalRepHrId", event.target.value)}
+                            value={row.doubleVisitMedicalRepHrId ?? ""}
+                          >
+                            <option value="">Select Medical Rep</option>
+                            {row.doubleVisitMedicalRepHrId && !workspace.medicalRepOptions.some((rep) => rep.hrId === row.doubleVisitMedicalRepHrId) ? (
+                              <option value={row.doubleVisitMedicalRepHrId}>
+                                {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
+                              </option>
+                            ) : null}
+                            {workspace.medicalRepOptions.map((rep) => (
+                              <option key={rep.hrId} value={rep.hrId}>
+                                {rep.fullName}{rep.areaName ? ` - ${rep.areaName}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">Only for Double Visit</span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "notes", event.target.value)} value={row.notes ?? ""} />
+                        {hasReturnNotes ? (
+                          <div className="mt-2 space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
+                            {row.returnNotes?.map((note) => (
+                              <p key={note.id}>{note.actorRole ?? "Reviewer"}: {note.note}</p>
+                            ))}
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
@@ -443,13 +556,21 @@ export function PlansWorkspace({
         </section>
 
         <aside className="space-y-4">
-          <QueueCard title="My Plans" plans={ownPlans} onOpen={loadPlanForEdit} />
+          <QueueCard
+            isPending={isPending}
+            onOpen={loadPlanForEdit}
+            onRetryCalendar={(planId) => runAction(() => retryCalendarSync(planId))}
+            plans={ownPlans}
+            title="My Plans"
+          />
           <ReviewCard
             comment={comment}
             isPending={isPending}
             onComment={setComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
+            onReturnNote={updateReturnNote}
             plans={managerQueue}
+            returnNotes={returnNotes}
             title="Manager Review"
             type="manager"
           />
@@ -458,7 +579,9 @@ export function PlansWorkspace({
             isPending={isPending}
             onComment={setComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
+            onReturnNote={updateReturnNote}
             plans={ceoQueue}
+            returnNotes={returnNotes}
             title="CEO Review"
             type="ceo"
           />
@@ -467,6 +590,7 @@ export function PlansWorkspace({
             isPending={isPending}
             onComment={setComment}
             onDecision={(planId) => runAction(() => acknowledge(planId))}
+            onRetryCalendar={(planId) => runAction(() => retryCalendarSync(planId))}
             plans={hrQueue}
             title="HR Acknowledgement"
             type="hr"
@@ -477,7 +601,38 @@ export function PlansWorkspace({
   );
 }
 
-function QueueCard({ onOpen, plans, title }: { onOpen: (plan: EmployeePlan) => void; plans: EmployeePlan[]; title: string }) {
+function SummaryTile({ label, tone = "slate", value }: { label: string; tone?: "amber" | "red" | "sky" | "slate"; value: number }) {
+  const toneClass = {
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    red: "border-red-200 bg-red-50 text-red-800",
+    sky: "border-sky-200 bg-sky-50 text-sky-800",
+    slate: "border-slate-200 bg-white text-slate-900",
+  }[tone];
+  return (
+    <div className={`rounded-lg border p-3 ${toneClass}`}>
+      <p className="text-xs font-bold uppercase text-current">{label}</p>
+      <p className="mt-1 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function planCanRetryCalendar(plan: EmployeePlan) {
+  return ["final_approved", "hr_acknowledged"].includes(plan.status) && ["blocked", "failed", "pending"].includes(plan.calendarStatus);
+}
+
+function QueueCard({
+  isPending,
+  onOpen,
+  onRetryCalendar,
+  plans,
+  title,
+}: {
+  isPending: boolean;
+  onOpen: (plan: EmployeePlan) => void;
+  onRetryCalendar?: (planId: string) => void;
+  plans: EmployeePlan[];
+  title: string;
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-3">
@@ -486,13 +641,21 @@ function QueueCard({ onOpen, plans, title }: { onOpen: (plan: EmployeePlan) => v
       <div className="max-h-[360px] space-y-2 overflow-y-auto p-3">
         {plans.length === 0 ? <p className="text-sm font-semibold text-slate-500">No plans yet.</p> : null}
         {plans.map((plan) => (
-          <button className="w-full rounded-lg border border-slate-200 p-3 text-left hover:bg-slate-50" key={plan.id} onClick={() => onOpen(plan)} type="button">
+          <div className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50" key={plan.id}>
+          <button className="w-full text-left" onClick={() => onOpen(plan)} type="button">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-black text-slate-900">{plan.planKind} {plan.periodKey}</p>
               <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(plan.status)}`}>{statusLabels[plan.status]}</span>
             </div>
             <p className="mt-1 text-xs font-semibold text-slate-500">Revision {plan.revision} - Calendar {plan.calendarStatus}</p>
           </button>
+          {onRetryCalendar && planCanRetryCalendar(plan) ? (
+            <Button className="mt-3 px-3 py-1.5 text-xs" disabled={isPending} onClick={() => onRetryCalendar(plan.id)} variant="secondary">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Retry Calendar
+            </Button>
+          ) : null}
+          </div>
         ))}
       </div>
     </div>
@@ -504,7 +667,10 @@ function ReviewCard({
   isPending,
   onComment,
   onDecision,
+  onRetryCalendar,
+  onReturnNote,
   plans,
+  returnNotes,
   title,
   type,
 }: {
@@ -512,7 +678,10 @@ function ReviewCard({
   isPending: boolean;
   onComment: (value: string) => void;
   onDecision: (planId: string, action: string) => void;
+  onRetryCalendar?: (planId: string) => void;
+  onReturnNote?: (planId: string, itemId: string, value: string) => void;
   plans: EmployeePlan[];
+  returnNotes?: Record<string, Record<string, string>>;
   title: string;
   type: "manager" | "ceo" | "hr";
 }) {
@@ -533,6 +702,23 @@ function ReviewCard({
               placeholder={type === "hr" ? "Acknowledgement note" : "Comment required for reject/return"}
               value={comment}
             />
+            {type !== "hr" ? (
+              <div className="mt-3 max-h-44 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                {plan.items.map((item) => (
+                  <label className="block" key={item.id}>
+                    <span className="block text-xs font-black text-slate-600">
+                      {formatDate(item.activityDate)} - {item.activityTitle}
+                    </span>
+                    <input
+                      className="mt-1 h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
+                      onChange={(event) => onReturnNote?.(plan.id, item.id, event.target.value)}
+                      placeholder="Optional row return note"
+                      value={returnNotes?.[plan.id]?.[item.id] ?? ""}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {type === "manager" ? (
                 <>
@@ -549,10 +735,18 @@ function ReviewCard({
                 </>
               ) : null}
               {type === "hr" ? (
-                <Button disabled={isPending} onClick={() => onDecision(plan.id, "hr_acknowledge")} variant="secondary">
-                  <CircleAlert className="mr-2 h-4 w-4" />
-                  Acknowledge
-                </Button>
+                <>
+                  <Button disabled={isPending} onClick={() => onDecision(plan.id, "hr_acknowledge")} variant="secondary">
+                    <CircleAlert className="mr-2 h-4 w-4" />
+                    Acknowledge
+                  </Button>
+                  {onRetryCalendar && planCanRetryCalendar(plan) ? (
+                    <Button disabled={isPending} onClick={() => onRetryCalendar(plan.id)} variant="secondary">
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Retry Calendar
+                    </Button>
+                  ) : null}
+                </>
               ) : null}
             </div>
           </div>

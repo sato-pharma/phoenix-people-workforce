@@ -47,15 +47,24 @@ export function runWeeklyMonthlyPlansV1Tests() {
 
   const serviceSource = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   const telegramSource = readFileSync("src/lib/notifications/telegram.ts", "utf8");
-  const migrationSource = readFileSync("supabase/migrations/20260606105733_weekly_monthly_plans_v1.sql", "utf8");
+  const migrationSource = readFileSync("supabase/migrations/20260606125715_weekly_monthly_plans_v1.sql", "utf8");
+  const followUpMigrationSource = readFileSync("supabase/migrations/20260606133000_employee_plan_followup_enhancements.sql", "utf8");
   const pageSource = readFileSync("app/employee-portals/plans/page.tsx", "utf8");
   const navSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+  const retryRouteSource = readFileSync("app/api/weekly-plans/[id]/calendar-sync/retry/route.ts", "utf8");
+  const exportRouteSource = readFileSync("app/api/weekly-plans/export/route.ts", "utf8");
+  const exportSource = readFileSync("src/lib/weekly-planning/export.ts", "utf8");
 
   assert.match(serviceSource, /syncApprovedPlanToGoogleCalendar/, "CEO approval must trigger Google Calendar sync service");
   assert.match(serviceSource, /status !== "final_approved" && plan\.status !== "hr_acknowledged"/, "calendar sync must not run before final approval");
   assert.match(serviceSource, /Employee has not connected Google Calendar/, "missing Google connection must be marked as blocked");
   assert.match(serviceSource, /medicalRepOptionsForEmployee/, "double-visit Medical Rep options must be resolved from the employee line");
+  assert.match(serviceSource, /Double Visit requires selecting a same-line Medical Rep/, "Double Visit must require a Medical Rep");
   assert.match(serviceSource, /Selected double-visit Medical Rep is not available for this employee line/, "server must validate selected Medical Rep line access");
+  assert.match(serviceSource, /activityType === "Double Visit" \? selectedRepHrId : null/, "non-Double Visit rows must clear double-visit Medical Rep fields");
+  assert.match(serviceSource, /recordReturnNotes/, "manager/CEO return must support row-level feedback");
+  assert.match(serviceSource, /retryEmployeePlanCalendarSync/, "approved plans must support Calendar sync retry");
+  assert.match(serviceSource, /item\.calendar_sync_status === "synced"\) continue/, "Calendar retry must not duplicate already-synced item events");
   assert.match(serviceSource, /createSystemNotification/, "workflow must use unified notifications");
   assert.match(serviceSource, /channels: \["in_app", "email", "telegram"\]/, "workflow notifications must include in-app, email and Telegram");
   assert.doesNotMatch(telegramSource, /approve|reject/i, "Telegram adapter must not expose approve/reject actions");
@@ -68,10 +77,23 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(migrationSource, /double_visit_medical_rep_name/i);
   assert.match(migrationSource, /revoke all on table public\.employee_plan_headers from anon, authenticated/i);
   assert.match(migrationSource, /enable row level security/i);
+  assert.match(followUpMigrationSource, /create table if not exists public\.employee_plan_item_return_notes/i);
+  assert.match(followUpMigrationSource, /on delete set null/i);
+  assert.match(followUpMigrationSource, /revoke all on table public\.employee_plan_item_return_notes from anon, authenticated/i);
+  assert.match(followUpMigrationSource, /enable row level security/i);
 
   assert.match(pageSource, /getEmployeePlansWorkspace/);
   assert.match(navSource, /Weekly \/ Monthly Plan/);
   const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
   assert.match(workspaceSource, /Double visit Medical Rep/);
   assert.match(workspaceSource, /workspace\.medicalRepOptions/);
+  assert.match(workspaceSource, /row\.activityType === "Double Visit"/);
+  assert.match(workspaceSource, /Retry Calendar/);
+  assert.match(workspaceSource, /workspace\.summary/);
+  assert.match(workspaceSource, /Export visible XLSX/);
+  assert.match(retryRouteSource, /retryEmployeePlanCalendarSync/);
+  assert.match(exportRouteSource, /application\/pdf/);
+  assert.match(exportRouteSource, /format=xlsx\|pdf|format/);
+  assert.match(exportSource, /buildEmployeePlansWorkbook/);
+  assert.match(exportSource, /buildEmployeePlansPdf/);
 }

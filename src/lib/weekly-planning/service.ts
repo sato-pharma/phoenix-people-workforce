@@ -89,6 +89,7 @@ type PlanItemRow = {
   shared_calendar_event_id: string | null;
   sort_order: number;
   start_time: string | null;
+  employee_plan_item_return_notes?: PlanReturnNoteRow[];
 };
 
 type PlanAckRow = {
@@ -99,6 +100,21 @@ type PlanAckRow = {
   login_id: string | null;
   plan_id: string;
   role_label: string | null;
+};
+
+type PlanReturnNoteRow = {
+  action: Extract<EmployeePlanAction, "manager_return" | "ceo_return">;
+  actor_hr_id: string | null;
+  actor_login_id: string | null;
+  actor_role: string | null;
+  activity_date: string | null;
+  activity_title: string | null;
+  created_at: string;
+  id: string;
+  item_id: string | null;
+  note: string;
+  plan_id: string;
+  sort_order: number | null;
 };
 
 type AuthUserRow = {
@@ -133,6 +149,20 @@ export type EmployeePlanItemInput = {
   startTime?: string | null;
 };
 
+export type EmployeePlanReturnNote = {
+  action: Extract<EmployeePlanAction, "manager_return" | "ceo_return">;
+  actorHrId: string | null;
+  actorRole: string | null;
+  createdAt: string;
+  id: string;
+  note: string;
+};
+
+export type EmployeePlanReturnNoteInput = {
+  itemId: string;
+  note: string;
+};
+
 export type EmployeePlan = {
   acknowledgements: Array<{
     acknowledgedAt: string;
@@ -161,6 +191,7 @@ export type EmployeePlan = {
     locationText: string | null;
     notes: string;
     objective: string | null;
+    returnNotes: EmployeePlanReturnNote[];
     sortOrder: number;
     startTime: string | null;
   }>;
@@ -174,6 +205,20 @@ export type EmployeePlan = {
   status: EmployeePlanStatus;
   submittedAt: string | null;
   updatedAt: string;
+};
+
+export type EmployeePlansSummary = {
+  calendarBlocked: number;
+  calendarFailed: number;
+  calendarPending: number;
+  ceoPending: number;
+  drafts: number;
+  finalApproved: number;
+  hrAcknowledged: number;
+  managerPending: number;
+  rejected: number;
+  returned: number;
+  submitted: number;
 };
 
 export type EmployeePlansWorkspace = {
@@ -199,11 +244,12 @@ export type EmployeePlansWorkspace = {
   }>;
   plans: EmployeePlan[];
   schemaReady: boolean;
+  summary: EmployeePlansSummary;
 };
 
 const planSelect = `
   *,
-  employee_plan_items (*),
+  employee_plan_items (*, employee_plan_item_return_notes (*)),
   employee_plan_hr_acknowledgements (*)
 `;
 
@@ -230,7 +276,20 @@ function normalizedName(value: string | null | undefined) {
 
 function isSchemaMissing(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
-  return /employee_plan_headers|employee_plan_items|google_calendar_connections|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
+  return /employee_plan_headers|employee_plan_items|employee_plan_item_return_notes|google_calendar_connections|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
+}
+
+function mapReturnNotes(item: PlanItemRow): EmployeePlanReturnNote[] {
+  return (item.employee_plan_item_return_notes ?? [])
+    .map((note) => ({
+      action: note.action,
+      actorHrId: note.actor_hr_id,
+      actorRole: note.actor_role,
+      createdAt: note.created_at,
+      id: note.id,
+      note: note.note,
+    }))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 function mapPlan(row: PlanHeaderRow): EmployeePlan {
@@ -263,6 +322,7 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
         locationText: item.location_text,
         notes: item.notes,
         objective: item.objective,
+        returnNotes: mapReturnNotes(item),
         sortOrder: item.sort_order,
         startTime: item.start_time,
       }))
@@ -278,6 +338,42 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
     submittedAt: row.submitted_at,
     updatedAt: row.updated_at,
   };
+}
+
+function emptyPlansSummary(): EmployeePlansSummary {
+  return {
+    calendarBlocked: 0,
+    calendarFailed: 0,
+    calendarPending: 0,
+    ceoPending: 0,
+    drafts: 0,
+    finalApproved: 0,
+    hrAcknowledged: 0,
+    managerPending: 0,
+    rejected: 0,
+    returned: 0,
+    submitted: 0,
+  };
+}
+
+function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
+  const summary = emptyPlansSummary();
+  for (const plan of plans) {
+    if (plan.status === "draft") summary.drafts += 1;
+    if (plan.status === "submitted") {
+      summary.submitted += 1;
+      summary.managerPending += 1;
+    }
+    if (plan.status === "manager_approved") summary.ceoPending += 1;
+    if (plan.status === "final_approved") summary.finalApproved += 1;
+    if (plan.status === "hr_acknowledged") summary.hrAcknowledged += 1;
+    if (plan.status.includes("returned")) summary.returned += 1;
+    if (plan.status.includes("rejected")) summary.rejected += 1;
+    if (plan.calendarStatus === "pending") summary.calendarPending += 1;
+    if (plan.calendarStatus === "blocked") summary.calendarBlocked += 1;
+    if (plan.calendarStatus === "failed") summary.calendarFailed += 1;
+  }
+  return summary;
 }
 
 function employeeTitle(employee: EmployeeDirectoryRow | null | undefined, fallbackRole?: PhoenixRole) {
@@ -387,9 +483,13 @@ function normalizeItem(
   periodStartDate: string,
   repByHrId: Map<string, { fullName: string; hrId: string }>,
 ): EmployeePlanItemInput & { doubleVisitMedicalRepName?: string | null } {
+  const activityType = validActivityType(cleanText(item.activityType));
   const selectedRepHrId = nullableText(item.doubleVisitMedicalRepHrId);
   let selectedRepName: string | null = null;
-  if (selectedRepHrId) {
+  if (activityType === "Double Visit") {
+    if (!selectedRepHrId) {
+      throw new Error("Double Visit requires selecting a same-line Medical Rep.");
+    }
     const rep = repByHrId.get(normalizeHrId(selectedRepHrId));
     if (!rep) {
       throw new Error("Selected double-visit Medical Rep is not available for this employee line.");
@@ -399,11 +499,11 @@ function normalizeItem(
   return {
     activityDate: cleanText(item.activityDate) || periodStartDate,
     activityTitle: cleanText(item.activityTitle) || "Untitled activity",
-    activityType: validActivityType(cleanText(item.activityType)),
+    activityType,
     area: nullableText(item.area),
     attendees: nullableText(item.attendees),
-    doubleVisitMedicalRepHrId: selectedRepHrId,
-    doubleVisitMedicalRepName: selectedRepName,
+    doubleVisitMedicalRepHrId: activityType === "Double Visit" ? selectedRepHrId : null,
+    doubleVisitMedicalRepName: activityType === "Double Visit" ? selectedRepName : null,
     endTime: nullableText(item.endTime),
     locationText: nullableText(item.locationText),
     notes: cleanText(item.notes),
@@ -472,6 +572,44 @@ async function recordDecision(input: {
     plan_id: input.planId,
     to_status: input.toStatus,
   });
+  if (error) throw error;
+}
+
+async function recordReturnNotes(input: {
+  access: AccessContext;
+  action: Extract<EmployeePlanAction, "manager_return" | "ceo_return">;
+  notes?: EmployeePlanReturnNoteInput[];
+  plan: PlanHeaderRow;
+}) {
+  const cleanNotes = (input.notes ?? [])
+    .map((note) => ({
+      itemId: cleanText(note.itemId),
+      note: cleanText(note.note),
+    }))
+    .filter((note) => note.itemId && note.note);
+  if (cleanNotes.length === 0) return;
+
+  const itemsById = new Map((input.plan.employee_plan_items ?? []).map((item) => [item.id, item]));
+  const rows = cleanNotes.map((note) => {
+    const item = itemsById.get(note.itemId);
+    if (!item) {
+      throw new Error("Row return feedback includes an item that does not belong to this plan.");
+    }
+    return {
+      action: input.action,
+      activity_date: item.activity_date,
+      activity_title: item.activity_title,
+      actor_hr_id: input.access.hrId,
+      actor_login_id: input.access.loginId ?? null,
+      actor_role: input.access.role,
+      item_id: item.id,
+      note: note.note,
+      plan_id: input.plan.id,
+      sort_order: item.sort_order,
+    };
+  });
+
+  const { error } = await getSupabaseAdmin().from("employee_plan_item_return_notes").insert(rows);
   if (error) throw error;
 }
 
@@ -713,6 +851,40 @@ export async function syncApprovedPlanToGoogleCalendar(planId: string) {
   return mapPlan(await loadPlanRow(planId));
 }
 
+function canRetryCalendarSync(access: AccessContext, employee: EmployeeDirectoryRow | null, plan: PlanHeaderRow) {
+  if (access.role === "CEO" || access.role === "Super Admin" || access.scope === "system") return true;
+  if (hrIdsMatch(access.hrId, plan.employee_hr_id)) return true;
+  return isHrReviewer(access, employee);
+}
+
+export async function retryEmployeePlanCalendarSync(access: AccessContext, planId: string) {
+  await assertPermission(access, "weekly_plans", "read");
+  const employee = await currentEmployee(access);
+  const plan = await loadPlanRow(planId);
+  if (!canViewPlan(access, employee, plan) || !canRetryCalendarSync(access, employee, plan)) {
+    throw new Error("Forbidden: you cannot retry Google Calendar sync for this plan.");
+  }
+  if (plan.status !== "final_approved" && plan.status !== "hr_acknowledged") {
+    throw new Error("Google Calendar sync can only be retried after final CEO approval.");
+  }
+
+  await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .update({ google_calendar_last_error: null, google_calendar_sync_status: "pending" })
+    .eq("id", planId);
+
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { googleCalendarSyncStatus: "pending" },
+    oldValues: { googleCalendarSyncStatus: plan.google_calendar_sync_status },
+    summary: `${plan.plan_kind} plan Google Calendar sync retry requested`,
+  });
+
+  return syncApprovedPlanToGoogleCalendar(planId);
+}
+
 async function findAuthUserForHrId(hrId: string | null | undefined) {
   if (!hrId) return null;
   const { data, error } = await getSupabaseAdmin()
@@ -726,6 +898,7 @@ async function findAuthUserForHrId(hrId: string | null | undefined) {
 
 export async function getEmployeePlansWorkspace(access: AccessContext): Promise<EmployeePlansWorkspace> {
   await assertPermission(access, "employee_profile", "read");
+  await assertPermission(access, "weekly_plans", "read");
   const employee = await currentEmployee(access);
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
@@ -740,6 +913,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       .limit(250);
     if (error) throw error;
     const visible = ((data ?? []) as PlanHeaderRow[]).filter((plan) => canViewPlan(access, employee, plan));
+    const plans = visible.map(mapPlan);
     return {
       canAcknowledgeHr,
       canSubmitPlans,
@@ -758,8 +932,9 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
       },
       medicalRepOptions,
-      plans: visible.map(mapPlan),
+      plans,
       schemaReady: true,
+      summary: summarizePlans(plans),
     };
   } catch (error) {
     if (!isSchemaMissing(error)) throw error;
@@ -783,6 +958,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       medicalRepOptions,
       plans: [],
       schemaReady: false,
+      summary: emptyPlansSummary(),
     };
   }
 }
@@ -929,6 +1105,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
 export async function decideEmployeePlan(access: AccessContext, planId: string, input: {
   action: Extract<EmployeePlanAction, "manager_approve" | "manager_reject" | "manager_return" | "ceo_approve" | "ceo_reject" | "ceo_return">;
   comment?: string | null;
+  returnNotes?: EmployeePlanReturnNoteInput[];
 }) {
   await assertPermission(access, "weekly_plans", "approve");
   const plan = await loadPlanRow(planId);
@@ -961,6 +1138,14 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     planId,
     toStatus: nextStatus,
   });
+  if (input.action === "manager_return" || input.action === "ceo_return") {
+    await recordReturnNotes({
+      access,
+      action: input.action,
+      notes: input.returnNotes,
+      plan,
+    });
+  }
 
   const updated = await loadPlanRow(planId);
   if (input.action === "manager_approve") await notifyCeo(updated);

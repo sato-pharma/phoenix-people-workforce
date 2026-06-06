@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { decideEmployeePlan } from "@/lib/weekly-planning/service";
+import { decideEmployeePlan, type EmployeePlanReturnNoteInput } from "@/lib/weekly-planning/service";
 import type { EmployeePlanAction } from "@/lib/weekly-planning/plan-v1";
 
 export const runtime = "nodejs";
@@ -40,6 +40,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const body = await request.json().catch(() => ({})) as {
       action?: EmployeePlanAction;
       comment?: string | null;
+      returnNotes?: EmployeePlanReturnNoteInput[];
     };
     if (!body.action || !decisionActions.has(body.action)) {
       return NextResponse.json(
@@ -50,6 +51,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const plan = await decideEmployeePlan(access, id, {
       action: body.action as Extract<EmployeePlanAction, "manager_approve" | "manager_reject" | "manager_return" | "ceo_approve" | "ceo_reject" | "ceo_return">,
       comment: body.comment,
+      returnNotes: Array.isArray(body.returnNotes) ? body.returnNotes : [],
     });
     return NextResponse.json({ data: plan, success: true });
   } catch (error) {
