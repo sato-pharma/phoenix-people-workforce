@@ -800,8 +800,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             <AdminCallout tone="neutral">
               <FileSpreadsheet className="mt-0.5 h-4 w-4" />
               <div>
-                <p className="font-semibold">Uploading a Normalizer coded sheet?</p>
-                <p className="text-sm">Pick the <b>same distributor</b> you coded it for. A coded sheet from the Source Normalizer passes validation here — or import it in one click on the Normalizer screen.</p>
+                <p className="font-semibold">Upload any distributor sheet — raw or coded.</p>
+                <p className="text-sm">Pick the <b>correct distributor</b>, then attach either its <b>raw export</b> or a <b>raw + coded</b> sheet. Missing Brick/Area/Region auto-fill from the customer map; any unmapped rows still show up in “Rows to Fix.”</p>
               </div>
             </AdminCallout>
           </div>
@@ -839,7 +839,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                       <span className="mt-1 block text-xs leading-5 text-[#64748B]">
                         {selectedFile
                           ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB selected`
-                          : "Overseas PS and Ibn Sina IS coded templates are supported in this step."}
+                          : "Any distributor's raw export or raw + coded sheet is accepted (.xlsx / .xls)."}
                       </span>
                     </span>
                   </span>

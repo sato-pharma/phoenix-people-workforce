@@ -59,6 +59,10 @@ export type SalesReferenceData = {
   areas?: SalesAreaReference[];
   blocks?: SalesBlockReference[];
   bricks?: SalesBrickReference[];
+  // Customer -> brick crosswalk (source_of_sales_customer_map), keyed by distributor + customer
+  // code. Used to auto-fill a row's Brick (and derived Area/Region) when the coded sheet leaves
+  // the brick blank/#N/A. Optional so callers and unit tests can omit it.
+  customerBricks?: { brickId: string; customerCode: string; distributorCode: string }[];
   distributors: SalesDistributorReference[];
   products: SalesProductReference[];
   regions: SalesAreaRegionReference[];
@@ -890,6 +894,16 @@ function buildReferenceMaps(references: SalesReferenceData) {
     areaByCode: new Map(areas.map((row) => [normalizeCode(row.areaCode), row])),
     blockByCode: new Map((references.blocks ?? []).map((row) => [normalizeCode(row.blockCode), row])),
     brickById: new Map((references.bricks ?? []).map((row) => [normalizeCode(row.brickId), row])),
+    // (distributor code + customer code) -> brick id, for the customer-map brick fallback.
+    // Only entries with a non-empty brick are kept.
+    customerBrickByKey: new Map(
+      (references.customerBricks ?? [])
+        .map((row) => [
+          `${normalizeCode(row.distributorCode)} ${normalizeCode(row.customerCode)}`,
+          normalizeCode(row.brickId),
+        ] as const)
+        .filter(([, brick]) => brick !== ""),
+    ),
     distributorByCode: new Map(references.distributors.map((row) => [normalizeCode(row.code), row])),
     productByCode: new Map(references.products.map((row) => [normalizeCode(row.productCode), row])),
     regionByCode: regionReferences,
@@ -947,11 +961,11 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     if (!hasAnyImportValue(row, headerMap)) continue;
     const rowIssues: DistributorSalesValidationIssue[] = [];
 
-    const rawAreaCode = valueAt(row, headerMap, "areaCode");
+    let rawAreaCode = valueAt(row, headerMap, "areaCode");
     const rawAreaName = optionalValueAt(row, headerMap, "areaName");
-    const rawBrickId = valueAt(row, headerMap, "brickId");
+    let rawBrickId = valueAt(row, headerMap, "brickId");
     const rawBrickName = optionalValueAt(row, headerMap, "brickName");
-    const rawRegionCode = valueAt(row, headerMap, "regionCode");
+    let rawRegionCode = valueAt(row, headerMap, "regionCode");
     const rawRegionName = optionalValueAt(row, headerMap, "regionName");
     const rawProductCode = valueAt(row, headerMap, "productCode");
     const rawProductName = optionalValueAt(row, headerMap, "productName");
@@ -964,6 +978,25 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const clientCode = customerValueAt(row, headerMap, "code");
     const clientName = customerValueAt(row, headerMap, "name");
     const clientAddress = customerValueAt(row, headerMap, "address");
+
+    // Auto-fill Brick (and derived Area/Region) from the customer map when the coded sheet leaves
+    // the brick blank or #N/A — keyed by distributor + customer code. This lets a raw export or a
+    // raw+coded ("hybrid") sheet validate without hand-filled bricks. A valid typed brick is left
+    // untouched, and a customer with no mapping still fails the brick checks below (surfacing in
+    // "Rows To Fix"). Skipped for region-only channels (Direct), which carry no brick/area.
+    if (
+      !headerMap.template.regionOnly
+      && (normalizeCode(rawBrickId) === "" || isNotAvailable(rawBrickId))
+      && normalizeCode(clientCode) !== ""
+    ) {
+      const mappedBrickId = maps.customerBrickByKey.get(`${selectedDistributorCode} ${normalizeCode(clientCode)}`);
+      const mappedBrick = mappedBrickId ? maps.brickById.get(mappedBrickId) : undefined;
+      if (mappedBrick) {
+        rawBrickId = mappedBrick.brickId;
+        if (normalizeCode(rawAreaCode) === "" || isNotAvailable(rawAreaCode)) rawAreaCode = mappedBrick.areaCode;
+        if (normalizeCode(rawRegionCode) === "" || isNotAvailable(rawRegionCode)) rawRegionCode = mappedBrick.regionCode;
+      }
+    }
 
     const areaCode = normalizeCode(rawAreaCode);
     const brickId = normalizeCode(rawBrickId);
@@ -1267,6 +1300,37 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
 
 export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
   const supabase = getSupabaseAdmin();
+  // Customer -> brick crosswalk for the brick auto-fill, loaded concurrently with the masters.
+  // Paged past PostgREST's 1000-row cap; tolerant of errors (e.g. table absent pre-migration) so
+  // a crosswalk failure never blocks a normal coded upload — it just disables the auto-fill.
+  const customerBricksPromise = (async () => {
+    const collected: { brickId: string; customerCode: string; distributorCode: string }[] = [];
+    const pageSize = 1000;
+    let from = 0;
+    for (;;) {
+      const page = await supabase
+        .from("source_of_sales_customer_map")
+        .select("distributor_code,customer_code,brick_id")
+        .eq("active", true)
+        .order("distributor_code", { ascending: true })
+        .order("customer_code", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (page.error) break;
+      const data = page.data ?? [];
+      for (const r of data) {
+        const brickId = String(r.brick_id ?? "").trim();
+        if (!brickId) continue;
+        collected.push({
+          brickId,
+          customerCode: String(r.customer_code ?? ""),
+          distributorCode: String(r.distributor_code ?? ""),
+        });
+      }
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return collected;
+  })();
   const [newRegionsResult, areasResult, blocksResult, bricksResult, productsResult, distributorsResult] = await Promise.all([
     supabase
       .from("source_of_sales_regions")
@@ -1404,6 +1468,7 @@ export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
     areas,
     blocks,
     bricks,
+    customerBricks: await customerBricksPromise,
     regions,
     products: (productsResult.data ?? []).map((row) => ({
       factoryPrice: Number(row.factory_price ?? 0),
