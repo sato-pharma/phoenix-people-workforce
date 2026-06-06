@@ -69,6 +69,8 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
     activityType: "Office",
     area: "",
     attendees: "",
+    doubleVisitMedicalRepHrId: "",
+    doubleVisitMedicalRepName: "",
     endTime: "",
     key: `row-${index}-${period.periodStartDate}`,
     locationText: "",
@@ -81,13 +83,14 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
 
 function rowPayload(rows: DraftItem[]): EmployeePlanItemInput[] {
   return rows
-    .filter((row) => row.activityTitle.trim() || row.objective?.trim() || row.attendees?.trim() || row.notes?.trim())
+    .filter((row) => row.activityTitle.trim() || row.objective?.trim() || row.attendees?.trim() || row.doubleVisitMedicalRepHrId?.trim() || row.notes?.trim())
     .map((row, index) => ({
       activityDate: row.activityDate,
       activityTitle: row.activityTitle.trim() || row.activityType,
       activityType: row.activityType,
       area: row.area,
       attendees: row.attendees,
+      doubleVisitMedicalRepHrId: row.doubleVisitMedicalRepHrId,
       endTime: row.endTime,
       locationText: row.locationText,
       notes: row.notes,
@@ -150,6 +153,8 @@ export function PlansWorkspace({
         activityType: "Office",
         area: "",
         attendees: "",
+        doubleVisitMedicalRepHrId: "",
+        doubleVisitMedicalRepName: "",
         endTime: "",
         key: `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         locationText: "",
@@ -232,6 +237,8 @@ export function PlansWorkspace({
       activityType: item.activityType,
       area: item.area ?? "",
       attendees: item.attendees ?? "",
+      doubleVisitMedicalRepHrId: item.doubleVisitMedicalRepHrId ?? "",
+      doubleVisitMedicalRepName: item.doubleVisitMedicalRepName ?? "",
       endTime: item.endTime ?? "",
       key: item.id,
       locationText: item.locationText ?? "",
@@ -353,7 +360,7 @@ export function PlansWorkspace({
               <h3 className="text-base font-black text-slate-900">Activity rows</h3>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-[1180px] w-full text-left text-sm">
+              <table className="min-w-[1460px] w-full text-left text-sm">
                 <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
                   <tr>
                     <th className="px-3 py-3">Date</th>
@@ -361,7 +368,9 @@ export function PlansWorkspace({
                     <th className="px-3 py-3">Type</th>
                     <th className="px-3 py-3">Title / objective</th>
                     <th className="px-3 py-3">Attendees</th>
-                    <th className="px-3 py-3">Location / area</th>
+                    <th className="px-3 py-3">Location</th>
+                    <th className="px-3 py-3">Area</th>
+                    <th className="px-3 py-3">Double visit Medical Rep</th>
                     <th className="px-3 py-3">Notes</th>
                   </tr>
                 </thead>
@@ -390,8 +399,30 @@ export function PlansWorkspace({
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "attendees", event.target.value)} value={row.attendees ?? ""} />
                       </td>
                       <td className="px-3 py-3">
-                        <input className="mb-2 h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "locationText", event.target.value)} placeholder="Location" value={row.locationText ?? ""} />
+                        <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "locationText", event.target.value)} placeholder="Location" value={row.locationText ?? ""} />
+                      </td>
+                      <td className="px-3 py-3">
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "area", event.target.value)} placeholder="Area" value={row.area ?? ""} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <select
+                          className="h-9 w-full rounded-md border border-slate-200 px-2"
+                          disabled={!planCanEdit(plan) || workspace.medicalRepOptions.length === 0}
+                          onChange={(event) => updateRow(row.key, "doubleVisitMedicalRepHrId", event.target.value)}
+                          value={row.doubleVisitMedicalRepHrId ?? ""}
+                        >
+                          <option value="">No double visit</option>
+                          {row.doubleVisitMedicalRepHrId && !workspace.medicalRepOptions.some((rep) => rep.hrId === row.doubleVisitMedicalRepHrId) ? (
+                            <option value={row.doubleVisitMedicalRepHrId}>
+                              {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
+                            </option>
+                          ) : null}
+                          {workspace.medicalRepOptions.map((rep) => (
+                            <option key={rep.hrId} value={rep.hrId}>
+                              {rep.fullName}{rep.areaName ? ` - ${rep.areaName}` : ""}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-3 py-3">
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "notes", event.target.value)} value={row.notes ?? ""} />

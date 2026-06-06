@@ -77,6 +77,8 @@ type PlanItemRow = {
   calendar_last_error: string | null;
   calendar_sync_status: EmployeePlanCalendarSyncStatus;
   calendar_synced_at: string | null;
+  double_visit_medical_rep_hr_id: string | null;
+  double_visit_medical_rep_name: string | null;
   employee_calendar_event_id: string | null;
   end_time: string | null;
   id: string;
@@ -121,6 +123,8 @@ export type EmployeePlanItemInput = {
   activityType: EmployeePlanActivityType;
   area?: string | null;
   attendees?: string | null;
+  doubleVisitMedicalRepHrId?: string | null;
+  doubleVisitMedicalRepName?: string | null;
   endTime?: string | null;
   locationText?: string | null;
   notes?: string | null;
@@ -150,6 +154,8 @@ export type EmployeePlan = {
     area: string | null;
     attendees: string | null;
     calendarStatus: EmployeePlanCalendarSyncStatus;
+    doubleVisitMedicalRepHrId: string | null;
+    doubleVisitMedicalRepName: string | null;
     endTime: string | null;
     id: string;
     locationText: string | null;
@@ -185,6 +191,12 @@ export type EmployeePlansWorkspace = {
     connected: boolean;
     sharedCalendarConfigured: boolean;
   };
+  medicalRepOptions: Array<{
+    areaName: string | null;
+    fullName: string;
+    hrId: string;
+    lineName: string | null;
+  }>;
   plans: EmployeePlan[];
   schemaReady: boolean;
 };
@@ -212,9 +224,13 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
   return Boolean(normalizeHrId(left) && normalizeHrId(left) === normalizeHrId(right));
 }
 
+function normalizedName(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function isSchemaMissing(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
-  return /employee_plan_headers|employee_plan_items|google_calendar_connections|schema cache|does not exist|PGRST205|42P01/i.test(text);
+  return /employee_plan_headers|employee_plan_items|google_calendar_connections|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
 }
 
 function mapPlan(row: PlanHeaderRow): EmployeePlan {
@@ -240,6 +256,8 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
         area: item.area,
         attendees: item.attendees,
         calendarStatus: item.calendar_sync_status,
+        doubleVisitMedicalRepHrId: item.double_visit_medical_rep_hr_id,
+        doubleVisitMedicalRepName: item.double_visit_medical_rep_name,
         endTime: item.end_time,
         id: item.id,
         locationText: item.location_text,
@@ -268,6 +286,39 @@ function employeeTitle(employee: EmployeeDirectoryRow | null | undefined, fallba
 
 function canSubmitFromEmployee(employee: EmployeeDirectoryRow | null, role: PhoenixRole) {
   return isWeeklyMonthlyPlanEligibleTitle(employeeTitle(employee, role), role);
+}
+
+function isMedicalRepEmployee(employee: EmployeeDirectoryRow) {
+  const title = `${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`.toLowerCase();
+  return title.includes("medical rep") || title.includes("medical representative");
+}
+
+function isActiveEmployee(employee: EmployeeDirectoryRow) {
+  return ["active", "on_leave", ""].includes(normalizedName(employee.employmentStatus));
+}
+
+function isSameLine(employee: EmployeeDirectoryRow, owner: EmployeeDirectoryRow) {
+  if (employee.lineId && owner.lineId) return employee.lineId === owner.lineId;
+  const employeeLine = normalizedName(employee.lineName);
+  const ownerLine = normalizedName(owner.lineName);
+  return Boolean(employeeLine && ownerLine && employeeLine === ownerLine);
+}
+
+async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | null) {
+  if (!employee) return [];
+  const directory = await getEmployeeDirectory();
+  return directory.employees
+    .filter((candidate) => candidate.hrId !== employee.hrId)
+    .filter(isActiveEmployee)
+    .filter(isMedicalRepEmployee)
+    .filter((candidate) => isSameLine(candidate, employee))
+    .map((candidate) => ({
+      areaName: candidate.areaName,
+      fullName: candidate.fullName,
+      hrId: candidate.hrId,
+      lineName: candidate.lineName,
+    }))
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
 function isHrReviewer(access: AccessContext, employee: EmployeeDirectoryRow | null) {
@@ -312,27 +363,54 @@ function validActivityType(value: string): EmployeePlanActivityType {
   return "Other";
 }
 
-function normalizeItems(items: EmployeePlanItemInput[], periodStartDate: string): EmployeePlanItemInput[] {
+function normalizeItems(
+  items: EmployeePlanItemInput[],
+  periodStartDate: string,
+  medicalRepOptions: Array<{ fullName: string; hrId: string }>,
+): EmployeePlanItemInput[] {
   const fallback: EmployeePlanItemInput = {
     activityDate: periodStartDate,
     activityTitle: "Office",
     activityType: "Office",
     sortOrder: 0,
   };
+  const repByHrId = new Map(medicalRepOptions.map((option) => [normalizeHrId(option.hrId), option]));
   const normalized = items.length > 0 ? items : [fallback];
   return normalized.map((item, index) => ({
+    ...normalizeItem(item, index, periodStartDate, repByHrId),
+  }));
+}
+
+function normalizeItem(
+  item: EmployeePlanItemInput,
+  index: number,
+  periodStartDate: string,
+  repByHrId: Map<string, { fullName: string; hrId: string }>,
+): EmployeePlanItemInput & { doubleVisitMedicalRepName?: string | null } {
+  const selectedRepHrId = nullableText(item.doubleVisitMedicalRepHrId);
+  let selectedRepName: string | null = null;
+  if (selectedRepHrId) {
+    const rep = repByHrId.get(normalizeHrId(selectedRepHrId));
+    if (!rep) {
+      throw new Error("Selected double-visit Medical Rep is not available for this employee line.");
+    }
+    selectedRepName = rep.fullName;
+  }
+  return {
     activityDate: cleanText(item.activityDate) || periodStartDate,
     activityTitle: cleanText(item.activityTitle) || "Untitled activity",
     activityType: validActivityType(cleanText(item.activityType)),
     area: nullableText(item.area),
     attendees: nullableText(item.attendees),
+    doubleVisitMedicalRepHrId: selectedRepHrId,
+    doubleVisitMedicalRepName: selectedRepName,
     endTime: nullableText(item.endTime),
     locationText: nullableText(item.locationText),
     notes: cleanText(item.notes),
     objective: nullableText(item.objective),
     sortOrder: Number.isFinite(item.sortOrder) ? Number(item.sortOrder) : index,
     startTime: nullableText(item.startTime),
-  }));
+  };
 }
 
 async function currentEmployee(access: AccessContext) {
@@ -363,6 +441,8 @@ async function replacePlanItems(planId: string, items: EmployeePlanItemInput[]) 
     activity_type: item.activityType,
     area: item.area ?? null,
     attendees: item.attendees ?? null,
+    double_visit_medical_rep_hr_id: item.doubleVisitMedicalRepHrId ?? null,
+    double_visit_medical_rep_name: "doubleVisitMedicalRepName" in item ? item.doubleVisitMedicalRepName ?? null : null,
     end_time: item.endTime ?? null,
     location_text: item.locationText ?? null,
     notes: item.notes ?? "",
@@ -547,6 +627,7 @@ function eventInputFor(plan: PlanHeaderRow, item: PlanItemRow): GoogleCalendarEv
     area: item.area,
     attendees: item.attendees,
     date: item.activity_date,
+    doubleVisitMedicalRepName: item.double_visit_medical_rep_name,
     endTime: item.end_time,
     locationText: item.location_text,
     notes: item.notes,
@@ -649,6 +730,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
   const googleConnection = await loadGoogleConnection(access.loginId, access.hrId).catch(() => null);
+  const medicalRepOptions = await medicalRepOptionsForEmployee(employee);
 
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -675,6 +757,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         connected: Boolean(googleConnection),
         sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
       },
+      medicalRepOptions,
       plans: visible.map(mapPlan),
       schemaReady: true,
     };
@@ -697,6 +780,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         connected: Boolean(googleConnection),
         sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
       },
+      medicalRepOptions,
       plans: [],
       schemaReady: false,
     };
@@ -718,7 +802,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
     throw new Error("Direct manager is missing from employee profile.");
   }
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
-  const items = normalizeItems(input.items, period.periodStartDate);
+  const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee));
   const status: EmployeePlanStatus = input.submit ? "submitted" : "draft";
   const now = new Date().toISOString();
 
@@ -774,7 +858,8 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
 
   if (isClosedEmployeePlanStatus(existing.status)) {
     const next = getNextEmployeePlanStatus(existing.status, "revise");
-    const items = normalizeItems(input.items, existing.period_start_date);
+    const owner = await currentEmployee(access);
+    const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner));
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .insert({
@@ -815,7 +900,8 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     throw new Error("This plan cannot be edited in its current status.");
   }
   const nextStatus = input.submit ? getNextEmployeePlanStatus(existing.status, "submit") : existing.status;
-  await replacePlanItems(existing.id, normalizeItems(input.items, existing.period_start_date));
+  const owner = await currentEmployee(access);
+  await replacePlanItems(existing.id, normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner)));
   const { error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
     .update({

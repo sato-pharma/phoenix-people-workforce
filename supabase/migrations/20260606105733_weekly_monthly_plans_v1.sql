@@ -87,6 +87,8 @@ create table if not exists public.employee_plan_items (
   attendees text null,
   location_text text null,
   area text null,
+  double_visit_medical_rep_hr_id text null,
+  double_visit_medical_rep_name text null,
   notes text not null default '',
   employee_calendar_event_id text null,
   shared_calendar_event_id text null,
