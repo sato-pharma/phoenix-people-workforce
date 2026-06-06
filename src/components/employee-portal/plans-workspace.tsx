@@ -24,6 +24,11 @@ type PlansWorkspaceProps = {
   basePath?: "/admin/weekly-plans" | "/employee-portals/plans";
   initialWorkspace: EmployeePlansWorkspace;
   selectedPlanId?: string | null;
+  showTimeColumn?: boolean;
+  showAttendeesColumn?: boolean;
+  showAreaColumn?: boolean;
+  showWorkplaceMemoField?: boolean;
+  workplaceRegions?: string[];
 };
 
 type DraftItem = EmployeePlanItemInput & {
@@ -123,6 +128,11 @@ export function PlansWorkspace({
   basePath = "/employee-portals/plans",
   initialWorkspace,
   selectedPlanId,
+  showTimeColumn = true,
+  showAttendeesColumn = true,
+  showAreaColumn = true,
+  showWorkplaceMemoField = false,
+  workplaceRegions = [],
 }: PlansWorkspaceProps) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [activeKind, setActiveKind] = useState<EmployeePlanKind>("weekly");
@@ -142,6 +152,12 @@ export function PlansWorkspace({
   const ceoQueue = plans.filter((item) => item.status === "manager_approved" && (access.role === "CEO" || access.role === "Super Admin"));
   const hrQueue = plans.filter((item) => ["final_approved", "hr_acknowledged"].includes(item.status) && workspace.canAcknowledgeHr);
   const calendarRows = rows.filter((row) => row.activityDate >= period.periodStartDate && row.activityDate <= period.periodEndDate);
+  const normalizedWorkplaceRegions = useMemo(() => {
+    const unique = Array.from(new Set(workplaceRegions.map((region) => String(region ?? "").trim()).filter(Boolean)));
+    unique.sort((left, right) => left.localeCompare(right));
+    return unique;
+  }, [workplaceRegions]);
+  const workplaceRegionSet = useMemo(() => new Set(normalizedWorkplaceRegions.map((region) => region.toLowerCase())), [normalizedWorkplaceRegions]);
 
   function resetRows(kind: EmployeePlanKind, date: string) {
     setRows(defaultRows(kind, date));
@@ -464,12 +480,12 @@ export function PlansWorkspace({
                 <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
                   <tr>
                     <th className="px-3 py-3">Date</th>
-                    <th className="px-3 py-3">Time</th>
+              {showTimeColumn ? <th className="px-3 py-3">Time</th> : null}
                     <th className="px-3 py-3">Type</th>
-                    <th className="px-3 py-3">Title / objective</th>
-                    <th className="px-3 py-3">Attendees</th>
-                    <th className="px-3 py-3">Location</th>
-                    <th className="px-3 py-3">Area</th>
+              <th className="px-3 py-3 w-56">Title / objective</th>
+                    {showAttendeesColumn ? <th className="px-3 py-3">Attendees</th> : null}
+                      <th className="px-3 py-3">Workplace</th>
+                    {showAreaColumn ? <th className="px-3 py-3">Area</th> : null}
                     <th className="px-3 py-3">Double visit Medical Rep</th>
                     <th className="px-3 py-3">Notes</th>
                   </tr>
@@ -482,30 +498,57 @@ export function PlansWorkspace({
                       <td className="px-3 py-3">
                         <input className="h-9 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "activityDate", event.target.value)} type="date" value={row.activityDate} />
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-2">
-                          <input className="h-9 w-24 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "startTime", event.target.value)} type="time" value={row.startTime ?? ""} />
-                          <input className="h-9 w-24 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "endTime", event.target.value)} type="time" value={row.endTime ?? ""} />
-                        </div>
-                      </td>
+              {showTimeColumn ? (
+                <td className="px-3 py-3">
+                  <div className="flex gap-2">
+                    <input className="h-9 w-24 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "startTime", event.target.value)} type="time" value={row.startTime ?? ""} />
+                    <input className="h-9 w-24 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "endTime", event.target.value)} type="time" value={row.endTime ?? ""} />
+                  </div>
+                </td>
+              ) : null}
                       <td className="px-3 py-3">
                         <select className="h-9 rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "activityType", event.target.value)} value={row.activityType}>
                           {employeePlanActivityTypes.map((type) => <option key={type} value={type}>{type}</option>)}
                         </select>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 w-56">
                         <input className="mb-2 h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "activityTitle", event.target.value)} placeholder="Activity title" value={row.activityTitle} />
                         <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "objective", event.target.value)} placeholder="Objective" value={row.objective ?? ""} />
                       </td>
+                      {showAttendeesColumn ? (
+                        <td className="px-3 py-3">
+                          <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "attendees", event.target.value)} value={row.attendees ?? ""} />
+                        </td>
+                      ) : null}
                       <td className="px-3 py-3">
-                        <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "attendees", event.target.value)} value={row.attendees ?? ""} />
+                        <select
+                          className="h-9 w-full rounded-md border border-slate-200 px-2"
+                          disabled={!planCanEdit(plan)}
+                          onChange={(event) => updateRow(row.key, "locationText", event.target.value)}
+                          value={row.locationText ?? ""}
+                        >
+                          <option value="">Select region</option>
+                          {row.locationText && !workplaceRegionSet.has(String(row.locationText).toLowerCase()) ? (
+                            <option value={row.locationText}>{row.locationText}</option>
+                          ) : null}
+                          {normalizedWorkplaceRegions.map((region) => <option key={region} value={region}>{region}</option>)}
+                        </select>
+                        {showWorkplaceMemoField ? (
+                          <input
+                            className="mt-2 h-9 w-full rounded-md border border-slate-200 px-2"
+                            disabled={!planCanEdit(plan)}
+                            onChange={(event) => updateRow(row.key, "area", event.target.value)}
+                            placeholder="Area"
+                            value={row.area ?? ""}
+                            type="text"
+                          />
+                        ) : null}
                       </td>
-                      <td className="px-3 py-3">
-                        <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "locationText", event.target.value)} placeholder="Location" value={row.locationText ?? ""} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "area", event.target.value)} placeholder="Area" value={row.area ?? ""} />
-                      </td>
+                      {showAreaColumn ? (
+                        <td className="px-3 py-3">
+                          <input className="h-9 w-full rounded-md border border-slate-200 px-2" disabled={!planCanEdit(plan)} onChange={(event) => updateRow(row.key, "area", event.target.value)} placeholder="Area" value={row.area ?? ""} />
+                        </td>
+                      ) : null}
                       <td className="px-3 py-3">
                         {row.activityType === "Double Visit" ? (
                           <select

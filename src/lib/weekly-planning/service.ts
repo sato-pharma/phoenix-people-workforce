@@ -224,6 +224,7 @@ export type EmployeePlansSummary = {
 export type EmployeePlansWorkspace = {
   canAcknowledgeHr: boolean;
   canSubmitPlans: boolean;
+  workplaceRegions: string[];
   currentEmployee: {
     fullName: string;
     hrId: string;
@@ -387,6 +388,34 @@ function canSubmitFromEmployee(employee: EmployeeDirectoryRow | null, role: Phoe
 function isMedicalRepEmployee(employee: EmployeeDirectoryRow) {
   const title = `${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`.toLowerCase();
   return title.includes("medical rep") || title.includes("medical representative");
+}
+
+function normalizeText(value: string | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function workplaceRegionsFromDirectory(directory: EmployeeDirectoryRow[]) {
+  const regionNameByKey = new Map<string, string>();
+  for (const row of directory) {
+    const regionName = normalizeText(row.regionName);
+    if (!regionName) continue;
+    const key = regionName.toLowerCase();
+    if (!regionNameByKey.has(key)) {
+      regionNameByKey.set(key, regionName);
+    }
+  }
+  return Array.from(regionNameByKey.values()).sort((a, b) => a.localeCompare(b));
+}
+
+function workplaceRegionsForEmployee(employee: EmployeeDirectoryRow | null, directory: EmployeeDirectoryRow[]) {
+  if (!employee) {
+    return workplaceRegionsFromDirectory(directory);
+  }
+
+  const byLine = workplaceRegionsFromDirectory(directory.filter((row) => isSameLine(row, employee)));
+  if (byLine.length > 0) return byLine;
+
+  return workplaceRegionsFromDirectory(directory);
 }
 
 function isActiveEmployee(employee: EmployeeDirectoryRow) {
@@ -899,11 +928,14 @@ async function findAuthUserForHrId(hrId: string | null | undefined) {
 export async function getEmployeePlansWorkspace(access: AccessContext): Promise<EmployeePlansWorkspace> {
   await assertPermission(access, "employee_profile", "read");
   await assertPermission(access, "weekly_plans", "read");
-  const employee = await currentEmployee(access);
+  const directory = await getEmployeeDirectory();
+  const viewerHrId = normalizeHrId(access.hrId);
+  const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
   const googleConnection = await loadGoogleConnection(access.loginId, access.hrId).catch(() => null);
   const medicalRepOptions = await medicalRepOptionsForEmployee(employee);
+  const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
 
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -932,6 +964,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
       },
       medicalRepOptions,
+      workplaceRegions,
       plans,
       schemaReady: true,
       summary: summarizePlans(plans),
@@ -956,6 +989,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
       },
       medicalRepOptions,
+      workplaceRegions,
       plans: [],
       schemaReady: false,
       summary: emptyPlansSummary(),
