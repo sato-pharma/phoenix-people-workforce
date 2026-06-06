@@ -44,6 +44,14 @@ export type MarketingWorkflowApprovalScope =
   | "finance"
   | "final";
 
+export type MarketingStepKind = "managerial_chain" | "role" | "finance";
+
+export type MarketingDecisionLabels = {
+  approve: string;
+  reject: string;
+  return: string;
+};
+
 export type MarketingApprovalStepStatus =
   | "pending"
   | "current"
@@ -82,15 +90,21 @@ export type MarketingRequestType = {
 
 export type MarketingWorkflowStep = {
   active: boolean;
+  allowReject: boolean;
   approvalScope: MarketingWorkflowApprovalScope;
   assignedRole: string;
+  ccRoles: string[];
+  chainTargetRole: string | null;
   createdAt: string;
+  decisionLabels: MarketingDecisionLabels;
   defaultSlaDays: number | null;
   id: number;
   required: boolean;
   sequence: number;
   stepCode: string;
+  stepKind: MarketingStepKind;
   stepName: string;
+  terminalStatus: MarketingRequestStatus | null;
   updatedAt: string;
 };
 
@@ -441,6 +455,7 @@ export type MarketingRequest = {
   customerContactId: string | null;
   customerId: string;
   estimatedCost: number;
+  executedAt: string | null;
   expectedRoiValue: number;
   id: string;
   lineId: number | null;
@@ -449,6 +464,8 @@ export type MarketingRequest = {
   otherRequestType: string | null;
   payDate: string | null;
   rejectedAt: string | null;
+  returnedAt: string | null;
+  returnedStepSequence: number | null;
   requestCode: string;
   requestDate: string;
   requestTypeId: number;
@@ -489,18 +506,24 @@ export type MarketingRequestPharmacy = {
 };
 
 export type MarketingRequestApprovalStep = {
+  allowReject: boolean;
   assignedHrId: string | null;
   assignedRole: string;
   createdAt: string;
   decisionAt: string | null;
   decisionByHrId: string | null;
+  decisionLabels: MarketingDecisionLabels | null;
   decisionNote: string | null;
+  executedAt: string | null;
   id: string;
+  isCc: boolean;
   requestId: string;
   sequence: number;
   status: MarketingApprovalStepStatus;
   stepCode: string;
+  stepKind: MarketingStepKind | null;
   stepName: string;
+  terminalStatus: MarketingRequestStatus | null;
   updatedAt: string;
   workflowStepId: number | null;
 };

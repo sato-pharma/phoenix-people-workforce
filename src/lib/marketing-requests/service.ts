@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { calculateMarketingRoiPreview, roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import {
@@ -47,6 +48,8 @@ import type {
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace,
+  MarketingDecisionLabels,
+  MarketingStepKind,
   MarketingWorkflowApprovalScope,
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
@@ -83,31 +86,43 @@ type MarketingRequestTypeDbRow = {
 
 type MarketingWorkflowStepDbRow = {
   active: boolean;
+  allow_reject?: boolean | null;
   approval_scope: MarketingWorkflowApprovalScope;
   assigned_role: string;
+  cc_roles?: string[] | null;
+  chain_target_role?: string | null;
   created_at?: string | null;
+  decision_labels?: Record<string, string> | null;
   default_sla_days: number | string | null;
   id: number | string;
   required: boolean;
   sequence: number | string;
   step_code: string;
+  step_kind?: string | null;
   step_name: string;
+  terminal_status?: string | null;
   updated_at?: string | null;
 };
 
 type MarketingRequestApprovalStepDbRow = {
+  allow_reject?: boolean | null;
   assigned_hr_id?: string | null;
   assigned_role: string;
   created_at?: string | null;
   decision_at?: string | null;
   decision_by_hr_id?: string | null;
+  decision_labels?: Record<string, string> | null;
   decision_note?: string | null;
+  executed_at?: string | null;
   id: string;
+  is_cc?: boolean | null;
   request_id: string;
   sequence: number | string;
   status: "pending" | "current" | "approved" | "rejected" | "returned" | "skipped";
   step_code: string;
+  step_kind?: string | null;
   step_name: string;
+  terminal_status?: string | null;
   updated_at?: string | null;
   workflow_step_id?: number | string | null;
 };
@@ -115,9 +130,11 @@ type MarketingRequestApprovalStepDbRow = {
 export type MarketingRequestDecision = "approve" | "reject" | "return";
 
 export type MarketingRequestDecisionSummary = {
+  allowReject: boolean;
   assignedApproverHrId: string;
   currentStepName: string;
   decision: MarketingRequestDecision;
+  decisionLabels: MarketingDecisionLabels;
   payDate: string;
   requestCode: string;
   requestId: string;
@@ -125,6 +142,7 @@ export type MarketingRequestDecisionSummary = {
   requesterName: string;
   requestType: string;
   status: MarketingRequest["status"];
+  stepKind: MarketingStepKind | null;
 };
 
 type MarketingControlSettingDbRow = {
@@ -269,6 +287,7 @@ type MarketingRequestDbRow = {
   customer_contact_id: string | null;
   customer_id: string;
   estimated_cost: number | string;
+  executed_at?: string | null;
   expected_roi_value: number | string;
   id: string;
   line_id: number | string | null;
@@ -277,6 +296,8 @@ type MarketingRequestDbRow = {
   other_request_type: string | null;
   pay_date: string | null;
   rejected_at?: string | null;
+  returned_at?: string | null;
+  returned_step_sequence?: number | string | null;
   request_code: string;
   request_date: string;
   request_type_id: number | string;
@@ -1074,6 +1095,7 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     customerContactId: row.customer_contact_id,
     customerId: row.customer_id,
     estimatedCost: toNumber(row.estimated_cost),
+    executedAt: row.executed_at ?? null,
     expectedRoiValue: toNumber(row.expected_roi_value),
     id: row.id,
     lineId: row.line_id === null ? null : Number(row.line_id),
@@ -1082,6 +1104,10 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     otherRequestType: row.other_request_type,
     payDate: row.pay_date,
     rejectedAt: row.rejected_at ?? null,
+    returnedAt: row.returned_at ?? null,
+    returnedStepSequence: row.returned_step_sequence === null || row.returned_step_sequence === undefined
+      ? null
+      : Number(row.returned_step_sequence),
     requestCode: row.request_code,
     requestDate: row.request_date,
     requesterHrId: row.requester_hr_id,
@@ -1099,18 +1125,24 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
 
 function mapApprovalStep(row: MarketingRequestApprovalStepDbRow): MarketingRequestApprovalStep {
   return {
+    allowReject: row.allow_reject ?? true,
     assignedHrId: row.assigned_hr_id ?? null,
     assignedRole: row.assigned_role,
     createdAt: nowIsoFallback(row.created_at),
     decisionAt: row.decision_at ?? null,
     decisionByHrId: row.decision_by_hr_id ?? null,
+    decisionLabels: row.decision_labels ? normalizeMarketingDecisionLabels(row.decision_labels) : null,
     decisionNote: row.decision_note ?? null,
+    executedAt: row.executed_at ?? null,
     id: row.id,
+    isCc: row.is_cc ?? false,
     requestId: row.request_id,
     sequence: Number(row.sequence),
     status: row.status,
     stepCode: row.step_code,
+    stepKind: row.step_kind ? normalizeMarketingStepKind(row.step_kind) : null,
     stepName: row.step_name,
+    terminalStatus: (cleanText(row.terminal_status) as MarketingRequest["status"] | null) ?? null,
     updatedAt: nowIsoFallback(row.updated_at),
     workflowStepId: row.workflow_step_id === null || row.workflow_step_id === undefined ? null : Number(row.workflow_step_id),
   };
@@ -1187,6 +1219,75 @@ async function loadActiveMarketingWorkflowSteps(supabase: SupabaseClient) {
   return ((data ?? []) as MarketingWorkflowStepDbRow[]).map(mapWorkflowStep);
 }
 
+function marketingChainStepName(roleName: string) {
+  return `${roleName} Approval`;
+}
+
+/**
+ * Expand the managerial chain into one approval step per manager above the requester,
+ * walking up manager_hr_id and stopping after the chain target role (National Sales
+ * Manager). Starting at the requester's manager means the requester's own level is
+ * skipped automatically (a District Manager submitter starts at the NSM). manager_hr_id
+ * is the live, seat-continuity-connected edge, so vacant seats already point upward.
+ */
+function buildMarketingManagerChain(params: {
+  chainTargetRole: string | null;
+  employeeRows: EmployeeDirectoryRow[];
+  requester: EmployeeDirectoryRow;
+}): Array<{ assignedHrId: string; assignedRole: string; stepName: string }> {
+  const byHrId = employeeRowByHrId(params.employeeRows);
+  const chain: Array<{ assignedHrId: string; assignedRole: string; stepName: string }> = [];
+  const visited = new Set<string>();
+  let currentHrId = normalizeHrId(params.requester.managerHrId);
+  let depth = 0;
+  while (currentHrId && depth < 8 && !visited.has(currentHrId)) {
+    visited.add(currentHrId);
+    const managerRow = byHrId.get(currentHrId);
+    if (!managerRow) break;
+    const roleName = String(resolveJobFunctionRole(managerRow.jobTitle));
+    chain.push({ assignedHrId: currentHrId, assignedRole: roleName, stepName: marketingChainStepName(roleName) });
+    if (params.chainTargetRole && roleName === params.chainTargetRole) break;
+    currentHrId = normalizeHrId(managerRow.managerHrId);
+    depth += 1;
+  }
+  return chain;
+}
+
+/** Product/Group Product Manager(s) of the request's line, CC-notified (never gate). */
+async function resolveLineCcHrIds(params: {
+  ccRoles: string[];
+  employeeRows: EmployeeDirectoryRow[];
+  request: MarketingRequest;
+  supabase: SupabaseClient;
+}): Promise<string[]> {
+  if (params.ccRoles.length === 0) return [];
+  const roles: PhoenixRole[] = [];
+  for (const raw of params.ccRoles) {
+    try {
+      roles.push(parseRoleStrict(raw));
+    } catch {
+      // ignore unknown cc role
+    }
+  }
+  if (roles.length === 0) return [];
+
+  const { data, error } = await params.supabase
+    .from("app_auth_users")
+    .select("hr_id,role,is_active")
+    .eq("is_active", true)
+    .in("role", roles);
+  if (error) throw error;
+
+  const byHrId = employeeRowByHrId(params.employeeRows);
+  const ccHrIds = new Set<string>();
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
+    const hrId = normalizeHrId(row.hr_id);
+    if (!hrId) continue;
+    if (sameNullableId(byHrId.get(hrId)?.lineId, params.request.lineId)) ccHrIds.add(hrId);
+  }
+  return Array.from(ccHrIds);
+}
+
 async function createMarketingApprovalSteps(params: {
   employeeRows: EmployeeDirectoryRow[];
   request: MarketingRequest;
@@ -1198,8 +1299,53 @@ async function createMarketingApprovalSteps(params: {
     throw validationError("Marketing workflow has no active required approval steps.", "marketing_workflow_missing");
   }
 
-  const rows = [];
+  const requesterRow = employeeRowByHrId(params.employeeRows).get(normalizeHrId(params.request.requesterHrId) ?? "");
+  const rows: Array<Record<string, unknown>> = [];
+  let sequence = 0;
+  const pushRow = (input: {
+    assignedHrId: string;
+    assignedRole: string;
+    isCc: boolean;
+    step: MarketingWorkflowStep;
+    stepName: string;
+  }) => {
+    sequence += 1;
+    rows.push({
+      allow_reject: input.step.allowReject,
+      assigned_hr_id: input.assignedHrId,
+      assigned_role: input.assignedRole,
+      decision_labels: input.step.decisionLabels,
+      is_cc: input.isCc,
+      request_id: params.request.id,
+      sequence,
+      status: input.isCc ? "skipped" : "pending",
+      step_code: input.step.stepCode,
+      step_kind: input.step.stepKind,
+      step_name: input.stepName,
+      terminal_status: input.step.terminalStatus,
+      workflow_step_id: input.step.id,
+    });
+  };
+
   for (const step of requiredSteps) {
+    if (step.stepKind === "managerial_chain") {
+      if (!requesterRow) {
+        throw validationError("Requester was not found in the employee directory.", "requester_not_found");
+      }
+      const chain = buildMarketingManagerChain({
+        chainTargetRole: step.chainTargetRole,
+        employeeRows: params.employeeRows,
+        requester: requesterRow,
+      });
+      if (chain.length === 0) {
+        throw validationError(`No approving manager could be resolved for ${requesterRow.fullName}.`, "marketing_approver_not_resolved");
+      }
+      for (const node of chain) {
+        pushRow({ assignedHrId: node.assignedHrId, assignedRole: node.assignedRole, isCc: false, step, stepName: node.stepName });
+      }
+      continue;
+    }
+
     const assignedHrId = await workflowStepApproverHrId({
       employeeRows: params.employeeRows,
       request: params.request,
@@ -1209,17 +1355,24 @@ async function createMarketingApprovalSteps(params: {
     if (!assignedHrId) {
       throw validationError(`Marketing workflow approver for ${step.stepName} could not be resolved exactly.`, "marketing_approver_not_resolved");
     }
-    rows.push({
-      assigned_hr_id: assignedHrId,
-      assigned_role: step.assignedRole,
-      request_id: params.request.id,
-      sequence: step.sequence,
-      status: rows.length === 0 ? "current" : "pending",
-      step_code: step.stepCode,
-      step_name: step.stepName,
-      workflow_step_id: step.id,
-    });
+    pushRow({ assignedHrId, assignedRole: step.assignedRole, isCc: false, step, stepName: step.stepName });
+
+    if (step.ccRoles.length > 0) {
+      const ccHrIds = await resolveLineCcHrIds({
+        ccRoles: step.ccRoles,
+        employeeRows: params.employeeRows,
+        request: params.request,
+        supabase: params.supabase,
+      });
+      for (const ccHrId of ccHrIds) {
+        if (ccHrId === assignedHrId) continue;
+        pushRow({ assignedHrId: ccHrId, assignedRole: step.assignedRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
+      }
+    }
   }
+
+  const firstGating = rows.find((row) => row.is_cc === false);
+  if (firstGating) firstGating.status = "current";
 
   const { data, error } = await params.supabase
     .from("marketing_request_approval_steps")
@@ -1424,8 +1577,11 @@ export async function getMarketingRequestDecisionSummary(
   }
 
   return {
+    allowReject: currentStep.allowReject,
     assignedApproverHrId: currentStep.assignedHrId ?? "",
     currentStepName: currentStep.stepName,
+    decisionLabels: currentStep.decisionLabels ?? normalizeMarketingDecisionLabels(null),
+    stepKind: currentStep.stepKind,
     decision,
     payDate: request.payDate ?? "Not set",
     requestCode: request.requestCode,
@@ -1465,6 +1621,9 @@ export async function decideMarketingRequestWorkflow(
   if (request.status !== "pending_approval") {
     throw conflictError("This marketing request is no longer pending approval.");
   }
+  if (decision === "reject" && currentStep.allowReject === false) {
+    throw validationError("This step cannot reject the request; return it with a note instead.", "marketing_reject_not_allowed");
+  }
 
   const decidedAt = new Date().toISOString();
   const terminalStepStatus = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned";
@@ -1494,6 +1653,8 @@ export async function decideMarketingRequestWorkflow(
       .from("marketing_requests")
       .update({
         rejected_at: decision === "reject" ? decidedAt : null,
+        returned_at: decision === "return" ? decidedAt : null,
+        returned_step_sequence: decision === "return" ? currentStep.sequence : null,
         status: nextStatus,
         updated_at: decidedAt,
         updated_by_hr_id: actorHrId,
@@ -1528,7 +1689,7 @@ export async function decideMarketingRequestWorkflow(
   }
 
   const nextStep = steps
-    .filter((step) => step.status === "pending" && step.sequence > currentStep.sequence)
+    .filter((step) => step.status === "pending" && !step.isCc && step.sequence > currentStep.sequence)
     .sort((left, right) => left.sequence - right.sequence)[0] ?? null;
 
   if (nextStep) {
@@ -1566,11 +1727,14 @@ export async function decideMarketingRequestWorkflow(
     return { decision, nextStep: currentNextStep, request, step: decidedStep };
   }
 
+  const finalStatus = currentStep.terminalStatus ?? "approved";
+  const isExecution = finalStatus === "active";
   const requestUpdate = await supabase
     .from("marketing_requests")
     .update({
       approved_at: decidedAt,
-      status: "approved",
+      executed_at: isExecution ? decidedAt : null,
+      status: finalStatus,
       updated_at: decidedAt,
       updated_by_hr_id: actorHrId,
     })
@@ -1579,27 +1743,38 @@ export async function decideMarketingRequestWorkflow(
     .single();
   if (requestUpdate.error) throw requestUpdate.error;
   request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+  if (isExecution) {
+    await supabase
+      .from("marketing_request_approval_steps")
+      .update({ executed_at: decidedAt, updated_at: decidedAt })
+      .eq("id", decidedStep.id);
+  }
   await auditMarketingDecision({
     actorHrId,
     decision,
     request,
     step: decidedStep,
-    summary: `Marketing request ${request.requestCode} fully approved.`,
+    summary: isExecution
+      ? `Marketing request ${request.requestCode} executed by finance and is now active.`
+      : `Marketing request ${request.requestCode} fully approved.`,
   });
   await notifyMarketingWorkflow({
     actorHrId,
     eventType: "request_approved",
-    message: `${request.requestCode} has been fully approved.`,
+    message: isExecution
+      ? `${request.requestCode} has been executed by finance and is now active.`
+      : `${request.requestCode} has been fully approved.`,
     metadata: {
       decision,
       decisionAt: decidedAt,
       decisionByHrId: actorHrId,
+      executed: isExecution,
       workflowParticipantHrIds: steps.map((step) => step.assignedHrId).filter(Boolean),
       ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
     },
     priority: "high",
     request,
-    title: "Marketing request approved",
+    title: isExecution ? "Marketing request executed" : "Marketing request approved",
   });
   return { decision, request, step: decidedStep };
 }
@@ -1736,12 +1911,28 @@ function mapRequestType(row: MarketingRequestTypeDbRow): MarketingRequestType {
   };
 }
 
+function normalizeMarketingDecisionLabels(raw: Record<string, string> | null | undefined): MarketingDecisionLabels {
+  return {
+    approve: cleanText(raw?.approve) ?? "Approve",
+    reject: cleanText(raw?.reject) ?? "Reject",
+    return: cleanText(raw?.return) ?? "Return",
+  };
+}
+
+function normalizeMarketingStepKind(value: string | null | undefined): MarketingStepKind {
+  return value === "managerial_chain" || value === "finance" ? value : "role";
+}
+
 function mapWorkflowStep(row: MarketingWorkflowStepDbRow): MarketingWorkflowStep {
   return {
     active: row.active,
+    allowReject: row.allow_reject ?? true,
     approvalScope: row.approval_scope,
     assignedRole: row.assigned_role,
+    ccRoles: Array.isArray(row.cc_roles) ? row.cc_roles.filter((value): value is string => Boolean(value)) : [],
+    chainTargetRole: cleanText(row.chain_target_role),
     createdAt: nowIsoFallback(row.created_at),
+    decisionLabels: normalizeMarketingDecisionLabels(row.decision_labels),
     defaultSlaDays: row.default_sla_days === null || row.default_sla_days === undefined
       ? null
       : Number(row.default_sla_days),
@@ -1749,7 +1940,9 @@ function mapWorkflowStep(row: MarketingWorkflowStepDbRow): MarketingWorkflowStep
     required: row.required,
     sequence: Number(row.sequence),
     stepCode: row.step_code,
+    stepKind: normalizeMarketingStepKind(row.step_kind),
     stepName: row.step_name,
+    terminalStatus: (cleanText(row.terminal_status) as MarketingRequest["status"] | null) ?? null,
     updatedAt: nowIsoFallback(row.updated_at),
   };
 }
