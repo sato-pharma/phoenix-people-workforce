@@ -4,8 +4,10 @@
 -- (bridged to sales products by normalized name -- their codes differ), at THAT
 -- request's pharmacies (bridged via distributor + pharmacy code -> brick), within ONLY
 -- the request's ROI window (pay_date .. pay_date + roi_duration_months, matched against
--- the YYYY-MM invoice_period). Realized value uses the same formula as monthly closing:
--- qty * (1 - discount) * factory_price. Sales rows must be validation_state = 'valid'.
+-- the YYYY-MM invoice_period). Realized value uses the canonical Phoenix sales rule: for
+-- distributor rows it is qty * (1 - discount) * factory_price; for DIRECT rows
+-- (is_direct = true) the sheet value is taken as-is. Sales rows must be
+-- validation_state = 'valid' and belong to a validated batch.
 --
 -- Distinct product codes and distinct (distributor_code, brick_id) pairs are pre-computed
 -- per request so a single sales row is never double-counted when two pharmacy codes map to
@@ -61,7 +63,12 @@ as $func$
   )
   select
     req.id as request_id,
-    coalesce(sum(r.qty * (1 - coalesce(r.discount, 0)) * coalesce(sp.factory_price, 0)), 0)::numeric as actual_value,
+    coalesce(sum(
+      case when coalesce(r.is_direct, false)
+           then coalesce(r.value, 0)
+           else r.qty * (1 - coalesce(r.discount, 0)) * coalesce(sp.factory_price, 0)
+      end
+    ), 0)::numeric as actual_value,
     coalesce(sum(r.qty), 0)::numeric as actual_units,
     count(r.id)::integer as sales_rows
   from req
