@@ -367,6 +367,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     sales: ["read", "export"],
     support_requests: ["read", "create"],
+    weekly_plans: ["read", "create", "update"],
     recruitment: ["read", "update"],
   },
   "Group Product Manager": {

@@ -19,6 +19,7 @@ export type EmployeePortalNavVisibility = {
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
+  showPlansTab?: boolean;
   showSupportTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
@@ -149,6 +150,17 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingCustomerDatabaseTab = betaNavEnabled && canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = betaNavEnabled && canUseEmployeePortalMarketingControl(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
+  const showPlansTab = [
+    "Product Manager",
+    "Group Product Manager",
+    "Training Manager",
+    "National Sales Manager",
+    "CEO",
+    "Super Admin",
+    "Manager",
+    "Regional Manager",
+    "HR Specialist",
+  ].includes(resolvedRole);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -165,6 +177,7 @@ export function resolveEmployeePortalNavVisibility(
     showMyPerformanceTab: !isTrainingManager,
     showMyCoachingTab: isMedicalRep,
     showOrganogramTab: showMedRepsPerformanceTab,
+    showPlansTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
     showSupportTab: betaNavEnabled,
     showTeamCoachingTab,
