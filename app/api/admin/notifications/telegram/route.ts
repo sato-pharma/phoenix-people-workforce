@@ -23,8 +23,8 @@ async function assertTelegramAdmin(request: Request, action: "read" | "update") 
 
 export async function GET(request: Request) {
   try {
-    await assertTelegramAdmin(request, "read");
-    return NextResponse.json({ data: await getTelegramAdminControlCenter(), success: true });
+    const access = await assertTelegramAdmin(request, "read");
+    return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     const message = error instanceof Error ? error.message : "Telegram admin data failed.";
@@ -38,7 +38,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     if (body?.type === "global_switch") {
       await setTelegramGlobalSwitch(access, body.enabled === true);
-      return NextResponse.json({ data: await getTelegramAdminControlCenter(), success: true });
+      return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     if (body?.type === "module_policy") {
       await updateTelegramPolicy(access, {
@@ -48,7 +48,7 @@ export async function PATCH(request: Request) {
         notes: typeof body.notes === "string" ? body.notes : null,
         optional: body.optional === true,
       });
-      return NextResponse.json({ data: await getTelegramAdminControlCenter(), success: true });
+      return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     return NextResponse.json({ error: "invalid_action", message: "Unsupported Telegram admin update." }, { status: 400 });
   } catch (error) {
@@ -65,21 +65,21 @@ export async function POST(request: Request) {
     const userId = String(body?.userId ?? "").trim();
     if (body?.action === "disable_user" && userId) {
       await adminDisableTelegram(access, userId);
-      return NextResponse.json({ data: await getTelegramAdminControlCenter(), success: true });
+      return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     if (body?.action === "disconnect_user" && userId) {
       await adminDisconnectTelegram(access, userId);
-      return NextResponse.json({ data: await getTelegramAdminControlCenter(), success: true });
+      return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
     }
     if (body?.action === "send_test") {
       const result = await adminSendTelegramTest(access);
-      return NextResponse.json({ data: { result, view: await getTelegramAdminControlCenter() }, success: true });
+      return NextResponse.json({ data: { result, view: await getTelegramAdminControlCenter(access) }, success: true });
     }
     if (body?.action === "retry_delivery") {
       const deliveryId = String(body?.deliveryId ?? "").trim();
       if (!deliveryId) return NextResponse.json({ error: "missing_delivery", message: "Delivery ID is required." }, { status: 400 });
       const result = await adminRetryTelegramDelivery(access, deliveryId);
-      return NextResponse.json({ data: { result, view: await getTelegramAdminControlCenter() }, success: true });
+      return NextResponse.json({ data: { result, view: await getTelegramAdminControlCenter(access) }, success: true });
     }
     return NextResponse.json({ error: "invalid_action", message: "Unsupported Telegram admin action." }, { status: 400 });
   } catch (error) {

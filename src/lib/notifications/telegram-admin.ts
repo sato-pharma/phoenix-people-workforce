@@ -2,8 +2,14 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { createSystemNotification, retryTelegramDeliveryById } from "@/lib/notifications/system";
+import {
+  getTelegramWebhookStatus,
+  telegramEnvironmentStatus,
+  type TelegramEnvironmentStatus,
+  type TelegramWebhookStatus,
+} from "@/lib/notifications/telegram";
 import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
-import { renderTelegramTemplate } from "@/lib/notifications/telegram-templates";
+import { listTelegramTemplates, renderTelegramTemplate } from "@/lib/notifications/telegram-templates";
 import {
   getTelegramGlobalEnabled,
   listTelegramModulePolicies,
@@ -61,6 +67,18 @@ export type TelegramAdminSummary = {
   lastTestRecipient: string | null;
   lastTestStatus: TelegramAdminDelivery["status"] | "none";
   pendingCount: number;
+};
+
+export type TelegramPilotHealth = {
+  adminPilotConnected: boolean;
+  adminPilotEnabled: boolean;
+  connectedEnabledUsersCount: number;
+  env: TelegramEnvironmentStatus;
+  generalAdminTestTemplateActive: boolean;
+  globalCurrentlyOff: boolean;
+  safeForAdminPilot: boolean;
+  webhook: TelegramWebhookStatus;
+  warnings: string[];
 };
 
 function cleanText(value: unknown) {
@@ -156,6 +174,58 @@ function adminTemplateErrorMessage(error: TelegramTemplateError) {
   return `General Admin Test Telegram template is invalid: ${error.message}`;
 }
 
+async function resolveGeneralAdminTestTemplateActive() {
+  try {
+    const templates = await listTelegramTemplates();
+    return templates.find((template) => template.templateKey === "general_admin_test")?.isActive === true;
+  } catch (error) {
+    if (tableMissing(error)) return false;
+    throw error;
+  }
+}
+
+async function getTelegramPilotHealth(input: {
+  access?: AccessContext | null;
+  connections: TelegramAdminConnection[];
+  globalEnabled: boolean;
+}): Promise<TelegramPilotHealth> {
+  const currentUserId = input.access ? actor(input.access) : "";
+  const currentHrId = cleanHrId(input.access?.hrId);
+  const adminConnection = input.connections.find((connection) =>
+    cleanText(connection.userId) === currentUserId || cleanHrId(connection.hrId) === currentHrId
+  );
+  const env = telegramEnvironmentStatus();
+  const [webhook, generalAdminTestTemplateActive] = await Promise.all([
+    getTelegramWebhookStatus(),
+    resolveGeneralAdminTestTemplateActive(),
+  ]);
+  const connectedEnabledUsersCount = input.connections.filter((connection) => connection.status === "connected" && connection.telegramEnabled).length;
+  const warnings = [
+    ...(!env.telegramBotToken ? ["TELEGRAM_BOT_TOKEN is missing."] : []),
+    ...(!env.telegramBotUsername ? ["TELEGRAM_BOT_USERNAME is missing."] : []),
+    ...(!env.phoenixAppUrl ? ["PHOENIX_APP_URL is missing."] : []),
+    ...(!env.notificationWebhookSecret ? ["NOTIFICATION_WEBHOOK_SECRET is missing."] : []),
+    ...(webhook.urlMatchesExpected === false ? ["Telegram webhook URL does not match the expected Phoenix webhook URL."] : []),
+    ...(input.globalEnabled ? ["Global Telegram is ON. Keep it OFF outside a short admin pilot test window."] : []),
+    ...(!generalAdminTestTemplateActive ? ["General Admin Test template is missing or inactive."] : []),
+    ...(!adminConnection || adminConnection.status !== "connected" ? ["Signed-in admin is not connected to Telegram."] : []),
+    ...(adminConnection && !adminConnection.telegramEnabled ? ["Signed-in admin has Telegram disabled in notification preferences."] : []),
+    ...(connectedEnabledUsersCount > 1 ? ["More than one connected user has Telegram enabled. Keep pilot limited to the admin account."] : []),
+  ];
+
+  return {
+    adminPilotConnected: adminConnection?.status === "connected",
+    adminPilotEnabled: adminConnection?.telegramEnabled === true,
+    connectedEnabledUsersCount,
+    env,
+    generalAdminTestTemplateActive,
+    globalCurrentlyOff: !input.globalEnabled,
+    safeForAdminPilot: warnings.length === 0,
+    webhook,
+    warnings,
+  };
+}
+
 async function lastTelegramDeliveryByRecipient() {
   const out = new Map<string, string>();
   try {
@@ -177,7 +247,7 @@ async function lastTelegramDeliveryByRecipient() {
   return out;
 }
 
-export async function getTelegramAdminControlCenter() {
+export async function getTelegramAdminControlCenter(access?: AccessContext | null) {
   const supabase = getSupabaseAdmin();
   const [globalEnabled, policies, directoryResult, lastDeliveries] = await Promise.all([
     getTelegramGlobalEnabled(),
@@ -239,7 +309,7 @@ export async function getTelegramAdminControlCenter() {
   try {
     const { data, error } = await supabase
       .from("notification_deliveries")
-      .select("id,attempts,last_error,next_attempt_at,recipient_hr_id,recipient_user_id,sent_at,status,updated_at,metadata,notification_events(module,event_type)")
+      .select("id,attempts,last_error,next_attempt_at,recipient_hr_id,recipient_user_id,sent_at,status,updated_at,notification_events(module,event_type)")
       .eq("channel", "telegram")
       .order("updated_at", { ascending: false })
       .limit(100);
@@ -299,7 +369,9 @@ export async function getTelegramAdminControlCenter() {
     pendingCount: connections.filter((connection) => connection.status === "pending").length,
   };
 
-  return { auditLogs, connections, deliveries, globalEnabled, policies, summary };
+  const pilotHealth = await getTelegramPilotHealth({ access, connections, globalEnabled });
+
+  return { auditLogs, connections, deliveries, globalEnabled, pilotHealth, policies, summary };
 }
 
 export async function setTelegramGlobalSwitch(access: AccessContext, enabled: boolean) {
