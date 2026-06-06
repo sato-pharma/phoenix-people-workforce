@@ -39,7 +39,7 @@ export type ProbationReminderRecipient = {
   email: string | null;
   hrId: string;
   name: string | null;
-  role: "HR" | "Training Manager" | "Direct Manager" | "Manager of Manager";
+  role: "HR Pilot Approver" | "Direct Manager" | "Manager of Manager";
 };
 
 export type ProbationWorkflowRecord = {
