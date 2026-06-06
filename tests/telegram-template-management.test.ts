@@ -145,6 +145,12 @@ export function runTelegramTemplateManagementTests() {
   assert.match(component, /insertTelegramPlaceholder/);
   assert.match(component, /insertTitlePlaceholder/);
   assert.match(component, /buttonUrlRefs/);
+  assert.match(component, /placeholderDragType/);
+  assert.match(component, /startPlaceholderDrag/);
+  assert.match(component, /dropMessagePlaceholder/);
+  assert.match(component, /dropTitlePlaceholder/);
+  assert.match(component, /dropButtonPlaceholder/);
+  assert.match(component, /draggable=\{canUpdate\}/);
   assert.match(component, /Live preview/);
   assert.match(component, /Send Admin-Only Preview/);
   assert.match(component, /Global Telegram OFF still blocks Telegram delivery/);
