@@ -92,7 +92,7 @@ const workflowPlaceholders = [
   "location",
   "reason",
 ];
-const linkPlaceholders = ["actionUrl", "requestUrl", "employeePortalUrl"];
+const linkPlaceholders = ["actionUrl", "approveUrl", "rejectUrl", "requestUrl", "employeePortalUrl"];
 const globalPlaceholders = [
   ...identityPlaceholders,
   ...organizationPlaceholders,
@@ -268,9 +268,10 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
     eventType: "request_submitted",
     module: "vacation",
     name: "Vacation",
-    recommendedPlaceholders: ["employeeName", "period", "status", "actionUrl"],
+    recommendedPlaceholders: ["employeeName", "period", "status", "actionUrl", "approveUrl", "rejectUrl"],
     sampleVariables: {
       actionUrl: "/admin/vacations/REQ-1001",
+      approveUrl: "/leave-management/vacation-decision/REQ-1001?decision=approve",
       approvalStep: "Direct manager review",
       approverName: "Sara Hassan",
       area: "Cairo",
@@ -287,6 +288,7 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
       reason: "Annual leave",
       recipientHrId: "DSM001",
       recipientName: "Sara Hassan",
+      rejectUrl: "/leave-management/vacation-decision/REQ-1001?decision=reject",
       requesterHrId: "EMP001",
       requesterName: "Omar Anwar",
       period: "15 Jun 2026 - 18 Jun 2026",

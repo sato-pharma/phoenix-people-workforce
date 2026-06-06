@@ -70,7 +70,8 @@ export function runTransactionWorkflowAuditTests() {
     vacationService.indexOf("export async function decideVacationRequest"),
   );
   assert.match(vacationDecision, /\.eq\("status", input\.request\.status\)/);
-  assert.match(vacationDecision, /eventType: isHrFinalDecision \? `hr_\$\{decisionValue\}` : `manager_\$\{decisionValue\}`/);
+  assert.match(vacationDecision, /eventType: `approval_\$\{step\.stepKey\}_\$\{decisionValue\}`/);
+  assert.match(vacationDecision, /stepKey: step\.stepKey/);
   assert.match(vacationDecision, /writeRequiredAuditLog\(\{[\s\S]*entityType: "vacation_request"/);
 
   const offersService = source("src/lib/offers/service.ts");

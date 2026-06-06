@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import ExcelJS from "exceljs";
 
@@ -45,12 +45,9 @@ import {
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import {
   assertLeaveWorkflowTransition,
-  vacationDecisionAction,
 } from "@/lib/vacation/workflow";
 import {
-  buildVacationDecisionUrl,
   sendVacationDecisionResultEmail,
-  sendVacationManagerDecisionEmail,
 } from "@/lib/vacation/email";
 import type {
   VacationBalanceSnapshot,
@@ -83,6 +80,7 @@ import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WE
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
 const vacationEvidenceReviewsTable = "v2_vacation_evidence_reviews";
+const vacationApprovalStepsTable = "v2_vacation_approval_steps";
 const vacationSlaRunsTable = "v2_vacation_sla_runs";
 const vacationSlaSettingsTable = "v2_vacation_sla_settings";
 const vacationTokensTable = "v2_vacation_email_tokens";
@@ -90,7 +88,6 @@ const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
 const vacationRetentionPoliciesTable = "v2_vacation_retention_policies";
 const vacationRetentionPurgeRunsTable = "v2_vacation_retention_purge_runs";
 const vacationAttachmentBucket = "leave-attachments";
-const emailTokenTtlDays = 14;
 const vacationAuditExportMaxRows = 5000;
 const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
 const sickAttachmentAllowedContentTypes = new Set([
@@ -174,6 +171,20 @@ type VacationEmailTokenDbRow = {
   used_at: string | null;
 };
 
+type VacationApprovalStepKey = "direct_manager" | "manager_of_manager" | "hr";
+type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
+
+type VacationApprovalStepRow = {
+  approver_hr_id: string | null;
+  approver_user_id: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  id: string;
+  request_id: string | null;
+  status: string | null;
+  step_key: string | null;
+};
+
 type VacationEventDbRow = {
   actor_hr_id: string | null;
   actor_login_id: string | null;
@@ -219,6 +230,14 @@ type HrRecipient = {
   email: string | null;
   hrId: string;
   name: string;
+};
+
+type VacationApprovalRecipient = {
+  email: string | null;
+  hrId: string;
+  name: string;
+  stepKey: VacationApprovalStepKey;
+  userId: string | null;
 };
 
 type VacationWeeklyOffPolicyDbRow = {
@@ -353,6 +372,7 @@ function isVacationSchemaMissingError(error: unknown) {
     message.includes(vacationRequestsTable) ||
     message.includes(vacationEventsTable) ||
     message.includes(vacationEvidenceReviewsTable) ||
+    message.includes(vacationApprovalStepsTable) ||
     message.includes(vacationSlaRunsTable) ||
     message.includes(vacationSlaSettingsTable) ||
     message.includes(vacationTokensTable) ||
@@ -1032,18 +1052,6 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
   };
 }
 
-function canDecideVacation(access: AccessContext, request: Pick<VacationRequestRecord, "managerHrId" | "status">) {
-  if (request.status !== "pending_manager" && request.status !== "pending_hr") return false;
-  if (access.scope === "system") return true;
-  if (request.status === "pending_manager") {
-    return accessMatchesHrId(access, request.managerHrId);
-  }
-  if (request.status === "pending_hr") {
-    return isAllVacationVisibility(access);
-  }
-  return false;
-}
-
 function normalizeAdminVacationStatus(value: unknown): VacationRequestStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "pending_manager" || normalized === "pending_hr" || normalized === "approved" || normalized === "rejected") {
@@ -1269,19 +1277,6 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function createVacationEmailToken(request: VacationRequestRecord) {
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + emailTokenTtlDays * 86400000).toISOString();
-  const { error } = await getSupabaseAdmin().from(vacationTokensTable).insert({
-    expires_at: expiresAt,
-    manager_hr_id: request.managerHrId,
-    request_id: request.id,
-    token_hash: tokenHash(token),
-  });
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  return token;
-}
-
 async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrRecipient[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -1309,6 +1304,222 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
   } catch {
     return [];
   }
+}
+
+const vacationPilotHrApproverKeys = ["B-10", "admin-HR"] as const;
+
+function approvalStatus(value: unknown): VacationApprovalStepStatus {
+  return value === "approved" || value === "rejected" ? value : "pending";
+}
+
+function approvalStepKey(value: unknown): VacationApprovalStepKey {
+  return value === "manager_of_manager" || value === "hr" ? value : "direct_manager";
+}
+
+function mapVacationApprovalStep(row: VacationApprovalStepRow) {
+  return {
+    approverHrId: text(row.approver_hr_id),
+    approverUserId: text(row.approver_user_id) || null,
+    decidedAt: row.decided_at,
+    decisionComment: row.decision_comment,
+    id: row.id,
+    requestId: text(row.request_id),
+    status: approvalStatus(row.status),
+    stepKey: approvalStepKey(row.step_key),
+  };
+}
+
+async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData): Promise<VacationApprovalRecipient[]> {
+  const requiredKeys = new Set(vacationPilotHrApproverKeys.map((key) => key.toLowerCase()));
+  const matchedKeys = new Set<string>();
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("login_id,hr_id,name,auth_email,is_active")
+    .eq("is_active", true);
+
+  if (error) throwVacationDatabaseError(error);
+
+  const rows: VacationApprovalRecipient[] = ((data ?? []) as Array<Record<string, unknown>>)
+    .flatMap((row) => {
+      const hrId = text(row.hr_id);
+      const loginId = text(row.login_id);
+      const rowKeys = [hrId.toLowerCase(), loginId.toLowerCase()].filter(Boolean);
+      const matches = rowKeys.filter((key) => requiredKeys.has(key));
+      if (matches.length === 0 || !hrId) return [];
+      matches.forEach((key) => matchedKeys.add(key));
+      const employee = findEmployeeByHrId(directory, hrId);
+      return [{
+        email: text(row.auth_email) || employee?.workEmail || null,
+        hrId,
+        name: text(row.name) || employee?.fullName || hrId,
+        stepKey: "hr" as const,
+        userId: loginId || null,
+      }];
+    });
+
+  const missingKeys = Array.from(requiredKeys).filter((key) => !matchedKeys.has(key));
+  if (missingKeys.length > 0) {
+    throw new Error(`Vacation HR approval pilot is not configured. Missing active approver identity: ${missingKeys.join(", ")}.`);
+  }
+
+  const unique = new Map<string, VacationApprovalRecipient>();
+  for (const row of rows) {
+    unique.set(`${canonicalHrId(row.hrId) ?? row.hrId}:${row.userId ?? ""}`, row);
+  }
+  return Array.from(unique.values());
+}
+
+async function resolveVacationParallelApprovalRecipients(
+  directory: EmployeeDirectoryData,
+  employee: EmployeeDirectoryRow,
+): Promise<VacationApprovalRecipient[]> {
+  const { manager, managerOfManager } = managerChain(directory, employee);
+  if (!manager?.hrId || !managerOfManager?.hrId) {
+    throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
+  }
+
+  const hrApprovers = await resolveVacationPilotHrApprovers(directory);
+  return [
+    {
+      email: manager.workEmail,
+      hrId: manager.hrId,
+      name: manager.fullName,
+      stepKey: "direct_manager",
+      userId: null,
+    },
+    {
+      email: managerOfManager.workEmail,
+      hrId: managerOfManager.hrId,
+      name: managerOfManager.fullName,
+      stepKey: "manager_of_manager",
+      userId: null,
+    },
+    ...hrApprovers,
+  ];
+}
+
+async function createVacationApprovalSteps(input: {
+  approvers: VacationApprovalRecipient[];
+  requestId: string;
+}) {
+  const now = new Date().toISOString();
+  const { error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .insert(input.approvers.map((approver) => ({
+      approver_hr_id: approver.hrId,
+      approver_user_id: approver.userId,
+      created_at: now,
+      request_id: input.requestId,
+      status: "pending",
+      step_key: approver.stepKey,
+      updated_at: now,
+    })));
+  if (error) throwVacationDatabaseError(error);
+}
+
+async function fetchVacationApprovalStepsForRequest(requestId: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .select("id,request_id,step_key,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+    .eq("request_id", requestId);
+  if (error) throwVacationDatabaseError(error);
+  return ((data ?? []) as VacationApprovalStepRow[]).map(mapVacationApprovalStep);
+}
+
+async function fetchVacationApprovalStepsForRequests(requestIds: string[]) {
+  if (requestIds.length === 0) return new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .select("id,request_id,step_key,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+    .in("request_id", requestIds);
+  if (error) {
+    if (isVacationSchemaMissingError(error)) return new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
+    throwVacationDatabaseError(error);
+  }
+  const byRequestId = new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
+  for (const row of ((data ?? []) as VacationApprovalStepRow[]).map(mapVacationApprovalStep)) {
+    const current = byRequestId.get(row.requestId) ?? [];
+    current.push(row);
+    byRequestId.set(row.requestId, current);
+  }
+  return byRequestId;
+}
+
+function approvalStepMatchesAccess(access: AccessContext, step: Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>[number]) {
+  const candidates = accessIdentityCandidates(access);
+  const approverHrId = canonicalHrId(step.approverHrId);
+  const approverUserId = text(step.approverUserId).toLowerCase();
+  return candidates.some((candidate) => candidate === approverHrId) ||
+    Boolean(approverUserId && text(access.loginId).toLowerCase() === approverUserId);
+}
+
+function approvalStepMatchesActor(input: {
+  actorHrId?: string | null;
+  actorLoginId?: string | null;
+  step: Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>[number];
+}) {
+  const actorHrId = canonicalHrId(input.actorHrId);
+  const actorLoginId = text(input.actorLoginId).toLowerCase();
+  const approverHrId = canonicalHrId(input.step.approverHrId);
+  const approverUserId = text(input.step.approverUserId).toLowerCase();
+  return Boolean(actorHrId && actorHrId === approverHrId) ||
+    Boolean(actorLoginId && actorLoginId === approverUserId);
+}
+
+async function getPendingVacationApprovalStepForAccess(access: AccessContext, request: VacationRequestRecord) {
+  const steps = await fetchVacationApprovalStepsForRequest(request.id);
+  return steps.find((step) => step.status === "pending" && approvalStepMatchesAccess(access, step)) ?? null;
+}
+
+async function getPendingVacationApprovalStepForActor(input: {
+  access?: AccessContext;
+  actorHrId?: string | null;
+  actorLoginId?: string | null;
+  request: VacationRequestRecord;
+}) {
+  const steps = await fetchVacationApprovalStepsForRequest(input.request.id);
+  const pendingSteps = steps.filter((step) => step.status === "pending");
+  const step = input.access
+    ? pendingSteps.find((candidate) => approvalStepMatchesAccess(input.access as AccessContext, candidate))
+    : pendingSteps.find((candidate) => approvalStepMatchesActor({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      step: candidate,
+    }));
+  return { step: step ?? null, steps };
+}
+
+async function recordVacationApprovalStepDecision(input: {
+  decision: VacationDecision;
+  decisionComment?: string | null;
+  stepId: string;
+}) {
+  const now = new Date().toISOString();
+  const status = input.decision === "approve" ? "approved" : "rejected";
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .update({
+      decided_at: now,
+      decision_comment: nullableText(input.decisionComment),
+      status,
+      updated_at: now,
+    })
+    .eq("id", input.stepId)
+    .eq("status", "pending")
+    .select("id,request_id,step_key,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+    .maybeSingle();
+  if (error) throwVacationDatabaseError(error);
+  if (!data) throw new Error("This vacation approval step was already decided.");
+  return mapVacationApprovalStep(data as VacationApprovalStepRow);
+}
+
+async function markVacationDecisionAccess<T extends VacationRequestRecord>(access: AccessContext, rows: T[]) {
+  const stepsByRequestId = await fetchVacationApprovalStepsForRequests(rows.map((row) => row.id));
+  return rows.map((row) => ({
+    ...row,
+    canDecide: row.status === "pending_manager" &&
+      (stepsByRequestId.get(row.id) ?? []).some((step) => step.status === "pending" && approvalStepMatchesAccess(access, step)),
+  }));
 }
 
 function isDuplicateActiveVacationError(error: unknown) {
@@ -1357,16 +1568,86 @@ async function notifyRecipients(input: {
   );
 }
 
+async function notifyVacationSubmittedByGovernance(input: {
+  approvalRecipients: VacationApprovalRecipient[];
+  directory: EmployeeDirectoryData;
+  href: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  policyWarnings?: string[];
+  request: VacationRequestRecord;
+  title: string;
+}) {
+  const employee = findEmployeeByHrId(input.directory, input.request.employeeHrId);
+  const period = `${input.request.startDate} - ${input.request.endDate}`;
+  const approveUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=approve`;
+  const rejectUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=reject`;
+
+  await Promise.allSettled(
+    input.approvalRecipients.map((recipient) =>
+      createSystemNotification({
+        actionUrl: input.href,
+        category: "vacation_request",
+        channels: ["in_app", "email", "telegram"],
+        email: {
+          recipients: recipient.email ? [recipient.email] : undefined,
+        },
+        eventType: "request_submitted",
+        message: input.message,
+        metadata: {
+          ...(input.metadata ?? {}),
+          actionUrl: input.href,
+          approveUrl,
+          approvalStep: recipient.stepKey,
+          approverName: recipient.name,
+          area: employee?.areaName ?? "",
+          department: input.request.departmentName ?? employee?.departmentName ?? "",
+          employeeHrId: input.request.employeeHrId,
+          employeeName: input.request.employeeName,
+          eventDate: new Date().toISOString().slice(0, 10),
+          idempotencyKey: `vacation:${input.request.id}:request_submitted:${recipient.stepKey}:${recipient.hrId}:${recipient.userId ?? ""}`,
+          line: input.request.lineName ?? employee?.lineName ?? "",
+          managerName: input.request.managerName ?? "",
+          period,
+          policyWarnings: input.policyWarnings ?? [],
+          recipientHrId: recipient.hrId,
+          recipientName: recipient.name,
+          rejectUrl,
+          requestId: input.request.id,
+          requestType: vacationTypeLabel(input.request.vacationType),
+          requestUrl: input.href,
+          status: "Pending your approval",
+          team: employee?.teamName ?? "",
+        },
+        module: "vacation",
+        priority: "high",
+        recipientHrId: recipient.hrId,
+        recipientUserId: recipient.userId,
+        recordId: input.request.id,
+        telegram: {
+          buttons: [
+            { label: "Open Phoenix", url: input.href },
+            { label: "Approve in Phoenix", url: approveUrl },
+            { label: "Reject in Phoenix", url: rejectUrl },
+          ],
+        },
+        title: input.title,
+      }),
+    ),
+  );
+}
+
 async function dispatchVacationSubmitted(input: {
-  baseUrl: string;
+  approvalRecipients: VacationApprovalRecipient[];
   directory: EmployeeDirectoryData;
   policyWarnings?: string[];
   request: VacationRequestRecord;
 }) {
-  const hrRecipients = await getHrRecipients(input.directory);
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   const policyWarningText = (input.policyWarnings ?? []).join(" ");
-  await notifyRecipients({
+  await notifyVacationSubmittedByGovernance({
+    approvalRecipients: input.approvalRecipients,
+    directory: input.directory,
     href: reportHref,
     message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). Review is pending your decision.${policyWarningText ? ` Policy review: ${policyWarningText}` : ""}`,
     metadata: {
@@ -1381,38 +1662,9 @@ async function dispatchVacationSubmitted(input: {
         { label: "Action", value: "Review request" },
       ],
     },
-    recipients: [
-      input.request.managerHrId,
-      input.request.managerOfManagerHrId,
-      ...hrRecipients.map((recipient) => recipient.hrId),
-    ],
-    requestId: input.request.id,
-    title: `${input.request.employeeName} submitted a vacation request`,
-    type: "submitted",
-  });
-
-  if (!input.request.managerHrId || !input.request.managerName) return;
-  const managerEmail = await resolveManagerEmail(input.directory, input.request.managerHrId);
-  if (!managerEmail) return;
-
-  const token = await createVacationEmailToken(input.request);
-  await sendVacationManagerDecisionEmail({
-    approveUrl: buildVacationDecisionUrl({
-      baseUrl: input.baseUrl,
-      decision: "approve",
-      requestId: input.request.id,
-      token,
-    }),
-    managerEmail,
-    managerName: input.request.managerName,
     policyWarnings: input.policyWarnings ?? [],
-    rejectUrl: buildVacationDecisionUrl({
-      baseUrl: input.baseUrl,
-      decision: "reject",
-      requestId: input.request.id,
-      token,
-    }),
     request: input.request,
+    title: `${input.request.employeeName} submitted a vacation request`,
   });
 }
 
@@ -1450,16 +1702,19 @@ async function dispatchVacationManagerReview(input: {
   });
 }
 
+void dispatchVacationManagerReview;
+
 async function dispatchVacationDecision(input: {
   decision: VacationDecision;
   directory: EmployeeDirectoryData;
   request: VacationRequestRecord;
 }) {
-  const hrRecipients = await getHrRecipients(input.directory);
   const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const approvalSteps = await fetchVacationApprovalStepsForRequest(input.request.id).catch(() => []);
+  const approvalRecipientHrIds = approvalSteps.map((step) => step.approverHrId);
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by HR final review.`,
+    message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by the vacation approval workflow.`,
     metadata: {
       requestId: input.request.id,
       status: input.request.status,
@@ -1472,8 +1727,7 @@ async function dispatchVacationDecision(input: {
     },
     recipients: [
       input.request.employeeHrId,
-      input.request.managerOfManagerHrId,
-      ...hrRecipients.map((recipient) => recipient.hrId),
+      ...approvalRecipientHrIds,
     ],
     requestId: input.request.id,
     title: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"}`,
@@ -1482,10 +1736,8 @@ async function dispatchVacationDecision(input: {
 
   if (!input.request.employeeWorkEmail) return;
   await sendVacationDecisionResultEmail({
-    cc: [
-      ...hrRecipients.map((recipient) => recipient.email).filter((email): email is string => Boolean(email)),
-      await resolveManagerEmail(input.directory, input.request.managerOfManagerHrId),
-    ].filter((email): email is string => Boolean(email)),
+    cc: (await Promise.all(approvalRecipientHrIds.map((hrId) => resolveManagerEmail(input.directory, hrId))))
+      .filter((email): email is string => Boolean(email)),
     decision: input.decision,
     employeeEmail: input.request.employeeWorkEmail,
     request: input.request,
@@ -1788,6 +2040,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
 }
 
 export async function createVacationRequest(access: AccessContext, input: CreateVacationRequestInput, options: { baseUrl: string }) {
+  void options;
   await assertPermission(access, "leave", "create");
   await assertLeaveWorkflowTransition({
     access,
@@ -1826,9 +2079,10 @@ export async function createVacationRequest(access: AccessContext, input: Create
     startDate,
     weeklyOffPolicy: weeklyOffPolicyForDateCalculation(weeklyOffPolicy),
   });
+  const approvalRecipients = await resolveVacationParallelApprovalRecipients(directory, employee);
   const { manager, managerOfManager } = managerChain(directory, employee);
-  if (!manager?.hrId) {
-    throw new Error("Your direct manager is not assigned. Please contact HR before submitting a vacation request.");
+  if (!manager?.hrId || !managerOfManager?.hrId) {
+    throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
   const weeklyOffPolicySnapshot = buildWeeklyOffPolicySnapshot(weeklyOffPolicy);
 
@@ -1931,6 +2185,18 @@ export async function createVacationRequest(access: AccessContext, input: Create
   }
 
   const request = mapVacationRow(data as VacationRequestDbRow);
+  try {
+    await createVacationApprovalSteps({ approvers: approvalRecipients, requestId: request.id });
+  } catch (error) {
+    try {
+      await getSupabaseAdmin().from(vacationRequestsTable).delete().eq("id", request.id);
+    } catch {
+      // Best-effort cleanup; the original approval-step error is more useful to the caller.
+    }
+    await deleteSickAttachment(sickAttachment?.objectPath).catch(() => undefined);
+    await deleteSickAttachment(compensatoryAttachment?.objectPath).catch(() => undefined);
+    throw error;
+  }
   await insertVacationEvent({
     actorHrId: employee.hrId,
     actorLoginId: access.loginId,
@@ -1956,7 +2222,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     requestId: request.id,
   });
 
-  await dispatchVacationSubmitted({ baseUrl: options.baseUrl, directory, policyWarnings, request }).catch(async (error) => {
+  await dispatchVacationSubmitted({ approvalRecipients, directory, policyWarnings, request }).catch(async (error) => {
     await insertVacationEvent({
       actorHrId: employee.hrId,
       actorLoginId: access.loginId,
@@ -2199,6 +2465,28 @@ async function fetchVacationRequestById(id: string) {
   };
 }
 
+export async function getVacationDecisionConfirmationData(access: AccessContext, requestId: string) {
+  await assertPermission(access, "leave", "approve");
+  const request = await fetchVacationRequestById(requestId);
+  if (!request) throw new Error("Vacation request was not found.");
+  const pendingStep = await getPendingVacationApprovalStepForAccess(access, request);
+  if (!pendingStep) {
+    throw new Error("Forbidden: you are not an assigned pending approver for this vacation request.");
+  }
+  return {
+    approvalStep: pendingStep.stepKey,
+    request: {
+      employeeHrId: request.employeeHrId,
+      employeeName: request.employeeName,
+      endDate: request.endDate,
+      id: request.id,
+      startDate: request.startDate,
+      status: request.status,
+      vacationType: vacationTypeLabel(request.vacationType),
+    },
+  };
+}
+
 async function applyVacationDecision(input: {
   access?: AccessContext;
   actorHrId: string | null;
@@ -2207,13 +2495,23 @@ async function applyVacationDecision(input: {
   decisionComment?: string | null;
   request: VacationRequestRecord;
 }) {
-  if (input.request.status !== "pending_manager" && input.request.status !== "pending_hr") {
+  if (input.request.status !== "pending_manager") {
     throw new Error("This vacation request already has a final decision.");
   }
 
   const directory = await getEmployeeDirectory();
   let balance: VacationBalanceSnapshot = input.request;
-  if (input.request.status === "pending_hr" && input.decision === "approve") {
+  const { step, steps } = await getPendingVacationApprovalStepForActor({
+    access: input.access,
+    actorHrId: input.actorHrId,
+    actorLoginId: input.actorLoginId,
+    request: input.request,
+  });
+  if (!step) {
+    throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
+  }
+
+  if (step.stepKey === "hr" && input.decision === "approve") {
     if (!hasAcceptedRequiredEvidence(input.request)) {
       throw new Error("Required vacation evidence must be accepted by HR before final HR approval.");
     }
@@ -2221,6 +2519,21 @@ async function applyVacationDecision(input: {
     if (actorHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(actorHrId)) {
       throw new Error("Separation of duties requires a different HR or Super Admin actor to make the final approval after evidence review.");
     }
+  }
+
+  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
+  const decidedStep = await recordVacationApprovalStepDecision({
+    decision: input.decision,
+    decisionComment: input.decisionComment,
+    stepId: step.id,
+  });
+  const stepsAfterDecision = steps.map((candidate) =>
+    candidate.id === decidedStep.id ? decidedStep : candidate
+  );
+  const rejected = input.decision === "reject" || stepsAfterDecision.some((candidate) => candidate.status === "rejected");
+  const allApproved = stepsAfterDecision.every((candidate) => candidate.status === "approved");
+  const isFinalDecision = rejected || allApproved;
+  if (allApproved) {
     balance = await calculatePaymentForRequest({
       durationDays: input.request.durationDays,
       employeeHrId: input.request.employeeHrId,
@@ -2230,47 +2543,37 @@ async function applyVacationDecision(input: {
       vacationType: input.request.vacationType,
     });
   }
-
-  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
-  const isHrFinalDecision = input.request.status === "pending_hr";
-  const workflowDecision = vacationDecisionAction({
-    decision: input.decision,
-    status: input.request.status,
-  });
-  await assertLeaveWorkflowTransition({
-    access: input.access ?? { role: "Manager" },
-    actionKey: workflowDecision.actionKey,
-    expectedNextStatus: workflowDecision.expectedNextStatus,
-    status: input.request.status,
-  });
   const now = new Date().toISOString();
-  const updatePayload = isHrFinalDecision
-    ? {
-        balance_after_days: balance.balanceAfterDays,
-        balance_before_days: balance.balanceBeforeDays,
-        entitlement_days: balance.entitlementDays,
-        hr_decision: decisionValue,
-        hr_decision_at: now,
-        hr_decision_by_hr_id: input.actorHrId,
-        hr_decision_comment: nullableText(input.decisionComment),
-        payment_status: balance.paymentStatus,
-        paid_duration_days: balance.paidDurationDays,
-        period_end: balance.periodEnd,
-        period_start: balance.periodStart,
-        status: decisionValue,
-        unpaid_reason: balance.unpaidReason,
-        unpaid_duration_days: balance.unpaidDurationDays,
-        updated_at: now,
-        used_paid_days: balance.usedPaidDays,
-      }
-    : {
-        manager_decision: decisionValue,
-        manager_decision_at: now,
-        manager_decision_by_hr_id: input.actorHrId,
-        manager_decision_comment: nullableText(input.decisionComment),
-        status: "pending_hr",
-        updated_at: now,
-      };
+  const updatePayload: Record<string, unknown> = {
+    status: isFinalDecision ? decisionValue : "pending_manager",
+    updated_at: now,
+  };
+  if (step.stepKey === "direct_manager" || (allApproved && !input.request.managerDecision)) {
+    updatePayload.manager_decision = step.stepKey === "direct_manager" ? decisionValue : "approved";
+    updatePayload.manager_decision_at = step.stepKey === "direct_manager" ? now : input.request.managerDecisionAt ?? now;
+    updatePayload.manager_decision_by_hr_id = step.stepKey === "direct_manager" ? input.actorHrId : input.request.managerDecisionByHrId ?? input.actorHrId;
+    updatePayload.manager_decision_comment = step.stepKey === "direct_manager" ? nullableText(input.decisionComment) : input.request.managerDecisionComment;
+  }
+  if (step.stepKey === "hr" || allApproved) {
+    updatePayload.hr_decision = step.stepKey === "hr" ? decisionValue : "approved";
+    updatePayload.hr_decision_at = step.stepKey === "hr" ? now : input.request.hrDecisionAt ?? now;
+    updatePayload.hr_decision_by_hr_id = step.stepKey === "hr" ? input.actorHrId : input.request.hrDecisionByHrId ?? input.actorHrId;
+    updatePayload.hr_decision_comment = step.stepKey === "hr" ? nullableText(input.decisionComment) : input.request.hrDecisionComment;
+  }
+  if (allApproved) {
+    Object.assign(updatePayload, {
+      balance_after_days: balance.balanceAfterDays,
+      balance_before_days: balance.balanceBeforeDays,
+      entitlement_days: balance.entitlementDays,
+      payment_status: balance.paymentStatus,
+      paid_duration_days: balance.paidDurationDays,
+      period_end: balance.periodEnd,
+      period_start: balance.periodStart,
+      unpaid_reason: balance.unpaidReason,
+      unpaid_duration_days: balance.unpaidDurationDays,
+      used_paid_days: balance.usedPaidDays,
+    });
+  }
 
   const { data, error } = await getSupabaseAdmin()
     .from(vacationRequestsTable)
@@ -2286,13 +2589,14 @@ async function applyVacationDecision(input: {
   await insertVacationEvent({
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
-    eventType: isHrFinalDecision ? `hr_${decisionValue}` : `manager_${decisionValue}`,
-    message: isHrFinalDecision
-      ? `Vacation request ${decisionValue} by HR final review.`
-      : `Vacation request ${decisionValue} by direct manager and sent to HR final review.`,
+    eventType: `approval_${step.stepKey}_${decisionValue}`,
+    message: isFinalDecision
+      ? `Vacation request ${decisionValue} by ${step.stepKey}.`
+      : `Vacation approval step ${step.stepKey} recorded as ${decisionValue}.`,
     metadata: {
       decisionComment: input.decisionComment ?? null,
       paymentStatus: updated.paymentStatus,
+      stepKey: step.stepKey,
       unpaidReason: updated.unpaidReason,
     },
     requestId: updated.id,
@@ -2304,9 +2608,10 @@ async function applyVacationDecision(input: {
     newValues: {
       balanceAfterDays: updated.balanceAfterDays,
       decisionComment: input.decisionComment ?? null,
-      hrDecision: isHrFinalDecision ? decisionValue : input.request.hrDecision,
-      managerDecision: isHrFinalDecision ? input.request.managerDecision : decisionValue,
+      hrDecision: updated.hrDecision,
+      managerDecision: updated.managerDecision,
       paymentStatus: updated.paymentStatus,
+      stepKey: step.stepKey,
       status: updated.status,
       unpaidReason: updated.unpaidReason,
       usedPaidDays: updated.usedPaidDays,
@@ -2318,21 +2623,22 @@ async function applyVacationDecision(input: {
       unpaidReason: input.request.unpaidReason,
       usedPaidDays: input.request.usedPaidDays,
     },
-    summary: isHrFinalDecision
-      ? `Vacation request ${decisionValue} by HR final review.`
-      : `Vacation request ${decisionValue} by direct manager and sent to HR final review.`,
+    summary: isFinalDecision
+      ? `Vacation request ${decisionValue} by approval workflow.`
+      : `Vacation approval step ${step.stepKey} recorded as ${decisionValue}.`,
   });
 
-  const dispatch = isHrFinalDecision ? dispatchVacationDecision : dispatchVacationManagerReview;
-  await dispatch({ decision: input.decision, directory, request: updated }).catch(async (error) => {
-    await insertVacationEvent({
-      actorHrId: input.actorHrId,
-      actorLoginId: input.actorLoginId,
-      eventType: "notification_failed",
-      message: vacationErrorMessage(error),
-      requestId: updated.id,
-    }).catch(() => undefined);
-  });
+  if (isFinalDecision) {
+    await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: updated.id,
+      }).catch(() => undefined);
+    });
+  }
 
   invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
   return updated;
@@ -2346,9 +2652,6 @@ export async function decideVacationRequest(access: AccessContext, input: {
   await assertPermission(access, "leave", "approve");
   const request = await fetchVacationRequestById(input.requestId);
   if (!request) throw new Error("Vacation request was not found.");
-  if (!canDecideVacation(access, request)) {
-    throw new Error("Forbidden: only the assigned direct manager can complete manager review, and only HR can make the final decision.");
-  }
 
   return applyVacationDecision({
     access,
@@ -3492,10 +3795,10 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   const visibleEmployeeHrIds = new Set(visibleEmployees.map((employee) => canonicalHrId(employee.hrId)).filter((value): value is string => Boolean(value)));
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
-  const visibleRows = await enrichVacationRows((data ?? [])
+  const visibleRowsBase = await markVacationDecisionAccess(access, (data ?? [])
     .map((row) => mapVacationRow(row as VacationRequestDbRow))
-    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds))
-    .map((row) => ({ ...row, canDecide: canDecideVacation(access, row) })));
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds)));
+  const visibleRows = await enrichVacationRows(visibleRowsBase);
   const holidays = await fetchHolidaysForRows(visibleRows);
   const warningsByRequest = buildVacationOverlapWarnings({ holidays, rows: visibleRows });
   const visibleRowsWithWarnings = visibleRows.map((row) => ({
@@ -3546,8 +3849,7 @@ export async function getVacationPlatformMetricRows(access: AccessContext) {
   );
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds });
 
-  return (data ?? [])
+  return markVacationDecisionAccess(access, (data ?? [])
     .map((row) => mapVacationRow(row as VacationRequestDbRow))
-    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds))
-    .map((row) => ({ ...row, canDecide: canDecideVacation(access, row) }));
+    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds)));
 }

@@ -90,6 +90,11 @@ export function runNotificationGovernanceHardeningTests() {
     /"contract_renewal\.\*":[\s\S]*recipientStrategy:\s*\["manager_chain",\s*"permission_based"\]/,
     "contract renewal notifications must be manager chain plus scoped permission recipients only",
   );
+  assertContains(
+    policySource,
+    /"vacation\.request_submitted":[\s\S]*recipientStrategy:\s*\[\]/,
+    "vacation request submitted pilot must fail closed unless the vacation approval-step resolver supplies exact recipients",
+  );
 
   assertContains(
     policySource,
