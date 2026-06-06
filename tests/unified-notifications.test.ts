@@ -101,6 +101,7 @@ export function runUnifiedNotificationsTests() {
     "src/lib/offers/service.ts",
     "src/lib/probation/service.ts",
     "src/lib/resignations/service.ts",
+    "src/lib/vacation/service.ts",
   ];
   for (const file of migratedProducerFiles) {
     assert.match(source(file), /createSystemNotification/, `${file} must route automated notification through createSystemNotification`);

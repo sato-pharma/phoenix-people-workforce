@@ -14,6 +14,8 @@ import {
 } from "@/lib/notifications/policy";
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
+import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
+import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram";
@@ -37,6 +39,11 @@ export type CreateSystemNotificationInput = {
   recipientHrId?: string | null;
   recipientUserId?: string | null;
   subjectHrId?: string | null;
+  telegram?: {
+    buttons?: Array<{ label: string; url: string }> | null;
+    ctaLabel?: string | null;
+    ctaUrl?: string | null;
+  };
   title: string;
 };
 
@@ -579,10 +586,31 @@ export async function processTelegramDeliveryRetries(limit = 10) {
 
     attempted += 1;
     try {
+      const governance = await resolveTelegramGovernance({
+        eventType: telegram.eventType ?? null,
+        module: telegram.module ?? "system",
+      });
+      if (!governance.enabled) {
+        await supabase
+          .from("notification_deliveries")
+          .update({
+            attempts,
+            last_error: governance.reason ?? "Telegram is not allowed by current policy.",
+            next_attempt_at: null,
+            status: "skipped",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+        continue;
+      }
+
       const result = await sendTelegramNotification({
-        actionUrl: telegram.actionUrl ?? "/",
+        actionUrl: telegram.actionUrl ?? null,
+        buttons: telegram.buttons ?? null,
         chatId: String(telegram.chatId),
-        message: String(telegram.message),
+        ctaLabel: telegram.ctaLabel ?? null,
+        ctaUrl: telegram.ctaUrl ?? null,
+        message: governance.genericOnly ? "Your payslip is available." : String(telegram.message),
         title: String(telegram.title),
       });
       if (result.skipped) throw new Error(result.reason);
@@ -619,10 +647,147 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   return { attempted, failed, sent };
 }
 
+export async function retryTelegramDeliveryById(id: string): Promise<SystemNotificationDeliveryResult> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("notification_deliveries")
+    .select("id,attempts,channel,idempotency_key,max_attempts,metadata,recipient_hr_id,recipient_user_id,status")
+    .eq("id", id)
+    .eq("channel", "telegram")
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as {
+    attempts?: number | null;
+    id: string;
+    idempotency_key?: string | null;
+    max_attempts?: number | null;
+    metadata?: Record<string, unknown> | null;
+    recipient_hr_id?: string | null;
+    recipient_user_id?: string | null;
+    status?: string | null;
+  } | null;
+  const idempotencyKey = row?.idempotency_key ?? `telegram-retry:${id}`;
+  if (!row) return { channel: "telegram", idempotencyKey, reason: "Delivery was not found.", status: "skipped" };
+  if (row.status === "sent") return { channel: "telegram", idempotencyKey, reason: "Delivery already sent.", status: "skipped" };
+
+  const telegram = row.metadata?.telegram as Partial<TelegramRetryPayload> | undefined;
+  if (!telegram?.title || !telegram?.message) {
+    return { channel: "telegram", idempotencyKey, reason: "Delivery does not contain a retry-safe Telegram payload.", status: "skipped" };
+  }
+
+  const governance = await resolveTelegramGovernance({
+    eventType: telegram.eventType ?? null,
+    module: telegram.module ?? "system",
+  });
+  if (!governance.enabled) {
+    await supabase
+      .from("notification_deliveries")
+      .update({
+        last_error: governance.reason ?? "Telegram is not allowed by current policy.",
+        next_attempt_at: null,
+        status: "skipped",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    return { channel: "telegram", idempotencyKey, reason: governance.reason, status: "skipped" };
+  }
+
+  const preferences = await loadPreferences({
+    eventType: telegram.eventType ?? "telegram_retry",
+    message: String(telegram.message),
+    module: telegram.module ?? "system",
+    recipientHrId: row.recipient_hr_id ?? null,
+    recipientUserId: row.recipient_user_id ?? null,
+    title: String(telegram.title),
+  });
+  if (!preferences.telegram_enabled) {
+    await supabase
+      .from("notification_deliveries")
+      .update({
+        last_error: "Telegram disabled by user preference.",
+        next_attempt_at: null,
+        status: "skipped",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    return { channel: "telegram", idempotencyKey, reason: "Telegram disabled by user preference.", status: "skipped" };
+  }
+
+  const connection = await loadTelegramConnection({
+    eventType: telegram.eventType ?? "telegram_retry",
+    message: String(telegram.message),
+    module: telegram.module ?? "system",
+    recipientHrId: row.recipient_hr_id ?? null,
+    recipientUserId: row.recipient_user_id ?? null,
+    title: String(telegram.title),
+  });
+  if (connection?.status !== "connected" || !connection.telegram_chat_id) {
+    await supabase
+      .from("notification_deliveries")
+      .update({
+        last_error: "Telegram is not connected.",
+        next_attempt_at: null,
+        status: "skipped",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    return { channel: "telegram", idempotencyKey, reason: "Telegram is not connected.", status: "skipped" };
+  }
+
+  const attempts = Number(row.attempts ?? 0);
+  const maxAttempts = Number(row.max_attempts ?? 5);
+  if (attempts >= maxAttempts) return { channel: "telegram", idempotencyKey, reason: "Maximum retry attempts reached.", status: "skipped" };
+
+  try {
+      const result = await sendTelegramNotification({
+        actionUrl: telegram.actionUrl ?? null,
+        buttons: telegram.buttons ?? null,
+        chatId: String(connection.telegram_chat_id),
+        ctaLabel: telegram.ctaLabel ?? null,
+        ctaUrl: telegram.ctaUrl ?? null,
+      message: governance.genericOnly ? "Your payslip is available." : String(telegram.message),
+      title: String(telegram.title),
+    });
+    if (result.skipped) throw new Error(result.reason);
+    await supabase
+      .from("notification_deliveries")
+      .update({
+        attempts: attempts + 1,
+        last_error: null,
+        next_attempt_at: null,
+        provider_message_id: result.providerMessageId ?? null,
+        sent_at: new Date().toISOString(),
+        status: "sent",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    return { channel: "telegram", idempotencyKey, status: "sent" };
+  } catch (retryError) {
+    const nextAttempts = attempts + 1;
+    const message = retryError instanceof Error ? retryError.message : "Telegram retry failed.";
+    await supabase
+      .from("notification_deliveries")
+      .update({
+        attempts: nextAttempts,
+        last_error: message,
+        next_attempt_at: nextAttempts >= maxAttempts ? null : nextTelegramRetryAt(nextAttempts),
+        status: nextAttempts >= maxAttempts ? "failed" : "retrying",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    return { channel: "telegram", error: message, idempotencyKey, status: nextAttempts >= maxAttempts ? "failed" : "retrying" };
+  }
+}
+
 type TelegramRetryPayload = {
   actionUrl?: string | null;
+  buttons?: Array<{ label: string; url: string }> | null;
   chatId: string;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
+  eventType?: string | null;
   message: string;
+  module?: string | null;
   title: string;
 };
 
@@ -723,6 +888,32 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
     }
 
     if (channel === "telegram") {
+      const telegramGovernance = await resolveTelegramGovernance({
+        eventType: input.eventType,
+        module: input.module,
+      });
+      if (!telegramGovernance.enabled) {
+        await upsertDelivery({
+          channel,
+          eventId,
+          idempotencyKey,
+          lastError: telegramGovernance.reason ?? "Telegram is not allowed by current policy.",
+          metadata: {
+            globalEnabled: telegramGovernance.globalEnabled,
+            modulePolicy: telegramGovernance.modulePolicy,
+          },
+          recipient,
+          status: "skipped",
+        });
+        deliveries.push({
+          channel,
+          idempotencyKey,
+          reason: telegramGovernance.reason ?? "Telegram is not allowed by current policy.",
+          status: "skipped",
+        });
+        continue;
+      }
+
       if (!preferences.telegram_enabled) {
         await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "Telegram disabled by preference.", recipient, status: "skipped" });
         deliveries.push({ channel, idempotencyKey, reason: "Telegram notifications are disabled for this user.", status: "skipped" });
@@ -736,12 +927,16 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         continue;
       }
 
+      let telegramContent: Awaited<ReturnType<typeof renderChannelContent>> | null = null;
       try {
-        const telegramContent = await renderChannelContent(input, "telegram");
+        telegramContent = await renderChannelContent(input, "telegram");
         const result = await sendTelegramNotification({
-          actionUrl: input.actionUrl ?? "/",
+          actionUrl: input.actionUrl ?? null,
+          buttons: input.telegram?.buttons ?? telegramContent.buttons ?? null,
           chatId: String(connection.telegram_chat_id),
-          message: isSensitivePayroll(input) ? "Your payslip is available." : telegramContent.message,
+          ctaLabel: input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
+          ctaUrl: input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
+          message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent.message,
           title: telegramContent.title,
         });
         const status = result.skipped ? "skipped" : "sent";
@@ -761,6 +956,22 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         deliveries.push({ channel, idempotencyKey, reason, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Telegram delivery failed.";
+        if (error instanceof TelegramTemplateError) {
+          await upsertDelivery({
+            channel,
+            eventId,
+            idempotencyKey,
+            lastError: message,
+            metadata: { skippedBy: "telegram_template_governance", templateErrorCode: error.code },
+            provider: "telegram",
+            recipient,
+            recipientAddress: String(connection.telegram_chat_id),
+            status: "skipped",
+          });
+          await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_template_governance" });
+          deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
+          continue;
+        }
         await upsertDelivery({
           channel,
           eventId,
@@ -770,10 +981,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
             fallback: "email_or_in_app",
             retry: true,
             telegram: {
-              actionUrl: input.actionUrl ?? "/",
+              actionUrl: input.actionUrl ?? null,
+              buttons: input.telegram?.buttons ?? telegramContent?.buttons ?? null,
               chatId: String(connection.telegram_chat_id),
-              message: isSensitivePayroll(input) ? "Your payslip is available." : (await renderChannelContent(input, "telegram")).message,
-              title: (await renderChannelContent(input, "telegram")).title,
+              ctaLabel: input.telegram?.ctaLabel ?? telegramContent?.ctaLabel ?? null,
+              ctaUrl: input.telegram?.ctaUrl ?? telegramContent?.ctaUrl ?? null,
+              eventType: input.eventType,
+              message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent?.message ?? telegramMessageFor(input),
+              module: input.module,
+              title: telegramContent?.title ?? input.title,
             },
           },
           provider: "telegram",

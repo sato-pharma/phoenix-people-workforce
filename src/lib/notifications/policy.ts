@@ -116,7 +116,7 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "recruitment.*": { channels: ["in_app", "email"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   "resignations.*": { channels: ["in_app", "email", "telegram"], permissionResource: "resignations", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
   "system.announcement": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
-  "vacation.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], recipientStrategy: ["direct_manager"], telegramAllowed: true },
+  "vacation.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], recipientStrategy: [], telegramAllowed: true },
   "vacation.*": { channels: ["in_app", "email", "telegram"], permissionResource: "leave", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
 };
 

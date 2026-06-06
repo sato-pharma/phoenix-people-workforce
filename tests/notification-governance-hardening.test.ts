@@ -100,6 +100,11 @@ export function runNotificationGovernanceHardeningTests() {
     /"contract_renewal\.renewal_reminder":[\s\S]*permissionResource:\s*null[\s\S]*recipientStrategy:\s*\["direct_manager",\s*"workflow_step_approver"\]/,
     "contract renewal reminders must use exact direct manager plus explicit workflow approvers only",
   );
+  assertContains(
+    policySource,
+    /"vacation\.request_submitted":[\s\S]*recipientStrategy:\s*\[\]/,
+    "vacation request submitted pilot must fail closed unless the vacation approval-step resolver supplies exact recipients",
+  );
 
   assertContains(
     policySource,

@@ -85,7 +85,8 @@ export function runWorkflowRegistryEnforcementTests() {
   const vacationService = source("src/lib/vacation/service.ts");
   assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "admin_create"/);
-  assert.match(vacationService, /vacationDecisionAction/);
+  assert.match(vacationService, /getPendingVacationApprovalStepForActor/);
+  assert.match(vacationService, /recordVacationApprovalStepDecision/);
 
   const lifecycleWorkflow = source("src/lib/employee-lifecycle/workflow.ts");
   assert.match(lifecycleWorkflow, /resignationWorkflowRegistryModuleKey = "resignations"/);
