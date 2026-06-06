@@ -19,8 +19,9 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
+    const distributorCode = String(form.get("distributorCode") ?? "") || undefined;
 
-    const result = await learnFromUploadedMappings(await file.arrayBuffer());
+    const result = await learnFromUploadedMappings(await file.arrayBuffer(), distributorCode);
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });

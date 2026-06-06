@@ -90,6 +90,7 @@ const defaultPolicy: NotificationPolicy = {
 const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "attendance.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
   "birthday.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
+  "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email"], recipientStrategy: ["direct_manager"] },
@@ -110,6 +111,7 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
+  "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
   "recruitment.*": { channels: ["in_app", "email"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   "resignations.*": { channels: ["in_app", "email", "telegram"], permissionResource: "resignations", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },

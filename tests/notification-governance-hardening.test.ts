@@ -82,6 +82,11 @@ export function runNotificationGovernanceHardeningTests() {
   );
   assertContains(
     policySource,
+    /"probation\.reminder_due":[\s\S]*permissionResource:\s*null[\s\S]*recipientStrategy:\s*\["direct_manager",\s*"workflow_step_approver"\]/,
+    "probation reminders must use exact direct manager plus explicit workflow approvers only",
+  );
+  assertContains(
+    policySource,
     /"resignations\.\*":[\s\S]*recipientStrategy:\s*\["manager_chain",\s*"permission_based"\]/,
     "resignation notifications must be manager chain plus scoped permission recipients only",
   );
@@ -89,6 +94,11 @@ export function runNotificationGovernanceHardeningTests() {
     policySource,
     /"contract_renewal\.\*":[\s\S]*recipientStrategy:\s*\["manager_chain",\s*"permission_based"\]/,
     "contract renewal notifications must be manager chain plus scoped permission recipients only",
+  );
+  assertContains(
+    policySource,
+    /"contract_renewal\.renewal_reminder":[\s\S]*permissionResource:\s*null[\s\S]*recipientStrategy:\s*\["direct_manager",\s*"workflow_step_approver"\]/,
+    "contract renewal reminders must use exact direct manager plus explicit workflow approvers only",
   );
   assertContains(
     policySource,

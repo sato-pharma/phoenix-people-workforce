@@ -39,7 +39,13 @@ export function runContractRenewalHardeningTests() {
 
   const reminderRoute = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
   assert.match(reminderRoute, /getContractRenewalReminderCandidates/);
+  assert.match(reminderRoute, /getEmployeeDirectoryRows/);
   assert.match(reminderRoute, /createSystemNotification/);
+  assert.match(reminderRoute, /workflowApproverHrIdsForEmployee/);
+  assert.match(reminderRoute, /phase6HrApproverHrIds = \["B-10", "admin-HR"\]/);
+  assert.match(reminderRoute, /managerOfManagerHrId/);
+  assert.match(reminderRoute, /actionUrl = "\/contracts\/renewals"/);
+  assert.doesNotMatch(reminderRoute, /recipientHrId:/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
   assert.match(dailyRoute, /runContractRenewalNotifications/);

@@ -11,6 +11,7 @@ import {
   Map as MapIcon,
   MapPin,
   Package,
+  Puzzle,
   RefreshCw,
   ShieldCheck,
   Truck,
@@ -22,6 +23,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
 import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
+import { DistributorProfileEditor } from "@/components/sales/distributor-profile-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
@@ -369,7 +371,34 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
 
 export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, initialRows }: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
-  const [activeTab, setActiveTab] = useState<MasterKey | "validation">(MASTER_ORDER[0]);
+  const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(MASTER_ORDER[0]);
+  const [downloadingMaster, setDownloadingMaster] = useState(false);
+  const [masterError, setMasterError] = useState<string | null>(null);
+
+  // Build + download the full 17-sheet master workbook, populated live from the current system data.
+  async function handleDownloadMaster() {
+    setDownloadingMaster(true);
+    setMasterError(null);
+    try {
+      const response = await fetch("/api/sales/master-workbook/export", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = await readJson<{ error?: string; success: boolean }>(response);
+        setMasterError(payload.error ?? "Download failed.");
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `phoenix-master-workbook-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (caught) {
+      setMasterError(caught instanceof Error ? caught.message : "Download failed.");
+    } finally {
+      setDownloadingMaster(false);
+    }
+  }
 
   if (initialError) {
     return (
@@ -382,7 +411,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
     );
   }
 
-  const activeDef = activeTab === "validation" ? null : MASTER_DEFINITIONS[activeTab];
+  const activeDef = activeTab === "validation" || activeTab === "profiles" ? null : MASTER_DEFINITIONS[activeTab];
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -402,6 +431,15 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
               </p>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <Button
+                className="gap-2 bg-[#0B0B0B] text-white hover:bg-[#F97316]"
+                disabled={downloadingMaster}
+                onClick={() => void handleDownloadMaster()}
+                title="Download the full master workbook, populated live from the current system data."
+              >
+                {downloadingMaster ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download Master Workbook
+              </Button>
               <Link href="/sales/import">
                 <Button className="gap-2" variant="secondary">
                   <Database className="h-4 w-4" />
@@ -411,6 +449,13 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             </div>
           </div>
         </div>
+
+        {masterError ? (
+          <AdminCallout tone="danger">
+            <AlertTriangle className="h-4 w-4" />
+            <p>{masterError}</p>
+          </AdminCallout>
+        ) : null}
 
         <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
           {MASTER_ORDER.map((master) => {
@@ -438,9 +483,19 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             <ShieldCheck className="h-4 w-4" />
             Database Validation
           </Button>
+          <Button
+            className={cn("gap-2 rounded-xl font-black", activeTab === "profiles" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+            onClick={() => setActiveTab("profiles")}
+            variant="secondary"
+          >
+            <Puzzle className="h-4 w-4" />
+            Distributor Mapping
+          </Button>
         </div>
 
-        {activeDef === null ? (
+        {activeTab === "profiles" ? (
+          <DistributorProfileEditor />
+        ) : activeDef === null ? (
           <DatabaseValidationTab headerGrid={initialHeaderGrid} />
         ) : (
           <MasterTab
