@@ -65,6 +65,16 @@ function approvalLabelBlocked(label: string) {
   return /\b(approve|approved|reject|rejected|decline|declined)\b/i.test(label);
 }
 
+function approvalLabelAllowedInPhoenix(label: string, url: string) {
+  const normalizedLabel = cleanText(label).toLowerCase();
+  const normalizedUrl = cleanText(url).toLowerCase();
+  const isPhoenixDecision =
+    normalizedUrl.includes("/leave-management/vacation-decision/") ||
+    normalizedUrl.includes("{{approveurl}}") ||
+    normalizedUrl.includes("{{rejecturl}}");
+  return isPhoenixDecision && (normalizedLabel === "approve in phoenix" || normalizedLabel === "reject in phoenix");
+}
+
 export function validateTelegramTemplateButtons(input: {
   allowedPlaceholders: string[];
   buttons?: TelegramTemplateButtonInput[] | null;
@@ -85,8 +95,8 @@ export function validateTelegramTemplateButtons(input: {
     if (!isSafeButtonType(type)) errors.push(`Button ${index + 1} has an unsupported type.`);
     if (!label) errors.push(`Button ${index + 1} label is required.`);
     if (/<[a-z][\s\S]*>/i.test(label)) errors.push(`Button ${index + 1} label must be plain text. HTML is not allowed.`);
-    if (approvalLabelBlocked(label) || type === "approve" || type === "reject") {
-      errors.push("Telegram action buttons cannot approve or reject in Phase 2.1.");
+    if ((approvalLabelBlocked(label) && !approvalLabelAllowedInPhoenix(label, url)) || type === "approve" || type === "reject") {
+      errors.push("Telegram action buttons cannot approve or reject unless they open a Phoenix confirmation page.");
     }
     if (!url) errors.push(`Button ${index + 1} URL is required.`);
     if (/<[a-z][\s\S]*>/i.test(url)) errors.push(`Button ${index + 1} URL must be plain text. HTML is not allowed.`);

@@ -16,6 +16,7 @@ function source(path: string) {
 
 export function runTelegramTemplateManagementTests() {
   const service = source("src/lib/notifications/telegram-templates.ts");
+  const centralTemplates = source("src/lib/notifications/templates.ts");
   const placeholders = source("src/lib/notifications/telegram-template-placeholders.ts");
   const telegramAdapter = source("src/lib/notifications/telegram.ts");
   const system = source("src/lib/notifications/system.ts");
@@ -74,7 +75,14 @@ export function runTelegramTemplateManagementTests() {
       allowedPlaceholders: ["requestUrl"],
       buttons: [{ enabled: true, label: "Approve", type: "custom", url: "{{requestUrl}}" }],
     }).errors.join(" "),
-    /cannot approve or reject/,
+    /cannot approve or reject unless they open a Phoenix confirmation page/,
+  );
+  assert.deepEqual(
+    validateTelegramTemplateButtons({
+      allowedPlaceholders: ["approveUrl"],
+      buttons: [{ enabled: true, label: "Approve in Phoenix", type: "custom", url: "{{approveUrl}}" }],
+    }).errors,
+    [],
   );
 
   assert.match(service, /telegramTemplateDefinitions/);
@@ -114,15 +122,22 @@ export function runTelegramTemplateManagementTests() {
   assert.match(placeholders, /HTML is not allowed/);
   assert.match(placeholders, /validateTelegramCta/);
   assert.match(placeholders, /validateTelegramTemplateButtons/);
-  assert.match(placeholders, /Telegram action buttons cannot approve or reject in Phase 2\.1/);
+  assert.match(placeholders, /approvalLabelAllowedInPhoenix/);
+  assert.match(placeholders, /Telegram action buttons cannot approve or reject unless they open a Phoenix confirmation page/);
   assert.match(placeholders, /isSafeTelegramCtaUrl/);
 
   assert.match(telegramAdapter, /buttons\?: Array<\{ label: string; url: string \}> \| null/);
   assert.match(telegramAdapter, /ctaLabel\?: string \| null/);
   assert.match(telegramAdapter, /ctaUrl\?: string \| null/);
   assert.match(telegramAdapter, /inline_keyboard: actionButtons\.buttons\.map/, "Telegram adapter must send safe buttons as inline keyboard");
+  assert.match(centralTemplates, /select\("title_template,message_template,is_active,metadata"\)/, "central renderer must load Telegram template metadata");
+  assert.match(centralTemplates, /validateTelegramTemplateButtons/, "central renderer must validate editable Telegram buttons");
+  assert.match(centralTemplates, /renderTelegramCtaUrl/, "central renderer must render safe Telegram button URLs");
+  assert.match(centralTemplates, /throw new TelegramTemplateError\("invalid_buttons"/, "invalid template buttons must fail safely before Telegram send");
   assert.match(system, /telegram\?:[\s\S]*buttons\?: Array<\{ label: string; url: string \}> \| null[\s\S]*ctaLabel\?: string \| null[\s\S]*ctaUrl\?: string \| null/);
-  assert.match(system, /sendTelegramNotification\({[\s\S]*buttons: input\.telegram\?\.buttons/, "central engine must pass buttons to Telegram adapter");
+  assert.match(system, /sendTelegramNotification\({[\s\S]*buttons: input\.telegram\?\.buttons \?\? telegramContent\.buttons \?\? null/, "central engine must pass rendered template buttons to Telegram adapter");
+  assert.match(system, /error instanceof TelegramTemplateError/, "invalid Telegram templates must skip Telegram without failing the whole notification");
+  assert.match(system, /skippedBy: "telegram_template_governance"/, "Telegram template skips must be auditable");
 
   assert.match(route, /assertPermission\(access, "communication", action\)/);
   assert.match(route, /body\?\.action === "preview"/);

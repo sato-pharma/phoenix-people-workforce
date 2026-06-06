@@ -15,6 +15,7 @@ import {
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
+import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram";
@@ -926,14 +927,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         continue;
       }
 
+      let telegramContent: Awaited<ReturnType<typeof renderChannelContent>> | null = null;
       try {
-        const telegramContent = await renderChannelContent(input, "telegram");
+        telegramContent = await renderChannelContent(input, "telegram");
         const result = await sendTelegramNotification({
           actionUrl: input.actionUrl ?? null,
-          buttons: input.telegram?.buttons ?? null,
+          buttons: input.telegram?.buttons ?? telegramContent.buttons ?? null,
           chatId: String(connection.telegram_chat_id),
-          ctaLabel: input.telegram?.ctaLabel ?? null,
-          ctaUrl: input.telegram?.ctaUrl ?? null,
+          ctaLabel: input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
+          ctaUrl: input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
           message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent.message,
           title: telegramContent.title,
         });
@@ -954,6 +956,22 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         deliveries.push({ channel, idempotencyKey, reason, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Telegram delivery failed.";
+        if (error instanceof TelegramTemplateError) {
+          await upsertDelivery({
+            channel,
+            eventId,
+            idempotencyKey,
+            lastError: message,
+            metadata: { skippedBy: "telegram_template_governance", templateErrorCode: error.code },
+            provider: "telegram",
+            recipient,
+            recipientAddress: String(connection.telegram_chat_id),
+            status: "skipped",
+          });
+          await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_template_governance" });
+          deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
+          continue;
+        }
         await upsertDelivery({
           channel,
           eventId,
@@ -964,14 +982,14 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
             retry: true,
             telegram: {
               actionUrl: input.actionUrl ?? null,
-              buttons: input.telegram?.buttons ?? null,
+              buttons: input.telegram?.buttons ?? telegramContent?.buttons ?? null,
               chatId: String(connection.telegram_chat_id),
-              ctaLabel: input.telegram?.ctaLabel ?? null,
-              ctaUrl: input.telegram?.ctaUrl ?? null,
+              ctaLabel: input.telegram?.ctaLabel ?? telegramContent?.ctaLabel ?? null,
+              ctaUrl: input.telegram?.ctaUrl ?? telegramContent?.ctaUrl ?? null,
               eventType: input.eventType,
-              message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : (await renderChannelContent(input, "telegram")).message,
+              message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent?.message ?? telegramMessageFor(input),
               module: input.module,
-              title: (await renderChannelContent(input, "telegram")).title,
+              title: telegramContent?.title ?? input.title,
             },
           },
           provider: "telegram",

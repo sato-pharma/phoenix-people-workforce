@@ -45,6 +45,10 @@ const complianceMigrationSource = readFileSync(
   new URL("../supabase/migrations/20260531202329_vacation_leave_governance_compliance.sql", import.meta.url),
   "utf8",
 );
+const parallelApprovalMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260606091523_vacation_parallel_approval_steps.sql", import.meta.url),
+  "utf8",
+);
 const typesSource = readFileSync(
   new URL("../src/lib/vacation/types.ts", import.meta.url),
   "utf8",
@@ -107,8 +111,43 @@ const vacationLayoutSource = readFileSync(
 );
 
 export function runVacationModuleTests() {
+  const submittedStart = serviceSource.indexOf("async function notifyVacationSubmittedByGovernance");
+  const submittedEnd = serviceSource.indexOf("async function dispatchVacationSubmitted", submittedStart);
+  const submittedBlock = serviceSource.slice(submittedStart, submittedEnd);
+
   assert.match(serviceSource, /const vacationRequestsTable = "v2_vacation_requests"/);
-  assert.match(serviceSource, /request\.status !== "pending_manager" && request\.status !== "pending_hr"/);
+  assert.match(serviceSource, /const vacationApprovalStepsTable = "v2_vacation_approval_steps"/);
+  assert.match(parallelApprovalMigrationSource, /create table if not exists public\.v2_vacation_approval_steps/);
+  assert.match(parallelApprovalMigrationSource, /step_key in \('direct_manager', 'manager_of_manager', 'hr'\)/);
+  assert.match(parallelApprovalMigrationSource, /status in \('pending', 'approved', 'rejected'\)/);
+  assert.match(parallelApprovalMigrationSource, /enable row level security/);
+  assert.ok(submittedStart >= 0 && submittedEnd > submittedStart, "vacation submitted notifications must use a dedicated governed helper");
+  assert.match(serviceSource, /resolveVacationParallelApprovalRecipients/, "vacation submit must resolve the exact parallel approval participants");
+  assert.match(serviceSource, /vacationPilotHrApproverKeys = \["B-10", "admin-HR"\]/, "vacation pilot HR approvers must be explicit identities");
+  assert.match(serviceSource, /createVacationApprovalSteps/, "vacation submit must create approval-step rows");
+  assert.match(submittedBlock, /createSystemNotification\(\{/, "vacation submitted pilot must route through createSystemNotification");
+  assert.match(submittedBlock, /eventType: "request_submitted"/, "vacation submitted pilot must use the engine policy event key");
+  assert.match(submittedBlock, /input\.approvalRecipients\.map/, "vacation submitted pilot must notify exact approval-step recipients");
+  assert.match(submittedBlock, /recipientHrId: recipient\.hrId/, "vacation submitted pilot must send only to resolved approvers");
+  assert.match(submittedBlock, /recipientUserId: recipient\.userId/, "vacation submitted pilot must preserve approver login identity when available");
+  assert.match(submittedBlock, /Approve in Phoenix/, "Telegram approval button must open Phoenix");
+  assert.match(submittedBlock, /Reject in Phoenix/, "Telegram rejection button must open Phoenix");
+  assert.match(submittedBlock, /\/leave-management\/vacation-decision\/\$\{encodeURIComponent\(input\.request\.id\)\}\?decision=approve/, "Telegram approve URL must be a Phoenix confirmation URL");
+  assert.match(submittedBlock, /requestUrl: input\.href/, "vacation submitted metadata must include requestUrl for Telegram templates");
+  assert.match(submittedBlock, /actionUrl: input\.href/, "vacation submitted metadata must include actionUrl for Telegram templates");
+  assert.match(submittedBlock, /approveUrl/, "vacation submitted metadata must include approveUrl for Telegram templates");
+  assert.match(submittedBlock, /rejectUrl/, "vacation submitted metadata must include rejectUrl for Telegram templates");
+  assert.match(submittedBlock, /employeeName: input\.request\.employeeName/, "vacation submitted metadata must include employeeName");
+  assert.match(submittedBlock, /employeeHrId: input\.request\.employeeHrId/, "vacation submitted metadata must include employeeHrId");
+  assert.match(submittedBlock, /period/, "vacation submitted metadata must include period");
+  assert.match(serviceSource, /\/leave-management\/vacation-report\?requestId=/, "vacation Telegram button must open the Phoenix vacation report page");
+  assert.match(serviceSource, /getPendingVacationApprovalStepForActor/, "vacation decisions must be bound to a pending approval-step row");
+  assert.match(serviceSource, /recordVacationApprovalStepDecision/, "vacation decisions must atomically decide one pending approval step");
+  assert.match(serviceSource, /rejected \|\| allApproved/, "vacation request must finalize only on rejection or all approvals");
+  assert.match(serviceSource, /dispatchVacationDecision\(\{ decision: input\.decision, directory, request: updated \}\)/, "final notifications must only send after terminal decision");
+  assert.match(serviceSource, /getVacationDecisionConfirmationData/, "Telegram approval URLs must be backed by an authenticated Phoenix confirmation page");
+  assert.match(serviceSource, /input\.request\.status !== "pending_manager"/);
+  assert.match(serviceSource, /Forbidden: only assigned pending vacation approvers can decide this request/);
   assert.match(serviceSource, /accessMatchesHrId\(access, request\.managerHrId\)/);
   assert.match(serviceSource, /access\.role === "Super Admin" \|\| isDesignatedHrSpecialist\(access\)/);
   assert.match(serviceSource, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/);

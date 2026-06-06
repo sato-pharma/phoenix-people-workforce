@@ -96,8 +96,8 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       recipientName: input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: approved
-        ? "Your vacation request has been approved by HR final review."
-        : `Your vacation request has been rejected by HR final review.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`,
+        ? "Your vacation request has been approved by the vacation approval workflow."
+        : `Your vacation request has been rejected by the vacation approval workflow.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`,
       subject: `Vacation request ${approved ? "approved" : "rejected"}`,
       vacationType: vacationTypeLabel(input.request.vacationType),
     },
