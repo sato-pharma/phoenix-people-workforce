@@ -36,7 +36,7 @@ test.describe("Marketing Validation Workspace", () => {
 
   test("displays validation form header", async ({ page }) => {
     await expect(page.getByText("Customer and pharmacy evidence")).toBeVisible();
-    await expect(page.getByText("HCP / PH Validation")).toBeVisible();
+    await expect(page.getByText("Customer Validation")).toBeVisible();
   });
 
   // ─── Tab Switching ──────────────────────────────────────────────────

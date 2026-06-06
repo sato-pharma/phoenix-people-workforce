@@ -140,7 +140,7 @@ export function MarketingCustomerDatabase() {
       <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">SCP / PH Database</p>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Customer Database</p>
             <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Customer, pharmacy, and vendor rows</h2>
           </div>
           <Badge variant="neutral">{workspace.rows.length} rows</Badge>

@@ -6,9 +6,10 @@ import {
   canUseEmployeePortalMarketingControl,
   canUseEmployeePortalMarketingCustomerDatabase,
   canUseEmployeePortalMarketingRequests,
+  canUseEmployeePortalMarketingRoiTracking,
 } from "@/lib/employee-portal/navigation";
 
-type EmployeePortalMarketingPage = "requests" | "control" | "customer-database";
+type EmployeePortalMarketingPage = "requests" | "control" | "customer-database" | "roi-tracking";
 
 export async function assertEmployeePortalMarketingPageAccess(page: EmployeePortalMarketingPage) {
   const access = await resolveAccessContextFromPage();
@@ -18,11 +19,13 @@ export async function assertEmployeePortalMarketingPageAccess(page: EmployeePort
   }
 
   const canAccess =
-    page === "control"
-      ? canUseEmployeePortalMarketingControl(access.role)
-      : page === "customer-database"
-        ? canUseEmployeePortalMarketingCustomerDatabase(access.role)
-        : canUseEmployeePortalMarketingRequests(access.role);
+    page === "roi-tracking"
+      ? canUseEmployeePortalMarketingRoiTracking(access.role)
+      : page === "control"
+        ? canUseEmployeePortalMarketingControl(access.role)
+        : page === "customer-database"
+          ? canUseEmployeePortalMarketingCustomerDatabase(access.role)
+          : canUseEmployeePortalMarketingRequests(access.role);
 
   if (!canAccess) {
     redirect("/employee-portals");

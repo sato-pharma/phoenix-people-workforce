@@ -14,7 +14,7 @@ export default async function EmployeePortalMarketingValidationPage() {
       badge="Marketing"
       description="Validate healthcare providers, pharmacy locations, and distributor pharmacy codes before they can feed activity requests."
       descriptionClassName="mt-3 max-w-none overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6"
-      title="HCP / PH Validation"
+      title="Customer Validation"
     >
       <MarketingValidationWorkspace />
     </EmployeePortalPageShell>

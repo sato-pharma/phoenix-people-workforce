@@ -137,10 +137,11 @@ export const adminNavigationSections = [
   {
     id: "marketing-requests",
     items: [
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "HCP / PH Validation", roles: ["District Manager", "SFE Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "SFE Manager", "Super Admin"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin"], exact: true },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: ["District Manager", "SFE Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests/customer-database", icon: Database, label: "SCP / PH Database", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "SFE Manager", "Super Admin"] },
     ],
     label: "Marketing Requests",
   },
@@ -213,7 +214,7 @@ export const employeePortalNavigationSections = [
       {
         href: "/employee-portals/marketing-requests/validation",
         icon: ShieldCheck,
-        label: "HCP / PH Validation",
+        label: "Customer Validation",
         roles: [
           "Medical Rep",
           "District Manager",
@@ -253,8 +254,25 @@ export const employeePortalNavigationSections = [
       {
         href: "/employee-portals/marketing-requests/customer-database",
         icon: Database,
-        label: "SCP / PH Database",
+        label: "Customer Database",
         roles: ["Super Admin"],
+      },
+      {
+        href: "/employee-portals/marketing-requests/roi-tracking",
+        icon: ChartColumnBig,
+        label: "ROI Tracking",
+        roles: [
+          "Medical Rep",
+          "District Manager",
+          "Regional Manager",
+          "National Sales Manager",
+          "Product Manager",
+          "Group Product Manager",
+          "Marketing Manager",
+          "SFE Manager",
+          "CEO",
+          "Super Admin",
+        ],
       },
     ],
     label: "Marketing Requests",
