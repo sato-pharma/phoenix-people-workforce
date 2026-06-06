@@ -8,6 +8,7 @@ import type {
   TelegramAdminConnection,
   TelegramAdminDelivery,
   TelegramAdminSummary,
+  TelegramPilotHealth,
 } from "@/lib/notifications/telegram-admin";
 import type { TelegramModulePolicy } from "@/lib/notifications/telegram-governance";
 
@@ -16,6 +17,7 @@ type TelegramAdminData = {
   connections: TelegramAdminConnection[];
   deliveries: TelegramAdminDelivery[];
   globalEnabled: boolean;
+  pilotHealth: TelegramPilotHealth;
   policies: TelegramModulePolicy[];
   summary: TelegramAdminSummary;
 };
@@ -47,6 +49,22 @@ function formatDate(value: string | null) {
 
 function moduleLabel(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+const envLabels = {
+  notificationWebhookSecret: ["NOTIFICATION", "WEBHOOK", "SECRET"].join("_"),
+  phoenixAppUrl: ["PHOENIX", "APP", "URL"].join("_"),
+  telegramBotToken: ["TELEGRAM", "BOT", "TOKEN"].join("_"),
+  telegramBotUsername: ["TELEGRAM", "BOT", "USERNAME"].join("_"),
+};
+
+function healthBadge(ok: boolean | null, readyLabel = "Ready", blockedLabel = "Needs attention") {
+  if (ok === null) return <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-600">Unknown</span>;
+  return (
+    <span className={`rounded border px-2 py-1 text-xs font-bold ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+      {ok ? readyLabel : blockedLabel}
+    </span>
+  );
 }
 
 export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
@@ -135,6 +153,65 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Last Telegram Test</p>
           <p className={`mt-2 text-lg font-black ${statusTextClass(data.summary.lastTestStatus)}`}>{lastTestLabel}</p>
           <p className="mt-1 text-xs font-semibold text-slate-500">{data.summary.lastTestError ?? formatDate(data.summary.lastTestAt)}</p>
+        </div>
+      </section>
+
+      <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Production Pilot Health</p>
+            <h2 className="mt-1 text-lg font-black text-slate-950">Admin-only readiness</h2>
+            <p className="mt-1 text-sm text-slate-600">Read-only checks for the controlled Telegram pilot. Secrets and payload bodies are never shown.</p>
+          </div>
+          {healthBadge(data.pilotHealth.safeForAdminPilot, "Pilot ready", "Review required")}
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Required Env</p>
+            <div className="mt-3 space-y-2 text-xs font-semibold text-slate-700">
+              <p className="flex items-center justify-between gap-2"><span>{envLabels.telegramBotToken}</span>{healthBadge(data.pilotHealth.env.telegramBotToken, "Set", "Missing")}</p>
+              <p className="flex items-center justify-between gap-2"><span>{envLabels.telegramBotUsername}</span>{healthBadge(data.pilotHealth.env.telegramBotUsername, "Set", "Missing")}</p>
+              <p className="flex items-center justify-between gap-2"><span>{envLabels.phoenixAppUrl}</span>{healthBadge(data.pilotHealth.env.phoenixAppUrl, "Set", "Missing")}</p>
+              <p className="flex items-center justify-between gap-2"><span>{envLabels.notificationWebhookSecret}</span>{healthBadge(data.pilotHealth.env.notificationWebhookSecret, "Set", "Missing")}</p>
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Webhook</p>
+            <div className="mt-3 space-y-2 text-xs font-semibold text-slate-700">
+              <p className="flex items-center justify-between gap-2"><span>Status check</span>{healthBadge(data.pilotHealth.webhook.checked, "Checked", "Unavailable")}</p>
+              <p className="flex items-center justify-between gap-2"><span>URL match</span>{healthBadge(data.pilotHealth.webhook.urlMatchesExpected, "Matches", "Mismatch")}</p>
+              <p>Pending updates: {data.pilotHealth.webhook.pendingUpdateCount ?? "Unknown"}</p>
+              <p className="break-all text-slate-500">Expected: {data.pilotHealth.webhook.expectedUrl ?? "Missing PHOENIX_APP_URL"}</p>
+              <p className="break-all text-slate-500">Configured: {data.pilotHealth.webhook.configuredUrl ?? "Not configured"}</p>
+              {data.pilotHealth.webhook.lastErrorMessage ? <p className="text-rose-700">Last error: {data.pilotHealth.webhook.lastErrorMessage}</p> : null}
+              {data.pilotHealth.webhook.error ? <p className="text-rose-700">{data.pilotHealth.webhook.error}</p> : null}
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Pilot Controls</p>
+            <div className="mt-3 space-y-2 text-xs font-semibold text-slate-700">
+              <p className="flex items-center justify-between gap-2"><span>Global default</span>{healthBadge(data.pilotHealth.globalCurrentlyOff, "OFF", "ON")}</p>
+              <p className="flex items-center justify-between gap-2"><span>Admin connected</span>{healthBadge(data.pilotHealth.adminPilotConnected, "Connected", "Not connected")}</p>
+              <p className="flex items-center justify-between gap-2"><span>Admin enabled</span>{healthBadge(data.pilotHealth.adminPilotEnabled, "Enabled", "Disabled")}</p>
+              <p className="flex items-center justify-between gap-2"><span>Test template</span>{healthBadge(data.pilotHealth.generalAdminTestTemplateActive, "Active", "Inactive")}</p>
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Pilot Scope</p>
+            <p className="mt-3 text-2xl font-black text-slate-950">{data.pilotHealth.connectedEnabledUsersCount}</p>
+            <p className="text-xs font-semibold text-slate-500">Connected users with Telegram enabled.</p>
+            {data.pilotHealth.warnings.length > 0 ? (
+              <ul className="mt-3 space-y-1 text-xs font-semibold text-amber-800">
+                {data.pilotHealth.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            ) : (
+              <p className="mt-3 text-xs font-bold text-emerald-700">No pilot blockers detected.</p>
+            )}
+          </div>
         </div>
       </section>
 

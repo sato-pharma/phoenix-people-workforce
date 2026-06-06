@@ -10,6 +10,7 @@ export function runTelegramAdminControlCenterTests() {
   const governance = source("src/lib/notifications/telegram-governance.ts");
   const adminService = source("src/lib/notifications/telegram-admin.ts");
   const templateService = source("src/lib/notifications/telegram-templates.ts");
+  const telegramService = source("src/lib/notifications/telegram.ts");
   const system = source("src/lib/notifications/system.ts");
   const route = source("app/api/admin/notifications/telegram/route.ts");
   const page = source("app/(admin)/admin/notifications/telegram/page.tsx");
@@ -43,7 +44,17 @@ export function runTelegramAdminControlCenterTests() {
   assert.match(system, /retryTelegramDeliveryById/);
   assert.match(system, /Delivery already sent/);
   assert.match(system, /Telegram disabled by user preference/);
+  assert.match(system, /connection\?\.status !== "connected" \|\| !connection\.telegram_chat_id/, "disabled or disconnected Telegram accounts must skip delivery");
+  assert.match(system, /last_error: "Telegram is not connected\."/);
+  assert.match(system, /if \(row\.status === "sent"\) return \{ channel: "telegram", idempotencyKey, reason: "Delivery already sent\.", status: "skipped" \}/, "retry must not duplicate already-sent Telegram deliveries");
+  assert.match(system, /if \(!telegramGovernance\.enabled\)[\s\S]*status: "skipped"/, "global OFF or module-disabled Telegram must create skipped delivery records");
   assert.match(system, /Your payslip is available\./);
+
+  assert.match(telegramService, /telegramEnvironmentStatus/);
+  assert.match(telegramService, /getTelegramWebhookStatus/);
+  assert.match(telegramService, /getWebhookInfo/);
+  assert.match(telegramService, /urlMatchesExpected/);
+  assert.match(telegramService, /replace\(\/bot\\d\+:\[A-Za-z0-9_-\]\+\/g, "bot\[redacted\]"\)/, "webhook errors must redact bot tokens");
 
   assert.match(adminService, /maskTelegramChatId/);
   assert.match(adminService, /getTelegramAdminControlCenter/);
@@ -73,9 +84,17 @@ export function runTelegramAdminControlCenterTests() {
   assert.match(adminService, /auditLogs/);
   assert.match(adminService, /connectedCount/);
   assert.match(adminService, /pendingCount/);
+  assert.match(adminService, /pilotHealth/);
+  assert.match(adminService, /telegramEnvironmentStatus/);
+  assert.match(adminService, /getTelegramWebhookStatus/);
+  assert.match(adminService, /generalAdminTestTemplateActive/);
+  assert.match(adminService, /connectedEnabledUsersCount/);
+  assert.match(adminService, /More than one connected user has Telegram enabled/);
   assert.doesNotMatch(adminService, /telegram_chat_id:[\s\S]*TelegramAdminConnection/, "admin view type must not expose raw chat IDs");
+  assert.doesNotMatch(adminService, /select\("id,attempts,last_error,next_attempt_at,recipient_hr_id,recipient_user_id,sent_at,status,updated_at,metadata/, "delivery monitor must not select raw delivery metadata payloads");
 
   assert.match(route, /assertPermission\(access, "communication", action\)/);
+  assert.match(route, /getTelegramAdminControlCenter\(access\)/, "admin API refreshes must compute pilot health for the signed-in admin");
   assert.match(route, /body\?\.type === "global_switch"/);
   assert.match(route, /body\?\.type === "module_policy"/);
   assert.match(route, /body\?\.action === "send_test"[\s\S]*adminSendTelegramTest\(access\)/, "route must not accept employee-wide or arbitrary test recipients");
@@ -85,10 +104,21 @@ export function runTelegramAdminControlCenterTests() {
 
   assert.match(page, /canAccess\(access, "communication", "read"\)/);
   assert.match(page, /TelegramAdminControlCenter/);
+  assert.match(page, /getTelegramAdminControlCenter\(access\)/);
   assert.match(page, /data\.summary\.connectedCount/);
   assert.match(page, /data\.summary\.pendingCount/);
   assert.match(component, /Payload bodies are intentionally hidden/);
   assert.match(component, /Global Kill Switch/);
+  assert.match(component, /Production Pilot Health/);
+  assert.match(component, /envLabels/);
+  assert.match(component, /\["TELEGRAM", "BOT", "TOKEN"\]\.join\("_"\)/);
+  assert.match(component, /\["TELEGRAM", "BOT", "USERNAME"\]\.join\("_"\)/);
+  assert.match(component, /\["PHOENIX", "APP", "URL"\]\.join\("_"\)/);
+  assert.match(component, /\["NOTIFICATION", "WEBHOOK", "SECRET"\]\.join\("_"\)/);
+  assert.match(component, /urlMatchesExpected/);
+  assert.match(component, /generalAdminTestTemplateActive/);
+  assert.match(component, /connectedEnabledUsersCount/);
+  assert.doesNotMatch(component, /process\.env/, "client UI must never read or expose raw environment values");
   assert.match(component, /Global Telegram is OFF/);
   assert.match(component, /Connected Users/);
   assert.match(component, /Pending Users/);

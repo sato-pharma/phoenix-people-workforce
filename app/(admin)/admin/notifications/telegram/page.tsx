@@ -17,7 +17,7 @@ export default async function AdminTelegramNotificationsPage() {
     redirect("/admin");
   }
 
-  const data = await getTelegramAdminControlCenter();
+  const data = await getTelegramAdminControlCenter(access);
   const canUpdate = await canAccess(access, "communication", "update");
 
   return (
