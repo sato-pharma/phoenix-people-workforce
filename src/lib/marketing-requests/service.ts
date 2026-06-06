@@ -370,6 +370,27 @@ export type MarketingRequestDraftWorkspace = {
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
+  returned: MarketingRequest[];
+};
+
+export type MarketingApproverInboxRow = {
+  currentStepName: string;
+  customerName: string;
+  decisionLabels: MarketingDecisionLabels;
+  estimatedCost: number;
+  id: string;
+  payDate: string | null;
+  requestCode: string;
+  requesterHrId: string;
+  requesterName: string;
+  requestType: string;
+  status: MarketingRequest["status"];
+  stepSequence: number;
+  submittedAt: string | null;
+};
+
+export type MarketingApproverInboxWorkspace = {
+  rows: MarketingApproverInboxRow[];
 };
 
 export type PreparedMarketingRequestDraft = {
@@ -1399,6 +1420,7 @@ function marketingTelegramButtons(requestId: string) {
 
 async function notifyMarketingWorkflow(params: {
   actorHrId: string | null;
+  ccHrIds?: string[];
   eventType: "request_assigned" | "request_returned" | "request_approved" | "request_rejected" | "request_completed" | "due_date_reminder" | "overdue_reminder" | "escalation";
   message: string;
   metadata?: Record<string, unknown>;
@@ -1407,6 +1429,10 @@ async function notifyMarketingWorkflow(params: {
   title: string;
 }) {
   const isAssigned = params.eventType === "request_assigned";
+  const ccHrIds = Array.from(new Set((params.ccHrIds ?? []).filter((hrId): hrId is string => Boolean(hrId))));
+  const existingParticipants = Array.isArray(params.metadata?.workflowParticipantHrIds)
+    ? (params.metadata.workflowParticipantHrIds as string[])
+    : [];
   await createSystemNotification({
     actionUrl: marketingActionUrl(params.request.id),
     actorId: params.actorHrId,
@@ -1418,6 +1444,9 @@ async function notifyMarketingWorkflow(params: {
       requestOwnerHrId: params.request.requesterHrId,
       status: params.request.status,
       ...(params.metadata ?? {}),
+      ...(ccHrIds.length > 0
+        ? { ccHrIds, workflowParticipantHrIds: Array.from(new Set([...existingParticipants, ...ccHrIds])) }
+        : {}),
       idempotencyKey: `marketing-request:${params.eventType}:${params.request.id}:${params.metadata?.currentStepId ?? params.metadata?.decisionAt ?? "event"}`,
     },
     module: "marketing_requests",
@@ -1702,6 +1731,10 @@ export async function decideMarketingRequestWorkflow(
       .single();
     if (nextStepUpdate.error) throw nextStepUpdate.error;
     const currentNextStep = mapApprovalStep(nextStepUpdate.data as MarketingRequestApprovalStepDbRow);
+    const ccHrIds = steps
+      .filter((step) => step.isCc && step.stepCode === currentNextStep.stepCode)
+      .map((step) => step.assignedHrId)
+      .filter((hrId): hrId is string => Boolean(hrId));
     await auditMarketingDecision({
       actorHrId,
       decision,
@@ -1711,6 +1744,7 @@ export async function decideMarketingRequestWorkflow(
     });
     await notifyMarketingWorkflow({
       actorHrId,
+      ccHrIds,
       eventType: "request_assigned",
       message: `${request.requestCode} is waiting for ${currentNextStep.stepName}.`,
       metadata: {
@@ -2948,7 +2982,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult] = await Promise.all([
+  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, returnedResult] = await Promise.all([
     supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
     supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
     supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
@@ -2965,6 +2999,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .in("status", approvedMarketingRequestStatuses)
       .order("pay_date", { ascending: false, nullsFirst: false })
       .limit(100),
+    supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(100),
   ]);
 
   if (typesResult.error) throw typesResult.error;
@@ -2974,6 +3009,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (validatedLinksResult.error) throw validatedLinksResult.error;
   if (draftsResult.error) throw draftsResult.error;
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
+  if (returnedResult.error) throw returnedResult.error;
 
   const employeeRows = await loadEmployeeDirectoryRows();
   const requester = findRequester(access, employeeRows);
@@ -2983,6 +3019,9 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
   const approvedRequests = ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+  const returned = ((returnedResult.data ?? []) as MarketingRequestDbRow[])
     .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
   const approvedRequestIds = approvedRequests.map((request) => request.id);
@@ -3021,6 +3060,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     requestTypes: ((typesResult.data ?? []) as MarketingRequestTypeDbRow[]).map(mapRequestType),
     requesterLineId,
     requesterLineName: unrestrictedProductLines ? "All product lines" : requester.lineName,
+    returned,
   };
 }
 
@@ -3197,6 +3237,223 @@ export async function createMarketingRequestDraft(
     await supabase.from("marketing_requests").delete().eq("id", request.id);
     throw error;
   }
+}
+
+/**
+ * Edit a returned marketing request and resubmit it. Resumes at the step that returned
+ * it (earlier approvals preserved), replacing the products/pharmacies with the edited set.
+ */
+export async function resubmitReturnedMarketingRequest(
+  input: MarketingRequestCreateDraft & { requestId: string },
+  access: AccessContext,
+): Promise<MarketingRequestDraftDetail> {
+  assertMarketingAccess(access);
+  const requestId = cleanText(input.requestId);
+  if (!requestId) throw validationError("Marketing request ID is required.");
+
+  const supabase = getSupabaseAdmin();
+  const employeeRows = await loadEmployeeDirectoryRows();
+  const requester = findRequester(access, employeeRows);
+
+  const existing = await loadMarketingRequestById(supabase, requestId);
+  if (existing.status !== "returned") {
+    throw conflictError("Only a returned marketing request can be resubmitted.");
+  }
+  if (normalizeHrId(existing.requesterHrId) !== normalizeHrId(requester.hrId)) {
+    throw forbiddenError("Forbidden: only the requester can resubmit this marketing request.");
+  }
+
+  const normalized = normalizeMarketingRequestDraftInput(input);
+  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes] = await Promise.all([
+    supabase.from("marketing_customers").select("id, owner_hr_id, manager_hr_id, line_id, area_id, active").eq("id", normalized.customerId).maybeSingle(),
+    supabase.from("marketing_request_types").select("id, code, name, description, requires_description, sort_order, active").eq("id", normalized.requestTypeId).maybeSingle(),
+    normalized.customerContactId
+      ? supabase.from("marketing_customer_contacts").select("id, customer_id, active").eq("id", normalized.customerContactId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    fetchActiveProducts(supabase, normalized.products.map((product) => product.productId)),
+    fetchPharmacyCodes(supabase, normalized.pharmacies.map((pharmacy) => pharmacy.distributorCodeId)),
+  ]);
+  if (customerResult.error) throw customerResult.error;
+  if (requestTypeResult.error) throw requestTypeResult.error;
+  if (contactResult.error) throw contactResult.error;
+  if (!customerResult.data) throw notFoundError("Customer was not found.", "customer_not_found");
+  if (!requestTypeResult.data) throw notFoundError("Request type was not found.", "request_type_not_found");
+  const contact = contactResult.data as MarketingCustomerContactDbRow | null;
+  if (contact && (contact.active === false || contact.customer_id !== normalized.customerId)) {
+    throw validationError("Customer contact does not belong to the selected customer.");
+  }
+
+  const prepared = prepareMarketingRequestDraft({
+    customer: customerResult.data as MarketingCustomerDbRow,
+    input,
+    pharmacyCodes,
+    products: productRows,
+    requestCode: existing.requestCode,
+    requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
+    requester,
+    unrestrictedProductLines: canUseAnyMarketingProductLine(access),
+  });
+
+  const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
+  const resumeStep = steps
+    .filter((step) => step.status === "returned")
+    .sort((left, right) => left.sequence - right.sequence)[0]
+    ?? steps.filter((step) => !step.isCc).sort((left, right) => left.sequence - right.sequence)[0]
+    ?? null;
+  if (!resumeStep) throw conflictError("This marketing request has no approval step to resume.");
+
+  const now = new Date().toISOString();
+
+  const deleteProducts = await supabase.from("marketing_request_products").delete().eq("request_id", requestId);
+  if (deleteProducts.error) throw deleteProducts.error;
+  const productsInsert = await supabase
+    .from("marketing_request_products")
+    .insert(prepared.productRows.map((row) => ({ ...row, request_id: requestId })))
+    .select("*");
+  if (productsInsert.error) throw productsInsert.error;
+
+  const deletePharmacies = await supabase.from("marketing_request_pharmacies").delete().eq("request_id", requestId);
+  if (deletePharmacies.error) throw deletePharmacies.error;
+  let pharmacies: MarketingRequestPharmacy[] = [];
+  const pharmacyInsertRows = prepared.pharmacyRows.map((row) => ({ ...row, request_id: requestId }));
+  if (pharmacyInsertRows.length > 0) {
+    const pharmaciesInsert = await supabase.from("marketing_request_pharmacies").insert(pharmacyInsertRows).select("*");
+    if (pharmaciesInsert.error) throw pharmaciesInsert.error;
+    pharmacies = ((pharmaciesInsert.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy);
+  }
+
+  const reopen = await supabase
+    .from("marketing_request_approval_steps")
+    .update({ decision_at: null, decision_by_hr_id: null, decision_note: null, status: "current", updated_at: now })
+    .eq("id", resumeStep.id)
+    .select("*")
+    .single();
+  if (reopen.error) throw reopen.error;
+  const currentStep = mapApprovalStep(reopen.data as MarketingRequestApprovalStepDbRow);
+
+  const requestUpdate = await supabase
+    .from("marketing_requests")
+    .update({
+      area_id: prepared.requestRow.area_id,
+      customer_contact_id: prepared.requestRow.customer_contact_id,
+      customer_id: prepared.requestRow.customer_id,
+      estimated_cost: prepared.requestRow.estimated_cost,
+      expected_roi_value: prepared.requestRow.expected_roi_value,
+      line_id: prepared.requestRow.line_id,
+      notes: prepared.requestRow.notes,
+      other_request_type: prepared.requestRow.other_request_type,
+      pay_date: prepared.requestRow.pay_date,
+      request_type_id: prepared.requestRow.request_type_id,
+      returned_at: null,
+      returned_step_sequence: null,
+      roi_duration_months: prepared.requestRow.roi_duration_months,
+      roi_status: prepared.requestRow.roi_status,
+      status: "pending_approval",
+      submitted_at: now,
+      updated_at: now,
+      updated_by_hr_id: requester.hrId,
+    })
+    .eq("id", requestId)
+    .select("*")
+    .single();
+  if (requestUpdate.error) throw requestUpdate.error;
+  const request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+
+  const requestTypeName = (requestTypeResult.data as MarketingRequestTypeDbRow).name;
+  const ccHrIds = steps
+    .filter((step) => step.isCc && step.stepCode === currentStep.stepCode)
+    .map((step) => step.assignedHrId)
+    .filter((hrId): hrId is string => Boolean(hrId));
+  await notifyMarketingWorkflow({
+    actorHrId: requester.hrId,
+    ccHrIds,
+    eventType: "request_assigned",
+    message: `${request.requestCode} was resubmitted and is waiting for ${currentStep.stepName}.`,
+    metadata: {
+      assignedApproverHrId: currentStep.assignedHrId,
+      currentStepId: currentStep.id,
+      currentStepName: currentStep.stepName,
+      workflowApproverHrId: currentStep.assignedHrId,
+      ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName }),
+    },
+    priority: "high",
+    request,
+    title: "Marketing request resubmitted",
+  });
+
+  return {
+    ...request,
+    pharmacies,
+    products: ((productsInsert.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
+  };
+}
+
+/** Approver inbox: marketing requests awaiting the current user's decision. */
+export async function getApproverPendingRequests(access: AccessContext): Promise<MarketingApproverInboxWorkspace> {
+  const actorHrId = requireMarketingDecisionActor(access);
+  const supabase = getSupabaseAdmin();
+
+  const stepsResult = await supabase
+    .from("marketing_request_approval_steps")
+    .select("*")
+    .eq("status", "current")
+    .eq("is_cc", false)
+    .eq("assigned_hr_id", actorHrId);
+  if (stepsResult.error) throw stepsResult.error;
+  const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+  if (steps.length === 0) return { rows: [] };
+
+  const requestIds = Array.from(new Set(steps.map((step) => step.requestId)));
+  const [requestsResult, employeeRows] = await Promise.all([
+    supabase.from("marketing_requests").select("*").in("id", requestIds).eq("status", "pending_approval"),
+    loadEmployeeDirectoryRows(),
+  ]);
+  if (requestsResult.error) throw requestsResult.error;
+  const requestById = new Map(((requestsResult.data ?? []) as MarketingRequestDbRow[]).map((row) => {
+    const request = mapRequest(row);
+    return [request.id, request] as const;
+  }));
+
+  const requests = Array.from(requestById.values());
+  const customerIds = Array.from(new Set(requests.map((request) => request.customerId)));
+  const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
+  const [customersResult, typesResult] = await Promise.all([
+    customerIds.length > 0
+      ? supabase.from("marketing_customers").select("id, display_name").in("id", customerIds)
+      : Promise.resolve({ data: [], error: null }),
+    typeIds.length > 0
+      ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (customersResult.error) throw customersResult.error;
+  if (typesResult.error) throw typesResult.error;
+  const customerNameById = new Map(((customersResult.data ?? []) as Array<{ id: string; display_name?: string | null }>)
+    .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
+  const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
+    .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
+
+  const rows: MarketingApproverInboxRow[] = [];
+  for (const step of steps) {
+    const request = requestById.get(step.requestId);
+    if (!request) continue;
+    rows.push({
+      currentStepName: step.stepName,
+      customerName: customerNameById.get(request.customerId) ?? request.customerId,
+      decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),
+      estimatedCost: request.estimatedCost,
+      id: request.id,
+      payDate: request.payDate,
+      requestCode: request.requestCode,
+      requesterHrId: request.requesterHrId,
+      requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+      requestType: typeNameById.get(request.requestTypeId) ?? "Marketing request",
+      status: request.status,
+      stepSequence: step.sequence,
+      submittedAt: request.submittedAt,
+    });
+  }
+  rows.sort((left, right) => (left.submittedAt ?? "").localeCompare(right.submittedAt ?? ""));
+  return { rows };
 }
 
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
