@@ -101,6 +101,7 @@ function buildEmployeePortalSections({
   showMarketingRequestsTab = false,
   showMarketingCustomerDatabaseTab = false,
   showMarketingControlTab = false,
+  showMarketingRoiTrackingTab = false,
   showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
@@ -141,10 +142,11 @@ function buildEmployeePortalSections({
     {
       title: "Marketing Requests",
       items: [
-        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "HCP / PH Validation", icon: ShieldCheck }] : []),
+        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
-        ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "SCP / PH Database", icon: Database }] : []),
+        ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
+        ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/marketing-requests/roi-tracking", label: "ROI Tracking", icon: ChartColumnBig }] : []),
       ],
     },
     {

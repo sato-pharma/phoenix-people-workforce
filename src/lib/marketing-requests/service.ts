@@ -7,7 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
+import { calculateMarketingRoiPreview, roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
   toMarketingRequestWorkflowStatus,
@@ -37,6 +37,8 @@ import type {
   MarketingRequestProduct,
   MarketingRequestFinanceRequirement,
   MarketingRequestType,
+  MarketingRoiTrackingRow,
+  MarketingRoiTrackingWorkspace,
   MarketingValidationInput,
   MarketingValidationReportRow,
   MarketingValidationStatus,
@@ -1342,6 +1344,136 @@ export function buildMarketingApprovedRequestRows(params: {
   });
 }
 
+function buildRoiWindowLabel(payDate: string | null, months: number): string | null {
+  if (!payDate) return null;
+  const match = /^(\d{4})-(\d{2})/.exec(payDate);
+  if (!match) return null;
+
+  const startLabel = `${match[1]}-${match[2]}`;
+  const span = Math.max(1, Math.round(months));
+  if (span <= 1) return startLabel;
+
+  const startIndex = Number(match[1]) * 12 + (Number(match[2]) - 1);
+  const endIndex = startIndex + (span - 1);
+  const endLabel = `${Math.floor(endIndex / 12)}-${String((endIndex % 12) + 1).padStart(2, "0")}`;
+  return `${startLabel} → ${endLabel}`;
+}
+
+type MarketingRoiActualDbRow = {
+  actual_units: number | string | null;
+  actual_value: number | string | null;
+  request_id: string;
+  sales_rows: number | string | null;
+};
+
+/**
+ * ROI Tracking workspace: every approved request that has a pay date, with its realized
+ * sales attributed live (promoted products, at the request's pharmacies, within its ROI
+ * window) against the required return. Read-only; the heavy attribution join runs in the
+ * phx_marketing_request_roi_actuals SQL function.
+ */
+export async function getMarketingRoiTrackingWorkspace(
+  access: AccessContext,
+): Promise<MarketingRoiTrackingWorkspace> {
+  assertMarketingWorkspaceAccess(access);
+
+  const supabase = getSupabaseAdmin();
+  const employeeRows = await loadEmployeeDirectoryRows();
+
+  const [requestsResult, customersResult] = await Promise.all([
+    supabase
+      .from("marketing_requests")
+      .select("*")
+      .in("status", approvedMarketingRequestStatuses)
+      .not("pay_date", "is", null)
+      .order("pay_date", { ascending: false, nullsFirst: false })
+      .limit(200),
+    supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true"),
+  ]);
+  if (requestsResult.error) throw requestsResult.error;
+  if (customersResult.error) throw customersResult.error;
+
+  const requests = ((requestsResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+  const customersById = new Map(
+    ((customersResult.data ?? []) as MarketingCustomerDbRow[]).map((row) => {
+      const customer = mapCustomer(row);
+      return [customer.id, customer] as const;
+    }),
+  );
+  const employeesByHrId = new Map(
+    employeeRows.map((employee) => [normalizeHrId(employee.hrId), employee] as const),
+  );
+
+  const requestIds = requests.map((request) => request.id);
+  const actualsByRequestId = new Map<string, { salesRows: number; units: number; value: number }>();
+  if (requestIds.length > 0) {
+    const actualsResult = await supabase.rpc("phx_marketing_request_roi_actuals", {
+      p_request_ids: requestIds,
+    });
+    if (actualsResult.error) throw actualsResult.error;
+    for (const row of (actualsResult.data ?? []) as MarketingRoiActualDbRow[]) {
+      actualsByRequestId.set(row.request_id, {
+        salesRows: toNumber(row.sales_rows),
+        units: toNumber(row.actual_units),
+        value: toNumber(row.actual_value),
+      });
+    }
+  }
+
+  const rows: MarketingRoiTrackingRow[] = requests.map((request) => {
+    const actuals = actualsByRequestId.get(request.id) ?? { salesRows: 0, units: 0, value: 0 };
+    const requester = employeesByHrId.get(normalizeHrId(request.requesterHrId));
+    const customer = customersById.get(request.customerId);
+    const actualSalesValue = roundMarketingMoney(actuals.value);
+    const actualCoverageRatio = request.requiredRoiValue > 0
+      ? roundMarketingRatio(actuals.value / request.requiredRoiValue)
+      : actuals.value > 0
+        ? 1
+        : 0;
+    const actualRoiStatus: MarketingRoiTrackingRow["actualRoiStatus"] = actuals.salesRows === 0
+      ? "no_data"
+      : actuals.value >= request.requiredRoiValue
+        ? "on_track"
+        : "behind";
+
+    return {
+      actualCoverageRatio,
+      actualRoiStatus,
+      actualSalesUnits: actuals.units,
+      actualSalesValue,
+      customerName: customer?.displayName ?? request.customerId,
+      estimatedCost: request.estimatedCost,
+      expectedRoiValue: request.expectedRoiValue,
+      hasSalesData: actuals.salesRows > 0,
+      id: request.id,
+      line: requester?.lineName ?? null,
+      payDate: request.payDate,
+      requestCode: request.requestCode,
+      requesterHrId: request.requesterHrId,
+      requiredRoiValue: request.requiredRoiValue,
+      roiCoverageRatio: request.roiCoverageRatio,
+      roiDurationMonths: request.roiDurationMonths,
+      roiStatus: request.roiStatus,
+      roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
+      status: request.status,
+    };
+  });
+
+  return {
+    rows,
+    summary: {
+      behind: rows.filter((row) => row.actualRoiStatus === "behind").length,
+      noData: rows.filter((row) => row.actualRoiStatus === "no_data").length,
+      onTrack: rows.filter((row) => row.actualRoiStatus === "on_track").length,
+      total: rows.length,
+      totalActualValue: roundMarketingMoney(rows.reduce((sum, row) => sum + row.actualSalesValue, 0)),
+      totalRequiredValue: roundMarketingMoney(rows.reduce((sum, row) => sum + row.requiredRoiValue, 0)),
+    },
+  };
+}
+
 function canSeeMarketingRequest(access: AccessContext, row: MarketingRequestDbRow, employeeRows: EmployeeDirectoryRow[]) {
   return canSeeMarketingHierarchyRecord(access, {
     employeeHrId: row.requester_hr_id,
@@ -1436,21 +1568,7 @@ function mapValidationReportRows(params: {
   return { rows, summary };
 }
 
-async function resolvePharmacyCodeReference(params: {
-  distributorId: number;
-  normalizedPharmacyCode: string;
-  supabase: SupabaseClient;
-}) {
-  const { data, error } = await params.supabase
-    .from("marketing_pharmacy_code_references")
-    .select("id, raw_pharmacy_code")
-    .eq("distributor_id", params.distributorId)
-    .limit(20);
-  if (error) throw error;
-
-  const matches = ((data ?? []) as MarketingPharmacyCodeReferenceDbRow[]).filter(
-    (row) => normalizeLookupKey(row.raw_pharmacy_code) === params.normalizedPharmacyCode,
-  );
+function buildPharmacyCodeReferenceResult(matches: Array<{ id: number | string }>) {
   const matchCount = matches.length;
   const status: MarketingPharmacyCodeReferenceStatus =
     matchCount === 1 ? "matched" : matchCount > 1 ? "ambiguous" : "not_found";
@@ -1459,6 +1577,69 @@ async function resolvePharmacyCodeReference(params: {
     matchCount,
     referenceId: matchCount === 1 ? Number(matches[0].id) : null,
     status,
+  };
+}
+
+async function resolvePharmacyCodeReference(params: {
+  distributorId: number;
+  normalizedPharmacyCode: string;
+  supabase: SupabaseClient;
+}) {
+  // Preferred path: exact match on the indexed normalized column. `limit(2)` is enough
+  // to distinguish not_found (0) / matched (1) / ambiguous (>=2) without scanning the
+  // whole distributor.
+  const primary = await params.supabase
+    .from("marketing_pharmacy_code_references")
+    .select("id")
+    .eq("distributor_id", params.distributorId)
+    .eq("normalized_pharmacy_code", params.normalizedPharmacyCode)
+    .limit(2);
+  if (!primary.error) {
+    return buildPharmacyCodeReferenceResult((primary.data ?? []) as Array<{ id: number | string }>);
+  }
+
+  // Fallback for databases where `normalized_pharmacy_code` has not been added yet
+  // (e.g. before the accompanying migration is applied). Filters in memory but, unlike
+  // the previous implementation, scans every reference for the distributor instead of an
+  // arbitrary first 20 rows.
+  const fallback = await params.supabase
+    .from("marketing_pharmacy_code_references")
+    .select("id, raw_pharmacy_code")
+    .eq("distributor_id", params.distributorId);
+  if (fallback.error) throw fallback.error;
+
+  const matches = ((fallback.data ?? []) as MarketingPharmacyCodeReferenceDbRow[]).filter(
+    (row) => normalizeLookupKey(row.raw_pharmacy_code) === params.normalizedPharmacyCode,
+  );
+  return buildPharmacyCodeReferenceResult(matches);
+}
+
+/**
+ * Non-blocking lookup powering the "is this pharmacy code already in our Phoenix
+ * database?" flag on the Customer Validation page. Returns whether the (distributor,
+ * pharmacy code) pair is known so the rep can see whether sales for it can be tracked.
+ */
+export async function getMarketingPharmacyCodeReferenceStatus(
+  input: { distributorId: number | string; pharmacyCode: string },
+  access: AccessContext,
+): Promise<{ matchCount: number; status: MarketingPharmacyCodeReferenceStatus; tracked: boolean }> {
+  assertMarketingAccess(access);
+
+  const distributorId = numberId(input.distributorId, "Distributor");
+  const normalizedPharmacyCode = normalizeLookupKey(input.pharmacyCode);
+  if (!normalizedPharmacyCode) {
+    return { matchCount: 0, status: "not_found", tracked: false };
+  }
+
+  const reference = await resolvePharmacyCodeReference({
+    distributorId,
+    normalizedPharmacyCode,
+    supabase: getSupabaseAdmin(),
+  });
+  return {
+    matchCount: reference.matchCount,
+    status: reference.status,
+    tracked: reference.matchCount > 0,
   };
 }
 

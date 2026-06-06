@@ -137,7 +137,7 @@ export function runEmployeePortalNavigationTests() {
   const superAdminDefault = resolveEmployeePortalNavVisibility("Super Admin");
   assert.equal(superAdminDefault.showMarketingRequestsTab, false, "Super Admin should not see Marketing Requests in nav by default");
   assert.equal(superAdminDefault.showMarketingControlTab, false, "Super Admin should not see Marketing Control in nav by default");
-  assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, false, "Super Admin should not see SCP / PH Database in nav by default");
+  assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, false, "Super Admin should not see Customer Database in nav by default");
   assert.equal(superAdminDefault.showSupportTab, false, "Super Admin should not see Contact HR Support in nav by default");
 
   // Core 8 launch modules stay visible for the correct roles regardless of the flag.
@@ -164,7 +164,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(sfeBeta.showMarketingRequestsTab, true, "SFE Manager should see Marketing Requests when beta nav is enabled");
 
   const superAdminBeta = resolveEmployeePortalNavVisibility("Super Admin");
-  assert.equal(superAdminBeta.showMarketingCustomerDatabaseTab, true, "Super Admin should see SCP / PH Database when beta nav is enabled");
+  assert.equal(superAdminBeta.showMarketingCustomerDatabaseTab, true, "Super Admin should see Customer Database when beta nav is enabled");
 
   // Enabling the flag must never grant Marketing to a role that was not authorized.
   const trainingManagerBeta = resolveEmployeePortalNavVisibility("Training Manager");
@@ -194,7 +194,7 @@ export function runEmployeePortalNavigationTests() {
   assert.match(
     layoutSource,
     /showMarketingRequestsTab \? \[\{ href: "\/employee-portals\/marketing-requests\/validation"/,
-    "HCP / PH Validation nav item must be gated behind showMarketingRequestsTab",
+    "Customer Validation nav item must be gated behind showMarketingRequestsTab",
   );
   assert.match(
     layoutSource,
@@ -204,7 +204,7 @@ export function runEmployeePortalNavigationTests() {
   assert.match(
     layoutSource,
     /showMarketingCustomerDatabaseTab \? \[\{ href: "\/employee-portals\/marketing-requests\/customer-database"/,
-    "SCP / PH Database nav item must be gated behind showMarketingCustomerDatabaseTab",
+    "Customer Database nav item must be gated behind showMarketingCustomerDatabaseTab",
   );
 
   // Page-level guards must remain unchanged: hiding nav never weakens direct-URL access.

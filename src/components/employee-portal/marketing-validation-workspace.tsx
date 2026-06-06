@@ -170,6 +170,8 @@ type PharmacyLine = {
   vendorCodes: VendorCodeLine[];
 };
 
+type CodeCheckStatus = "checking" | "tracked" | "untracked" | "unknown";
+
 type CameraTarget =
   | { kind: "customer" }
   | { kind: "pharmacy"; pharmacyKey: string };
@@ -903,6 +905,8 @@ export function MarketingValidationWorkspace() {
   const [customerOtherType, setCustomerOtherType] = useState("");
   const [customerCapture, setCustomerCapture] = useState<CaptureState>(emptyCapture);
   const [pharmacies, setPharmacies] = useState<PharmacyLine[]>([newPharmacyLine()]);
+  const [codeChecks, setCodeChecks] = useState<Record<string, CodeCheckStatus>>({});
+  const codeCheckTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMounted, setHasMounted] = useState(false);
   // Hydration flag - mount-only setState is the canonical React pattern.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1038,6 +1042,55 @@ export function MarketingValidationWorkspace() {
       ),
     );
   }
+
+  // Advisory, non-blocking check: does this (vendor, pharmacy code) already exist in the
+  // Phoenix reference database (fed from the sales module)? Debounced so typing is smooth.
+  // This never gates submission --- it only tells the rep whether sales can be tracked.
+  const checkVendorCode = useCallback((lineKey: string, distributorId: string, code: string) => {
+    const timers = codeCheckTimers.current;
+    if (timers[lineKey]) {
+      clearTimeout(timers[lineKey]);
+      delete timers[lineKey];
+    }
+
+    const trimmedCode = code.trim();
+    if (!distributorId || !trimmedCode) {
+      setCodeChecks((current) => {
+        if (!(lineKey in current)) return current;
+        const next = { ...current };
+        delete next[lineKey];
+        return next;
+      });
+      return;
+    }
+
+    setCodeChecks((current) => ({ ...current, [lineKey]: "checking" }));
+    timers[lineKey] = setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ code: trimmedCode, distributorId });
+          const response = await fetch(`/api/marketing-requests/pharmacy-code-lookup?${params.toString()}`, {
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            setCodeChecks((current) => ({ ...current, [lineKey]: "unknown" }));
+            return;
+          }
+          const payload = (await response.json()) as { tracked?: boolean };
+          setCodeChecks((current) => ({ ...current, [lineKey]: payload.tracked ? "tracked" : "untracked" }));
+        } catch {
+          setCodeChecks((current) => ({ ...current, [lineKey]: "unknown" }));
+        }
+      })();
+    }, 450);
+  }, []);
+
+  useEffect(() => {
+    const timers = codeCheckTimers.current;
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
 
   async function captureLocation(target: "customer" | string) {
     setMessage(null);
@@ -1352,7 +1405,7 @@ export function MarketingValidationWorkspace() {
                 </div>
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">
-                    HCP / PH Validation
+                    Customer Validation
                   </p>
                   <h2 className="text-lg font-black tracking-tight text-slate-900">
                     Customer and pharmacy evidence
@@ -1519,43 +1572,88 @@ export function MarketingValidationWorkspace() {
                               Add
                             </Button>
                           </div>
-                          {pharmacy.vendorCodes.map((line) => (
-                            <div className="grid grid-cols-[1fr_1fr_32px] gap-2" key={line.key}>
-                              <SelectField
-                                disabled={workspace.distributors.length === 0}
-                                onChange={(value) => updateVendorCode(pharmacy.key, line.key, { distributorId: value })}
-                                value={line.distributorId}
-                              >
-                                <option value="">Vendor</option>
-                                {workspace.distributors.map((distributor: MarketingDistributor) => (
-                                  <option key={distributor.id} value={distributor.id}>
-                                    {distributor.displayName}
-                                  </option>
-                                ))}
-                              </SelectField>
-                              <Input
-                                className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                                onChange={(event) => updateVendorCode(pharmacy.key, line.key, { distributorCode: event.target.value })}
-                                placeholder="Code"
-                                value={line.distributorCode}
-                              />
-                              <button
-                                aria-label="Remove vendor"
-                                className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                disabled={pharmacy.vendorCodes.length === 1}
-                                onClick={() =>
-                                  updatePharmacy(pharmacy.key, {
-                                    vendorCodes: pharmacy.vendorCodes.length === 1
-                                      ? pharmacy.vendorCodes
-                                      : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
-                                  })
-                                }
-                                type="button"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                          {pharmacy.vendorCodes.map((line) => {
+                            const codeCheck = codeChecks[line.key];
+                            return (
+                            <div key={line.key}>
+                              <div className="grid grid-cols-[1fr_1fr_32px] gap-2">
+                                <SelectField
+                                  disabled={workspace.distributors.length === 0}
+                                  onChange={(value) => {
+                                    updateVendorCode(pharmacy.key, line.key, { distributorId: value });
+                                    checkVendorCode(line.key, value, line.distributorCode);
+                                  }}
+                                  value={line.distributorId}
+                                >
+                                  <option value="">Vendor</option>
+                                  {workspace.distributors.map((distributor: MarketingDistributor) => (
+                                    <option key={distributor.id} value={distributor.id}>
+                                      {distributor.displayName}
+                                    </option>
+                                  ))}
+                                </SelectField>
+                                <Input
+                                  className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                  onChange={(event) => {
+                                    const nextCode = event.target.value;
+                                    updateVendorCode(pharmacy.key, line.key, { distributorCode: nextCode });
+                                    checkVendorCode(line.key, line.distributorId, nextCode);
+                                  }}
+                                  placeholder="Code"
+                                  value={line.distributorCode}
+                                />
+                                <button
+                                  aria-label="Remove vendor"
+                                  className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                  disabled={pharmacy.vendorCodes.length === 1}
+                                  onClick={() =>
+                                    updatePharmacy(pharmacy.key, {
+                                      vendorCodes: pharmacy.vendorCodes.length === 1
+                                        ? pharmacy.vendorCodes
+                                        : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
+                                    })
+                                  }
+                                  type="button"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                              {codeCheck ? (
+                                <p
+                                  className={`mt-1.5 flex items-center gap-1.5 text-[11px] font-bold ${
+                                    codeCheck === "tracked"
+                                      ? "text-emerald-700"
+                                      : codeCheck === "untracked"
+                                        ? "text-amber-700"
+                                        : "text-slate-500"
+                                  }`}
+                                >
+                                  {codeCheck === "checking" ? (
+                                    <>
+                                      <LoadingSpinner />
+                                      Checking Phoenix database…
+                                    </>
+                                  ) : null}
+                                  {codeCheck === "tracked" ? (
+                                    <>
+                                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                      In Phoenix sales database — sales can be tracked.
+                                    </>
+                                  ) : null}
+                                  {codeCheck === "untracked" ? (
+                                    <>
+                                      <ShieldX className="h-3.5 w-3.5 shrink-0" />
+                                      Not in our database yet — sales won’t be auto-tracked.
+                                    </>
+                                  ) : null}
+                                  {codeCheck === "unknown" ? (
+                                    <>Could not check the database right now.</>
+                                  ) : null}
+                                </p>
+                              ) : null}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     </div>

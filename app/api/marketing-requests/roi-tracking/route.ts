@@ -1,0 +1,57 @@
+import { NextResponse } from "next/server";
+
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { toApiError } from "@/lib/http/api-errors";
+import { getMarketingRoiTrackingWorkspace } from "@/lib/marketing-requests/service";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function marketingRoiTrackingApiError(error: unknown) {
+  if (isForbiddenError(error)) {
+    return {
+      code: "forbidden",
+      message: error instanceof Error ? error.message : "Forbidden.",
+      status: 403,
+    };
+  }
+
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("marketing_request") ||
+    normalized.includes("source_of_sales") ||
+    normalized.includes("phx_marketing_request_roi_actuals") ||
+    normalized.includes("could not find the table") ||
+    normalized.includes("could not find the function") ||
+    normalized.includes("schema cache") ||
+    (normalized.includes("relation") && normalized.includes("does not exist"))
+  ) {
+    return {
+      code: "marketing_roi_tracking_schema_not_ready",
+      message: "Marketing ROI tracking schema is not applied to the connected database yet.",
+      status: 503,
+    };
+  }
+
+  const apiError = toApiError(error, "Marketing ROI tracking failed.");
+  return {
+    code: apiError.code === "internal_error" ? "marketing_roi_tracking_failed" : apiError.code,
+    message: apiError.message,
+    status: apiError.status,
+  };
+}
+
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    return NextResponse.json(await getMarketingRoiTrackingWorkspace(access));
+  } catch (error) {
+    const { code, message, status } = marketingRoiTrackingApiError(error);
+    return NextResponse.json({ error: code, message }, { status });
+  }
+}

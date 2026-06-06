@@ -10,6 +10,7 @@ export type EmployeePortalNavVisibility = {
   showMarketingRequestsTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
+  showMarketingRoiTrackingTab?: boolean;
   showMyPerformanceTab?: boolean;
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
@@ -116,6 +117,13 @@ export function canUseEmployeePortalMarketingCustomerDatabase(
   return resolvePortalRole(roleLabel, accessRole) === "Super Admin";
 }
 
+export function canUseEmployeePortalMarketingRoiTracking(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return marketingRequestRoles.has(resolvePortalRole(roleLabel, accessRole));
+}
+
 export function resolveEmployeePortalNavVisibility(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
@@ -149,6 +157,7 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingRequestsTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingCustomerDatabaseTab = betaNavEnabled && canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = betaNavEnabled && canUseEmployeePortalMarketingControl(resolvedRole);
+  const showMarketingRoiTrackingTab = betaNavEnabled && canUseEmployeePortalMarketingRoiTracking(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
   const showPlansTab = [
     "Product Manager",
@@ -172,6 +181,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingRequestsTab,
+    showMarketingRoiTrackingTab,
     showMedRepsPerformanceTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: !isTrainingManager,
