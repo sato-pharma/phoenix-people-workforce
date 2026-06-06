@@ -21,6 +21,7 @@ export type GoogleCalendarEventInput = {
   area?: string | null;
   attendees?: string | null;
   date: string;
+  doubleVisitMedicalRepName?: string | null;
   endTime?: string | null;
   locationText?: string | null;
   notes?: string | null;
@@ -188,6 +189,7 @@ function buildEventBody(input: GoogleCalendarEventInput) {
     `Phoenix ${input.planKind} plan`,
     input.objective ? `Objective: ${input.objective}` : null,
     input.attendees ? `Attendees: ${input.attendees}` : null,
+    input.doubleVisitMedicalRepName ? `Double visit with: ${input.doubleVisitMedicalRepName}` : null,
     input.area ? `Area: ${input.area}` : null,
     input.notes ? `Notes: ${input.notes}` : null,
   ].filter(Boolean).join("\n");

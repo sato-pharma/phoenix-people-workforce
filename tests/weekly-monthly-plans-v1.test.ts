@@ -54,6 +54,8 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(serviceSource, /syncApprovedPlanToGoogleCalendar/, "CEO approval must trigger Google Calendar sync service");
   assert.match(serviceSource, /status !== "final_approved" && plan\.status !== "hr_acknowledged"/, "calendar sync must not run before final approval");
   assert.match(serviceSource, /Employee has not connected Google Calendar/, "missing Google connection must be marked as blocked");
+  assert.match(serviceSource, /medicalRepOptionsForEmployee/, "double-visit Medical Rep options must be resolved from the employee line");
+  assert.match(serviceSource, /Selected double-visit Medical Rep is not available for this employee line/, "server must validate selected Medical Rep line access");
   assert.match(serviceSource, /createSystemNotification/, "workflow must use unified notifications");
   assert.match(serviceSource, /channels: \["in_app", "email", "telegram"\]/, "workflow notifications must include in-app, email and Telegram");
   assert.doesNotMatch(telegramSource, /approve|reject/i, "Telegram adapter must not expose approve/reject actions");
@@ -62,9 +64,14 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(migrationSource, /create table if not exists public\.employee_plan_hr_acknowledgements/i);
   assert.match(migrationSource, /create table if not exists public\.google_calendar_connections/i);
   assert.match(migrationSource, /calendar_sync_status/i);
+  assert.match(migrationSource, /double_visit_medical_rep_hr_id/i);
+  assert.match(migrationSource, /double_visit_medical_rep_name/i);
   assert.match(migrationSource, /revoke all on table public\.employee_plan_headers from anon, authenticated/i);
   assert.match(migrationSource, /enable row level security/i);
 
   assert.match(pageSource, /getEmployeePlansWorkspace/);
   assert.match(navSource, /Weekly \/ Monthly Plan/);
+  const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  assert.match(workspaceSource, /Double visit Medical Rep/);
+  assert.match(workspaceSource, /workspace\.medicalRepOptions/);
 }
