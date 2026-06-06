@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { createAccessContext } from "@/lib/auth/permissions";
 import {
@@ -33,6 +34,10 @@ const baseInput: MarketingRequestCreateDraft = {
   roiDurationMonths: 6,
 };
 
+function source(path: string) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
 const requester = {
   areaId: 30,
   hrId: "MR001",
@@ -61,6 +66,30 @@ const requestType = {
 };
 
 export function runMarketingRequestServiceTests() {
+  const serviceSource = source("src/lib/marketing-requests/service.ts");
+  const policySource = source("src/lib/notifications/policy.ts");
+  const telegramTemplatesSource = source("src/lib/notifications/telegram-templates.ts");
+  const telegramPlaceholderSource = source("src/lib/notifications/telegram-template-placeholders.ts");
+  const decisionRouteSource = source("app/api/marketing-requests/[id]/decision/route.ts");
+  const decisionPageSource = source("app/employee-portals/marketing-requests/decision/[requestId]/page.tsx");
+
+  assert.match(serviceSource, /createMarketingApprovalSteps/, "marketing request submit must create approval steps");
+  assert.match(serviceSource, /marketing_request_approval_steps/, "marketing workflow must use approval-step table");
+  assert.match(serviceSource, /createSystemNotification/, "marketing workflow must use central notification engine");
+  assert.match(serviceSource, /eventType:\s*"request_assigned"/, "marketing workflow must notify the assigned approver");
+  assert.match(serviceSource, /assertMarketingStepAssignedToActor/, "marketing decisions must require the assigned approver");
+  assert.match(serviceSource, /assignedHrId !== normalizeHrId\(actorHrId\)/, "wrong approver must be blocked");
+  assert.match(serviceSource, /marketingTelegramButtons/, "marketing Telegram buttons must be generated centrally");
+  assert.doesNotMatch(serviceSource, /sendTelegramNotification|api\.telegram\.org/, "marketing module must never call Telegram directly");
+  assert.match(policySource, /"marketing_requests\.request_assigned":[\s\S]*channels:\s*\["in_app",\s*"email",\s*"telegram"\]/, "request_assigned must use in-app, email, and Telegram");
+  assert.match(policySource, /"marketing_requests\.request_submitted":[\s\S]*recipientStrategy:\s*\["workflow_step_approver"\]/, "request_submitted must stay scoped to workflow approver");
+  assert.match(telegramTemplatesSource, /templateKey:\s*"marketing_requests"/, "Template Studio must expose marketing request Telegram template");
+  assert.match(telegramPlaceholderSource, /\/employee-portals\/marketing-requests\/decision\//, "approve/reject labels must only be allowed for Phoenix marketing confirmation URLs");
+  assert.match(decisionRouteSource, /assertSameOriginMutation/, "marketing decision API must remain CSRF guarded");
+  assert.match(decisionRouteSource, /decideMarketingRequestWorkflow/, "marketing decision API must use governed workflow service");
+  assert.match(decisionPageSource, /getMarketingRequestDecisionSummary/, "marketing decision page must re-check authorization before showing details");
+  assert.match(decisionPageSource, /Login Required/, "marketing decision links must require a Phoenix session");
+
   const normalized = normalizeMarketingRequestDraftInput({
     ...baseInput,
     products: [

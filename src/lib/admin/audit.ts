@@ -10,6 +10,7 @@ export type AuditEntityType =
   | "deduction_export"
   | "employee_resignation"
   | "field_workforce_compliance_import"
+  | "marketing_request"
   | "notification"
   | "outstation_request"
   | "payroll_batch"

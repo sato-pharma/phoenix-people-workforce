@@ -2,9 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import {
   canSeeHrScopedRecord,
+  parseRoleStrict,
   resolveEmployeeIdentityId,
   type AccessContext,
+  type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { calculateMarketingRoiPreview, roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
@@ -36,6 +39,7 @@ import type {
   MarketingRequestPharmacy,
   MarketingRequestProduct,
   MarketingRequestFinanceRequirement,
+  MarketingRequestApprovalStep,
   MarketingRequestType,
   MarketingRoiTrackingRow,
   MarketingRoiTrackingWorkspace,
@@ -89,6 +93,38 @@ type MarketingWorkflowStepDbRow = {
   step_code: string;
   step_name: string;
   updated_at?: string | null;
+};
+
+type MarketingRequestApprovalStepDbRow = {
+  assigned_hr_id?: string | null;
+  assigned_role: string;
+  created_at?: string | null;
+  decision_at?: string | null;
+  decision_by_hr_id?: string | null;
+  decision_note?: string | null;
+  id: string;
+  request_id: string;
+  sequence: number | string;
+  status: "pending" | "current" | "approved" | "rejected" | "returned" | "skipped";
+  step_code: string;
+  step_name: string;
+  updated_at?: string | null;
+  workflow_step_id?: number | string | null;
+};
+
+export type MarketingRequestDecision = "approve" | "reject" | "return";
+
+export type MarketingRequestDecisionSummary = {
+  assignedApproverHrId: string;
+  currentStepName: string;
+  decision: MarketingRequestDecision;
+  payDate: string;
+  requestCode: string;
+  requestId: string;
+  requesterHrId: string;
+  requesterName: string;
+  requestType: string;
+  status: MarketingRequest["status"];
 };
 
 type MarketingControlSettingDbRow = {
@@ -1059,6 +1095,513 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     updatedAt: nowIsoFallback(row.updated_at),
     updatedByHrId: row.updated_by_hr_id ?? null,
   };
+}
+
+function mapApprovalStep(row: MarketingRequestApprovalStepDbRow): MarketingRequestApprovalStep {
+  return {
+    assignedHrId: row.assigned_hr_id ?? null,
+    assignedRole: row.assigned_role,
+    createdAt: nowIsoFallback(row.created_at),
+    decisionAt: row.decision_at ?? null,
+    decisionByHrId: row.decision_by_hr_id ?? null,
+    decisionNote: row.decision_note ?? null,
+    id: row.id,
+    requestId: row.request_id,
+    sequence: Number(row.sequence),
+    status: row.status,
+    stepCode: row.step_code,
+    stepName: row.step_name,
+    updatedAt: nowIsoFallback(row.updated_at),
+    workflowStepId: row.workflow_step_id === null || row.workflow_step_id === undefined ? null : Number(row.workflow_step_id),
+  };
+}
+
+function sameNullableId(left: number | null | undefined, right: number | null | undefined) {
+  return left !== null && left !== undefined && right !== null && right !== undefined && left === right;
+}
+
+function employeeMatchesMarketingRequestScope(employee: EmployeeDirectoryRow | undefined, request: MarketingRequest) {
+  if (!employee) return false;
+  if (sameNullableId(employee.lineId, request.lineId)) return true;
+  if (sameNullableId(employee.areaId, request.areaId)) return true;
+  return false;
+}
+
+async function roleApproverHrId(params: {
+  employeeRows: EmployeeDirectoryRow[];
+  request: MarketingRequest;
+  roleName: string;
+  supabase: SupabaseClient;
+}) {
+  let role: PhoenixRole;
+  try {
+    role = parseRoleStrict(params.roleName);
+  } catch {
+    return null;
+  }
+
+  const { data, error } = await params.supabase
+    .from("app_auth_users")
+    .select("hr_id,role,is_active")
+    .eq("is_active", true)
+    .ilike("role", role);
+  if (error) throw error;
+
+  const employeesByHrId = employeeRowByHrId(params.employeeRows);
+  const candidates = ((data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>)
+    .map((row) => normalizeHrId(row.hr_id))
+    .filter((hrId): hrId is string => Boolean(hrId));
+
+  if (candidates.length === 0) return null;
+  if (role === "CEO" || role === "Finance Manager" || role === "SFE Manager" || role === "Marketing Manager") {
+    const scoped = candidates.filter((hrId) => employeeMatchesMarketingRequestScope(employeesByHrId.get(hrId), params.request));
+    if (scoped.length === 1) return scoped[0];
+    if (candidates.length === 1) return candidates[0];
+    return null;
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+async function workflowStepApproverHrId(params: {
+  employeeRows: EmployeeDirectoryRow[];
+  request: MarketingRequest;
+  step: MarketingWorkflowStep;
+  supabase: SupabaseClient;
+}) {
+  if (params.step.approvalScope === "direct_manager") return normalizeHrId(params.request.managerHrId);
+  return roleApproverHrId({
+    employeeRows: params.employeeRows,
+    request: params.request,
+    roleName: params.step.assignedRole,
+    supabase: params.supabase,
+  });
+}
+
+async function loadActiveMarketingWorkflowSteps(supabase: SupabaseClient) {
+  const { data, error } = await supabase
+    .from("marketing_workflow_steps")
+    .select("*")
+    .eq("active", true)
+    .order("sequence", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as MarketingWorkflowStepDbRow[]).map(mapWorkflowStep);
+}
+
+async function createMarketingApprovalSteps(params: {
+  employeeRows: EmployeeDirectoryRow[];
+  request: MarketingRequest;
+  supabase: SupabaseClient;
+}) {
+  const workflowSteps = await loadActiveMarketingWorkflowSteps(params.supabase);
+  const requiredSteps = workflowSteps.filter((step) => step.required);
+  if (requiredSteps.length === 0) {
+    throw validationError("Marketing workflow has no active required approval steps.", "marketing_workflow_missing");
+  }
+
+  const rows = [];
+  for (const step of requiredSteps) {
+    const assignedHrId = await workflowStepApproverHrId({
+      employeeRows: params.employeeRows,
+      request: params.request,
+      step,
+      supabase: params.supabase,
+    });
+    if (!assignedHrId) {
+      throw validationError(`Marketing workflow approver for ${step.stepName} could not be resolved exactly.`, "marketing_approver_not_resolved");
+    }
+    rows.push({
+      assigned_hr_id: assignedHrId,
+      assigned_role: step.assignedRole,
+      request_id: params.request.id,
+      sequence: step.sequence,
+      status: rows.length === 0 ? "current" : "pending",
+      step_code: step.stepCode,
+      step_name: step.stepName,
+      workflow_step_id: step.id,
+    });
+  }
+
+  const { data, error } = await params.supabase
+    .from("marketing_request_approval_steps")
+    .insert(rows)
+    .select("*")
+    .order("sequence", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+}
+
+function marketingActionUrl(requestId: string, decision?: "approve" | "reject" | "return") {
+  const base = `/employee-portals/marketing-requests/decision/${encodeURIComponent(requestId)}`;
+  return decision ? `${base}?decision=${decision}` : `/employee-portals/marketing-requests?requestId=${encodeURIComponent(requestId)}`;
+}
+
+function marketingTelegramButtons(requestId: string) {
+  return [
+    { label: "View Details", type: "view", url: marketingActionUrl(requestId) },
+    { label: "Approve in Phoenix", type: "approve", url: marketingActionUrl(requestId, "approve") },
+    { label: "Reject in Phoenix", type: "reject", url: marketingActionUrl(requestId, "reject") },
+    { label: "Return in Phoenix", type: "return", url: marketingActionUrl(requestId, "return") },
+  ];
+}
+
+async function notifyMarketingWorkflow(params: {
+  actorHrId: string | null;
+  eventType: "request_assigned" | "request_returned" | "request_approved" | "request_rejected" | "request_completed" | "due_date_reminder" | "overdue_reminder" | "escalation";
+  message: string;
+  metadata?: Record<string, unknown>;
+  priority?: "normal" | "high" | "critical";
+  request: MarketingRequest;
+  title: string;
+}) {
+  const isAssigned = params.eventType === "request_assigned";
+  await createSystemNotification({
+    actionUrl: marketingActionUrl(params.request.id),
+    actorId: params.actorHrId,
+    eventType: params.eventType,
+    message: params.message,
+    metadata: {
+      requestCode: params.request.requestCode,
+      requestId: params.request.id,
+      requestOwnerHrId: params.request.requesterHrId,
+      status: params.request.status,
+      ...(params.metadata ?? {}),
+      idempotencyKey: `marketing-request:${params.eventType}:${params.request.id}:${params.metadata?.currentStepId ?? params.metadata?.decisionAt ?? "event"}`,
+    },
+    module: "marketing_requests",
+    priority: params.priority ?? "high",
+    recordId: params.request.id,
+    subjectHrId: params.request.requesterHrId,
+    telegram: isAssigned ? { buttons: marketingTelegramButtons(params.request.id) } : undefined,
+    title: params.title,
+  }).catch(() => undefined);
+}
+
+export function parseMarketingRequestDecision(value: unknown): MarketingRequestDecision | null {
+  const normalized = (cleanText(value) ?? "").toLowerCase();
+  return normalized === "approve" || normalized === "reject" || normalized === "return"
+    ? normalized
+    : null;
+}
+
+function requireMarketingDecisionActor(access: AccessContext) {
+  const actorHrId = resolveEmployeeIdentityId(access);
+  if (!actorHrId) {
+    throw forbiddenError("Forbidden: a linked Phoenix HR identity is required to decide this marketing request.");
+  }
+  return actorHrId;
+}
+
+async function loadMarketingRequestById(supabase: SupabaseClient, requestId: string) {
+  const { data, error } = await supabase
+    .from("marketing_requests")
+    .select("*")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  return mapRequest(data as MarketingRequestDbRow);
+}
+
+async function loadMarketingRequestApprovalSteps(supabase: SupabaseClient, requestId: string) {
+  const { data, error } = await supabase
+    .from("marketing_request_approval_steps")
+    .select("*")
+    .eq("request_id", requestId)
+    .order("sequence", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+}
+
+async function loadMarketingRequestTypeName(supabase: SupabaseClient, requestTypeId: number) {
+  const { data, error } = await supabase
+    .from("marketing_request_types")
+    .select("name")
+    .eq("id", requestTypeId)
+    .maybeSingle();
+  if (error) throw error;
+  return cleanText((data as { name?: string | null } | null)?.name) ?? "Marketing request";
+}
+
+function employeeNameByHrId(employeeRows: EmployeeDirectoryRow[], hrId: string | null | undefined) {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return "";
+  return employeeRowByHrId(employeeRows).get(normalized)?.fullName ?? normalized;
+}
+
+function marketingNotificationVariables(params: {
+  currentStep?: MarketingRequestApprovalStep | null;
+  employeeRows: EmployeeDirectoryRow[];
+  request: MarketingRequest;
+  requestTypeName: string;
+}) {
+  const requesterHrId = normalizeHrId(params.request.requesterHrId);
+  const requester = requesterHrId ? employeeRowByHrId(params.employeeRows).get(requesterHrId) : undefined;
+  const managerName = employeeNameByHrId(params.employeeRows, params.request.managerHrId);
+  return {
+    actionUrl: marketingActionUrl(params.request.id),
+    approvalStep: params.currentStep?.stepName ?? "",
+    approveUrl: marketingActionUrl(params.request.id, "approve"),
+    approverName: employeeNameByHrId(params.employeeRows, params.currentStep?.assignedHrId),
+    area: requester?.areaName ?? String(params.request.areaId ?? ""),
+    department: requester?.departmentName ?? "",
+    dueDate: params.request.payDate,
+    employeeHrId: params.request.requesterHrId,
+    employeeName: requester?.fullName ?? params.request.requesterHrId,
+    employeePortalUrl: "/employee-portals/marketing-requests",
+    eventDate: new Date().toISOString().slice(0, 10),
+    line: requester?.lineName ?? String(params.request.lineId ?? ""),
+    managerName,
+    moduleName: "Marketing Requests",
+    priority: "High",
+    reason: params.request.notes ?? "",
+    recipientHrId: params.currentStep?.assignedHrId ?? "",
+    recipientName: employeeNameByHrId(params.employeeRows, params.currentStep?.assignedHrId),
+    requesterHrId: params.request.requesterHrId,
+    requesterName: requester?.fullName ?? params.request.requesterHrId,
+    rejectUrl: marketingActionUrl(params.request.id, "reject"),
+    requestCode: params.request.requestCode,
+    requestId: params.request.requestCode,
+    requestUrl: marketingActionUrl(params.request.id),
+    requestType: params.requestTypeName,
+    returnUrl: marketingActionUrl(params.request.id, "return"),
+    role: params.currentStep?.assignedRole ?? "",
+    status: params.request.status.replace(/_/g, " "),
+    submittedAt: params.request.submittedAt ?? params.request.createdAt,
+    team: requester?.teamName ?? "",
+    updatedAt: params.request.updatedAt,
+    workflowName: "Marketing request approval",
+  };
+}
+
+function assertMarketingStepAssignedToActor(step: MarketingRequestApprovalStep, actorHrId: string) {
+  const assignedHrId = normalizeHrId(step.assignedHrId);
+  if (!assignedHrId || assignedHrId !== normalizeHrId(actorHrId)) {
+    throw forbiddenError("Forbidden: this marketing request is not assigned to your Phoenix identity.");
+  }
+}
+
+async function auditMarketingDecision(input: {
+  actorHrId: string;
+  decision: MarketingRequestDecision;
+  request: MarketingRequest;
+  step: MarketingRequestApprovalStep;
+  summary: string;
+}) {
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: input.request.id,
+    entityType: "marketing_request",
+    newValues: {
+      decision: input.decision,
+      requestCode: input.request.requestCode,
+      source: "marketing_request_phoenix_decision",
+      stepCode: input.step.stepCode,
+      stepId: input.step.id,
+    },
+    summary: input.summary,
+  });
+}
+
+export async function getMarketingRequestDecisionSummary(
+  requestId: string,
+  decision: MarketingRequestDecision,
+  access: AccessContext,
+): Promise<MarketingRequestDecisionSummary> {
+  const cleanRequestId = cleanText(requestId);
+  if (!cleanRequestId) throw validationError("Marketing request ID is required.");
+  const actorHrId = requireMarketingDecisionActor(access);
+  const supabase = getSupabaseAdmin();
+  const [request, steps, employeeRows] = await Promise.all([
+    loadMarketingRequestById(supabase, cleanRequestId),
+    loadMarketingRequestApprovalSteps(supabase, cleanRequestId),
+    loadEmployeeDirectoryRows(),
+  ]);
+  const currentStep = steps.find((step) => step.status === "current") ?? null;
+  if (!currentStep) throw conflictError("This marketing request has no current approval step.");
+  assertMarketingStepAssignedToActor(currentStep, actorHrId);
+  if (request.status !== "pending_approval") {
+    throw conflictError("This marketing request is no longer pending approval.");
+  }
+
+  return {
+    assignedApproverHrId: currentStep.assignedHrId ?? "",
+    currentStepName: currentStep.stepName,
+    decision,
+    payDate: request.payDate ?? "Not set",
+    requestCode: request.requestCode,
+    requestId: request.id,
+    requesterHrId: request.requesterHrId,
+    requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+    requestType: await loadMarketingRequestTypeName(supabase, request.requestTypeId),
+    status: request.status,
+  };
+}
+
+export async function decideMarketingRequestWorkflow(
+  access: AccessContext,
+  input: {
+    comment?: string | null;
+    decision: MarketingRequestDecision;
+    requestId: string;
+  },
+) {
+  const requestId = cleanText(input.requestId);
+  if (!requestId) throw validationError("Marketing request ID is required.");
+  const decision = parseMarketingRequestDecision(input.decision);
+  if (!decision) throw validationError("Marketing request decision is invalid.", "invalid_marketing_decision");
+  const comment = cleanText(input.comment);
+  if ((decision === "reject" || decision === "return") && !comment) {
+    throw validationError(`${decision === "reject" ? "Rejection" : "Return"} reason is required.`);
+  }
+
+  const actorHrId = requireMarketingDecisionActor(access);
+  const supabase = getSupabaseAdmin();
+  const employeeRows = await loadEmployeeDirectoryRows();
+  let request = await loadMarketingRequestById(supabase, requestId);
+  const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
+  const currentStep = steps.find((step) => step.status === "current") ?? null;
+  if (!currentStep) throw conflictError("This marketing request has no current approval step.");
+  assertMarketingStepAssignedToActor(currentStep, actorHrId);
+  if (request.status !== "pending_approval") {
+    throw conflictError("This marketing request is no longer pending approval.");
+  }
+
+  const decidedAt = new Date().toISOString();
+  const terminalStepStatus = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned";
+  const stepUpdate = await supabase
+    .from("marketing_request_approval_steps")
+    .update({
+      decision_at: decidedAt,
+      decision_by_hr_id: actorHrId,
+      decision_note: comment || null,
+      status: terminalStepStatus,
+      updated_at: decidedAt,
+    })
+    .eq("id", currentStep.id)
+    .eq("status", "current")
+    .select("*")
+    .single();
+  if (stepUpdate.error) {
+    throw conflictError("This marketing approval step was already decided. Refresh Phoenix and try again.");
+  }
+  const decidedStep = mapApprovalStep(stepUpdate.data as MarketingRequestApprovalStepDbRow);
+
+  const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
+
+  if (decision === "reject" || decision === "return") {
+    const nextStatus = decision === "reject" ? "rejected" : "returned";
+    const requestUpdate = await supabase
+      .from("marketing_requests")
+      .update({
+        rejected_at: decision === "reject" ? decidedAt : null,
+        status: nextStatus,
+        updated_at: decidedAt,
+        updated_by_hr_id: actorHrId,
+      })
+      .eq("id", request.id)
+      .select("*")
+      .single();
+    if (requestUpdate.error) throw requestUpdate.error;
+    request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+    await auditMarketingDecision({
+      actorHrId,
+      decision,
+      request,
+      step: decidedStep,
+      summary: `Marketing request ${request.requestCode} ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.`,
+    });
+    await notifyMarketingWorkflow({
+      actorHrId,
+      eventType: decision === "reject" ? "request_rejected" : "request_returned",
+      message: `${request.requestCode} was ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.`,
+      metadata: {
+        decision,
+        decisionAt: decidedAt,
+        decisionByHrId: actorHrId,
+        ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
+      },
+      priority: "high",
+      request,
+      title: decision === "reject" ? "Marketing request rejected" : "Marketing request returned",
+    });
+    return { decision, request, step: decidedStep };
+  }
+
+  const nextStep = steps
+    .filter((step) => step.status === "pending" && step.sequence > currentStep.sequence)
+    .sort((left, right) => left.sequence - right.sequence)[0] ?? null;
+
+  if (nextStep) {
+    const nextStepUpdate = await supabase
+      .from("marketing_request_approval_steps")
+      .update({ status: "current", updated_at: decidedAt })
+      .eq("id", nextStep.id)
+      .eq("status", "pending")
+      .select("*")
+      .single();
+    if (nextStepUpdate.error) throw nextStepUpdate.error;
+    const currentNextStep = mapApprovalStep(nextStepUpdate.data as MarketingRequestApprovalStepDbRow);
+    await auditMarketingDecision({
+      actorHrId,
+      decision,
+      request,
+      step: decidedStep,
+      summary: `Marketing request ${request.requestCode} approved at ${decidedStep.stepName}; moved to ${currentNextStep.stepName}.`,
+    });
+    await notifyMarketingWorkflow({
+      actorHrId,
+      eventType: "request_assigned",
+      message: `${request.requestCode} is waiting for ${currentNextStep.stepName}.`,
+      metadata: {
+        assignedApproverHrId: currentNextStep.assignedHrId,
+        currentStepId: currentNextStep.id,
+        currentStepName: currentNextStep.stepName,
+        workflowApproverHrId: currentNextStep.assignedHrId,
+        ...marketingNotificationVariables({ currentStep: currentNextStep, employeeRows, request, requestTypeName }),
+      },
+      priority: "high",
+      request,
+      title: "Marketing request assigned",
+    });
+    return { decision, nextStep: currentNextStep, request, step: decidedStep };
+  }
+
+  const requestUpdate = await supabase
+    .from("marketing_requests")
+    .update({
+      approved_at: decidedAt,
+      status: "approved",
+      updated_at: decidedAt,
+      updated_by_hr_id: actorHrId,
+    })
+    .eq("id", request.id)
+    .select("*")
+    .single();
+  if (requestUpdate.error) throw requestUpdate.error;
+  request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+  await auditMarketingDecision({
+    actorHrId,
+    decision,
+    request,
+    step: decidedStep,
+    summary: `Marketing request ${request.requestCode} fully approved.`,
+  });
+  await notifyMarketingWorkflow({
+    actorHrId,
+    eventType: "request_approved",
+    message: `${request.requestCode} has been fully approved.`,
+    metadata: {
+      decision,
+      decisionAt: decidedAt,
+      decisionByHrId: actorHrId,
+      workflowParticipantHrIds: steps.map((step) => step.assignedHrId).filter(Boolean),
+      ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
+    },
+    priority: "high",
+    request,
+    title: "Marketing request approved",
+  });
+  return { decision, request, step: decidedStep };
 }
 
 function mapCustomer(row: MarketingCustomerDbRow): MarketingCustomer {
@@ -2368,7 +2911,7 @@ export async function createMarketingRequestDraft(
     .single();
   if (requestInsert.error) throw requestInsert.error;
 
-  const request = mapRequest(requestInsert.data as MarketingRequestDbRow);
+  let request = mapRequest(requestInsert.data as MarketingRequestDbRow);
 
   try {
     const productInsertRows = prepared.productRows.map((row) => ({
@@ -2395,26 +2938,59 @@ export async function createMarketingRequestDraft(
       pharmacies = ((pharmaciesInsert.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy);
     }
 
+    const steps = await createMarketingApprovalSteps({ employeeRows, request, supabase });
+    const now = new Date().toISOString();
+    const requestUpdate = await supabase
+      .from("marketing_requests")
+      .update({
+        status: "pending_approval",
+        submitted_at: now,
+        updated_at: now,
+        updated_by_hr_id: request.requesterHrId,
+      })
+      .eq("id", request.id)
+      .select("*")
+      .single();
+    if (requestUpdate.error) throw requestUpdate.error;
+    request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+
     const draftDetail = {
       ...request,
       pharmacies,
       products: ((productsInsert.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
     };
-    const customer = customerResult.data as MarketingCustomerDbRow;
     const requestType = requestTypeResult.data as MarketingRequestTypeDbRow;
+    const currentStep = steps.find((step) => step.status === "current");
+    if (currentStep) {
+      await notifyMarketingWorkflow({
+        actorHrId: request.requesterHrId,
+        eventType: "request_assigned",
+        message: `${request.requestCode} is waiting for ${currentStep.stepName}.`,
+        metadata: {
+          assignedApproverHrId: currentStep.assignedHrId,
+          currentStepId: currentStep.id,
+          currentStepName: currentStep.stepName,
+          customerId: request.customerId,
+          requestType: requestType.name,
+          workflowApproverHrId: currentStep.assignedHrId,
+        },
+        request,
+        title: "Marketing request assigned",
+      });
+    }
     await createSystemNotification({
-      actionUrl: "/employee-portals/marketing-requests",
+      actionUrl: marketingActionUrl(request.id),
       actorId: request.requesterHrId,
       eventType: "request_submitted",
       message: `${request.requestCode} was submitted by ${request.requesterHrId}.`,
       metadata: {
-        assignedApproverHrId: customer.manager_hr_id ?? null,
         customerId: request.customerId,
         idempotencyKey: `marketing-request-submitted:${request.id}`,
         requestCode: request.requestCode,
         requestOwnerHrId: request.requesterHrId,
         requestType: requestType.name,
         status: request.status,
+        workflowApproverHrId: currentStep?.assignedHrId ?? null,
       },
       module: "marketing_requests",
       priority: "high",
