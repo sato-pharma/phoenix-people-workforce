@@ -70,8 +70,10 @@ function approvalLabelAllowedInPhoenix(label: string, url: string) {
   const normalizedUrl = cleanText(url).toLowerCase();
   const isPhoenixDecision =
     normalizedUrl.includes("/leave-management/vacation-decision/") ||
+    normalizedUrl.includes("/employee-portals/marketing-requests/decision/") ||
     normalizedUrl.includes("{{approveurl}}") ||
-    normalizedUrl.includes("{{rejecturl}}");
+    normalizedUrl.includes("{{rejecturl}}") ||
+    normalizedUrl.includes("{{returnurl}}");
   return isPhoenixDecision && (normalizedLabel === "approve in phoenix" || normalizedLabel === "reject in phoenix");
 }
 
