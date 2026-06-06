@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import { AlertCircle, CheckCircle2, Eye, Save, Send, ToggleLeft, ToggleRight } from "lucide-react";
 
 import type { TelegramTemplateView } from "@/lib/notifications/telegram-templates";
@@ -36,6 +37,8 @@ type PreviewState = {
   message: string;
   title: string;
 };
+
+const placeholderDragType = "application/x-phoenix-telegram-placeholder";
 
 function statusClass(active: boolean) {
   return active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600";
@@ -111,6 +114,45 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
       const nextCursor = start + placeholder.length + 4;
       textarea?.setSelectionRange(nextCursor, nextCursor);
     });
+  }
+
+  function startPlaceholderDrag(event: DragEvent<HTMLButtonElement>, placeholder: string) {
+    event.dataTransfer.setData(placeholderDragType, placeholder);
+    event.dataTransfer.setData("text/plain", `{{${placeholder}}}`);
+    event.dataTransfer.effectAllowed = "copy";
+  }
+
+  function placeholderFromDrop(event: DragEvent<HTMLElement>) {
+    const raw = event.dataTransfer.getData(placeholderDragType) || event.dataTransfer.getData("text/plain");
+    const placeholder = raw.replace(/^\{\{\s*/, "").replace(/\s*\}\}$/, "").trim();
+    return selectedTemplate.allowedPlaceholders.includes(placeholder) ? placeholder : null;
+  }
+
+  function allowPlaceholderDrop(event: DragEvent<HTMLElement>) {
+    if (!canUpdate) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function dropMessagePlaceholder(event: DragEvent<HTMLTextAreaElement>) {
+    const placeholder = placeholderFromDrop(event);
+    if (!placeholder) return;
+    event.preventDefault();
+    insertPlaceholder(placeholder);
+  }
+
+  function dropTitlePlaceholder(event: DragEvent<HTMLInputElement>) {
+    const placeholder = placeholderFromDrop(event);
+    if (!placeholder) return;
+    event.preventDefault();
+    insertTitlePlaceholder(placeholder);
+  }
+
+  function dropButtonPlaceholder(index: number, event: DragEvent<HTMLInputElement>) {
+    const placeholder = placeholderFromDrop(event);
+    if (!placeholder) return;
+    event.preventDefault();
+    insertButtonPlaceholder(index, placeholder);
   }
 
   function insertTitlePlaceholder(placeholder: string) {
@@ -304,6 +346,8 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                   className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
                   disabled={!canUpdate}
                   onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  onDragOver={allowPlaceholderDrop}
+                  onDrop={dropTitlePlaceholder}
                   ref={titleRef}
                   value={draft.title}
                 />
@@ -313,7 +357,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-sm font-bold text-slate-800">Available placeholders</p>
-                    <p className="text-xs font-semibold text-slate-500">Write any normal text, then insert only the variables you need.</p>
+                    <p className="text-xs font-semibold text-slate-500">Write any normal text, then click or drag variables into the title, message, or button URL fields.</p>
                   </div>
                   <p className="text-xs font-bold text-slate-500">{selectedTemplate.allowedPlaceholders.length} variables available</p>
                 </div>
@@ -322,8 +366,10 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                     <button
                       className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-bold text-orange-800 disabled:opacity-50"
                       disabled={!canUpdate}
+                      draggable={canUpdate}
                       key={placeholder}
                       onClick={() => insertPlaceholder(placeholder)}
+                      onDragStart={(event) => startPlaceholderDrag(event, placeholder)}
                       type="button"
                     >
                       {"{{"}{placeholder}{"}}"}
@@ -336,8 +382,10 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                     <button
                       className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
                       disabled={!canUpdate}
+                      draggable={canUpdate}
                       key={`title-${placeholder}`}
                       onClick={() => insertTitlePlaceholder(placeholder)}
+                      onDragStart={(event) => startPlaceholderDrag(event, placeholder)}
                       type="button"
                     >
                       {"{{"}{placeholder}{"}}"}
@@ -415,6 +463,8 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                             className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
                             disabled={!canUpdate || !button.enabled}
                             onChange={(event) => updateButton(index, { url: event.target.value })}
+                            onDragOver={allowPlaceholderDrop}
+                            onDrop={(event) => dropButtonPlaceholder(index, event)}
                             placeholder="{{actionUrl}}"
                             ref={(node) => { buttonUrlRefs.current[index] = node; }}
                             value={button.url}
@@ -426,8 +476,10 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                           <button
                             className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
                             disabled={!canUpdate || !button.enabled}
+                            draggable={canUpdate && button.enabled}
                             key={`${index}-${placeholder}`}
                             onClick={() => insertButtonPlaceholder(index, placeholder)}
+                            onDragStart={(event) => startPlaceholderDrag(event, placeholder)}
                             type="button"
                           >
                             {"{{"}{placeholder}{"}}"}
@@ -479,6 +531,8 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                   className="mt-1 min-h-64 w-full resize-y rounded border border-slate-200 px-3 py-2 font-mono text-sm leading-6 text-slate-900"
                   disabled={!canUpdate}
                   onChange={(event) => setDraft((current) => ({ ...current, message: event.target.value }))}
+                  onDragOver={allowPlaceholderDrop}
+                  onDrop={dropMessagePlaceholder}
                   ref={textareaRef}
                   value={draft.message}
                 />

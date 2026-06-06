@@ -2,6 +2,8 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { createSystemNotification, retryTelegramDeliveryById } from "@/lib/notifications/system";
+import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { renderTelegramTemplate } from "@/lib/notifications/telegram-templates";
 import {
   getTelegramGlobalEnabled,
   listTelegramModulePolicies,
@@ -95,6 +97,63 @@ function deliveryStatus(value: unknown): TelegramAdminDelivery["status"] {
 
 function actor(access: AccessContext) {
   return access.loginId ?? access.hrId ?? "system";
+}
+
+function adminTestDisplayDate() {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date());
+}
+
+function adminTestTemplateVariables(access: AccessContext, recipientUserId: string, recipientHrId: string) {
+  const date = adminTestDisplayDate();
+  const adminName = cleanText(access.loginId) || cleanText(access.hrId) || "Phoenix Admin";
+  const adminHrId = cleanText(access.hrId) || recipientHrId || recipientUserId;
+  return {
+    actionUrl: "/admin/notifications/telegram",
+    approvalStep: "Admin preview",
+    approverName: "Phoenix",
+    area: "Head Office",
+    department: "Administration",
+    dueDate: date,
+    employeeHrId: adminHrId,
+    employeeName: adminName,
+    employeePortalUrl: "/employee-portals",
+    eventDate: date,
+    line: "Administration",
+    managerName: "Phoenix",
+    moduleName: "Telegram",
+    priority: "Normal",
+    reason: "Admin-only test",
+    recipientHrId,
+    recipientName: adminName,
+    requesterHrId: adminHrId,
+    requesterName: adminName,
+    requestId: "TEST-1001",
+    requestType: "Admin test",
+    requestUrl: "/admin/notifications/telegram",
+    role: access.role,
+    status: "Preview",
+    submittedAt: date,
+    team: "Phoenix Admin",
+    updatedAt: date,
+    workflowName: "Telegram admin test",
+  };
+}
+
+function adminTemplateErrorMessage(error: TelegramTemplateError) {
+  if (error.code === "template_missing") {
+    return "General Admin Test Telegram template is not configured. Open Telegram Templates, save it, and mark it active before sending a Control Center test.";
+  }
+  if (error.code === "template_inactive") {
+    return "General Admin Test Telegram template is inactive. Activate it before sending a Control Center test.";
+  }
+  if (error.code === "template_store_missing") {
+    return "Telegram template storage is not available. The notification template table must exist before sending a Control Center test.";
+  }
+  return `General Admin Test Telegram template is invalid: ${error.message}`;
 }
 
 async function lastTelegramDeliveryByRecipient() {
@@ -318,25 +377,49 @@ export async function adminDisconnectTelegram(access: AccessContext, userId: str
 export async function adminSendTelegramTest(access: AccessContext) {
   const recipientUserId = actor(access);
   const recipientHrId = access.hrId ?? recipientUserId;
+  let rendered: Awaited<ReturnType<typeof renderTelegramTemplate>>;
+  try {
+    rendered = await renderTelegramTemplate("general_admin_test", adminTestTemplateVariables(access, recipientUserId, recipientHrId));
+  } catch (error) {
+    if (error instanceof TelegramTemplateError) {
+      throw new Error(adminTemplateErrorMessage(error));
+    }
+    throw error;
+  }
+
   const result = await createSystemNotification({
-    actionUrl: "/admin/notifications/telegram",
+    actionUrl: rendered.ctaUrl ?? rendered.buttons[0]?.url ?? "/admin/notifications/telegram",
     actorId: actor(access),
     channels: ["telegram"],
     eventType: "telegram_admin_test",
-    message: "Phoenix Telegram admin test notification.",
-    metadata: { adminTest: true, idempotencyKey: `telegram-admin-test:${recipientUserId}:${testRunId()}` },
+    message: rendered.message,
+    metadata: {
+      adminTest: true,
+      idempotencyKey: `telegram-admin-test:${recipientUserId}:${testRunId()}`,
+      templateKey: "general_admin_test",
+      templateRendered: true,
+    },
     module: "system",
     priority: "normal",
     recipientHrId,
     recipientUserId,
-    title: "Telegram admin test",
+    telegram: {
+      buttons: rendered.buttons,
+      ctaLabel: rendered.ctaLabel,
+      ctaUrl: rendered.ctaUrl,
+    },
+    title: rendered.title,
   });
   await writeAuditLog({
     actorLoginId: actor(access),
     entityId: recipientUserId,
     entityType: "notification",
-    newValues: { deliveries: result.deliveries.map((delivery) => ({ channel: delivery.channel, status: delivery.status })) },
-    summary: "Telegram test notification sent/skipped.",
+    newValues: {
+      deliveries: result.deliveries.map((delivery) => ({ channel: delivery.channel, status: delivery.status })),
+      templateKey: "general_admin_test",
+      templateRendered: true,
+    },
+    summary: "Telegram template-based test notification sent/skipped.",
   });
   return result;
 }
