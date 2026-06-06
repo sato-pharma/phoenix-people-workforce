@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { createSourceOfSalesUpload } from "@/lib/sales/monthly-distributor-import";
+import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await createSourceOfSalesUpload({ distributorCode, file, uploadedBy });
+    const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy });
     const blocked = result.status === "blocked";
 
     return NextResponse.json(
