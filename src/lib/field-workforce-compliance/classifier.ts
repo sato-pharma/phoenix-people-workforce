@@ -478,6 +478,7 @@ function buildEmployeeSummary(input: {
     holidayWarnings: timeline.filter((cell) => cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)).length,
     hrId: displayHrId,
     lineName: input.employeeReference?.lineName ?? null,
+    managerHrId: input.employeeReference?.managerHrId ?? null,
     managerName: input.employeeReference?.managerName ?? null,
     matchedEmployeeName: input.employeeReference?.fullName ?? null,
     matchedHrId: input.employeeReference?.hrId ?? null,
@@ -505,6 +506,54 @@ function sortReviewCandidates(left: FieldWorkforceReviewCandidate, right: FieldW
   const date = leftDate.localeCompare(rightDate);
   if (date !== 0) return date;
   return left.employeeName.localeCompare(right.employeeName);
+}
+
+/**
+ * Order employee rows hierarchically so the team calendar is grouped by manager (DSM):
+ * each manager appears first, immediately followed by their direct reports (recursively),
+ * instead of the raw workbook order. Roots (employees whose manager is not in this set,
+ * e.g. DSMs when the RSM is absent) are listed alphabetically; reports under each manager
+ * are alphabetical too. Grouping uses manager_hr_id; visited is tracked by object identity
+ * so duplicate HR IDs are never dropped and cycles cannot loop.
+ */
+function orderEmployeesByHierarchy(
+  employees: FieldWorkforceEmployeeSummary[],
+): FieldWorkforceEmployeeSummary[] {
+  const normalize = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase();
+  const present = new Set(employees.map((employee) => normalize(employee.hrId)));
+  const childrenByManager = new Map<string, FieldWorkforceEmployeeSummary[]>();
+  const roots: FieldWorkforceEmployeeSummary[] = [];
+
+  for (const employee of employees) {
+    const managerKey = normalize(employee.managerHrId);
+    if (managerKey && present.has(managerKey) && managerKey !== normalize(employee.hrId)) {
+      const list = childrenByManager.get(managerKey) ?? [];
+      list.push(employee);
+      childrenByManager.set(managerKey, list);
+    } else {
+      roots.push(employee);
+    }
+  }
+
+  const byName = (left: FieldWorkforceEmployeeSummary, right: FieldWorkforceEmployeeSummary) =>
+    left.employeeName.localeCompare(right.employeeName);
+  roots.sort(byName);
+  for (const list of childrenByManager.values()) list.sort(byName);
+
+  const ordered: FieldWorkforceEmployeeSummary[] = [];
+  const visited = new Set<FieldWorkforceEmployeeSummary>();
+  const visit = (employee: FieldWorkforceEmployeeSummary) => {
+    if (visited.has(employee)) return;
+    visited.add(employee);
+    ordered.push(employee);
+    for (const child of childrenByManager.get(normalize(employee.hrId)) ?? []) visit(child);
+  };
+  for (const root of roots) visit(root);
+  // Safety net: surface any employee not reached (duplicate HR IDs / cycles) rather than drop it.
+  for (const employee of employees) {
+    if (!visited.has(employee)) ordered.push(employee);
+  }
+  return ordered;
 }
 
 export function buildFieldWorkforceCompliancePreview(input: {
@@ -556,7 +605,7 @@ export function buildFieldWorkforceCompliancePreview(input: {
 
   return {
     errors: parsed.errors,
-    employees,
+    employees: orderEmployeesByHierarchy(employees),
     metadata: {
       dateRange: {
         end: lastDate,
