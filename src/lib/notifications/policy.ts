@@ -15,6 +15,7 @@ export type NotificationRecipientStrategy =
   | "admin"
   | "area_manager"
   | "assigned_approver"
+  | "cc"
   | "department_head"
   | "direct_manager"
   | "employee"
@@ -100,7 +101,7 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "marketing_requests.escalation": { bypassQuietHours: true, channels: ["in_app", "email", "telegram"], priority: "critical", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.overdue_reminder": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
   "marketing_requests.request_approved": { channels: ["in_app", "email", "telegram"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },
-  "marketing_requests.request_assigned": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["assigned_approver"], telegramAllowed: true },
+  "marketing_requests.request_assigned": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["assigned_approver", "cc"], telegramAllowed: true },
   "marketing_requests.request_completed": { channels: ["in_app", "email", "telegram"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.request_rejected": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
   "marketing_requests.request_returned": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
@@ -463,6 +464,10 @@ export async function resolveNotificationRecipientsWithGovernance(input: Resolve
       const scoped = await explicitRecipientCandidates(input, ["teamManagerHrId", "teamManagerHrIds"]);
       recipients.push(...scoped.map((candidate) => candidate.recipient).filter((recipient) => recipient.hrId));
       if (scoped.length === 0) warnings.push({ code: "team_manager_missing", detail: "Team manager must be explicit; no broad team fallback was used.", strategy });
+    } else if (strategy === "cc") {
+      const scoped = await explicitRecipientCandidates(input, ["ccHrIds"]);
+      recipients.push(...scoped.map((candidate) => candidate.recipient).filter((recipient) => recipient.hrId));
+      if (scoped.length === 0) warnings.push({ code: "cc_recipient_missing", detail: "CC recipients must be explicit; no fallback was used.", strategy });
     } else if (strategy === "hr" || strategy === "admin" || strategy === "module_owner" || strategy === "permission_based") {
       const scoped = await permissionBasedRecipients(input, policy, subject);
       if (scoped.length > 0) recipients.push(...scoped);

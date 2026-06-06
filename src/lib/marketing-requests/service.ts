@@ -361,16 +361,50 @@ type MarketingRequesterLine = Pick<EmployeeDirectoryRow, "lineId"> & {
   lineName?: string | null;
 };
 
+export type MarketingRequestStepProgress = {
+  approvedGatingCount: number;
+  currentApproverHrId: string | null;
+  currentApproverName: string;
+  currentStepName: string;
+  returnReason: string | null;
+  sequence: number;
+  totalGatingSteps: number;
+};
+
+export type MarketingRequestTimelineStep = {
+  assignedHrId: string | null;
+  assignedName: string;
+  assignedRole: string;
+  decisionAt: string | null;
+  decisionByHrId: string | null;
+  decisionByName: string;
+  decisionNote: string | null;
+  isCc: boolean;
+  sequence: number;
+  status: MarketingRequestApprovalStep["status"];
+  stepName: string;
+};
+
+export type MarketingRequestDetail = {
+  pharmacies: MarketingRequestPharmacy[];
+  products: MarketingRequestProduct[];
+  progress: MarketingRequestStepProgress | null;
+  request: MarketingRequest;
+  steps: MarketingRequestTimelineStep[];
+};
+
 export type MarketingRequestDraftWorkspace = {
   approvedRequests: MarketingApprovedRequestRow[];
   customers: MarketingCustomer[];
   distributors: MarketingDistributor[];
   drafts: MarketingRequest[];
+  inApproval: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
   returned: MarketingRequest[];
+  stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
 
 export type MarketingApproverInboxRow = {
@@ -1251,7 +1285,7 @@ function marketingChainStepName(roleName: string) {
  * skipped automatically (a District Manager submitter starts at the NSM). manager_hr_id
  * is the live, seat-continuity-connected edge, so vacant seats already point upward.
  */
-function buildMarketingManagerChain(params: {
+export function buildMarketingManagerChain(params: {
   chainTargetRole: string | null;
   employeeRows: EmployeeDirectoryRow[];
   requester: EmployeeDirectoryRow;
@@ -1275,7 +1309,7 @@ function buildMarketingManagerChain(params: {
 }
 
 /** Product/Group Product Manager(s) of the request's line, CC-notified (never gate). */
-async function resolveLineCcHrIds(params: {
+export async function resolveLineCcHrIds(params: {
   ccRoles: string[];
   employeeRows: EmployeeDirectoryRow[];
   request: MarketingRequest;
@@ -1508,6 +1542,54 @@ function employeeNameByHrId(employeeRows: EmployeeDirectoryRow[], hrId: string |
   const normalized = normalizeHrId(hrId);
   if (!normalized) return "";
   return employeeRowByHrId(employeeRows).get(normalized)?.fullName ?? normalized;
+}
+
+/**
+ * Compact "where is this request now" summary from its approval steps.
+ * CC rows are excluded from the gating count so the progress strip reflects
+ * the real decision chain (DM → NSM → SFE → Marketing → CEO → Finance).
+ */
+function buildMarketingStepProgress(
+  steps: MarketingRequestApprovalStep[],
+  employeeRows: EmployeeDirectoryRow[],
+): MarketingRequestStepProgress | null {
+  const gating = steps.filter((step) => !step.isCc).sort((left, right) => left.sequence - right.sequence);
+  if (gating.length === 0) return null;
+  const current = gating.find((step) => step.status === "current") ?? null;
+  const returnedStep = gating.find((step) => step.status === "returned") ?? null;
+  const anchor = current ?? returnedStep ?? gating[gating.length - 1];
+  return {
+    approvedGatingCount: gating.filter((step) => step.status === "approved").length,
+    currentApproverHrId: anchor.assignedHrId ?? null,
+    currentApproverName: employeeNameByHrId(employeeRows, anchor.assignedHrId),
+    currentStepName: anchor.stepName,
+    returnReason: returnedStep?.decisionNote ?? null,
+    sequence: anchor.sequence,
+    totalGatingSteps: gating.length,
+  };
+}
+
+/** Ordered, display-ready timeline of every approval step (gating + CC). */
+function buildMarketingTimeline(
+  steps: MarketingRequestApprovalStep[],
+  employeeRows: EmployeeDirectoryRow[],
+): MarketingRequestTimelineStep[] {
+  return steps
+    .slice()
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((step) => ({
+      assignedHrId: step.assignedHrId,
+      assignedName: employeeNameByHrId(employeeRows, step.assignedHrId),
+      assignedRole: step.assignedRole,
+      decisionAt: step.decisionAt,
+      decisionByHrId: step.decisionByHrId,
+      decisionByName: employeeNameByHrId(employeeRows, step.decisionByHrId),
+      decisionNote: step.decisionNote,
+      isCc: step.isCc,
+      sequence: step.sequence,
+      status: step.status,
+      stepName: step.stepName,
+    }));
 }
 
 function marketingNotificationVariables(params: {
@@ -2982,7 +3064,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, returnedResult] = await Promise.all([
+  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, returnedResult, inApprovalResult] = await Promise.all([
     supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
     supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
     supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
@@ -3000,6 +3082,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .order("pay_date", { ascending: false, nullsFirst: false })
       .limit(100),
     supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(100),
+    supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(200),
   ]);
 
   if (typesResult.error) throw typesResult.error;
@@ -3010,6 +3093,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (draftsResult.error) throw draftsResult.error;
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
   if (returnedResult.error) throw returnedResult.error;
+  if (inApprovalResult.error) throw inApprovalResult.error;
 
   const employeeRows = await loadEmployeeDirectoryRows();
   const requester = findRequester(access, employeeRows);
@@ -3024,6 +3108,33 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const returned = ((returnedResult.data ?? []) as MarketingRequestDbRow[])
     .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
+  const inApproval = ((inApprovalResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+
+  // Batch-load approval steps for every in-flight request so the tracking UI can
+  // show "currently with <step> — <approver>" without an N+1 query per request.
+  const trackedRequestIds = Array.from(new Set([...inApproval, ...returned].map((request) => request.id)));
+  const stepProgressByRequestId: Record<string, MarketingRequestStepProgress> = {};
+  if (trackedRequestIds.length > 0) {
+    const trackedStepsResult = await supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .in("request_id", trackedRequestIds)
+      .order("sequence", { ascending: true });
+    if (trackedStepsResult.error) throw trackedStepsResult.error;
+    const stepsByRequest = new Map<string, MarketingRequestApprovalStep[]>();
+    for (const row of (trackedStepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+      const step = mapApprovalStep(row);
+      const bucket = stepsByRequest.get(step.requestId) ?? [];
+      bucket.push(step);
+      stepsByRequest.set(step.requestId, bucket);
+    }
+    for (const [requestId, requestSteps] of stepsByRequest) {
+      const progress = buildMarketingStepProgress(requestSteps, employeeRows);
+      if (progress) stepProgressByRequestId[requestId] = progress;
+    }
+  }
   const approvedRequestIds = approvedRequests.map((request) => request.id);
   const financeRequirementsResult = approvedRequestIds.length > 0
     ? await supabase
@@ -3056,11 +3167,13 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     customers,
     distributors: ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor),
     drafts,
+    inApproval,
     products,
     requestTypes: ((typesResult.data ?? []) as MarketingRequestTypeDbRow[]).map(mapRequestType),
     requesterLineId,
     requesterLineName: unrestrictedProductLines ? "All product lines" : requester.lineName,
     returned,
+    stepProgressByRequestId,
   };
 }
 
@@ -3454,6 +3567,62 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   }
   rows.sort((left, right) => (left.submittedAt ?? "").localeCompare(right.submittedAt ?? ""));
   return { rows };
+}
+
+/**
+ * Full detail for a single marketing request: header, products, pharmacies, and the
+ * ordered approval timeline with assignee display names. Used by the tracking timeline
+ * and the "Returned to me → Edit & Resubmit" prefill. Visible to anyone who can see the
+ * request (requester / hierarchy / scope) or who is assigned to one of its steps.
+ */
+export async function getMarketingRequestDetail(
+  requestId: string,
+  access: AccessContext,
+): Promise<MarketingRequestDetail> {
+  const cleanRequestId = cleanText(requestId);
+  if (!cleanRequestId) throw validationError("Marketing request ID is required.");
+
+  const supabase = getSupabaseAdmin();
+  const employeeRows = await loadEmployeeDirectoryRows();
+  const requestResult = await supabase
+    .from("marketing_requests")
+    .select("*")
+    .eq("id", cleanRequestId)
+    .maybeSingle();
+  if (requestResult.error) throw requestResult.error;
+  if (!requestResult.data) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  const requestRow = requestResult.data as MarketingRequestDbRow;
+
+  const [stepsResult, productsResult, pharmaciesResult] = await Promise.all([
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .eq("request_id", cleanRequestId)
+      .order("sequence", { ascending: true }),
+    supabase.from("marketing_request_products").select("*").eq("request_id", cleanRequestId),
+    supabase.from("marketing_request_pharmacies").select("*").eq("request_id", cleanRequestId),
+  ]);
+  if (stepsResult.error) throw stepsResult.error;
+  if (productsResult.error) throw productsResult.error;
+  if (pharmaciesResult.error) throw pharmaciesResult.error;
+
+  const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+
+  const actorHrId = normalizeHrId(access.hrId);
+  const isAssignedApprover = actorHrId
+    ? steps.some((step) => normalizeHrId(step.assignedHrId) === actorHrId)
+    : false;
+  if (!canSeeMarketingRequest(access, requestRow, employeeRows) && !isAssignedApprover && access.scope !== "system") {
+    throw forbiddenError("Forbidden: you cannot view this marketing request.");
+  }
+
+  return {
+    pharmacies: ((pharmaciesResult.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy),
+    products: ((productsResult.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
+    progress: buildMarketingStepProgress(steps, employeeRows),
+    request: mapRequest(requestRow),
+    steps: buildMarketingTimeline(steps, employeeRows),
+  };
 }
 
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
