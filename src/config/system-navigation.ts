@@ -95,7 +95,7 @@ export const adminNavigationSections = [
     items: [
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
       { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }] },
-      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Field Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
+      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },

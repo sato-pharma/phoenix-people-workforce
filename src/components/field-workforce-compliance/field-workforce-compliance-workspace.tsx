@@ -1881,7 +1881,7 @@ function ArchivedMonthsPanel({
               {archives.length === 0 ? (
                 <tr>
                   <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
-                    No archived Field Workforce Compliance months yet.
+                    No archived Workforce Compliance months yet.
                   </td>
                 </tr>
               ) : null}
@@ -2203,7 +2203,7 @@ export function FieldWorkforceComplianceWorkspace() {
           description="Understand and review monthly field workforce activity safely before any future HR, leave, or payroll decision."
           eyebrow="Operational HR Governance"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
-          title="Field Workforce Compliance"
+          title="Workforce Compliance"
         />
 
         <AdminTableShell

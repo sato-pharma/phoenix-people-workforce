@@ -78,6 +78,7 @@ export type FieldWorkforceEmployeeReference = {
   hrId: string;
   jobTitle?: string | null;
   lineName?: string | null;
+  managerHrId?: string | null;
   managerName?: string | null;
   roleName?: string | null;
   teamName?: string | null;
@@ -135,6 +136,7 @@ export type FieldWorkforceEmployeeSummary = {
   holidayWarnings: number;
   hrId: string;
   lineName: string | null;
+  managerHrId: string | null;
   managerName: string | null;
   matchedEmployeeName: string | null;
   matchedHrId: string | null;
