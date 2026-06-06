@@ -2,12 +2,17 @@ import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { createSystemNotification } from "@/lib/notifications/system";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type EmployeeDirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
+
+const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
 
 function cairoDate() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -24,6 +29,33 @@ function isAuthorized(request: Request) {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+function cleanHrId(value: string | null | undefined) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function employeeDirectoryByHrId(rows: EmployeeDirectoryRow[]) {
+  const entries: Array<[string, EmployeeDirectoryRow]> = [];
+  for (const row of rows) {
+    const hrId = cleanHrId(row.hrId);
+    if (hrId) entries.push([hrId, row]);
+  }
+  return new Map(entries);
+}
+
+function managerOf(employee: EmployeeDirectoryRow | null | undefined, employeesByHrId: Map<string, EmployeeDirectoryRow>) {
+  const managerHrId = cleanHrId(employee?.managerHrId);
+  return managerHrId ? employeesByHrId.get(managerHrId) ?? null : null;
+}
+
+function workflowApproverHrIdsForEmployee(employee: EmployeeDirectoryRow, employeesByHrId: Map<string, EmployeeDirectoryRow>) {
+  const directManager = managerOf(employee, employeesByHrId);
+  const managerOfManager = managerOf(directManager, employeesByHrId);
+  return Array.from(new Set([
+    cleanHrId(managerOfManager?.hrId),
+    ...phase6HrApproverHrIds.map(cleanHrId),
+  ].filter(Boolean)));
+}
+
 export async function runContractRenewalNotifications(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized", message: "Contract renewal notification run is not authorized." }, { status: 401 });
@@ -37,11 +69,30 @@ export async function runContractRenewalNotifications(request: Request) {
     0,
   ]);
   const results = [];
+  const directory = await getEmployeeDirectoryRows();
+  const employeesByHrId = employeeDirectoryByHrId(directory);
 
   for (const row of candidates) {
+    const employee = employeesByHrId.get(cleanHrId(row.hr_id));
+    if (!employee) {
+      results.push({
+        daysUntil: row.daysUntil,
+        employeeHrId: row.hr_id,
+        result: {
+          skipped: true,
+          warning: "Contract renewal reminder skipped because the employee could not be resolved in the employee directory.",
+        },
+      });
+      continue;
+    }
+
+    const directManager = managerOf(employee, employeesByHrId);
+    const managerOfManager = managerOf(directManager, employeesByHrId);
+    const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId);
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
+    const actionUrl = "/contracts/renewals";
     const result = await createSystemNotification({
-      actionUrl: "/contracts/renewals",
+      actionUrl,
       actorId: "system",
       email: {
         employeeHrId: row.hr_id,
@@ -60,9 +111,22 @@ export async function runContractRenewalNotifications(request: Request) {
       eventType: "renewal_reminder",
       message: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
       metadata: {
+        actionUrl,
+        area: employee.areaName ?? null,
+        department: employee.departmentName ?? null,
+        directManagerHrId: cleanHrId(directManager?.hrId) || null,
+        employeeName: row.full_name,
         employeeHrId: row.hr_id,
+        eventDate: runDate,
         idempotencyKey: `contract-renewal-reminder:${row.hr_id}:${row.contract_renewal_date}:${runDate}`,
+        line: employee.lineName ?? row.line ?? null,
+        managerName: employee.managerName ?? directManager?.fullName ?? null,
+        managerOfManagerHrId: cleanHrId(managerOfManager?.hrId) || null,
         renewalDate: row.contract_renewal_date,
+        requestUrl: actionUrl,
+        status: "Pending manager recommendation",
+        team: employee.teamName ?? null,
+        workflowApproverHrIds,
       },
       module: "contract_renewal",
       priority: row.daysUntil <= 7 ? "critical" : "high",

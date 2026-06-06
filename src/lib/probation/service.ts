@@ -17,7 +17,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   CreateProbationEvaluationInput,
   ProbationDecision,
-  ProbationReminderRecipient,
   ProbationRow,
   ProbationWorkflowAction,
   ProbationWorkflowRecord,
@@ -86,17 +85,9 @@ type ProbationWorkflowInput = {
   note?: string | null;
 };
 
-type AuthNotificationRecipientRow = {
-  auth_email?: string | null;
-  email?: string | null;
-  hr_id?: string | null;
-  is_active?: boolean | null;
-  name?: string | null;
-  role?: string | null;
-};
-
 const probationDays = 90;
 const hrProbationRoles = new Set(["Super Admin", "HR Specialist"]);
+const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
@@ -492,75 +483,31 @@ export function getProbationReminderSchedule(hireDate: string | null | undefined
     .filter((reminder) => Boolean(reminder.scheduledFor));
 }
 
-function cleanEmail(value: string | null | undefined) {
-  const email = String(value ?? "").trim().toLowerCase();
-  return email.includes("@") ? email : null;
-}
-
-function recipientKey(recipient: Pick<ProbationReminderRecipient, "hrId" | "role">) {
-  return `${recipient.role}:${normalizeHrId(recipient.hrId)}`;
-}
-
-async function loadHrAndTrainingReminderRecipients(): Promise<ProbationReminderRecipient[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("app_auth_users")
-    .select("hr_id,name,email,auth_email,role,is_active")
-    .in("role", ["HR Specialist", "Super Admin", "Training Manager"])
-    .eq("is_active", true);
-
-  if (error) {
-    if (isProbationSchemaMissing(error)) return [];
-    throw error;
-  }
-
-  const recipients: ProbationReminderRecipient[] = [];
-  for (const row of (data ?? []) as AuthNotificationRecipientRow[]) {
-    const role = row.role === "Training Manager" ? "Training Manager" : "HR";
-    const hrId = cleanText(row.hr_id)?.toUpperCase();
-    if (hrId) {
-      recipients.push({
-        email: cleanEmail(row.email) ?? cleanEmail(row.auth_email),
-        hrId,
-        name: cleanText(row.name),
-        role,
-      });
-    }
-  }
-  return recipients;
-}
-
-async function resolveProbationReminderRecipients(
-  employee: EmployeeScopeRow,
-  directory: EmployeeScopeRow[],
-): Promise<ProbationReminderRecipient[]> {
+function probationWorkflowApproverHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
   const manager = managerOf(employee, directory);
   const managerManager = manager ? managerOf(manager, directory) : null;
-  const roleRecipients = await loadHrAndTrainingReminderRecipients();
-  const recipients = [
-    ...roleRecipients,
-    manager
-      ? {
-          email: cleanEmail(manager.workEmail),
-          hrId: manager.hrId,
-          name: manager.fullName,
-          role: "Direct Manager" as const,
-        }
-      : null,
-    managerManager
-      ? {
-          email: cleanEmail(managerManager.workEmail),
-          hrId: managerManager.hrId,
-          name: managerManager.fullName,
-          role: "Manager of Manager" as const,
-        }
-      : null,
-  ].filter((recipient): recipient is ProbationReminderRecipient => Boolean(recipient?.hrId));
+  return Array.from(new Set([
+    normalizeHrId(managerManager?.hrId),
+    ...phase6HrApproverHrIds.map(normalizeHrId),
+  ].filter(Boolean)));
+}
 
-  const unique = new Map<string, ProbationReminderRecipient>();
-  for (const recipient of recipients) {
-    unique.set(recipientKey(recipient), recipient);
-  }
-  return Array.from(unique.values());
+function resolveProbationReminderRecipientHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+  const manager = managerOf(employee, directory);
+  return Array.from(new Set([
+    normalizeHrId(manager?.hrId),
+    ...probationWorkflowApproverHrIds(employee, directory),
+  ].filter(Boolean)));
+}
+
+function probationRecipientRoles(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+  const manager = managerOf(employee, directory);
+  const managerManager = manager ? managerOf(manager, directory) : null;
+  return [
+    manager ? { hr_id: normalizeHrId(manager.hrId), role: "Direct Manager" } : null,
+    managerManager ? { hr_id: normalizeHrId(managerManager.hrId), role: "Manager of Manager" } : null,
+    ...phase6HrApproverHrIds.map((hrId) => ({ hr_id: normalizeHrId(hrId), role: "HR Pilot Approver" })),
+  ].filter((recipient): recipient is { hr_id: string; role: string } => Boolean(recipient?.hr_id));
 }
 
 async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
@@ -568,9 +515,9 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
   if (schedule.length === 0) return;
 
   const now = new Date().toISOString();
-  const recipients = await resolveProbationReminderRecipients(employee, directory);
-  const recipientHrIds = recipients.map((recipient) => recipient.hrId);
-  const recipientEmails = recipients.map((recipient) => recipient.email).filter((email): email is string => Boolean(email));
+  const recipientHrIds = resolveProbationReminderRecipientHrIds(employee, directory);
+  const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory);
+  const recipientRoles = probationRecipientRoles(employee, directory);
   const rows = schedule.map((reminder) => ({
     category: "probation",
     employee_hr_id: employee.hrId,
@@ -582,9 +529,9 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
       days_after_hire: reminder.daysAfterHire,
       days_remaining: reminder.daysRemaining,
       hire_date: employee.hireDate,
-      recipient_emails: recipientEmails,
-      recipient_roles: recipients.map((recipient) => ({ hr_id: recipient.hrId, role: recipient.role })),
+      recipient_roles: recipientRoles,
       reminder_type: reminder.reminderType,
+      workflowApproverHrIds,
       details: [
         { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
         { label: "Days remaining", value: `${reminder.daysRemaining}` },
@@ -719,45 +666,51 @@ export async function processDueProbationReminderEvents(limit = 25) {
 
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
-    const recipientHrIds = Array.isArray(event.recipients)
-      ? event.recipients.map((recipient) => normalizeHrId(recipient)).filter(Boolean)
-      : [];
-    const notificationResults = await Promise.all(
-      (recipientHrIds.length > 0 ? recipientHrIds : [undefined]).map((recipientHrId) =>
-        createSystemNotification({
-          actionUrl: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
-          actorId: "system",
-          email: {
-            ctaHref: `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`,
-            ctaLabel: "Submit Your Feedback",
-            employeeHrId: employee.hrId,
-            metrics: [
-              { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
-              { label: "Hire date", value: employee.hireDate ?? "-" },
-              { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
-            ],
-            notificationType: "probation",
-            subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
-            summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
-            title: event.subject ?? "Probation reminder",
-            tone: row.days_remaining <= 15 ? "danger" : "warning",
-          },
-          eventType: "reminder_due",
-          message: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
-          metadata: {
-            ...metadata,
-            employeeHrId: employee.hrId,
-            idempotencyKey: `probation-reminder:${event.id}:${recipientHrId ?? "policy"}`,
-          },
-          module: "probation",
-          priority: row.days_remaining <= 15 ? "critical" : "high",
-          recipientHrId,
-          recordId: event.id,
-          subjectHrId: employee.hrId,
-          title: event.subject ?? "Probation reminder",
-        }),
-      ),
-    );
+    const actionUrl = `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`;
+    const notificationResult = await createSystemNotification({
+      actionUrl,
+      actorId: "system",
+      email: {
+        ctaHref: actionUrl,
+        ctaLabel: "Open Probation Review",
+        employeeHrId: employee.hrId,
+        metrics: [
+          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+          { label: "Hire date", value: employee.hireDate ?? "-" },
+          { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
+        ],
+        notificationType: "probation",
+        subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
+        summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+        title: event.subject ?? "Probation reminder",
+        tone: row.days_remaining <= 15 ? "danger" : "warning",
+      },
+      eventType: "reminder_due",
+      message: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+      metadata: {
+        ...metadata,
+        actionUrl,
+        area: employee.areaName ?? null,
+        department: employee.departmentName ?? null,
+        employeeHrId: employee.hrId,
+        employeeName: employee.fullName,
+        eventDate: todayDateOnly(),
+        hiringDate: employee.hireDate ?? null,
+        idempotencyKey: `probation-reminder:${event.id}:policy`,
+        line: employee.lineName ?? null,
+        managerName: employee.managerName ?? managerOf(employee, employees)?.fullName ?? null,
+        requestUrl: actionUrl,
+        status: "Feedback required",
+        team: employee.teamName ?? null,
+        workflowApproverHrIds: probationWorkflowApproverHrIds(employee, employees),
+      },
+      module: "probation",
+      priority: row.days_remaining <= 15 ? "critical" : "high",
+      recordId: event.id,
+      subjectHrId: employee.hrId,
+      title: event.subject ?? "Probation reminder",
+    });
+    const notificationResults = [notificationResult];
     const deliverySent = notificationResults.some((result) => result.deliveries.some((delivery) => delivery.status === "sent"));
 
     await markProbationReminderEvent(event.id, deliverySent ? "sent" : "failed", {
