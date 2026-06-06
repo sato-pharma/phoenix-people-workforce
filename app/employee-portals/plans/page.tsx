@@ -5,7 +5,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
 
@@ -17,13 +17,19 @@ export default async function PlansPage({
   searchParams: Promise<{ plan?: string | string[] }>;
 }) {
   const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
-  await assertPermission(access, "employee_profile", "read");
 
+  const canReadProfile = await canAccess(access, "employee_profile", "read");
   const canReadPlans = await canAccess(access, "weekly_plans", "read");
-  if (!canReadPlans && access.role !== "CEO" && access.role !== "Super Admin") {
+  if (
+    !canReadProfile ||
+    (!canReadPlans && access.role !== "CEO" && access.role !== "Super Admin")
+  ) {
     return (
       <EmployeePortalEmptyState
         message="Your position is not enabled for weekly/monthly planning."
