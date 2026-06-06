@@ -108,8 +108,8 @@ export function runNotificationGovernanceHardeningTests() {
 
   assertContains(
     policySource,
-    /"marketing_requests\.request_assigned":[\s\S]*recipientStrategy:\s*\["assigned_approver"\]/,
-    "marketing request_assigned must notify assigned approver only",
+    /"marketing_requests\.request_assigned":[\s\S]*recipientStrategy:\s*\["assigned_approver",\s*"cc"\]/,
+    "marketing request_assigned must notify the assigned approver plus the explicit line CC (PM/GPM) only",
   );
   assertContains(
     policySource,

@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { createAccessContext } from "@/lib/auth/permissions";
+import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   buildMarketingApprovedRequestRows,
+  buildMarketingManagerChain,
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
+  resolveLineCcHrIds,
 } from "@/lib/marketing-requests/service";
-import type { MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
+import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
 
 const baseInput: MarketingRequestCreateDraft = {
   customerId: "11111111-1111-1111-1111-111111111111",
@@ -65,7 +68,91 @@ const requestType = {
   sort_order: 10,
 };
 
-export function runMarketingRequestServiceTests() {
+const baseEmployee: EmployeeDirectoryRow = {
+  areaId: 30,
+  areaName: "Alex",
+  birthDate: null,
+  bankAccount: null,
+  bankName: null,
+  baseSalary: null,
+  basicSalary: null,
+  contractRenewalDate: null,
+  contractType: null,
+  createdAt: "2026-05-21T00:00:00.000Z",
+  crmId: null,
+  crmUsername: null,
+  departmentId: null,
+  departmentName: null,
+  education: null,
+  employmentStatus: "active",
+  extraCostOfLiving: null,
+  fullName: "Employee",
+  fuelAllowance: null,
+  gender: null,
+  grossSalary: null,
+  hasBankAccount: null,
+  hireDate: null,
+  hrId: "EMP000",
+  jobTitle: "Medical Rep",
+  lastWorkingDate: null,
+  lineId: 7,
+  lineName: "Anti infective",
+  managerHrId: null,
+  managerName: null,
+  pendingManagerReplacementForHrId: null,
+  medicalInsurance: null,
+  medicalInsuranceNumber: null,
+  medicalInsuranceStatus: null,
+  mobileNumber: null,
+  nameAr: null,
+  nationalId: null,
+  netSalary: null,
+  organogramVisible: true,
+  payrollEligible: true,
+  positionId: null,
+  positionTitle: null,
+  regionName: "Alex",
+  residenceAddress: null,
+  residenceArea: null,
+  residenceCity: null,
+  residenceGeocodeStatus: null,
+  residenceLatitude: null,
+  residenceLongitude: null,
+  resignationDate: null,
+  salaryPaymentMode: "one_part",
+  socialInsurance: null,
+  socialInsuranceNumber: null,
+  socialInsuranceStatus: null,
+  taxes: null,
+  teamId: null,
+  teamName: null,
+  updatedAt: "2026-05-21T00:00:00.000Z",
+  workEmail: null,
+};
+
+function makeEmployee(overrides: Partial<EmployeeDirectoryRow> & { hrId: string }): EmployeeDirectoryRow {
+  return { ...baseEmployee, ...overrides };
+}
+
+/** Minimal stub of the Supabase client surface resolveLineCcHrIds uses. */
+function fakeCcSupabase(rows: Array<{ hr_id: string }>) {
+  const builder = {
+    eq() {
+      return builder;
+    },
+    in() {
+      return Promise.resolve({ data: rows, error: null });
+    },
+    select() {
+      return builder;
+    },
+  };
+  return { from: () => builder } as unknown as Parameters<typeof resolveLineCcHrIds>[0]["supabase"];
+}
+
+const ccRequest = { areaId: 30, id: "REQ-CC", lineId: 7 } as unknown as MarketingRequest;
+
+export async function runMarketingRequestServiceTests() {
   const serviceSource = source("src/lib/marketing-requests/service.ts");
   const policySource = source("src/lib/notifications/policy.ts");
   const telegramTemplatesSource = source("src/lib/notifications/telegram-templates.ts");
@@ -347,4 +434,145 @@ export function runMarketingRequestServiceTests() {
   assert.equal(approvedRows[0].sumOfAmount, 1000);
   assert.equal(approvedRows[0].financeProofFileName, "proof.jpg");
   assert.equal(approvedRows[0].invoiceFileName, "invoice.pdf");
+
+  /* ---------------------------------------------------------------------- */
+  /* Approval-chain reshape: managerial chain builder                        */
+  /* ---------------------------------------------------------------------- */
+
+  // Medical Rep submits -> Direct Manager -> National Sales Manager (stop).
+  const repChainRows = [
+    makeEmployee({ fullName: "Rep One", hrId: "MR001", jobTitle: "Medical Rep", managerHrId: "DM001" }),
+    makeEmployee({ fullName: "District Mgr", hrId: "DM001", jobTitle: "District Manager", managerHrId: "NSM001" }),
+    makeEmployee({ fullName: "National Mgr", hrId: "NSM001", jobTitle: "National Sales Manager", managerHrId: "CEO001" }),
+    makeEmployee({ fullName: "Chief", hrId: "CEO001", jobTitle: "CEO", managerHrId: null }),
+  ];
+  const repChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: repChainRows,
+    requester: repChainRows[0],
+  });
+  assert.deepEqual(
+    repChain.map((step) => step.assignedHrId),
+    ["dm001", "nsm001"],
+    "Medical Rep chain must be Direct Manager then National Sales Manager",
+  );
+  assert.deepEqual(
+    repChain.map((step) => step.assignedRole),
+    ["District Manager", "National Sales Manager"],
+    "Medical Rep chain roles must classify via job function",
+  );
+
+  // District Manager submits -> chain starts at National Sales Manager (self-skip).
+  const dmChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: repChainRows,
+    requester: repChainRows[1],
+  });
+  assert.deepEqual(
+    dmChain.map((step) => step.assignedHrId),
+    ["nsm001"],
+    "District Manager chain must skip rep+DM and start at National Sales Manager",
+  );
+
+  // Cycle guard: A -> B -> A must terminate (no infinite loop) and not duplicate.
+  const cycleRows = [
+    makeEmployee({ hrId: "A001", jobTitle: "Medical Rep", managerHrId: "B001" }),
+    makeEmployee({ hrId: "B001", jobTitle: "District Manager", managerHrId: "A001" }),
+  ];
+  const cycleChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: cycleRows,
+    requester: cycleRows[0],
+  });
+  assert.ok(cycleChain.length <= 2, "cycle guard must stop the manager walk");
+  assert.equal(new Set(cycleChain.map((step) => step.assignedHrId)).size, cycleChain.length, "cycle chain must not duplicate seats");
+
+  // Missing NSM: rep -> DM only (DM has no resolvable manager) -> chain never reaches NSM.
+  const noNsmRows = [
+    makeEmployee({ hrId: "MR009", jobTitle: "Medical Rep", managerHrId: "DM009" }),
+    makeEmployee({ hrId: "DM009", jobTitle: "District Manager", managerHrId: null }),
+  ];
+  const noNsmChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: noNsmRows,
+    requester: noNsmRows[0],
+  });
+  assert.deepEqual(noNsmChain.map((step) => step.assignedHrId), ["dm009"], "chain stops when no NSM seat resolves");
+  assert.ok(
+    !noNsmChain.some((step) => step.assignedRole === "National Sales Manager"),
+    "chain without an NSM seat must not contain a National Sales Manager step",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Approval-chain reshape: line CC resolver (PM/GPM)                       */
+  /* ---------------------------------------------------------------------- */
+
+  const ccEmployees = [
+    makeEmployee({ hrId: "PM001", jobTitle: "Product Manager", lineId: 7 }),
+    makeEmployee({ hrId: "GPM001", jobTitle: "Group Product Manager", lineId: 8 }),
+    makeEmployee({ hrId: "GPM002", jobTitle: "Group Product Manager", lineId: 7 }),
+  ];
+
+  // No CC roles configured -> no CC recipients (no DB call required).
+  assert.deepEqual(
+    await resolveLineCcHrIds({ ccRoles: [], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
+    [],
+    "empty cc roles must resolve to no recipients",
+  );
+
+  // Many candidates: only same-line PM/GPM are CC'd; other-line GPM excluded.
+  const manyCc = await resolveLineCcHrIds({
+    ccRoles: ["Product Manager", "Group Product Manager"],
+    employeeRows: ccEmployees,
+    request: ccRequest,
+    supabase: fakeCcSupabase([{ hr_id: "PM001" }, { hr_id: "GPM001" }, { hr_id: "GPM002" }]),
+  });
+  assert.deepEqual(manyCc.sort(), ["gpm002", "pm001"], "only same-line PM/GPM are CC recipients");
+
+  // Single candidate match.
+  const oneCc = await resolveLineCcHrIds({
+    ccRoles: ["Product Manager"],
+    employeeRows: ccEmployees,
+    request: ccRequest,
+    supabase: fakeCcSupabase([{ hr_id: "PM001" }]),
+  });
+  assert.deepEqual(oneCc, ["pm001"], "single same-line PM resolves to one CC recipient");
+
+  // Unknown CC role string is ignored (no throw).
+  assert.deepEqual(
+    await resolveLineCcHrIds({ ccRoles: ["Not A Role"], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
+    [],
+    "unknown cc role strings must be ignored",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Approval-chain reshape: source + migration guards                      */
+  /* ---------------------------------------------------------------------- */
+
+  // Notification policy must expose the explicit "cc" recipient strategy and use it for assignment.
+  assert.match(policySource, /"cc"/, "notification policy must define a cc recipient strategy");
+  assert.match(
+    policySource,
+    /"marketing_requests\.request_assigned":[\s\S]*recipientStrategy:\s*\["assigned_approver",\s*"cc"\]/,
+    "request_assigned must CC the line PM/GPM via the cc strategy",
+  );
+  assert.match(policySource, /strategy === "cc"/, "policy resolver must handle the cc strategy");
+
+  // Service exposes resubmit, approver inbox, and request detail/tracking.
+  assert.match(serviceSource, /resubmitReturnedMarketingRequest/, "service must support returned -> resubmit");
+  assert.match(serviceSource, /getApproverPendingRequests/, "service must expose the approver inbox");
+  assert.match(serviceSource, /getMarketingRequestDetail/, "service must expose request detail for tracking");
+  assert.match(serviceSource, /stepProgressByRequestId/, "workspace must expose step progress for tracking");
+  assert.match(serviceSource, /buildMarketingStepProgress/, "service must compute compact step progress");
+
+  // New API routes exist.
+  assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");
+  assert.match(source("app/api/marketing-requests/inbox/route.ts"), /getApproverPendingRequests/, "inbox route must call the service");
+  assert.match(source("app/api/marketing-requests/[id]/route.ts"), /getMarketingRequestDetail/, "request detail route must call the service");
+
+  // Migration reshape tokens.
+  const chainMigration = source("supabase/migrations/20260606180000_marketing_workflow_chain_reshape.sql");
+  for (const token of ["step_kind", "chain_target_role", "cc_roles", "terminal_status", "allow_reject", "manager_chain", "sfe_validation", "marketing_review", "ceo_approval", "finance_execution"]) {
+    assert.match(chainMigration, new RegExp(token), `chain reshape migration must define ${token}`);
+  }
 }

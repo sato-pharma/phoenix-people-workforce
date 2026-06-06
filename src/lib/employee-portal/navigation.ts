@@ -8,6 +8,7 @@ export type EmployeePortalNavVisibility = {
   showIncentiveTab?: boolean;
   showManagementTab?: boolean;
   showMarketingRequestsTab?: boolean;
+  showMarketingInboxTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
   showMarketingRoiTrackingTab?: boolean;
@@ -155,6 +156,7 @@ export function resolveEmployeePortalNavVisibility(
   // a role that was not already authorized for it.
   const betaNavEnabled = isEmployeePortalBetaNavEnabled();
   const showMarketingRequestsTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingInboxTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingCustomerDatabaseTab = betaNavEnabled && canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = betaNavEnabled && canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = betaNavEnabled && canUseEmployeePortalMarketingRoiTracking(resolvedRole);
@@ -180,6 +182,7 @@ export function resolveEmployeePortalNavVisibility(
     showManagementTab,
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
+    showMarketingInboxTab,
     showMarketingRequestsTab,
     showMarketingRoiTrackingTab,
     showMedRepsPerformanceTab,
