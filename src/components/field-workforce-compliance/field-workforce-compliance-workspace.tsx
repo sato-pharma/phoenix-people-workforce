@@ -1958,6 +1958,13 @@ export function FieldWorkforceComplianceWorkspace() {
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [archiveActiveTab, setArchiveActiveTab] = useState<WorkspaceTab>("timeline");
+  const [crmMonth, setCrmMonth] = useState(() => new Date().getMonth() + 1);
+  const [crmYear, setCrmYear] = useState(() => new Date().getFullYear());
+  const [isImportingCrm, setIsImportingCrm] = useState(false);
+  const crmYearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    return [current + 1, current, current - 1, current - 2];
+  }, []);
 
   const loadArchives = useCallback(async () => {
     setIsLoadingArchives(true);
@@ -2061,6 +2068,40 @@ export function FieldWorkforceComplianceWorkspace() {
       setMessage(error instanceof Error ? error.message : "Preview failed.");
     } finally {
       setIsPreviewing(false);
+    }
+  }
+
+  async function handleImportFromIReports360() {
+    if (isImportingCrm || isPreviewing) return;
+    setIsImportingCrm(true);
+    setResult(null);
+    setErrors([]);
+    setWarnings([]);
+    setMessage(null);
+    setArchiveMessage(null);
+    setArchiveError(null);
+    setSelectedFile(null);
+
+    try {
+      const response = await fetch("/api/admin/field-workforce-compliance/import-from-ireports360", {
+        body: JSON.stringify({ month: crmMonth, year: crmYear }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJsonResponse<PreviewResponse>(response);
+      setErrors(payload.errors ?? []);
+      setWarnings(payload.warnings ?? payload.data?.warnings ?? []);
+      if (payload.success && payload.data) {
+        setResult(payload.data);
+        setActiveTab("timeline");
+      } else {
+        setActiveTab("overview");
+        setMessage(payload.message ?? payload.error ?? "iReports360 import failed.");
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "iReports360 import failed.");
+    } finally {
+      setIsImportingCrm(false);
     }
   }
 
@@ -2261,6 +2302,47 @@ export function FieldWorkforceComplianceWorkspace() {
                 }}
               />
             </Card>
+          </div>
+        </AdminTableShell>
+
+        <AdminTableShell
+          description="Pull the month's field activity straight from iReports360 — no manual file needed. Read-only; nothing is archived until you choose Save Archived Month."
+          title="Live Import (iReports360)"
+        >
+          <div className="flex flex-wrap items-end gap-3 p-4">
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              Month
+              <select
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                value={crmMonth}
+                onChange={(event) => setCrmMonth(Number(event.target.value))}
+              >
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
+                  <option key={monthValue} value={monthValue}>{monthValue}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              Year
+              <select
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                value={crmYear}
+                onChange={(event) => setCrmYear(Number(event.target.value))}
+              >
+                {crmYearOptions.map((yearValue) => (
+                  <option key={yearValue} value={yearValue}>{yearValue}</option>
+                ))}
+              </select>
+            </label>
+            <Button
+              className="gap-2 rounded-xl font-black"
+              disabled={isImportingCrm || isPreviewing}
+              type="button"
+              onClick={() => void handleImportFromIReports360()}
+            >
+              {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              Import from iReports360
+            </Button>
           </div>
         </AdminTableShell>
 
