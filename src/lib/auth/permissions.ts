@@ -733,20 +733,22 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
 }
 
 async function getPermissionMatrixFromDb(): Promise<PermissionMatrix> {
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("role_permission_overrides")
-      .select("role_name,resource,action,is_allowed");
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("role_permission_overrides")
+    .select("role_name,resource,action,is_allowed");
 
-    if (error || !data) {
-      return clonePermissionMatrix(defaultPermissionMatrix);
-    }
-
-    return toPermissionMatrix(data as PermissionDbOverrideRow[]);
-  } catch {
-    return clonePermissionMatrix(defaultPermissionMatrix);
+  // Never swallow a load failure into the default matrix. A silent revert to
+  // defaults can re-grant access an admin explicitly revoked (or drop a grant)
+  // with no trace. Surface it and let resolvePermissionMatrix fall back to the
+  // last-known-good matrix instead of quietly changing the live policy.
+  if (error || !data) {
+    throw new Error(
+      `Failed to load role_permission_overrides: ${error?.message ?? "no rows returned"}`,
+    );
   }
+
+  return toPermissionMatrix(data as PermissionDbOverrideRow[]);
 }
 
 async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
@@ -755,12 +757,25 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
   }
 
   if (!permissionMatrixPromise) {
-    permissionMatrixPromise = getPermissionMatrixFromDb().then((matrix) => {
-      permissionCache = { fetchedAt: Date.now(), matrix };
-      return matrix;
-    }).finally(() => {
-      permissionMatrixPromise = null;
-    });
+    permissionMatrixPromise = getPermissionMatrixFromDb()
+      .then((matrix) => {
+        permissionCache = { fetchedAt: Date.now(), matrix };
+        return matrix;
+      })
+      .catch((error) => {
+        // Fail observable, not silent. Retain the last-known-good matrix so a
+        // transient DB error can't quietly widen access; only a cold start with
+        // no prior matrix falls back to the built-in defaults. We intentionally
+        // do not cache this degraded result, so the next call retries the DB.
+        console.error(
+          "[permissions] role_permission_overrides load failed; retaining last-known matrix",
+          error,
+        );
+        return permissionCache?.matrix ?? clonePermissionMatrix(defaultPermissionMatrix);
+      })
+      .finally(() => {
+        permissionMatrixPromise = null;
+      });
   }
 
   return permissionMatrixPromise;
