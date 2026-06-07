@@ -1,10 +1,12 @@
+import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
+
 export type EgyptianNationalHoliday = {
   description: string | null;
   durationDays: number;
   endDate: string | null;
   id: string;
   name: string;
-  source: "google_calendar";
+  source: "company" | "google_calendar";
   startDate: string;
 };
 
@@ -143,6 +145,29 @@ function monthDateRange(year: number, month: number) {
 function overlapsMonth(input: { endDate: string | null; monthEnd: string; monthStart: string; startDate: string }) {
   const endDate = input.endDate ?? input.startDate;
   return input.startDate <= input.monthEnd && endDate >= input.monthStart;
+}
+
+function companyHolidayRows(month: number, year: number): EgyptianNationalHoliday[] {
+  return getCompanyHolidaysForMonth({ month, year }).map((holiday) => {
+    const endDate = holiday.endDate ?? holiday.startDate;
+    return {
+      description: null,
+      durationDays: inclusiveDaysBetween(holiday.startDate, endDate),
+      endDate,
+      id: `company-${holiday.startDate}`,
+      name: holiday.name,
+      source: "company" as const,
+      startDate: holiday.startDate,
+    };
+  });
+}
+
+/** Merges company-defined holidays into the Google calendar holidays for a month. */
+function withCompanyHolidays(
+  googleHolidays: EgyptianNationalHoliday[],
+  company: EgyptianNationalHoliday[],
+): EgyptianNationalHoliday[] {
+  return company.length > 0 ? mergeHolidayRows([...googleHolidays, ...company]) : googleHolidays;
 }
 
 async function fetchGoogleHolidayCalendar(input: {
@@ -303,6 +328,7 @@ export async function getEgyptianNationalHolidays(input: {
   const cached = holidayCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.result;
 
+  const company = companyHolidayRows(month, year);
   const configuredCalendarId = process.env.GOOGLE_HOLIDAY_CALENDAR_ID_EG?.trim();
   const calendarCandidates = Array.from(new Set([
     configuredCalendarId,
@@ -321,7 +347,10 @@ export async function getEgyptianNationalHolidays(input: {
     } else {
       lastStatus = icsResponse.status;
       if (icsResponse.ok) {
-        const holidays = icsEventsToHolidays(parseGoogleHolidayIcs(await icsResponse.text()), monthStart, monthEnd);
+        const holidays = withCompanyHolidays(
+          icsEventsToHolidays(parseGoogleHolidayIcs(await icsResponse.text()), monthStart, monthEnd),
+          company,
+        );
         const result = {
           calendarId: candidateCalendarId,
           connected: true,
@@ -354,7 +383,7 @@ export async function getEgyptianNationalHolidays(input: {
       const result = {
         calendarId: candidateCalendarId,
         connected: true,
-        holidays: googleEventsToHolidays(payload.items ?? [], monthStart, monthEnd),
+        holidays: withCompanyHolidays(googleEventsToHolidays(payload.items ?? [], monthStart, monthEnd), company),
         message: null,
         month,
         sourceLabel: "Google Calendar Egypt public holidays",
@@ -367,9 +396,11 @@ export async function getEgyptianNationalHolidays(input: {
 
   const result = {
     calendarId: calendarCandidates[0] ?? null,
-    connected: false,
-    holidays: [],
-    message: `Google Calendar Egypt holiday calendar could not be loaded from the public iCal feed${apiKey.trim() ? " or Calendar API" : ""}. Last status: ${lastStatus || "unknown"}.`,
+    connected: company.length > 0,
+    holidays: company,
+    message: company.length > 0
+      ? null
+      : `Google Calendar Egypt holiday calendar could not be loaded from the public iCal feed${apiKey.trim() ? " or Calendar API" : ""}. Last status: ${lastStatus || "unknown"}.`,
     month,
     sourceLabel: "Google Calendar Egypt public holidays",
     year,
