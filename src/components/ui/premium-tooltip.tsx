@@ -32,7 +32,12 @@ export function PremiumTooltip({
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (placement === "cursor") {
-      setPosition({ x: e.clientX, y: e.clientY });
+      const pad = 12;
+      const estWidth = Math.min(288, window.innerWidth - pad * 2);
+      const estHeight = 200;
+      const x = Math.min(e.clientX + pad, window.innerWidth - estWidth - pad);
+      const y = Math.min(e.clientY + pad, window.innerHeight - estHeight - pad);
+      setPosition({ x: Math.max(pad, x), y: Math.max(pad, y) });
     }
   };
 
@@ -49,7 +54,7 @@ export function PremiumTooltip({
       {isVisible && (
         <div
           className={cn(
-            "z-50 w-72 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.12)] pointer-events-none",
+            "z-50 w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.12)] pointer-events-none",
             placement === "top"
               ? "absolute bottom-full left-1/2 mb-2 -translate-x-1/2"
               : "fixed",
