@@ -1,4 +1,5 @@
 import type { SalesBatch, SalesDashboardData, SalesProductPerformanceRow } from "@/lib/sales/types";
+import { roundCurrency } from "@/lib/payroll/money";
 
 export type SalesMetricRecord = Record<string, unknown> & {
   batchId?: string | null;
@@ -115,8 +116,8 @@ export function buildSalesManagerPerformanceGroups<TMember extends SalesManagerP
 
   return [...groups.entries()]
     .map(([managerHrId, group]) => {
-      const totalSales = group.members.reduce((sum, member) => sum + valueAsNumber(member.totalSales), 0);
-      const totalTarget = group.members.reduce((sum, member) => sum + valueAsNumber(member.totalTarget), 0);
+      const totalSales = roundCurrency(group.members.reduce((sum, member) => sum + valueAsNumber(member.totalSales), 0));
+      const totalTarget = roundCurrency(group.members.reduce((sum, member) => sum + valueAsNumber(member.totalTarget), 0));
       return {
         achievementPercent: salesAchievementRate(totalSales, totalTarget) * 100,
         managerHrId,
@@ -131,6 +132,13 @@ export function buildSalesManagerPerformanceGroups<TMember extends SalesManagerP
 
 export function sumSalesMetricRows<T extends Record<string, unknown>>(rows: T[], key: string) {
   return rows.reduce((total, row) => total + valueAsNumber(row[key]), 0);
+}
+
+// Money variant: rounds the aggregate to cents to absorb float drift from summing
+// many already-rounded currency rows. Use for currency keys (salesValue/targetValue);
+// keep sumSalesMetricRows for unit/count sums.
+export function sumSalesMetricMoney<T extends Record<string, unknown>>(rows: T[], key: string) {
+  return roundCurrency(sumSalesMetricRows(rows, key));
 }
 
 export function aggregateSalesMetricRows<T extends Record<string, unknown>>(rows: T[], key: string) {
@@ -201,8 +209,8 @@ function areaLabel(items: SalesMetricRecord[]) {
 
 export function buildSalesDashboardView(rows: SalesMetricRecord[], fallbackSummary: Record<string, unknown> = {}): SalesDashboardView {
   const reportRows = rows.filter((row) => !isC01Row(row));
-  const totalSales = sumSalesMetricRows(rows, "salesValue");
-  const totalTarget = sumSalesMetricRows(rows, "targetValue");
+  const totalSales = sumSalesMetricMoney(rows, "salesValue");
+  const totalTarget = sumSalesMetricMoney(rows, "targetValue");
   const unitsSold = sumSalesMetricRows(rows, "salesUnits");
   const activeProducts = new Set(reportRows.map((row) => valueAsText(row.product)).filter(Boolean)).size;
   const linkedEmployees = new Set(reportRows.map((row) => valueAsText(row.employeeHrId)).filter(Boolean)).size;
@@ -213,8 +221,8 @@ export function buildSalesDashboardView(rows: SalesMetricRecord[], fallbackSumma
   const trendRows = [...aggregateSalesMetricRows(rows, "period").entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([period, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return {
         achievementRate: salesAchievementRate(sales, target),
         linkedEmployees: new Set(items.map((item) => valueAsText(item.employeeHrId)).filter(Boolean)).size,
@@ -226,10 +234,10 @@ export function buildSalesDashboardView(rows: SalesMetricRecord[], fallbackSumma
 
   const managerRows = [...aggregateSalesMetricRows(reportRows, "managerName").entries()]
     .map(([manager, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       const topProduct = [...aggregateSalesMetricRows(items, "product").entries()]
-        .map(([product, productRows]) => ({ product, sales: sumSalesMetricRows(productRows, "salesValue") }))
+        .map(([product, productRows]) => ({ product, sales: sumSalesMetricMoney(productRows, "salesValue") }))
         .sort((left, right) => right.sales - left.sales)[0]?.product ?? "Unknown";
       return { achievementRate: salesAchievementRate(sales, target), area: areaLabel(items), manager: cleanPersonName(manager), sales, target, topProduct };
     })
@@ -237,46 +245,46 @@ export function buildSalesDashboardView(rows: SalesMetricRecord[], fallbackSumma
 
   const lineRows = [...aggregateSalesMetricRows(reportRows, "line").entries()]
     .map(([line, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return { achievementRate: salesAchievementRate(sales, target), line, rows: items.length, sales, target };
     })
     .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
 
   const productRows = [...aggregateSalesMetricRows(reportRows, "product").entries()]
     .map(([product, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return { achievementRate: salesAchievementRate(sales, target), family: valueAsText(items[0]?.family) || "Unknown", product, sales, target };
     })
     .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
 
   const repRows = [...aggregateSalesMetricRows(reportRows.filter((row) => valueAsText(row.employeeName)), "employeeName").entries()]
     .map(([rep, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return { achievementRate: salesAchievementRate(sales, target), area: areaLabel(items), rep: cleanPersonName(rep), sales, target };
     })
     .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
 
   const territoryRows = [...aggregateSalesMetricRows(reportRows, "territory").entries()]
     .map(([name, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return { achievementRate: salesAchievementRate(sales, target), name, sales, target };
     })
     .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
 
   const familyRows = [...aggregateSalesMetricRows(reportRows, "family").entries()]
     .map(([name, items]) => {
-      const sales = sumSalesMetricRows(items, "salesValue");
-      const target = sumSalesMetricRows(items, "targetValue");
+      const sales = sumSalesMetricMoney(items, "salesValue");
+      const target = sumSalesMetricMoney(items, "targetValue");
       return { achievementRate: salesAchievementRate(sales, target), name, sales, target, units: sumSalesMetricRows(items, "salesUnits") };
     })
     .sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales));
 
   const channelMix = [...aggregateSalesMetricRows(reportRows, "salesType").entries()]
-    .map(([name, items]) => ({ name, value: sumSalesMetricRows(items, "salesValue") }))
+    .map(([name, items]) => ({ name, value: sumSalesMetricMoney(items, "salesValue") }))
     .sort((left, right) => valueAsNumber(right.value) - valueAsNumber(left.value));
 
   return {
@@ -321,7 +329,7 @@ export function buildSalesProductAnalytics(data: SalesDashboardData, searchQuery
   const topProducts = topBySales.slice(0, 5);
   const bottomProducts = [...products].sort((a, b) => a.achievementRate - b.achievementRate).slice(0, 5);
   const top5Sales = topBySales.slice(0, 5);
-  const top5SalesTotal = top5Sales.reduce((sum, product) => sum + product.sales, 0);
+  const top5SalesTotal = roundCurrency(top5Sales.reduce((sum, product) => sum + product.sales, 0));
   const others = Math.max(0, totalSales - top5SalesTotal);
   const productMix = [
     ...top5Sales.map((product) => ({

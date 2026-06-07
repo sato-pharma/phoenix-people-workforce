@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { roundCurrency } from "@/lib/payroll/money";
 import type { ExecExportData, ExecutiveReport } from "@/lib/sales/executive-report";
 import type { MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import {
@@ -236,7 +237,7 @@ function writeGeographySheet(workbook: ExcelJS.Workbook, report: ExecutiveReport
     rows: regions.map((rg) => [
       rg.regionName,
       F(sumifs(ref.dpUnits, [[ref.dpRegion, rg.regionCode]]), rg.units),
-      F(sumifs(ref.dpValue, [[ref.dpRegion, rg.regionCode]]), rg.value),
+      F(sumifs(ref.dpValue, [[ref.dpRegion, rg.regionCode]]), roundCurrency(rg.value)),
       F(div0(sumifs(ref.dpValue, [[ref.dpRegion, rg.regionCode]]), sumAll(ref.dpValue)), c.national.value > 0 ? rg.value / c.national.value : 0),
     ]),
     title: "By Region",
@@ -251,7 +252,7 @@ function writeGeographySheet(workbook: ExcelJS.Workbook, report: ExecutiveReport
     rows: areas.map((ar) => [
       ar.areaName, ar.regionName,
       F(sumifs(ref.dpUnits, [[ref.dpArea, ar.areaCode]]), ar.units),
-      F(sumifs(ref.dpValue, [[ref.dpArea, ar.areaCode]]), ar.value),
+      F(sumifs(ref.dpValue, [[ref.dpArea, ar.areaCode]]), roundCurrency(ar.value)),
       F(div0(sumifs(ref.dpValue, [[ref.dpArea, ar.areaCode]]), sumAll(ref.dpValue)), c.national.value > 0 ? ar.value / c.national.value : 0),
     ]),
     title: "By Area",
