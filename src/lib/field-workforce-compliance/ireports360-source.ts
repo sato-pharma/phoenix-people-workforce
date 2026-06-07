@@ -132,19 +132,25 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const dayCount = daysInMonth(year, month);
   const dateIsos = Array.from({ length: dayCount }, (_, index) => `${monthPrefix}-${pad2(index + 1)}`);
 
-  // Group this month's visits by agent id, and index agent ids by normalized agent name
-  // (a username fallback for the few employees with a CRM username but no CRM id).
-  const visitsByAgent = new Map<number, IReports360Visit[]>();
+  // Credit each visit to BOTH its primary agent AND its joint/"double" partner, indexing
+  // ids by normalized name (a username fallback for employees with a CRM username but no
+  // CRM id). Managers and senior staff often only ride along on reps' visits as the
+  // doubleID, so without this they would wrongly show zero worked days.
+  const visitsByParticipant = new Map<number, IReports360Visit[]>();
   const agentIdByName = new Map<string, number>();
+  const creditVisit = (participantId: number, name: string | null, visit: IReports360Visit) => {
+    if (!visitsByParticipant.has(participantId)) visitsByParticipant.set(participantId, []);
+    visitsByParticipant.get(participantId)!.push(visit);
+    const nameKey = normalizeAgentName(name);
+    if (nameKey && !agentIdByName.has(nameKey)) agentIdByName.set(nameKey, participantId);
+  };
   for (const visit of visits) {
     const dayIso = (visit.visitDate ?? "").slice(0, 10);
     if (!dayIso.startsWith(monthPrefix)) continue;
-    if (!visitsByAgent.has(visit.agentID)) {
-      visitsByAgent.set(visit.agentID, []);
-      const nameKey = normalizeAgentName(visit.agentName);
-      if (nameKey && !agentIdByName.has(nameKey)) agentIdByName.set(nameKey, visit.agentID);
+    creditVisit(visit.agentID, visit.agentName, visit);
+    if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
+      creditVisit(visit.doubleID, visit.doubleName, visit);
     }
-    visitsByAgent.get(visit.agentID)!.push(visit);
   }
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
@@ -163,7 +169,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       const byName = agentIdByName.get(normalizeAgentName(employee.crmUsername));
       if (byName != null) agentId = byName;
     }
-    const agentVisits = Number.isFinite(agentId) ? visitsByAgent.get(agentId) ?? [] : [];
+    const agentVisits = Number.isFinite(agentId) ? visitsByParticipant.get(agentId) ?? [] : [];
 
     const byDay = new Map<string, IReports360Visit[]>();
     for (const visit of agentVisits) {
