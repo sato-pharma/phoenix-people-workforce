@@ -152,6 +152,18 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /access\.role === "Super Admin" \|\| isDesignatedHrSpecialist\(access\)/);
   assert.match(serviceSource, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/);
   assert.match(serviceSource, /managerOfManagerHrId/);
+  // CEO-direct-reports: the parallel chain requires only a direct manager; the
+  // manager-of-manager step is included only when one exists (no manager above the CEO).
+  assert.match(
+    serviceSource,
+    /\.\.\.\(managerOfManager\?\.hrId\s*\n\s*\?\s*\[/,
+    "manager-of-manager approval step must be optional so direct reports to the top of the org can submit",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /if \(!manager\?\.hrId \|\| !managerOfManager\?\.hrId\) \{/,
+    "vacation submit must not hard-require a manager-of-manager (blocks CEO direct reports)",
+  );
   assert.match(serviceSource, /getVacationPolicyWarnings/);
   assert.match(typesSource, /label: "Pending HR", value: "pending_hr"/);
   assert.match(serviceSource, /\.in\("vacation_type", \["annual", "emergency"\]\)/);
