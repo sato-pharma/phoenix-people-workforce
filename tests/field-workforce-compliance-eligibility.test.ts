@@ -40,6 +40,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     "Group Product Manager",
     "Marketing Manager",
     "Training Manager",
+    "SFE Manager", // appears in the compliance report (excluded from deductions elsewhere)
   ]) {
     assert.equal(
       isFieldWorkforceComplianceEligibleTitle(eligible),
@@ -48,9 +49,8 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     );
   }
 
-  // --- Helper: who is excluded (everyone else, incl. SFE Manager by default) ---
+  // --- Helper: who is excluded (back-office, system, blank titles) ---
   for (const excluded of [
-    "SFE Manager",
     "HR Manager",
     "Finance Manager",
     "R And D Manager",
