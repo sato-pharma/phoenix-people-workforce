@@ -9,6 +9,7 @@ import {
 } from "@/lib/sales/contracts";
 import { parseSalesUpload } from "@/lib/sales/parser";
 import { filterClosingSheetRollupRecords, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
+import { roundCurrency } from "@/lib/payroll/money";
 import type { SalesBatchReconciliation, SalesRecordInput } from "@/lib/sales/types";
 
 type UploadSummaryDetails = {
@@ -129,9 +130,9 @@ function summarizeUploadTotals(records: SalesRecordInput[]) {
     nsmTotal: 0,
     products: new Set(records.map((record) => record.product).filter(Boolean)).size,
     salesUnits: sum(importableRecords, (record) => record.salesUnits),
-    salesValue: sum(importableRecords, (record) => record.salesValue),
+    salesValue: roundCurrency(sum(importableRecords, (record) => record.salesValue)),
     targetUnits: sum(importableRecords, (record) => record.targetUnits),
-    targetValue: sum(importableRecords, (record) => record.targetValue),
+    targetValue: roundCurrency(sum(importableRecords, (record) => record.targetValue)),
     territories: new Set(records.map((record) => record.territory).filter(Boolean)).size,
     totalRows: records.length,
     warningRows: records.filter((record) => record.validationState === "warning").length,
@@ -154,9 +155,9 @@ function summarizeManagerTotals(records: SalesRecordInput[]) {
       manager,
       rows: items.length,
       salesUnits: sum(items, (record) => record.salesUnits),
-      salesValue: sum(items, (record) => record.salesValue),
+      salesValue: roundCurrency(sum(items, (record) => record.salesValue)),
       targetUnits: sum(items, (record) => record.targetUnits),
-      targetValue: sum(items, (record) => record.targetValue),
+      targetValue: roundCurrency(sum(items, (record) => record.targetValue)),
     }))
     .sort((left, right) => right.salesValue - left.salesValue);
 }
