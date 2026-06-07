@@ -1725,27 +1725,67 @@ export async function listPublishedDeductionsForPortal(input: {
   return { comments, lines };
 }
 
+/** The last `count` calendar month keys (YYYY-MM), most recent first, including the current month. */
+function recentCalendarMonthKeys(count: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let offset = 0; offset < count; offset += 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
 /**
- * Returns the distinct month keys that have at least one deduction candidate,
- * sorted descending (most recent first). Used to populate the monthKey picker
- * in the Deductions Governance workspace so users never have to type a date.
+ * Returns the month keys the Deductions Governance picker should offer, sorted
+ * descending (most recent first). This is the UNION of:
+ *   - months that already have deduction candidates (so finished months stay pickable);
+ *   - months with an archived Field Workforce Compliance import (the months you can
+ *     actually sync FWC absence from — the primary source);
+ *   - the last few calendar months (so the current month and recent months are always
+ *     available to bootstrap a first sync of attendance/vacation).
+ *
+ * Without the FWC/calendar months a brand-new install has zero candidates, so the picker
+ * was empty and every action errored with "Select a monthKey filter ..." — a chicken-and-egg
+ * because you needed a month picked to Sync, but the list only came from already-synced data.
  */
 export async function listAvailableDeductionMonthKeys(input: {
   access: AccessContext;
-}): Promise<string[]> {
+}): Promise<{ defaultMonthKey: string | undefined; months: string[] }> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("deduction_candidates")
-    .select("month_key")
-    .order("month_key", { ascending: false });
-  if (error) throw error;
-  const seen = new Set<string>();
-  const months: string[] = [];
-  for (const row of data ?? []) {
-    const key = String(row.month_key ?? "").trim();
-    if (key && !seen.has(key)) { seen.add(key); months.push(key); }
-  }
-  return months;
+
+  const [candidateResult, fwcResult] = await Promise.all([
+    supabase.from("deduction_candidates").select("month_key"),
+    supabase
+      .from("field_workforce_compliance_imports")
+      .select("month_key")
+      .eq("status", "archived"),
+  ]);
+  if (candidateResult.error) throw candidateResult.error;
+  // FWC archive lookup is a best-effort enrichment; never let it break the picker.
+  const fwcRows = fwcResult.error ? [] : fwcResult.data ?? [];
+
+  const candidateMonths = new Set<string>();
+  const fwcMonths = new Set<string>();
+  const collect = (set: Set<string>, value: unknown) => {
+    const key = String(value ?? "").trim();
+    if (key) set.add(key);
+  };
+  for (const row of candidateResult.data ?? []) collect(candidateMonths, row.month_key);
+  for (const row of fwcRows) collect(fwcMonths, row.month_key);
+
+  const all = new Set<string>([...candidateMonths, ...fwcMonths, ...recentCalendarMonthKeys(4)]);
+  const months = Array.from(all).sort((left, right) => right.localeCompare(left));
+
+  const descending = (set: Set<string>) =>
+    Array.from(set).sort((left, right) => right.localeCompare(left))[0];
+
+  // Prefer a month that actually has data to act on: most recent month with
+  // candidates, else most recent archived FWC month, else the most recent month
+  // offered (current calendar month) as a last resort.
+  const defaultMonthKey = descending(candidateMonths) ?? descending(fwcMonths) ?? months[0];
+
+  return { defaultMonthKey, months };
 }
 
 // Type-only re-exports kept so call sites can type their state shape against

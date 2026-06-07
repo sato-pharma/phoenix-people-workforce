@@ -39,16 +39,19 @@ export default async function AdminDeductionsGovernancePage() {
   let initialAudit = null;
   let initialComments = null;
   let availableMonthKeys: string[] = [];
+  let defaultMonth: string | undefined;
 
-  // Fetch available months first so we can pre-select the most recent one,
-  // then load all data scoped to that month by default.
+  // Fetch selectable months first (candidates + FWC archive months + recent calendar
+  // months) so the picker is never empty, then pre-select the best default and load all
+  // data scoped to that month.
   try {
-    availableMonthKeys = await listAvailableDeductionMonthKeys({ access });
+    const monthInfo = await listAvailableDeductionMonthKeys({ access });
+    availableMonthKeys = monthInfo.months;
+    defaultMonth = monthInfo.defaultMonthKey;
   } catch {
-    // Non-fatal — workspace falls back to empty dropdown
+    // Non-fatal — workspace falls back to a free-text month input
   }
 
-  const defaultMonth = availableMonthKeys[0]; // most recent, descending order
   const filters = defaultMonth ? { monthKey: defaultMonth } : ({} as const);
 
   try {
