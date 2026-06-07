@@ -114,12 +114,10 @@ If a workflow is repeatedly manual:
 
 # Git/GitHub Workflow Rules
 
-Never assume it is safe to work directly on main.
-
 Current Phoenix Workforce branch policy:
 
-- `main` is production-only and must not be edited directly.
-- `codex/work-from-production` is the active working branch for new edits, functions, fixes, and feature work.
+- `main` is the production branch. The user (project owner) may approve direct commits to `main` at their discretion.
+- `codex/work-from-production` is the default working branch for new edits, functions, fixes, and feature work.
 - Production URL: `https://phoenix-workforce.vercel.app`.
 - Working preview URL: `https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app`.
 - Vercel should keep only two active deployments: production `main` and the `codex/work-from-production` preview.
@@ -156,8 +154,7 @@ Never confuse preview/staging with production.
 
 ## Branch Strategy
 
-- `main` is production only.
-- Never edit `main` directly.
+- `main` is the production branch. Direct pushes to `main` are permitted when explicitly approved by the user.
 - Use one active working branch per active PR.
 - Use `codex/ceo-staging-rebuild-hardening` only for PR #24 related fixes until PR #24 is merged or closed.
 - After PR #24 is merged or closed, create a fresh branch for unrelated work.
@@ -172,7 +169,7 @@ git branch --show-current
 git log -1 --oneline
 ```
 
-If the current branch is `main`, stop and switch/create a safe branch before editing.
+Confirm with the user before pushing directly to `main` unless they have already explicitly approved it.
 
 ## Parallel Session and Git Worktree Safety
 

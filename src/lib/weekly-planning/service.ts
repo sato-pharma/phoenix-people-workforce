@@ -205,6 +205,7 @@ export type EmployeePlansWorkspace = {
     fullName: string;
     hrId: string;
     lineName: string | null;
+    regionName: string | null;
   }>;
   plans: EmployeePlan[];
   schemaReady: boolean;
@@ -396,6 +397,7 @@ async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | nul
       fullName: candidate.fullName,
       hrId: candidate.hrId,
       lineName: candidate.lineName,
+      regionName: candidate.regionName,
     }))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
