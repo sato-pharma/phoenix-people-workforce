@@ -1285,7 +1285,14 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
       .eq("is_active", true)
       .in("role", ["HR Specialist", "Super Admin"]);
 
-    if (error) return [];
+    if (error) {
+      // Fail observable, not silent: returning [] here means HR/Super Admin are
+      // notified about nobody. Keep returning [] so a notification-lookup failure
+      // never blocks the employee's vacation action, but log it so the dropped
+      // notification is diagnosable.
+      console.error("[vacation] HR recipient lookup failed; HR notifications skipped", error);
+      return [];
+    }
 
     return (data ?? [])
       .map((row) => {
@@ -1301,7 +1308,8 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
         };
       })
       .filter((entry): entry is HrRecipient => Boolean(entry));
-  } catch {
+  } catch (error) {
+    console.error("[vacation] HR recipient lookup threw; HR notifications skipped", error);
     return [];
   }
 }
