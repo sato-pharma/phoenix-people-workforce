@@ -48,6 +48,13 @@ export class IReports360ApiError extends Error {
   }
 }
 
+function normalizeHttpStatus(status: number): number {
+  if (!Number.isFinite(status) || status < 100 || status > 599) return 502;
+  if (status === 401 || status === 400 || status === 403 || status === 404 || status === 409 || status === 429) return status;
+  if (status >= 500 && status <= 599) return status;
+  return 502;
+}
+
 function messageFromPayload(payload: unknown, fallback: string): string {
   if (payload && typeof payload === "object" && "message" in payload) {
     const message = (payload as { message?: unknown }).message;
@@ -90,7 +97,7 @@ async function fetchJson(
   if (!response.ok) {
     throw new IReports360ApiError(
       messageFromPayload(payload, `iReports360 responded with HTTP ${response.status}.`),
-      response.status === 401 ? 401 : 502,
+      normalizeHttpStatus(response.status),
     );
   }
 
@@ -108,6 +115,10 @@ export async function iReports360Login(config: IReports360Config): Promise<strin
     },
     config.timeoutMs,
   )) as { message?: string; success?: boolean; token?: string } | null;
+
+  if (payload?.success === false) {
+    throw new IReports360ApiError(messageFromPayload(payload, "iReports360 login failed."), 401);
+  }
 
   if (!payload?.token) {
     throw new IReports360ApiError(
@@ -137,7 +148,10 @@ export async function iReports360GetVisits(
     url,
     { headers: { Authorization: `Bearer ${token}` }, method: "GET" },
     config.timeoutMs,
-  )) as { data?: IReports360Visit[] } | null;
+  )) as { data?: IReports360Visit[]; message?: string; success?: boolean } | null;
+  if (payload?.success === false) {
+    throw new IReports360ApiError(messageFromPayload(payload, "iReports360 visits request failed."), 502);
+  }
   return Array.isArray(payload?.data) ? payload.data : [];
 }
 
@@ -156,6 +170,9 @@ export async function iReports360GetCheckins(
     url,
     { headers: { Authorization: `Bearer ${token}` }, method: "GET" },
     config.timeoutMs,
-  )) as { data?: IReports360Checkin[] } | null;
+  )) as { data?: IReports360Checkin[]; message?: string; success?: boolean } | null;
+  if (payload?.success === false) {
+    throw new IReports360ApiError(messageFromPayload(payload, "iReports360 checkins request failed."), 502);
+  }
   return Array.isArray(payload?.data) ? payload.data : [];
 }
