@@ -1,8 +1,14 @@
-// Deductions Governance Center foundation. NEVER mutate payroll (salary_records) or employee leave balances from this module. Decisions are export-only.
+// Deductions Governance Center foundation. NEVER mutate payroll (salary_records) or employee leave balances from this module. Decisions are governance-only.
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "../hr-id.ts";
+import {
+  assertDeductionsGovernanceDecisionActor,
+  calculateDeductionAmountFromBaseSalary,
+  payrollColumnForDeduction,
+} from "./calculations.ts";
 import {
   buildDeductionCandidateKey,
   normalizeDates,
@@ -10,7 +16,9 @@ import {
 } from "./candidate-key.ts";
 import {
   deductionCalculationStatuses,
+  deductionDecisionReasons,
   deductionDecisionStatuses,
+  deductionPayrollColumns,
   deductionPayrollHandoffStatuses,
   deductionSeverities,
   deductionSourceModules,
@@ -22,6 +30,10 @@ import {
   type DeductionDecision,
   type DeductionDecisionReason,
   type DeductionDecisionStatus,
+  type DeductionMonthlySummary,
+  type DeductionMonthlySummaryLine,
+  type DeductionComment,
+  type DeductionPayrollColumn,
   type DeductionPayrollHandoffStatus,
   type DeductionSeverity,
   type DeductionSourceModule,
@@ -42,12 +54,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function compactHrId(value: string | null | undefined): string | null {
+export function compactDeductionHrId(value: string | null | undefined): string | null {
   const canonical = canonicalHrIdKey(value);
   if (!canonical) return null;
   const compact = canonical.replace(/[^a-z0-9]/g, "");
   return compact ? compact : null;
 }
+
+const compactHrId = compactDeductionHrId;
 
 export function validateCandidateDraft(
   draft: DeductionCandidateDraft,
@@ -241,16 +255,93 @@ export function prepareCandidateInsertPayload(
   };
 }
 
+export type CandidateDraftInsertResult = {
+  created: number;
+  skippedExisting: number;
+  warnings: string[];
+};
+
+export async function insertDeductionCandidateDrafts(input: {
+  createdBy: string;
+  drafts: DeductionCandidateDraft[];
+  sourceLabel: string;
+}): Promise<CandidateDraftInsertResult> {
+  if (!input.createdBy.trim()) {
+    throw new Error("insertDeductionCandidateDrafts requires createdBy");
+  }
+  const supabase = getSupabaseAdmin();
+  let created = 0;
+  let skippedExisting = 0;
+  const warnings: string[] = [];
+
+  for (const draft of input.drafts) {
+    let payload: CandidateInsertPayload;
+    try {
+      payload = prepareCandidateInsertPayload(draft, {
+        createdBy: input.createdBy,
+      });
+    } catch (error) {
+      warnings.push(
+        `${input.sourceLabel}: invalid draft: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      continue;
+    }
+
+    const probe = await supabase
+      .from("deduction_candidates")
+      .select("id")
+      .eq("source_module", payload.source_module)
+      .eq("candidate_key", payload.candidate_key)
+      .is("superseded_at", null)
+      .limit(1);
+
+    if (probe.error) {
+      warnings.push(`${input.sourceLabel}: duplicate probe failed: ${probe.error.message}`);
+      continue;
+    }
+    if (Array.isArray(probe.data) && probe.data.length > 0) {
+      skippedExisting += 1;
+      continue;
+    }
+
+    const insert = await supabase
+      .from("deduction_candidates")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (insert.error) {
+      const code = (insert.error as { code?: string }).code ?? "";
+      if (code === "23505") {
+        skippedExisting += 1;
+        continue;
+      }
+      warnings.push(`${input.sourceLabel}: insert failed: ${insert.error.message}`);
+      continue;
+    }
+
+    created += 1;
+    await writeAuditLog({
+      actorLoginId: input.createdBy,
+      entityId: (insert.data as { id?: string } | null)?.id ?? null,
+      entityType: "deduction_candidate",
+      newValues: payload as unknown as Record<string, unknown>,
+      summary: `Deduction candidate created from ${input.sourceLabel}`,
+    });
+  }
+
+  return { created, skippedExisting, warnings };
+}
+
 // ---------------------------------------------------------------------------
-// Phase C: Read-only Deduction Inbox service surface.
+// Deductions Governance service surface.
 //
 // Strict boundaries (read this before adding anything):
 // - No write to salary_records, salary_batches, payroll_batches, payslips,
 //   employee_leave_balances, leave_transactions, v2_vacation_requests, or any
-//   payroll/leave RPC. Phase C is governance/reporting only.
-// - Decision PATCH (updateDeductionDecision) is DEFERRED to Phase C2. The
-//   foundation, route shell, and UI prepare for it but the mutation entry
-//   point is intentionally not exposed here yet. See risksAndLimitations.
+//   payroll/leave RPC from this module.
+// - Governance decisions, summaries, comments, and export registry writes are
+//   allowed here. Payroll handoff/import lives in a separate module/RPC.
 // ---------------------------------------------------------------------------
 
 export type DeductionInboxFilters = {
@@ -317,6 +408,14 @@ export type DeductionAuditEvent = {
   entityType: string | null;
   entityId: string | null;
   summary: string | null;
+};
+
+export type DeductionCommentFeedItem = DeductionComment & {
+  deductionType: DeductionType | null;
+  employeeCode: string | null;
+  employeeName: string | null;
+  monthKey: string | null;
+  sourceModule: DeductionSourceModule | null;
 };
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -411,12 +510,16 @@ type DecisionRow = {
   decision_status: string;
   decision_reason: string | null;
   hr_note: string | null;
+  applied_deduction_value: string | number | null;
+  applied_amount: string | number | null;
+  payroll_column: string | null;
   decided_by: string | null;
   decided_at: string | null;
   resolved_at: string | null;
   resolved_by: string | null;
   payroll_handoff_status: string;
   last_export_id: string | null;
+  finalized_summary_id: string | null;
   actor_role_at_decision: string | null;
   actor_scope_at_decision: string | null;
   created_at: string;
@@ -454,6 +557,10 @@ function isDecisionStatus(value: string): value is DeductionDecisionStatus {
 
 function isPayrollHandoff(value: string): value is DeductionPayrollHandoffStatus {
   return (deductionPayrollHandoffStatuses as readonly string[]).includes(value);
+}
+
+function isPayrollColumn(value: string | null | undefined): value is DeductionPayrollColumn {
+  return Boolean(value && (deductionPayrollColumns as readonly string[]).includes(value));
 }
 
 function mapCandidateRow(row: CandidateRow): DeductionCandidate {
@@ -516,12 +623,16 @@ function mapDecisionRow(row: DecisionRow): DeductionDecision {
     decisionStatus,
     decisionReason: row.decision_reason ?? "",
     hrNote: row.hr_note ?? "",
+    appliedDeductionValue: toNullableNumber(row.applied_deduction_value),
+    appliedAmount: toNullableNumber(row.applied_amount),
+    payrollColumn: isPayrollColumn(row.payroll_column) ? row.payroll_column : null,
     decidedBy: row.decided_by,
     decidedAt: row.decided_at,
     resolvedAt: row.resolved_at,
     resolvedBy: row.resolved_by,
     payrollHandoffStatus,
     lastExportId: row.last_export_id,
+    finalizedSummaryId: row.finalized_summary_id,
     actorRoleAtDecision: row.actor_role_at_decision,
     actorScopeAtDecision: row.actor_scope_at_decision,
     createdAt: row.created_at,
@@ -533,7 +644,7 @@ const CANDIDATE_COLUMNS =
   "id, source_module, source_record_id, candidate_key, employee_code, employee_hr_id_compact, employee_name, month_key, month, year, deduction_type, deduction_unit, deduction_value, estimated_amount, calculation_status, severity, reason, evidence, holiday_context, dates, hierarchy_snapshot, created_by, created_at, superseded_at, superseded_by_candidate_id";
 
 const DECISION_COLUMNS =
-  "id, candidate_id, decision_status, decision_reason, hr_note, decided_by, decided_at, resolved_at, resolved_by, payroll_handoff_status, last_export_id, actor_role_at_decision, actor_scope_at_decision, created_at, updated_at";
+  "id, candidate_id, decision_status, decision_reason, hr_note, applied_deduction_value, applied_amount, payroll_column, decided_by, decided_at, resolved_at, resolved_by, payroll_handoff_status, last_export_id, finalized_summary_id, actor_role_at_decision, actor_scope_at_decision, created_at, updated_at";
 
 // Use a structurally typed builder so the helper composes both with .select()
 // outputs and chained filter builders without coupling to internal generics.
@@ -729,13 +840,17 @@ export function rollupKpis(rows: DeductionInboxRow[]): DeductionInboxKpis {
         break;
       case "Approved for Payroll":
         kpis.approvedForPayroll += 1;
-        if (typeof row.estimatedAmount === "number") {
+        if (typeof row.decision?.appliedAmount === "number") {
+          kpis.estimatedAmountSubtotal += row.decision.appliedAmount;
+        } else if (typeof row.estimatedAmount === "number") {
           kpis.estimatedAmountSubtotal += row.estimatedAmount;
         }
         break;
       case "Approved for Leave Adjustment":
         kpis.approvedForLeaveAdjustment += 1;
-        if (typeof row.estimatedAmount === "number") {
+        if (typeof row.decision?.appliedAmount === "number") {
+          kpis.estimatedAmountSubtotal += row.decision.appliedAmount;
+        } else if (typeof row.estimatedAmount === "number") {
           kpis.estimatedAmountSubtotal += row.estimatedAmount;
         }
         break;
@@ -801,7 +916,9 @@ export function rollupBySource(rows: DeductionInboxRow[]): DeductionSourceGroup[
       bucket.approvedForLeaveAdjustment += 1;
     }
     if (status === "Disputed") bucket.disputed += 1;
-    if (
+    if (typeof row.decision?.appliedAmount === "number") {
+      bucket.estimatedAmountCalculatedSubtotal += row.decision.appliedAmount;
+    } else if (
       row.calculationStatus === "calculated" &&
       typeof row.estimatedAmount === "number"
     ) {
@@ -925,8 +1042,12 @@ export async function listRecentAuditEvents(input: {
     .select("id, actor_login_id, entity_id, entity_type, summary, created_at")
     .in("entity_type", [
       "deduction_candidate",
+      "deduction_comment",
       "deduction_decision",
       "deduction_export",
+      "deduction_finalization",
+      "deduction_payroll_import",
+      "deduction_payroll_preview",
     ])
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -953,24 +1074,657 @@ export async function listRecentAuditEvents(input: {
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Decision PATCH (updateDeductionDecision) — DEFERRED to Phase C2.
-//
-// Reasoning: a safe implementation must (a) re-check the conflict window with
-// detectCandidateConflict against live data, (b) bind actor_role_at_decision +
-// actor_scope_at_decision atomically with writeRequiredAuditLog, and (c) be
-// covered by integration tests against the real Supabase tables before HR is
-// allowed to click "Approve". Shipping the write surface without that proof
-// risks producing approve-state rows that the Payroll Handoff (Phase H) would
-// then export. Phase C ships fully read-only; the UI disables the decision
-// dropdown with a "Phase C2" hint.
-// ---------------------------------------------------------------------------
+type CommentFeedCandidateRow = {
+  deduction_type: string | null;
+  employee_code: string | null;
+  employee_name: string | null;
+  id: string;
+  month_key: string | null;
+  source_module: string | null;
+};
 
-// Intentionally NOT exported: this constant signals to readers that we
-// considered a writer and chose to defer it. Removing this comment without
-// reading the audit chain is a code-smell.
-const PHASE_C_DECISION_WRITER_DEFERRED = true as const;
-void PHASE_C_DECISION_WRITER_DEFERRED;
+function isCommentFeedSourceModule(value: string | null | undefined): value is DeductionSourceModule {
+  return Boolean(value && deductionSourceModules.includes(value as DeductionSourceModule));
+}
+
+function isCommentFeedDeductionType(value: string | null | undefined): value is DeductionType {
+  return Boolean(value && deductionTypes.includes(value as DeductionType));
+}
+
+export async function listRecentDeductionComments(input: {
+  access: AccessContext;
+  limit?: number;
+}): Promise<DeductionCommentFeedItem[]> {
+  const supabase = getSupabaseAdmin();
+  const limit = Math.min(200, Math.max(1, Math.floor(input.limit ?? 100)));
+  const { data, error } = await supabase
+    .from("deduction_comments")
+    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const comments = ((data ?? []) as CommentRow[]).map(mapCommentRow);
+  const candidateIds = [...new Set(comments.map((comment) => comment.candidateId))];
+  const candidates = new Map<string, CommentFeedCandidateRow>();
+  if (candidateIds.length > 0) {
+    const { data: candidateData, error: candidateError } = await supabase
+      .from("deduction_candidates")
+      .select("id, employee_code, employee_name, month_key, source_module, deduction_type")
+      .in("id", candidateIds);
+    if (candidateError) throw candidateError;
+    for (const row of (candidateData ?? []) as CommentFeedCandidateRow[]) {
+      candidates.set(row.id, row);
+    }
+  }
+
+  return comments.map((comment) => {
+    const candidate = candidates.get(comment.candidateId);
+    return {
+      ...comment,
+      deductionType: isCommentFeedDeductionType(candidate?.deduction_type)
+        ? candidate.deduction_type
+        : null,
+      employeeCode: candidate?.employee_code ?? null,
+      employeeName: candidate?.employee_name ?? null,
+      monthKey: candidate?.month_key ?? null,
+      sourceModule: isCommentFeedSourceModule(candidate?.source_module)
+        ? candidate.source_module
+        : null,
+    };
+  });
+}
+
+async function loadCandidateById(candidateId: string): Promise<DeductionCandidate> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_candidates")
+    .select(CANDIDATE_COLUMNS)
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Deduction candidate not found.");
+  return mapCandidateRow(data as CandidateRow);
+}
+
+async function loadEmployeeBaseSalary(employeeCode: string): Promise<number | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("base_salary")
+    .ilike("hr_id", employeeCode)
+    .limit(1);
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] as { base_salary?: unknown } | undefined : undefined;
+  const baseSalary = Number(row?.base_salary ?? 0);
+  return Number.isFinite(baseSalary) && baseSalary > 0 ? baseSalary : null;
+}
+
+function normalizeAppliedValue(input: {
+  candidate: DeductionCandidate;
+  decisionStatus: DeductionDecisionStatus;
+  requestedValue?: number | null;
+}) {
+  if (input.decisionStatus !== "Approved for Payroll") return null;
+  const value = input.requestedValue == null
+    ? input.candidate.deductionValue
+    : Number(input.requestedValue);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Applied deduction value must be a non-negative number.");
+  }
+  if (value > input.candidate.deductionValue) {
+    throw new Error("Applied deduction value cannot exceed the original system-flagged value.");
+  }
+  return Math.round(value * 100) / 100;
+}
+
+async function calculateAppliedAmount(input: {
+  appliedValue: number | null;
+  candidate: DeductionCandidate;
+}) {
+  if (input.appliedValue == null) return null;
+  if (input.candidate.deductionUnit === "amount") {
+    return Math.round(input.appliedValue * 100) / 100;
+  }
+  if (input.candidate.deductionUnit === "days") {
+    const baseSalary = await loadEmployeeBaseSalary(input.candidate.employeeCode);
+    const amount = calculateDeductionAmountFromBaseSalary({
+      baseSalary,
+      deductionDays: input.appliedValue,
+    });
+    if (amount == null) {
+      throw new Error(`Base salary is required before approving deduction for ${input.candidate.employeeCode}.`);
+    }
+    return amount;
+  }
+  if (input.candidate.estimatedAmount != null && input.candidate.deductionValue > 0) {
+    return Math.round((input.candidate.estimatedAmount / input.candidate.deductionValue) * input.appliedValue * 100) / 100;
+  }
+  throw new Error("This deduction unit cannot be approved for payroll until an amount is available.");
+}
+
+export type UpdateDeductionDecisionInput = {
+  access: AccessContext;
+  appliedDeductionValue?: number | null;
+  candidateId: string;
+  decisionReason?: string;
+  decisionStatus: DeductionDecisionStatus;
+  hrNote?: string;
+};
+
+export async function updateDeductionDecision(input: UpdateDeductionDecisionInput): Promise<DeductionDecision> {
+  assertDeductionsGovernanceDecisionActor(input.access);
+  if (!deductionDecisionStatuses.includes(input.decisionStatus)) {
+    throw new Error("Invalid deduction decision status.");
+  }
+  const decisionReason = String(input.decisionReason ?? "").trim();
+  const hrNote = String(input.hrNote ?? "").trim();
+  if (input.decisionStatus !== "Pending") {
+    if (!decisionReason) {
+      throw new Error("Decision reason is required for non-pending decisions.");
+    }
+    if (!(deductionDecisionReasons as readonly string[]).includes(decisionReason)) {
+      throw new Error("Choose a supported decision reason.");
+    }
+    if (decisionReason === "Other" && !hrNote) {
+      throw new Error("HR note is required when decision reason is Other.");
+    }
+  }
+
+  const candidate = await loadCandidateById(input.candidateId);
+  const payrollColumn = payrollColumnForDeduction({
+    deductionType: candidate.deductionType,
+    sourceModule: candidate.sourceModule,
+  });
+  if (input.decisionStatus === "Approved for Payroll" && !payrollColumn) {
+    throw new Error("This deduction source is not mapped to a payroll column.");
+  }
+
+  const appliedValue = normalizeAppliedValue({
+    candidate,
+    decisionStatus: input.decisionStatus,
+    requestedValue: input.appliedDeductionValue,
+  });
+  const appliedAmount = await calculateAppliedAmount({
+    appliedValue,
+    candidate,
+  });
+  const actor = input.access.loginId ?? input.access.hrId ?? "system";
+  const now = new Date().toISOString();
+  const resolvedAt = ["Resolved", "Cancelled", "Do Not Take Action"].includes(input.decisionStatus)
+    ? now
+    : null;
+
+  const payload = {
+    actor_role_at_decision: input.access.role,
+    actor_scope_at_decision: input.access.scope,
+    applied_amount: appliedAmount,
+    applied_deduction_value: appliedValue,
+    candidate_id: candidate.id,
+    decided_at: input.decisionStatus === "Pending" ? null : now,
+    decided_by: input.decisionStatus === "Pending" ? null : actor,
+    decision_reason: input.decisionStatus === "Pending" ? "" : decisionReason,
+    decision_status: input.decisionStatus,
+    hr_note: hrNote,
+    payroll_column: input.decisionStatus === "Approved for Payroll" ? payrollColumn : null,
+    payroll_handoff_status: "Not pushed",
+    resolved_at: resolvedAt,
+    resolved_by: resolvedAt ? actor : null,
+  };
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_decisions")
+    .upsert(payload, { onConflict: "candidate_id" })
+    .select(DECISION_COLUMNS)
+    .single();
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: actor,
+    entityId: candidate.id,
+    entityType: "deduction_decision",
+    newValues: payload,
+    summary: `Deduction decision saved for ${candidate.employeeCode} (${candidate.monthKey}).`,
+  });
+
+  return mapDecisionRow(data as DecisionRow);
+}
+
+type SummaryRow = {
+  candidate_count: number;
+  created_at: string;
+  employee_count: number;
+  finalized_at: string;
+  finalized_by: string;
+  id: string;
+  month: number;
+  month_key: string;
+  notes: string | null;
+  source_counts: Record<string, unknown> | null;
+  status: string;
+  total_amount: string | number;
+  total_days: string | number;
+  year: number;
+};
+
+type SummaryLineRow = {
+  applied_amount: string | number;
+  applied_deduction_value: string | number;
+  candidate_id: string;
+  created_at: string;
+  dates: unknown;
+  decision_id: string;
+  deduction_type: string;
+  deduction_unit: string;
+  employee_code: string;
+  employee_hr_id_compact: string;
+  employee_name: string | null;
+  hr_note: string | null;
+  id: string;
+  month_key: string;
+  original_deduction_value: string | number;
+  payroll_column: string;
+  reason: string | null;
+  source_module: string;
+  summary_id: string;
+};
+
+function mapSummaryRow(row: SummaryRow): DeductionMonthlySummary {
+  return {
+    id: row.id,
+    monthKey: row.month_key,
+    month: row.month,
+    year: row.year,
+    status: row.status === "superseded" ? "superseded" : "finalized",
+    finalizedBy: row.finalized_by,
+    finalizedAt: row.finalized_at,
+    candidateCount: row.candidate_count,
+    employeeCount: row.employee_count,
+    totalDays: toNumber(row.total_days),
+    totalAmount: toNumber(row.total_amount),
+    sourceCounts: row.source_counts ?? {},
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSummaryLineRow(row: SummaryLineRow): DeductionMonthlySummaryLine {
+  const sourceModule = isSourceModule(row.source_module) ? row.source_module : "OTHER";
+  const deductionType = isDeductionType(row.deduction_type) ? row.deduction_type : "other";
+  const deductionUnit = (deductionUnits as readonly string[]).includes(row.deduction_unit)
+    ? row.deduction_unit as DeductionMonthlySummaryLine["deductionUnit"]
+    : "count";
+  const payrollColumn = isPayrollColumn(row.payroll_column)
+    ? row.payroll_column
+    : "crm";
+  return {
+    id: row.id,
+    summaryId: row.summary_id,
+    candidateId: row.candidate_id,
+    decisionId: row.decision_id,
+    employeeCode: row.employee_code,
+    employeeHrIdCompact: row.employee_hr_id_compact,
+    employeeName: row.employee_name,
+    monthKey: row.month_key,
+    sourceModule,
+    deductionType,
+    payrollColumn,
+    deductionUnit,
+    originalDeductionValue: toNumber(row.original_deduction_value),
+    appliedDeductionValue: toNumber(row.applied_deduction_value),
+    appliedAmount: toNumber(row.applied_amount),
+    dates: asDates(row.dates),
+    reason: row.reason,
+    hrNote: row.hr_note,
+    createdAt: row.created_at,
+  };
+}
+
+export type FinalizeMonthlyDeductionsResult = {
+  lines: DeductionMonthlySummaryLine[];
+  summary: DeductionMonthlySummary;
+};
+
+export async function finalizeMonthlyDeductions(input: {
+  access: AccessContext;
+  monthKey: string;
+  notes?: string;
+}): Promise<FinalizeMonthlyDeductionsResult> {
+  assertDeductionsGovernanceDecisionActor(input.access);
+  const monthKey = normalizeMonthKey(input.monthKey);
+  const [yearText, monthText] = monthKey.split("-");
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const actor = input.access.loginId ?? input.access.hrId ?? "system";
+  const rows = await fetchInboxRowsForAggregation({ monthKey }, MAX_KPI_ROWS);
+  const approved = rows.filter((row) =>
+    row.decision?.decisionStatus === "Approved for Payroll" &&
+    row.decision.payrollColumn &&
+    row.decision.appliedDeductionValue != null &&
+    row.decision.appliedAmount != null,
+  );
+  if (approved.length === 0) {
+    throw new Error(`No approved payroll deductions are ready to finalize for ${monthKey}.`);
+  }
+
+  const employeeCodes = new Set<string>();
+  const sourceCounts: Record<string, number> = {};
+  let totalDays = 0;
+  let totalAmount = 0;
+  for (const row of approved) {
+    employeeCodes.add(row.employeeCode);
+    sourceCounts[row.sourceModule] = (sourceCounts[row.sourceModule] ?? 0) + 1;
+    totalDays += row.decision?.appliedDeductionValue ?? 0;
+    totalAmount += row.decision?.appliedAmount ?? 0;
+  }
+
+  const summaryPayload = {
+    candidate_count: approved.length,
+    employee_count: employeeCodes.size,
+    finalized_by: actor,
+    month,
+    month_key: monthKey,
+    notes: String(input.notes ?? "").trim() || null,
+    source_counts: sourceCounts,
+    total_amount: Math.round(totalAmount * 100) / 100,
+    total_days: Math.round(totalDays * 100) / 100,
+    year,
+  };
+
+  const summaryInsert = await getSupabaseAdmin()
+    .from("deduction_monthly_summaries")
+    .insert(summaryPayload)
+    .select("id, month_key, month, year, status, finalized_by, finalized_at, candidate_count, employee_count, total_days, total_amount, source_counts, notes, created_at")
+    .single();
+  if (summaryInsert.error) throw summaryInsert.error;
+  const summary = mapSummaryRow(summaryInsert.data as SummaryRow);
+
+  const linePayloads = approved.map((row) => ({
+    applied_amount: row.decision?.appliedAmount ?? 0,
+    applied_deduction_value: row.decision?.appliedDeductionValue ?? 0,
+    candidate_id: row.id,
+    dates: row.dates,
+    decision_id: row.decision?.id,
+    deduction_type: row.deductionType,
+    deduction_unit: row.deductionUnit,
+    employee_code: row.employeeCode,
+    employee_hr_id_compact: row.employeeHrIdCompact,
+    employee_name: row.employeeName,
+    hr_note: row.decision?.hrNote ?? null,
+    month_key: row.monthKey,
+    original_deduction_value: row.deductionValue,
+    payroll_column: row.decision?.payrollColumn,
+    reason: row.reason,
+    source_module: row.sourceModule,
+    summary_id: summary.id,
+  }));
+
+  const linesInsert = await getSupabaseAdmin()
+    .from("deduction_monthly_summary_lines")
+    .insert(linePayloads)
+    .select("id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at");
+  if (linesInsert.error) throw linesInsert.error;
+  const lines = ((linesInsert.data ?? []) as SummaryLineRow[]).map(mapSummaryLineRow);
+
+  const decisionIds = approved
+    .map((row) => row.decision?.id)
+    .filter((value): value is string => Boolean(value));
+  if (decisionIds.length > 0) {
+    const update = await getSupabaseAdmin()
+      .from("deduction_decisions")
+      .update({
+        finalized_summary_id: summary.id,
+        payroll_handoff_status: "Pending integration",
+      })
+      .in("id", decisionIds);
+    if (update.error) throw update.error;
+  }
+
+  await writeAuditLog({
+    actorLoginId: actor,
+    entityId: summary.id,
+    entityType: "deduction_summary",
+    newValues: {
+      candidateCount: approved.length,
+      monthKey,
+      totalAmount: summary.totalAmount,
+    },
+    summary: `Monthly deductions finalized for ${monthKey}.`,
+  });
+
+  return { summary, lines };
+}
+
+export async function listMonthlyDeductionSummaries(input: {
+  access: AccessContext;
+  monthKey?: string;
+  limit?: number;
+}): Promise<DeductionMonthlySummary[]> {
+  const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 24)));
+  let query = getSupabaseAdmin()
+    .from("deduction_monthly_summaries")
+    .select("id, month_key, month, year, status, finalized_by, finalized_at, candidate_count, employee_count, total_days, total_amount, source_counts, notes, created_at")
+    .order("finalized_at", { ascending: false })
+    .limit(limit);
+  const monthKey = safeNormalizeMonthKey(input.monthKey);
+  if (monthKey) query = query.eq("month_key", monthKey);
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as SummaryRow[]).map(mapSummaryRow);
+}
+
+export async function listMonthlyDeductionSummaryLines(input: {
+  access: AccessContext;
+  summaryId: string;
+}): Promise<DeductionMonthlySummaryLine[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_monthly_summary_lines")
+    .select("id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at")
+    .eq("summary_id", input.summaryId)
+    .order("employee_name", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as SummaryLineRow[]).map(mapSummaryLineRow);
+}
+
+type CommentRow = {
+  author_hr_id: string | null;
+  author_login_id: string;
+  author_role: string | null;
+  body: string;
+  candidate_id: string;
+  created_at: string;
+  id: string;
+};
+
+function mapCommentRow(row: CommentRow): DeductionComment {
+  return {
+    id: row.id,
+    candidateId: row.candidate_id,
+    authorLoginId: row.author_login_id,
+    authorHrId: row.author_hr_id,
+    authorRole: row.author_role,
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+
+export async function listDeductionComments(input: {
+  access: AccessContext;
+  candidateIds: string[];
+}): Promise<DeductionComment[]> {
+  if (input.candidateIds.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_comments")
+    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+    .in("candidate_id", input.candidateIds)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as CommentRow[]).map(mapCommentRow);
+}
+
+async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string) {
+  const candidate = await loadCandidateById(candidateId);
+  const actorHr = compactHrId(access.hrId ?? access.loginId);
+  if (!actorHr || actorHr !== candidate.employeeHrIdCompact) {
+    throw new Error("Forbidden: employees can comment only on their own published deductions.");
+  }
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_monthly_summary_lines")
+    .select("id")
+    .eq("candidate_id", candidateId)
+    .limit(1);
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error("Comments are available only after the deduction is finalized.");
+  }
+}
+
+export async function addDeductionComment(input: {
+  access: AccessContext;
+  body: string;
+  candidateId: string;
+}): Promise<DeductionComment> {
+  await assertEmployeeCanCommentOnCandidate(input.access, input.candidateId);
+  const body = String(input.body ?? "").replace(/\s+/g, " ").trim();
+  if (!body) throw new Error("Comment is required.");
+  if (body.length > 2000) throw new Error("Comment cannot exceed 2000 characters.");
+  const payload = {
+    author_hr_id: input.access.hrId,
+    author_login_id: input.access.loginId ?? input.access.hrId ?? "employee",
+    author_role: input.access.role,
+    body,
+    candidate_id: input.candidateId,
+  };
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_comments")
+    .insert(payload)
+    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+    .single();
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: payload.author_login_id,
+    entityId: input.candidateId,
+    entityType: "deduction_comment",
+    newValues: { bodyLength: body.length },
+    summary: "Employee comment added to published deduction.",
+  });
+
+  return mapCommentRow(data as CommentRow);
+}
+
+type EmployeeScopeRow = {
+  full_name: string | null;
+  hr_id: string | null;
+  line: string | null;
+  line_id: number | null;
+  manager_hr_id: string | null;
+};
+
+function collectPortalDeductionScope(input: {
+  access: AccessContext;
+  employees: EmployeeScopeRow[];
+}) {
+  if (input.access.scope === "system") return { all: true, compactHrIds: new Set<string>() };
+  const root = compactHrId(input.access.hrId ?? input.access.loginId);
+  const compactHrIds = new Set<string>();
+  if (root) compactHrIds.add(root);
+  const byManager = new Map<string, EmployeeScopeRow[]>();
+  const rootRows = input.employees.filter((employee) => compactHrId(employee.hr_id) === root);
+  const rootLineIds = new Set(rootRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number"));
+  const rootLineNames = new Set(rootRows.map((row) => String(row.line ?? "").trim().toLowerCase()).filter(Boolean));
+
+  for (const employee of input.employees) {
+    const manager = compactHrId(employee.manager_hr_id);
+    if (!manager) continue;
+    const list = byManager.get(manager) ?? [];
+    list.push(employee);
+    byManager.set(manager, list);
+  }
+
+  const addDirect = (managerId: string) => {
+    for (const child of byManager.get(managerId) ?? []) {
+      const childId = compactHrId(child.hr_id);
+      if (childId) compactHrIds.add(childId);
+    }
+  };
+
+  const addHierarchy = (managerId: string) => {
+    const queue = [managerId];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
+      for (const child of byManager.get(current) ?? []) {
+        const childId = compactHrId(child.hr_id);
+        if (!childId || compactHrIds.has(childId)) continue;
+        compactHrIds.add(childId);
+        queue.push(childId);
+      }
+    }
+  };
+
+  if (root) {
+    if (input.access.scope === "team") addDirect(root);
+    if (
+      input.access.scope === "hierarchy" ||
+      input.access.scope === "line" ||
+      input.access.scope === "company" ||
+      input.access.role === "National Sales Manager" ||
+      input.access.role === "Regional Manager"
+    ) {
+      addHierarchy(root);
+    }
+  }
+
+  if (input.access.scope === "line" || input.access.role === "National Sales Manager") {
+    for (const employee of input.employees) {
+      const normalizedLineName = String(employee.line ?? "").trim().toLowerCase();
+      const inLine =
+        (typeof employee.line_id === "number" && rootLineIds.has(employee.line_id)) ||
+        (normalizedLineName && rootLineNames.has(normalizedLineName));
+      const employeeId = compactHrId(employee.hr_id);
+      if (inLine && employeeId) compactHrIds.add(employeeId);
+    }
+  }
+
+  return { all: false, compactHrIds };
+}
+
+export async function listPublishedDeductionsForPortal(input: {
+  access: AccessContext;
+  monthKey?: string;
+}): Promise<{
+  comments: DeductionComment[];
+  lines: DeductionMonthlySummaryLine[];
+}> {
+  const { data: employees, error: employeesError } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,full_name,manager_hr_id,line_id,line");
+  const monthKey = safeNormalizeMonthKey(input.monthKey);
+  if (employeesError) throw employeesError;
+  const scope = collectPortalDeductionScope({
+    access: input.access,
+    employees: (employees ?? []) as EmployeeScopeRow[],
+  });
+
+  let query = getSupabaseAdmin()
+    .from("deduction_monthly_summary_lines")
+    .select("id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at")
+    .order("month_key", { ascending: false })
+    .order("employee_name", { ascending: true });
+  if (monthKey) query = query.eq("month_key", monthKey);
+  const { data, error } = await query;
+  if (error) throw error;
+  const allLines = ((data ?? []) as SummaryLineRow[]).map(mapSummaryLineRow);
+  const lines = scope.all
+    ? allLines
+    : allLines.filter((line) => scope.compactHrIds.has(line.employeeHrIdCompact));
+  const comments = await listDeductionComments({
+    access: input.access,
+    candidateIds: lines.map((line) => line.candidateId),
+  });
+  return { comments, lines };
+}
+
 // Type-only re-exports kept so call sites can type their state shape against
 // the same union the DB constrains to. Pure typing; no DB.
 export type { DeductionDecisionReason };
