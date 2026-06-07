@@ -141,6 +141,14 @@ function roundMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+// Outstation expenses are reviewed/approved by HR, not Finance. Map any legacy
+// "finance_review" rows persisted before that rename onto the current value so
+// the UI shows "HR review" consistently without a data migration.
+function normalizeApprovalRecommendation(value: string): OutstationApprovalRecommendation {
+  if (value === "finance_review") return "hr_review";
+  return value as OutstationApprovalRecommendation;
+}
+
 function minutesFromSeconds(value: number | null | undefined) {
   return value != null ? Number((value / 60).toFixed(1)) : null;
 }
@@ -275,8 +283,8 @@ function recommendationForResult(params: {
   ) {
     return {
       approvalReason:
-        "Train or bus requests require ticket evidence before finance can approve the claim.",
-      approvalRecommendation: "finance_review" as OutstationApprovalRecommendation,
+        "Train or bus requests require ticket evidence before HR can approve the claim.",
+      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
     };
   }
 
@@ -291,8 +299,8 @@ function recommendationForResult(params: {
   if (Math.abs(params.variancePercent) > 50) {
     return {
       approvalReason:
-        "Claimed amount materially exceeds the expected amount and should be reviewed by finance.",
-      approvalRecommendation: "finance_review" as OutstationApprovalRecommendation,
+        "Claimed amount materially exceeds the expected amount and should be reviewed by HR.",
+      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
     };
   }
 
@@ -1373,7 +1381,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     allowanceBreakdown: safeJsonParse(row.allowance_breakdown_json, null),
     attachmentCount: numberValue(row.attachment_count),
     approvalReason: text(row.approval_reason),
-    approvalRecommendation: text(row.approval_recommendation) as OutstationApprovalRecommendation,
+    approvalRecommendation: normalizeApprovalRecommendation(text(row.approval_recommendation)),
     capturedAccuracyMeters: numberValue(row.captured_accuracy_meters),
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
@@ -1572,7 +1580,7 @@ export async function submitMedicalRepSimpleExpenseRequest(
         }),
         approval_reason:
           "Medical rep manual traveling expense submitted without manager outstation distance rules.",
-        approval_recommendation: "finance_review",
+        approval_recommendation: "hr_review",
         area: identity.employeeArea,
         attachment_count: uploadedAttachments.length,
         calculation_status: "submitted",
@@ -1883,6 +1891,91 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       totalVariance: roundMoney(sumBy(requests, (request) => request.varianceAmount)),
     },
     markers,
+  };
+}
+
+export type ManagerExpenseCalculationPreview = {
+  allowanceAmount: number;
+  allowanceBreakdown: OutstationAllowanceBreakdown;
+  claimedTotalAmount: number;
+  eligibilityStatus: OutstationEligibilityStatus;
+  expectedTotalAmount: number;
+  fuelAmount: number;
+  fuelRatePerKm: number;
+  overnightDays: number;
+  sameDayTrip: boolean;
+  varianceAmount: number;
+  variancePercent: number;
+};
+
+/**
+ * Computes the fuel + allowance breakdown for a manual admin outstation expense
+ * WITHOUT persisting anything. Used by the add-expense modal to show a live
+ * calculation preview. The fuel + total math here is intentionally identical to
+ * `createManagerExpenseAsAdmin`; keep the two in sync.
+ */
+export async function previewManagerExpenseCalculation(
+  access: AccessContext,
+  input: {
+    claimedTotalAmount?: number;
+    distanceKm: number;
+    employeeHrId: string;
+    transportationType: OutstationTransportationType;
+    tripEndDate: string;
+    tripStartDate: string;
+  },
+): Promise<ManagerExpenseCalculationPreview> {
+  await assertOutstationAdminAccess(access, "approve");
+
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find(
+    (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(input.employeeHrId),
+  );
+  if (!employee?.hrId) {
+    throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
+  }
+
+  const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
+  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+
+  let fuelAmount = 0;
+  if (input.transportationType === "car") {
+    fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
+  }
+
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: input.distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+  const eligibilityStatus: OutstationEligibilityStatus =
+    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+
+  const expectedTotalAmount =
+    eligibilityStatus === "not_eligible"
+      ? 0
+      : roundMoney(fuelAmount + allowance.allowanceAmount);
+  const claimedInput = Number(input.claimedTotalAmount ?? 0);
+  const claimedTotalAmount =
+    Number.isFinite(claimedInput) && claimedInput > 0 ? claimedInput : expectedTotalAmount;
+  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
+  const variancePercent =
+    expectedTotalAmount > 0 ? roundMoney((varianceAmount / expectedTotalAmount) * 100) : 0;
+
+  return {
+    allowanceAmount: allowance.allowanceAmount,
+    allowanceBreakdown: allowance.breakdown,
+    claimedTotalAmount,
+    eligibilityStatus,
+    expectedTotalAmount,
+    fuelAmount,
+    fuelRatePerKm: policy.fuelRatePerKm,
+    overnightDays: allowance.overnightDays,
+    sameDayTrip: allowance.sameDayTrip,
+    varianceAmount,
+    variancePercent,
   };
 }
 
