@@ -86,7 +86,10 @@ type ProbationWorkflowInput = {
 };
 
 const probationDays = 90;
-const hrProbationRoles = new Set(["Super Admin", "HR Specialist"]);
+// Governance: probation pass/terminate/evaluation authority is reserved for Super Admin
+// (Admin-HR) and the HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role.
+// HR Specialist (incl. the designated A-16) must NOT administer or approve probation.
+const hrProbationRoles = new Set(["Super Admin"]);
 const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {

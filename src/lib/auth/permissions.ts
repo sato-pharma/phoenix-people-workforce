@@ -153,6 +153,11 @@ type PermissionDbOverrideRow = {
 };
 
 const allActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
+// Governance: HR Specialists (incl. the designated A-16) must NOT approve any workflow.
+// Approval authority is reserved for Super Admin (Admin-HR) and the HR Manager B-10
+// (Omar Anwar Gawish, B-10), who holds the Super Admin role. Use this for every HR
+// Specialist resource so the role keeps full data access but never the `approve` action.
+const allActionsNoApprove: PermissionAction[] = ["read", "create", "update", "delete", "export", "import"];
 const portalNavigationRoles = new Set<PhoenixRole>([
   "Employee",
   "Medical Rep",
@@ -235,28 +240,28 @@ const defaultPermissionMatrix: PermissionMap = {
     communication: ["read", "update"],
     overview: ["read"],
     imports: ["read", "import"],
-    contracts: allActions,
+    contracts: allActionsNoApprove,
     coaching: ["read"],
-    employee_documents: allActions,
-    employee_profile: allActions,
-    employees: allActions,
-    expenses: ["read", "approve", "update", "delete", "export"],
-    hr_calendar: allActions,
-    leave: allActions,
+    employee_documents: allActionsNoApprove,
+    employee_profile: allActionsNoApprove,
+    employees: allActionsNoApprove,
+    expenses: ["read", "update", "delete", "export"],
+    hr_calendar: allActionsNoApprove,
+    leave: allActionsNoApprove,
     organogram: ["read", "export"],
-    outstation: ["read", "approve", "update", "delete", "export"],
-    offers: allActions,
+    outstation: ["read", "update", "delete", "export"],
+    offers: allActionsNoApprove,
     payslips: ["read", "export"],
-    deductions: ["read", "create", "update", "approve", "export", "import"],
-    weekly_plans: ["read", "create", "update", "approve", "export", "import"],
-    probation: allActions,
-    resignations: allActions,
-    support_requests: ["read", "create", "update", "approve", "export"],
+    deductions: ["read", "create", "update", "export", "import"],
+    weekly_plans: ["read", "create", "update", "export", "import"],
+    probation: allActionsNoApprove,
+    resignations: allActionsNoApprove,
+    support_requests: ["read", "create", "update", "export"],
     team: ["read", "export"],
-    vacancies: allActions,
+    vacancies: allActionsNoApprove,
     workflow_registry: ["read"],
-    recruitment: allActions,
-    candidates: allActions,
+    recruitment: allActionsNoApprove,
+    candidates: allActionsNoApprove,
   },
   "Finance Manager": {
     employee_documents: ["read", "export"],

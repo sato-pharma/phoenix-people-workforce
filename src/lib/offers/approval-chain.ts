@@ -42,16 +42,20 @@ export type ApprovalStepRow = {
   reason: string | null;
 };
 
-// Pure: required approvers for an offer. HR Specialist + Finance Manager (roles)
+// Pure: required approvers for an offer. The HR Manager step + Finance Manager (roles)
 // + the requisition's hiring manager (person) are always required; CEO is added
 // when net salary exceeds the per-position cap. Sequence is for display order only.
+//
+// Governance: the "HR Manager" approval is reserved for Super Admin (Admin-HR) and the
+// HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role. HR Specialist
+// (incl. the designated A-16) must NOT approve offers.
 export function computeRequiredApprovers(input: {
   netSalary: number | null;
   hiringManagerHrId: string | null;
   threshold: number;
 }): RequiredApprover[] {
   const steps: Array<Omit<RequiredApprover, "sequence">> = [
-    { kind: "role", role: "HR Specialist", hrId: null, required: true, label: "HR Manager" },
+    { kind: "role", role: "Super Admin", hrId: null, required: true, label: "HR Manager" },
     { kind: "role", role: "Finance Manager", hrId: null, required: true, label: "Finance" },
   ];
 
