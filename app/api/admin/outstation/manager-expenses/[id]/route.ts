@@ -48,14 +48,13 @@ export async function PATCH(
     if (
       body.destination !== undefined &&
       (!body.destination ||
-        !body.destination.placeId ||
         !Number.isFinite(body.destination.latitude) ||
         !Number.isFinite(body.destination.longitude))
     ) {
       return NextResponse.json(
         {
           error: "invalid_destination",
-          message: "Provided destination must be a valid Google Places result with coordinates.",
+          message: "Provided destination must have valid coordinates.",
         },
         { status: 400 },
       );
