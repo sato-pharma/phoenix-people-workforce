@@ -98,7 +98,7 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
                 <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Customer / Facility</th>
                 <th className="px-4 py-3">Visit</th>
-                <th className="px-4 py-3">Joint</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">AM/PM</th>
                 <th className="px-4 py-3">Comment</th>
               </tr>
@@ -124,14 +124,8 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
                       {visit.callType != null ? ` · ct:${visit.callType}` : ""}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    {visit.mode === "double" ? (
-                      <span className="inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700">
-                        Double{visit.partnerName ? ` — ${visit.partnerName}` : ""}
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600">Solo</span>
-                    )}
+                  <td className="px-4 py-3 text-sm text-slate-700">
+                    {visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`)}
                   </td>
                   <td className="px-4 py-3">{visit.ampm || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{visit.comment || "—"}</td>
