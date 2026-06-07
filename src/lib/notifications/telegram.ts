@@ -166,6 +166,30 @@ export function phoenixActionUrl(path: string | null | undefined) {
   return base ? `${base}${value.startsWith("/") ? value : `/${value}`}` : value;
 }
 
+function appOrigin() {
+  const base = appUrl();
+  if (!base) return null;
+  try {
+    return new URL(base).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isPhoenixTelegramButtonUrl(value: string | null | undefined) {
+  const url = String(value ?? "").trim();
+  if (!url) return false;
+  if (url.startsWith("/") && !url.startsWith("//")) return true;
+  if (!/^https?:\/\//i.test(url)) return false;
+  const origin = appOrigin();
+  if (!origin) return false;
+  try {
+    return new URL(url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 function cleanTelegramText(value: string) {
   return value
     .replace(/\s+/g, " ")
@@ -198,7 +222,7 @@ function buildTelegramButtons(input: TelegramSendInput) {
       }];
 
   const safeButtons = buttons
-    .filter((button) => button.url)
+    .filter((button) => isPhoenixTelegramButtonUrl(button.url))
     .slice(0, 3)
     .map((button) => ({
       text: button.label || "Open in Phoenix",
