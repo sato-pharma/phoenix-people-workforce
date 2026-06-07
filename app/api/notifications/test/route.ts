@@ -1,12 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { systemIdentity } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import {
-  emailNotificationsEnabled,
-  sendNotificationEmail,
-} from "@/lib/notifications/email";
+import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { emailNotificationsEnabled } from "@/lib/notifications/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,20 +29,22 @@ export async function POST(request: Request) {
       ? body.to.map(String)
       : typeof body.to === "string"
         ? [body.to]
-        : undefined;
+        : [];
 
-    const result = await sendNotificationEmail({
-      ctaHref: "/payroll",
-      ctaLabel: "Open Phoenix Payroll",
-      metrics: [
-        { label: "Environment", value: process.env.NODE_ENV ?? "unknown" },
-        { label: "Dashboard URL", value: process.env.NOTIFICATION_DASHBOARD_URL ?? "not configured" },
-      ],
-      recipients,
-      subject: `${systemIdentity.brandName} email notifications test`,
-      summary: `This is a live test email from the ${systemIdentity.appName} notification system.`,
-      title: "Email Notifications Are Online",
-      tone: "success",
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: "Missing 'to' field." }, { status: 400 });
+    }
+
+    const subject = `${systemIdentity.brandName} email notifications test`;
+    const text = `This is a live test email from ${systemIdentity.appName}. If you received this, email delivery is working.`;
+    const html = `<div style="font-family:sans-serif;padding:24px;max-width:480px"><h2 style="color:#f97316">Email Notifications Are Online</h2><p>${text}</p><p style="color:#888;font-size:12px">Environment: ${process.env.NODE_ENV ?? "unknown"}</p></div>`;
+
+    const result = await sendPhoenixEmail({
+      html,
+      idempotencyKey: `test-${randomUUID()}`,
+      subject,
+      text,
+      to: recipients,
     });
 
     return NextResponse.json({
