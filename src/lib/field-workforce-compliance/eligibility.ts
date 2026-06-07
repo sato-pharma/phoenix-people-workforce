@@ -19,9 +19,10 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
  * Sales/Marketing role). The explicit set also covers "Marketing Manager" and
  * "Training Manager", which do not map to a canonical sales/marketing PhoenixRole.
  *
- * NOTE: the SFE Manager is intentionally EXCLUDED (the rule names only Sales,
- * Marketing, and the Training Manager). To include the SFE Manager later, add
- * "sfe manager" to ELIGIBLE_TITLES below — that is the only change required.
+ * NOTE: the SFE Manager APPEARS in the Workforce Compliance report (listed below), but
+ * must NOT be subject to deductions. That deduction-side exclusion is enforced separately
+ * in the deductions-governance connector — this helper only controls who shows up in the
+ * compliance report.
  */
 
 const ELIGIBLE_TITLES = new Set<string>([
@@ -42,6 +43,8 @@ const ELIGIBLE_TITLES = new Set<string>([
   "marketing manager",
   // Training
   "training manager",
+  // SFE — appears in the compliance report; excluded from deductions separately.
+  "sfe manager",
 ]);
 
 // Canonical Sales + Marketing job-function roles (per src/lib/employees/job-function.ts).
