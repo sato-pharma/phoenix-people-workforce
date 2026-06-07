@@ -19,8 +19,8 @@ export function runEmailNotificationTests() {
   assert.match(sendPhoenixEmailSource, /testingRecipients \? undefined : input\.cc/);
   // Testing-delivery configuration is centralized in system-settings.ts (single
   // source of truth). The send layer reads the switch + fallback recipients from there.
-  assert.match(sendPhoenixEmailSource, /forceTestingDelivery/);
-  assert.match(systemSettingsSource, /forceTestingDelivery/);
+  assert.match(sendPhoenixEmailSource, /isForceTestingDelivery/);
+  assert.match(systemSettingsSource, /isForceTestingDelivery/);
   assert.match(systemSettingsSource, /testingRecipientFallback/);
   assert.match(systemSettingsSource, /omar\.anwar@satopharma\.com/);
   assert.match(systemSettingsSource, /phoenix@satopharma\.com/);

@@ -1,11 +1,14 @@
 import crypto from "crypto";
 
+import * as Sentry from "@sentry/nextjs";
+
 import {
   renderGeneralNotificationEmailHtml,
   renderGeneralNotificationEmailText,
 } from "@/emails/general-notification";
 import {
   systemAuthEmailText,
+  systemEmail,
   systemIdentity,
   systemNotificationEmailText,
 } from "@/config/system-settings";
@@ -502,6 +505,7 @@ async function loadEmployeeContact(hrId: string | null | undefined) {
     .from("employees")
     .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
     .eq("hr_id", cleanHrId)
+    .not("employment_status", "in", "(resigned,terminated,inactive)")
     .maybeSingle();
 
   if (error) throw error;
@@ -524,7 +528,8 @@ async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) 
   const { data, error } = await supabase
     .from("employees")
     .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
-    .not("work_email", "is", null);
+    .not("work_email", "is", null)
+    .not("employment_status", "in", "(resigned,terminated,inactive)");
 
   if (error) throw error;
 
@@ -861,20 +866,22 @@ export async function getEmailNotificationOutboxStats() {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from(notificationOutboxTable)
-      .select("status,payload,created_at")
+      .select("status,payload,created_at,attempts,max_attempts")
       .order("created_at", { ascending: false })
       .limit(500);
 
     if (error) throw error;
 
     const rows = (data ?? []) as Array<{
+      attempts: number;
       created_at: string;
+      max_attempts: number;
       payload: Partial<NotificationEmailInput> | null;
       status: NotificationOutboxRow["status"];
     }>;
     const allowed = new Set<EmailNotificationType>(emailNotificationTypes);
 
-    return summarizeNotificationOutboxRows(
+    const summary = summarizeNotificationOutboxRows(
       rows.map((row) => ({
         createdAt: row.created_at,
         payload: row.payload,
@@ -882,6 +889,12 @@ export async function getEmailNotificationOutboxStats() {
       })),
       Array.from(allowed),
     );
+
+    const terminalFailed = rows.filter(
+      (row) => row.status === "failed" && row.attempts >= row.max_attempts,
+    ).length;
+
+    return { ...summary, terminalFailed };
   } catch (error) {
     if (notificationSchemaMissing(error)) {
       return {
@@ -891,6 +904,7 @@ export async function getEmailNotificationOutboxStats() {
         recentAllowed: 0,
         recentTotal: 0,
         sent: 0,
+        terminalFailed: 0,
       };
     }
     throw error;
@@ -1047,6 +1061,17 @@ function nextAttemptAtIso(attemptNumber: number) {
   return next.toISOString();
 }
 
+const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
+
+function listUnsubscribeHeaders(notificationType: EmailNotificationType | undefined): Record<string, string> | undefined {
+  if (!notificationType || transactionalEmailTypes.has(notificationType)) return undefined;
+  const replyTo = process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
+  return {
+    "List-Unsubscribe": `<mailto:${replyTo}?subject=unsubscribe>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
+
 async function sendNotificationEmailDirect(input: NotificationEmailInput): Promise<SendEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
@@ -1089,6 +1114,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
 
   return sendPhoenixEmail({
     from,
+    headers: listUnsubscribeHeaders(input.notificationType),
     html: renderHtml(input, delivery.policy),
     idempotencyKey: requestId,
     subject: notificationSubject(input, delivery.policy),
@@ -1213,6 +1239,74 @@ async function loadDueNotificationOutboxRows(limit: number) {
   return ((data ?? []) as NotificationOutboxRow[]).filter((row) => row.attempts < row.max_attempts);
 }
 
+const staleProcessingThresholdMinutes = 10;
+const retentionDays = 90;
+
+export async function reapStaleProcessingOutboxRows(): Promise<number> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const threshold = new Date();
+    threshold.setMinutes(threshold.getMinutes() - staleProcessingThresholdMinutes);
+
+    const { data, error } = await supabase
+      .from(notificationOutboxTable)
+      .update({ locked_at: null, status: "pending", updated_at: new Date().toISOString() })
+      .eq("status", "processing")
+      .lt("locked_at", threshold.toISOString())
+      .select("id");
+
+    if (error) {
+      if (notificationSchemaMissing(error)) return 0;
+      throw error;
+    }
+    return data?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function cleanupOldNotificationData(): Promise<{ outboxDeleted: number; eventsRedacted: number }> {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - retentionDays);
+  const thresholdIso = threshold.toISOString();
+  let outboxDeleted = 0;
+  let eventsRedacted = 0;
+
+  try {
+    const supabase = getSupabaseAdmin();
+
+    const { data: outboxData, error: outboxError } = await supabase
+      .from(notificationOutboxTable)
+      .delete()
+      .eq("status", "sent")
+      .lt("sent_at", thresholdIso)
+      .select("id");
+
+    if (outboxError && !notificationSchemaMissing(outboxError)) {
+      console.error("Outbox retention cleanup failed", outboxError);
+    }
+    outboxDeleted = outboxData?.length ?? 0;
+  } catch { /* schema missing */ }
+
+  try {
+    const supabase = getSupabaseAdmin();
+
+    const { data: eventsData, error: eventsError } = await supabase
+      .from("email_delivery_events")
+      .update({ raw_event: {} })
+      .lt("occurred_at", thresholdIso)
+      .neq("raw_event", "{}")
+      .select("id");
+
+    if (eventsError) {
+      console.error("Delivery events retention cleanup failed", eventsError);
+    }
+    eventsRedacted = eventsData?.length ?? 0;
+  } catch { /* table missing */ }
+
+  return { eventsRedacted, outboxDeleted };
+}
+
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
   const claimed = await claimNotificationOutboxRow(row.id);
   if (!claimed) {
@@ -1253,6 +1347,14 @@ export async function processNotificationOutbox(limit = notificationOutboxBatchS
     }
   }
 
+  if (failed > 0) {
+    Sentry.captureMessage("Email outbox processing had failures", {
+      level: "warning",
+      tags: { component: "email", cron: "outbox-processing" },
+      extra: { attempted, failed, sent },
+    });
+  }
+
   return { attempted, failed, processedIds, sent };
 }
 
@@ -1281,6 +1383,9 @@ export async function safeSendNotificationEmail(input: NotificationEmailInput) {
     if (notificationSchemaMissing(error)) {
       return sendNotificationEmailDirect(input);
     }
+    Sentry.captureException(error, {
+      tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
+    });
     console.error("Email notification failed", error);
     return {
       reason: error instanceof Error ? error.message : "Email notification failed.",
