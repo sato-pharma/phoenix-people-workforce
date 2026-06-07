@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 import { isFieldWorkforceComplianceEligibleTitle } from "../src/lib/field-workforce-compliance/eligibility.ts";
 import {
   buildIReports360FieldWorkforceMatrix,
-  type IReports360AgentResolver,
+  type FieldWorkforceEmployeeInput,
 } from "../src/lib/field-workforce-compliance/ireports360-source.ts";
 import type { IReports360Visit } from "../src/lib/field-workforce-compliance/ireports360-client.ts";
 
@@ -76,33 +76,40 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(isFieldWorkforceComplianceEligibleTitle("", "Medical Rep"), true);
   assert.equal(isFieldWorkforceComplianceEligibleTitle("Office Coordinator", null), false);
 
-  // --- Matrix builder: only eligible, matched agents become rows ---
-  const resolver: IReports360AgentResolver = {
-    resolve(agentId) {
-      if (agentId === 1) return { eligible: true, fullName: "Rep One", hireDateIso: "2024-01-01", hrId: "A-1" };
-      if (agentId === 2) return { eligible: false, fullName: "Admin Two", hireDateIso: "2024-01-01", hrId: "A-2" };
-      return null; // agent 3 has no Phoenix HR-ID match
-    },
-  };
+  // --- Matrix builder: every eligible, active employee becomes a row (even with no visits) ---
+  const employees: FieldWorkforceEmployeeInput[] = [
+    // Eligible rep WITH a visit.
+    { crmId: "1", crmUsername: "Rep.One", employmentStatus: "active", fullName: "Rep One", hireDate: "2024-01-01", hrId: "A-1", jobTitle: "Medical Representative", positionTitle: null },
+    // Eligible manager with NO visits — must still appear (this is the "missing managers" fix).
+    { crmId: "5", crmUsername: "Mgr.Five", employmentStatus: "active", fullName: "Mgr Five", hireDate: "2024-01-01", hrId: "A-5", jobTitle: "National Sales Manager", positionTitle: null },
+    // Ineligible role — excluded.
+    { crmId: "2", crmUsername: "Admin.Two", employmentStatus: "active", fullName: "Admin Two", hireDate: "2024-01-01", hrId: "A-2", jobTitle: "Admin Assistant", positionTitle: null },
+    // Departed employee — excluded even though eligible role.
+    { crmId: "9", crmUsername: "Gone.Nine", employmentStatus: "resigned", fullName: "Gone Nine", hireDate: "2024-01-01", hrId: "A-9", jobTitle: "Medical Representative", positionTitle: null },
+  ];
 
-  const { matrix, excludedAgents } = buildIReports360FieldWorkforceMatrix({
+  const { matrix } = buildIReports360FieldWorkforceMatrix({
+    employees,
     month: 5,
     year: 2026,
     todayIso: "2026-06-01",
-    resolver,
     visits: [
       visit(1, "2026-05-04", "Rep.One ( Cairo / A )"),
-      visit(2, "2026-05-04", "Admin.Two ( HQ / Office )"),
-      visit(3, "2026-05-04", "Ghost.Agent ( Unknown / X )"),
+      visit(99, "2026-05-04", "Ghost.Agent ( Unknown / X )"), // orphan visit, no employee → ignored
     ],
   });
 
-  // Header row + exactly one data row (the eligible, matched agent).
-  assert.equal(matrix.length, 2, "matrix should contain header + 1 eligible row");
-  const dataRow = matrix[1];
-  assert.equal(dataRow[0], "Rep One");
-  assert.equal(dataRow[1], "A-1"); // HR ID column
-  // Ineligible (agent 2) and unmatched (agent 3) are counted, not rendered.
-  assert.equal(excludedAgents.ineligibleRole, 1, "one ineligible-role agent excluded");
-  assert.equal(excludedAgents.noHrId, 1, "one unmatched (no HR ID) agent excluded");
+  // Header + Rep One (A-1) + Mgr Five (A-5). Admin Two (ineligible) and Gone Nine (departed) excluded.
+  const hrIds = matrix.slice(1).map((row) => row[1]);
+  assert.deepEqual([...hrIds].sort(), ["A-1", "A-5"], "only eligible, active employees appear");
+
+  const repRow = matrix.find((row) => row[1] === "A-1")!;
+  const mgrRow = matrix.find((row) => row[1] === "A-5")!;
+  // Column layout: [TM, HR ID, Hiring Date, Month, Year, day1..dayN]; 2026-05-04 = index 8.
+  assert.equal(repRow[8], 1, "Rep One shows 1 regular visit on 2026-05-04");
+  // Manager has no visits: every day cell is "N" or null (Friday/future) — never a number.
+  assert.ok(
+    mgrRow.slice(5).every((cell) => cell === "N" || cell === null),
+    "zero-visit manager appears with no numeric activity",
+  );
 }
