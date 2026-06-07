@@ -38,11 +38,6 @@ export function OutstationCostBreakdown({
           value={egp(result.claimedTotalAmount)}
         />
         <Line
-          accent="border-l-amber-400"
-          label="Variance"
-          value={`${egp(result.varianceAmount)} (${result.variancePercent.toFixed(1)}%)`}
-        />
-        <Line
           accent="border-l-emerald-300"
           label="Same Day Trip"
           value={result.sameDayTrip ? "Yes" : "No"}

@@ -301,7 +301,6 @@ function RequestDetailsModal({
             <Info label="Duration" value={request.durationMinutes != null ? `${request.durationMinutes.toFixed(0)} mins` : "N/A"} />
             <Info label="Expected amount" value={formatCurrency(request.expectedTotalAmount)} />
             <Info label="Claimed amount" value={formatCurrency(request.claimedTotalAmount)} />
-            <Info label="Variance" value={`${formatCurrency(request.varianceAmount)} (${request.variancePercent.toFixed(1)}%)`} />
             <Info label="Transportation" value={formatStatus(request.transportationType)} />
             <Info label="Expense type" value={formatStatus(request.expenseType)} />
             <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
@@ -577,10 +576,9 @@ export function OutstationRequestsAdmin({
         accumulator.expected += request.expectedTotalAmount;
         accumulator.rejected += request.status === "rejected" ? 1 : 0;
         accumulator.submitted += request.status === "submitted" ? 1 : 0;
-        accumulator.variance += request.varianceAmount;
         return accumulator;
       },
-      { approved: 0, claimed: 0, expected: 0, rejected: 0, submitted: 0, variance: 0 },
+      { approved: 0, claimed: 0, expected: 0, rejected: 0, submitted: 0 },
     );
   }, [filtered]);
 
@@ -778,15 +776,6 @@ export function OutstationRequestsAdmin({
           )}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric label="Requests" value={String(filtered.length)} />
-          <Metric label="Submitted" value={String(totals.submitted)} />
-          <Metric label="Approved" value={String(totals.approved)} />
-          <Metric label="Rejected" value={String(totals.rejected)} />
-          <Metric label="Expected" value={formatCurrency(totals.expected)} />
-          <Metric label="Claimed" value={formatCurrency(totals.claimed)} />
-        </div>
-
         <AdminTableShell
           action={hasActiveFilters ? (
             <button
@@ -847,31 +836,19 @@ export function OutstationRequestsAdmin({
         </AdminTableShell>
 
         <Card className={`${panelClassName} overflow-hidden p-0`}>
-            <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
-              />
-              <div className="relative z-10 space-y-1.5">
-                <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
-                <h2 className="text-xl font-black text-white">Outstation expense queue</h2>
-                <p className="text-sm text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
-              </div>
-            </div>
-
             <div className="max-h-[68vh] overflow-auto">
               <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-40 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.16em] text-[#64748B]">
                   <tr>
                     <th className={stickyEmployeeHeaderClassName}>Employee</th>
                     <th className={stickyTripHeaderClassName}>Trip</th>
+                    <th className={adminTableHeaderClassName}>To</th>
                     <th className={adminTableHeaderClassName}>Distance</th>
                     <th className={adminTableHeaderClassName}>Eligibility</th>
-                    <th className={adminTableHeaderClassName}>Status</th>
-                    <th className={adminTableHeaderClassName}>Expected</th>
-                    <th className={adminTableHeaderClassName}>Claimed</th>
-                    <th className={adminTableHeaderClassName}>Variance</th>
-                    <th className={adminTableHeaderClassName}>Recommendation</th>
+                    <th className={adminTableHeaderClassName}>Travel Cost</th>
+                    <th className={adminTableHeaderClassName}>Allowance</th>
+                    <th className={adminTableHeaderClassName}>Meeting</th>
+                    <th className={adminTableHeaderClassName}>Total Cost</th>
                     <th className={adminTableHeaderClassName}>Actions</th>
                   </tr>
                 </thead>
@@ -893,6 +870,9 @@ export function OutstationRequestsAdmin({
                           {formatDate(request.tripStartDate)} to {formatDate(request.tripEndDate)}
                         </td>
                         <td className="px-4 py-3 font-semibold text-[#0F172A]">
+                          {request.toLabel ?? request.toCity ?? request.toArea ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-[#0F172A]">
                           {formatKm(request.distanceFromResidenceKm)}
                         </td>
                         <td className="px-4 py-3">
@@ -900,22 +880,17 @@ export function OutstationRequestsAdmin({
                             {formatStatus(request.eligibilityStatus)}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
-                            {formatStatus(request.status)}
-                          </span>
+                        <td className="px-4 py-3 font-semibold text-[#64748B]">
+                          {formatCurrency(request.fuelAmount + request.ticketAmount)}
                         </td>
                         <td className="px-4 py-3 font-semibold text-[#64748B]">
-                          {formatCurrency(request.expectedTotalAmount)}
+                          {formatCurrency(request.allowanceAmount)}
                         </td>
                         <td className="px-4 py-3 font-semibold text-[#64748B]">
+                          {formatCurrency(request.expenseType === "meeting" ? request.claimedTotalAmount : 0)}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-[#0F172A]">
                           {formatCurrency(request.claimedTotalAmount)}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-[#64748B]">
-                          {formatCurrency(request.varianceAmount)} ({request.variancePercent.toFixed(1)}%)
-                        </td>
-                        <td className={`px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${recommendationTone(request.approvalRecommendation)}`}>
-                          {formatStatus(request.approvalRecommendation)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
