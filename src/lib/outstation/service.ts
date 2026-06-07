@@ -1886,6 +1886,91 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
   };
 }
 
+export type ManagerExpenseCalculationPreview = {
+  allowanceAmount: number;
+  allowanceBreakdown: OutstationAllowanceBreakdown;
+  claimedTotalAmount: number;
+  eligibilityStatus: OutstationEligibilityStatus;
+  expectedTotalAmount: number;
+  fuelAmount: number;
+  fuelRatePerKm: number;
+  overnightDays: number;
+  sameDayTrip: boolean;
+  varianceAmount: number;
+  variancePercent: number;
+};
+
+/**
+ * Computes the fuel + allowance breakdown for a manual admin outstation expense
+ * WITHOUT persisting anything. Used by the add-expense modal to show a live
+ * calculation preview. The fuel + total math here is intentionally identical to
+ * `createManagerExpenseAsAdmin`; keep the two in sync.
+ */
+export async function previewManagerExpenseCalculation(
+  access: AccessContext,
+  input: {
+    claimedTotalAmount?: number;
+    distanceKm: number;
+    employeeHrId: string;
+    transportationType: OutstationTransportationType;
+    tripEndDate: string;
+    tripStartDate: string;
+  },
+): Promise<ManagerExpenseCalculationPreview> {
+  await assertOutstationAdminAccess(access, "approve");
+
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find(
+    (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(input.employeeHrId),
+  );
+  if (!employee?.hrId) {
+    throw new Error(`Employee ${input.employeeHrId} was not found in the employee directory.`);
+  }
+
+  const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
+  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+
+  let fuelAmount = 0;
+  if (input.transportationType === "car") {
+    fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
+  }
+
+  const distanceEligibility = classifyOutstationExpenseEligibility({
+    actualDistanceKm: input.distanceKm,
+    policy: {
+      officialMinimumDistanceKm: policy.minimumDistanceKm,
+      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+    },
+  });
+  const eligibilityStatus: OutstationEligibilityStatus =
+    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+
+  const expectedTotalAmount =
+    eligibilityStatus === "not_eligible"
+      ? 0
+      : roundMoney(fuelAmount + allowance.allowanceAmount);
+  const claimedInput = Number(input.claimedTotalAmount ?? 0);
+  const claimedTotalAmount =
+    Number.isFinite(claimedInput) && claimedInput > 0 ? claimedInput : expectedTotalAmount;
+  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
+  const variancePercent =
+    expectedTotalAmount > 0 ? roundMoney((varianceAmount / expectedTotalAmount) * 100) : 0;
+
+  return {
+    allowanceAmount: allowance.allowanceAmount,
+    allowanceBreakdown: allowance.breakdown,
+    claimedTotalAmount,
+    eligibilityStatus,
+    expectedTotalAmount,
+    fuelAmount,
+    fuelRatePerKm: policy.fuelRatePerKm,
+    overnightDays: allowance.overnightDays,
+    sameDayTrip: allowance.sameDayTrip,
+    varianceAmount,
+    variancePercent,
+  };
+}
+
 export async function createManagerExpenseAsAdmin(
   access: AccessContext,
   input: ManagerExpenseAdminInput,

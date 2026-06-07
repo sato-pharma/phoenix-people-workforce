@@ -46,6 +46,31 @@ type EmployeeLookup =
   | { status: "not_found" }
   | { status: "error"; message: string };
 
+type CalcPreviewRow = { amount: number; label: string; type: string };
+
+type CalcPreview = {
+  allowanceAmount: number;
+  allowanceBreakdown: {
+    overnightDays: number;
+    returnDayApplied: boolean;
+    rows: CalcPreviewRow[];
+    sameDayTrip: boolean;
+  };
+  claimedTotalAmount: number;
+  eligibilityStatus: string;
+  expectedTotalAmount: number;
+  fuelAmount: number;
+  fuelRatePerKm: number;
+  overnightDays: number;
+  sameDayTrip: boolean;
+  varianceAmount: number;
+  variancePercent: number;
+};
+
+function formatEgp(value: number) {
+  return `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
 const panelClassName =
@@ -157,6 +182,8 @@ export function AdminManagerExpenseModal({
   const [destinationIsRegion, setDestinationIsRegion] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [calcPreview, setCalcPreview] = useState<CalcPreview | null>(null);
+  const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const initialName = targetName ?? request?.employeeName ?? null;
   const [employeeLookup, setEmployeeLookup] = useState<EmployeeLookup>(
@@ -324,6 +351,45 @@ export function AdminManagerExpenseModal({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeHrId]);
+
+  async function fetchCalcPreview(hrId: string, distance: number) {
+    try {
+      const response = await fetch("/api/admin/outstation/preview-expense-calculation", {
+        body: JSON.stringify({
+          claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
+          distanceKm: distance,
+          employeeHrId: hrId,
+          transportationType,
+          tripEndDate,
+          tripStartDate,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as { message?: string; preview?: CalcPreview };
+      setCalcPreview(response.ok && payload.preview ? payload.preview : null);
+    } catch {
+      setCalcPreview(null);
+    }
+  }
+
+  // Live calculation preview: recompute the fuel + allowance breakdown whenever
+  // the inputs that drive the payout change.
+  useEffect(() => {
+    const distance = Number(manualDistanceKm);
+    const hrId = hrIdForDistance;
+    if (!hrId || !Number.isFinite(distance) || distance <= 0 || !tripStartDate || !tripEndDate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCalcPreview(null);
+      return;
+    }
+    if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current);
+    previewDebounceRef.current = setTimeout(() => void fetchCalcPreview(hrId, distance), 450);
+    return () => {
+      if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrIdForDistance, manualDistanceKm, tripStartDate, tripEndDate, transportationType, claimedAmount]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -668,6 +734,67 @@ export function AdminManagerExpenseModal({
               value={claimedAmount}
             />
           </div>
+
+          {/* Calculation preview — fuel + allowance breakdown */}
+          {calcPreview ? (
+            <div className={`${panelClassName} p-4`}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+                  Calculation preview
+                </p>
+                {calcPreview.eligibilityStatus === "not_eligible" ? (
+                  <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-[#B91C1C]">
+                    Not eligible
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                    Fuel (round trip)
+                  </p>
+                  <p className="mt-0.5 text-sm font-black text-[#0F172A]">
+                    {formatEgp(calcPreview.fuelAmount)}
+                  </p>
+                </div>
+                <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                    Allowance
+                  </p>
+                  <p className="mt-0.5 text-sm font-black text-[#0F172A]">
+                    {formatEgp(calcPreview.allowanceAmount)}
+                  </p>
+                </div>
+                <div className="rounded-md bg-[#FFF7ED] px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
+                    Expected total
+                  </p>
+                  <p className="mt-0.5 text-sm font-black text-[#EA580C]">
+                    {formatEgp(calcPreview.expectedTotalAmount)}
+                  </p>
+                </div>
+              </div>
+              {calcPreview.allowanceBreakdown.rows.length > 0 ? (
+                <ul className="mt-3 space-y-1 border-t border-[#E2E8F0] pt-3">
+                  {calcPreview.allowanceBreakdown.rows.map((row, index) => (
+                    <li
+                      className="flex items-center justify-between text-xs text-[#475569]"
+                      key={`${row.type}-${index}`}
+                    >
+                      <span className="font-semibold">{row.label}</span>
+                      <span className="font-black text-[#0F172A]">{formatEgp(row.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {calcPreview.eligibilityStatus === "not_eligible" ? (
+                <p className="mt-3 text-xs font-semibold text-[#B91C1C]">
+                  Distance is below the policy minimum, so the expected payout is EGP 0. The
+                  claim can still be filed for manual review.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Notes */}
           <div>
