@@ -203,6 +203,12 @@ async function listPermissionOverrides(): Promise<PermissionOverrideRow[]> {
     .select("role_name,resource,action,is_allowed");
 
   if (error || !data) {
+    // Observable, not silent: a failed load makes the access dashboard show
+    // "no overrides", which misrepresents the live policy to an admin. Log it
+    // so the discrepancy is diagnosable rather than invisible.
+    if (error) {
+      console.error("[access-control] role_permission_overrides provenance load failed", error);
+    }
     return [];
   }
 
