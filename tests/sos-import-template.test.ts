@@ -12,9 +12,15 @@ export function runSosImportTemplateTests() {
   const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
   const coded = new Set(CODED_HEADERS.map(norm));
 
-  // every REQUIRED field header is emitted by the coded sheet (findHeaderMap requires all of these)
-  for (const header of Object.values(NORMALIZER_TEMPLATE.fields)) {
-    assert.ok(coded.has(norm(header)), `NORMALIZER_TEMPLATE required field "${header}" must be a CODED_HEADERS column`);
+  // every REQUIRED field must have at least one accepted header alias that the coded sheet emits.
+  // (findHeaderMap resolves each field to whichever alias is present; the coded format uses the canonical
+  // name, but hybrid sheets may use distributor-raw aliases like QTY_INVOICE / INVOICE_DATE / Brick ID2.)
+  for (const spec of Object.values(NORMALIZER_TEMPLATE.fields)) {
+    const aliases = Array.isArray(spec) ? spec : [spec];
+    assert.ok(
+      aliases.some((header) => coded.has(norm(header))),
+      `NORMALIZER_TEMPLATE field [${aliases.join(", ")}] must include a CODED_HEADERS column`,
+    );
   }
   // the bonus + discount columns the template reads are also emitted; discount drives the value recompute
   // (Qty x factory_price x (1 - Discount%)) that reproduces the engine's value exactly.
