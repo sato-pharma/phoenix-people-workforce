@@ -40,6 +40,7 @@ import {
   buildPayrollExpenseDsmSummaries,
   summarizePayrollExpenses,
 } from "@/lib/payroll/expense-metrics";
+import { roundCurrency } from "@/lib/payroll/money";
 import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
 import {
   calculatePayrollParts,
@@ -5167,7 +5168,7 @@ export async function getNsmTeamExpenses(
         );
 
         return {
-          expenses: periodRows.reduce((sum, expense) => sum + (expense.total || 0), 0),
+          expenses: roundCurrency(periodRows.reduce((sum, expense) => sum + (expense.total || 0), 0)),
           month: toPeriodLabel(period),
           trips: periodRows.length,
         };

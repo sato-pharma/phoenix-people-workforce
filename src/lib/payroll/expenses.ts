@@ -9,6 +9,7 @@ import {
   type PayrollExpenseTrendPoint,
 } from "@/lib/payroll/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
+import { roundCurrency } from "@/lib/payroll/money";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
@@ -813,7 +814,7 @@ export async function savePayrollExpenseApprovals(input: {
         approved_rows: reportTotals.approvedRows,
         file_name: input.fileName,
         row_count: reportTotals.rowCount,
-        total_expenses: reportTotals.totalExpenses,
+        total_expenses: roundCurrency(reportTotals.totalExpenses),
         trip_date_from: reportTotals.tripDateFrom,
         trip_date_to: reportTotals.tripDateTo,
         updated_at: now,
@@ -828,7 +829,7 @@ export async function savePayrollExpenseApprovals(input: {
         approved_rows: reportTotals.approvedRows,
         file_name: input.fileName,
         row_count: reportTotals.rowCount,
-        total_expenses: reportTotals.totalExpenses,
+        total_expenses: roundCurrency(reportTotals.totalExpenses),
         trip_date_from: reportTotals.tripDateFrom,
         trip_date_to: reportTotals.tripDateTo,
         updated_at: now,
