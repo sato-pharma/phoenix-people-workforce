@@ -1934,7 +1934,11 @@ function ArchivedMonthsPanel({
   );
 }
 
-export function FieldWorkforceComplianceWorkspace() {
+export function FieldWorkforceComplianceWorkspace({
+  ireports360Configured,
+}: {
+  ireports360Configured: boolean;
+}) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -2309,41 +2313,53 @@ export function FieldWorkforceComplianceWorkspace() {
           description="Pull the month's field activity straight from iReports360 — no manual file needed. Read-only; nothing is archived until you choose Save Archived Month."
           title="Live Import (iReports360)"
         >
-          <div className="flex flex-wrap items-end gap-3 p-4">
-            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-              Month
-              <select
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                value={crmMonth}
-                onChange={(event) => setCrmMonth(Number(event.target.value))}
+          {ireports360Configured ? (
+            <div className="flex flex-wrap items-end gap-3 p-4">
+              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                Month
+                <select
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                  value={crmMonth}
+                  onChange={(event) => setCrmMonth(Number(event.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
+                    <option key={monthValue} value={monthValue}>{monthValue}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                Year
+                <select
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                  value={crmYear}
+                  onChange={(event) => setCrmYear(Number(event.target.value))}
+                >
+                  {crmYearOptions.map((yearValue) => (
+                    <option key={yearValue} value={yearValue}>{yearValue}</option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                className="gap-2 rounded-xl font-black"
+                disabled={isImportingCrm || isPreviewing}
+                type="button"
+                onClick={() => void handleImportFromIReports360()}
               >
-                {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
-                  <option key={monthValue} value={monthValue}>{monthValue}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-              Year
-              <select
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                value={crmYear}
-                onChange={(event) => setCrmYear(Number(event.target.value))}
-              >
-                {crmYearOptions.map((yearValue) => (
-                  <option key={yearValue} value={yearValue}>{yearValue}</option>
-                ))}
-              </select>
-            </label>
-            <Button
-              className="gap-2 rounded-xl font-black"
-              disabled={isImportingCrm || isPreviewing}
-              type="button"
-              onClick={() => void handleImportFromIReports360()}
-            >
-              {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              Import from iReports360
-            </Button>
-          </div>
+                {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                Import from iReports360
+              </Button>
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                <p className="font-black">Live import is not configured on this server.</p>
+                <p className="mt-1 text-amber-800">
+                  The iReports360 connection settings are not set in this environment, so one-click monthly imports are unavailable.
+                  Use the manual Excel upload above for now, and contact your administrator to enable the live connection.
+                </p>
+              </div>
+            </div>
+          )}
         </AdminTableShell>
 
         {message ? (
