@@ -1,4 +1,5 @@
 import { normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { roundCurrency } from "@/lib/payroll/money";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 
 export type PayrollExpenseSummary = {
@@ -79,23 +80,25 @@ export function summarizePayrollExpenses(
   expenses: PayrollExpenseApproval[],
 ): PayrollExpenseSummary {
   const approvedRows = expenses.filter((expense) => expense.hrApproved);
-  const totalAmount = expenses.reduce((sum, expense) => sum + (expense.total || 0), 0);
+  const totalAmount = roundCurrency(expenses.reduce((sum, expense) => sum + (expense.total || 0), 0));
 
   return {
-    approvedAmount: approvedRows.reduce((sum, expense) => sum + (expense.total || 0), 0),
+    approvedAmount: roundCurrency(approvedRows.reduce((sum, expense) => sum + (expense.total || 0), 0)),
     approvedRows: approvedRows.length,
-    averageCostPerTrip: expenses.length > 0 ? totalAmount / expenses.length : 0,
-    pendingAmount: expenses
-      .filter((expense) => !expense.hrApproved)
-      .reduce((sum, expense) => sum + (expense.total || 0), 0),
+    averageCostPerTrip: expenses.length > 0 ? roundCurrency(totalAmount / expenses.length) : 0,
+    pendingAmount: roundCurrency(
+      expenses
+        .filter((expense) => !expense.hrApproved)
+        .reduce((sum, expense) => sum + (expense.total || 0), 0),
+    ),
     pendingRows: expenses.filter((expense) => !expense.hrApproved).length,
     specialistCount: new Set(expenses.map((expense) => expense.specialist).filter(Boolean)).size,
-    totalAllowance: expenses.reduce((sum, expense) => sum + (expense.allowance || 0), 0),
+    totalAllowance: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.allowance || 0), 0)),
     totalAmount,
     totalDistance: expenses.reduce((sum, expense) => sum + (expense.km || 0), 0),
-    totalMeetingAmount: expenses.reduce((sum, expense) => sum + (expense.meetingAmount || 0), 0),
+    totalMeetingAmount: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.meetingAmount || 0), 0)),
     totalRows: expenses.length,
-    totalTravelCost: expenses.reduce((sum, expense) => sum + (expense.travelCost || 0), 0),
+    totalTravelCost: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.travelCost || 0), 0)),
   };
 }
 

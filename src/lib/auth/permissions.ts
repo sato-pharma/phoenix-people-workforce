@@ -616,7 +616,7 @@ export function resolveNavigationMode(context: AccessContext): NavigationMode {
     return "employee-portal";
   }
   // The CEO is an executive Admin account: it uses the existing admin shell and
-  // navigation (landing on /admin/ceo-command-center), never the employee portal.
+  // navigation (landing on /admin/sales-command), never the employee portal.
   if (context.role === "CEO") {
     return "admin";
   }

@@ -9,6 +9,7 @@ import {
   firstExcelWorksheet,
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
+import { roundCurrency } from "@/lib/payroll/money";
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -222,11 +223,11 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       systemApproved: records.filter((record) =>
         record.status.toLowerCase().includes("system approval"),
       ).length,
-      totalAllowance: records.reduce((sum, record) => sum + record.allowance, 0),
-      totalExpenses: records.reduce((sum, record) => sum + record.total, 0),
+      totalAllowance: roundCurrency(records.reduce((sum, record) => sum + record.allowance, 0)),
+      totalExpenses: roundCurrency(records.reduce((sum, record) => sum + record.total, 0)),
       totalKm: records.reduce((sum, record) => sum + record.km, 0),
-      totalMeetingAmount: records.reduce((sum, record) => sum + record.meetingAmount, 0),
-      totalTravelCost: records.reduce((sum, record) => sum + record.travelCost, 0),
+      totalMeetingAmount: roundCurrency(records.reduce((sum, record) => sum + record.meetingAmount, 0)),
+      totalTravelCost: roundCurrency(records.reduce((sum, record) => sum + record.travelCost, 0)),
       trips: records.length,
     },
     warnings,
