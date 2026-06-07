@@ -113,7 +113,8 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(__vacationDeductionConnectorTestables.unpaidDays(null), 0);
   }
 
-  // Payroll preview: replacement totals, deltas, fallback matching by employee_code, and blockers.
+  // Payroll preview: add-on-top totals (existing + applied = resulting), amount-added delta,
+  // fallback matching by employee_code, and blockers.
   {
     const preview = buildDeductionsPayrollPreview({
       batch: { id: "batch-1", month: 5, year: 2026, status: "adjustments_open" },
@@ -157,7 +158,12 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(preview.totals.fingerPrint, 50);
     assert.equal(preview.totals.unpaidVacations, 70);
     assert.equal(preview.totals.total, 220);
-    assert.equal(preview.rows.find((row) => row.employeeCode === "A-1")?.delta, 120);
+    // Add-on-top: A-1 already has CRM 20 + Finger Print 10; the import ADDS CRM 100 + FP 50.
+    const a1 = preview.rows.find((row) => row.employeeCode === "A-1");
+    assert.equal(a1?.delta, 150); // amount added (100 + 50), not the replace-delta (150 - 30)
+    assert.equal(a1?.resultingTotals.crm, 120); // 20 existing + 100 added
+    assert.equal(a1?.resultingTotals.fingerPrint, 60); // 10 existing + 50 added
+    assert.equal(a1?.resultingTotals.unpaidVacations, 0);
     assert.equal(preview.rows.find((row) => row.employeeCode === "B-2")?.matched, true);
 
     const locked = buildDeductionsPayrollPreview({
