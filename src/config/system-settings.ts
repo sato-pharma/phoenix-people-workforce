@@ -44,19 +44,18 @@ export const systemEditingPolicy = {
 export const systemEmail = {
   defaultFromEmail: "phoenix@mail.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
-  // ── EMAIL TESTING SAFETY SWITCH ──────────────────────────────────────────────
-  // While `true`, EVERY outgoing email (notifications, password-setup links, HR
-  // replies, internal messages, excuse decisions) is redirected ONLY to the
-  // `testingRecipientFallback` addresses below — real recipients receive nothing.
-  // Keep this `true` while you are still editing and testing.
-  // When you are ready to send to real recipients, change `true` to `false`.
-  forceTestingDelivery: true,
   testingRecipientFallback: [
     "omar.anwar@satopharma.com",
     "achieverrr303@gmail.com",
     "phoenix@satopharma.com",
   ],
 } as const;
+
+export function isForceTestingDelivery(): boolean {
+  return ["1", "true", "yes", "on"].includes(
+    String(process.env.PHOENIX_EMAIL_FORCE_TESTING ?? "true").toLowerCase(),
+  );
+}
 
 export const systemDocuments = {
   workbookCompany: systemIdentity.appName,

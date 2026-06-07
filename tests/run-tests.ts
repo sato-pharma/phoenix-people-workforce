@@ -146,6 +146,7 @@ import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-product
 import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
 import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
 import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
+import { runEmailProductionReadinessTests } from "./email-production-readiness.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -305,3 +306,4 @@ await runTest("phase 32 production migration queue review", runPhase32Production
 await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
 await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
 await runTest("staging safe rebuild", runStagingSafeRebuildTests);
+await runTest("email production readiness", runEmailProductionReadinessTests);

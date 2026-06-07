@@ -5,6 +5,7 @@ import {
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
+import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
@@ -1663,10 +1664,21 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     .update(JSON.stringify({ key, subject: rendered.subject, to: to.map((recipient) => recipient.email), context }))
     .digest("hex");
 
+  const authTemplateKeys: Set<string> = new Set([
+    EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP,
+    EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
+    EMAIL_TEMPLATE_KEYS.USER_CREATED,
+  ]);
+  const unsubscribeHeaders = authTemplateKeys.has(key) ? undefined : {
+    "List-Unsubscribe": `<mailto:${process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo}?subject=unsubscribe>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+
   return sendPhoenixEmail({
     bcc: bcc.map((recipient) => recipient.email),
     cc: cc.map((recipient) => recipient.email),
     from: input.from ?? undefined,
+    headers: unsubscribeHeaders,
     html: rendered.html,
     idempotencyKey: `template-${key}-${requestId}`,
     subject: rendered.subject,

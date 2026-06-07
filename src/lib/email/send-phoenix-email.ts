@@ -1,6 +1,7 @@
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
-import { systemEmail, systemIdentity } from "@/config/system-settings";
+import { isForceTestingDelivery, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage } from "@/lib/email/email-safety";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const resendEndpoint = "https://api.resend.com/emails";
 
@@ -8,6 +9,7 @@ export type SendPhoenixEmailInput = {
   bcc?: string[];
   cc?: string[];
   from?: string;
+  headers?: Record<string, string>;
   html: string;
   idempotencyKey: string;
   subject: string;
@@ -34,14 +36,43 @@ function resolveTestingRecipients() {
   const deliveryMode = String(process.env.PHOENIX_EMAIL_DELIVERY_MODE ?? "").trim().toLowerCase();
   const testRecipients = splitEmailList(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS);
   // Redirect all mail to the testing recipients when the config safety switch is on
-  // (systemEmail.forceTestingDelivery) OR the env delivery mode is explicitly "testing".
-  const testingEnabled = systemEmail.forceTestingDelivery || deliveryMode === "testing";
+  // (isForceTestingDelivery()) OR the env delivery mode is explicitly "testing".
+  const testingEnabled = isForceTestingDelivery() || deliveryMode === "testing";
   if (!testingEnabled) return null;
   return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : [...systemEmail.testingRecipientFallback];
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
   return assertReachableEmailImage(url, { blockLocalAssets: true });
+}
+
+const suppressedStatuses = ["bounced", "complained", "suppressed"];
+
+async function loadSuppressedRecipients(emails: string[]): Promise<Set<string>> {
+  if (emails.length === 0) return new Set();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("email_delivery_events")
+      .select("recipients")
+      .in("status", suppressedStatuses);
+
+    if (error) throw error;
+
+    const suppressed = new Set<string>();
+    for (const row of (data ?? []) as Array<{ recipients: string[] }>) {
+      for (const r of row.recipients ?? []) {
+        suppressed.add(r.trim().toLowerCase());
+      }
+    }
+    return suppressed;
+  } catch {
+    return new Set();
+  }
+}
+
+function removeSuppressed(emails: string[], suppressed: Set<string>): string[] {
+  return emails.filter((e) => !suppressed.has(e.trim().toLowerCase()));
 }
 
 export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<SendPhoenixEmailResult> {
@@ -57,15 +88,25 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
 
   await assertReachablePhoenixEmailImage();
   const testingRecipients = resolveTestingRecipients();
-  const to = testingRecipients ?? input.to;
-  const cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? input.cc : undefined;
-  const bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? input.bcc : undefined;
+
+  const allCandidates = [...(testingRecipients ?? input.to), ...(input.cc ?? []), ...(input.bcc ?? [])];
+  const suppressed = await loadSuppressedRecipients(allCandidates);
+
+  const to = removeSuppressed(testingRecipients ?? input.to, suppressed);
+  if (to.length === 0) {
+    return { reason: "All recipients are suppressed (bounce/complaint).", skipped: true };
+  }
+  const cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(input.cc, suppressed) : undefined;
+  const bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(input.bcc, suppressed) : undefined;
+
+  const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;
 
   const response = await fetch(resendEndpoint, {
     body: JSON.stringify({
       bcc,
       cc,
       from,
+      headers: emailHeaders,
       html: input.html,
       replyTo: process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo,
       subject: input.subject,

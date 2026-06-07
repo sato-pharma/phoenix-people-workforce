@@ -85,7 +85,7 @@ export function runUnifiedNotificationsTests() {
   assert.match(recipientsSource, /"recruitment"/, "recruitment notifications must be visible in the personal bell");
   assert.match(recipientsSource, /"excuse"/, "excuse notifications must be visible in the personal bell");
   assert.doesNotMatch(source("src/lib/excuses/service.ts"), /"excuse_request"/, "excuse producers must not use hidden category excuse_request");
-  assert.match(configSource, /forceTestingDelivery:\s*true/, "email testing redirection must remain hard-coded on");
+  assert.match(configSource, /isForceTestingDelivery/, "email testing redirection must be env-controlled via isForceTestingDelivery");
 
   const migratedProducerFiles = [
     "app/api/payroll/[id]/workflow/route.ts",
