@@ -173,8 +173,8 @@ async function run() {
         { type: "page", label: "employee portal expenses visibility", path: "/employee-portals/expense-dashboard", expectedText: ["Expense"], expectedUrlIncludes: "/employee-portals/expense-dashboard" },
         { type: "page", label: "employee directory denied by permission", path: "/employees", expectedText: ["EMPLOYEE PORTAL"], expectedUrlIncludes: "/employee-portals", forbiddenText: ["Add Employee"] },
       ]],
-      ["CEO", "PHASE23-CEO", "/admin/ceo-command-center", [
-        { type: "page", label: "ceo command center landing", path: "/admin/ceo-command-center", expectedText: ["Executive Command Center"], expectedUrlIncludes: "/admin/ceo-command-center" },
+      ["CEO", "PHASE23-CEO", "/admin/sales-command", [
+        { type: "page", label: "sales command landing", path: "/admin/sales-command", expectedText: ["Sales Command"], expectedUrlIncludes: "/admin/sales-command" },
         { type: "page", label: "command center read visibility", path: "/admin", expectedText: ["Command Center"], expectedUrlIncludes: "/admin" },
         { type: "page", label: "payroll read visibility", path: "/payroll", expectedText: ["Payroll"], expectedUrlIncludes: "/payroll" },
       ]],

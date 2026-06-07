@@ -7,7 +7,7 @@ import { RouteErrorState } from "@/components/ui/route-error-state";
 // admin page throws, the sidebar/topbar stay mounted and the user can still
 // navigate, instead of falling through to the root app/error.tsx which replaces
 // the entire chrome with a standalone page. Pages with their own error.tsx
-// (e.g. ceo-command-center) still take precedence over this baseline.
+// (e.g. a route-specific error.tsx) still take precedence over this baseline.
 export default function AdminGroupError({
   error,
   reset,
