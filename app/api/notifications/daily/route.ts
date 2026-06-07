@@ -5,6 +5,7 @@ import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/rout
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
+import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +21,12 @@ async function runDailyNotifications(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
 
-  const [birthdayResponse, contractRenewalResponse, vacationSla, recruitment] = await Promise.all([
+  const [birthdayResponse, contractRenewalResponse, vacationSla, recruitment, telegramDigest] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
     runVacationSlaDaily(),
     runRecruitmentDailyNotifications(),
+    runTelegramDailyHrDigest(),
   ]);
   const [birthdays, contractRenewals] = await Promise.all([
     birthdayResponse.json(),
@@ -36,6 +38,7 @@ async function runDailyNotifications(request: Request) {
     contractRenewals,
     recruitment,
     success: true,
+    telegramDigest,
     vacationSla,
   });
 }
