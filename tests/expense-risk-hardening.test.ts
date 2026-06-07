@@ -14,8 +14,13 @@ export function runExpenseRiskHardeningTests() {
   assert.match(adminAccess, /assertPermission\(access,\s*"outstation",\s*action\)/);
 
   const permissions = source("src/lib/auth/permissions.ts");
-  assert.match(permissions, /"HR Specialist": \{[\s\S]*expenses: \["read", "approve", "update", "delete", "export"\]/);
-  assert.match(permissions, /"HR Specialist": \{[\s\S]*outstation: \["read", "approve", "update", "delete", "export"\]/);
+  // Governance: HR Specialist (incl. designated A-16) must NOT have `approve` on any
+  // resource — approval authority is reserved for Super Admin (Admin-HR) + HR Manager B-10.
+  assert.match(permissions, /"HR Specialist": \{[\s\S]*expenses: \["read", "update", "delete", "export"\]/);
+  assert.match(permissions, /"HR Specialist": \{[\s\S]*outstation: \["read", "update", "delete", "export"\]/);
+  const hrSpecialistBlock = permissions.match(/"HR Specialist": \{[\s\S]*?\n {2}\},/);
+  assert.ok(hrSpecialistBlock, "HR Specialist permission block must be present");
+  assert.doesNotMatch(hrSpecialistBlock[0], /"approve"/, "HR Specialist must not be granted the approve action on any resource");
 
   const adminOutstationSources = [
     "app/api/admin/outstation/requests/route.ts",
