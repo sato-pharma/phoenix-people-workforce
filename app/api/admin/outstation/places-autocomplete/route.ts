@@ -27,30 +27,49 @@ export async function GET(request: Request) {
       );
     }
 
-    const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
-    url.searchParams.set("input", input);
-    url.searchParams.set("key", key);
-    url.searchParams.set("language", "ar");
-    if (sessiontoken) url.searchParams.set("sessiontoken", sessiontoken);
-
-    const response = await fetch(url.toString(), { cache: "no-store" });
+    // Places API (New). The legacy Places API is no longer enabled for this
+    // project, so we call the v1 autocomplete endpoint.
+    const response = await fetch(
+      "https://places.googleapis.com/v1/places:autocomplete",
+      {
+        body: JSON.stringify({
+          input,
+          languageCode: "ar",
+          ...(sessiontoken ? { sessionToken: sessiontoken } : {}),
+        }),
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": key,
+        },
+        method: "POST",
+      },
+    );
     if (!response.ok) {
-      throw new Error(`Google Places Autocomplete failed with ${response.status}.`);
+      const details = await response.text().catch(() => "");
+      throw new Error(
+        `Google Places Autocomplete failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+      );
     }
 
     const payload = (await response.json()) as {
-      predictions?: Array<{
-        description?: string;
-        place_id?: string;
+      suggestions?: Array<{
+        placePrediction?: {
+          placeId?: string;
+          text?: { text?: string };
+        };
       }>;
-      status?: string;
     };
 
-    const predictions = (payload.predictions ?? [])
-      .filter((prediction) => prediction.place_id && prediction.description)
+    const predictions = (payload.suggestions ?? [])
+      .map((suggestion) => suggestion.placePrediction)
+      .filter(
+        (prediction): prediction is { placeId: string; text: { text: string } } =>
+          Boolean(prediction?.placeId && prediction?.text?.text),
+      )
       .map((prediction) => ({
-        description: prediction.description!,
-        placeId: prediction.place_id!,
+        description: prediction.text.text,
+        placeId: prediction.placeId,
       }));
 
     return NextResponse.json({ predictions });
