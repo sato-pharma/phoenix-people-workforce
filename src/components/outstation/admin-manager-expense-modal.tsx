@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { PlacesAutocompleteInput } from "@/components/outstation/places-autocomplete-input";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,13 @@ type DistanceResult = {
   fromLabel: string;
   routePolyline: string | null;
 };
+
+type EmployeeLookup =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "found"; name: string; jobTitle: string | null }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
 
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
@@ -134,6 +142,14 @@ export function AdminManagerExpenseModal({
       : null,
   );
 
+  // manualDistanceKm is always the editable distance value.
+  // Maps auto-fills it on success; admin can type it when Maps fails.
+  const [manualDistanceKm, setManualDistanceKm] = useState(
+    request?.distanceFromResidenceKm != null
+      ? String(request.distanceFromResidenceKm)
+      : "",
+  );
+
   const [resolvingPlace, setResolvingPlace] = useState(false);
   const [calculatingDistance, setCalculatingDistance] = useState(false);
   const [distanceError, setDistanceError] = useState<string | null>(null);
@@ -141,7 +157,83 @@ export function AdminManagerExpenseModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const initialName = targetName ?? request?.employeeName ?? null;
+  const [employeeLookup, setEmployeeLookup] = useState<EmployeeLookup>(
+    initialName ? { status: "found", name: initialName, jobTitle: null } : { status: "idle" },
+  );
+  const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const hrIdForDistance = employeeHrId || request?.employeeHrId;
+
+  async function lookupEmployee(hrId: string) {
+    if (!hrId.trim()) {
+      setEmployeeLookup({ status: "idle" });
+      return;
+    }
+    setEmployeeLookup({ status: "loading" });
+    try {
+      const url = new URL("/api/admin/outstation/employee-lookup", window.location.origin);
+      url.searchParams.set("hrId", hrId.trim());
+      const response = await fetch(url.toString());
+      const payload = (await response.json()) as {
+        hrId?: string;
+        jobTitle?: string | null;
+        message?: string;
+        name?: string;
+      };
+      if (!response.ok || !payload.name) {
+        setEmployeeLookup(
+          response.status === 404
+            ? { status: "not_found" }
+            : { status: "error", message: payload.message ?? "Lookup failed." },
+        );
+      } else {
+        setEmployeeLookup({ status: "found", jobTitle: payload.jobTitle ?? null, name: payload.name });
+      }
+    } catch {
+      setEmployeeLookup({ status: "error", message: "Could not reach the server." });
+    }
+  }
+
+  async function calculateDistance(dest: ManagerExpenseDestination, hrId: string) {
+    setCalculatingDistance(true);
+    setDistanceError(null);
+    try {
+      const response = await fetch("/api/admin/outstation/calculate-manager-distance", {
+        body: JSON.stringify({
+          destinationLat: dest.latitude,
+          destinationLng: dest.longitude,
+          managerHrId: hrId,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        distanceKm?: number;
+        durationMinutes?: number | null;
+        error?: string;
+        fromLabel?: string;
+        message?: string;
+        routePolyline?: string | null;
+      };
+
+      if (!response.ok || payload.distanceKm == null) {
+        setDistanceError(payload.message ?? "Distance calculation failed.");
+      } else {
+        setDistanceResult({
+          distanceKm: payload.distanceKm,
+          durationMinutes: payload.durationMinutes ?? null,
+          fromLabel: payload.fromLabel ?? "",
+          routePolyline: payload.routePolyline ?? null,
+        });
+        setManualDistanceKm(String(payload.distanceKm));
+      }
+    } catch {
+      setDistanceError("Could not reach the distance calculation service.");
+    } finally {
+      setCalculatingDistance(false);
+    }
+  }
 
   async function resolveAndCalculate(prediction: PlacesPrediction) {
     setResolvingPlace(true);
@@ -149,6 +241,7 @@ export function AdminManagerExpenseModal({
     setDistanceResult(null);
     setDistanceError(null);
     setDestination(null);
+    setManualDistanceKm("");
 
     try {
       const url = new URL("/api/admin/outstation/place-details", window.location.origin);
@@ -196,58 +289,40 @@ export function AdminManagerExpenseModal({
     }
   }
 
-  async function calculateDistance(dest: ManagerExpenseDestination, hrId: string) {
-    setCalculatingDistance(true);
-    setDistanceError(null);
-    try {
-      const response = await fetch("/api/admin/outstation/calculate-manager-distance", {
-        body: JSON.stringify({
-          destinationLat: dest.latitude,
-          destinationLng: dest.longitude,
-          managerHrId: hrId,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json()) as {
-        distanceKm?: number;
-        durationMinutes?: number | null;
-        error?: string;
-        fromLabel?: string;
-        message?: string;
-        routePolyline?: string | null;
-      };
-
-      if (!response.ok || payload.distanceKm == null) {
-        setDistanceError(payload.message ?? "Distance calculation failed.");
-      } else {
-        setDistanceResult({
-          distanceKm: payload.distanceKm,
-          durationMinutes: payload.durationMinutes ?? null,
-          fromLabel: payload.fromLabel ?? "",
-          routePolyline: payload.routePolyline ?? null,
-        });
-      }
-    } catch {
-      setDistanceError("Could not reach the distance calculation service.");
-    } finally {
-      setCalculatingDistance(false);
-    }
-  }
-
-  const hrIdRef = useRef(hrIdForDistance);
-  hrIdRef.current = hrIdForDistance;
-
+  // Mount-time lookup if we already have an HR ID but no name yet
   useEffect(() => {
-    if (destination && hrIdForDistance && !distanceResult) {
-      void calculateDistance(destination, hrIdForDistance);
+    if (employeeHrId && !initialName) {
+      // Async fetch on mount; the loading setState is intentional, not a render loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void lookupEmployee(employeeHrId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // When HR ID changes after a destination is already selected, re-trigger distance calc
+  const destinationRef = useRef(destination);
+  useEffect(() => {
+    destinationRef.current = destination;
+  }, [destination]);
+  const prevHrIdRef = useRef(hrIdForDistance);
+
+  useEffect(() => {
+    const prevHrId = prevHrIdRef.current;
+    prevHrIdRef.current = hrIdForDistance;
+    const dest = destinationRef.current;
+    if (hrIdForDistance && hrIdForDistance !== prevHrId && dest && !calculatingDistance) {
+      setDistanceResult(null);
+      setDistanceError(null);
+      setManualDistanceKm("");
+      void calculateDistance(dest, hrIdForDistance);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeHrId]);
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!destination || !distanceResult) return;
+    const distanceKm = Number(manualDistanceKm);
+    if (!destination || distanceKm <= 0) return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -255,12 +330,12 @@ export function AdminManagerExpenseModal({
     const input: ManagerExpenseAdminInput = {
       claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
       destination,
-      distanceKm: distanceResult.distanceKm,
-      durationMinutes: distanceResult.durationMinutes,
+      distanceKm,
+      durationMinutes: distanceResult?.durationMinutes ?? null,
       employeeHrId,
       expenseType,
       notes: notes.trim() || null,
-      routePolyline: distanceResult.routePolyline,
+      routePolyline: distanceResult?.routePolyline ?? null,
       transportationType,
       tripEndDate,
       tripStartDate,
@@ -302,7 +377,7 @@ export function AdminManagerExpenseModal({
 
   const canSubmit =
     Boolean(destination) &&
-    Boolean(distanceResult) &&
+    Number(manualDistanceKm) > 0 &&
     Boolean(tripStartDate) &&
     Boolean(tripEndDate) &&
     (isEdit || Boolean(employeeHrId)) &&
@@ -310,9 +385,9 @@ export function AdminManagerExpenseModal({
     !resolvingPlace &&
     !calculatingDistance;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-6 py-5">
           <div>
@@ -324,7 +399,7 @@ export function AdminManagerExpenseModal({
             </h2>
             {(targetName ?? request?.employeeName) ? (
               <p className="mt-1 text-sm font-semibold text-[#64748B]">
-                {targetName ?? request?.employeeName} - {employeeHrId}
+                {targetName ?? request?.employeeName} &mdash; {employeeHrId}
               </p>
             ) : null}
           </div>
@@ -343,14 +418,49 @@ export function AdminManagerExpenseModal({
             <div>
               <FieldLabel>Employee HR ID</FieldLabel>
               <InputField
-                onChange={(e) => setEmployeeHrId(e.target.value.trim())}
-                placeholder="e.g. EMP-001"
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  setEmployeeHrId(value);
+                  if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+                  lookupDebounceRef.current = setTimeout(
+                    () => void lookupEmployee(value),
+                    500,
+                  );
+                }}
+                placeholder="e.g. A-12"
                 required
                 value={employeeHrId}
               />
-              <p className="mt-1 text-xs text-[#64748B]">
-                Enter the HR ID of the employee for whom you are adding this expense.
-              </p>
+              {employeeLookup.status === "loading" ? (
+                <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#64748B]">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#F97316]" />
+                  Looking up employee...
+                </div>
+              ) : employeeLookup.status === "found" ? (
+                <div className="mt-2 flex items-center gap-2 rounded-md bg-[#F0FDF4] px-3 py-2 text-xs font-black text-[#047857]">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {employeeLookup.name}
+                  {employeeLookup.jobTitle ? (
+                    <span className="font-semibold text-[#047857]/70">
+                      {" — "}{employeeLookup.jobTitle}
+                    </span>
+                  ) : null}
+                </div>
+              ) : employeeLookup.status === "not_found" ? (
+                <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C]">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  No employee found with this HR ID.
+                </div>
+              ) : employeeLookup.status === "error" ? (
+                <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  {employeeLookup.message}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-[#64748B]">
+                  Enter the HR ID of the employee — their name will appear automatically.
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -360,7 +470,7 @@ export function AdminManagerExpenseModal({
             <PlacesAutocompleteInput
               disabled={resolvingPlace || calculatingDistance}
               onSelect={(prediction) => void resolveAndCalculate(prediction)}
-              placeholder="Search city or locationâ€¦"
+              placeholder="Search city or location..."
               value={destination?.label}
             />
 
@@ -374,15 +484,15 @@ export function AdminManagerExpenseModal({
             {resolvingPlace ? (
               <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#64748B]">
                 <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />
-                Resolving place detailsâ€¦
+                Resolving place details...
               </div>
             ) : destination ? (
               <div className="mt-2 space-y-1">
                 {(destination.city ?? destination.area) ? (
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#047857]">
                     <MapPin className="h-3.5 w-3.5" />
-                    {[destination.city, destination.area].filter(Boolean).join(" Â· ")}
-                    {destination.country ? ` Â· ${destination.country}` : ""}
+                    {[destination.city, destination.area].filter(Boolean).join(" · ")}
+                    {destination.country ? ` · ${destination.country}` : ""}
                   </div>
                 ) : null}
                 <p className="text-[11px] text-[#94A3B8]">
@@ -392,62 +502,86 @@ export function AdminManagerExpenseModal({
             ) : null}
           </div>
 
-          {/* Distance result */}
+          {/* Distance — Maps result panel (informational) + always-editable input */}
           {calculatingDistance ? (
             <div className={`${panelClassName} flex items-center gap-3 p-4`}>
               <Loader2 className="h-5 w-5 animate-spin text-[#F97316]" />
               <div>
-                <p className="text-sm font-black text-[#0F172A]">Calculating road distanceâ€¦</p>
+                <p className="text-sm font-black text-[#0F172A]">Calculating road distance...</p>
                 <p className="text-xs text-[#64748B]">Using Google Maps Routes API</p>
               </div>
             </div>
-          ) : distanceError ? (
-            <div className="flex items-start gap-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] p-4 text-sm">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
-              <div>
-                <p className="font-black text-[#B91C1C]">Distance calculation failed</p>
-                <p className="mt-0.5 text-xs font-semibold text-[#B91C1C]">{distanceError}</p>
-              </div>
-            </div>
-          ) : distanceResult ? (
-            <div className={`${panelClassName} p-4`}>
-              <div className="mb-3 flex items-center gap-2">
-                <Route className="h-4 w-4 text-[#F97316]" />
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-                  Road distance Â· Google Maps
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-[#FFF7ED] px-4 py-3 text-center">
-                  <p className="text-2xl font-black text-[#EA580C]">
-                    {distanceResult.distanceKm.toFixed(1)} km
-                  </p>
-                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#EA580C]/70">
-                    Distance
-                  </p>
+          ) : (
+            <div className="space-y-3">
+              {distanceError ? (
+                <div className="flex items-start gap-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] p-3 text-sm">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
+                  <div>
+                    <p className="font-black text-[#B91C1C]">Google Maps could not calculate distance</p>
+                    <p className="mt-0.5 text-xs font-semibold text-[#B91C1C]">{distanceError}</p>
+                  </div>
                 </div>
-                {distanceResult.durationMinutes != null ? (
-                  <div className="rounded-xl bg-[#F0FDF4] px-4 py-3 text-center">
-                    <p className="text-2xl font-black text-[#047857]">
-                      {Math.round(distanceResult.durationMinutes)} min
-                    </p>
-                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#047857]/70">
-                      Drive time
+              ) : distanceResult ? (
+                <div className={`${panelClassName} p-4`}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Route className="h-4 w-4 text-[#F97316]" />
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+                      Road distance &middot; Google Maps
                     </p>
                   </div>
-                ) : null}
-              </div>
-              {distanceResult.fromLabel ? (
-                <div className="mt-3 flex items-start gap-2 text-xs text-[#64748B]">
-                  <Navigation className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <p>
-                    <span className="font-black">From:</span>{" "}
-                    <span className="font-semibold">{distanceResult.fromLabel}</span>
-                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl bg-[#FFF7ED] px-4 py-3 text-center">
+                      <p className="text-2xl font-black text-[#EA580C]">
+                        {distanceResult.distanceKm.toFixed(1)} km
+                      </p>
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#EA580C]/70">
+                        Distance
+                      </p>
+                    </div>
+                    {distanceResult.durationMinutes != null ? (
+                      <div className="rounded-xl bg-[#F0FDF4] px-4 py-3 text-center">
+                        <p className="text-2xl font-black text-[#047857]">
+                          {Math.round(distanceResult.durationMinutes)} min
+                        </p>
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#047857]/70">
+                          Drive time
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {distanceResult.fromLabel ? (
+                    <div className="mt-3 flex items-start gap-2 text-xs text-[#64748B]">
+                      <Navigation className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <p>
+                        <span className="font-black">From:</span>{" "}
+                        <span className="font-semibold">{distanceResult.fromLabel}</span>
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
+
+              {/* Distance input — always visible so the form is never stuck */}
+              <div>
+                <FieldLabel>
+                  {distanceResult ? "Distance (km) — override if needed" : "Distance (km)"}
+                </FieldLabel>
+                <InputField
+                  min="0"
+                  onChange={(e) => setManualDistanceKm(e.target.value)}
+                  placeholder="e.g. 45"
+                  step="0.1"
+                  type="number"
+                  value={manualDistanceKm}
+                />
+                {!distanceResult && !distanceError && !destination ? (
+                  <p className="mt-1 text-xs text-[#64748B]">
+                    Select a destination and Google Maps will fill this automatically.
+                  </p>
+                ) : null}
+              </div>
             </div>
-          ) : null}
+          )}
 
           {/* Trip dates */}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -507,7 +641,7 @@ export function AdminManagerExpenseModal({
 
           {/* Claimed amount */}
           <div>
-            <FieldLabel>Claimed amount (EGP) â€” optional</FieldLabel>
+            <FieldLabel>Claimed amount (EGP) &mdash; optional</FieldLabel>
             <InputField
               min="0"
               onChange={(e) => setClaimedAmount(e.target.value)}
@@ -562,6 +696,7 @@ export function AdminManagerExpenseModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
