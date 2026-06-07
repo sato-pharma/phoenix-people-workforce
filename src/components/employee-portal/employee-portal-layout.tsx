@@ -138,6 +138,7 @@ function buildEmployeePortalSections({
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         { href: "/payslips", label: "Payslips", icon: FileText },
+        { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
       ],
     },
     {

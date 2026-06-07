@@ -3,9 +3,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { listFieldWorkforceComplianceArchives } from "@/lib/field-workforce-compliance/archive";
+import { getFieldWorkforceRecommendationsReport } from "@/lib/field-workforce-compliance/recommendations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeMonthKey } from "../candidate-key.ts";
 import {
+  insertDeductionCandidateDrafts,
   prepareCandidateInsertPayload,
   validateCandidateDraft,
 } from "../service.ts";
@@ -376,5 +379,94 @@ export async function syncFieldWorkforceApprovedDecisions(input: {
     created,
     skippedExisting,
     warnings,
+  };
+}
+
+export async function syncFieldWorkforceNoActivityCandidates(input: {
+  archiveId?: string;
+  monthKey?: string;
+  createdBy: string;
+}): Promise<FwcSyncResult> {
+  if (typeof input.createdBy !== "string" || !input.createdBy.trim()) {
+    throw new Error("syncFieldWorkforceNoActivityCandidates requires createdBy");
+  }
+  const monthKey = input.monthKey ? normalizeMonthKey(input.monthKey) : undefined;
+  const archives = input.archiveId
+    ? [{ id: input.archiveId.trim(), monthKey: monthKey ?? "" }]
+    : (await listFieldWorkforceComplianceArchives()).filter((archive) =>
+        monthKey ? archive.monthKey === monthKey : true,
+      );
+  if (archives.length === 0) {
+    return {
+      sourceTotal: 0,
+      created: 0,
+      skippedExisting: 0,
+      warnings: ["No archived Field Workforce Compliance month matched this sync scope."],
+    };
+  }
+
+  const drafts: DeductionCandidateDraft[] = [];
+  const warnings: string[] = [];
+  for (const archive of archives) {
+    const report = await getFieldWorkforceRecommendationsReport({
+      actorLoginId: input.createdBy,
+      archiveId: archive.id,
+      auditFinalReportView: false,
+    });
+    if (!report) {
+      warnings.push(`FWC archive ${archive.id}: report not found.`);
+      continue;
+    }
+    for (const recommendation of report.payrollRecommendations) {
+      if (recommendation.sourceType !== "no_activity_candidate") continue;
+      const [yearStr, monthStr] = recommendation.monthKey.split("-");
+      const year = Number.parseInt(yearStr, 10);
+      const month = Number.parseInt(monthStr, 10);
+      drafts.push({
+        sourceModule: "FIELD_WORKFORCE",
+        sourceRecordId: `${recommendation.importId}:${recommendation.recommendationKey}:pending`,
+        employeeCode: recommendation.employeeCode,
+        employeeName: recommendation.employeeName,
+        monthKey: recommendation.monthKey,
+        month,
+        year,
+        deductionType: "no_activity",
+        deductionUnit: "days",
+        deductionValue: recommendation.daysCount,
+        estimatedAmount: null,
+        calculationStatus: "requires_payroll_review",
+        severity: recommendation.severity,
+        reason: "Field Workforce Compliance no-activity absence candidate",
+        evidence: {
+          archiveId: recommendation.importId,
+          existingCoverageStatus: recommendation.existingCoverageStatus,
+          recommendationKey: recommendation.recommendationKey,
+          recommendationReason: recommendation.recommendationReason,
+          sourceType: recommendation.sourceType,
+        },
+        holidayContext: recommendation.holidayContext,
+        dates: recommendation.dates,
+        hierarchySnapshot: {
+          areaName: recommendation.areaName,
+          lineName: recommendation.lineName,
+          managerName: recommendation.managerName,
+          roleName: recommendation.roleName,
+          teamName: recommendation.teamName,
+        },
+      });
+    }
+  }
+
+  const inserted = await insertDeductionCandidateDrafts({
+    createdBy: input.createdBy,
+    drafts,
+    sourceLabel: "Field Workforce Compliance no-activity",
+  });
+
+  return {
+    sourceTotal: drafts.length,
+    created: inserted.created,
+    skippedExisting: inserted.skippedExisting,
+    warnings: [...warnings, ...inserted.warnings],
   };
 }

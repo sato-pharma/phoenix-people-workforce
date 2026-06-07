@@ -3,8 +3,11 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
   Loader2,
   RefreshCw,
+  Save,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
@@ -20,10 +23,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  deductionDecisionReasons,
   deductionDecisionStatuses,
   deductionSeverities,
   deductionSourceModules,
   deductionTypes,
+  type DeductionDecisionReason,
   type DeductionDecisionStatus,
   type DeductionSeverity,
   type DeductionSourceModule,
@@ -31,6 +36,7 @@ import {
 } from "@/lib/deductions-governance/types";
 import type {
   DeductionAuditEvent,
+  DeductionCommentFeedItem,
   DeductionEmployeeGroup,
   DeductionInboxFilters,
   DeductionInboxKpis,
@@ -47,6 +53,7 @@ type WorkspaceTab =
   | "by-employee"
   | "final-approved"
   | "disputes"
+  | "comments"
   | "audit";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
@@ -56,6 +63,7 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "by-employee", label: "By Employee" },
   { id: "final-approved", label: "Final Approved Deductions" },
   { id: "disputes", label: "Disputes" },
+  { id: "comments", label: "Employee Comments" },
   { id: "audit", label: "Audit Trail" },
 ];
 
@@ -71,6 +79,38 @@ type ApiPayload = {
   finalApproved?: DeductionInboxRow[];
   disputes?: DeductionInboxRow[];
   audit?: DeductionAuditEvent[];
+  comments?: DeductionCommentFeedItem[];
+};
+
+type PayrollPreviewPayload = {
+  preview?: {
+    blockers: string[];
+    canImport: boolean;
+    rows: Array<{
+      delta: number;
+      employeeCode: string;
+      employeeName: string | null;
+      matched: boolean;
+      appliedTotals: {
+        crm: number;
+        fingerPrint: number;
+        unpaidVacations: number;
+      };
+      existingTotals: {
+        crm: number;
+        fingerPrint: number;
+        unpaidVacations: number;
+      };
+    }>;
+    totals: {
+      crm: number;
+      fingerPrint: number;
+      total: number;
+      unpaidVacations: number;
+    };
+  };
+  success?: boolean;
+  message?: string;
 };
 
 export type DeductionsGovernanceWorkspaceProps = {
@@ -79,6 +119,7 @@ export type DeductionsGovernanceWorkspaceProps = {
   initialAudit: DeductionAuditEvent[] | null;
   initialByEmployee: DeductionEmployeeGroup[] | null;
   initialBySource: DeductionSourceGroup[] | null;
+  initialComments: DeductionCommentFeedItem[] | null;
   initialDisputes: DeductionInboxRow[] | null;
   initialError: string | null;
   initialFinalApproved: DeductionInboxRow[] | null;
@@ -205,7 +246,7 @@ function KpiGrid({ kpis }: { kpis: DeductionInboxKpis }) {
         value={formatNumber(kpis.pending)}
       />
       <AdminStatCard
-        description="HR approved to be deducted via the monthly payroll workbook (export only)."
+        description="HR approved to be finalized and imported into the monthly payroll workbook."
         icon={<ShieldCheck className="h-5 w-5" />}
         label="Approved for Payroll"
         tone="blue"
@@ -387,9 +428,11 @@ function InboxFiltersBar({
 function InboxTable({
   rows,
   canEditDecisions,
+  onDecisionSaved,
 }: {
   rows: DeductionInboxRow[];
   canEditDecisions: boolean;
+  onDecisionSaved?: () => void;
 }) {
   return (
     <div className="phoenix-horizontal-scroll max-h-[60vh] overflow-auto">
@@ -437,12 +480,11 @@ function InboxTable({
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <Badge variant={decisionBadgeVariant(status)}>{status}</Badge>
-                  {!canEditDecisions ? (
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                      Edit in Phase C2
-                    </p>
-                  ) : null}
+                  {canEditDecisions ? (
+                    <DecisionControls row={row} onSaved={onDecisionSaved} />
+                  ) : (
+                    <Badge variant={decisionBadgeVariant(status)}>{status}</Badge>
+                  )}
                 </td>
                 <td className="max-w-[240px] px-4 py-3 text-xs leading-5 text-slate-600">{row.decision?.decisionReason || "-"}</td>
                 <td className="max-w-[240px] px-4 py-3 text-xs leading-5 text-slate-600">{row.decision?.hrNote || "-"}</td>
@@ -460,6 +502,130 @@ function InboxTable({
           ) : null}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DecisionControls({
+  row,
+  onSaved,
+}: {
+  row: DeductionInboxRow;
+  onSaved?: () => void;
+}) {
+  const [status, setStatus] = useState<DeductionDecisionStatus>(
+    row.decision?.decisionStatus ?? "Pending",
+  );
+  const [appliedValue, setAppliedValue] = useState<string>(
+    row.decision?.appliedDeductionValue == null
+      ? String(row.deductionValue)
+      : String(row.decision.appliedDeductionValue),
+  );
+  const [reason, setReason] = useState<string>(
+    row.decision?.decisionReason || "Policy violation",
+  );
+  const [hrNote, setHrNote] = useState<string>(row.decision?.hrNote ?? "");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const save = useCallback(async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/deductions-governance/decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appliedDeductionValue: status === "Approved for Payroll" ? Number(appliedValue) : null,
+          candidateId: row.id,
+          decisionReason: status === "Pending" ? "" : reason,
+          decisionStatus: status,
+          hrNote,
+        }),
+      });
+      const payload = (await response.json()) as { success?: boolean; message?: string };
+      if (!response.ok || !payload.success) {
+        setMessage(payload.message ?? "Decision save failed.");
+        return;
+      }
+      setMessage("Saved");
+      onSaved?.();
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "Decision save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }, [appliedValue, hrNote, onSaved, reason, row.id, status]);
+
+  return (
+    <div className="min-w-[260px] space-y-2">
+      <select
+        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        value={status}
+        onChange={(event) => setStatus(event.target.value as DeductionDecisionStatus)}
+      >
+        {deductionDecisionStatuses.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      {status === "Approved for Payroll" ? (
+        <div className="grid grid-cols-[1fr_1fr] gap-2">
+          <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+            Original
+            <input
+              className="mt-1 h-8 w-full rounded-lg border border-slate-100 bg-slate-50 px-2 font-mono text-xs text-slate-500"
+              readOnly
+              value={row.deductionValue}
+            />
+          </label>
+          <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+            Apply
+            <input
+              className="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 font-mono text-xs text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              min="0"
+              step="0.25"
+              type="number"
+              value={appliedValue}
+              onChange={(event) => setAppliedValue(event.target.value)}
+            />
+          </label>
+        </div>
+      ) : null}
+      {status !== "Pending" ? (
+        <select
+          className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={reason}
+          onChange={(event) => setReason(event.target.value as DeductionDecisionReason)}
+        >
+          {deductionDecisionReasons.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      <input
+        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        placeholder="HR note"
+        value={hrNote}
+        onChange={(event) => setHrNote(event.target.value)}
+      />
+      <div className="flex items-center gap-2">
+        <Button className="h-8 gap-1.5 px-2 text-xs" disabled={saving} type="button" onClick={() => void save()}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save
+        </Button>
+        {message ? (
+          <span className={cn(
+            "text-[11px] font-semibold",
+            message === "Saved" ? "text-emerald-600" : "text-rose-600",
+          )}>
+            {message}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -562,6 +728,39 @@ function AuditPanel({ events }: { events: DeductionAuditEvent[] }) {
   );
 }
 
+function CommentsPanel({ comments }: { comments: DeductionCommentFeedItem[] }) {
+  if (comments.length === 0) {
+    return (
+      <Card className="p-6 text-sm text-slate-500">
+        Employee comments will appear here after employees respond to finalized deductions.
+      </Card>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white/95">
+      {comments.map((comment) => (
+        <div className="grid gap-2 px-4 py-3 lg:grid-cols-[180px_220px_160px_minmax(0,1fr)]" key={comment.id}>
+          <div>
+            <p className="text-xs font-semibold text-slate-500">{formatDateTime(comment.createdAt)}</p>
+            <p className="mt-1 font-mono text-[11px] font-semibold text-slate-400">{comment.authorHrId ?? comment.authorLoginId}</p>
+          </div>
+          <div>
+            <p className="text-sm font-black text-slate-900">{comment.employeeName ?? comment.employeeCode ?? "-"}</p>
+            <p className="mt-1 font-mono text-xs text-slate-500">{comment.employeeCode ?? comment.candidateId}</p>
+          </div>
+          <div className="flex flex-wrap items-start gap-1.5">
+            {comment.monthKey ? <Badge variant="success">{comment.monthKey}</Badge> : null}
+            {comment.sourceModule ? <Badge variant="neutral">{comment.sourceModule}</Badge> : null}
+            {comment.deductionType ? <Badge variant="warning">{comment.deductionType}</Badge> : null}
+          </div>
+          <p className="text-sm leading-6 text-slate-700">{comment.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [filters, setFilters] = useState<DeductionInboxFilters>({});
@@ -575,11 +774,21 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
   const [finalApproved, setFinalApproved] = useState<DeductionInboxRow[] | null>(props.initialFinalApproved);
   const [disputes, setDisputes] = useState<DeductionInboxRow[] | null>(props.initialDisputes);
   const [audit, setAudit] = useState<DeductionAuditEvent[] | null>(props.initialAudit);
+  const [comments, setComments] = useState<DeductionCommentFeedItem[] | null>(props.initialComments);
   const [error, setError] = useState<string | null>(props.initialError);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isFinalizing, setIsFinalizing] = useState<boolean>(false);
+  const [isImportingPayroll, setIsImportingPayroll] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [payrollPreview, setPayrollPreview] = useState<PayrollPreviewPayload["preview"] | null>(null);
   const [syncStatus, setSyncStatus] = useState<
     | { kind: "success"; created: number; skippedExisting: number; sourceTotal: number; warnings: number }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
+  const [actionStatus, setActionStatus] = useState<
+    | { kind: "success"; message: string }
     | { kind: "error"; message: string }
     | null
   >(null);
@@ -609,6 +818,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
       if (payload.finalApproved) setFinalApproved(payload.finalApproved);
       if (payload.disputes) setDisputes(payload.disputes);
       if (payload.audit) setAudit(payload.audit);
+      if (payload.comments) setComments(payload.comments);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to refresh.");
     } finally {
@@ -616,18 +826,18 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
     }
   }, [filters, page, pageSize]);
 
-  const syncFromFieldWorkforce = useCallback(async () => {
+  const syncAllSources = useCallback(async () => {
     const monthKeyForSync = filters.monthKey;
     if (!monthKeyForSync) {
       setSyncStatus({
         kind: "error",
-        message: "Select a monthKey filter before syncing approved Field Workforce Compliance decisions.",
+        message: "Select a monthKey filter before syncing deduction sources.",
       });
       return;
     }
     if (typeof window !== "undefined") {
       const confirmed = window.confirm(
-        "Sync approved Field Workforce Compliance decisions for current view? This will not modify payroll or leave balances.",
+        "Sync FWC absence, fingerprint lateness, and unpaid vacation candidates for the current month? This will not modify payroll or leave balances.",
       );
       if (!confirmed) return;
     }
@@ -635,7 +845,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
     setSyncStatus(null);
     try {
       const response = await fetch(
-        "/api/admin/deductions-governance/sync/field-workforce-compliance",
+        "/api/admin/deductions-governance/sync/all",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -653,7 +863,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
       if (!response.ok || !payload.success) {
         setSyncStatus({
           kind: "error",
-          message: payload.message ?? "Field Workforce Compliance sync failed.",
+          message: payload.message ?? "Deductions source sync failed.",
         });
         return;
       }
@@ -668,12 +878,146 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
     } catch (caught) {
       setSyncStatus({
         kind: "error",
-        message: caught instanceof Error ? caught.message : "Field Workforce Compliance sync failed.",
+        message: caught instanceof Error ? caught.message : "Deductions source sync failed.",
       });
     } finally {
       setIsSyncing(false);
     }
   }, [filters.monthKey, refresh, pageSize]);
+
+  const finalizeCurrentMonth = useCallback(async () => {
+    const monthKey = filters.monthKey;
+    if (!monthKey) {
+      setActionStatus({ kind: "error", message: "Select a monthKey filter before finalizing." });
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm(`Finalize approved deductions for ${monthKey}?`)) return;
+    setIsFinalizing(true);
+    setActionStatus(null);
+    try {
+      const response = await fetch("/api/admin/deductions-governance/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthKey }),
+      });
+      const payload = (await response.json()) as { success?: boolean; message?: string; summary?: { candidateCount?: number; totalAmount?: number } };
+      if (!response.ok || !payload.success) {
+        setActionStatus({ kind: "error", message: payload.message ?? "Finalization failed." });
+        return;
+      }
+      setActionStatus({
+        kind: "success",
+        message: `Finalized ${formatNumber(payload.summary?.candidateCount ?? 0)} deduction(s), total ${formatMoney(payload.summary?.totalAmount ?? 0)}.`,
+      });
+      await refresh(1, pageSize);
+    } catch (caught) {
+      setActionStatus({ kind: "error", message: caught instanceof Error ? caught.message : "Finalization failed." });
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [filters.monthKey, pageSize, refresh]);
+
+  const previewPayrollImport = useCallback(async () => {
+    const monthKey = filters.monthKey;
+    if (!monthKey) {
+      setActionStatus({ kind: "error", message: "Select a monthKey filter before payroll preview." });
+      return;
+    }
+    setActionStatus(null);
+    try {
+      const response = await fetch(`/api/admin/deductions-governance/payroll-preview?monthKey=${encodeURIComponent(monthKey)}`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as PayrollPreviewPayload;
+      if (!response.ok || !payload.success || !payload.preview) {
+        setActionStatus({ kind: "error", message: payload.message ?? "Payroll preview failed." });
+        return;
+      }
+      setPayrollPreview(payload.preview);
+      setActionStatus({
+        kind: payload.preview.canImport ? "success" : "error",
+        message: payload.preview.canImport
+          ? `Payroll preview ready: ${formatMoney(payload.preview.totals.total)} total.`
+          : payload.preview.blockers.join(" "),
+      });
+    } catch (caught) {
+      setActionStatus({ kind: "error", message: caught instanceof Error ? caught.message : "Payroll preview failed." });
+    }
+  }, [filters.monthKey]);
+
+  const exportCurrentMonth = useCallback(async () => {
+    const monthKey = filters.monthKey;
+    if (!monthKey) {
+      setActionStatus({ kind: "error", message: "Select a monthKey filter before export." });
+      return;
+    }
+    setIsExporting(true);
+    setActionStatus(null);
+    try {
+      const response = await fetch("/api/admin/deductions-governance/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthKey }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        setActionStatus({ kind: "error", message: payload?.message ?? "Deductions export failed." });
+        return;
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const matchedName = disposition.match(/filename="([^"]+)"/)?.[1];
+      const fileName = matchedName ?? `phoenix-deductions-governance-${monthKey}.xlsx`;
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      setActionStatus({ kind: "success", message: `Export generated: ${fileName}` });
+      await refresh(page, pageSize);
+    } catch (caught) {
+      setActionStatus({ kind: "error", message: caught instanceof Error ? caught.message : "Deductions export failed." });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [filters.monthKey, page, pageSize, refresh]);
+
+  const confirmPayrollImport = useCallback(async () => {
+    const monthKey = filters.monthKey;
+    if (!monthKey) {
+      setActionStatus({ kind: "error", message: "Select a monthKey filter before payroll import." });
+      return;
+    }
+    if (!payrollPreview?.canImport) {
+      setActionStatus({ kind: "error", message: "Open a clean payroll preview before import." });
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm(`Import approved deductions into payroll for ${monthKey}?`)) return;
+    setIsImportingPayroll(true);
+    setActionStatus(null);
+    try {
+      const response = await fetch("/api/admin/deductions-governance/payroll-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthKey }),
+      });
+      const payload = (await response.json()) as { success?: boolean; message?: string };
+      if (!response.ok || !payload.success) {
+        setActionStatus({ kind: "error", message: payload.message ?? "Payroll import failed." });
+        return;
+      }
+      setActionStatus({ kind: "success", message: "Deductions imported to payroll." });
+      setPayrollPreview(null);
+      await refresh(1, pageSize);
+    } catch (caught) {
+      setActionStatus({ kind: "error", message: caught instanceof Error ? caught.message : "Payroll import failed." });
+    } finally {
+      setIsImportingPayroll(false);
+    }
+  }, [filters.monthKey, pageSize, payrollPreview?.canImport, refresh]);
 
   const inboxRows = inbox?.rows ?? [];
   const safeKpis = kpis ?? {
@@ -696,25 +1040,70 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
       <AdminPageHero
         actions={
           props.canSync ? (
-            <Button
-              disabled={isSyncing || isLoading}
-              onClick={() => {
-                void syncFromFieldWorkforce();
-              }}
-              title="Imports approved Field Workforce Compliance report decisions as deduction candidates. Does not execute payroll or modify leave balances."
-              type="button"
-              variant="secondary"
-            >
-              {isSyncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              <span className="ml-2">Sync from Field Workforce Compliance</span>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={isSyncing || isLoading}
+                onClick={() => {
+                  void syncAllSources();
+                }}
+                title="Imports pending candidates from FWC absence, fingerprint attendance, and unpaid vacation. Does not execute payroll or modify leave balances."
+                type="button"
+                variant="secondary"
+              >
+                {isSyncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                <span className="ml-2">Sync Sources</span>
+              </Button>
+              <Button
+                disabled={isFinalizing || isLoading}
+                onClick={() => {
+                  void finalizeCurrentMonth();
+                }}
+                type="button"
+                variant="secondary"
+              >
+                {isFinalizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                <span className="ml-2">Finalize Month</span>
+              </Button>
+              <Button
+                disabled={isLoading}
+                onClick={() => {
+                  void previewPayrollImport();
+                }}
+                type="button"
+                variant="secondary"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span className="ml-2">Payroll Preview</span>
+              </Button>
+              <Button
+                disabled={isExporting || isLoading}
+                onClick={() => {
+                  void exportCurrentMonth();
+                }}
+                type="button"
+                variant="secondary"
+              >
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                <span className="ml-2">Export</span>
+              </Button>
+              <Button
+                disabled={isImportingPayroll || !payrollPreview?.canImport}
+                onClick={() => {
+                  void confirmPayrollImport();
+                }}
+                type="button"
+              >
+                {isImportingPayroll ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                <span className="ml-2">Confirm Import</span>
+              </Button>
+            </div>
           ) : null
         }
-        description="HR governance workspace for deduction candidates from operational sources. Read-only in Phase C. No payroll execution, no leave-balance mutation."
+        description="HR governance workspace for deduction candidates from FWC absence, fingerprint attendance, and unpaid vacation. Payroll import requires preview first."
         eyebrow="Workforce Governance"
         icon={<ShieldCheck className="h-3.5 w-3.5" />}
         title="Deductions Governance Center"
@@ -735,12 +1124,78 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
         </AdminCallout>
       ) : null}
 
+      {actionStatus ? (
+        <AdminCallout tone={actionStatus.kind === "success" ? "success" : "danger"}>
+          {actionStatus.kind === "success" ? (
+            <ShieldCheck className="mt-0.5 h-4 w-4" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+          )}
+          <p>{actionStatus.message}</p>
+        </AdminCallout>
+      ) : null}
+
+      {payrollPreview ? (
+        <Card className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-black text-slate-900">Payroll Import Preview</p>
+              <p className="mt-1 text-xs text-slate-500">
+                CRM {formatMoney(payrollPreview.totals.crm)} / Finger Print {formatMoney(payrollPreview.totals.fingerPrint)} / Unpaid Vacations {formatMoney(payrollPreview.totals.unpaidVacations)}
+              </p>
+            </div>
+            <Badge variant={payrollPreview.canImport ? "success" : "danger"}>
+              {payrollPreview.canImport ? "Ready" : "Blocked"}
+            </Badge>
+          </div>
+          {payrollPreview.blockers.length > 0 ? (
+            <ul className="mt-3 space-y-1 text-xs font-semibold text-rose-600">
+              {payrollPreview.blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="phoenix-horizontal-scroll mt-3 max-h-64 overflow-auto">
+            <table className="w-full min-w-[780px] text-left text-xs">
+              <thead className="bg-slate-50 font-black uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Employee</th>
+                  <th className="px-3 py-2">Code</th>
+                  <th className="px-3 py-2">Matched</th>
+                  <th className="px-3 py-2">CRM</th>
+                  <th className="px-3 py-2">Finger Print</th>
+                  <th className="px-3 py-2">Unpaid Vacations</th>
+                  <th className="px-3 py-2">Delta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {payrollPreview.rows.slice(0, 50).map((row) => (
+                  <tr key={row.employeeCode}>
+                    <td className="px-3 py-2 font-semibold text-slate-800">{row.employeeName ?? "-"}</td>
+                    <td className="px-3 py-2 font-mono text-slate-500">{row.employeeCode}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={row.matched ? "success" : "danger"}>{row.matched ? "Matched" : "Unmatched"}</Badge>
+                    </td>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.crm)} {"->"} {formatMoney(row.appliedTotals.crm)}</td>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.fingerPrint)} {"->"} {formatMoney(row.appliedTotals.fingerPrint)}</td>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.unpaidVacations)} {"->"} {formatMoney(row.appliedTotals.unpaidVacations)}</td>
+                    <td className={cn("px-3 py-2 font-mono font-bold", row.delta > 0 ? "text-rose-600" : row.delta < 0 ? "text-emerald-600" : "text-slate-500")}>
+                      {formatMoney(row.delta)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
       <AdminCallout tone="neutral">
         <ShieldAlert className="mt-0.5 h-4 w-4" />
         <p>
           This module collects deduction candidates from operational sources for HR review.
-          It does not deduct salary or modify leave balances. All approvals are export-only
-          handoffs to payroll, delivered via the Phase H payroll handoff workbook.
+          It does not change leave balances. Payroll changes happen only after a clean preview
+          and explicit Confirm Import action by Admin HR or B-10.
         </p>
       </AdminCallout>
 
@@ -757,7 +1212,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
         safeKpis.total === 0 ? (
           <Card className="p-8 text-center text-sm text-slate-500">
             <p className="text-base font-black text-slate-700">No deduction candidates yet.</p>
-            <p className="mt-2">Connect a source module in Phase D to start populating this inbox.</p>
+            <p className="mt-2">Select a month and sync sources to populate this inbox.</p>
           </Card>
         ) : (
           <KpiGrid kpis={safeKpis} />
@@ -766,7 +1221,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
 
       {activeTab === "inbox" ? (
         <AdminTableShell
-          description="Filter, sort, and review the live deduction candidate pool. Read-only in Phase C."
+          description="Filter, sort, review, and decide the live deduction candidate pool."
           title="Deduction Inbox"
         >
           <InboxFiltersBar
@@ -787,7 +1242,13 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
               void refresh(1, pageSize);
             }}
           />
-          <InboxTable canEditDecisions={props.canEditDecisions} rows={inboxRows} />
+          <InboxTable
+            canEditDecisions={props.canEditDecisions}
+            rows={inboxRows}
+            onDecisionSaved={() => {
+              void refresh(page, pageSize);
+            }}
+          />
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
             <span>
               Showing {inboxRows.length ? (page - 1) * pageSize + 1 : 0}-
@@ -842,12 +1303,12 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
           <AdminCallout tone="warning">
             <ShieldAlert className="mt-0.5 h-4 w-4" />
             <p>
-              This view is report-only. It does not execute payroll or leave changes.
-              Payroll Handoff export will arrive in Phase H.
+              This view shows HR-approved deductions queued for monthly finalization and payroll preview.
+              Leave balances are never changed from this workspace.
             </p>
           </AdminCallout>
           <AdminTableShell
-            description="HR-approved candidates queued for payroll handoff (export-only)."
+            description="HR-approved candidates queued for finalization and payroll handoff."
             title="Final Approved Deductions"
           >
             <InboxTable canEditDecisions={false} rows={finalApproved ?? []} />
@@ -861,6 +1322,15 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
           title="Disputes"
         >
           <InboxTable canEditDecisions={false} rows={disputes ?? []} />
+        </AdminTableShell>
+      ) : null}
+
+      {activeTab === "comments" ? (
+        <AdminTableShell
+          description="Employee responses to finalized deductions. Comments are informational only and do not reopen payroll."
+          title="Employee Comments"
+        >
+          <CommentsPanel comments={comments ?? []} />
         </AdminTableShell>
       ) : null}
 
