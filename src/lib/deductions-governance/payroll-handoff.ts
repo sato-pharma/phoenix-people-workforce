@@ -52,6 +52,7 @@ export type DeductionsPayrollPreviewRow = {
     fingerPrint: number;
     unpaidVacations: number;
   };
+  // Amount ADDED to this employee's payroll deductions (governance import is add-on-top).
   delta: number;
   employeeCode: string;
   employeeName: string | null;
@@ -62,6 +63,12 @@ export type DeductionsPayrollPreviewRow = {
   };
   matched: boolean;
   payrollRecordId: string | null;
+  // Resulting payroll values after import = existing + applied (add-on-top).
+  resultingTotals: {
+    crm: number;
+    fingerPrint: number;
+    unpaidVacations: number;
+  };
 };
 
 export type DeductionsPayrollPreview = {
@@ -157,13 +164,15 @@ export function buildDeductionsPayrollPreview(input: {
     totalCrm += money(totals.crm);
     totalFingerPrint += money(totals.fingerPrint);
     totalUnpaidVacations += money(totals.unpaidVacations);
+    void existingGovernance;
     rows.push({
       appliedTotals: {
         crm: money(totals.crm),
         fingerPrint: money(totals.fingerPrint),
         unpaidVacations: money(totals.unpaidVacations),
       },
-      delta: Math.round((appliedGovernance - existingGovernance) * 100) / 100,
+      // Add-on-top: the delta applied to payroll is the governance amount itself.
+      delta: Math.round(appliedGovernance * 100) / 100,
       employeeCode: totals.employeeCode,
       employeeName: totals.employeeName ?? record?.full_name ?? null,
       existingTotals: {
@@ -173,6 +182,11 @@ export function buildDeductionsPayrollPreview(input: {
       },
       matched: Boolean(record),
       payrollRecordId: record?.id ?? null,
+      resultingTotals: {
+        crm: money(money(record?.crm) + money(totals.crm)),
+        fingerPrint: money(money(record?.finger_print) + money(totals.fingerPrint)),
+        unpaidVacations: money(money(record?.unpaid_vacations) + money(totals.unpaidVacations)),
+      },
     });
   }
   rows.sort((left, right) =>
