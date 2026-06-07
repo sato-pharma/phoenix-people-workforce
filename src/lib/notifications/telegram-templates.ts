@@ -20,6 +20,7 @@ export type TelegramTemplateWorkflowKey =
   | "probation"
   | "vacation"
   | "outstation"
+  | "marketing_requests"
   | "payroll"
   | "general_admin_test";
 
@@ -344,6 +345,58 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
       workflowName: "Outstation review",
     },
     templateKey: "outstation",
+  },
+  {
+    allowedPlaceholders: [
+      ...globalPlaceholders,
+      "requestCode",
+      "approveUrl",
+      "rejectUrl",
+      "returnUrl",
+    ],
+    defaultMessage: "Marketing request\nRequester: {{requesterName}}\nRequest: {{requestCode}}\nStep: {{approvalStep}}\nStatus: {{status}}\n\nOpen in Phoenix: {{actionUrl}}",
+    defaultTitle: "Marketing Request Approval",
+    eventType: "request_assigned",
+    module: "marketing_requests",
+    name: "Marketing Requests",
+    recommendedPlaceholders: ["requestCode", "requesterName", "approvalStep", "status", "actionUrl", "approveUrl", "rejectUrl"],
+    sampleVariables: {
+      actionUrl: "/employee-portals/marketing-requests/decision/MKT-1001",
+      approvalStep: "Marketing review",
+      approveUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=approve",
+      approverName: "Mona Adel",
+      area: "Alexandria",
+      department: "Commercial",
+      dueDate: "20 Jun 2026",
+      employeeHrId: "MR001",
+      employeeName: "Med Rep One",
+      employeePortalUrl: "/employee-portals/marketing-requests",
+      eventDate: "18 Jun 2026",
+      hireDate: "1 Jan 2024",
+      hiringDate: "1 Jan 2024",
+      line: "Anti infective",
+      managerName: "District Manager",
+      moduleName: "Marketing Requests",
+      priority: "High",
+      reason: "Customer activity request",
+      recipientHrId: "MKT001",
+      recipientName: "Mona Adel",
+      rejectUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=reject",
+      requesterHrId: "MR001",
+      requesterName: "Med Rep One",
+      requestCode: "MKT-1001",
+      requestId: "MKT-1001",
+      requestUrl: "/employee-portals/marketing-requests/decision/MKT-1001",
+      requestType: "Marketing activity",
+      returnUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=return",
+      role: "Marketing Manager",
+      status: "Pending approval",
+      submittedAt: "18 Jun 2026",
+      team: "Alex Team",
+      updatedAt: "18 Jun 2026",
+      workflowName: "Marketing request approval",
+    },
+    templateKey: "marketing_requests",
   },
   {
     allowedPlaceholders: ["actionUrl", "employeePortalUrl", "eventDate"],

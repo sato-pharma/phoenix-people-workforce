@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog } from "lucide-react";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox } from "lucide-react";
 import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -99,8 +99,10 @@ function buildEmployeePortalSections({
   showIncentiveTab = true,
   showManagementTab = false,
   showMarketingRequestsTab = false,
+  showMarketingInboxTab = false,
   showMarketingCustomerDatabaseTab = false,
   showMarketingControlTab = false,
+  showMarketingRoiTrackingTab = false,
   showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
@@ -141,10 +143,12 @@ function buildEmployeePortalSections({
     {
       title: "Marketing Requests",
       items: [
-        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "HCP / PH Validation", icon: ShieldCheck }] : []),
+        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
+        ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Approval Inbox", icon: Inbox }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
-        ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "SCP / PH Database", icon: Database }] : []),
+        ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
+        ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/marketing-requests/roi-tracking", label: "ROI Tracking", icon: ChartColumnBig }] : []),
       ],
     },
     {
