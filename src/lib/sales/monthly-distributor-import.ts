@@ -117,6 +117,9 @@ export type DistributorSalesProductSummary = DistributorSalesTotal & {
 };
 
 export type DistributorSalesValidationResult = {
+  // Non-blocking advisories surfaced to the user (e.g. the file's distributor column disagrees with
+  // the selected distributor). These never block the upload — they just prompt a sanity check.
+  advisories?: string[];
   batchId?: string;
   blockingReasons: string[];
   byArea: DistributorSalesAreaSummary[];
@@ -1311,8 +1314,32 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     blockingReasons.push(`The sheet contains multiple invoice months: ${periods.join(", ")}.`);
   }
 
+  // Guardrail (advisory, non-blocking): if the sheet's own distributor column consistently disagrees
+  // with the selected distributor, surface it — a wrong dropdown pick would otherwise save a whole
+  // month against the wrong company without any warning.
+  const advisories: string[] = [];
+  const fileDistribCounts = new Map<string, number>();
+  for (const row of rows) {
+    const code = normalizeCode(row.distributorCode);
+    if (code) fileDistribCounts.set(code, (fileDistribCounts.get(code) ?? 0) + 1);
+  }
+  let dominantFileDistrib = "";
+  let dominantCount = 0;
+  for (const [code, count] of fileDistribCounts) {
+    if (count > dominantCount) {
+      dominantFileDistrib = code;
+      dominantCount = count;
+    }
+  }
+  if (dominantFileDistrib && dominantFileDistrib !== selectedDistributorCode) {
+    advisories.push(
+      `This file's distributor column says "${dominantFileDistrib}", but you selected "${distributor.name}" (${selectedDistributorCode}). Double-check you picked the right distributor before saving.`,
+    );
+  }
+
   return {
     ...summarizeRows(rows),
+    advisories,
     blockingReasons,
     distributor,
     failedRows,
@@ -1339,6 +1366,7 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
   const parsed = await parseDistributorSalesWorkbookBuffer(input);
 
   return {
+    advisories: parsed.advisories,
     batchId: parsed.batchId,
     blockingReasons: parsed.blockingReasons,
     byArea: parsed.byArea,
@@ -2073,6 +2101,30 @@ async function persistDistributorSalesUpload(
   const { parsedRows, ...result } = parsed;
 
   const supabase = getSupabaseAdmin();
+
+  // Guardrail: never silently double-count. If this upload validates and a VALIDATED batch for the
+  // same distributor + period already exists, block it with a clear message — the user deletes the
+  // existing sheet first (matching the normal delete-then-re-upload flow). Blocked batches don't
+  // count in dashboards, so they are intentionally not treated as duplicates here.
+  if (result.status === "validated" && result.period) {
+    const existing = await supabase
+      .from("source_of_sales_import_batches")
+      .select("file_name")
+      .eq("distributor_code", result.distributor.code)
+      .eq("period", result.period)
+      .eq("status", "validated")
+      .limit(1)
+      .maybeSingle();
+    if (!existing.error && existing.data) {
+      const existingName = String(existing.data.file_name ?? "an earlier sheet");
+      throw new SalesWorkflowError(
+        "duplicate_sales_batch",
+        `A validated ${result.distributor.name} sheet for ${result.period} is already uploaded (${existingName}). Delete it first, then re-upload — this prevents the month's totals from being double-counted.`,
+        409,
+      );
+    }
+  }
+
   const batchInsert = await supabase
     .from("source_of_sales_import_batches")
     .insert({
