@@ -139,7 +139,7 @@ type EmailContactRow = {
   full_name?: string | null;
   hr_id?: string;
   job_title?: string | null;
-  line?: string | null;
+  line_name?: string | null;
   lines?: { name: string | null } | Array<{ name: string | null }> | null;
   manager_hr_id?: string | null;
   work_email?: string | null;
@@ -500,7 +500,7 @@ async function loadEmployeeContact(hrId: string | null | undefined) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line,lines(name)")
+    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
     .eq("hr_id", cleanHrId)
     .maybeSingle();
 
@@ -514,7 +514,7 @@ function normalizeCompare(value: string | null | undefined) {
 
 function employeeLine(contact: EmailContactRow | null | undefined) {
   const relation = Array.isArray(contact?.lines) ? contact?.lines[0] : contact?.lines;
-  return contact?.line || relation?.name || null;
+  return contact?.line_name || relation?.name || null;
 }
 
 async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) {
@@ -523,7 +523,7 @@ async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line,lines(name)")
+    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
     .not("work_email", "is", null);
 
   if (error) throw error;
@@ -717,7 +717,7 @@ export async function getEmailRoutingOptions() {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("employees")
-      .select("job_title,line,lines(name)")
+      .select("job_title,line_name,lines(name)")
       .not("work_email", "is", null);
 
     if (error) throw error;

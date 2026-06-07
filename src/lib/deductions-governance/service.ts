@@ -1613,7 +1613,7 @@ export async function addDeductionComment(input: {
 type EmployeeScopeRow = {
   full_name: string | null;
   hr_id: string | null;
-  line: string | null;
+  line_name: string | null;
   line_id: number | null;
   manager_hr_id: string | null;
 };
@@ -1629,7 +1629,7 @@ function collectPortalDeductionScope(input: {
   const byManager = new Map<string, EmployeeScopeRow[]>();
   const rootRows = input.employees.filter((employee) => compactHrId(employee.hr_id) === root);
   const rootLineIds = new Set(rootRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number"));
-  const rootLineNames = new Set(rootRows.map((row) => String(row.line ?? "").trim().toLowerCase()).filter(Boolean));
+  const rootLineNames = new Set(rootRows.map((row) => String(row.line_name ?? "").trim().toLowerCase()).filter(Boolean));
 
   for (const employee of input.employees) {
     const manager = compactHrId(employee.manager_hr_id);
@@ -1677,7 +1677,7 @@ function collectPortalDeductionScope(input: {
 
   if (input.access.scope === "line" || input.access.role === "National Sales Manager") {
     for (const employee of input.employees) {
-      const normalizedLineName = String(employee.line ?? "").trim().toLowerCase();
+      const normalizedLineName = String(employee.line_name ?? "").trim().toLowerCase();
       const inLine =
         (typeof employee.line_id === "number" && rootLineIds.has(employee.line_id)) ||
         (normalizedLineName && rootLineNames.has(normalizedLineName));
@@ -1698,7 +1698,7 @@ export async function listPublishedDeductionsForPortal(input: {
 }> {
   const { data: employees, error: employeesError } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name,manager_hr_id,line_id,line");
+    .select("hr_id,full_name,manager_hr_id,line_id,line_name");
   const monthKey = safeNormalizeMonthKey(input.monthKey);
   if (employeesError) throw employeesError;
   const scope = collectPortalDeductionScope({
