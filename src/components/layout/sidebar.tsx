@@ -839,8 +839,13 @@ export function MobileSidebar({
       />
       <aside
         className={cn(
+          // Full-height left drawer pinned to the fixed overlay's edges. Do NOT add
+          // `relative` in the admin branch below — `cn()`/tailwind-merge treats it as
+          // a conflicting `position` utility and drops this `absolute`, which collapses
+          // the drawer to 0×0 on mobile. The inner `relative z-10` wrapper already
+          // establishes the stacking context for the drawer content.
           "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col shadow-2xl transition-transform duration-200",
-          isAdmin ? cn("relative border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
+          isAdmin ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
