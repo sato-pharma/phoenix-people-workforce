@@ -77,6 +77,7 @@ type ResignationFormState = {
 
 type EmployeeImportPreview = {
   failedRows?: number;
+  missingRequiredColumns?: string[];
   rowsToInsert?: unknown[];
   rowsToUpdate?: unknown[];
   validationErrors?: Array<{ message?: string; rowNumber?: number }>;
@@ -1153,7 +1154,9 @@ export function EmployeeManagement({
       setNotice(
         `Import preview ready: ${payload.rowsToInsert?.length ?? 0} to create, ${
           payload.rowsToUpdate?.length ?? 0
-        } to update, ${payload.failedRows ?? 0} blocked.`,
+        } to update, ${payload.failedRows ?? 0} blocked${
+          payload.failedRows ? " (blocked rows will be skipped on confirm)" : ""
+        }.`,
       );
     } catch {
       setError("Unable to upload employee template.");
@@ -1196,6 +1199,8 @@ export function EmployeeManagement({
           payload.updatedEmployees ?? 0
         } updated, ${payload.accessUsersCreated ?? 0} access accounts added${
           payload.accessUsersFailed ? `, ${payload.accessUsersFailed} access accounts need review` : ""
+        }${
+          payload.blockedRows ? `, ${payload.blockedRows} row(s) skipped (fix and re-upload to apply them)` : ""
         }.`,
       );
     } catch {
@@ -1354,15 +1359,33 @@ export function EmployeeManagement({
                   ) : null}
                 </div>
                 {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
-                  <p className="mt-1 text-xs text-danger">
-                    {pendingImportPreview.validationErrors?.slice(0, 3).map((issue) => `Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`).join(" ")}
+                  <div className="mt-1 space-y-0.5 text-xs text-danger">
+                    {pendingImportPreview.validationErrors?.slice(0, 10).map((issue, index) => (
+                      <p key={`${issue.rowNumber ?? "-"}-${index}`}>
+                        {`Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Validation failed."}`}
+                      </p>
+                    ))}
+                    {(pendingImportPreview.validationErrors?.length ?? 0) > 10 ? (
+                      <p className="font-semibold">
+                        +{(pendingImportPreview.validationErrors?.length ?? 0) - 10} more blocked row(s).
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {(pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0 ? (
+                  <p className="mt-1 text-xs font-semibold text-danger">
+                    Missing required column(s): {pendingImportPreview.missingRequiredColumns?.join(", ")}. Fix the file header before importing.
+                  </p>
+                ) : (pendingImportPreview.failedRows ?? 0) > 0 ? (
+                  <p className="mt-1 text-xs text-text-secondary">
+                    Blocked rows are skipped automatically — the {(pendingImportPreview.rowsToUpdate?.length ?? 0) + (pendingImportPreview.rowsToInsert?.length ?? 0)} valid row(s) will still be imported.
                   </p>
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   className="h-10 rounded-xl px-5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
-                  disabled={isImportingTemplate || Boolean(pendingImportPreview.failedRows)}
+                  disabled={isImportingTemplate || (pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0}
                   onClick={() => void confirmPendingImport()}
                 >
                   {isImportingTemplate ? <LoadingSpinner /> : <Check className="h-4 w-4" />}
