@@ -5,6 +5,7 @@ import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@
 import { isDisposableSalesBatchRow, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { formatUnits } from "@/lib/sales/format";
 import { isSalesOthersBucket } from "@/lib/sales/others";
+import { roundCurrency } from "@/lib/payroll/money";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
@@ -254,18 +255,18 @@ function hasMaterialValueGap(actual: number, expected: number) {
 function buildBatchReconciliation(records: ScopedRecord[]): SalesBatchReconciliation {
   const importedSalesUnits = sum(records, (record) => record.salesUnits);
   const importedTargetUnits = sum(records, (record) => record.targetUnits);
-  const importedSalesValue = sum(records, (record) => record.salesValue);
-  const importedTargetValue = sum(records, (record) => record.targetValue);
-  const expectedSalesValue = sum(records, (record) =>
+  const importedSalesValue = roundCurrency(sum(records, (record) => record.salesValue));
+  const importedTargetValue = roundCurrency(sum(records, (record) => record.targetValue));
+  const expectedSalesValue = roundCurrency(sum(records, (record) =>
     Number.isFinite(record.salesUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0
       ? record.salesUnits * record.factoryPrice
       : 0
-  );
-  const expectedTargetValue = sum(records, (record) =>
+  ));
+  const expectedTargetValue = roundCurrency(sum(records, (record) =>
     Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0
       ? record.targetUnits * record.factoryPrice
       : 0
-  );
+  ));
 
   invalidateExecutiveDashboardCache("sales import created", ["sales"]);
   return {
@@ -275,8 +276,8 @@ function buildBatchReconciliation(records: ScopedRecord[]): SalesBatchReconcilia
     importedTargetValue,
     expectedSalesValue,
     expectedTargetValue,
-    salesValueVariance: importedSalesValue - expectedSalesValue,
-    targetValueVariance: importedTargetValue - expectedTargetValue,
+    salesValueVariance: roundCurrency(importedSalesValue - expectedSalesValue),
+    targetValueVariance: roundCurrency(importedTargetValue - expectedTargetValue),
     salesValueMismatchRows: records.filter((record) =>
       Number.isFinite(record.salesUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0
         ? hasMaterialValueGap(record.salesValue, record.salesUnits * record.factoryPrice)
