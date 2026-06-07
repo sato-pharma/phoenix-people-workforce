@@ -936,6 +936,20 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </AdminCallout>
         ) : null}
 
+        {result?.advisories && result.advisories.length > 0 ? (
+          <AdminCallout tone="neutral">
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+            <div>
+              <p className="font-semibold">Heads up — please double-check</p>
+              <div className="mt-2 space-y-2 text-sm">
+                {result.advisories.map((advisory, index) => (
+                  <p key={`${advisory}:${index}`}>{advisory}</p>
+                ))}
+              </div>
+            </div>
+          </AdminCallout>
+        ) : null}
+
         {result ? (
           <>
             <AdminTableShell
