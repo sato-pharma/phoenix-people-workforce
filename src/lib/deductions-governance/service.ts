@@ -1725,6 +1725,29 @@ export async function listPublishedDeductionsForPortal(input: {
   return { comments, lines };
 }
 
+/**
+ * Returns the distinct month keys that have at least one deduction candidate,
+ * sorted descending (most recent first). Used to populate the monthKey picker
+ * in the Deductions Governance workspace so users never have to type a date.
+ */
+export async function listAvailableDeductionMonthKeys(input: {
+  access: AccessContext;
+}): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("deduction_candidates")
+    .select("month_key")
+    .order("month_key", { ascending: false });
+  if (error) throw error;
+  const seen = new Set<string>();
+  const months: string[] = [];
+  for (const row of data ?? []) {
+    const key = String(row.month_key ?? "").trim();
+    if (key && !seen.has(key)) { seen.add(key); months.push(key); }
+  }
+  return months;
+}
+
 // Type-only re-exports kept so call sites can type their state shape against
 // the same union the DB constrains to. Pure typing; no DB.
 export type { DeductionDecisionReason };
