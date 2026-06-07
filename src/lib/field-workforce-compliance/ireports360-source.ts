@@ -100,19 +100,31 @@ function isDepartedStatus(status: string | null | undefined): boolean {
   return normalized === "terminated" || normalized === "resigned" || normalized === "inactive";
 }
 
-/** Maps a single agent-day's visit records to a compliance cell value. */
+/** Maps a single agent-day's visit records to a compliance cell value.
+ *
+ * Priority: CP (campaign/special activity) > regular visit count > AV (leave).
+ * If ANY visit on a day maps to CP, the whole day is classified as CP —
+ * a mixed day (regular visits + one campaign activity) is a campaign day.
+ */
 function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
-  const regular = visits.reduce((count, visit) => count + (visit.visitType === 0 ? 1 : 0), 0);
-  if (regular > 0) return regular;
-
+  let regularCount = 0;
   let hasCp = false;
   let hasAv = false;
+
   for (const visit of visits) {
-    const mapped = VISIT_TYPE_TO_STATUS.get(visit.visitType) ?? "CP";
-    if (mapped === "AV") hasAv = true;
-    else hasCp = true;
+    if (visit.visitType === 0) {
+      regularCount++;
+    } else {
+      const mapped = VISIT_TYPE_TO_STATUS.get(visit.visitType) ?? "CP";
+      if (mapped === "AV") hasAv = true;
+      else hasCp = true;
+    }
   }
-  return hasCp ? "CP" : hasAv ? "AV" : "CP";
+
+  if (hasCp) return "CP";
+  if (regularCount > 0) return regularCount;
+  if (hasAv) return "AV";
+  return "CP";
 }
 
 /**
