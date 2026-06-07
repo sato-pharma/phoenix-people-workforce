@@ -86,7 +86,7 @@ export function generateFieldWorkforceFinalActionsWorkbook(report: FieldWorkforc
 
   sheet.mergeCells(1, 1, 1, headers.length);
   styleTitle(sheet.getCell(1, 1));
-  sheet.getCell(1, 1).value = `${systemIdentity.appName} - Field Workforce Compliance Final Approved Actions`;
+  sheet.getCell(1, 1).value = `${systemIdentity.appName} - Workforce Compliance Final Approved Actions`;
 
   sheet.mergeCells(2, 1, 2, headers.length);
   sheet.getCell(2, 1).value = "This export does not execute payroll or leave changes.";
