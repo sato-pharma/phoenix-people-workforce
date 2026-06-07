@@ -104,7 +104,7 @@ function requestStatusTone(status: string) {
 function recommendationTone(value: string) {
   const normalized = value.toLowerCase();
   if (normalized === "auto_approve") return "text-[#047857]";
-  if (normalized === "finance_review") return "text-[#1D4ED8]";
+  if (normalized === "hr_review" || normalized === "finance_review") return "text-[#1D4ED8]";
   if (normalized === "reject") return "text-[#B91C1C]";
   return "text-[#C2410C]";
 }

@@ -15,7 +15,7 @@ export type OutstationCalculationStatus =
 export type OutstationApprovalRecommendation =
   | "auto_approve"
   | "manager_review"
-  | "finance_review"
+  | "hr_review"
   | "reject";
 
 export type OutstationFraudFlag =
