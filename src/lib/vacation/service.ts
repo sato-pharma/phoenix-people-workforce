@@ -1374,7 +1374,10 @@ async function resolveVacationParallelApprovalRecipients(
   employee: EmployeeDirectoryRow,
 ): Promise<VacationApprovalRecipient[]> {
   const { manager, managerOfManager } = managerChain(directory, employee);
-  if (!manager?.hrId || !managerOfManager?.hrId) {
+  // The direct manager is required. The manager-of-manager step is included only
+  // when one exists — employees who report directly to the top of the org (e.g. the
+  // CEO, who has no manager above) still get a valid chain of direct manager + HR.
+  if (!manager?.hrId) {
     throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
 
@@ -1387,13 +1390,17 @@ async function resolveVacationParallelApprovalRecipients(
       stepKey: "direct_manager",
       userId: null,
     },
-    {
-      email: managerOfManager.workEmail,
-      hrId: managerOfManager.hrId,
-      name: managerOfManager.fullName,
-      stepKey: "manager_of_manager",
-      userId: null,
-    },
+    ...(managerOfManager?.hrId
+      ? [
+          {
+            email: managerOfManager.workEmail,
+            hrId: managerOfManager.hrId,
+            name: managerOfManager.fullName,
+            stepKey: "manager_of_manager" as const,
+            userId: null,
+          },
+        ]
+      : []),
     ...hrApprovers,
   ];
 }
@@ -2081,7 +2088,9 @@ export async function createVacationRequest(access: AccessContext, input: Create
   });
   const approvalRecipients = await resolveVacationParallelApprovalRecipients(directory, employee);
   const { manager, managerOfManager } = managerChain(directory, employee);
-  if (!manager?.hrId || !managerOfManager?.hrId) {
+  // Only the direct manager is required; manager-of-manager is optional (top-of-org
+  // reports, e.g. direct reports to the CEO, have no manager above their manager).
+  if (!manager?.hrId) {
     throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
   const weeklyOffPolicySnapshot = buildWeeklyOffPolicySnapshot(weeklyOffPolicy);
