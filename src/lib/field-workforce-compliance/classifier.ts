@@ -1,5 +1,6 @@
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { daysInMonth } from "@/lib/field-workforce-compliance/parser";
+import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
 import type {
   FieldWorkforceCellStatus,
   FieldWorkforceDayCell,
@@ -141,7 +142,8 @@ function explainCell(input: {
   visitCount?: number;
 }) {
   if (input.ignoreReason === "before_hiring_date") return "Ignored because before hiring date.";
-  if (input.ignoreReason === "friday") return "Excluded because Friday/weekend.";
+  if (input.ignoreReason === "national_holiday") return `Excluded — national holiday${input.holidayName ? `: ${input.holidayName}` : ""}.`;
+  if (input.ignoreReason === "weekly_off") return "Excluded because weekly day off.";
   if (input.status === "UNKNOWN") return "Review needed: unknown value in monthly file.";
   if (input.status === "N" && input.isPublicHoliday) return "No activity entered on a public holiday; review as holiday context, not normal deduction.";
   if (input.status === "AV" && input.isPublicHoliday) return "Vacation signal overlaps a public holiday; reconcile before any leave action.";
@@ -168,7 +170,8 @@ function cellContext(cell: {
   const context: string[] = [];
   if (cell.isPreHire) context.push("Pre-hire");
   if (cell.isFriday) context.push("Friday");
-  if (cell.isPublicHoliday) context.push(cell.holidayName ? `Public holiday: ${cell.holidayName}` : "Public holiday");
+  else if (cell.ignoreReason === "weekly_off") context.push("Weekly off");
+  if (cell.isPublicHoliday) context.push(cell.holidayName ? `National vacation: ${cell.holidayName}` : "National vacation");
   if (cell.status === "UNKNOWN") context.push("Unknown value");
   if (cell.ignored) context.push("Ignored");
   return context;
@@ -182,8 +185,8 @@ function candidateTypeForCell(cell: FieldWorkforceDayCell): FieldWorkforceReview
     }
     return null;
   }
-  if (cell.isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(cell.status)) return "public_holiday_overlap";
-  if (cell.isFriday && !cell.isPreHire && !["F", "BLANK"].includes(cell.status)) return "friday_overlap";
+  // Weekly-off days and national holidays are not working days — they raise no candidates.
+  if (cell.ignored) return null;
   if (cell.status === "N") return "no_activity";
   if (cell.status === "AV") return "vacation_signal";
   return null;
@@ -325,17 +328,28 @@ function buildTimeline(input: {
   holidayByDate: Map<string, string>;
   hrId: string;
   month: number;
+  title: string | null;
   year: number;
 }) {
   return monthDates(input.year, input.month).map((dateIso) => {
     const rawValue = input.employee.rawDailyValues[dateIso] ?? null;
     const { status, visitCount } = classifyRawValue(rawValue);
     const friday = isFriday(dateIso);
+    const isWeeklyOff = isFieldWorkforceWeeklyOff({ dateIso, title: input.title });
     const isPreHire = Boolean(input.employee.hiringDateIso && dateIso < input.employee.hiringDateIso);
     const holidayName = input.holidayByDate.get(dateIso);
     const isPublicHoliday = Boolean(holidayName);
-    const ignored = isPreHire || friday;
-    const ignoreReason = isPreHire ? "before_hiring_date" : friday ? "friday" : undefined;
+    // National holidays and weekly-off days (Friday always; Saturday too unless the title is
+    // Medical Rep / District Manager) are NOT working days — they never count as activity or
+    // as absence, and they raise no review candidates.
+    const ignored = isPreHire || isWeeklyOff || isPublicHoliday;
+    const ignoreReason = isPreHire
+      ? "before_hiring_date"
+      : isPublicHoliday
+        ? "national_holiday"
+        : isWeeklyOff
+          ? "weekly_off"
+          : undefined;
     const eligible = !ignored;
     const countedAsWorkedDay = eligible && (status === "VISITS" || status === "CP");
     const countedAsVisitTotal = eligible && status === "VISITS";
@@ -345,9 +359,7 @@ function buildTimeline(input: {
     if (status === "UNKNOWN") severity = "High";
     else if (isPreHire && (status === "VISITS" || status === "CP")) severity = "High";
     else if (isPreHire && status === "AV") severity = "Review";
-    else if (isPublicHoliday && ["N", "AV", "CP", "VISITS"].includes(status)) severity = "Review";
-    else if (friday && !["F", "BLANK"].includes(status)) severity = "Review";
-    else if (status === "AV") severity = "Review";
+    else if (eligible && status === "AV") severity = "Review";
 
     const cell = {
       context: [],
@@ -448,6 +460,7 @@ function buildEmployeeSummary(input: {
     holidayByDate: input.holidayByDate,
     hrId: displayHrId,
     month: input.month,
+    title: input.employeeReference?.jobTitle ?? input.employeeReference?.roleName ?? null,
     year: input.year,
   });
   updateNoActivitySeverity(timeline);
@@ -466,12 +479,12 @@ function buildEmployeeSummary(input: {
   return {
     areaName: input.employeeReference?.areaName ?? null,
     campaignDays: timeline.filter((cell) => !cell.ignored && cell.status === "CP").length,
-    compliancePercent: timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length > 0
-      ? roundPercent((timeline.filter((cell) => cell.countedAsWorkedDay).length / timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length) * 100)
+    compliancePercent: timeline.filter((cell) => !cell.ignored).length > 0
+      ? roundPercent((timeline.filter((cell) => cell.countedAsWorkedDay).length / timeline.filter((cell) => !cell.ignored).length) * 100)
       : 0,
     employeeName,
     employmentStatus: input.employeeReference?.employmentStatus ?? null,
-    eligibleWorkingDays: timeline.filter((cell) => !cell.isPreHire && !cell.isFriday).length,
+    eligibleWorkingDays: timeline.filter((cell) => !cell.ignored).length,
     fridays: timeline.filter((cell) => !cell.isPreHire && cell.isFriday).length,
     hiringDateIso,
     hiringDateSource,

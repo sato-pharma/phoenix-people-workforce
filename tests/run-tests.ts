@@ -40,6 +40,7 @@ import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
+import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
 import { runLoginPageHardeningTests } from "./login-page-hardening.test.ts";
@@ -193,6 +194,7 @@ await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseI
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
+await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
 await runTest("deductions governance service", runDeductionsGovernanceServiceTests);
 await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcConnectorTests);

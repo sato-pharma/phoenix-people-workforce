@@ -37,6 +37,7 @@ import {
   iReports360Login,
   type IReports360Visit,
 } from "@/lib/field-workforce-compliance/ireports360-client";
+import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
@@ -58,21 +59,18 @@ const VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
   [-15, "AV"], // Health Day
 ]);
 
-export type IReports360ResolvedAgent = {
-  fullName: string | null;
-  hireDateIso: string | null;
-  hrId: string;
-};
-
-export type IReports360AgentResolver = {
-  resolve(agentId: number, agentName: string | null): IReports360ResolvedAgent | null;
-};
-
-export type IReports360UnresolvedAgent = {
-  agentId: number;
-  agentName: string | null;
-  visitCount: number;
-};
+/** Subset of the employee directory that the matrix builder reads. */
+export type FieldWorkforceEmployeeInput = Pick<
+  DirectoryRow,
+  | "crmId"
+  | "crmUsername"
+  | "employmentStatus"
+  | "fullName"
+  | "hireDate"
+  | "hrId"
+  | "jobTitle"
+  | "positionTitle"
+>;
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -92,32 +90,10 @@ export function normalizeAgentName(name: string | null | undefined): string {
     .replace(/\s+/g, " ");
 }
 
-/** Builds a resolver from the employee directory: CRM id (primary) then CRM username. */
-export function buildAgentResolver(directory: DirectoryRow[]): IReports360AgentResolver {
-  const byCrmId = new Map<string, DirectoryRow>();
-  const byCrmUsername = new Map<string, DirectoryRow>();
-
-  for (const employee of directory) {
-    const crmId = employee.crmId == null ? "" : String(employee.crmId).trim();
-    if (crmId && !byCrmId.has(crmId)) byCrmId.set(crmId, employee);
-
-    const usernameKey = normalizeAgentName(employee.crmUsername);
-    if (usernameKey && !byCrmUsername.has(usernameKey)) byCrmUsername.set(usernameKey, employee);
-  }
-
-  return {
-    resolve(agentId, agentName) {
-      const match =
-        byCrmId.get(String(agentId)) ??
-        (agentName ? byCrmUsername.get(normalizeAgentName(agentName)) : undefined);
-      if (!match) return null;
-      return {
-        fullName: match.fullName ?? null,
-        hireDateIso: match.hireDate ? String(match.hireDate).slice(0, 10) : null,
-        hrId: match.hrId,
-      };
-    },
-  };
+/** Employees who have left the company are not rendered in the monthly report. */
+function isDepartedStatus(status: string | null | undefined): boolean {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  return normalized === "terminated" || normalized === "resigned" || normalized === "inactive";
 }
 
 /** Maps a single agent-day's visit records to a compliance cell value. */
@@ -136,47 +112,64 @@ function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
 }
 
 /**
- * Builds the Field Workforce Compliance matrix (header row + one row per agent) from
- * a month of iReports360 visits. The output is consumed by the existing
+ * Builds the Field Workforce Compliance matrix (header row + one row per EMPLOYEE) for a
+ * month of iReports360 visits. The report is **employee-driven**: every eligible, active
+ * Phoenix employee gets a row even with zero visits, so fully-absent reps and non-visiting
+ * managers still appear (and can be reviewed for deductions). Agents in the visit feed that
+ * map to no eligible employee are ignored. The output is consumed by the existing
  * parseFieldWorkforceComplianceMatrix, so dateColumns/validation stay identical.
  */
 export function buildIReports360FieldWorkforceMatrix(input: {
+  employees: FieldWorkforceEmployeeInput[];
   month: number;
-  resolver: IReports360AgentResolver;
   todayIso?: string | null;
   visits: IReports360Visit[];
   year: number;
-}): { matrix: unknown[][]; unresolvedAgents: IReports360UnresolvedAgent[] } {
-  const { month, resolver, visits, year } = input;
+}): { matrix: unknown[][] } {
+  const { employees, month, visits, year } = input;
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
   const dateIsos = Array.from({ length: dayCount }, (_, index) => `${monthPrefix}-${pad2(index + 1)}`);
 
-  const visitsByAgent = new Map<number, IReports360Visit[]>();
-  const agentNameById = new Map<number, string | null>();
+  // Credit each visit to BOTH its primary agent AND its joint/"double" partner, indexing
+  // ids by normalized name (a username fallback for employees with a CRM username but no
+  // CRM id). Managers and senior staff often only ride along on reps' visits as the
+  // doubleID, so without this they would wrongly show zero worked days.
+  const visitsByParticipant = new Map<number, IReports360Visit[]>();
+  const agentIdByName = new Map<string, number>();
+  const creditVisit = (participantId: number, name: string | null, visit: IReports360Visit) => {
+    if (!visitsByParticipant.has(participantId)) visitsByParticipant.set(participantId, []);
+    visitsByParticipant.get(participantId)!.push(visit);
+    const nameKey = normalizeAgentName(name);
+    if (nameKey && !agentIdByName.has(nameKey)) agentIdByName.set(nameKey, participantId);
+  };
   for (const visit of visits) {
     const dayIso = (visit.visitDate ?? "").slice(0, 10);
     if (!dayIso.startsWith(monthPrefix)) continue;
-    if (!visitsByAgent.has(visit.agentID)) {
-      visitsByAgent.set(visit.agentID, []);
-      agentNameById.set(visit.agentID, visit.agentName ?? null);
+    creditVisit(visit.agentID, visit.agentName, visit);
+    if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
+      creditVisit(visit.doubleID, visit.doubleName, visit);
     }
-    visitsByAgent.get(visit.agentID)!.push(visit);
   }
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
   const matrix: unknown[][] = [header];
-  const unresolvedAgents: IReports360UnresolvedAgent[] = [];
 
-  const agentIds = [...visitsByAgent.keys()].sort((left, right) => left - right);
-  for (const agentId of agentIds) {
-    const agentVisits = visitsByAgent.get(agentId) ?? [];
-    const agentName = agentNameById.get(agentId) ?? null;
-    const resolved = resolver.resolve(agentId, agentName);
-    if (!resolved) {
-      unresolvedAgents.push({ agentId, agentName, visitCount: agentVisits.length });
+  const eligible = employees
+    .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
+    .filter((employee) => !isDepartedStatus(employee.employmentStatus))
+    .sort((left, right) =>
+      String(left.hrId).localeCompare(String(right.hrId), undefined, { numeric: true }));
+
+  for (const employee of eligible) {
+    const crmId = employee.crmId == null ? "" : String(employee.crmId).trim();
+    let agentId = crmId && /^\d+$/.test(crmId) ? Number(crmId) : Number.NaN;
+    if (!Number.isFinite(agentId)) {
+      const byName = agentIdByName.get(normalizeAgentName(employee.crmUsername));
+      if (byName != null) agentId = byName;
     }
+    const agentVisits = Number.isFinite(agentId) ? visitsByParticipant.get(agentId) ?? [] : [];
 
     const byDay = new Map<string, IReports360Visit[]>();
     for (const visit of agentVisits) {
@@ -194,16 +187,16 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     });
 
     matrix.push([
-      resolved?.fullName ?? agentName ?? "",
-      resolved?.hrId ?? "",
-      resolved?.hireDateIso ?? "",
+      employee.fullName ?? "",
+      employee.hrId,
+      employee.hireDate ? String(employee.hireDate).slice(0, 10) : "",
       month,
       year,
       ...dayCells,
     ]);
   }
 
-  return { matrix, unresolvedAgents };
+  return { matrix };
 }
 
 function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeReference {
@@ -286,10 +279,9 @@ export async function buildFieldWorkforceCompliancePreviewFromIReports360(input:
     getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
 
-  const resolver = buildAgentResolver(directory);
   const { matrix } = buildIReports360FieldWorkforceMatrix({
+    employees: directory,
     month,
-    resolver,
     todayIso: input.todayIso ?? null,
     visits,
     year,
