@@ -93,11 +93,12 @@ async function parseExcelRows(file: File) {
 }
 
 function shouldRejectImport(result: EmployeeImportValidationResult) {
-  return (
-    result.failedRows > 0 ||
-    result.missingRequiredColumns.length > 0 ||
-    result.duplicateHrIds.length > 0
-  );
+  // Only reject the whole upload for structural problems that make EVERY row
+  // unsafe to import (a required column is missing, so nothing is importable).
+  // Per-row validation failures (e.g. a bad birth date) and duplicate HR_IDs are
+  // already excluded from rowsToInsert/rowsToUpdate by the import plan, so we apply
+  // the valid rows and skip the blocked ones instead of failing the entire batch.
+  return result.missingRequiredColumns.length > 0;
 }
 
 function validationRejection(result: EmployeeImportValidationResult) {
@@ -1153,6 +1154,8 @@ export async function POST(request: Request) {
       accessUsersCreated: accessProvisioning.created,
       accessUsersFailed: accessProvisioning.failed,
       accessUsersSkipped: accessProvisioning.skipped,
+      blockedRows: dryRunResult.failedRows,
+      validationErrors: dryRunResult.validationErrors,
       createdAreas: areaResult.created,
       createdDepartments: departmentResult.created,
       createdLines: lineResult.created,
