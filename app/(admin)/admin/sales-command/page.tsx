@@ -45,11 +45,14 @@ function describeLoadError(error: unknown): string {
   return "Failed to load Source of Sales data.";
 }
 
-async function safeReport(period: string | null): Promise<{ data: ExecutiveReport | null; error: string | null }> {
+async function safeReport(
+  period: string | null,
+  mode: "full" | "comparison" = "full",
+): Promise<{ data: ExecutiveReport | null; error: string | null }> {
   try {
-    return { data: await loadExecutiveReport(period), error: null };
+    return { data: await loadExecutiveReport(period, { mode }), error: null };
   } catch (error) {
-    console.error(`[sales-command] loadExecutiveReport failed for period=${period ?? "all"}:`, error);
+    console.error(`[sales-command] loadExecutiveReport failed for period=${period ?? "all"} (${mode}):`, error);
     return { data: null, error: describeLoadError(error) };
   }
 }
@@ -89,9 +92,10 @@ export default async function SalesCommandPage({
 
   const emptyReport = { data: null as ExecutiveReport | null, error: null as string | null };
   const [reportResult, priorResult, yoyResult, stripData] = await Promise.all([
-    safeReport(selected),
-    loadPrior ? safeReport(loadPrior) : Promise.resolve(emptyReport),
-    loadYoy ? safeReport(loadYoy) : Promise.resolve(emptyReport),
+    safeReport(selected, "full"),
+    // Baselines only feed MoM/YoY delta columns — load them lightly (distributor×product only).
+    loadPrior ? safeReport(loadPrior, "comparison") : Promise.resolve(emptyReport),
+    loadYoy ? safeReport(loadYoy, "comparison") : Promise.resolve(emptyReport),
     getAdminCommandCenterData(access)
       .then((data) => ({ data: data as AdminCommandCenterData | null, error: null as string | null }))
       .catch((error) => ({

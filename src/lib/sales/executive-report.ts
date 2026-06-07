@@ -154,10 +154,24 @@ export function buildLineProductMatrix(rows: ExecDistProductRow[]): ExecLineProd
 
 // ── Server orchestrator ──────────────────────────────────────────────────────
 
-export async function loadExecutiveReport(period: string | null): Promise<ExecutiveReport> {
-  const supabase = getSupabaseAdmin();
+export async function loadExecutiveReport(
+  period: string | null,
+  options?: { mode?: "full" | "comparison" },
+): Promise<ExecutiveReport> {
+  // "comparison" mode loads ONLY the distributor×product aggregate. Every field the Sales
+  // Command dashboard reads from a prior / year-ago baseline (national value+units, byLine,
+  // byDistributor, regionByDistributor) derives purely from those rows — see rollupByDistributor
+  // and assembleComparison. So for baselines we skip the expensive per-customer (~7s) and
+  // per-brick aggregates and the export-data assembly, turning a ~15s baseline load into ~1-2s.
+  const lite = options?.mode === "comparison";
+
+  // Company-wide aggregates legitimately take several seconds server-side; give this client a
+  // longer per-request abort than the 15s default so a cold/loaded read isn't killed mid-flight.
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 30000 });
   // Cheap reference/master reads run concurrently and overlap the heavy aggregates below.
-  const referencesPromise = loadSalesReferenceData();
+  // The executive report only needs the region/area/distributor name masters — NOT the large
+  // customer→brick crosswalk (that powers the import auto-fill only), so skip it here.
+  const referencesPromise = loadSalesReferenceData({ includeCustomerBricks: false });
   const brickMasterPromise = supabase
     .from("source_of_sales_bricks")
     .select("brick_id,brick_name,area_code,region_code")
@@ -174,8 +188,8 @@ export async function loadExecutiveReport(period: string | null): Promise<Execut
   // isolated and well within budget, while still overlapping the cheap reads above. rpcAll now
   // fetches each in a SINGLE function execution (no per-page re-aggregation).
   const dpData = await rpcAll(supabase, "phx_exec_distributor_product", { p_period: period }, ["distributor_code", "official_line", "region_code", "area_code", "product_code"]);
-  const brickData = await rpcAll(supabase, "phx_exec_brick", { p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]);
-  const custData = await rpcAll(supabase, "phx_exec_customers", { p_period: period }, ["client_code", "distributor_code"]);
+  const brickData = lite ? [] : await rpcAll(supabase, "phx_exec_brick", { p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]);
+  const custData = lite ? [] : await rpcAll(supabase, "phx_exec_customers", { p_period: period }, ["client_code", "distributor_code"]);
 
   const [references, brickMasterResult, periodsResult] = await Promise.all([
     referencesPromise,
@@ -226,24 +240,28 @@ export async function loadExecutiveReport(period: string | null): Promise<Execut
   });
 
   const byLine = rollupByLine(distProductRows);
-  const lineProduct = buildLineProductMatrix(distProductRows);
+  const lineProduct = lite ? [] : buildLineProductMatrix(distProductRows);
   const lineByDistributor = buildValueGrid(
     distProductRows.map((row) => ({ distributorCode: row.distributorCode, key: row.officialLine, label: row.officialLine, value: row.value })),
     comparison.distributors.map((d) => d.code),
     baseMaps,
   );
 
-  const data: ExecExportData = {
-    bricks: comparison.data.bricks,
-    customers: comparison.data.customers,
-    distProduct: distProductRows.map((row) => ({
-      areaCode: row.areaCode, areaName: nameOf(areaName, row.areaCode), distributorCode: row.distributorCode, distributorName: nameOf(distributorName, row.distributorCode),
-      officialLine: row.officialLine, productCode: row.productCode, productName: row.productName, regionCode: row.regionCode, regionName: nameOf(regionName, row.regionCode),
-      units: round(row.units), value: round(row.value),
-    })),
-    masterAreas: comparison.data.masterAreas,
-    masterBricks: comparison.data.masterBricks,
-  };
+  // The export-data fact arrays are only consumed by the workbook export of the CURRENT report;
+  // a comparison baseline never needs them, so leave them empty in lite mode.
+  const data: ExecExportData = lite
+    ? { bricks: [], customers: [], distProduct: [], masterAreas: [], masterBricks: [] }
+    : {
+        bricks: comparison.data.bricks,
+        customers: comparison.data.customers,
+        distProduct: distProductRows.map((row) => ({
+          areaCode: row.areaCode, areaName: nameOf(areaName, row.areaCode), distributorCode: row.distributorCode, distributorName: nameOf(distributorName, row.distributorCode),
+          officialLine: row.officialLine, productCode: row.productCode, productName: row.productName, regionCode: row.regionCode, regionName: nameOf(regionName, row.regionCode),
+          units: round(row.units), value: round(row.value),
+        })),
+        masterAreas: comparison.data.masterAreas,
+        masterBricks: comparison.data.masterBricks,
+      };
 
   const availablePeriods = [...new Set(((periodsResult.error ? [] : periodsResult.data ?? []) as Array<Record<string, unknown>>)
     .map((row) => String(row.period ?? ""))

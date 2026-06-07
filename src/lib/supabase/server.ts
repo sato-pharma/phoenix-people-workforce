@@ -12,7 +12,7 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-function createSupabaseClient(apiKey: string): SupabaseClient {
+function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequestTimeoutMs): SupabaseClient {
   return createClient(
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
     apiKey,
@@ -26,7 +26,7 @@ function createSupabaseClient(apiKey: string): SupabaseClient {
           const controller = new AbortController();
           const timeout = setTimeout(
             () => controller.abort(),
-            supabaseRequestTimeoutMs,
+            requestTimeoutMs,
           );
 
           try {
@@ -57,9 +57,13 @@ function getOptionalEnv(name: string) {
 /**
  * Admin client using service role key.
  * Bypasses RLS. Use ONLY for system jobs, background tasks, or admin-only logic.
+ *
+ * `requestTimeoutMs` overrides the default 15s per-request abort. Raise it only for
+ * deliberately heavy admin reads (e.g. the company-wide Source-of-Sales aggregates) whose
+ * server-side compute legitimately exceeds 15s; leave it at the default everywhere else.
  */
-export function getSupabaseAdmin(): SupabaseClient {
-  return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+export function getSupabaseAdmin(options?: { requestTimeoutMs?: number }): SupabaseClient {
+  return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"), options?.requestTimeoutMs);
 }
 
 /**

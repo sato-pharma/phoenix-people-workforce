@@ -1391,39 +1391,46 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
   };
 }
 
-export async function loadSalesReferenceData(): Promise<SalesReferenceData> {
+export async function loadSalesReferenceData(
+  options?: { includeCustomerBricks?: boolean },
+): Promise<SalesReferenceData> {
   const supabase = getSupabaseAdmin();
-  // Customer -> brick crosswalk for the brick auto-fill, loaded concurrently with the masters.
+  // The customer -> brick crosswalk powers ONLY the import brick auto-fill, and it is large
+  // (tens of thousands of rows paged 1000-at-a-time = many round-trips). Callers that just need
+  // the name masters (e.g. the executive report) pass includeCustomerBricks:false to skip it.
+  const includeCustomerBricks = options?.includeCustomerBricks ?? true;
   // Paged past PostgREST's 1000-row cap; tolerant of errors (e.g. table absent pre-migration) so
   // a crosswalk failure never blocks a normal coded upload — it just disables the auto-fill.
-  const customerBricksPromise = (async () => {
-    const collected: { brickId: string; customerCode: string; distributorCode: string }[] = [];
-    const pageSize = 1000;
-    let from = 0;
-    for (;;) {
-      const page = await supabase
-        .from("source_of_sales_customer_map")
-        .select("distributor_code,customer_code,brick_id")
-        .eq("active", true)
-        .order("distributor_code", { ascending: true })
-        .order("customer_code", { ascending: true })
-        .range(from, from + pageSize - 1);
-      if (page.error) break;
-      const data = page.data ?? [];
-      for (const r of data) {
-        const brickId = String(r.brick_id ?? "").trim();
-        if (!brickId) continue;
-        collected.push({
-          brickId,
-          customerCode: String(r.customer_code ?? ""),
-          distributorCode: String(r.distributor_code ?? ""),
-        });
-      }
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-    return collected;
-  })();
+  const customerBricksPromise = includeCustomerBricks
+    ? (async () => {
+        const collected: { brickId: string; customerCode: string; distributorCode: string }[] = [];
+        const pageSize = 1000;
+        let from = 0;
+        for (;;) {
+          const page = await supabase
+            .from("source_of_sales_customer_map")
+            .select("distributor_code,customer_code,brick_id")
+            .eq("active", true)
+            .order("distributor_code", { ascending: true })
+            .order("customer_code", { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (page.error) break;
+          const data = page.data ?? [];
+          for (const r of data) {
+            const brickId = String(r.brick_id ?? "").trim();
+            if (!brickId) continue;
+            collected.push({
+              brickId,
+              customerCode: String(r.customer_code ?? ""),
+              distributorCode: String(r.distributor_code ?? ""),
+            });
+          }
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+        return collected;
+      })()
+    : Promise.resolve([] as { brickId: string; customerCode: string; distributorCode: string }[]);
   const [newRegionsResult, areasResult, blocksResult, bricksResult, productsResult, distributorsResult] = await Promise.all([
     supabase
       .from("source_of_sales_regions")
