@@ -185,6 +185,41 @@ export async function buildCodedBuffer(distributorCode: string, file: File): Pro
 
 // ── Direct import of coded rows (bypasses templates — rows are already coded + validated) ──
 
+// Build the row objects persisted to source_of_sales_import_rows. Kept pure (no DB) so the column
+// shape can be unit-tested against the live schema. It MUST mirror insertSourceOfSalesRows in
+// monthly-distributor-import.ts: only block_code + brick_id are stored, never block_name/brick_name —
+// the table has no such columns (they live on source_of_sales_bricks), and brick display names are
+// resolved live from the master in loadSourceOfSalesDashboard. Writing them made PostgREST reject
+// (or silently drop) the entire "Import (validated)" batch.
+export function buildNormalizedImportRows(rows: CodedRow[], batchId: string) {
+  return rows.map((r, index) => ({
+    area_code: r.areaCode,
+    area_name: r.areaName,
+    batch_id: batchId,
+    block_code: "",
+    brick_id: r.brickId,
+    client_address: null,
+    client_code: r.clientCode,
+    client_name: r.clientName,
+    row_number: index + 1,
+    distributor_code: r.distributorCode,
+    invoice_period: r.invoiceDate,
+    region_name: r.regionName,
+    region_code: r.regionCode,
+    product_name: r.productName,
+    product_code: r.productCode,
+    official_line: r.officialLine,
+    qty: Number.isFinite(r.qty) ? r.qty : 0,
+    bonus_qty: Number.isFinite(r.bonusQty) ? r.bonusQty : 0,
+    discount: Number.isFinite(r.discount) ? r.discount : 0,
+    value: Number.isFinite(r.value) ? r.value : 0,
+    is_direct: r.isDirect,
+    validation_state: "valid",
+    validation_issues: [],
+    raw_row: {},
+  }));
+}
+
 export async function persistNormalizedBatch(input: {
   distributorCode: string;
   distributorName: string;
@@ -226,34 +261,7 @@ export async function persistNormalizedBatch(input: {
   if (batchInsert.error) throw batchInsert.error;
   const batchId = String(batchInsert.data.id);
 
-  const inserts = rows.map((r, index) => ({
-    area_code: r.areaCode,
-    area_name: r.areaName,
-    batch_id: batchId,
-    block_code: "",
-    block_name: "",
-    brick_id: r.brickId,
-    brick_name: r.brickName,
-    client_address: null,
-    client_code: r.clientCode,
-    client_name: r.clientName,
-    row_number: index + 1,
-    distributor_code: r.distributorCode,
-    invoice_period: r.invoiceDate,
-    region_name: r.regionName,
-    region_code: r.regionCode,
-    product_name: r.productName,
-    product_code: r.productCode,
-    official_line: r.officialLine,
-    qty: Number.isFinite(r.qty) ? r.qty : 0,
-    bonus_qty: Number.isFinite(r.bonusQty) ? r.bonusQty : 0,
-    discount: Number.isFinite(r.discount) ? r.discount : 0,
-    value: Number.isFinite(r.value) ? r.value : 0,
-    is_direct: r.isDirect,
-    validation_state: "valid",
-    validation_issues: [],
-    raw_row: {},
-  }));
+  const inserts = buildNormalizedImportRows(rows, batchId);
   for (let i = 0; i < inserts.length; i += 500) {
     const { error } = await supabase.from("source_of_sales_import_rows").insert(inserts.slice(i, i + 500));
     if (error) throw error;

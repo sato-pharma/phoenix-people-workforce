@@ -57,6 +57,7 @@ import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.t
 import { runExecutiveReportTests } from "./executive-report.test.ts";
 import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runSosNormalizerTests } from "./sos-normalizer.test.ts";
+import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runCustomerMapImportTests } from "./customer-map-import.test.ts";
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
@@ -214,6 +215,7 @@ await runTest("monthly closing comparison", runMonthlyClosingComparisonTests);
 await runTest("executive report", runExecutiveReportTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("sos normalizer", runSosNormalizerTests);
+await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("customer map import", runCustomerMapImportTests);
 await runTest("marketing reference importer", runMarketingReferenceImporterTests);
