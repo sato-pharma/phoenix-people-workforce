@@ -308,18 +308,44 @@ type DistributorSalesTemplate = {
   valueField?: string;
 };
 
-const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
+// A coded field may be expressed as a single header name OR a list of accepted header aliases.
+// findHeaderMap resolves it to the first alias actually present in the sheet.
+type FieldSpec = string | string[];
+
+// Template DEFINITION — the coded ID columns are stable, but distributors keep their own raw names
+// for qty / date / brick on hybrid (raw + hand-coded) sheets, so those fields list header aliases
+// (first = canonical, used in messages). findHeaderMap resolves a Def to a DistributorSalesTemplate
+// whose fields are the concrete single header names present in the sheet.
+type DistributorSalesTemplateDef = Omit<DistributorSalesTemplate, "fields"> & {
+  fields: Partial<Record<DistributorSalesTemplateField, FieldSpec>> & {
+    distributorCode: FieldSpec;
+    invoiceDate: FieldSpec;
+    productCode: FieldSpec;
+    qty: FieldSpec;
+    regionCode: FieldSpec;
+  };
+};
+
+// Shared header aliases for the columns whose names vary across distributors on hybrid sheets.
+// Order = priority: the first alias present in the sheet wins (so the invoiced/sales qty is picked
+// before pack/unit, and the explicit Brick ID before a duplicated "Brick ID2"). Matching is on the
+// normalized (lower-cased, space-collapsed) header, so casing/spacing differences also match.
+const QTY_HEADER_ALIASES = ["Qty", "Quantity", "QTY_INVOICE", "QTY_PACK", "qnt"];
+const INVOICE_DATE_HEADER_ALIASES = ["Invoice Date", "Date", "INVOICE_DATE", "inv_date"];
+const BRICK_ID_HEADER_ALIASES = ["Brick ID", "Brick ID2"];
+
+const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplateDef = {
   bonusField: "B. Qty",
   customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
   discountField: "Discount%",
   distributorCodes: ["PS"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
     distributorCode: "Distrub ID",
-    invoiceDate: "Invoice Date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "Qty",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "overseas_ps",
@@ -329,18 +355,18 @@ const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplate = {
   },
 };
 
-const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
+const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplateDef = {
   bonusField: "Free Unit",
   customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
   discountField: "Discount%",
   distributorCodes: ["IS"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
     distributorCode: "Distrub ID",
-    invoiceDate: "Date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "Quantity",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "ibn_sina_is",
@@ -354,17 +380,17 @@ const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplate = {
 // Ibn Sina "Sato" branch (PAS feed) — treated as its own distributor (code IS-S). Same
 // coded format as IS, but the brick column is "Brick ID", quantity is "Quantity", and
 // there is NO free-unit column (bonus is neglected anyway).
-const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplate = {
+const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
   discountField: "Discount%",
   distributorCodes: ["IS-S"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
     distributorCode: "Distrub ID",
-    invoiceDate: "Date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "Quantity",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "ibn_sina_sato_iss",
@@ -378,18 +404,18 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplate = {
 // EPDA "Pharmacies" direct feed (code EP-S). Coded format like IS-S, but quantity is "qnt",
 // the date is "inv_date", and each line carries an is_bonus flag (free-goods lines add no
 // value). Captures the customer fields (cust_code / cust_name / cust_address).
-const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplate = {
+const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplateDef = {
   bonusFlagField: "is_bonus",
   customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
   discountField: "Discount%",
   distributorCodes: ["EP-S"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
     distributorCode: "Distrub ID",
-    invoiceDate: "inv_date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "qnt",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "epda_pharmacies_eps",
@@ -404,15 +430,15 @@ const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplate = {
 // "Value" column (real per-deal pricing; e.g. Satoslim has Price 0 but a real Value), never
 // recomputed from factory price. Quantity is "QTY" (Bonus excluded). Region "National" is a
 // special bucket for orders tied to no region.
-const DIRECT_TEMPLATE: DistributorSalesTemplate = {
+const DIRECT_TEMPLATE: DistributorSalesTemplateDef = {
   bonusField: "Bonus",
   customerFields: { address: [], code: [], name: ["Pharmacy Name"] },
   distributorCodes: ["Direct"],
   fields: {
     distributorCode: "Distrub ID",
-    invoiceDate: "Date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "QTY",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "direct_orders",
@@ -431,18 +457,18 @@ const DIRECT_TEMPLATE: DistributorSalesTemplate = {
 // sheet's "Discount%" column) so the recompute reproduces the engine's value. Offered as a FINAL fallback
 // in templateForDistributor — tried AFTER the distributor's own template — so a coded sheet validates
 // under any distributor while raw/hand-coded sheets still match their dedicated template first.
-export const NORMALIZER_TEMPLATE: DistributorSalesTemplate = {
+export const NORMALIZER_TEMPLATE: DistributorSalesTemplateDef = {
   bonusField: "B. Qty",
   customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
   discountField: "Discount%",
   distributorCodes: ["NORMALIZER"],
   fields: {
     areaCode: "Area ID",
-    brickId: "Brick ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
     distributorCode: "Distrub ID",
-    invoiceDate: "Invoice Date",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: "Qty",
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "normalizer",
@@ -500,21 +526,30 @@ function requiredHeadersForTemplate(template: DistributorSalesTemplate) {
   return Object.values(template.fields);
 }
 
-function templateForDistributor(distributorCode: string): DistributorSalesTemplate[] {
+function templateForDistributor(distributorCode: string): DistributorSalesTemplateDef[] {
   const code = normalizeCode(distributorCode);
   const matchingTemplates = DISTRIBUTOR_SALES_TEMPLATES.filter((template) =>
     template.distributorCodes.map(normalizeCode).includes(code),
   );
-  const base = matchingTemplates.length > 0 ? [...matchingTemplates] : [...DISTRIBUTOR_SALES_TEMPLATES];
+  // Known distributor → try its own dedicated template first. Unknown distributor → no dedicated
+  // template; do NOT fall back to every distributor's template (that made a normalizer-coded buffer
+  // match OVERSEAS_PS first, since PS and NORMALIZER have identical headers, mislabelling the result
+  // as "Overseas PS"). Only the Normalizer coded sheet applies to unknown distributors.
+  const base = matchingTemplates.length > 0 ? [...matchingTemplates] : [];
   // Always allow the unified Normalizer coded sheet as the FINAL fallback (tried after the distributor's
   // own template), so a coded sheet validates under any distributor. Raw/hand-coded sheets still match
   // their dedicated template first; raw (uncoded) sheets match none and stay blocked as before.
   return [...base, NORMALIZER_TEMPLATE];
 }
 
-function findHeaderMap(sheet: ExcelJS.Worksheet, template: DistributorSalesTemplate): HeaderMap | null {
+function aliasList(spec: FieldSpec | undefined): string[] {
+  if (spec === undefined) return [];
+  return Array.isArray(spec) ? spec : [spec];
+}
+
+function findHeaderMap(sheet: ExcelJS.Worksheet, def: DistributorSalesTemplateDef): HeaderMap | null {
   const maxHeaderRow = Math.min(sheet.rowCount, 10);
-  const requiredKeys = requiredHeadersForTemplate(template).map(normalizeKey);
+  const fieldEntries = Object.entries(def.fields) as Array<[DistributorSalesTemplateField, FieldSpec]>;
 
   for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
@@ -529,9 +564,36 @@ function findHeaderMap(sheet: ExcelJS.Worksheet, template: DistributorSalesTempl
       }
     });
 
-    if (requiredKeys.every((header) => columns.has(header))) {
-      return { columns, labels, rowNumber, template };
+    // Resolve every required field to the FIRST alias header present in this row. Hybrid sheets keep
+    // distributor-raw qty/date/brick names (e.g. QTY_INVOICE, INVOICE_DATE, Brick ID2), so a coded
+    // sheet still matches its template and is read from its own coded columns — no silent fallback to
+    // the normalizer (which would re-code from raw text and drop unmapped rows, undercounting totals).
+    const resolvedFields: Partial<Record<DistributorSalesTemplateField, string>> = {};
+    let matched = true;
+    for (const [field, spec] of fieldEntries) {
+      const present = aliasList(spec).find((header) => columns.has(normalizeKey(header)));
+      if (!present) {
+        matched = false;
+        break;
+      }
+      resolvedFields[field] = present;
     }
+    if (!matched) continue;
+
+    const resolvedTemplate: DistributorSalesTemplate = {
+      bonusField: def.bonusField,
+      bonusFlagField: def.bonusFlagField,
+      customerFields: def.customerFields,
+      discountField: def.discountField,
+      distributorCodes: def.distributorCodes,
+      fields: resolvedFields as DistributorSalesTemplate["fields"],
+      key: def.key,
+      name: def.name,
+      optionalFields: def.optionalFields,
+      regionOnly: def.regionOnly,
+      valueField: def.valueField,
+    };
+    return { columns, labels, rowNumber, template: resolvedTemplate };
   }
 
   return null;
@@ -550,7 +612,10 @@ function findSalesSheet(workbook: ExcelJS.Workbook, distributorCode: string) {
 
 function requiredTemplateMessage(distributorCode: string) {
   return templateForDistributor(distributorCode)
-    .map((template) => `${template.name}: ${requiredHeadersForTemplate(template).join(", ")}`)
+    .map((template) => {
+      const headers = Object.values(template.fields).map((spec) => aliasList(spec)[0] ?? "");
+      return `${template.name}: ${headers.join(", ")}`;
+    })
     .join(" | ");
 }
 
