@@ -141,6 +141,14 @@ function roundMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+// Outstation expenses are reviewed/approved by HR, not Finance. Map any legacy
+// "finance_review" rows persisted before that rename onto the current value so
+// the UI shows "HR review" consistently without a data migration.
+function normalizeApprovalRecommendation(value: string): OutstationApprovalRecommendation {
+  if (value === "finance_review") return "hr_review";
+  return value as OutstationApprovalRecommendation;
+}
+
 function minutesFromSeconds(value: number | null | undefined) {
   return value != null ? Number((value / 60).toFixed(1)) : null;
 }
@@ -275,8 +283,8 @@ function recommendationForResult(params: {
   ) {
     return {
       approvalReason:
-        "Train or bus requests require ticket evidence before finance can approve the claim.",
-      approvalRecommendation: "finance_review" as OutstationApprovalRecommendation,
+        "Train or bus requests require ticket evidence before HR can approve the claim.",
+      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
     };
   }
 
@@ -291,8 +299,8 @@ function recommendationForResult(params: {
   if (Math.abs(params.variancePercent) > 50) {
     return {
       approvalReason:
-        "Claimed amount materially exceeds the expected amount and should be reviewed by finance.",
-      approvalRecommendation: "finance_review" as OutstationApprovalRecommendation,
+        "Claimed amount materially exceeds the expected amount and should be reviewed by HR.",
+      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
     };
   }
 
@@ -1373,7 +1381,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     allowanceBreakdown: safeJsonParse(row.allowance_breakdown_json, null),
     attachmentCount: numberValue(row.attachment_count),
     approvalReason: text(row.approval_reason),
-    approvalRecommendation: text(row.approval_recommendation) as OutstationApprovalRecommendation,
+    approvalRecommendation: normalizeApprovalRecommendation(text(row.approval_recommendation)),
     capturedAccuracyMeters: numberValue(row.captured_accuracy_meters),
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
@@ -1572,7 +1580,7 @@ export async function submitMedicalRepSimpleExpenseRequest(
         }),
         approval_reason:
           "Medical rep manual traveling expense submitted without manager outstation distance rules.",
-        approval_recommendation: "finance_review",
+        approval_recommendation: "hr_review",
         area: identity.employeeArea,
         attachment_count: uploadedAttachments.length,
         calculation_status: "submitted",
