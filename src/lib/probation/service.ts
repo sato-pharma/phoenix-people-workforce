@@ -86,15 +86,25 @@ type ProbationWorkflowInput = {
 };
 
 const probationDays = 90;
-const hrProbationRoles = new Set(["Super Admin", "HR Specialist"]);
+// Governance: probation pass/terminate/evaluation authority is reserved for Super Admin
+// (Admin-HR) and the HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role.
+// HR Specialist (incl. the designated A-16) must NOT administer or approve probation.
+const hrProbationRoles = new Set(["Super Admin"]);
 const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
 }
 
+// View-only probation access. Super Admins (Admin-HR / B-10) administer probation;
+// HR Specialist (incl. the designated A-16) may VIEW and export probation records but
+// must NOT take any action (pass / terminate / evaluate / manager feedback).
+export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope">) {
+  return isProbationAdministrator(access) || access.role === "HR Specialist";
+}
+
 export function assertCanExportProbation(access: AccessContext) {
-  if (!isProbationAdministrator(access)) {
+  if (!canViewAllProbation(access)) {
     throw new Error(`Forbidden: ${access.role} cannot export probation.`);
   }
 }
@@ -112,7 +122,7 @@ function canReadProbationEmployee(
   viewer: EmployeeScopeRow | null,
   directory: EmployeeScopeRow[] = [],
 ) {
-  if (isProbationAdministrator(access)) return true;
+  if (canViewAllProbation(access)) return true;
   if (access.role === "National Sales Manager") return isSameLine(employee, viewer);
   if (access.role === "Regional Manager") return isInManagerHierarchy(directory, viewer, employee);
   if (access.role === "Training Manager") return false;
