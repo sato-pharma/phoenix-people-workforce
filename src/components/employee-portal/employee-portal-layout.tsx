@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox } from "lucide-react";
-import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
@@ -425,9 +424,8 @@ export function EmployeePortalTopNav({
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-1.5 sm:gap-2.5 lg:flex-none">
-            <PhoenixLogo />
-            <div className="border-l border-slate-200 pl-1.5 sm:pl-2.5">
+          <div className="flex items-center lg:flex-none">
+            <div>
               <p className="text-[8px] font-black uppercase tracking-[0.22em] text-orange-600 sm:text-[9px] sm:tracking-[0.26em]">Employee Portal</p>
               <p className="text-[10px] font-medium text-slate-400 whitespace-nowrap sm:text-[11px]">{data.employee.roleLabel}</p>
             </div>
@@ -579,7 +577,6 @@ export function EmployeePortalTopNav({
         style={{ transform: mobileMenuOpen ? "translate3d(0, 0, 0)" : "translate3d(-100%, 0, 0)" }}
       >
         <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
-          <PhoenixLogo />
           <button
             aria-label="Close menu"
             className="flex h-8 w-8 items-center justify-center rounded border border-slate-100 text-slate-400 hover:text-slate-600"
