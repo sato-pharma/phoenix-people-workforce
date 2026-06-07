@@ -15,6 +15,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { calculatePayrollParts, normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
+import { roundCurrency } from "@/lib/payroll/money";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { getPayrollWorkflowTransition } from "@/lib/payroll/workflow";
 import { assertPayrollWorkflowRegistryTransition } from "@/lib/payroll/workflow-registry";
@@ -906,10 +907,10 @@ export async function getPayrollDashboard(
     );
   }
 
-  const totalGross = records.reduce((sum, r) => sum + r.grossSalary, 0);
-  const totalNet = records.reduce((sum, r) => sum + r.netSalary, 0);
-  const totalAdditions = records.reduce((sum, r) => sum + r.totalAdditions, 0);
-  const totalGovtDeductions = records.reduce((sum, r) => sum + r.governmentalDeductions, 0);
+  const totalGross = roundCurrency(records.reduce((sum, r) => sum + r.grossSalary, 0));
+  const totalNet = roundCurrency(records.reduce((sum, r) => sum + r.netSalary, 0));
+  const totalAdditions = roundCurrency(records.reduce((sum, r) => sum + r.totalAdditions, 0));
+  const totalGovtDeductions = roundCurrency(records.reduce((sum, r) => sum + r.governmentalDeductions, 0));
   const avgNet = records.length > 0 ? totalNet / records.length : 0;
   const anomalies = records.filter((r) => r.netSalary > avgNet * 2.25);
   const readinessRate = records.length > 0 ? (records.length - anomalies.length) / records.length : 1;
