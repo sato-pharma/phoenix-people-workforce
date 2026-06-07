@@ -154,6 +154,7 @@ export function AdminManagerExpenseModal({
   const [calculatingDistance, setCalculatingDistance] = useState(false);
   const [distanceError, setDistanceError] = useState<string | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [destinationIsRegion, setDestinationIsRegion] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -242,6 +243,7 @@ export function AdminManagerExpenseModal({
     setDistanceError(null);
     setDestination(null);
     setManualDistanceKm("");
+    setDestinationIsRegion(false);
 
     try {
       const url = new URL("/api/admin/outstation/place-details", window.location.origin);
@@ -255,11 +257,13 @@ export function AdminManagerExpenseModal({
         country?: string | null;
         error?: string;
         formattedAddress?: string;
+        isAdministrativeArea?: boolean;
         label?: string;
         latitude?: number;
         longitude?: number;
         message?: string;
         placeId?: string;
+        types?: string[];
       };
 
       if (!placeResponse.ok || !placePayload.latitude || !placePayload.longitude) {
@@ -267,6 +271,8 @@ export function AdminManagerExpenseModal({
         setResolvingPlace(false);
         return;
       }
+
+      setDestinationIsRegion(Boolean(placePayload.isAdministrativeArea));
 
       const resolved: ManagerExpenseDestination = {
         area: placePayload.area ?? null,
@@ -498,6 +504,17 @@ export function AdminManagerExpenseModal({
                 <p className="text-[11px] text-[#94A3B8]">
                   {destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}
                 </p>
+              </div>
+            ) : null}
+
+            {destinationIsRegion && destination && !resolvingPlace ? (
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs text-[#9A3412]">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#EA580C]" />
+                <span>
+                  <span className="font-black">This is a region, not a specific place.</span>{" "}
+                  Distance is measured to the region&rsquo;s map center, which can be far from
+                  the actual city. Pick a city or an exact location for an accurate distance.
+                </span>
               </div>
             ) : null}
           </div>
