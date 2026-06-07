@@ -12,15 +12,6 @@ import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
-  createApprovedPlanCalendarEvents,
-  decryptGoogleCalendarToken,
-  encryptGoogleCalendarToken,
-  isGoogleCalendarConfigured,
-  refreshGoogleCalendarAccessToken,
-  sharedGoogleCalendarId,
-  type GoogleCalendarEventInput,
-} from "@/lib/weekly-planning/google-calendar";
-import {
   buildEmployeePlanPeriod,
   canEditEmployeePlanStatus,
   employeePlanActivityTypes,
@@ -29,7 +20,6 @@ import {
   isWeeklyMonthlyPlanEligibleTitle,
   type EmployeePlanAction,
   type EmployeePlanActivityType,
-  type EmployeePlanCalendarSyncStatus,
   type EmployeePlanKind,
   type EmployeePlanStatus,
 } from "@/lib/weekly-planning/plan-v1";
@@ -44,9 +34,6 @@ type PlanHeaderRow = {
   employee_job_title: string | null;
   employee_name: string;
   final_approved_at: string | null;
-  google_calendar_last_error: string | null;
-  google_calendar_sync_status: EmployeePlanCalendarSyncStatus;
-  google_calendar_synced_at: string | null;
   hierarchy_snapshot: Record<string, unknown> | null;
   id: string;
   manager_decision_at: string | null;
@@ -74,19 +61,14 @@ type PlanItemRow = {
   activity_type: EmployeePlanActivityType;
   area: string | null;
   attendees: string | null;
-  calendar_last_error: string | null;
-  calendar_sync_status: EmployeePlanCalendarSyncStatus;
-  calendar_synced_at: string | null;
   double_visit_medical_rep_hr_id: string | null;
   double_visit_medical_rep_name: string | null;
-  employee_calendar_event_id: string | null;
   end_time: string | null;
   id: string;
   location_text: string | null;
   notes: string;
   objective: string | null;
   plan_id: string;
-  shared_calendar_event_id: string | null;
   sort_order: number;
   start_time: string | null;
   employee_plan_item_return_notes?: PlanReturnNoteRow[];
@@ -123,14 +105,6 @@ type AuthUserRow = {
   login_id?: string | null;
   name?: string | null;
   role?: string | null;
-};
-
-type GoogleConnectionRow = {
-  access_token_encrypted: string | null;
-  calendar_id: string | null;
-  id: string;
-  refresh_token_encrypted: string | null;
-  token_expires_at: string | null;
 };
 
 export type EmployeePlanItemInput = {
@@ -170,8 +144,6 @@ export type EmployeePlan = {
     hrId: string;
     roleLabel: string | null;
   }>;
-  calendarError: string | null;
-  calendarStatus: EmployeePlanCalendarSyncStatus;
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
@@ -183,7 +155,6 @@ export type EmployeePlan = {
     activityType: EmployeePlanActivityType;
     area: string | null;
     attendees: string | null;
-    calendarStatus: EmployeePlanCalendarSyncStatus;
     doubleVisitMedicalRepHrId: string | null;
     doubleVisitMedicalRepName: string | null;
     endTime: string | null;
@@ -208,9 +179,6 @@ export type EmployeePlan = {
 };
 
 export type EmployeePlansSummary = {
-  calendarBlocked: number;
-  calendarFailed: number;
-  calendarPending: number;
   ceoPending: number;
   drafts: number;
   finalApproved: number;
@@ -232,11 +200,6 @@ export type EmployeePlansWorkspace = {
     managerHrId: string | null;
     managerName: string | null;
   } | null;
-  googleCalendar: {
-    configured: boolean;
-    connected: boolean;
-    sharedCalendarConfigured: boolean;
-  };
   medicalRepOptions: Array<{
     areaName: string | null;
     fullName: string;
@@ -277,7 +240,7 @@ function normalizedName(value: string | null | undefined) {
 
 function isSchemaMissing(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
-  return /employee_plan_headers|employee_plan_items|employee_plan_item_return_notes|google_calendar_connections|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
+  return /employee_plan_headers|employee_plan_items|employee_plan_item_return_notes|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
 }
 
 function mapReturnNotes(item: PlanItemRow): EmployeePlanReturnNote[] {
@@ -301,8 +264,6 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
       hrId: ack.hr_id,
       roleLabel: ack.role_label,
     })),
-    calendarError: row.google_calendar_last_error,
-    calendarStatus: row.google_calendar_sync_status,
     employeeHrId: row.employee_hr_id,
     employeeJobTitle: row.employee_job_title,
     employeeName: row.employee_name,
@@ -315,7 +276,6 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
         activityType: item.activity_type,
         area: item.area,
         attendees: item.attendees,
-        calendarStatus: item.calendar_sync_status,
         doubleVisitMedicalRepHrId: item.double_visit_medical_rep_hr_id,
         doubleVisitMedicalRepName: item.double_visit_medical_rep_name,
         endTime: item.end_time,
@@ -343,9 +303,6 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
 
 function emptyPlansSummary(): EmployeePlansSummary {
   return {
-    calendarBlocked: 0,
-    calendarFailed: 0,
-    calendarPending: 0,
     ceoPending: 0,
     drafts: 0,
     finalApproved: 0,
@@ -370,9 +327,6 @@ function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
     if (plan.status === "hr_acknowledged") summary.hrAcknowledged += 1;
     if (plan.status.includes("returned")) summary.returned += 1;
     if (plan.status.includes("rejected")) summary.rejected += 1;
-    if (plan.calendarStatus === "pending") summary.calendarPending += 1;
-    if (plan.calendarStatus === "blocked") summary.calendarBlocked += 1;
-    if (plan.calendarStatus === "failed") summary.calendarFailed += 1;
   }
   return summary;
 }
@@ -749,182 +703,6 @@ async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: Emp
   });
 }
 
-async function loadGoogleConnection(userId: string | null | undefined, hrId: string | null | undefined) {
-  const query = getSupabaseAdmin()
-    .from("google_calendar_connections")
-    .select("id,calendar_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-    .eq("status", "connected")
-    .limit(1);
-  const { data, error } = userId
-    ? await query.eq("user_id", userId).maybeSingle()
-    : hrId
-      ? await query.ilike("hr_id", hrId).maybeSingle()
-      : { data: null, error: null };
-  if (error) throw error;
-  return data as GoogleConnectionRow | null;
-}
-
-async function updateConnectionAccessToken(connectionId: string, accessToken: string, expiresIn: number | undefined) {
-  const expiresAt = new Date(Date.now() + Math.max(60, expiresIn ?? 3600) * 1000).toISOString();
-  const { error } = await getSupabaseAdmin()
-    .from("google_calendar_connections")
-    .update({
-      access_token_encrypted: encryptGoogleCalendarToken(accessToken),
-      token_expires_at: expiresAt,
-    })
-    .eq("id", connectionId);
-  if (error) throw error;
-}
-
-async function resolveAccessToken(connection: GoogleConnectionRow) {
-  const accessToken = decryptGoogleCalendarToken(connection.access_token_encrypted);
-  if (!accessToken) throw new Error("Google Calendar access token is missing.");
-  const expiresAt = connection.token_expires_at ? Date.parse(connection.token_expires_at) : 0;
-  if (expiresAt > Date.now() + 60_000) return accessToken;
-  const refreshToken = decryptGoogleCalendarToken(connection.refresh_token_encrypted);
-  if (!refreshToken) return accessToken;
-  const refreshed = await refreshGoogleCalendarAccessToken(refreshToken);
-  if (!refreshed.access_token) throw new Error("Google Calendar token refresh returned no access token.");
-  await updateConnectionAccessToken(connection.id, refreshed.access_token, refreshed.expires_in);
-  return refreshed.access_token;
-}
-
-function eventInputFor(plan: PlanHeaderRow, item: PlanItemRow): GoogleCalendarEventInput {
-  return {
-    area: item.area,
-    attendees: item.attendees,
-    date: item.activity_date,
-    doubleVisitMedicalRepName: item.double_visit_medical_rep_name,
-    endTime: item.end_time,
-    locationText: item.location_text,
-    notes: item.notes,
-    objective: item.objective,
-    planKind: plan.plan_kind,
-    startTime: item.start_time,
-    title: item.activity_title,
-  };
-}
-
-export async function syncApprovedPlanToGoogleCalendar(planId: string) {
-  const plan = await loadPlanRow(planId);
-  if (plan.status !== "final_approved" && plan.status !== "hr_acknowledged") return mapPlan(plan);
-
-  const sharedCalendar = sharedGoogleCalendarId();
-  if (!isGoogleCalendarConfigured() || !sharedCalendar) {
-    const error = !isGoogleCalendarConfigured()
-      ? "Google Calendar OAuth is not configured."
-      : "GOOGLE_CALENDAR_SHARED_ID is not configured.";
-    await getSupabaseAdmin()
-      .from("employee_plan_items")
-      .update({ calendar_last_error: error, calendar_sync_status: "blocked" })
-      .eq("plan_id", planId);
-    await getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .update({ google_calendar_last_error: error, google_calendar_sync_status: "blocked" })
-      .eq("id", planId);
-    return mapPlan(await loadPlanRow(planId));
-  }
-
-  const authUser = await findAuthUserForHrId(plan.employee_hr_id);
-  const connection = await loadGoogleConnection(authUser?.login_id, plan.employee_hr_id);
-  if (!connection) {
-    const error = "Employee has not connected Google Calendar.";
-    await getSupabaseAdmin()
-      .from("employee_plan_items")
-      .update({ calendar_last_error: error, calendar_sync_status: "blocked" })
-      .eq("plan_id", planId);
-    await getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .update({ google_calendar_last_error: error, google_calendar_sync_status: "blocked" })
-      .eq("id", planId);
-    return mapPlan(await loadPlanRow(planId));
-  }
-
-  const accessToken = await resolveAccessToken(connection);
-  const items = (plan.employee_plan_items ?? []) as PlanItemRow[];
-  let failed = 0;
-  for (const item of items) {
-    if (item.calendar_sync_status === "synced") continue;
-    await getSupabaseAdmin()
-      .from("employee_plan_items")
-      .update({ calendar_sync_status: "pending", calendar_last_error: null })
-      .eq("id", item.id);
-    const result = await createApprovedPlanCalendarEvents({
-      accessToken,
-      employeeCalendarId: connection.calendar_id || "primary",
-      event: eventInputFor(plan, item),
-      sharedCalendarId: sharedCalendar,
-    });
-    if (result.status !== "synced") failed += 1;
-    await getSupabaseAdmin()
-      .from("employee_plan_items")
-      .update({
-        calendar_last_error: result.error,
-        calendar_sync_status: result.status,
-        calendar_synced_at: result.status === "synced" ? new Date().toISOString() : null,
-        employee_calendar_event_id: result.employeeCalendarEventId ?? null,
-        shared_calendar_event_id: result.sharedCalendarEventId ?? null,
-      })
-      .eq("id", item.id);
-  }
-
-  const status: EmployeePlanCalendarSyncStatus = failed > 0 ? "failed" : "synced";
-  await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .update({
-      google_calendar_last_error: failed > 0 ? `${failed} calendar item(s) failed to sync.` : null,
-      google_calendar_sync_status: status,
-      google_calendar_synced_at: status === "synced" ? new Date().toISOString() : null,
-    })
-    .eq("id", planId);
-  return mapPlan(await loadPlanRow(planId));
-}
-
-function canRetryCalendarSync(access: AccessContext, employee: EmployeeDirectoryRow | null, plan: PlanHeaderRow) {
-  if (access.role === "CEO" || access.role === "Super Admin" || access.scope === "system") return true;
-  if (hrIdsMatch(access.hrId, plan.employee_hr_id)) return true;
-  return isHrReviewer(access, employee);
-}
-
-export async function retryEmployeePlanCalendarSync(access: AccessContext, planId: string) {
-  await assertPermission(access, "weekly_plans", "read");
-  const employee = await currentEmployee(access);
-  const plan = await loadPlanRow(planId);
-  if (!canViewPlan(access, employee, plan) || !canRetryCalendarSync(access, employee, plan)) {
-    throw new Error("Forbidden: you cannot retry Google Calendar sync for this plan.");
-  }
-  if (plan.status !== "final_approved" && plan.status !== "hr_acknowledged") {
-    throw new Error("Google Calendar sync can only be retried after final CEO approval.");
-  }
-
-  await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .update({ google_calendar_last_error: null, google_calendar_sync_status: "pending" })
-    .eq("id", planId);
-
-  await writeAuditLog({
-    actorLoginId: access.loginId,
-    entityId: planId,
-    entityType: "weekly_plan",
-    newValues: { googleCalendarSyncStatus: "pending" },
-    oldValues: { googleCalendarSyncStatus: plan.google_calendar_sync_status },
-    summary: `${plan.plan_kind} plan Google Calendar sync retry requested`,
-  });
-
-  return syncApprovedPlanToGoogleCalendar(planId);
-}
-
-async function findAuthUserForHrId(hrId: string | null | undefined) {
-  if (!hrId) return null;
-  const { data, error } = await getSupabaseAdmin()
-    .from("app_auth_users")
-    .select("login_id,hr_id,name,auth_email,role")
-    .ilike("hr_id", hrId)
-    .maybeSingle();
-  if (error) return null;
-  return data as AuthUserRow | null;
-}
-
 export async function getEmployeePlansWorkspace(access: AccessContext): Promise<EmployeePlansWorkspace> {
   await assertPermission(access, "employee_profile", "read");
   await assertPermission(access, "weekly_plans", "read");
@@ -933,7 +711,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
-  const googleConnection = await loadGoogleConnection(access.loginId, access.hrId).catch(() => null);
   const medicalRepOptions = await medicalRepOptionsForEmployee(employee);
   const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
 
@@ -958,11 +735,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
           }
         : null,
-      googleCalendar: {
-        configured: isGoogleCalendarConfigured(),
-        connected: Boolean(googleConnection),
-        sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
-      },
       medicalRepOptions,
       workplaceRegions,
       plans,
@@ -983,11 +755,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
           }
         : null,
-      googleCalendar: {
-        configured: isGoogleCalendarConfigured(),
-        connected: Boolean(googleConnection),
-        sharedCalendarConfigured: Boolean(sharedGoogleCalendarId()),
-      },
       medicalRepOptions,
       workplaceRegions,
       plans: [],
@@ -1023,7 +790,6 @@ export async function createEmployeePlan(access: AccessContext, input: {
       employee_hr_id: employee.hrId,
       employee_job_title: employeeTitle(employee, access.role),
       employee_name: employee.fullName,
-      google_calendar_sync_status: "not_ready",
       hierarchy_snapshot: {
         lineName: employee.lineName,
         managerHrId: employee.managerHrId,
@@ -1160,7 +926,6 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   }
   if (nextStatus === "final_approved") {
     patch.final_approved_at = now;
-    patch.google_calendar_sync_status = "pending";
   }
   const { error } = await getSupabaseAdmin().from("employee_plan_headers").update(patch).eq("id", planId);
   if (error) throw error;
@@ -1184,7 +949,6 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   const updated = await loadPlanRow(planId);
   if (input.action === "manager_approve") await notifyCeo(updated);
   if (input.action === "ceo_approve") {
-    await syncApprovedPlanToGoogleCalendar(planId);
     await notifyHr(await loadPlanRow(planId));
   }
   if (input.action.includes("return") || input.action.includes("reject")) {
@@ -1241,46 +1005,3 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
   return mapPlan(await loadPlanRow(planId));
 }
 
-export async function saveGoogleCalendarConnection(input: {
-  access: AccessContext;
-  accessToken: string;
-  expiresIn?: number;
-  googleEmail: string | null;
-  refreshToken?: string | null;
-  scope?: string | null;
-}) {
-  const expiresAt = new Date(Date.now() + Math.max(60, input.expiresIn ?? 3600) * 1000).toISOString();
-  const payload: Record<string, unknown> = {
-    access_token_encrypted: encryptGoogleCalendarToken(input.accessToken),
-    calendar_id: "primary",
-    disconnected_at: null,
-    google_email: input.googleEmail,
-    hr_id: input.access.hrId,
-    scope: input.scope ?? null,
-    status: "connected",
-    token_expires_at: expiresAt,
-    user_id: input.access.loginId ?? input.access.hrId ?? "",
-  };
-  if (input.refreshToken) {
-    payload.refresh_token_encrypted = encryptGoogleCalendarToken(input.refreshToken);
-  }
-  const { error } = await getSupabaseAdmin()
-    .from("google_calendar_connections")
-    .upsert(payload, { onConflict: "user_id" });
-  if (error) throw error;
-}
-
-export async function disconnectGoogleCalendar(access: AccessContext) {
-  const userId = access.loginId ?? access.hrId;
-  if (!userId) throw new Error("No user identity found.");
-  const { error } = await getSupabaseAdmin()
-    .from("google_calendar_connections")
-    .update({
-      access_token_encrypted: null,
-      disconnected_at: new Date().toISOString(),
-      refresh_token_encrypted: null,
-      status: "disabled",
-    })
-    .eq("user_id", userId);
-  if (error) throw error;
-}

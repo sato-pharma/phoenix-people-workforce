@@ -45,7 +45,7 @@ export default async function PlansPage({
   return (
     <EmployeePortalPageShell
       badge="Weekly / Monthly Plan"
-      description="Submit structured weekly and monthly plans, route approvals through your manager and CEO, and sync approved activities to Google Calendar."
+      description="Submit structured weekly and monthly plans and route approvals through your manager, CEO, and HR."
       title="Weekly / Monthly Plan"
     >
       <PlansWorkspace
