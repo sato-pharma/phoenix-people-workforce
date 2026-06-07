@@ -7,14 +7,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function extractAddressComponent(
-  components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
+  components: Array<{ longText?: string; shortText?: string; types?: string[] }> | undefined,
   targetTypes: string[],
 ) {
   const component = components?.find(
     (entry) =>
       Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
   );
-  return component?.long_name ?? component?.short_name ?? null;
+  return component?.longText ?? component?.shortText ?? null;
 }
 
 export async function GET(request: Request) {
@@ -41,47 +41,49 @@ export async function GET(request: Request) {
       );
     }
 
-    const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-    url.searchParams.set("place_id", placeId);
-    url.searchParams.set(
-      "fields",
-      "geometry,name,formatted_address,address_components",
+    // Places API (New). The legacy Places API is no longer enabled for this
+    // project, so we call the v1 place details endpoint.
+    const url = new URL(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
     );
-    url.searchParams.set("key", key);
-    url.searchParams.set("language", "ar");
-    if (sessiontoken) url.searchParams.set("sessiontoken", sessiontoken);
+    url.searchParams.set("languageCode", "ar");
+    if (sessiontoken) url.searchParams.set("sessionToken", sessiontoken);
 
-    const response = await fetch(url.toString(), { cache: "no-store" });
+    const response = await fetch(url.toString(), {
+      cache: "no-store",
+      headers: {
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask":
+          "id,displayName,formattedAddress,location,addressComponents",
+      },
+    });
     if (!response.ok) {
-      throw new Error(`Google Places Details failed with ${response.status}.`);
+      const details = await response.text().catch(() => "");
+      throw new Error(
+        `Google Places Details failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
+      );
     }
 
-    const payload = (await response.json()) as {
-      result?: {
-        address_components?: Array<{
-          long_name?: string;
-          short_name?: string;
-          types?: string[];
-        }>;
-        formatted_address?: string;
-        geometry?: {
-          location?: { lat?: number; lng?: number };
-        };
-        name?: string;
-      };
-      status?: string;
+    const result = (await response.json()) as {
+      addressComponents?: Array<{
+        longText?: string;
+        shortText?: string;
+        types?: string[];
+      }>;
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
     };
 
-    const result = payload.result;
-    if (!result?.geometry?.location) {
+    if (!result.location) {
       return NextResponse.json(
         { error: "place_not_found", message: "Place details could not be resolved." },
         { status: 404 },
       );
     }
 
-    const lat = Number(result.geometry.location.lat);
-    const lng = Number(result.geometry.location.lng);
+    const lat = Number(result.location.latitude);
+    const lng = Number(result.location.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return NextResponse.json(
         { error: "invalid_coordinates", message: "Place coordinates are invalid." },
@@ -89,7 +91,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const components = result.address_components;
+    const components = result.addressComponents;
     const city =
       extractAddressComponent(components, [
         "administrative_area_level_1",
@@ -104,12 +106,14 @@ export async function GET(request: Request) {
     const country =
       extractAddressComponent(components, ["country"]) ?? null;
 
+    const displayName = result.displayName?.text ?? "";
+
     return NextResponse.json({
       area,
       city,
       country,
-      formattedAddress: result.formatted_address ?? result.name ?? "",
-      label: result.name ?? result.formatted_address ?? "",
+      formattedAddress: result.formattedAddress ?? displayName ?? "",
+      label: displayName || result.formattedAddress || "",
       latitude: lat,
       longitude: lng,
       placeId,
