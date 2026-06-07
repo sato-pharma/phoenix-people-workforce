@@ -28,8 +28,6 @@ export type EmployeePlanAction =
   | "revise"
   | "cancel";
 
-export type EmployeePlanCalendarSyncStatus = "not_ready" | "pending" | "synced" | "blocked" | "failed";
-
 export const employeePlanStatuses = [
   "draft",
   "submitted",
