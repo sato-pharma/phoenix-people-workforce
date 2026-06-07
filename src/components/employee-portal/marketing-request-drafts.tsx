@@ -12,11 +12,14 @@ import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   FileCheck2,
   ListChecks,
   Megaphone,
   PackagePlus,
+  Pencil,
   RefreshCcw,
   Save,
   Search,
@@ -24,8 +27,13 @@ import {
   TrendingUp,
   Upload,
   WifiOff,
+  X,
 } from "lucide-react";
 
+import {
+  MarketingApprovalTimeline,
+  MarketingProgressStrip,
+} from "@/components/employee-portal/marketing-approval-timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +41,10 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
+import type {
+  MarketingRequestDetail,
+  MarketingRequestStepProgress,
+} from "@/lib/marketing-requests/service";
 import type {
   MarketingApprovedRequestRow,
   MarketingCustomer,
@@ -49,10 +61,13 @@ type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
+  inApproval: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
+  returned: MarketingRequest[];
+  stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
 
 type ProductLine = {
@@ -215,10 +230,13 @@ function emptyPayload(): DraftWorkspacePayload {
     approvedRequests: [],
     customers: [],
     drafts: [],
+    inApproval: [],
     products: [],
     requestTypes: [],
     requesterLineId: null,
     requesterLineName: null,
+    returned: [],
+    stepProgressByRequestId: {},
   };
 }
 
@@ -583,9 +601,9 @@ function MarketingRequestDraftWorkspaceInner() {
     text: string;
     type: "success" | "error";
   } | null>(null);
-  const [activeView, setActiveView] = useState<"create" | "approved">(
-    "create",
-  );
+  const [activeView, setActiveView] = useState<
+    "approved" | "create" | "tracking"
+  >("create");
   const [uploadingEvidenceKey, setUploadingEvidenceKey] = useState<
     string | null
   >(null);
@@ -606,10 +624,23 @@ function MarketingRequestDraftWorkspaceInner() {
   );
   // #7 --- Approved requests search
   const [approvedSearch, setApprovedSearch] = useState("");
+  // Tracking view: resubmit mode + cached request details + expanded rows
+  const [resubmitRequestId, setResubmitRequestId] = useState<string | null>(
+    null,
+  );
+  const [resubmitRequestCode, setResubmitRequestCode] = useState<string>("");
+  const [detailCache, setDetailCache] = useState<
+    Record<string, MarketingRequestDetail>
+  >({});
+  const [expandedTrackingId, setExpandedTrackingId] = useState<string | null>(
+    null,
+  );
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
   /* ------ Focus trap for active tab panel (#1) ------------------------------------------------------------------------------ */
   const createPanelRef = useFocusTrap(activeView === "create");
   const approvedPanelRef = useFocusTrap(activeView === "approved");
+  const trackingPanelRef = useFocusTrap(activeView === "tracking");
 
   /* ------ Auto-dismiss timer ref ------------------------------------------------------------------------------------------------------------------------ */
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -675,10 +706,13 @@ function MarketingRequestDraftWorkspaceInner() {
         approvedRequests: payload.approvedRequests ?? [],
         customers: payload.customers ?? [],
         drafts: payload.drafts ?? [],
+        inApproval: payload.inApproval ?? [],
         products: payload.products ?? [],
         requestTypes: payload.requestTypes ?? [],
         requesterLineId: payload.requesterLineId ?? null,
         requesterLineName: payload.requesterLineName ?? null,
+        returned: payload.returned ?? [],
+        stepProgressByRequestId: payload.stepProgressByRequestId ?? {},
       });
       setCustomerId(
         (current) => current || payload.customers?.[0]?.id || "",
@@ -718,6 +752,25 @@ function MarketingRequestDraftWorkspaceInner() {
         workspace.products.map((product) => [String(product.id), product]),
       ),
     [workspace.products],
+  );
+
+  const customerNameMap = useMemo(
+    () =>
+      new Map(
+        workspace.customers.map((customer) => [
+          customer.id,
+          customer.displayName,
+        ]),
+      ),
+    [workspace.customers],
+  );
+
+  const requestTypeNameMap = useMemo(
+    () =>
+      new Map(
+        workspace.requestTypes.map((type) => [type.id, type.name]),
+      ),
+    [workspace.requestTypes],
   );
 
   const visibleProducts = workspace.products;
@@ -846,6 +899,94 @@ function MarketingRequestDraftWorkspaceInner() {
     );
   }
 
+  /* ------ Tracking + resubmit helpers ------------------------------------------------------------------------------------------------------------- */
+
+  function resetForm() {
+    setCustomerId(workspace.customers[0]?.id ?? "");
+    setRequestTypeId(String(workspace.requestTypes[0]?.id ?? ""));
+    setRequestDate(todayDate);
+    setPayDate("");
+    setEstimatedCost("");
+    setRoiDurationMonths("3");
+    setOtherRequestType("");
+    setNotes("");
+    setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
+  }
+
+  async function fetchRequestDetail(
+    requestId: string,
+  ): Promise<MarketingRequestDetail | null> {
+    if (detailCache[requestId]) return detailCache[requestId];
+    setLoadingDetailId(requestId);
+    try {
+      const response = await fetch(
+        `/api/marketing-requests/${requestId}`,
+        { cache: "no-store" },
+      );
+      const payload = await response.json();
+      if (!response.ok || !payload.detail) {
+        showMessage(
+          payload.message ?? "Unable to load request details.",
+          "error",
+        );
+        return null;
+      }
+      const detail = payload.detail as MarketingRequestDetail;
+      setDetailCache((current) => ({ ...current, [requestId]: detail }));
+      return detail;
+    } catch {
+      showMessage("Unable to load request details.", "error");
+      return null;
+    } finally {
+      setLoadingDetailId(null);
+    }
+  }
+
+  async function toggleTrackingExpand(requestId: string) {
+    if (expandedTrackingId === requestId) {
+      setExpandedTrackingId(null);
+      return;
+    }
+    setExpandedTrackingId(requestId);
+    if (!detailCache[requestId]) {
+      await fetchRequestDetail(requestId);
+    }
+  }
+
+  async function startResubmit(request: MarketingRequest) {
+    setMessage(null);
+    const detail = await fetchRequestDetail(request.id);
+    if (!detail) return;
+
+    setCustomerId(detail.request.customerId);
+    setRequestTypeId(String(detail.request.requestTypeId));
+    setRequestDate(detail.request.requestDate || todayDate);
+    setPayDate(detail.request.payDate ?? "");
+    setEstimatedCost(String(detail.request.estimatedCost ?? ""));
+    setRoiDurationMonths(String(detail.request.roiDurationMonths ?? "3"));
+    setOtherRequestType(detail.request.otherRequestType ?? "");
+    setNotes(detail.request.notes ?? "");
+    setProductLines(
+      detail.products.length > 0
+        ? detail.products.map((product, index) => ({
+            key: `line-${index + 1}`,
+            productId: String(product.productId),
+            quantity: String(product.forecastQuantity),
+          }))
+        : [{ key: "line-1", productId: "", quantity: "" }],
+    );
+
+    setResubmitRequestId(request.id);
+    setResubmitRequestCode(detail.request.requestCode);
+    setActiveView("create");
+  }
+
+  function cancelResubmit() {
+    setResubmitRequestId(null);
+    setResubmitRequestCode("");
+    resetForm();
+  }
+
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
@@ -872,8 +1013,16 @@ function MarketingRequestDraftWorkspaceInner() {
       roiDurationMonths: Number(roiDurationMonths),
     };
 
-    // #3 --- Offline: enqueue and show optimistic feedback
+    // #3 --- Offline: enqueue and show optimistic feedback (drafts only).
+    // Resubmit cannot be queued because it targets a specific request route.
     if (!isOnline) {
+      if (resubmitRequestId) {
+        showMessage(
+          "You are offline. Reconnect to resubmit this returned request.",
+          "error",
+        );
+        return;
+      }
       enqueue(draftPayload);
       showMessage(
         "You are offline. Draft queued and will save when reconnected.",
@@ -889,14 +1038,38 @@ function MarketingRequestDraftWorkspaceInner() {
 
     setIsSaving(true);
     try {
-      const response = await fetch("/api/marketing-requests/drafts", {
+      const targetUrl = resubmitRequestId
+        ? `/api/marketing-requests/${resubmitRequestId}/resubmit`
+        : "/api/marketing-requests/drafts";
+      const response = await fetch(targetUrl, {
         body: JSON.stringify(draftPayload),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
       if (!response.ok) {
-        showMessage(payload.message ?? "Unable to save draft.", "error");
+        showMessage(
+          payload.message ??
+            (resubmitRequestId
+              ? "Unable to resubmit request."
+              : "Unable to save draft."),
+          "error",
+        );
+        return;
+      }
+
+      if (resubmitRequestId) {
+        const resubmittedId = resubmitRequestId;
+        setResubmitRequestId(null);
+        setResubmitRequestCode("");
+        setDetailCache((current) => {
+          const next = { ...current };
+          delete next[resubmittedId];
+          return next;
+        });
+        resetForm();
+        showMessage("Request resubmitted successfully.", "success");
+        await loadWorkspace();
         return;
       }
 
@@ -917,7 +1090,12 @@ function MarketingRequestDraftWorkspaceInner() {
       setPayDate("");
       setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
     } catch {
-      showMessage("Unable to save draft.", "error");
+      showMessage(
+        resubmitRequestId
+          ? "Unable to resubmit request."
+          : "Unable to save draft.",
+        "error",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -1145,6 +1323,29 @@ function MarketingRequestDraftWorkspaceInner() {
             </span>
           )}
         </button>
+        <button
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+            activeView === "tracking"
+              ? "bg-orange-500 text-white shadow-sm"
+              : "bg-transparent text-slate-600 hover:bg-white"
+          }`}
+          onClick={() => setActiveView("tracking")}
+          type="button"
+        >
+          <ClipboardList className="h-3.5 w-3.5" />
+          <span>Tracking</span>
+          {!isLoading && (
+            <span
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+                activeView === "tracking"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-200/60 text-slate-500"
+              }`}
+            >
+              {workspace.returned.length + workspace.inApproval.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
@@ -1154,6 +1355,30 @@ function MarketingRequestDraftWorkspaceInner() {
         ref={createPanelRef}
         className={activeView === "create" ? "space-y-3" : "hidden"}
       >
+        {/* ------ Resubmit banner --------------------------------------------------------------------------------------------------------------------------- */}
+        {resubmitRequestId ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-semibold text-amber-900">
+            <span className="flex min-w-0 items-center gap-2">
+              <Pencil className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words">
+                Editing returned request{" "}
+                <span className="font-mono font-black">
+                  {resubmitRequestCode}
+                </span>{" "}
+                — resubmitting will resume at the step that returned it.
+              </span>
+            </span>
+            <button
+              className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
+              onClick={cancelResubmit}
+              type="button"
+            >
+              <X className="h-3 w-3" />
+              Cancel resubmit
+            </button>
+          </div>
+        ) : null}
+
         {/* ------ Draft Form Card ------------------------------------------------------------------------------------------------------------------------ */}
         <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           {isLoading ? (
@@ -1165,10 +1390,12 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
-                      Create Draft
+                      {resubmitRequestId ? "Edit & Resubmit" : "Create Draft"}
                     </p>
                     <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
-                      Activity request
+                      {resubmitRequestId
+                        ? "Returned request"
+                        : "Activity request"}
                     </h2>
                   </div>
                   <Badge variant={roiBadgeVariant(roiPreview.roiStatus)}>
@@ -1516,10 +1743,12 @@ function MarketingRequestDraftWorkspaceInner() {
                 >
                   {isSaving ? (
                     <LoadingSpinner className="text-white" />
+                  ) : resubmitRequestId ? (
+                    <RefreshCcw className="h-3.5 w-3.5" />
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
-                  Save Draft
+                  {resubmitRequestId ? "Resubmit Request" : "Save Draft"}
                 </Button>
               </div>
             </form>
@@ -2020,6 +2249,233 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
             </>
           )}
+        </Card>
+      </div>
+
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      {/* ------ TRACKING TAB  (#1 focus trap) ----------------------------------------------------------------------- */}
+      {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
+      <div
+        ref={trackingPanelRef}
+        className={activeView === "tracking" ? "space-y-3" : "hidden"}
+      >
+        {/* ------ Returned to me ----------------------------------------------------------------------------------------------------------------------------- */}
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">
+                  Action Needed
+                </p>
+                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                  Returned to me
+                </h2>
+              </div>
+              <Badge variant="warning">
+                {workspace.returned.length} returned
+              </Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5 p-4">
+            {isLoading ? (
+              <TableSkeleton cols={3} rows={2} />
+            ) : workspace.returned.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                Nothing returned to you right now.
+              </p>
+            ) : (
+              workspace.returned.map((request) => {
+                const progress =
+                  workspace.stepProgressByRequestId[request.id] ?? null;
+                return (
+                  <div
+                    className="rounded-sm border border-amber-200 bg-amber-50/40 p-3"
+                    key={request.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                          {request.requestCode}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                          {customerNameMap.get(request.customerId) ??
+                            "Customer"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                          {requestTypeNameMap.get(request.requestTypeId) ??
+                            "Request"}{" "}
+                          · {egp(request.estimatedCost)}
+                        </p>
+                      </div>
+                      <button
+                        className="flex shrink-0 items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-2 text-[12px] font-bold text-white shadow-sm transition hover:bg-orange-600"
+                        onClick={() => void startResubmit(request)}
+                        type="button"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Edit &amp; Resubmit
+                      </button>
+                    </div>
+                    {progress?.returnReason ? (
+                      <p className="mt-2 rounded-sm border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-800">
+                        <span className="font-bold">Return reason: </span>
+                        {progress.returnReason}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
+
+        {/* ------ In approval -------------------------------------------------------------------------------------------------------------------------------- */}
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                  In Flight
+                </p>
+                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                  In approval
+                </h2>
+              </div>
+              <Badge variant="neutral">
+                {workspace.inApproval.length} pending
+              </Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5 p-4">
+            {isLoading ? (
+              <TableSkeleton cols={3} rows={3} />
+            ) : workspace.inApproval.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                No requests are currently in approval.
+              </p>
+            ) : (
+              workspace.inApproval.map((request) => {
+                const progress =
+                  workspace.stepProgressByRequestId[request.id] ?? null;
+                const expanded = expandedTrackingId === request.id;
+                const detail = detailCache[request.id];
+                return (
+                  <div
+                    className="rounded-sm border border-slate-200 bg-slate-50/50 p-3"
+                    key={request.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                          {request.requestCode}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                          {customerNameMap.get(request.customerId) ??
+                            "Customer"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                          {requestTypeNameMap.get(request.requestTypeId) ??
+                            "Request"}{" "}
+                          · {egp(request.estimatedCost)}
+                        </p>
+                      </div>
+                      <button
+                        aria-expanded={expanded}
+                        className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                        onClick={() =>
+                          void toggleTrackingExpand(request.id)
+                        }
+                        type="button"
+                      >
+                        {expanded ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                        {expanded ? "Hide timeline" : "View timeline"}
+                      </button>
+                    </div>
+
+                    <div className="mt-2">
+                      <MarketingProgressStrip progress={progress} />
+                    </div>
+
+                    {expanded ? (
+                      <div className="mt-2 border-t border-slate-200 pt-2">
+                        {loadingDetailId === request.id && !detail ? (
+                          <div className="flex items-center gap-2 px-1 py-2 text-[11px] font-medium text-slate-400">
+                            <LoadingSpinner />
+                            Loading timeline...
+                          </div>
+                        ) : detail ? (
+                          <MarketingApprovalTimeline steps={detail.steps} />
+                        ) : (
+                          <p className="px-1 py-2 text-[11px] font-medium text-slate-400">
+                            Timeline unavailable.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
+
+        {/* ------ Drafts ------------------------------------------------------------------------------------------------------------------------------------- */}
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                  Not Submitted
+                </p>
+                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                  Drafts
+                </h2>
+              </div>
+              <Badge variant="neutral">{workspace.drafts.length} drafts</Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5 p-4">
+            {isLoading ? (
+              <TableSkeleton cols={3} rows={2} />
+            ) : workspace.drafts.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                No drafts yet.
+              </p>
+            ) : (
+              workspace.drafts.map((draft) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-100 bg-slate-50/60 p-3"
+                  key={draft.id}
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] font-bold text-slate-500">
+                      {draft.requestCode}
+                    </p>
+                    <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                      {customerNameMap.get(draft.customerId) ?? "Customer"}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                      {requestTypeNameMap.get(draft.requestTypeId) ??
+                        "Request"}{" "}
+                      · {egp(draft.estimatedCost)}
+                    </p>
+                  </div>
+                  <button
+                    className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => setActiveView("create")}
+                    type="button"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Continue editing
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </Card>
       </div>
 

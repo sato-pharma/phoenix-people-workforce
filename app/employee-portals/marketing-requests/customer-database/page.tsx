@@ -13,7 +13,7 @@ export default async function EmployeePortalMarketingCustomerDatabasePage() {
     <EmployeePortalPageShell
       badge="Marketing"
       description="Admin validation dev database for customer, pharmacy, and distributor-code rows."
-      title="SCP / PH Database"
+      title="Customer Database"
     >
       <MarketingCustomerDatabase />
     </EmployeePortalPageShell>
