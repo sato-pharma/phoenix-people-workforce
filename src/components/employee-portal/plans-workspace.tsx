@@ -304,7 +304,7 @@ export function PlansWorkspace({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       {!workspace.schemaReady ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
           Planning database migration is not applied yet. Apply the staging migration before smoke testing.
@@ -381,8 +381,8 @@ export function PlansWorkspace({
         <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">{message}</div>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="space-y-4">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="min-w-0 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
               {(["weekly", "monthly"] as const).map((kind) => (
