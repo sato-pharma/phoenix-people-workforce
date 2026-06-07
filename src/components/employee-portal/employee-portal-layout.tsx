@@ -424,10 +424,10 @@ export function EmployeePortalTopNav({
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="flex items-center lg:flex-none">
-            <div>
+          <div className="flex min-w-0 flex-1 items-center lg:flex-none">
+            <div className="min-w-0">
               <p className="text-[8px] font-black uppercase tracking-[0.22em] text-orange-600 sm:text-[9px] sm:tracking-[0.26em]">Employee Portal</p>
-              <p className="text-[10px] font-medium text-slate-400 whitespace-nowrap sm:text-[11px]">{data.employee.roleLabel}</p>
+              <p className="truncate text-[10px] font-medium text-slate-400 sm:text-[11px]">{data.employee.roleLabel}</p>
             </div>
           </div>
 
