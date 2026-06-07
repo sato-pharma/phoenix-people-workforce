@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  Calculator,
   Camera,
   CheckCircle2,
   Clock,
@@ -20,6 +21,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { startTransition, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
@@ -247,8 +249,17 @@ function RequestDetailsModal({
   onReject: (request: OutstationExpenseRequest) => void;
   request: OutstationExpenseRequest;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
+  // Render through a portal to document.body so the dialog escapes the admin
+  // shell's stacking context and is never painted under the sticky topbar.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
       <div className="w-full max-w-7xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
           <div className="min-w-0">
@@ -295,6 +306,54 @@ function RequestDetailsModal({
             <Info label="Expense type" value={formatStatus(request.expenseType)} />
             <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
           </div>
+
+          <Card className={`${panelClassName} p-5`}>
+            <div className="mb-4 flex items-start gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#FFF7ED] text-[#EA580C]">
+                <Calculator className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Allowance calculation</p>
+                <h3 className="mt-1 text-lg font-black text-[#0F172A]">How the expected amount is built</h3>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">Fuel (round trip)</p>
+                <p className="mt-1 text-lg font-black text-[#0F172A]">{formatCurrency(request.fuelAmount)}</p>
+                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+                  {formatKm(request.distanceFromResidenceKm)} &times; 2 &middot; {formatStatus(request.transportationType)}
+                </p>
+              </div>
+              <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">Allowance</p>
+                <p className="mt-1 text-lg font-black text-[#0F172A]">{formatCurrency(request.allowanceAmount)}</p>
+                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+                  {request.sameDayTrip
+                    ? "Same-day trip"
+                    : `${request.overnightDays} overnight ${request.overnightDays === 1 ? "night" : "nights"} + return day`}
+                </p>
+              </div>
+              <div className="rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#EA580C]">Expected total</p>
+                <p className="mt-1 text-lg font-black text-[#EA580C]">{formatCurrency(request.expectedTotalAmount)}</p>
+                <p className="mt-0.5 text-[11px] text-[#EA580C]/70">Fuel + allowance</p>
+              </div>
+            </div>
+            {request.allowanceBreakdown && request.allowanceBreakdown.rows.length > 0 ? (
+              <div className="mt-4 overflow-hidden rounded-md border border-[#E2E8F0]">
+                {request.allowanceBreakdown.rows.map((row, index) => (
+                  <div
+                    className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-2.5 text-sm last:border-b-0"
+                    key={`${row.type}-${index}`}
+                  >
+                    <span className="font-semibold text-[#475569]">{row.label}</span>
+                    <span className="font-black text-[#0F172A]">{formatCurrency(row.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Card>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <Card className={`${panelClassName} p-5`}>
@@ -418,7 +477,8 @@ function RequestDetailsModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
