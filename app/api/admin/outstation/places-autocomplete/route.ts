@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       "https://places.googleapis.com/v1/places:autocomplete",
       {
         body: JSON.stringify({
+          includedRegionCodes: ["eg"],
           input,
           languageCode: "ar",
           ...(sessiontoken ? { sessionToken: sessiontoken } : {}),
