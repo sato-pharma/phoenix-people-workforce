@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   UploadCloud,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
@@ -94,11 +95,12 @@ type ComparisonResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "queue" | "summary" | "diagnostics" | "archives" | "comparison" | "recommendations";
+type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "queue" | "summary" | "diagnostics" | "archives" | "comparison" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "timeline", label: "Employee Timeline" },
+  { id: "team-calendar", label: "Team Calendar" },
   { id: "queue", label: "Review Queue" },
   { id: "summary", label: "Monthly Summary" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -430,73 +432,38 @@ function MetricCard({
   );
 }
 
-function TimelineDayCell({
-  cell,
-  onSelect,
-}: {
-  cell: FieldWorkforceDayCell;
-  onSelect: (cell: FieldWorkforceDayCell) => void;
-}) {
-  return (
-    <button
-      aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation}`}
-      className={cn(
-        "relative flex h-10 w-11 shrink-0 items-center justify-center rounded-lg border text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-orange-300",
-        statusCellClass(cell),
-      )}
-      title={cell.explanation}
-      type="button"
-      onClick={() => onSelect(cell)}
-      onFocus={() => onSelect(cell)}
-      onMouseEnter={() => onSelect(cell)}
-    >
+function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
+  const baseClass = cn(
+    "relative flex h-10 w-full items-center justify-center rounded-lg border text-xs font-black",
+    statusCellClass(cell),
+  );
+  const content = (
+    <>
       {statusLabel(cell.status, cell.visitCount)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
-    </button>
+    </>
   );
-}
-
-function TimelineCellDetails({ cell }: { cell: FieldWorkforceDayCell | null }) {
-  if (!cell) {
+  // Numeric-visit days deep-link to the day drill-down in a NEW tab; other days are static.
+  if (cell.status === "VISITS") {
     return (
-      <Card className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-        Select a day to inspect the calculation context.
-      </Card>
+      <Link
+        aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation} (open visits)`}
+        className={cn(baseClass, "transition hover:ring-2 hover:ring-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-300")}
+        href={`/admin/field-workforce-compliance/visits/${encodeURIComponent(cell.hrId)}/${cell.dateIso}`}
+        rel="noopener noreferrer"
+        target="_blank"
+        title={`${cell.explanation} — click to open the day's visits`}
+      >
+        {content}
+      </Link>
     );
   }
-
   return (
-    <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{displayDate(cell.dateIso)} / {weekday(cell.dateIso)}</p>
-          <h3 className="mt-1 text-lg font-black text-slate-950">{cell.employeeName}</h3>
-          <p className="text-xs font-semibold text-slate-500">{cell.hrId}</p>
-        </div>
-        {severityBadge(cell.severity)}
-      </div>
-      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Raw</p>
-          <p className="mt-1 font-black text-slate-900">{formatRawValue(cell.rawValue)}</p>
-        </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Meaning</p>
-          <p className="mt-1 font-black text-slate-900">{statusMeaning(cell.status)}</p>
-        </div>
-      </div>
-      <p className="mt-4 text-sm leading-6 text-slate-700">{cell.explanation}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {cell.context.length > 0 ? cell.context.map((item) => (
-          <Badge key={item} variant={item.includes("Public holiday") ? "warning" : "neutral"}>{item}</Badge>
-        )) : <Badge variant="success">Counted normally</Badge>}
-        {cell.countedAsWorkedDay ? <Badge variant="success">Worked day</Badge> : null}
-        {cell.countedAsVisitTotal ? <Badge variant="success">Visit total</Badge> : null}
-        {cell.countedAsNoActivityCandidate ? <Badge variant="warning">N candidate</Badge> : null}
-      </div>
-    </Card>
+    <div aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation}`} className={baseClass} title={cell.explanation}>
+      {content}
+    </div>
   );
 }
 
@@ -721,77 +688,58 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
   );
 }
 
-function SingleEmployeeTimeline({
-  employee,
-  onSelectCell,
-  selectedCell,
-}: {
-  employee: FieldWorkforceEmployeeSummary;
-  onSelectCell: (cell: FieldWorkforceDayCell) => void;
-  selectedCell: FieldWorkforceDayCell | null;
-}) {
+function SingleEmployeeTimeline({ employee }: { employee: FieldWorkforceEmployeeSummary }) {
+  const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(0, 1fr))` };
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-          <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
-          <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
-        </div>
-        <div className="phoenix-horizontal-scroll overflow-x-auto p-4">
-          <div className="min-w-max">
-            <div className="mb-2 flex gap-1.5">
-              {employee.timeline.map((cell) => (
-                <div
-                  className={cn(
-                    "w-11 shrink-0 rounded-md px-1 py-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-slate-500",
-                    cell.isFriday ? "bg-slate-100" : "",
-                    cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
-                  )}
-                  key={`${cell.dateIso}-header`}
-                >
-                  <span className="block text-[11px] text-slate-900">{cell.dayNumber}</span>
-                  <span>{weekday(cell.dateIso)}</span>
-                </div>
-              ))}
+    <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
+        <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
+      </div>
+      {/* Full month fits the width — no horizontal scroll. */}
+      <div className="p-3">
+        <div className="grid gap-1" style={monthColumns}>
+          {employee.timeline.map((cell) => (
+            <div
+              className={cn(
+                "rounded-md py-1 text-center text-[9px] font-black uppercase tracking-tight text-slate-500",
+                cell.isFriday ? "bg-slate-100" : "",
+                cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
+              )}
+              key={`${cell.dateIso}-header`}
+            >
+              <span className="block text-[11px] leading-tight text-slate-900">{cell.dayNumber}</span>
+              <span>{weekday(cell.dateIso)}</span>
             </div>
-            <div className="flex gap-1.5">
-              {employee.timeline.map((cell) => (
-                <TimelineDayCell cell={cell} key={cell.dateIso} onSelect={onSelectCell} />
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
-      </Card>
-      <TimelineCellDetails cell={selectedCell} />
-    </div>
+        <div className="mt-1 grid gap-1" style={monthColumns}>
+          {employee.timeline.map((cell) => (
+            <TimelineDayCell cell={cell} key={cell.dateIso} />
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 
 function TimelinePanel({
-  employeeNotes,
   employees,
   employeeSearch,
   hierarchyFilters,
   hierarchyItems,
   onHierarchyFiltersChange,
   onEmployeeSearchChange,
-  onSelectCell,
   onSelectEmployee,
-  onUpdateEmployeeNote,
-  selectedCell,
   selectedEmployee,
 }: {
-  employeeNotes: Record<string, string>;
   employees: FieldWorkforceEmployeeSummary[];
   employeeSearch: string;
   hierarchyFilters: HierarchyFilterState;
   hierarchyItems: FieldWorkforceEmployeeSummary[];
   onEmployeeSearchChange: (value: string) => void;
   onHierarchyFiltersChange: (filters: HierarchyFilterState) => void;
-  onSelectCell: (cell: FieldWorkforceDayCell) => void;
   onSelectEmployee: (hrId: string) => void;
-  onUpdateEmployeeNote: (hrId: string, value: string) => void;
-  selectedCell: FieldWorkforceDayCell | null;
   selectedEmployee: FieldWorkforceEmployeeSummary | null;
 }) {
   if (!selectedEmployee) {
@@ -818,25 +766,91 @@ function TimelinePanel({
       />
       <TimelineLegend />
       <EmployeeComplianceCard employee={selectedEmployee} />
-      <SingleEmployeeTimeline
-        employee={selectedEmployee}
-        selectedCell={selectedCell}
-        onSelectCell={onSelectCell}
-      />
+      <SingleEmployeeTimeline employee={selectedEmployee} />
+    </div>
+  );
+}
+
+function TeamLineFilters({
+  lineName,
+  teamName,
+  lineOptions,
+  teamOptions,
+  onChange,
+}: {
+  lineName: string;
+  teamName: string;
+  lineOptions: string[];
+  teamOptions: string[];
+  onChange: (next: { lineName: string; teamName: string }) => void;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <label className="block">
+        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Line</span>
+        <select
+          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
+          value={lineName}
+          onChange={(event) => onChange({ lineName: event.target.value, teamName })}
+        >
+          <option value="All">All Lines</option>
+          {lineOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Team</span>
+        <select
+          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
+          value={teamName}
+          onChange={(event) => onChange({ lineName, teamName: event.target.value })}
+        >
+          <option value="All">All Teams</option>
+          {teamOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+/** Whole line / whole team / all employees on one page — each rep's full month, green days deep-link. */
+function TeamCalendarPanel({ employees }: { employees: FieldWorkforceEmployeeSummary[] }) {
+  const [lineName, setLineName] = useState("All");
+  const [teamName, setTeamName] = useState("All");
+  const lineOptions = useMemo(() => uniqueHierarchyOptions(employees, "lineName"), [employees]);
+  const teamOptions = useMemo(() => uniqueHierarchyOptions(employees, "teamName"), [employees]);
+  const filtered = useMemo(
+    () => employees.filter((employee) =>
+      matchesHierarchyFilters(employee, { ...emptyHierarchyFilters, lineName, teamName }),
+    ),
+    [employees, lineName, teamName],
+  );
+
+  return (
+    <div className="space-y-4">
       <Card className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm font-black text-slate-950">Temporary HR review note</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Session-only. Not saved, not approved, not sent to payroll or leave.</p>
-          </div>
-          <textarea
-            className="min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 lg:max-w-xl"
-            placeholder="Official conference, pending medical leave, field assignment, training day, device issue..."
-            value={employeeNotes[selectedEmployee.hrId] ?? ""}
-            onChange={(event) => onUpdateEmployeeNote(selectedEmployee.hrId, event.target.value)}
+        <p className="text-sm font-black text-slate-950">Team Calendar</p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">A whole line, a whole team, or everyone — each rep&apos;s full month on one page. Click a green numeric day to open that day&apos;s visits.</p>
+        <div className="mt-3">
+          <TeamLineFilters
+            lineName={lineName}
+            teamName={teamName}
+            lineOptions={lineOptions}
+            teamOptions={teamOptions}
+            onChange={(next) => { setLineName(next.lineName); setTeamName(next.teamName); }}
           />
         </div>
       </Card>
+      <TimelineLegend />
+      <p className="text-xs font-bold text-slate-500">Showing {filtered.length} of {employees.length} reps</p>
+      {filtered.length === 0 ? (
+        <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No employee matches the current filter.</Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((employee) => (
+            <SingleEmployeeTimeline employee={employee} key={employee.hrId} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1208,8 +1222,6 @@ function ReviewWorkspacePanels({
 }) {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [selectedHrId, setSelectedHrId] = useState<string>(result.employees[0]?.hrId ?? "");
-  const [selectedCell, setSelectedCell] = useState<FieldWorkforceDayCell | null>(result.employees[0]?.timeline[0] ?? null);
-  const [employeeNotes, setEmployeeNotes] = useState<Record<string, string>>({});
   const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
 
   const filteredEmployees = useMemo(() => {
@@ -1224,15 +1236,9 @@ function ReviewWorkspacePanels({
     filteredEmployees.find((employee) => employee.hrId === selectedHrId) ??
     filteredEmployees[0] ??
     null;
-  const effectiveSelectedCell =
-    selectedCell && selectedEmployee && selectedCell.hrId === selectedEmployee.hrId
-      ? selectedCell
-      : selectedEmployee?.timeline[0] ?? null;
 
   function selectEmployee(hrId: string) {
-    const employee = filteredEmployees.find((row) => row.hrId === hrId) ?? result.employees.find((row) => row.hrId === hrId);
     setSelectedHrId(hrId);
-    setSelectedCell(employee?.timeline[0] ?? null);
   }
 
   const totalCandidates = result.reviewCandidates.length;
@@ -1253,26 +1259,23 @@ function ReviewWorkspacePanels({
   if (activeTab === "timeline") {
     return (
       <TimelinePanel
-        employeeNotes={employeeNotes}
         employeeSearch={employeeSearch}
         employees={filteredEmployees}
         hierarchyFilters={hierarchyFilters}
         hierarchyItems={result.employees}
-        selectedCell={effectiveSelectedCell}
         selectedEmployee={selectedEmployee}
         onEmployeeSearchChange={setEmployeeSearch}
         onHierarchyFiltersChange={(filters) => {
           setHierarchyFilters(filters);
           setSelectedHrId("");
         }}
-        onSelectCell={setSelectedCell}
         onSelectEmployee={selectEmployee}
-        onUpdateEmployeeNote={(hrId, value) => setEmployeeNotes((current) => ({
-          ...current,
-          [hrId]: value,
-        }))}
       />
     );
+  }
+
+  if (activeTab === "team-calendar") {
+    return <TeamCalendarPanel employees={result.employees} />;
   }
 
   if (activeTab === "queue") return <ReviewQueue candidates={result.reviewCandidates} />;

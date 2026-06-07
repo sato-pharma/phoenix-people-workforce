@@ -18,6 +18,8 @@
  */
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { googleRouteThroughStops } from "@/lib/google-maps/server";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
   daysInMonth,
@@ -33,8 +35,10 @@ import {
   getIReports360Config,
 } from "@/lib/field-workforce-compliance/ireports360-config";
 import {
+  iReports360GetCheckins,
   iReports360GetVisits,
   iReports360Login,
+  type IReports360Checkin,
   type IReports360Visit,
 } from "@/lib/field-workforce-compliance/ireports360-client";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
@@ -303,4 +307,142 @@ export async function buildFieldWorkforceCompliancePreviewFromIReports360(input:
     holidays: holidays.holidays,
     parsed,
   });
+}
+
+/** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */
+function cleanAgentDisplayName(name: string | null | undefined): string | null {
+  const cleaned = String(name ?? "").split("(")[0].replace(/\./g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || null;
+}
+
+export type IReports360RepDayVisit = IReports360Visit & {
+  kind: "campaign" | "regular";
+  mode: "single" | "double";
+  partnerName: string | null;
+  role: "primary" | "double";
+};
+
+export type IReports360DayRouteLeg = {
+  distanceKm: number | null;
+  durationMinutes: number | null;
+};
+
+export type IReports360DayRoute = {
+  encodedPolyline: string | null;
+  legs: IReports360DayRouteLeg[];
+};
+
+// In-memory cache of computed driving routes, keyed by rep + day + the exact ordered
+// check-in coordinates (so corrected GPS recomputes under a new key). A historical
+// rep-day's route never changes, so each unique rep-day costs at most ONE Google Routes
+// API call per server process — keeping usage well inside the free monthly tier. Mirrors
+// the in-memory holiday cache pattern in national-holidays.ts.
+const routeCache = new Map<string, IReports360DayRoute>();
+const ROUTE_CACHE_MAX = 5000;
+
+function routeCacheKey(hrId: string, day: string, stops: Array<{ lat: number; lng: number }>): string {
+  const coords = stops.map((stop) => `${stop.lat.toFixed(5)},${stop.lng.toFixed(5)}`).join("|");
+  return `${hrId}::${day}::${coords}`;
+}
+
+/**
+ * Driving route through the day's check-ins, cached so a given rep-day hits the Google
+ * Routes API at most once. Failures are NOT cached, so it retries automatically once the
+ * Maps key is allowed to call the Routes API.
+ */
+async function getCachedDrivingRoute(
+  hrId: string,
+  day: string,
+  stops: Array<{ lat: number; lng: number }>,
+): Promise<IReports360DayRoute | null> {
+  if (stops.length < 2) return null;
+  const cacheKey = routeCacheKey(hrId, day, stops);
+  const cached = routeCache.get(cacheKey);
+  if (cached) return cached;
+
+  const drivingRoute = await googleRouteThroughStops(stops);
+  if (!drivingRoute) return null;
+
+  const route: IReports360DayRoute = {
+    encodedPolyline: drivingRoute.encodedPolyline,
+    legs: drivingRoute.legs.map((leg) => ({
+      distanceKm: leg.distanceMeters != null ? Math.round((leg.distanceMeters / 1000) * 10) / 10 : null,
+      durationMinutes: leg.durationSeconds != null ? Math.round(leg.durationSeconds / 60) : null,
+    })),
+  };
+  if (routeCache.size >= ROUTE_CACHE_MAX) routeCache.clear();
+  routeCache.set(cacheKey, route);
+  return route;
+}
+
+/**
+ * Read-only drill-down for the "click a visit day" page: the visit records AND the GPS
+ * check-ins one rep logged on one day. Resolves the rep's crm_id from the directory, pulls
+ * that single day from iReports360 (one login, visits + check-ins in parallel), and keeps the
+ * records where the rep is the primary agent OR the joined double-visit partner. Each visit is
+ * annotated with kind (campaign/regular), the rep's role, single/double mode, and the partner.
+ * Check-ins are sorted by time so the page can draw the rep's route in order.
+ */
+export async function getIReports360RepDayVisits(input: { date: string; hrId: string }): Promise<{
+  checkins: IReports360Checkin[];
+  rep: { crmId: string | null; fullName: string | null; hrId: string } | null;
+  route: IReports360DayRoute | null;
+  visits: IReports360RepDayVisit[];
+}> {
+  const day = input.date.slice(0, 10);
+  const directory = await getEmployeeDirectoryRows();
+  const key = canonicalHrIdKey(input.hrId);
+  const employee = directory.find((row) => canonicalHrIdKey(row.hrId) === key) ?? null;
+  if (!employee) return { checkins: [], rep: null, route: null, visits: [] };
+
+  const rep = {
+    crmId: employee.crmId == null ? null : String(employee.crmId),
+    fullName: employee.fullName ?? null,
+    hrId: employee.hrId,
+  };
+  if (!rep.crmId) return { checkins: [], rep, route: null, visits: [] };
+
+  const config = getIReports360Config();
+  const token = await iReports360Login(config);
+  const agentId = Number(rep.crmId);
+  // Visits are required for this page; GPS check-ins are a best-effort overlay, so a
+  // check-ins API problem must never break the core visit drill-down.
+  const [allVisits, allCheckins] = await Promise.all([
+    iReports360GetVisits(config, token, day, day),
+    iReports360GetCheckins(config, token, day, day).catch(() => [] as IReports360Checkin[]),
+  ]);
+  // Include records where the rep is the primary agent OR the double-visit partner, and
+  // annotate each so the table can show campaign/regular + single/double + with whom.
+  const visits: IReports360RepDayVisit[] = allVisits
+    .filter(
+      (visit) =>
+        (visit.agentID === agentId || visit.doubleID === agentId) &&
+        (visit.visitDate ?? "").slice(0, 10) === day,
+    )
+    .map((visit) => {
+      const role: "primary" | "double" = visit.agentID === agentId ? "primary" : "double";
+      const hasPartner = visit.doubleID != null && visit.doubleID !== 0;
+      const partnerName = hasPartner
+        ? cleanAgentDisplayName(role === "primary" ? visit.doubleName : visit.agentName)
+        : null;
+      return {
+        ...visit,
+        kind: (visit.contactName ?? "").trim() ? "regular" : "campaign",
+        mode: hasPartner ? "double" : "single",
+        partnerName,
+        role,
+      };
+    });
+  const checkins = allCheckins
+    .filter((checkin) => checkin.agentID === agentId && (checkin.checkDate ?? "").slice(0, 10) === day)
+    .sort((left, right) => String(left.checkDate).localeCompare(String(right.checkDate)));
+
+  // Cached Google driving route through the coordinate-bearing check-ins (in time order),
+  // aligned to the same filter+sort the map uses so leg[i] is stop[i] -> stop[i+1].
+  const stops = checkins
+    .filter((checkin) => Number.isFinite(checkin.lat) && Number.isFinite(checkin.lon))
+    .map((checkin) => ({ lat: checkin.lat as number, lng: checkin.lon as number }));
+  const route = await getCachedDrivingRoute(rep.hrId, day, stops);
+
+  return { checkins, rep, route, visits };
 }

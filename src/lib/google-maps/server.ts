@@ -388,3 +388,71 @@ export async function googleDirectionsRoute(
 }> {
   return computeRoutes(origin, destination);
 }
+
+export type GoogleStopLeg = {
+  distanceMeters: number | null;
+  durationSeconds: number | null;
+};
+
+/**
+ * Real driving route through an ordered list of stops (>= 2). Returns the overall
+ * encoded polyline (follows roads) plus one leg per consecutive pair, each with the
+ * driving distance and duration. Uses TRAFFIC_UNAWARE so it stays on the cheapest
+ * "Compute Routes Essentials" SKU (10k free calls/month). Best-effort: returns null if
+ * the server key is missing or the Routes API rejects the request, so callers can fall
+ * back gracefully (and callers should cache successes to avoid repeat billing).
+ */
+export async function googleRouteThroughStops(stops: LatLng[]): Promise<{
+  encodedPolyline: string | null;
+  legs: GoogleStopLeg[];
+} | null> {
+  const key = getServerKey();
+  if (!key || stops.length < 2) return null;
+
+  const toWaypoint = (point: LatLng) => ({
+    location: { latLng: { latitude: point.lat, longitude: point.lng } },
+  });
+
+  try {
+    const response = await postJsonWithHttpsFallback(
+      "https://routes.googleapis.com/directions/v2:computeRoutes",
+      {
+        body: JSON.stringify({
+          destination: toWaypoint(stops[stops.length - 1]),
+          intermediates: stops.slice(1, -1).map(toWaypoint),
+          origin: toWaypoint(stops[0]),
+          polylineEncoding: "ENCODED_POLYLINE",
+          polylineQuality: "OVERVIEW",
+          routingPreference: "TRAFFIC_UNAWARE",
+          travelMode: "DRIVE",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": "routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration",
+        },
+        method: "POST",
+      },
+    );
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      routes?: Array<{
+        legs?: Array<{ distanceMeters?: number; duration?: string }>;
+        polyline?: { encodedPolyline?: string };
+      }>;
+    };
+    const route = payload.routes?.[0];
+    if (!route) return null;
+
+    return {
+      encodedPolyline: route.polyline?.encodedPolyline ?? null,
+      legs: (route.legs ?? []).map((leg) => ({
+        distanceMeters: leg.distanceMeters != null && Number.isFinite(leg.distanceMeters) ? Number(leg.distanceMeters) : null,
+        durationSeconds: parseDurationSeconds(leg.duration),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
