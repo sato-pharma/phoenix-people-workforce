@@ -386,6 +386,8 @@ export function fieldWorkforcePreviewFromArchiveRows(input: {
       holidayWarnings: asNumber(summaryRow.public_holiday_warning_count),
       hrId: employeeCode,
       lineName: summaryRow.line_name ?? null,
+      // Archived months predate manager_hr_id capture; ordering falls back to name order.
+      managerHrId: null,
       managerName: summaryRow.manager_name ?? null,
       matchedEmployeeName: String(summaryRow.employee_name),
       matchedHrId: employeeCode,
