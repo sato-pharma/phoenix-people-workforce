@@ -101,6 +101,11 @@ type PayrollPreviewPayload = {
         fingerPrint: number;
         unpaidVacations: number;
       };
+      resultingTotals: {
+        crm: number;
+        fingerPrint: number;
+        unpaidVacations: number;
+      };
     }>;
     totals: {
       crm: number;
@@ -1162,10 +1167,10 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
                   <th className="px-3 py-2">Employee</th>
                   <th className="px-3 py-2">Code</th>
                   <th className="px-3 py-2">Matched</th>
-                  <th className="px-3 py-2">CRM</th>
-                  <th className="px-3 py-2">Finger Print</th>
-                  <th className="px-3 py-2">Unpaid Vacations</th>
-                  <th className="px-3 py-2">Delta</th>
+                  <th className="px-3 py-2">CRM (now + add = new)</th>
+                  <th className="px-3 py-2">Finger Print (now + add = new)</th>
+                  <th className="px-3 py-2">Unpaid Vacations (now + add = new)</th>
+                  <th className="px-3 py-2">Total Added</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1176,10 +1181,10 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
                     <td className="px-3 py-2">
                       <Badge variant={row.matched ? "success" : "danger"}>{row.matched ? "Matched" : "Unmatched"}</Badge>
                     </td>
-                    <td className="px-3 py-2">{formatMoney(row.existingTotals.crm)} {"->"} {formatMoney(row.appliedTotals.crm)}</td>
-                    <td className="px-3 py-2">{formatMoney(row.existingTotals.fingerPrint)} {"->"} {formatMoney(row.appliedTotals.fingerPrint)}</td>
-                    <td className="px-3 py-2">{formatMoney(row.existingTotals.unpaidVacations)} {"->"} {formatMoney(row.appliedTotals.unpaidVacations)}</td>
-                    <td className={cn("px-3 py-2 font-mono font-bold", row.delta > 0 ? "text-rose-600" : row.delta < 0 ? "text-emerald-600" : "text-slate-500")}>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.crm)} + {formatMoney(row.appliedTotals.crm)} = {formatMoney(row.resultingTotals.crm)}</td>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.fingerPrint)} + {formatMoney(row.appliedTotals.fingerPrint)} = {formatMoney(row.resultingTotals.fingerPrint)}</td>
+                    <td className="px-3 py-2">{formatMoney(row.existingTotals.unpaidVacations)} + {formatMoney(row.appliedTotals.unpaidVacations)} = {formatMoney(row.resultingTotals.unpaidVacations)}</td>
+                    <td className={cn("px-3 py-2 font-mono font-bold", row.delta > 0 ? "text-rose-600" : "text-slate-500")}>
                       {formatMoney(row.delta)}
                     </td>
                   </tr>
