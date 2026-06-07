@@ -7,6 +7,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listSalesPeriods, loadExecutiveReport, type ExecutiveReport } from "@/lib/sales/executive-report";
 
 export const dynamic = "force-dynamic";
+// The Source-of-Sales aggregates scan the full month of fact rows server-side and can take
+// well over the platform's default function limit. Raise the ceiling so the page renders the
+// real report instead of being killed mid-load. (Vercel clamps to the plan's max.)
+export const maxDuration = 60;
 
 // Shift a YYYY-MM period back N months for the month-over-month (N=1) and year-over-year (N=12)
 // comparison columns. Returns null for anything that is not a clean YYYY-MM string.
@@ -26,11 +30,27 @@ function shiftPeriod(period: string, monthsBack: number): string | null {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+// A Supabase PostgrestError is a plain object (not an Error subclass), so `instanceof Error`
+// silently swallows its `message`/`details`/`hint`/`code`. Extract a human string from whatever
+// shape was thrown, and log the full object server-side so the real cause is never lost.
+function describeLoadError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const parts = [record.message, record.details, record.hint, record.code]
+      .filter((part): part is string => typeof part === "string" && part.length > 0);
+    if (parts.length > 0) return parts.join(" — ");
+  }
+  return "Failed to load Source of Sales data.";
+}
+
 async function safeReport(period: string | null): Promise<{ data: ExecutiveReport | null; error: string | null }> {
   try {
     return { data: await loadExecutiveReport(period), error: null };
   } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : "Failed to load Source of Sales data." };
+    console.error(`[sales-command] loadExecutiveReport failed for period=${period ?? "all"}:`, error);
+    return { data: null, error: describeLoadError(error) };
   }
 }
 
