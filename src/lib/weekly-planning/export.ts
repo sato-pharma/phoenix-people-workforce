@@ -20,7 +20,6 @@ const planExportColumns = [
   { key: "doubleVisitMedicalRepName", label: "Double Visit Medical Rep", width: 28 },
   { key: "notes", label: "Notes", width: 36 },
   { key: "returnNotes", label: "Return Notes", width: 40 },
-  { key: "calendarStatus", label: "Calendar Status", width: 18 },
   { key: "managerDecision", label: "Manager Decision", width: 20 },
   { key: "ceoDecision", label: "CEO Decision", width: 20 },
 ] as const;
@@ -43,7 +42,6 @@ export function flattenEmployeePlansForExport(plans: EmployeePlan[]): ExportRow[
           activityType: "",
           area: null,
           attendees: null,
-          calendarStatus: plan.calendarStatus,
           doubleVisitMedicalRepName: null,
           endTime: null,
           locationText: null,
@@ -59,7 +57,6 @@ export function flattenEmployeePlansForExport(plans: EmployeePlan[]): ExportRow[
       activityType: item.activityType,
       area: item.area,
       attendees: item.attendees,
-      calendarStatus: item.calendarStatus,
       ceoDecision: statusLabel(plan.status.startsWith("ceo_") || plan.status === "final_approved" || plan.status === "hr_acknowledged" ? plan.status : ""),
       doubleVisitMedicalRepName: item.doubleVisitMedicalRepName,
       employeeHrId: plan.employeeHrId,
@@ -109,7 +106,6 @@ function pdfLine(row: ExportRow) {
     row.activityType,
     row.activityTitle,
     row.area,
-    row.calendarStatus,
   ].map(compactText).join(" | ");
 }
 
@@ -121,7 +117,7 @@ export function buildEmployeePlansPdf(plans: EmployeePlan[]) {
     `Plans: ${plans.length}`,
     `Rows: ${rows.length}`,
     "",
-    "Employee | Plan | Period | Status | Date | Type | Title | Area | Calendar",
+    "Employee | Plan | Period | Status | Date | Type | Title | Area",
     ...rows.map(pdfLine),
   ];
   const pages: string[][] = [];

@@ -2,12 +2,10 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
-  CalendarCheck,
   CheckCircle2,
   CircleAlert,
   Download,
   Edit3,
-  RefreshCw,
   RotateCcw,
   Send,
   XCircle,
@@ -125,7 +123,6 @@ function statusTone(status: EmployeePlanStatus) {
 
 export function PlansWorkspace({
   access,
-  basePath = "/employee-portals/plans",
   initialWorkspace,
   selectedPlanId,
   showTimeColumn = true,
@@ -279,13 +276,6 @@ export function PlansWorkspace({
     setMessage("HR acknowledgement recorded.");
   }
 
-  async function retryCalendarSync(planId: string) {
-    const response = await fetch(`/api/weekly-plans/${planId}/calendar-sync/retry`, { method: "POST" });
-    const result = await response.json();
-    if (!response.ok || !result.success) throw new Error(result.message ?? "Calendar sync retry failed.");
-    setMessage("Google Calendar sync retry requested.");
-  }
-
   function downloadExport(url: string) {
     window.location.assign(url);
   }
@@ -336,21 +326,6 @@ export function PlansWorkspace({
           <p className="mt-2 text-lg font-black text-slate-900">{workspace.currentEmployee?.managerName ?? "Not assigned"}</p>
           <p className="mt-1 text-sm text-slate-600">{workspace.currentEmployee?.managerHrId ?? "Manager HR ID missing"}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Google Calendar</p>
-          <p className="mt-2 text-lg font-black text-slate-900">
-            {workspace.googleCalendar.connected ? "Connected" : "Not connected"}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <a
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              href={`/api/integrations/google-calendar/connect?returnTo=${encodeURIComponent(basePath)}`}
-            >
-              <CalendarCheck className="mr-2 h-4 w-4" />
-              Connect
-            </a>
-          </div>
-        </div>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
@@ -361,9 +336,6 @@ export function PlansWorkspace({
         <SummaryTile label="HR acknowledged" value={workspace.summary.hrAcknowledged} />
         <SummaryTile label="Returned" value={workspace.summary.returned} tone="amber" />
         <SummaryTile label="Rejected" value={workspace.summary.rejected} tone="red" />
-        <SummaryTile label="Calendar pending" value={workspace.summary.calendarPending} tone="sky" />
-        <SummaryTile label="Calendar blocked" value={workspace.summary.calendarBlocked} tone="amber" />
-        <SummaryTile label="Calendar failed" value={workspace.summary.calendarFailed} tone="red" />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -600,9 +572,7 @@ export function PlansWorkspace({
 
         <aside className="space-y-4">
           <QueueCard
-            isPending={isPending}
             onOpen={loadPlanForEdit}
-            onRetryCalendar={(planId) => runAction(() => retryCalendarSync(planId))}
             plans={ownPlans}
             title="My Plans"
           />
@@ -633,7 +603,6 @@ export function PlansWorkspace({
             isPending={isPending}
             onComment={setComment}
             onDecision={(planId) => runAction(() => acknowledge(planId))}
-            onRetryCalendar={(planId) => runAction(() => retryCalendarSync(planId))}
             plans={hrQueue}
             title="HR Acknowledgement"
             type="hr"
@@ -659,20 +628,12 @@ function SummaryTile({ label, tone = "slate", value }: { label: string; tone?: "
   );
 }
 
-function planCanRetryCalendar(plan: EmployeePlan) {
-  return ["final_approved", "hr_acknowledged"].includes(plan.status) && ["blocked", "failed", "pending"].includes(plan.calendarStatus);
-}
-
 function QueueCard({
-  isPending,
   onOpen,
-  onRetryCalendar,
   plans,
   title,
 }: {
-  isPending: boolean;
   onOpen: (plan: EmployeePlan) => void;
-  onRetryCalendar?: (planId: string) => void;
   plans: EmployeePlan[];
   title: string;
 }) {
@@ -690,14 +651,8 @@ function QueueCard({
               <p className="text-sm font-black text-slate-900">{plan.planKind} {plan.periodKey}</p>
               <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(plan.status)}`}>{statusLabels[plan.status]}</span>
             </div>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Revision {plan.revision} - Calendar {plan.calendarStatus}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Revision {plan.revision}</p>
           </button>
-          {onRetryCalendar && planCanRetryCalendar(plan) ? (
-            <Button className="mt-3 px-3 py-1.5 text-xs" disabled={isPending} onClick={() => onRetryCalendar(plan.id)} variant="secondary">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Retry Calendar
-            </Button>
-          ) : null}
           </div>
         ))}
       </div>
@@ -710,7 +665,6 @@ function ReviewCard({
   isPending,
   onComment,
   onDecision,
-  onRetryCalendar,
   onReturnNote,
   plans,
   returnNotes,
@@ -721,7 +675,6 @@ function ReviewCard({
   isPending: boolean;
   onComment: (value: string) => void;
   onDecision: (planId: string, action: string) => void;
-  onRetryCalendar?: (planId: string) => void;
   onReturnNote?: (planId: string, itemId: string, value: string) => void;
   plans: EmployeePlan[];
   returnNotes?: Record<string, Record<string, string>>;
@@ -783,12 +736,6 @@ function ReviewCard({
                     <CircleAlert className="mr-2 h-4 w-4" />
                     Acknowledge
                   </Button>
-                  {onRetryCalendar && planCanRetryCalendar(plan) ? (
-                    <Button disabled={isPending} onClick={() => onRetryCalendar(plan.id)} variant="secondary">
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Retry Calendar
-                    </Button>
-                  ) : null}
                 </>
               ) : null}
             </div>
