@@ -11,6 +11,10 @@ import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/pre
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The iReports360 live import (login + a month of visits/check-ins + matrix build) can
+// exceed the default ~10s serverless window and get killed with a 502. Allow up to 60s
+// (the Vercel plan maximum) before timing out.
+export const maxDuration = 60;
 
 function parseIntField(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value)) return value;
