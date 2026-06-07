@@ -97,14 +97,12 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
   const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), b]));
   const supabase = getSupabaseAdmin();
 
-  const [existProd, existTerr, existCust] = await Promise.all([
-    supabase.from("source_of_sales_product_aliases").select("normalized_alias").eq("active", true),
-    supabase.from("source_of_sales_territory_aliases").select("normalized_alias").eq("active", true),
-    supabase.from("source_of_sales_customer_map").select("distributor_code,customer_code").eq("active", true),
-  ]);
-  const haveProd = new Set(((existProd.data ?? []) as Array<{ normalized_alias?: string }>).map((r) => normalizeAliasKey(r.normalized_alias)));
-  const haveTerr = new Set(((existTerr.data ?? []) as Array<{ normalized_alias?: string }>).map((r) => normalizeAliasKey(r.normalized_alias)));
-  const haveCust = new Set(((existCust.error ? [] : existCust.data ?? []) as Array<{ distributor_code?: string; customer_code?: string }>).map((r) => `${normalizeCodeKey(r.distributor_code)} ${normalizeCodeKey(r.customer_code)}`));
+  // Intra-batch dedup only — these sets prevent sending duplicate keys in a single upsert batch.
+  // We do NOT pre-load existing DB rows: the upsert ON CONFLICT DO UPDATE path below overwrites
+  // existing rows, so corrections and re-mappings always take effect (not silently skipped).
+  const haveProd = new Set<string>();
+  const haveTerr = new Set<string>();
+  const haveCust = new Set<string>();
 
   const productRows: Record<string, unknown>[] = [];
   const territoryRows: Record<string, unknown>[] = [];
@@ -140,28 +138,27 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });
     }
   }
-  // Insert-if-absent via the DB's own conflict handling (ON CONFLICT DO NOTHING). This is immune to
-  // normalization drift between the bootstrap rows and normalizeAliasKey, and to races — a duplicate is
-  // silently skipped by Postgres instead of throwing. .select() returns only the rows actually inserted.
+  // Upsert: ON CONFLICT DO UPDATE so corrections and re-mappings always overwrite the existing row.
+  // .select("id") returns all affected rows (inserts + updates), giving an accurate saved count.
   const failed = (label: string, error: { message?: string; details?: string; hint?: string }) =>
     new Error(`${label}: ${[error.message, error.details, error.hint].filter(Boolean).join(" — ") || "insert failed"}`);
   let saved = 0;
   if (productRows.length) {
-    const { data, error } = await supabase.from("source_of_sales_product_aliases").upsert(productRows, { onConflict: "normalized_alias", ignoreDuplicates: true }).select("id");
+    const { data, error } = await supabase.from("source_of_sales_product_aliases").upsert(productRows, { onConflict: "normalized_alias" }).select("id");
     if (error) throw failed("product aliases", error);
     saved += data?.length ?? 0;
   }
   if (territoryRows.length) {
-    const { data, error } = await supabase.from("source_of_sales_territory_aliases").upsert(territoryRows, { onConflict: "normalized_alias,target_type,target_code", ignoreDuplicates: true }).select("id");
+    const { data, error } = await supabase.from("source_of_sales_territory_aliases").upsert(territoryRows, { onConflict: "normalized_alias,target_type,target_code" }).select("id");
     if (error) throw failed("territory aliases", error);
     saved += data?.length ?? 0;
   }
   if (customerRows.length) {
-    const { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code", ignoreDuplicates: true }).select("id");
+    const { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code" }).select("id");
     if (error) throw failed("customer map", error);
     saved += data?.length ?? 0;
   }
-  // rows that collided with an existing (possibly inactive) row count as skipped, not saved
+  // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
   skipped += productRows.length + territoryRows.length + customerRows.length - saved;
   return { saved, skipped, invalid };
 }
