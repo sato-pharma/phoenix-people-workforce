@@ -16,6 +16,7 @@ import { runPhoenixHrReplyTemplateTests } from "./phoenix-hr-reply-template.test
 import { runPlatformMetricsTests } from "./platform-metrics.test.ts";
 import { runExpenseMetricsTests } from "./expense-metrics.test.ts";
 import { runPayrollMoneyTests } from "./payroll-money.test.ts";
+import { runSalesMoneyRoundingTests } from "./sales-money-rounding.test.ts";
 import { runExpenseRiskHardeningTests } from "./expense-risk-hardening.test.ts";
 import { runOperationalEventsTests } from "./operational-events.test.ts";
 import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-metrics.test.ts";
@@ -175,6 +176,7 @@ await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);
 await runTest("platform metrics", runPlatformMetricsTests);
 await runTest("expense metrics", runExpenseMetricsTests);
 await runTest("payroll money rounding", runPayrollMoneyTests);
+await runTest("sales money rounding", runSalesMoneyRoundingTests);
 await runTest("expense risk hardening", runExpenseRiskHardeningTests);
 await runTest("operational events", runOperationalEventsTests);
 await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsTests);
