@@ -47,6 +47,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PremiumTooltip } from "@/components/ui/premium-tooltip";
+import { CountUpNumber } from "@/components/ui/count-up";
+import { cardHoverClass } from "@/components/ui/motion";
 import {
   PayrollPayslipsSection,
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
@@ -560,9 +562,9 @@ export function SalesAchievementRing({
     <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement</p>
       <div className="mt-4 flex flex-col items-center">
-        <div className="relative flex h-[280px] w-[280px] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
-          <div className="flex h-[236px] w-[236px] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
-            <p className="text-[68px] font-semibold leading-none text-slate-950">{clamped}%</p>
+        <div className="relative flex aspect-square h-[clamp(200px,62vw,280px)] w-[clamp(200px,62vw,280px)] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
+          <div className="flex aspect-square h-[clamp(168px,52vw,236px)] w-[clamp(168px,52vw,236px)] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
+            <p className="text-[clamp(48px,15vw,68px)] font-semibold leading-none text-slate-950">{clamped}%</p>
             <p className="mt-1 text-[12px] font-medium uppercase tracking-[0.1em] text-slate-500">of target</p>
           </div>
         </div>
@@ -823,41 +825,47 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     : achievement >= 90
       ? "Within control band"
       : "Needs attention";
+  const pctFormat = (n: number) => `${n.toFixed(1)}%`;
   const signals = [
     {
       accent: "green" as const,
       label: "Sales",
       note: `Target ${egp(data.sales.overviewTarget)}`,
       progress: achievement,
-      value: egp(data.sales.overviewSales),
+      numeric: data.sales.overviewSales,
+      format: egp,
     },
     {
       accent: "orange" as const,
       label: "Target",
       progress: achievement,
       note: "Approved sales target",
-      value: egp(data.sales.overviewTarget),
+      numeric: data.sales.overviewTarget,
+      format: egp,
     },
     {
       accent: "blue" as const,
       label: "Achievement Rate",
       note: "All-time sales versus target",
       progress: achievement,
-      value: `${achievement.toFixed(1)}%`,
+      numeric: achievement,
+      format: pctFormat,
     },
     {
       accent: "amber" as const,
       label: "Gap to Target",
       note: performanceState,
       progress: achievement,
-      value: egp(gap),
+      numeric: gap,
+      format: egp,
     },
   ] satisfies Array<{
     accent: MetricAccent;
     label: string;
     note: string;
     progress: number;
-    value: string;
+    numeric: number;
+    format: (value: number) => string;
   }>;
 
   return (
@@ -876,14 +884,14 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           const tone = metricTone(signal.accent);
           return (
             <Card
-              className={`group relative flex min-h-[100px] min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border}`}
+              className={`group relative flex min-h-[100px] min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border} ${cardHoverClass}`}
               key={signal.label}
             >
               <div className="flex flex-1 flex-col justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
                   <p className={`mt-2 break-words text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
-                    {signal.value}
+                    <CountUpNumber value={signal.numeric} format={signal.format} />
                   </p>
                   <p className="mt-1.5 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
                 </div>
