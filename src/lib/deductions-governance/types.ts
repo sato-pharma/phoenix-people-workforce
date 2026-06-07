@@ -83,8 +83,16 @@ export const deductionPayrollHandoffStatuses = [
   "Not pushed",
   "Export only",
   "Pending integration",
+  "Imported to Payroll",
 ] as const;
 export type DeductionPayrollHandoffStatus = (typeof deductionPayrollHandoffStatuses)[number];
+
+export const deductionPayrollColumns = [
+  "crm",
+  "finger_print",
+  "unpaid_vacations",
+] as const;
+export type DeductionPayrollColumn = (typeof deductionPayrollColumns)[number];
 
 export type DeductionCandidate = {
   id: string;
@@ -120,12 +128,16 @@ export type DeductionDecision = {
   decisionStatus: DeductionDecisionStatus;
   decisionReason: string;
   hrNote: string;
+  appliedDeductionValue: number | null;
+  appliedAmount: number | null;
+  payrollColumn: DeductionPayrollColumn | null;
   decidedBy: string | null;
   decidedAt: string | null;
   resolvedAt: string | null;
   resolvedBy: string | null;
   payrollHandoffStatus: DeductionPayrollHandoffStatus;
   lastExportId: string | null;
+  finalizedSummaryId: string | null;
   actorRoleAtDecision: string | null;
   actorScopeAtDecision: string | null;
   createdAt: string;
@@ -141,6 +153,55 @@ export type DeductionExport = {
   filtersSnapshot: Record<string, unknown>;
   fileName: string;
   notes: string | null;
+};
+
+export type DeductionMonthlySummary = {
+  id: string;
+  monthKey: string;
+  month: number;
+  year: number;
+  status: "finalized" | "superseded";
+  finalizedBy: string;
+  finalizedAt: string;
+  candidateCount: number;
+  employeeCount: number;
+  totalDays: number;
+  totalAmount: number;
+  sourceCounts: Record<string, unknown>;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type DeductionMonthlySummaryLine = {
+  id: string;
+  summaryId: string;
+  candidateId: string;
+  decisionId: string;
+  employeeCode: string;
+  employeeHrIdCompact: string;
+  employeeName: string | null;
+  monthKey: string;
+  sourceModule: DeductionSourceModule;
+  deductionType: DeductionType;
+  payrollColumn: DeductionPayrollColumn;
+  deductionUnit: DeductionUnit;
+  originalDeductionValue: number;
+  appliedDeductionValue: number;
+  appliedAmount: number;
+  dates: string[];
+  reason: string | null;
+  hrNote: string | null;
+  createdAt: string;
+};
+
+export type DeductionComment = {
+  id: string;
+  candidateId: string;
+  authorLoginId: string;
+  authorHrId: string | null;
+  authorRole: string | null;
+  body: string;
+  createdAt: string;
 };
 
 // Draft shape emitted by source-module connectors prior to insert.

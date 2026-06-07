@@ -34,6 +34,7 @@ import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.t
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
+import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-completion.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
@@ -187,6 +188,7 @@ await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
 await runTest("deductions governance service", runDeductionsGovernanceServiceTests);
 await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcConnectorTests);
+await runTest("deductions governance completion", runDeductionsGovernanceCompletionTests);
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
