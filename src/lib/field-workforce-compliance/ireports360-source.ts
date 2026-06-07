@@ -427,7 +427,7 @@ export async function getIReports360RepDayVisits(input: { date: string; hrId: st
         : null;
       return {
         ...visit,
-        kind: (visit.contactName ?? "").trim() ? "regular" : "campaign",
+        kind: visit.visitType === 0 ? "regular" : "campaign",
         mode: hasPartner ? "double" : "single",
         partnerName,
         role,
