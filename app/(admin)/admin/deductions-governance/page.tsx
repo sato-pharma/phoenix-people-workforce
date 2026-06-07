@@ -8,6 +8,7 @@ import {
   getDeductionInboxKpis,
   groupByEmployee,
   groupBySource,
+  listAvailableDeductionMonthKeys,
   listDeductionCandidates,
   listDisputes,
   listFinalApprovedDecisions,
@@ -28,7 +29,6 @@ export default async function AdminDeductionsGovernancePage() {
 
   // Server-side initial load. Failures are surfaced as empty initial state;
   // the workspace also exposes a Refresh control that re-queries the API.
-  const filters = {} as const;
   let initialError: string | null = null;
   let initialKpis = null;
   let initialInbox = null;
@@ -38,6 +38,18 @@ export default async function AdminDeductionsGovernancePage() {
   let initialDisputes = null;
   let initialAudit = null;
   let initialComments = null;
+  let availableMonthKeys: string[] = [];
+
+  // Fetch available months first so we can pre-select the most recent one,
+  // then load all data scoped to that month by default.
+  try {
+    availableMonthKeys = await listAvailableDeductionMonthKeys({ access });
+  } catch {
+    // Non-fatal — workspace falls back to empty dropdown
+  }
+
+  const defaultMonth = availableMonthKeys[0]; // most recent, descending order
+  const filters = defaultMonth ? { monthKey: defaultMonth } : ({} as const);
 
   try {
     const [
@@ -56,7 +68,7 @@ export default async function AdminDeductionsGovernancePage() {
       groupByEmployee({ access, filters, limit: 100 }),
       listFinalApprovedDecisions({ access, filters }),
       listDisputes({ access, filters }),
-      listRecentAuditEvents({ access, limit: 50 }),
+      listRecentAuditEvents({ access, monthKey: defaultMonth, limit: 50 }),
       listRecentDeductionComments({ access, limit: 100 }),
     ]);
     initialKpis = kpis;
@@ -75,8 +87,10 @@ export default async function AdminDeductionsGovernancePage() {
 
   return (
     <DeductionsGovernanceWorkspace
+      availableMonthKeys={availableMonthKeys}
       canEditDecisions={canEditDecisions}
       canSync={canSync}
+      defaultMonthKey={defaultMonth}
       initialAudit={initialAudit}
       initialByEmployee={initialByEmployee}
       initialBySource={initialBySource}

@@ -119,8 +119,10 @@ type PayrollPreviewPayload = {
 };
 
 export type DeductionsGovernanceWorkspaceProps = {
+  availableMonthKeys?: string[];
   canEditDecisions: boolean;
   canSync?: boolean;
+  defaultMonthKey?: string;
   initialAudit: DeductionAuditEvent[] | null;
   initialByEmployee: DeductionEmployeeGroup[] | null;
   initialBySource: DeductionSourceGroup[] | null;
@@ -297,6 +299,7 @@ function KpiGrid({ kpis }: { kpis: DeductionInboxKpis }) {
 }
 
 function InboxFiltersBar({
+  availableMonthKeys,
   filters,
   onChange,
   pageSize,
@@ -304,6 +307,7 @@ function InboxFiltersBar({
   isLoading,
   onRefresh,
 }: {
+  availableMonthKeys: string[];
   filters: DeductionInboxFilters;
   onChange: (next: DeductionInboxFilters) => void;
   pageSize: number;
@@ -313,12 +317,25 @@ function InboxFiltersBar({
 }) {
   return (
     <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[160px_180px_180px_180px_minmax(0,1fr)_140px]">
-      <input
-        className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-        placeholder="Month (YYYY-MM)"
-        value={filters.monthKey ?? ""}
-        onChange={(event) => onChange({ ...filters, monthKey: event.target.value })}
-      />
+      {availableMonthKeys.length > 0 ? (
+        <select
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          value={filters.monthKey ?? ""}
+          onChange={(event) => onChange({ ...filters, monthKey: event.target.value || undefined })}
+        >
+          <option value="">All months</option>
+          {availableMonthKeys.map((mk) => (
+            <option key={mk} value={mk}>{mk}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          placeholder="Month (YYYY-MM)"
+          value={filters.monthKey ?? ""}
+          onChange={(event) => onChange({ ...filters, monthKey: event.target.value || undefined })}
+        />
+      )}
       <select
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={filters.sourceModule ?? ""}
@@ -768,7 +785,9 @@ function CommentsPanel({ comments }: { comments: DeductionCommentFeedItem[] }) {
 
 export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
-  const [filters, setFilters] = useState<DeductionInboxFilters>({});
+  const [filters, setFilters] = useState<DeductionInboxFilters>(
+    props.defaultMonthKey ? { monthKey: props.defaultMonthKey } : {},
+  );
   const [pageSize, setPageSize] = useState<number>(50);
   const [page, setPage] = useState<number>(1);
 
@@ -1230,6 +1249,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
           title="Deduction Inbox"
         >
           <InboxFiltersBar
+            availableMonthKeys={props.availableMonthKeys ?? []}
             filters={filters}
             isLoading={isLoading}
             pageSize={pageSize}
