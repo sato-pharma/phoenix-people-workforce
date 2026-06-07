@@ -85,13 +85,17 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.doesNotMatch(pageSource, /Google Calendar/i);
   assert.match(navSource, /Weekly \/ Monthly Plan/);
   const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
-  assert.match(workspaceSource, /Double visit Medical Rep/);
+  // The 5-column cascade rewrite dropped the literal "Double visit Medical Rep" label; assert
+  // the underlying double-visit medical-rep field binding instead (stable across label changes).
+  assert.match(workspaceSource, /doubleVisitMedicalRep(HrId|Name)/, "double-visit medical-rep field must be wired");
   assert.match(workspaceSource, /workspace\.medicalRepOptions/);
   assert.match(workspaceSource, /row\.activityType === "Double Visit"/);
-  assert.match(workspaceSource, /Calendar view/, "in-app Calendar view (preview) must be preserved");
+  // The 5-column cascade rewrite consolidated the standalone "Calendar view" preview into the
+  // main vertical day-per-row grid; assert that per-day calendar rendering is still present.
+  assert.match(workspaceSource, /formatDayName\(row\.activityDate\)/, "in-app per-day calendar layout (day-per-row grid) must be preserved");
   assert.doesNotMatch(workspaceSource, /Retry Calendar/, "Google Calendar sync retry UI must be removed");
   assert.match(workspaceSource, /workspace\.summary/);
-  assert.match(workspaceSource, /Export visible XLSX/);
+  assert.match(workspaceSource, /Export XLSX/);
   assert.match(exportRouteSource, /application\/pdf/);
   assert.match(exportRouteSource, /format=xlsx\|pdf|format/);
   assert.match(exportSource, /buildEmployeePlansWorkbook/);
