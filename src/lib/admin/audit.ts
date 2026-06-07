@@ -6,8 +6,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type AuditEntityType =
   | "auth_session"
   | "deduction_candidate"
+  | "deduction_comment"
   | "deduction_decision"
   | "deduction_export"
+  | "deduction_finalization"
+  | "deduction_payroll_import"
+  | "deduction_payroll_preview"
+  | "deduction_summary"
   | "employee_resignation"
   | "field_workforce_compliance_import"
   | "notification"

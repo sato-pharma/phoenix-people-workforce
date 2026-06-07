@@ -10,6 +10,7 @@ import {
   listDisputes,
   listFinalApprovedDecisions,
   listRecentAuditEvents,
+  listRecentDeductionComments,
   sanitizeDeductionInboxFilters,
   type DeductionInboxFilters,
 } from "@/lib/deductions-governance/service";
@@ -99,6 +100,7 @@ export async function GET(request: Request) {
       finalApproved,
       disputes,
       audit,
+      comments,
     ] = await Promise.all([
       getDeductionInboxKpis({ access, filters }),
       listDeductionCandidates({ access, filters, page, pageSize }),
@@ -107,6 +109,7 @@ export async function GET(request: Request) {
       listFinalApprovedDecisions({ access, filters }),
       listDisputes({ access, filters }),
       listRecentAuditEvents({ access, monthKey: filters.monthKey, limit: 50 }),
+      listRecentDeductionComments({ access, limit: 100 }),
     ]);
 
     return NextResponse.json({
@@ -118,6 +121,7 @@ export async function GET(request: Request) {
       finalApproved,
       disputes,
       audit,
+      comments,
     });
   } catch (error) {
     return jsonError(error, "Failed to load Deductions Governance Center.");
