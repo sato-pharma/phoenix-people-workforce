@@ -113,7 +113,7 @@ function StatusBanner({ result, error }: { error: string | null; result: Distrib
         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
         <div>
           <p className="font-semibold">Validation passed</p>
-          <p className="mt-1 leading-6">The sheet is clean for this distributor template.</p>
+          <p className="mt-1 leading-6">The sheet is clean for {result.distributor.name} / {result.distributor.code}.</p>
         </div>
       </AdminCallout>
     );
@@ -140,7 +140,7 @@ function TotalsGrid({ result }: { result: DistributorSalesValidationResult }) {
       <Metric label="Total Qty" value={numberWithDecimals(result.totals.totalQty)} />
       <Metric label="Total B. Qty" value={numberWithDecimals(result.totals.totalBonusQty)} />
       <Metric label="Total Value" value={formatCurrency(result.totals.totalValue)} />
-      <Metric label="Template" value={result.templateName} />
+      <Metric label="Distributor" value={`${result.distributor.name} / ${result.distributor.code}`} />
     </div>
   );
 }
@@ -658,10 +658,22 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         method: "POST",
       });
       const payload = await readJsonResponse(response);
-      setResult(payload.data ?? null);
-      if (payload.data?.batchId) {
+      const data = payload.data ?? null;
+      setResult(data);
+      if (data?.batchId) {
         await reloadBatches();
-        await reloadDashboard(payload.data.period);
+        // Pin the dashboard to the just-uploaded period so the new data is visibly reflected.
+        await reloadDashboard(data.period ?? null);
+        if (data.status === "validated") {
+          const periodLabel = data.period ?? "an undated period (check the sheet's dates)";
+          const distributorLabel = data.distributor?.name ?? selectedDistributorCode;
+          setActionMessage({
+            type: "success",
+            text: `Saved ${formatNumber(data.rowCount)} rows — ${formatCurrency(data.totals.totalValue)} for ${periodLabel} (${distributorLabel}). Dashboard updated.`,
+          });
+          // Make the dashboard update obvious instead of leaving the user on the upload tab.
+          setActiveTab("dashboard");
+        }
       }
       if (!payload.success) {
         setError(payload.error ?? "Validation failed.");
@@ -783,6 +795,17 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </Button>
         </div>
 
+        {actionMessage ? (
+          <AdminCallout tone={actionMessage.type === "success" ? "success" : "danger"}>
+            {actionMessage.type === "success" ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4" />
+            )}
+            <p>{actionMessage.text}</p>
+          </AdminCallout>
+        ) : null}
+
         {activeTab === "dashboard" ? (
           <SourceOfSalesDashboardPanel
             dashboard={dashboard}
@@ -888,17 +911,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             </Card>
           </div>
         </AdminTableShell>
-
-        {actionMessage ? (
-          <AdminCallout tone={actionMessage.type === "success" ? "success" : "danger"}>
-            {actionMessage.type === "success" ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4" />
-            )}
-            <p>{actionMessage.text}</p>
-          </AdminCallout>
-        ) : null}
 
         <UploadedSheetsTable
           batches={batches}
