@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 
 type Visit = {
   ampm: string | null;
+  callType: number | null;
   comment: string | null;
   contactName: string | null;
   customerName: string | null;
@@ -115,10 +116,13 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
                           ? "inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700"
                           : "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
                       }
-                      title={visit.visitTypeDescription ?? `visitType ${visit.visitType}`}
                     >
                       {visit.kind === "campaign" ? "Campaign" : "Regular"}
                     </span>
+                    <div className="mt-0.5 text-[10px] text-slate-400">
+                      {visit.visitTypeDescription ?? `type:${visit.visitType}`}
+                      {visit.callType != null ? ` · ct:${visit.callType}` : ""}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {visit.mode === "double" ? (
