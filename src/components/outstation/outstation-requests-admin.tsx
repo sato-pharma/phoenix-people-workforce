@@ -30,7 +30,9 @@ import { OutstationReviewMap } from "@/components/outstation/outstation-review-m
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { Input } from "@/components/ui/input";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -79,6 +81,26 @@ function formatKm(value: number | null | undefined) {
 
 function formatStatus(value: string) {
   return value.replace(/_/g, " ");
+}
+
+// Trip month key as "YYYY-MM" from an ISO-ish date string (used for the month filter).
+function tripMonthKey(value: string | null | undefined) {
+  if (!value) return "";
+  const key = String(value).slice(0, 7);
+  return /^\d{4}-\d{2}$/.test(key) ? key : "";
+}
+
+function formatMonthLabel(key: string) {
+  const [year, month] = key.split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  if (Number.isNaN(date.getTime())) return key;
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+// Round numeric export cells to 2 dp so the styled XLSX SUM() totals stay clean.
+function roundForExport(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return 0;
+  return Number(value.toFixed(2));
 }
 
 function parseRequestId(value: string | null) {
@@ -497,6 +519,7 @@ export function OutstationRequestsAdmin({
   const [search, setSearch] = useState("");
   const [eligibility, setEligibility] = useState("");
   const [role, setRole] = useState("");
+  const [month, setMonth] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(initialSelectedId);
   const [detailRequestId, setDetailRequestId] = useState<number | null>(
     requests.some((request) => request.id === initialRequestId) ? initialRequestId : null,
@@ -538,6 +561,14 @@ export function OutstationRequestsAdmin({
     [localRequests],
   );
 
+  const months = useMemo(
+    () =>
+      [...new Set(localRequests.map((request) => tripMonthKey(request.tripStartDate)).filter(Boolean))].sort(
+        (a, b) => b.localeCompare(a),
+      ),
+    [localRequests],
+  );
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return localRequests.filter((request) => {
@@ -554,10 +585,56 @@ export function OutstationRequestsAdmin({
       return (
         matchesSearch &&
         (!eligibility || request.eligibilityStatus === eligibility) &&
-        (!role || request.employeeRole === role)
+        (!role || request.employeeRole === role) &&
+        (!month || tripMonthKey(request.tripStartDate) === month)
       );
     });
-  }, [eligibility, localRequests, role, search]);
+  }, [eligibility, localRequests, month, role, search]);
+
+  const exportColumns = useMemo<ExportColumn[]>(
+    () => [
+      { key: "employee", label: "Employee", width: 26 },
+      { key: "hrId", label: "HR ID", width: 12 },
+      { key: "role", label: "Role", width: 22 },
+      { key: "tripStart", label: "Trip start", width: 14 },
+      { key: "tripEnd", label: "Trip end", width: 14 },
+      { key: "destination", label: "Destination", width: 28 },
+      { key: "distanceKm", label: "Distance (km)", numeric: true, width: 14 },
+      { key: "eligibility", label: "Eligibility", width: 15 },
+      { key: "status", label: "Status", width: 13 },
+      { key: "travelCost", label: "Travel cost", numeric: true, width: 13 },
+      { key: "allowance", label: "Allowance", numeric: true, width: 13 },
+      { key: "meeting", label: "Meeting", numeric: true, width: 12 },
+      { key: "expected", label: "Expected", numeric: true, width: 13 },
+      { key: "claimed", label: "Claimed", numeric: true, width: 13 },
+      { key: "recommendation", label: "Recommendation", width: 18 },
+    ],
+    [],
+  );
+
+  const exportRows = useMemo<ExportRow[]>(
+    () =>
+      filtered.map((request) => ({
+        employee: formatEmployeeDisplayName(request.employeeName),
+        hrId: request.employeeHrId,
+        role: request.employeeRole,
+        tripStart: formatDate(request.tripStartDate),
+        tripEnd: formatDate(request.tripEndDate),
+        destination: request.toLabel ?? request.toCity ?? request.toArea ?? "",
+        distanceKm: roundForExport(request.distanceFromResidenceKm),
+        eligibility: formatStatus(request.eligibilityStatus),
+        status: formatStatus(request.status),
+        travelCost: roundForExport(request.fuelAmount + request.ticketAmount),
+        allowance: roundForExport(request.allowanceAmount),
+        meeting: roundForExport(request.expenseType === "meeting" ? request.claimedTotalAmount : 0),
+        expected: roundForExport(request.expectedTotalAmount),
+        claimed: roundForExport(request.claimedTotalAmount),
+        recommendation: formatStatus(request.approvalRecommendation),
+      })),
+    [filtered],
+  );
+
+  const exportSubtitle = `Outstation expenses${month ? ` · ${formatMonthLabel(month)}` : " · all months"} · ${filtered.length} request(s)`;
 
   const selectedRequest =
     filtered.find((request) => request.id === selectedId) ??
@@ -588,6 +665,7 @@ export function OutstationRequestsAdmin({
     setSearch("");
     setEligibility("");
     setRole("");
+    setMonth("");
   }
 
   function selectRequest(request: OutstationExpenseRequest) {
@@ -703,7 +781,7 @@ export function OutstationRequestsAdmin({
     }
   }
 
-  const hasActiveFilters = Boolean(search || eligibility || role);
+  const hasActiveFilters = Boolean(search || eligibility || role || month);
 
   if (localRequests.length === 0) {
     return (
@@ -759,14 +837,24 @@ export function OutstationRequestsAdmin({
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Outstation expenses"
           actions={(
-            <Button
-              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
-              onClick={() => setManagerExpenseModal({ mode: "create" })}
-              type="button"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Add manual expense
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <ExportXlsxButton
+                className="h-9 rounded-xl"
+                columns={exportColumns}
+                rows={exportRows}
+                sheetName="Outstation expenses"
+                subtitle={exportSubtitle}
+                title="Outstation expenses"
+              />
+              <Button
+                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                onClick={() => setManagerExpenseModal({ mode: "create" })}
+                type="button"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Add manual expense
+              </Button>
+            </div>
           )}
           badges={(
             <>
@@ -800,7 +888,7 @@ export function OutstationRequestsAdmin({
           description="Search by employee or location and filter by eligibility and role."
           title="Request filters"
         >
-          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Search</span>
               <div className="relative">
@@ -839,6 +927,22 @@ export function OutstationRequestsAdmin({
                 {roles.map((item) => (
                   <option key={item} value={item}>
                     {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Month</span>
+              <select
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                onChange={(event) => setMonth(event.target.value)}
+                value={month}
+              >
+                <option value="">All months</option>
+                {months.map((key) => (
+                  <option key={key} value={key}>
+                    {formatMonthLabel(key)}
                   </option>
                 ))}
               </select>
