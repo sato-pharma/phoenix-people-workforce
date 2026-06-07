@@ -37,6 +37,7 @@ import {
   iReports360Login,
   type IReports360Visit,
 } from "@/lib/field-workforce-compliance/ireports360-client";
+import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
@@ -59,6 +60,7 @@ const VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
 ]);
 
 export type IReports360ResolvedAgent = {
+  eligible: boolean;
   fullName: string | null;
   hireDateIso: string | null;
   hrId: string;
@@ -68,10 +70,9 @@ export type IReports360AgentResolver = {
   resolve(agentId: number, agentName: string | null): IReports360ResolvedAgent | null;
 };
 
-export type IReports360UnresolvedAgent = {
-  agentId: number;
-  agentName: string | null;
-  visitCount: number;
+export type IReports360ExcludedAgentCounts = {
+  ineligibleRole: number;
+  noHrId: number;
 };
 
 function pad2(value: number): string {
@@ -112,6 +113,7 @@ export function buildAgentResolver(directory: DirectoryRow[]): IReports360AgentR
         (agentName ? byCrmUsername.get(normalizeAgentName(agentName)) : undefined);
       if (!match) return null;
       return {
+        eligible: isFieldWorkforceComplianceEligibleTitle(match.jobTitle, match.positionTitle),
         fullName: match.fullName ?? null,
         hireDateIso: match.hireDate ? String(match.hireDate).slice(0, 10) : null,
         hrId: match.hrId,
@@ -146,7 +148,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   todayIso?: string | null;
   visits: IReports360Visit[];
   year: number;
-}): { matrix: unknown[][]; unresolvedAgents: IReports360UnresolvedAgent[] } {
+}): { excludedAgents: IReports360ExcludedAgentCounts; matrix: unknown[][] } {
   const { month, resolver, visits, year } = input;
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
@@ -167,15 +169,25 @@ export function buildIReports360FieldWorkforceMatrix(input: {
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
   const matrix: unknown[][] = [header];
-  const unresolvedAgents: IReports360UnresolvedAgent[] = [];
+  const excludedAgents: IReports360ExcludedAgentCounts = { ineligibleRole: 0, noHrId: 0 };
 
   const agentIds = [...visitsByAgent.keys()].sort((left, right) => left - right);
   for (const agentId of agentIds) {
     const agentVisits = visitsByAgent.get(agentId) ?? [];
     const agentName = agentNameById.get(agentId) ?? null;
     const resolved = resolver.resolve(agentId, agentName);
+
+    // Eligibility gate: Workforce Compliance lists ONLY the Sales force, Marketing, and
+    // the Training Manager. Agents with no Phoenix HR-ID match, and matched agents whose
+    // Phoenix role falls outside that set, are dropped here — they never enter the matrix,
+    // so they raise no "no HR ID" / hiring-date warnings downstream.
     if (!resolved) {
-      unresolvedAgents.push({ agentId, agentName, visitCount: agentVisits.length });
+      excludedAgents.noHrId += 1;
+      continue;
+    }
+    if (!resolved.eligible) {
+      excludedAgents.ineligibleRole += 1;
+      continue;
     }
 
     const byDay = new Map<string, IReports360Visit[]>();
@@ -194,16 +206,16 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     });
 
     matrix.push([
-      resolved?.fullName ?? agentName ?? "",
-      resolved?.hrId ?? "",
-      resolved?.hireDateIso ?? "",
+      resolved.fullName ?? agentName ?? "",
+      resolved.hrId,
+      resolved.hireDateIso ?? "",
       month,
       year,
       ...dayCells,
     ]);
   }
 
-  return { matrix, unresolvedAgents };
+  return { excludedAgents, matrix };
 }
 
 function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeReference {
