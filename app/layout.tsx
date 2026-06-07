@@ -7,10 +7,10 @@ export const metadata: Metadata = {
   title: systemIdentity.appName,
   description: systemIdentity.description,
   icons: {
-    apple: [{ type: "image/png", sizes: "180x180", url: "/apple-icon.png?v=phoenix-transparent-2" }],
+    apple: [{ type: "image/png", sizes: "180x180", url: "/apple-icon.png?v=phoenix-transparent-3" }],
     icon: [
-      { sizes: "16x16 32x32 48x48 64x64", url: "/favicon.ico?v=phoenix-transparent-2" },
-      { type: "image/png", sizes: "512x512", url: "/icon.png?v=phoenix-transparent-2" },
+      { sizes: "16x16 32x32 48x48 64x64", url: "/favicon.ico?v=phoenix-transparent-3" },
+      { type: "image/png", sizes: "512x512", url: "/icon.png?v=phoenix-transparent-3" },
     ],
   },
 };
