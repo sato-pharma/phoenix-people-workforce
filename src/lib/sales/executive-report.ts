@@ -156,14 +156,31 @@ export function buildLineProductMatrix(rows: ExecDistProductRow[]): ExecLineProd
 
 export async function loadExecutiveReport(period: string | null): Promise<ExecutiveReport> {
   const supabase = getSupabaseAdmin();
-  // Paginated reads — company-wide aggregates can exceed PostgREST's 1000-row cap.
-  const [references, dpData, brickData, custData, brickMasterResult, periodsResult] = await Promise.all([
-    loadSalesReferenceData(),
-    rpcAll(supabase, "phx_exec_distributor_product", { p_period: period }, ["distributor_code", "official_line", "region_code", "area_code", "product_code"]),
-    rpcAll(supabase, "phx_exec_brick", { p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]),
-    rpcAll(supabase, "phx_exec_customers", { p_period: period }, ["client_code", "distributor_code"]),
-    supabase.from("source_of_sales_bricks").select("brick_id,brick_name,area_code,region_code").eq("active", true),
-    supabase.from("source_of_sales_import_batches").select("period").eq("status", "validated").not("period", "is", null),
+  // Cheap reference/master reads run concurrently and overlap the heavy aggregates below.
+  const referencesPromise = loadSalesReferenceData();
+  const brickMasterPromise = supabase
+    .from("source_of_sales_bricks")
+    .select("brick_id,brick_name,area_code,region_code")
+    .eq("active", true);
+  const periodsPromise = supabase
+    .from("source_of_sales_import_batches")
+    .select("period")
+    .eq("status", "validated")
+    .not("period", "is", null);
+
+  // The three exec aggregates each scan the whole period's fact rows (seconds each). Run them
+  // SEQUENTIALLY: in parallel they multiply DB contention and push individual requests past the
+  // 15s Supabase fetch abort (and trip statement timeouts). Sequential keeps every request
+  // isolated and well within budget, while still overlapping the cheap reads above. rpcAll now
+  // fetches each in a SINGLE function execution (no per-page re-aggregation).
+  const dpData = await rpcAll(supabase, "phx_exec_distributor_product", { p_period: period }, ["distributor_code", "official_line", "region_code", "area_code", "product_code"]);
+  const brickData = await rpcAll(supabase, "phx_exec_brick", { p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]);
+  const custData = await rpcAll(supabase, "phx_exec_customers", { p_period: period }, ["client_code", "distributor_code"]);
+
+  const [references, brickMasterResult, periodsResult] = await Promise.all([
+    referencesPromise,
+    brickMasterPromise,
+    periodsPromise,
   ]);
 
   const regionName = new Map<string, string>();
