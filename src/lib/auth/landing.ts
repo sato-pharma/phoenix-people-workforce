@@ -17,6 +17,6 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "hr specialist" || normalized === "hr manager") return "/admin";
   if (normalized === "sfe manager") return "/admin/marketing-requests";
   if (normalized === "training manager") return "/employee-portals/training-manager";
-  if (normalized === "ceo") return "/admin/ceo-command-center";
+  if (normalized === "ceo") return "/admin/sales-command";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
 }

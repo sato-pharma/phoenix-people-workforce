@@ -75,7 +75,7 @@ export const adminNavigationSections = [
   {
     id: "executive",
     items: [
-      { href: "/admin/ceo-command-center", icon: BriefcaseBusiness, label: "CEO Command Center", roles: ["CEO", "Super Admin"] },
+      { href: "/admin/sales-command", icon: ChartNoAxesColumnIncreasing, label: "Sales Command", roles: ["CEO", "Super Admin"] },
     ],
     label: "Executive",
   },
