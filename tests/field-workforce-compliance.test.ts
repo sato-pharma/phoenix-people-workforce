@@ -89,13 +89,13 @@ export async function runFieldWorkforceComplianceTests() {
   const ahmed = preview.employees.find((employee) => employee.hrId === "A-1");
   assert.ok(ahmed);
   assert.equal(ahmed.employeeName, "Ahmed Official");
-  assert.equal(ahmed.eligibleWorkingDays, 25);
+  assert.equal(ahmed.eligibleWorkingDays, 24); // 31 - 2 pre-hire - 4 Fridays - 1 national holiday (Jan 7)
   assert.equal(ahmed.fridays, 4);
-  assert.equal(ahmed.workedDays, 2);
+  assert.equal(ahmed.workedDays, 1); // only Jan 5 (CP); Jan 1 visits are pre-hire, Jan 7 visits are a holiday
   assert.equal(ahmed.campaignDays, 1);
-  assert.equal(ahmed.totalVisits, 5);
+  assert.equal(ahmed.totalVisits, 0); // Jan 1 (9) is pre-hire, Jan 7 (5) is an excluded holiday
   assert.equal(ahmed.noActivityCandidates, 2);
-  assert.equal(ahmed.compliancePercent, 8);
+  assert.equal(ahmed.compliancePercent, 4.17); // 1 worked / 24 eligible
   assert.equal(ahmed.managerName, "Manager One");
   assert.equal(ahmed.noActivityPattern.longestStreak, 2);
   assert.equal(ahmed.noActivityPattern.hasTwoDayStreak, true);
@@ -130,9 +130,10 @@ export async function runFieldWorkforceComplianceTests() {
   const jan7 = ahmed.timeline.find((cell) => cell.dateIso === "2026-01-07");
   assert.ok(jan7);
   assert.equal(jan7.isPublicHoliday, true);
-  assert.equal(jan7.severity, "Review");
-  assert.match(jan7.explanation, /public holiday/);
-  assert.equal(jan7.countedAsVisitTotal, true);
+  assert.equal(jan7.ignored, true); // national holiday is excluded — not a working day
+  assert.equal(jan7.severity, undefined);
+  assert.match(jan7.explanation, /national holiday/i);
+  assert.equal(jan7.countedAsVisitTotal, false);
 
   const unknownEmployee = preview.employees.find((employee) => employee.hrId === "ZZ-9");
   assert.ok(unknownEmployee);
@@ -153,10 +154,9 @@ export async function runFieldWorkforceComplianceTests() {
     candidate.type === "pre_hire_activity" &&
     candidate.dateIso === "2026-01-02"
   ));
-  assert.ok(preview.reviewCandidates.some((candidate) =>
-    candidate.type === "public_holiday_overlap" &&
-    candidate.severity === "Review" &&
-    candidate.dateIso === "2026-01-07"
+  // National holidays are excluded — they must NOT raise any review candidate.
+  assert.ok(!preview.reviewCandidates.some((candidate) =>
+    candidate.type === "public_holiday_overlap" || candidate.dateIso === "2026-01-07"
   ));
   assert.ok(preview.reviewCandidates.every((candidate) =>
     !candidate.explanation.toLowerCase().includes("deduct automatically") &&
