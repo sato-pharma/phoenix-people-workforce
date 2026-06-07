@@ -174,6 +174,28 @@ git log -1 --oneline
 
 If the current branch is `main`, stop and switch/create a safe branch before editing.
 
+## Parallel Session and Git Worktree Safety
+
+Multiple agent/dev sessions must never edit the same working directory, and the primary
+repo's `.git` must never be re-created. Ignoring this has repeatedly wiped `.git`,
+orphaned every worktree, and destroyed uncommitted work.
+
+- One working tree per session. Never run two sessions editing
+  `F:\Phoenix Workforce\phoenix-workforce` at once. Give each parallel session its own
+  git worktree.
+- Create isolation with `git worktree add` under a sibling path
+  (`F:\Phoenix Workforce\_wt-<task>`) or `.codex-worktrees/<task>`. NEVER `git clone`,
+  `git init`, or otherwise rebuild over `phoenix-workforce/.git` — a re-clone wipes
+  `.git` and orphans every linked worktree.
+- Push early and often. Each session pushes its branch to `origin` frequently so a local
+  `.git` loss is always recoverable by fetch. Treat `origin` as the source of truth.
+- Recovery, if ever needed: re-link/fetch and `reset --mixed origin/<branch>` — never
+  re-clone over the primary, and never `checkout`/`clean` away unpushed work.
+- Before editing, run `git worktree list` and `git status` to confirm you are in the
+  intended tree.
+- Remove a finished worktree with `git worktree remove <path>` — never by deleting a live
+  worktree folder.
+
 ## Standard Flow For Any Function, Feature, Or Edit
 
 Follow this order:

@@ -177,3 +177,5 @@ keys used by their respective domains.
   after every production deploy — workspace aliases can diverge from the public alias).
 - Keep only two active Vercel deployments: production `main` and the working preview.
 - `.vercel/` is local CLI metadata and stays uncommitted.
+- Parallel sessions must use isolated git worktrees and never re-clone over the primary
+  `.git` — see AGENTS.md § Parallel Session and Git Worktree Safety.
