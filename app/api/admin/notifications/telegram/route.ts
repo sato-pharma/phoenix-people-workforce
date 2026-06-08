@@ -11,6 +11,8 @@ import {
   setTelegramGlobalSwitch,
   updateTelegramPolicy,
 } from "@/lib/notifications/telegram-admin";
+import { runTelegramOnboardingCampaign } from "@/lib/notifications/telegram-onboarding";
+import { provisionTelegramBot } from "@/lib/notifications/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +82,19 @@ export async function POST(request: Request) {
       if (!deliveryId) return NextResponse.json({ error: "missing_delivery", message: "Delivery ID is required." }, { status: 400 });
       const result = await adminRetryTelegramDelivery(access, deliveryId);
       return NextResponse.json({ data: { result, view: await getTelegramAdminControlCenter(access) }, success: true });
+    }
+    if (body?.action === "provision_bot") {
+      const report = await provisionTelegramBot();
+      return NextResponse.json({ data: { report, view: await getTelegramAdminControlCenter(access) }, success: true });
+    }
+    if (body?.action === "send_invitations") {
+      const summary = await runTelegramOnboardingCampaign({
+        access,
+        force: body?.force === true,
+        limit: Number.isFinite(Number(body?.limit)) ? Number(body?.limit) : undefined,
+        userIds: Array.isArray(body?.userIds) ? body.userIds.map(String) : undefined,
+      });
+      return NextResponse.json({ data: { summary, view: await getTelegramAdminControlCenter(access) }, success: true });
     }
     return NextResponse.json({ error: "invalid_action", message: "Unsupported Telegram admin action." }, { status: 400 });
   } catch (error) {
