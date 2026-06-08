@@ -53,14 +53,15 @@ function resolvePortalRole(
 /**
  * Launch posture flag for Beta employee-portal modules.
  *
- * For the Core 8 launch, Beta modules (Marketing Requests and Contact HR Support)
- * are hidden from the employee-portal navigation by default. Pages stay reachable
- * by direct URL and keep their own page-level permission guards — this flag only
- * controls navigation visibility.
+ * Marketing Requests has graduated from Beta to a full module and is no longer
+ * gated by this flag — it is visible to already-authorized roles at all times.
+ * Contact HR Support is the remaining Beta module: hidden from the employee-portal
+ * navigation by default. Pages stay reachable by direct URL and keep their own
+ * page-level permission guards — this flag only controls navigation visibility.
  *
- * Set PHOENIX_PORTAL_SHOW_BETA_NAV=true (server env) to surface Beta modules in the
- * nav for roles that are already authorized for them. Read at call time so the
- * launch posture can change without a rebuild and so tests can toggle it.
+ * Set PHOENIX_PORTAL_SHOW_BETA_NAV=true (server env) to surface the remaining Beta
+ * modules in the nav for roles that are already authorized for them. Read at call
+ * time so the launch posture can change without a rebuild and so tests can toggle it.
  */
 export function isEmployeePortalBetaNavEnabled(): boolean {
   return String(process.env.PHOENIX_PORTAL_SHOW_BETA_NAV ?? "").trim().toLowerCase() === "true";
@@ -97,18 +98,17 @@ export function canUseEmployeePortalMarketingControl(
 /**
  * Whether the dashboard "Submit Marketing Request" quick-action should render.
  *
- * Marketing Requests is a Beta module: hidden by default, surfaced only when the
- * beta flag is enabled AND the role is already authorized for Marketing. This
- * mirrors the sidebar nav gating so the dashboard cannot leak a Beta module into
- * the Core 8 launch surface. `betaNavEnabled` is resolved server-side from
- * PHOENIX_PORTAL_SHOW_BETA_NAV and passed into the (client) dashboard.
+ * Marketing Requests is now a full module, so the quick-action renders whenever
+ * the role is already authorized for Marketing — independent of the beta flag.
+ * The leading `betaNavEnabled` parameter is retained for call-site compatibility
+ * (the dashboard still passes it) but no longer gates visibility.
  */
 export function shouldShowEmployeePortalMarketingQuickAction(
-  betaNavEnabled: boolean | undefined,
+  _betaNavEnabled: boolean | undefined,
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ) {
-  return betaNavEnabled === true && canUseEmployeePortalMarketingRequests(roleLabel, accessRole);
+  return canUseEmployeePortalMarketingRequests(roleLabel, accessRole);
 }
 
 export function canUseEmployeePortalMarketingCustomerDatabase(
@@ -151,15 +151,16 @@ export function resolveEmployeePortalNavVisibility(
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = isDistrictManager || isNationalSalesManager;
-  // Beta modules are hidden from launch nav unless the beta flag is enabled. The
-  // role checks still apply on top, so enabling the flag never grants a module to
-  // a role that was not already authorized for it.
+  // Marketing Requests is a full module: its tabs are visible to already-authorized
+  // roles regardless of the launch flag. The role checks still apply, so visibility
+  // never extends to a role that is not authorized for Marketing. Contact HR Support
+  // (showSupportTab) remains the only Beta nav module gated behind betaNavEnabled.
   const betaNavEnabled = isEmployeePortalBetaNavEnabled();
-  const showMarketingRequestsTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
-  const showMarketingInboxTab = betaNavEnabled && canUseEmployeePortalMarketingRequests(resolvedRole);
-  const showMarketingCustomerDatabaseTab = betaNavEnabled && canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
-  const showMarketingControlTab = betaNavEnabled && canUseEmployeePortalMarketingControl(resolvedRole);
-  const showMarketingRoiTrackingTab = betaNavEnabled && canUseEmployeePortalMarketingRoiTracking(resolvedRole);
+  const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingInboxTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
+  const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
+  const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
   const showPlansTab = [
     "Product Manager",
