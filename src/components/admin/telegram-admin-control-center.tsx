@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, CircleOff, PlugZap, RefreshCw, Send, ShieldCheck, Unplug } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleOff, Mail, PlugZap, RefreshCw, Rocket, Send, ShieldCheck, Unplug } from "lucide-react";
 
 import type {
   TelegramAdminAuditLog,
@@ -73,6 +73,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [opsDetail, setOpsDetail] = useState<string[] | null>(null);
 
   const filteredConnections = useMemo(() => {
     if (statusFilter === "all") return data.connections;
@@ -103,6 +104,70 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
   function updatePolicy(policy: TelegramModulePolicy, patch: Partial<TelegramModulePolicy>) {
     const next = { ...policy, ...patch };
     void request("PATCH", { ...next, type: "module_policy" }, `${moduleLabel(policy.module)} policy updated.`);
+  }
+
+  // Ops actions (provision bot, send invitations) return extra detail alongside the
+  // refreshed view; render that detail in the rollout panel instead of discarding it.
+  async function runOpsAction(
+    body: Record<string, unknown>,
+    successMessage: string,
+    describe: (payload: Record<string, unknown> | undefined) => string[],
+  ) {
+    setBusy(String(body.action));
+    setError(null);
+    setNotice(null);
+    setOpsDetail(null);
+    try {
+      const response = await fetch("/api/admin/notifications/telegram", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Telegram admin action failed.");
+      setData(payload.data?.view ?? data);
+      setNotice(successMessage);
+      setOpsDetail(describe(payload.data));
+    } catch (opsError) {
+      setError(opsError instanceof Error ? opsError.message : "Telegram admin action failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function provisionBot() {
+    void runOpsAction({ action: "provision_bot" }, "Bot provisioning completed.", (payload) => {
+      const report = (payload?.report ?? {}) as {
+        botUsername?: string | null;
+        ok?: boolean;
+        secretConfigured?: boolean;
+        steps?: Array<{ detail: string; ok: boolean; step: string }>;
+      };
+      const lines = (report.steps ?? []).map((entry) => `${entry.ok ? "✓" : "✗"} ${entry.step} — ${entry.detail}`);
+      lines.unshift(report.ok ? "Bot is provisioned and the webhook matches this deployment." : "Provisioning needs attention — review the steps below.");
+      if (report.botUsername) lines.push(`Bot username: @${report.botUsername}`);
+      if (report.secretConfigured === false) lines.push("⚠ NOTIFICATION_WEBHOOK_SECRET is not set — the webhook is unprotected.");
+      return lines;
+    });
+  }
+
+  function sendInvitations() {
+    void runOpsAction({ action: "send_invitations" }, "Connect invitations processed.", (payload) => {
+      const summary = (payload?.summary ?? {}) as {
+        attempted?: number;
+        available?: number;
+        failed?: number;
+        sent?: number;
+        skipped?: number;
+        truncated?: boolean;
+      };
+      const lines = [
+        `${summary.sent ?? 0} sent · ${summary.skipped ?? 0} skipped · ${summary.failed ?? 0} failed (of ${summary.attempted ?? 0} attempted).`,
+      ];
+      if (summary.truncated) lines.push(`Batch limit reached — ${summary.available ?? 0} eligible employees in total. Run again to continue.`);
+      else lines.push(`${summary.available ?? 0} eligible employees were targeted in this run.`);
+      return lines;
+    });
   }
 
   const lastTestLabel = data.summary.lastTestStatus === "none"
@@ -215,6 +280,53 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
         </div>
       </section>
 
+      <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Bot Setup &amp; Rollout</p>
+            <h2 className="mt-1 text-lg font-black text-slate-950">Provision once, then invite by email</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Provisioning validates the bot token, points the Telegram webhook at this deployment (secret-protected), and publishes the bot
+              profile. Invitations email every active, not-yet-connected employee a personal one-click connect link from the Phoenix template.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded border border-slate-200 bg-slate-950 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
+            disabled={!canUpdate || Boolean(busy)}
+            onClick={provisionBot}
+            type="button"
+          >
+            <Rocket className="h-4 w-4" />
+            {busy === "provision_bot" ? "Provisioning…" : "Provision bot & webhook"}
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
+            disabled={!canUpdate || Boolean(busy)}
+            onClick={sendInvitations}
+            type="button"
+          >
+            <Mail className="h-4 w-4" />
+            {busy === "send_invitations" ? "Sending…" : "Email connect invitations"}
+          </button>
+        </div>
+
+        {opsDetail && opsDetail.length > 0 ? (
+          <ul className="mt-4 space-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+            {opsDetail.map((line, index) => (
+              <li className="break-words" key={`${index}-${line.slice(0, 24)}`}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
+
+        <p className="mt-3 text-xs font-semibold text-slate-500">
+          Invitations require email delivery to be enabled (RESEND_API_KEY + EMAIL_NOTIFICATIONS_ENABLED). Connect links are single-use and
+          expire after 7 days; employees can also reconnect any time from their portal Notification Settings.
+        </p>
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
@@ -308,23 +420,23 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-3 py-2">Employee</th>
-                <th className="px-3 py-2">Org Scope</th>
+                <th className="adm-col-pin px-3 py-2">Employee</th>
+                <th className="adm-col-hide-xl px-3 py-2">Org Scope</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Last Connected</th>
-                <th className="px-3 py-2">Last Delivery</th>
-                <th className="px-3 py-2">Chat</th>
+                <th className="adm-col-hide-lg px-3 py-2">Last Connected</th>
+                <th className="adm-col-hide-lg px-3 py-2">Last Delivery</th>
+                <th className="adm-col-hide-xl px-3 py-2">Chat</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredConnections.map((connection) => (
                 <tr className="align-top" key={connection.userId}>
-                  <td className="px-3 py-3">
+                  <td className="adm-col-pin px-3 py-3">
                     <p className="font-bold text-slate-900">{connection.employeeName ?? connection.userId}</p>
                     <p className="text-xs text-slate-500">{connection.hrId ?? "No HR ID"}</p>
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-600">
+                  <td className="adm-col-hide-xl px-3 py-3 text-xs text-slate-600">
                     <p>{connection.department ?? "No department"}</p>
                     <p>{connection.line ?? "No line"}</p>
                     <p>{connection.manager ?? "No manager"}</p>
@@ -333,9 +445,9 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
                     <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(connection.status)}`}>{connection.status}</span>
                     <p className="mt-2 text-xs text-slate-500">{connection.telegramEnabled ? "User enabled" : "User disabled"}</p>
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{formatDate(connection.connectedAt)}</td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{formatDate(connection.lastDeliveryAt)}</td>
-                  <td className="px-3 py-3 text-xs font-semibold text-slate-600">{connection.maskedChatId ?? "Not stored"}</td>
+                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(connection.connectedAt)}</td>
+                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(connection.lastDeliveryAt)}</td>
+                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-600">{connection.maskedChatId ?? "Not stored"}</td>
                   <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
                       <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canUpdate || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
@@ -359,11 +471,11 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-3 py-2">Module</th>
+                <th className="adm-col-pin px-3 py-2">Module</th>
                 <th className="px-3 py-2">Recipient</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Attempts</th>
-                <th className="px-3 py-2">Next Retry</th>
+                <th className="adm-col-hide-xl px-3 py-2">Attempts</th>
+                <th className="adm-col-hide-lg px-3 py-2">Next Retry</th>
                 <th className="px-3 py-2">Provider Error</th>
                 <th className="px-3 py-2">Action</th>
               </tr>
@@ -371,14 +483,14 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
             <tbody className="divide-y divide-slate-100">
               {data.deliveries.map((delivery) => (
                 <tr className="align-top" key={delivery.id}>
-                  <td className="px-3 py-3">
+                  <td className="adm-col-pin px-3 py-3">
                     <p className="font-bold text-slate-900">{delivery.module ?? "Unknown"}</p>
                     <p className="text-xs text-slate-500">{delivery.eventType ?? "Unknown event"}</p>
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-600">{delivery.recipient ?? delivery.recipientHrId ?? "Unknown"}</td>
                   <td className="px-3 py-3"><span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{delivery.status}</span></td>
-                  <td className="px-3 py-3 text-xs font-semibold text-slate-700">{delivery.attempts}</td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{formatDate(delivery.nextAttemptAt)}</td>
+                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-700">{delivery.attempts}</td>
+                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(delivery.nextAttemptAt)}</td>
                   <td className="max-w-md px-3 py-3 text-xs text-slate-600">{delivery.providerError ?? "None"}</td>
                   <td className="px-3 py-3">
                     <button
@@ -408,19 +520,19 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">Actor</th>
+                <th className="adm-col-pin px-3 py-2">Time</th>
+                <th className="adm-col-hide-xl px-3 py-2">Actor</th>
                 <th className="px-3 py-2">Event</th>
-                <th className="px-3 py-2">Entity</th>
+                <th className="adm-col-hide-lg px-3 py-2">Entity</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.auditLogs.map((log) => (
                 <tr className="align-top" key={log.id}>
-                  <td className="px-3 py-3 text-xs text-slate-600">{formatDate(log.createdAt)}</td>
-                  <td className="px-3 py-3 text-xs font-semibold text-slate-700">{log.actorLoginId ?? "system"}</td>
+                  <td className="adm-col-pin px-3 py-3 text-xs text-slate-600">{formatDate(log.createdAt)}</td>
+                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-700">{log.actorLoginId ?? "system"}</td>
                   <td className="px-3 py-3 text-sm font-bold text-slate-900">{log.summary}</td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{log.entityId ?? "telegram"}</td>
+                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{log.entityId ?? "telegram"}</td>
                 </tr>
               ))}
               {data.auditLogs.length === 0 ? (
