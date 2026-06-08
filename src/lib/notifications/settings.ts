@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { buildTelegramDeepLink, hashTelegramToken } from "@/lib/notifications/telegram";
+import { buildTelegramDeepLinkFromToken, hashTelegramToken } from "@/lib/notifications/telegram";
 
 export type NotificationPreferences = {
   emailEnabled: boolean;
@@ -181,7 +181,7 @@ export async function createTelegramConnectionToken(access: Pick<AccessContext, 
 
   return {
     expiresAt: expires.toISOString(),
-    link: buildTelegramDeepLink(token),
+    link: await buildTelegramDeepLinkFromToken(token),
     token,
   };
 }

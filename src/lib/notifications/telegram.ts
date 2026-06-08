@@ -240,6 +240,158 @@ export function buildTelegramDeepLink(token: string) {
   return `https://t.me/${encodeURIComponent(username)}?start=${encodeURIComponent(token)}`;
 }
 
+type TelegramApiResult<T> = { ok: true; result: T } | { error: string; ok: false };
+
+// Generic Telegram Bot API caller used by the provisioning helpers. Send/webhook
+// status keep their own bespoke logic above; this one centralises the boilerplate
+// for the one-time setup calls (getMe, setWebhook, setMyCommands, …).
+async function callTelegram<T = unknown>(method: string, body?: Record<string, unknown>): Promise<TelegramApiResult<T>> {
+  const token = telegramBotToken();
+  if (!token) return { error: "TELEGRAM_BOT_TOKEN is missing.", ok: false };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), telegramTimeoutMs());
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      body: body ? JSON.stringify(body) : undefined,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      method: "POST",
+      signal: controller.signal,
+    });
+    const payload = (await response.json().catch(() => null)) as { description?: string; ok?: boolean; result?: T } | null;
+    if (!response.ok || payload?.ok === false) {
+      return { error: cleanWebhookError(payload?.description) ?? `Telegram ${method} failed with ${response.status}.`, ok: false };
+    }
+    return { ok: true, result: payload?.result as T };
+  } catch (error) {
+    return {
+      error: error instanceof Error && error.name === "AbortError" ? `Telegram ${method} timed out.` : `Telegram ${method} unavailable.`,
+      ok: false,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export type TelegramBotIdentity = {
+  canJoinGroups: boolean | null;
+  firstName: string | null;
+  id: number | null;
+  username: string | null;
+};
+
+export async function getTelegramBotIdentity(): Promise<{ error: string | null; identity: TelegramBotIdentity | null; ok: boolean }> {
+  const result = await callTelegram<{ can_join_groups?: boolean; first_name?: string; id?: number; username?: string }>("getMe");
+  if (!result.ok) return { error: result.error, identity: null, ok: false };
+  return {
+    error: null,
+    identity: {
+      canJoinGroups: result.result?.can_join_groups ?? null,
+      firstName: result.result?.first_name ?? null,
+      id: result.result?.id ?? null,
+      username: result.result?.username ?? null,
+    },
+    ok: true,
+  };
+}
+
+let cachedBotUsername: { at: number; value: string } | null = null;
+const BOT_USERNAME_CACHE_MS = 5 * 60 * 1000;
+
+// The connect link's bot is defined by the TOKEN, not the env username. We resolve
+// the live username from getMe (cached ~5 min) so connect deep links always point
+// at the bot that actually owns the token and the configured webhook — they can
+// never drift to a stale/old bot if TELEGRAM_BOT_USERNAME is wrong. The env value
+// is only a fallback for when getMe is briefly unavailable.
+export async function resolveTelegramBotUsername(): Promise<string | null> {
+  const now = Date.now();
+  if (cachedBotUsername && now - cachedBotUsername.at < BOT_USERNAME_CACHE_MS) {
+    return cachedBotUsername.value;
+  }
+  const identity = await getTelegramBotIdentity();
+  const liveUsername = identity.ok ? identity.identity?.username?.replace(/^@/, "") ?? null : null;
+  if (liveUsername) {
+    cachedBotUsername = { at: now, value: liveUsername };
+    return liveUsername;
+  }
+  return telegramBotUsername();
+}
+
+export async function buildTelegramDeepLinkFromToken(token: string): Promise<string | null> {
+  const username = await resolveTelegramBotUsername();
+  if (!username) return null;
+  return `https://t.me/${encodeURIComponent(username)}?start=${encodeURIComponent(token)}`;
+}
+
+export type TelegramProvisionStep = { detail: string; ok: boolean; step: string };
+
+export type TelegramProvisionReport = {
+  botUsername: string | null;
+  ok: boolean;
+  secretConfigured: boolean;
+  steps: TelegramProvisionStep[];
+  webhook: TelegramWebhookStatus;
+};
+
+// One-shot provisioning of the Telegram bot as Phoenix's notification channel:
+// validate the token, point the webhook at this deployment (secret-protected),
+// register the /start command, and publish a polished bot profile. Everything is
+// idempotent and safe to re-run; BotFather bot *creation* is the only step that
+// cannot be automated through the API.
+export async function provisionTelegramBot(input?: { dropPendingUpdates?: boolean }): Promise<TelegramProvisionReport> {
+  const steps: TelegramProvisionStep[] = [];
+  const secret = telegramWebhookSecret();
+  const expectedUrl = expectedTelegramWebhookUrl();
+
+  const identity = await getTelegramBotIdentity();
+  steps.push({
+    detail: identity.ok ? `Bot @${identity.identity?.username ?? "unknown"} is reachable.` : identity.error ?? "Bot token is invalid.",
+    ok: identity.ok,
+    step: "Validate bot token",
+  });
+  if (!identity.ok) {
+    return { botUsername: telegramBotUsername(), ok: false, secretConfigured: Boolean(secret), steps, webhook: await getTelegramWebhookStatus() };
+  }
+  const botUsername = identity.identity?.username ?? telegramBotUsername();
+
+  if (!expectedUrl) {
+    steps.push({ detail: "PHOENIX_APP_URL / NEXT_PUBLIC_APP_URL is missing; cannot set the webhook.", ok: false, step: "Resolve webhook URL" });
+    return { botUsername, ok: false, secretConfigured: Boolean(secret), steps, webhook: await getTelegramWebhookStatus() };
+  }
+  steps.push({ detail: expectedUrl, ok: true, step: "Resolve webhook URL" });
+
+  const setWebhook = await callTelegram("setWebhook", {
+    allowed_updates: ["message"],
+    drop_pending_updates: input?.dropPendingUpdates ?? true,
+    max_connections: 40,
+    secret_token: secret ?? undefined,
+    url: expectedUrl,
+  });
+  steps.push({
+    detail: setWebhook.ok
+      ? `Webhook set to ${expectedUrl}${secret ? " (secret-protected)." : " — add NOTIFICATION_WEBHOOK_SECRET to protect it."}`
+      : setWebhook.error,
+    ok: setWebhook.ok,
+    step: "Set webhook",
+  });
+
+  const setCommands = await callTelegram("setMyCommands", {
+    commands: [{ command: "start", description: "Connect & receive Phoenix Workforce notifications" }],
+  });
+  steps.push({ detail: setCommands.ok ? "/start command registered." : setCommands.error, ok: setCommands.ok, step: "Register /start command" });
+
+  // Bot profile copy — best effort; failures here do not block provisioning.
+  await callTelegram("setMyShortDescription", { short_description: "Phoenix Workforce notifications center." });
+  await callTelegram("setMyDescription", {
+    description:
+      "Receive your Phoenix Workforce HR notifications — approvals, payroll alerts, contracts, leave, and reminders — directly in Telegram. Send /start with your personal Phoenix connect link to link your account.",
+  });
+  steps.push({ detail: "Bot name, description, and short description published.", ok: true, step: "Publish bot profile" });
+
+  const webhook = await getTelegramWebhookStatus();
+  const ok = identity.ok && setWebhook.ok && webhook.urlMatchesExpected === true;
+  return { botUsername, ok, secretConfigured: Boolean(secret), steps, webhook };
+}
+
 export async function sendTelegramNotification(input: TelegramSendInput): Promise<TelegramSendResult> {
   const token = telegramBotToken();
   if (!token) return { reason: "TELEGRAM_BOT_TOKEN is missing.", skipped: true };
