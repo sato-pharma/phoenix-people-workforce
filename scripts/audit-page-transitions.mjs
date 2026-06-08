@@ -62,11 +62,12 @@ function unique(values) {
 
 function configuredRoutes() {
   const source = readFileSync(join(process.cwd(), "src/config/system-navigation.ts"), "utf8");
-  const includeEmployeePortalBeta = String(process.env.PHOENIX_PORTAL_SHOW_BETA_NAV ?? "").trim().toLowerCase() === "true";
+  // Marketing Requests has graduated from Beta to a full module, so its routes are
+  // always audited. No remaining employee-portal Beta routes are sourced from
+  // system-navigation.ts, so no beta-flag gating is needed here.
   return unique([...source.matchAll(/href:\s*"([^"]+)"/g)].map((match) => match[1]))
     .filter((href) => href.startsWith("/"))
-    .filter((href) => !href.includes("/coaching/new"))
-    .filter((href) => includeEmployeePortalBeta || !href.startsWith("/employee-portals/marketing-requests"));
+    .filter((href) => !href.includes("/coaching/new"));
 }
 
 function roleForHref(href) {

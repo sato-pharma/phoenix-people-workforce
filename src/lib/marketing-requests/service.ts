@@ -546,7 +546,7 @@ type CreateDraftOptions = {
   supabase?: SupabaseClient;
 };
 
-const marketingCreatorRoles = new Set<AccessContext["role"]>([
+export const marketingCreatorRoles = new Set<AccessContext["role"]>([
   "Medical Rep",
   "District Manager",
   "Regional Manager",

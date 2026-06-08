@@ -120,25 +120,43 @@ export function runEmployeePortalNavigationTests() {
     "SFE Manager should land in the admin marketing request shell",
   );
 
-  // --- Workstream 4: Beta module launch navigation gating ----------------------
+  // --- Marketing Requests graduated to full module; Contact HR Support still Beta ----
   const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
 
-  // Default launch posture (flag unset): Beta modules are hidden from portal nav.
+  // Default launch posture (flag unset): Marketing Requests is a full module and
+  // stays visible for authorized roles; Contact HR Support remains Beta-hidden.
   delete process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
 
   const nsmDefault = resolveEmployeePortalNavVisibility("National Sales Manager");
-  assert.equal(nsmDefault.showMarketingRequestsTab, false, "NSM should not see Marketing Requests in nav by default");
+  assert.equal(nsmDefault.showMarketingRequestsTab, true, "NSM should see Marketing Requests in nav (full module, flag-independent)");
   assert.equal(nsmDefault.showSupportTab, false, "NSM should not see Contact HR Support in nav by default");
 
+  // Product Manager and Group Product Manager are authorized for Marketing and must
+  // see the module in nav without the launch flag (regression coverage).
+  const productManagerDefault = resolveEmployeePortalNavVisibility("Product Manager");
+  assert.equal(productManagerDefault.showMarketingRequestsTab, true, "Product Manager should see Marketing Requests in nav (full module)");
+  assert.equal(productManagerDefault.showMarketingInboxTab, true, "Product Manager should see the Marketing Approval Inbox in nav");
+  assert.equal(productManagerDefault.showMarketingRoiTrackingTab, true, "Product Manager should see Marketing ROI Tracking in nav");
+
+  const groupProductManagerDefault = resolveEmployeePortalNavVisibility("Group Product Manager");
+  assert.equal(groupProductManagerDefault.showMarketingRequestsTab, true, "Group Product Manager should see Marketing Requests in nav (full module)");
+  assert.equal(groupProductManagerDefault.showMarketingInboxTab, true, "Group Product Manager should see the Marketing Approval Inbox in nav");
+  assert.equal(groupProductManagerDefault.showMarketingRoiTrackingTab, true, "Group Product Manager should see Marketing ROI Tracking in nav");
+
   const sfeDefault = resolveEmployeePortalNavVisibility("SFE Manager");
-  assert.equal(sfeDefault.showMarketingControlTab, false, "SFE Manager should not see Marketing Control in nav by default");
-  assert.equal(sfeDefault.showMarketingRequestsTab, false, "SFE Manager should not see Marketing Requests in nav by default");
+  assert.equal(sfeDefault.showMarketingControlTab, true, "SFE Manager should see Marketing Control in nav (full module)");
+  assert.equal(sfeDefault.showMarketingRequestsTab, true, "SFE Manager should see Marketing Requests in nav (full module)");
 
   const superAdminDefault = resolveEmployeePortalNavVisibility("Super Admin");
-  assert.equal(superAdminDefault.showMarketingRequestsTab, false, "Super Admin should not see Marketing Requests in nav by default");
-  assert.equal(superAdminDefault.showMarketingControlTab, false, "Super Admin should not see Marketing Control in nav by default");
-  assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, false, "Super Admin should not see Customer Database in nav by default");
+  assert.equal(superAdminDefault.showMarketingRequestsTab, true, "Super Admin should see Marketing Requests in nav (full module)");
+  assert.equal(superAdminDefault.showMarketingControlTab, true, "Super Admin should see Marketing Control in nav (full module)");
+  assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, true, "Super Admin should see Customer Database in nav (full module)");
   assert.equal(superAdminDefault.showSupportTab, false, "Super Admin should not see Contact HR Support in nav by default");
+
+  // Marketing Requests visibility never extends to an unauthorized role.
+  const trainingManagerDefault = resolveEmployeePortalNavVisibility("Training Manager");
+  assert.equal(trainingManagerDefault.showMarketingRequestsTab, false, "Marketing Requests must not show for an unauthorized role");
+  assert.equal(trainingManagerDefault.showMarketingControlTab, false, "Marketing Control must not show for an unauthorized role");
 
   // Core 8 launch modules stay visible for the correct roles regardless of the flag.
   const medRepCore = resolveEmployeePortalNavVisibility("Medical Rep");
@@ -152,19 +170,12 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(nsmCore.showDsmsPerformanceTab, true, "Core: NSM keeps DSMs Performance with beta nav off");
   assert.equal(nsmCore.showTeamExpensesTab, true, "Core: NSM keeps Team Expenses with beta nav off");
 
-  // Beta flag enabled: Beta modules appear for already-authorized roles only.
+  // Beta flag enabled: Contact HR Support (still Beta) appears; Marketing stays visible.
   process.env.PHOENIX_PORTAL_SHOW_BETA_NAV = "true";
 
   const nsmBeta = resolveEmployeePortalNavVisibility("National Sales Manager");
-  assert.equal(nsmBeta.showMarketingRequestsTab, true, "NSM should see Marketing Requests when beta nav is enabled");
+  assert.equal(nsmBeta.showMarketingRequestsTab, true, "NSM keeps Marketing Requests when beta nav is enabled");
   assert.equal(nsmBeta.showSupportTab, true, "Contact HR Support should appear when beta nav is enabled");
-
-  const sfeBeta = resolveEmployeePortalNavVisibility("SFE Manager");
-  assert.equal(sfeBeta.showMarketingControlTab, true, "SFE Manager should see Marketing Control when beta nav is enabled");
-  assert.equal(sfeBeta.showMarketingRequestsTab, true, "SFE Manager should see Marketing Requests when beta nav is enabled");
-
-  const superAdminBeta = resolveEmployeePortalNavVisibility("Super Admin");
-  assert.equal(superAdminBeta.showMarketingCustomerDatabaseTab, true, "Super Admin should see Customer Database when beta nav is enabled");
 
   // Enabling the flag must never grant Marketing to a role that was not authorized.
   const trainingManagerBeta = resolveEmployeePortalNavVisibility("Training Manager");
@@ -221,46 +232,39 @@ export function runEmployeePortalNavigationTests() {
     "Marketing Requests page must keep its page-level access guard",
   );
 
-  // --- Workstream 4 follow-up: dashboard Marketing quick-action gating ---------
-  // Hidden by default (beta flag unset/false), regardless of role authorization.
+  // --- Dashboard Marketing quick-action: full module, role-gated only ----------
+  // Visible for authorized roles regardless of the (legacy) beta flag argument.
   assert.equal(
     shouldShowEmployeePortalMarketingQuickAction(undefined, "Medical Rep"),
-    false,
-    "Dashboard Marketing quick-action must be hidden when the beta flag is unset",
+    true,
+    "Dashboard Marketing quick-action shows for an authorized role (full module, flag-independent)",
   );
   assert.equal(
     shouldShowEmployeePortalMarketingQuickAction(false, "National Sales Manager"),
-    false,
-    "Dashboard Marketing quick-action must be hidden when the beta flag is false (even for authorized roles)",
+    true,
+    "Dashboard Marketing quick-action shows for NSM even when the legacy beta argument is false",
   );
   assert.equal(
-    shouldShowEmployeePortalMarketingQuickAction(false, "Super Admin"),
-    false,
-    "Dashboard Marketing quick-action stays hidden for Super Admin when beta is off",
+    shouldShowEmployeePortalMarketingQuickAction(false, "Product Manager"),
+    true,
+    "Dashboard Marketing quick-action shows for Product Manager (full module)",
+  );
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(false, "Group Product Manager"),
+    true,
+    "Dashboard Marketing quick-action shows for Group Product Manager (full module)",
   );
 
-  // Appears only when beta flag is true AND the role is already authorized.
-  assert.equal(
-    shouldShowEmployeePortalMarketingQuickAction(true, "Medical Rep"),
-    true,
-    "Dashboard Marketing quick-action appears for an authorized role when beta is enabled",
-  );
-  assert.equal(
-    shouldShowEmployeePortalMarketingQuickAction(true, "National Sales Manager"),
-    true,
-    "Dashboard Marketing quick-action appears for NSM when beta is enabled",
-  );
-
-  // Beta on must NOT surface it for roles not authorized for Marketing.
+  // Never surfaces for roles not authorized for Marketing.
   assert.equal(
     shouldShowEmployeePortalMarketingQuickAction(true, "Employee"),
     false,
-    "Beta flag must not surface the Marketing quick-action for an unauthorized Employee",
+    "Marketing quick-action must not surface for an unauthorized Employee",
   );
   assert.equal(
     shouldShowEmployeePortalMarketingQuickAction(true, "Training Manager"),
     false,
-    "Beta flag must not surface the Marketing quick-action for Training Manager",
+    "Marketing quick-action must not surface for Training Manager",
   );
 
   // The dashboard wires the quick-action through the gating helper, and Core 8
