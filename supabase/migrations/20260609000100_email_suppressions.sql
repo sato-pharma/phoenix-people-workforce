@@ -26,10 +26,11 @@ create table if not exists public.email_suppressions (
   expires_at timestamptz null
 );
 
--- Active suppressions (no expiry, or not yet expired).
-create index if not exists email_suppressions_active_idx
-  on public.email_suppressions (address)
-  where expires_at is null or expires_at > now();
+-- The PRIMARY KEY on address already serves the send-time `.in("address", …)` lookup.
+-- (A partial index with `now()` in its predicate is rejected — index predicates must be
+-- IMMUTABLE — so expiry is filtered in the query, not the index.)
+create index if not exists email_suppressions_expires_idx
+  on public.email_suppressions (expires_at);
 
 -- Service-role only: this list is written by server webhooks/endpoints and read by the
 -- send layer. No anon/authenticated access.
