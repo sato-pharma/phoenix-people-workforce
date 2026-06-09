@@ -215,7 +215,7 @@ const defaultPermissionMatrix: PermissionMap = {
     imports: ["read", "import"],
     contracts: ["read", "approve", "export"],
     coaching: ["read"],
-    employee_profile: ["read", "export"],
+    employee_profile: ["read", "update", "export"],
     employees: ["read", "export"],
     expenses: ["read", "approve", "export"],
     outstation: ["read", "approve", "export", "update"],
