@@ -9,6 +9,7 @@ import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
+import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1669,14 +1670,26 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
     EMAIL_TEMPLATE_KEYS.USER_CREATED,
   ]);
-  const unsubscribeHeaders = authTemplateKeys.has(key) ? undefined : {
-    "List-Unsubscribe": `<mailto:${process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo}?subject=unsubscribe>`,
-    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-  };
+  const unsubscribeHeaders = ((): Record<string, string> | undefined => {
+    if (authTemplateKeys.has(key)) return undefined;
+    const mailto = `<mailto:${process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo}?subject=unsubscribe>`;
+    const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+    const primary = to.length === 1 ? to[0].email : undefined;
+    // RFC 8058 one-click needs an HTTPS endpoint + a single recipient to mint a token for.
+    if (!base || !primary) return { "List-Unsubscribe": mailto };
+    const token = createUnsubscribeToken(primary, key);
+    return {
+      "List-Unsubscribe": `<${base}/api/email/unsubscribe/${token}>, ${mailto}`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    };
+  })();
 
   return sendPhoenixEmail({
     bcc: bcc.map((recipient) => recipient.email),
     cc: cc.map((recipient) => recipient.email),
+    // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
+    // to BCC behind a neutral visible To.
+    fanoutToBcc: true,
     from: input.from ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,

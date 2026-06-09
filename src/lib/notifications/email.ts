@@ -13,7 +13,8 @@ import {
   systemNotificationEmailText,
 } from "@/config/system-settings";
 import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1127,11 +1128,22 @@ export function classifyOutboxSkip(
 
 const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
 
-function listUnsubscribeHeaders(notificationType: EmailNotificationType | undefined): Record<string, string> | undefined {
+function listUnsubscribeHeaders(
+  notificationType: EmailNotificationType | undefined,
+  primaryRecipient?: string,
+): Record<string, string> | undefined {
   if (!notificationType || transactionalEmailTypes.has(notificationType)) return undefined;
   const replyTo = process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
+  const mailto = `<mailto:${replyTo}?subject=unsubscribe>`;
+  const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+  // RFC 8058 one-click requires an HTTPS endpoint. Emit it (alongside mailto) only when we
+  // have an app URL AND a single resolved recipient to mint a per-address token for.
+  if (!base || !primaryRecipient) {
+    return { "List-Unsubscribe": mailto };
+  }
+  const token = createUnsubscribeToken(primaryRecipient, notificationType);
   return {
-    "List-Unsubscribe": `<mailto:${replyTo}?subject=unsubscribe>`,
+    "List-Unsubscribe": `<${base}/api/email/unsubscribe/${token}>, ${mailto}`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
   };
 }
@@ -1176,9 +1188,13 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     });
   }
 
+  const fanout = delivery.recipients.length > 1;
   return sendPhoenixEmail({
+    fanoutToBcc: true,
     from,
-    headers: listUnsubscribeHeaders(input.notificationType),
+    // Per-address one-click token only for single-recipient sends; fan-outs go to internal
+    // staff (manager chain / HR inbox) and use the mailto fallback.
+    headers: listUnsubscribeHeaders(input.notificationType, fanout ? undefined : delivery.recipients[0]),
     html: renderHtml(input, delivery.policy),
     idempotencyKey: requestId,
     subject: notificationSubject(input, delivery.policy),
@@ -1270,18 +1286,26 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
     .eq("id", row.id);
 }
 
-async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string) {
+async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string, retryAfterMs?: number) {
   const supabase = getSupabaseAdmin();
   const attempts = row.attempts + 1;
   const terminal = attempts >= row.max_attempts;
   const now = new Date().toISOString();
+  // Honour a provider Retry-After (e.g. a 429): wait at least that long, but never less
+  // than the normal backoff schedule.
+  const baseNext = nextAttemptAtIso(attempts);
+  const nextAttempt = terminal
+    ? null
+    : retryAfterMs != null
+      ? new Date(Math.max(Date.parse(baseNext), Date.now() + retryAfterMs)).toISOString()
+      : baseNext;
   await supabase
     .from(notificationOutboxTable)
     .update({
       attempts,
       last_error: errorMessage,
       locked_at: null,
-      next_attempt_at: terminal ? null : nextAttemptAtIso(attempts),
+      next_attempt_at: nextAttempt,
       status: "failed",
       updated_at: now,
     })
@@ -1470,7 +1494,8 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email notification failed.";
-    await markNotificationOutboxFailed(claimed, message);
+    const retryAfterMs = error instanceof RetryableEmailError ? error.retryAfterMs : undefined;
+    await markNotificationOutboxFailed(claimed, message, retryAfterMs);
     return { reason: message, skipped: true };
   }
 }

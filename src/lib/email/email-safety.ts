@@ -49,6 +49,25 @@ function configuredAllowedDomains() {
   ));
 }
 
+/**
+ * Block hosts that resolve to local/internal networks (SSRF guard for the reusable image
+ * validator). Matches the parsed hostname against loopback, RFC1918 private ranges,
+ * link-local (incl. the 169.254.169.254 cloud-metadata endpoint), and IPv6
+ * loopback/ULA/link-local. The naive original only matched `localhost`/`127.0.0.1`.
+ */
+export function isBlockedImageHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1" || h === "::") return true;
+  if (/^127\./.test(h)) return true; // IPv4 loopback
+  if (/^10\./.test(h)) return true; // RFC1918
+  if (/^192\.168\./.test(h)) return true; // RFC1918
+  if (/^169\.254\./.test(h)) return true; // link-local incl. cloud metadata
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true; // RFC1918 172.16-31
+  if (/^(fc|fd)[0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
+  if (/^fe80:/i.test(h)) return true; // IPv6 link-local
+  return false;
+}
+
 function emailDomain(email: string) {
   return email.trim().toLowerCase().split("@").pop() ?? "";
 }
@@ -137,8 +156,8 @@ export async function assertReachableEmailImage(url: string, input?: {
     throw new Error("Email signature image URL must be HTTPS so email clients can load it.");
   }
 
-  if (input?.blockLocalAssets && /localhost|127\.0\.0\.1|\/assets\//i.test(url)) {
-    throw new Error("Email signature image must not use localhost or a relative /assets URL.");
+  if (input?.blockLocalAssets && (isBlockedImageHost(parsed.hostname) || /\/assets\//i.test(parsed.pathname))) {
+    throw new Error("Email signature image must not use a local/internal host or a relative /assets URL.");
   }
 
   const now = Date.now();
