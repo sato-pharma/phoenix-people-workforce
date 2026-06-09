@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import * as Sentry from "@sentry/nextjs";
+
 import {
   canSeeHrScopedRecord,
   parseRoleStrict,
@@ -1489,7 +1491,122 @@ async function notifyMarketingWorkflow(params: {
     subjectHrId: params.request.requesterHrId,
     telegram: isAssigned ? { buttons: marketingTelegramButtons(params.request.id) } : undefined,
     title: params.title,
-  }).catch(() => undefined);
+  }).catch((error) => {
+    // Best-effort, but no longer silent — surface so a broken marketing notification is visible.
+    Sentry.captureException(error, {
+      tags: { component: "marketing-requests", eventType: params.eventType },
+      extra: { requestId: params.request.id },
+    });
+  });
+}
+
+// --- Marketing SLA reminders (daily) ---------------------------------------
+const MARKETING_SLA_PENDING_STATUSES = ["pending_validation", "pending_approval", "returned"] as const;
+const MARKETING_SLA_DUE_SOON_DAYS = 3; // remind when the pay date is within N days
+const MARKETING_SLA_ESCALATION_DAYS = 2; // escalate when overdue by more than N days
+
+export type MarketingSlaEvent = "due_date_reminder" | "overdue_reminder" | "escalation";
+
+/**
+ * Pure SLA classifier from a request's pay date relative to today (both YYYY-MM-DD,
+ * Africa/Cairo). Returns the event to fire, or null when comfortably before the due date.
+ */
+export function classifyMarketingSla(input: { payDate: string | null; today: string }): MarketingSlaEvent | null {
+  if (!input.payDate) return null;
+  const due = Date.parse(`${input.payDate}T00:00:00Z`);
+  const today = Date.parse(`${input.today}T00:00:00Z`);
+  if (!Number.isFinite(due) || !Number.isFinite(today)) return null;
+  const daysUntilDue = Math.round((due - today) / 86_400_000);
+  if (daysUntilDue < -MARKETING_SLA_ESCALATION_DAYS) return "escalation";
+  if (daysUntilDue < 0) return "overdue_reminder";
+  if (daysUntilDue <= MARKETING_SLA_DUE_SOON_DAYS) return "due_date_reminder";
+  return null;
+}
+
+function marketingTodayCairo(): string {
+  // YYYY-MM-DD in Africa/Cairo (the platform-wide convention).
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+const MARKETING_SLA_EVENT_COPY: Record<MarketingSlaEvent, { priority: "critical" | "high"; title: string; verb: string }> = {
+  due_date_reminder: { priority: "high", title: "Marketing request due soon", verb: "is approaching its pay date" },
+  escalation: { priority: "critical", title: "Marketing request escalation", verb: "is significantly overdue and requires immediate action" },
+  overdue_reminder: { priority: "high", title: "Marketing request overdue", verb: "is past its pay date and still needs a decision" },
+};
+
+/**
+ * Daily SLA scan for marketing requests. For each still-pending request with a pay date,
+ * fire the due/overdue/escalation notification (routed by policy to the assigned approver
+ * + request owner, or the workflow approver for escalation). Idempotent per day via a
+ * date-stamped notification key. Best-effort; never throws.
+ */
+export async function runMarketingSlaDaily(): Promise<{
+  errors: Array<{ message: string; requestId: string }>;
+  escalations: number;
+  overdue: number;
+  reminders: number;
+  runDate: string;
+  scanned: number;
+}> {
+  const today = marketingTodayCairo();
+  const errors: Array<{ message: string; requestId: string }> = [];
+  let reminders = 0;
+  let overdue = 0;
+  let escalations = 0;
+  let scanned = 0;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("marketing_requests")
+      .select("*")
+      .in("status", MARKETING_SLA_PENDING_STATUSES as unknown as string[])
+      .not("pay_date", "is", null);
+    if (error) throw error;
+    const rows = (data ?? []) as MarketingRequestDbRow[];
+    scanned = rows.length;
+    for (const row of rows) {
+      const request = mapRequest(row);
+      const eventType = classifyMarketingSla({ payDate: request.payDate, today });
+      if (!eventType) continue;
+      try {
+        // Current approver — feeds assigned_approver / workflow_step_approver routing.
+        const { data: stepData } = await supabase
+          .from("marketing_request_approval_steps")
+          .select("assigned_hr_id")
+          .eq("request_id", request.id)
+          .eq("status", "current")
+          .maybeSingle();
+        const approverHrId = (stepData as { assigned_hr_id?: string | null } | null)?.assigned_hr_id ?? null;
+        const copy = MARKETING_SLA_EVENT_COPY[eventType];
+        await notifyMarketingWorkflow({
+          actorHrId: "system",
+          eventType,
+          message: `Marketing request ${request.requestCode} ${copy.verb} (pay date ${request.payDate}).`,
+          metadata: {
+            assignedApproverHrId: approverHrId,
+            // Date-stamps the idempotency key so each reminder fires at most once per day
+            // (notifyMarketingWorkflow keys off metadata.decisionAt).
+            decisionAt: `sla:${today}`,
+            dueDate: request.payDate,
+            escalationOwnerHrId: approverHrId,
+            workflowApproverHrId: approverHrId,
+          },
+          priority: copy.priority,
+          request,
+          title: `${copy.title} — ${request.requestCode}`,
+        });
+        if (eventType === "escalation") escalations += 1;
+        else if (eventType === "overdue_reminder") overdue += 1;
+        else reminders += 1;
+      } catch (rowError) {
+        errors.push({ message: rowError instanceof Error ? rowError.message : "Marketing SLA notify failed.", requestId: request.id });
+      }
+    }
+  } catch (error) {
+    Sentry.captureException(error, { tags: { component: "marketing-requests", cron: "marketing-sla" } });
+    errors.push({ message: error instanceof Error ? error.message : "Marketing SLA scan failed.", requestId: "scan" });
+  }
+  return { errors, escalations, overdue, reminders, runDate: today, scanned };
 }
 
 export function parseMarketingRequestDecision(value: unknown): MarketingRequestDecision | null {

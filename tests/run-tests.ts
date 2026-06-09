@@ -153,6 +153,7 @@ import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
 import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
 import { runEmailSendHardeningTests } from "./email-send-hardening.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
+import { runEmailFollowupsTests } from "./email-followups.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -319,3 +320,4 @@ await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
 await runTest("email engine hardening", runEmailEngineHardeningTests);
 await runTest("email send hardening", runEmailSendHardeningTests);
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
+await runTest("email followups", runEmailFollowupsTests);
