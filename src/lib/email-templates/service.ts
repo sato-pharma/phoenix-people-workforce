@@ -1,5 +1,7 @@
 import crypto from "crypto";
 
+import * as Sentry from "@sentry/nextjs";
+
 import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
@@ -9,6 +11,7 @@ import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
+import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -969,7 +972,17 @@ async function recordTemplateHistory(input: {
     .limit(1);
 
   if (latest.error) {
-    if (tableMissing(latest.error)) return;
+    if (tableMissing(latest.error)) {
+      // tableMissing also matches a transient PostgREST schema-cache miss, so a publish
+      // could mutate the live template with no version/audit record. Surface it instead
+      // of swallowing fully silently.
+      Sentry.captureMessage("Email template history not recorded (table missing / schema cache)", {
+        level: "warning",
+        tags: { component: "email-templates", action: input.action },
+        extra: { templateKey: input.template.templateKey },
+      });
+      return;
+    }
     throw latest.error;
   }
 
@@ -986,7 +999,14 @@ async function recordTemplateHistory(input: {
   });
 
   if (inserted.error) {
-    if (tableMissing(inserted.error)) return;
+    if (tableMissing(inserted.error)) {
+      Sentry.captureMessage("Email template history insert skipped (table missing / schema cache)", {
+        level: "warning",
+        tags: { component: "email-templates", action: input.action },
+        extra: { templateKey: input.template.templateKey },
+      });
+      return;
+    }
     throw inserted.error;
   }
 }
@@ -1669,14 +1689,26 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
     EMAIL_TEMPLATE_KEYS.USER_CREATED,
   ]);
-  const unsubscribeHeaders = authTemplateKeys.has(key) ? undefined : {
-    "List-Unsubscribe": `<mailto:${process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo}?subject=unsubscribe>`,
-    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-  };
+  const unsubscribeHeaders = ((): Record<string, string> | undefined => {
+    if (authTemplateKeys.has(key)) return undefined;
+    const mailto = `<mailto:${process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo}?subject=unsubscribe>`;
+    const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+    const primary = to.length === 1 ? to[0].email : undefined;
+    // RFC 8058 one-click needs an HTTPS endpoint + a single recipient to mint a token for.
+    if (!base || !primary) return { "List-Unsubscribe": mailto };
+    const token = createUnsubscribeToken(primary, key);
+    return {
+      "List-Unsubscribe": `<${base}/api/email/unsubscribe/${token}>, ${mailto}`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    };
+  })();
 
   return sendPhoenixEmail({
     bcc: bcc.map((recipient) => recipient.email),
     cc: cc.map((recipient) => recipient.email),
+    // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
+    // to BCC behind a neutral visible To.
+    fanoutToBcc: true,
     from: input.from ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,

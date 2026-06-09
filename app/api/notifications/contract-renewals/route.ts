@@ -153,18 +153,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Contract renewal notification run is not authorized." }, { status: 401 });
   }
   try {
-    // Sentry cron monitor: a missed or failed daily run raises an alert (email).
-    // This run also processes the notification outbox + probation reminders.
-    return await Sentry.withMonitor(
-      "contract-renewals",
-      () => runContractRenewalNotifications(request),
-      {
-        schedule: { type: "crontab", value: "15 4 * * *" },
-        checkinMargin: 60,
-        maxRuntime: 30,
-        timezone: "Etc/UTC",
-      },
-    );
+    // NOTE: no Sentry cron monitor here. This sub-route runs in-process from the single
+    // daily dispatcher (/api/notifications/daily), which calls
+    // runContractRenewalNotifications() directly — never this GET handler — so a per-route
+    // monitor would never check in and would raise false missed-run alerts (its "15 4"
+    // schedule never matched reality). The dispatcher owns the cron monitor.
+    return await runContractRenewalNotifications(request);
   } catch (error) {
     Sentry.captureException(error, { tags: { cron: "contract-renewals" } });
     const message = error instanceof Error ? error.message : "Contract renewal notification run failed.";

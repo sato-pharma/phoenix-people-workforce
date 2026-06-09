@@ -149,6 +149,10 @@ import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-mig
 import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
 import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
 import { runEmailProductionReadinessTests } from "./email-production-readiness.test.ts";
+import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
+import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
+import { runEmailSendHardeningTests } from "./email-send-hardening.test.ts";
+import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -311,3 +315,7 @@ await runTest("phase 33 migration history reconciliation gate", runPhase33Migrat
 await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
 await runTest("staging safe rebuild", runStagingSafeRebuildTests);
 await runTest("email production readiness", runEmailProductionReadinessTests);
+await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
+await runTest("email engine hardening", runEmailEngineHardeningTests);
+await runTest("email send hardening", runEmailSendHardeningTests);
+await runTest("email templates triggers", runEmailTemplatesTriggersTests);

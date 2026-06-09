@@ -64,7 +64,10 @@ export function proxy(request: NextRequest) {
     (
       request.nextUrl.pathname === "/api/attendance/raw-punches" ||
       request.nextUrl.pathname === "/api/integrations/telegram/webhook" ||
-      request.nextUrl.pathname === "/api/webhooks/resend"
+      request.nextUrl.pathname === "/api/webhooks/resend" ||
+      // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
+      // signed token (not a session) authorises it, so it is CSRF-exempt by design.
+      request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")
     )
   ) {
     return NextResponse.next();
