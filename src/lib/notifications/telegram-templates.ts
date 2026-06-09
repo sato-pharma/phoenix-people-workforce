@@ -39,6 +39,10 @@ export type TelegramTemplateDefinition = {
   module: string;
   name: string;
   recommendedPlaceholders: string[];
+  // Placeholders that MUST be supplied at live send. Any other allowed placeholder is
+  // optional and renders to empty if the live event omits it (so a template that passes
+  // preview never throws at send). Omitted ⇒ no body placeholder is hard-required.
+  requiredPlaceholders?: string[];
   sampleVariables: Record<string, string>;
   templateKey: TelegramTemplateWorkflowKey;
 };
@@ -676,8 +680,8 @@ export async function renderTelegramTemplate(templateKey: TelegramTemplateWorkfl
     buttons: renderedButtons,
     ctaLabel: ctaEnabled ? cleanText(cta.label) : null,
     ctaUrl: ctaEnabled ? renderTelegramCtaUrl(cleanText(cta.url), variables, definition.allowedPlaceholders) : null,
-    message: renderTelegramTemplateText(cleanText(row.message_template), variables, definition.allowedPlaceholders),
-    title: renderTelegramTemplateText(cleanText(row.title_template) || definition.defaultTitle, variables, definition.allowedPlaceholders),
+    message: renderTelegramTemplateText(cleanText(row.message_template), variables, definition.allowedPlaceholders, definition.requiredPlaceholders ?? []),
+    title: renderTelegramTemplateText(cleanText(row.title_template) || definition.defaultTitle, variables, definition.allowedPlaceholders, definition.requiredPlaceholders ?? []),
   };
 }
 
@@ -705,8 +709,8 @@ export function previewTelegramTemplate(input: TelegramTemplateSaveInput) {
     buttons: renderedButtons,
     ctaLabel: renderedButtons[0]?.label ?? (input.ctaEnabled ? cleanText(input.ctaLabel) : null),
     ctaUrl: renderedButtons[0]?.url ?? (input.ctaEnabled ? renderTelegramCtaUrl(input.ctaUrl, definition.sampleVariables, definition.allowedPlaceholders) : null),
-    message: renderTelegramTemplateText(input.message, definition.sampleVariables, definition.allowedPlaceholders),
-    title: renderTelegramTemplateText(cleanText(input.title) || definition.defaultTitle, definition.sampleVariables, definition.allowedPlaceholders),
+    message: renderTelegramTemplateText(input.message, definition.sampleVariables, definition.allowedPlaceholders, definition.requiredPlaceholders ?? []),
+    title: renderTelegramTemplateText(cleanText(input.title) || definition.defaultTitle, definition.sampleVariables, definition.allowedPlaceholders, definition.requiredPlaceholders ?? []),
   };
 }
 

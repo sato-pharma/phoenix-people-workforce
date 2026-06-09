@@ -1,3 +1,8 @@
+// Single source of truth for the redacted payroll/payslip Telegram body. Sensitive
+// payroll content must never reach Telegram in full; every redaction site (live send,
+// both retry workers, and the payslip template default) references this constant.
+export const GENERIC_PAYSLIP_MESSAGE = "Your payslip is available.";
+
 export class TelegramTemplateError extends Error {
   code: string;
 
