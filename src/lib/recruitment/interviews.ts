@@ -11,7 +11,7 @@ import {
 } from "@/lib/recruitment/db";
 import { interviewTypes, type Interview, type InterviewType } from "@/lib/recruitment/types";
 import { isInterviewOutcome, normalizeScorecard } from "@/lib/recruitment/scorecards";
-import { sendInterviewScheduledNotifications } from "@/lib/recruitment/interview-notifications";
+import { notifyInterviewFeedback, sendInterviewScheduledNotifications } from "@/lib/recruitment/interview-notifications";
 
 // Rule 7 — notify candidate + interviewer + owner; never block the action on a
 // notification failure.
@@ -157,6 +157,21 @@ export async function recordInterviewOutcome(
   // Rule 7 — a reschedule (new date/location/link) re-notifies all parties.
   if (input.scheduledAt !== undefined && updated.scheduledAt) {
     await notifyInterview(application, updated, "rescheduled");
+  }
+  // When an outcome is recorded, send interview feedback to the hiring team
+  // (best-effort; never block the write on a notification failure).
+  if (input.outcome !== undefined && updated.outcome) {
+    try {
+      await notifyInterviewFeedback({
+        candidateName: application.candidate?.fullName ?? "Candidate",
+        feedback: updated.notes ?? null,
+        interviewerHrId: updated.interviewerHrId,
+        jobTitle: application.requisition?.jobTitle ?? "",
+        outcome: updated.outcome,
+      });
+    } catch {
+      // Best-effort.
+    }
   }
   return updated;
 }
