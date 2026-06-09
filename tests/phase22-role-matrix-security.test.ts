@@ -8,6 +8,7 @@ import {
   getExpensesScope,
   getPayrollScope,
   getSalesScope,
+  phoenixRoles,
   resolveNavigationMode,
 } from "../src/lib/auth/permissions.ts";
 
@@ -53,6 +54,25 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(nonDesignatedHrSpecialist, "employees", "read"), false);
   assert.equal(await canAccess(nonDesignatedHrSpecialist, "admin", "read"), false);
   assert.equal(await canAccess(nonDesignatedHrSpecialist, "user_admin", "read"), false);
+
+  // EVERY role must be able to manage its OWN notification/Telegram settings. Both
+  // profile pages (admin shell and employee portal) render the notification panel for
+  // any signed-in user, and the self-service endpoints (PATCH /api/notifications/settings,
+  // /api/integrations/telegram/*) gate on employee_profile:update. CEO was missing it,
+  // so "Connect Telegram" returned 403 surfaced as the misleading "Unable to create
+  // Telegram link." This is self-scoped only — employee_profile:update never edits OTHER
+  // employees (that is the `employees` resource) — so granting it must not widen
+  // cross-employee access.
+  for (const role of phoenixRoles) {
+    const context = createAccessContext({ hrId: `SELF-${role}`, role });
+    assert.equal(
+      await canAccess(context, "employee_profile", "update"),
+      true,
+      `${role} must be able to manage own profile/notification settings (employee_profile:update)`,
+    );
+  }
+  const ceo = createAccessContext({ hrId: "CEO-1", role: "CEO" });
+  assert.equal(await canAccess(ceo, "employees", "update"), false, "CEO still cannot edit other employees");
 
   assert.equal(getPayrollScope(employee), "SELF");
   assert.equal(getPayrollScope(districtManager), "SELF");

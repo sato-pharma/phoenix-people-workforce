@@ -40,6 +40,17 @@ function statusLabel(settings: NotificationSettings) {
   return "Not connected";
 }
 
+// Turn a failed API response into an honest message. A 403 from these endpoints is a
+// permission denial (the API returns {error:"forbidden"} with no message), so surface
+// that plainly instead of the generic action-failed fallback — otherwise a blocked role
+// reads "Unable to create Telegram link." and chases the wrong problem.
+function errorMessageFor(response: Response, payload: { error?: string; message?: string } | null, fallback: string) {
+  if (response.status === 403 || payload?.error === "forbidden") {
+    return "You don't have permission to manage Telegram notifications. Please contact an administrator.";
+  }
+  return payload?.message ?? fallback;
+}
+
 export function NotificationSettingsPanel() {
   const [settings, setSettings] = useState<NotificationSettings>(emptySettings);
   const [loading, setLoading] = useState(true);
@@ -113,7 +124,7 @@ export function NotificationSettingsPanel() {
     try {
       const response = await fetch("/api/integrations/telegram/connect", { method: "POST" });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? "Unable to create Telegram link.");
+      if (!response.ok) throw new Error(errorMessageFor(response, payload, "Unable to create Telegram link."));
       setConnectLink(payload.data?.link ?? null);
       setConnectExpiresAt(payload.data?.expiresAt ?? null);
       if (payload.data?.link) window.open(payload.data.link, "_blank", "noopener,noreferrer");
@@ -132,7 +143,7 @@ export function NotificationSettingsPanel() {
     try {
       const response = await fetch("/api/integrations/telegram/disconnect", { method: "POST" });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? "Unable to disconnect Telegram.");
+      if (!response.ok) throw new Error(errorMessageFor(response, payload, "Unable to disconnect Telegram."));
       setSettings(payload.data ?? emptySettings);
       setConnectLink(null);
       setMessage("Telegram disconnected.");
@@ -150,7 +161,7 @@ export function NotificationSettingsPanel() {
     try {
       const response = await fetch("/api/integrations/telegram/test", { method: "POST" });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? "Unable to send test notification.");
+      if (!response.ok) throw new Error(errorMessageFor(response, payload, "Unable to send test notification."));
       const telegramDelivery = payload.data?.deliveries?.find((delivery: { channel: string }) => delivery.channel === "telegram");
       setMessage(telegramDelivery?.status === "sent" ? "Telegram test notification sent." : telegramDelivery?.reason ?? "Test notification was recorded.");
     } catch (testError) {

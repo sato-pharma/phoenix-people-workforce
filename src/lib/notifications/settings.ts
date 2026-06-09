@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { buildTelegramDeepLinkFromToken, hashTelegramToken } from "@/lib/notifications/telegram";
+import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 
 export type NotificationPreferences = {
   emailEnabled: boolean;
@@ -141,7 +141,21 @@ export async function createTelegramConnectionToken(access: Pick<AccessContext, 
   const userId = userIdFromAccess(access);
   if (!userId) throw new Error("Authentication is required.");
 
+  // Build the connect deep link FIRST. The link is the whole deliverable, and
+  // resolveTelegramBotUsername() returns null when the bot is unreachable / the token is
+  // missing (it never falls back to the env username for a credential link). Failing here
+  // — before writing any DB row — gives the employee a clear, actionable error instead of
+  // a silent 200 with a null link, and avoids leaving a dangling pending token row that
+  // can never be completed.
   const token = crypto.randomBytes(32).toString("base64url");
+  if (!(await resolveTelegramBotUsername())) {
+    throw new Error("Telegram bot is temporarily unreachable; cannot create a connect link. Please try again in a moment or contact an administrator.");
+  }
+  const link = await buildTelegramDeepLinkFromToken(token);
+  if (!link) {
+    throw new Error("Telegram bot username is not available; cannot create a connect link. Please try again in a moment or contact an administrator.");
+  }
+
   const now = new Date();
   const expires = new Date(now.getTime() + 15 * 60 * 1000);
   const supabase = getSupabaseAdmin();
@@ -181,7 +195,7 @@ export async function createTelegramConnectionToken(access: Pick<AccessContext, 
 
   return {
     expiresAt: expires.toISOString(),
-    link: await buildTelegramDeepLinkFromToken(token),
+    link,
     token,
   };
 }
