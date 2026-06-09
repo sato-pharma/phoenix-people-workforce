@@ -7,6 +7,7 @@
 // Kept in its own module (no import of interviews.ts) to avoid a cycle.
 
 import { createSystemNotification } from "@/lib/notifications/system";
+import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Interview } from "@/lib/recruitment/types";
 
@@ -118,21 +119,39 @@ export async function sendInterviewScheduledNotifications(
     { label: "Role", value: ctx.jobTitle || "—" },
   ];
 
-  // --- Candidate (email only) -------------------------------------------
+  // --- Candidate (email) ------------------------------------------------
   if (ctx.candidateEmail) {
-    await safeSendNotificationEmail({
-      notificationType: "general",
-      recipientMode: "candidate",
-      candidateEmail: ctx.candidateEmail,
-      subject: `Interview ${verb} — ${ctx.jobTitle || "Phoenix Workforce"}`,
-      title: `Interview ${verb}`,
-      summary:
-        kind === "cancelled"
-          ? `Your ${label.toLowerCase()} interview has been cancelled. We'll be in touch about next steps.`
-          : `Your ${label.toLowerCase()} interview for ${ctx.jobTitle} has been ${verb}. Details are below.`,
-      metrics: kind === "cancelled" ? [{ label: "Interview", value: `${label} interview` }] : detailMetrics,
-      tone: kind === "cancelled" ? "warning" : "neutral",
-    });
+    if (kind === "cancelled") {
+      // No dedicated cancellation template — send the cancellation notice via the
+      // generic path.
+      await safeSendNotificationEmail({
+        notificationType: "general",
+        recipientMode: "candidate",
+        candidateEmail: ctx.candidateEmail,
+        subject: `Interview cancelled — ${ctx.jobTitle || "Phoenix Workforce"}`,
+        title: "Interview cancelled",
+        summary: `Your ${label.toLowerCase()} interview has been cancelled. We'll be in touch about next steps.`,
+        metrics: [{ label: "Interview", value: `${label} interview` }],
+        tone: "warning",
+      });
+    } else {
+      // Scheduled / rescheduled → dedicated, admin-editable interview_invitation template.
+      await sendTemplatedEmail({
+        templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_INVITATION,
+        candidateEmail: ctx.candidateEmail,
+        fallbackTo: [ctx.candidateEmail],
+        context: {
+          candidateName: ctx.candidateName,
+          interviewDate: date,
+          interviewLocation: interview.location ?? "To be confirmed",
+          interviewTime: time,
+          interviewerName: name ?? "—",
+          jobTitle: ctx.jobTitle,
+          meetingUrl: interview.meetingLink ?? "",
+          recipientName: ctx.candidateName,
+        },
+      });
+    }
   }
 
   // --- Interviewer (in-app + email) -------------------------------------
@@ -176,4 +195,38 @@ export async function sendInterviewScheduledNotifications(
       title: `Interview ${verb}`,
     });
   }
+}
+
+function interviewNextStep(outcome: string | null): string {
+  const o = String(outcome ?? "").toLowerCase();
+  if (o.includes("pass") || o === "advance" || o === "proceed") return "Proceed to the next round.";
+  if (o.includes("fail") || o.includes("reject") || o === "no_hire") return "Close the candidate and notify them.";
+  if (o.includes("hold")) return "Hold — revisit after the remaining interviews.";
+  return "Review the feedback and decide the next recruiting step.";
+}
+
+/**
+ * Notify the hiring team (HR / hiring manager / recruiter — resolved by the
+ * interview_feedback template's recipient rules) when an interview outcome is recorded.
+ * Renders the dedicated, admin-editable interview_feedback template. Best-effort.
+ */
+export async function notifyInterviewFeedback(input: {
+  candidateName: string;
+  feedback: string | null;
+  interviewerHrId: string | null;
+  jobTitle: string;
+  outcome: string | null;
+}): Promise<void> {
+  await sendTemplatedEmail({
+    templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_FEEDBACK,
+    employeeHrId: input.interviewerHrId,
+    context: {
+      candidateName: input.candidateName,
+      feedback: input.feedback?.trim() || "No written feedback was provided.",
+      jobTitle: input.jobTitle,
+      nextStep: interviewNextStep(input.outcome),
+      recipientName: "Team",
+      status: input.outcome || "Recorded",
+    },
+  });
 }
