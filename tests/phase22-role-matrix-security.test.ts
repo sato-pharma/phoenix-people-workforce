@@ -54,6 +54,16 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(nonDesignatedHrSpecialist, "admin", "read"), false);
   assert.equal(await canAccess(nonDesignatedHrSpecialist, "user_admin", "read"), false);
 
+  // CEO must be able to manage their OWN notification/Telegram settings. The self-service
+  // endpoints (PATCH /api/notifications/settings, /api/integrations/telegram/*) gate on
+  // employee_profile:update, so without it the CEO's "Connect Telegram" returned 403 and
+  // surfaced as the misleading "Unable to create Telegram link." This is self-scoped only —
+  // employee_profile:update never edits OTHER employees (that is the `employees` resource),
+  // so the CEO must NOT gain edit rights over other employees from this.
+  const ceo = createAccessContext({ hrId: "CEO-1", role: "CEO" });
+  assert.equal(await canAccess(ceo, "employee_profile", "update"), true, "CEO can manage own profile/notification settings");
+  assert.equal(await canAccess(ceo, "employees", "update"), false, "CEO still cannot edit other employees");
+
   assert.equal(getPayrollScope(employee), "SELF");
   assert.equal(getPayrollScope(districtManager), "SELF");
   assert.equal(getPayrollScope(createAccessContext({ role: "Finance Manager" })), "COMPANY");
