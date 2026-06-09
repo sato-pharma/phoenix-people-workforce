@@ -6,6 +6,7 @@ import {
   calculateVacationPayment,
   getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
+  getVacationPolicyToday,
   vacationRequestDisplayId,
   validateVacationRequestPolicy,
 } from "../src/lib/vacation/calculations.ts";
@@ -214,16 +215,50 @@ export function runVacationCalculationTests() {
     vacationType: "emergency",
   });
 
+  const annualClock = new Date("2026-05-19T06:00:00Z");
+  const annualToday = getVacationPolicyToday(annualClock);
+
+  // Annual vacation may now start TODAY. (A single-day same-day annual request is reclassified
+  // to "emergency" by the backend, but the date policy itself must allow today.)
+  validateVacationRequestPolicy({
+    dayPart: "full_day",
+    endDate: annualToday,
+    now: annualClock,
+    startDate: annualToday,
+    vacationType: "annual",
+  });
+
+  // Annual vacation starting a future date remains allowed.
+  validateVacationRequestPolicy({
+    dayPart: "full_day",
+    endDate: "2026-05-25",
+    now: annualClock,
+    startDate: "2026-05-24",
+    vacationType: "annual",
+  });
+
+  // Annual vacation in the PAST is still rejected — we only opened today, not retroactive dates.
   assert.throws(
     () =>
       validateVacationRequestPolicy({
         dayPart: "full_day",
-        endDate: "2026-05-19",
-        now: new Date("2026-05-19T06:00:00Z"),
-        startDate: "2026-05-19",
+        endDate: "2026-05-18",
+        now: annualClock,
+        startDate: "2026-05-18",
         vacationType: "annual",
       }),
-    /tomorrow or later/i,
-    "Annual vacation must start from the next day or later",
+    /today or later/i,
+    "Annual vacation must not start before today",
+  );
+
+  // Duration math is unchanged for a single-day annual-today request.
+  assert.equal(
+    calculateVacationDurationDays({
+      dayPart: "full_day",
+      endDate: annualToday,
+      startDate: annualToday,
+    }),
+    1,
+    "A single-day annual request starting today should still count as one vacation day",
   );
 }
