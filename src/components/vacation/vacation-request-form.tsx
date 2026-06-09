@@ -283,7 +283,9 @@ function isRequestDateSelectable(input: {
   }
 
   if (input.vacationType === "annual") {
-    return input.date >= getAnnualVacationMinimumStartDate();
+    // Annual vacation may start today. The shared guard above already blocks past dates and
+    // Fridays; a same-day annual request is reclassified to "emergency" by the backend.
+    return input.date >= today;
   }
 
   if (input.vacationType === "compensatory" && input.compensatoryEventDate) {

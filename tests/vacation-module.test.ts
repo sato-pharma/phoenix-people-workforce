@@ -117,6 +117,32 @@ export function runVacationModuleTests() {
 
   assert.match(serviceSource, /const vacationRequestsTable = "v2_vacation_requests"/);
   assert.match(serviceSource, /const vacationApprovalStepsTable = "v2_vacation_approval_steps"/);
+
+  // Guard: the dead/legacy leave engine (public.leave_* tables + phx_leave_* RPCs) must never be
+  // referenced by live runtime code — the live engine is the v2_vacation_* family. The
+  // workflow-registry MODULE KEY string "leave_requests" lives in workflow.ts (not scanned here)
+  // and the live "leave-attachments" storage bucket are both intentionally allowed.
+  const liveVacationRuntimeSources = [
+    ["service", serviceSource],
+    ["requests route", routeSource],
+    ["admin route", adminRouteSource],
+    ["request [id] route", requestAdminRouteSource],
+    ["attachment route", requestAttachmentRouteSource],
+    ["timeline route", requestTimelineRouteSource],
+    ["evidence-review route", requestEvidenceReviewRouteSource],
+    ["report export route", vacationAuditExportRouteSource],
+    ["national-holidays route", nationalHolidaysRouteSource],
+    ["request form", vacationRequestFormSource],
+  ];
+  const deadLeaveObjectPattern =
+    /phx_leave_|employee_leave_balances|\bleave_transactions\b|\bleave_approvals\b|\bleave_audit_logs\b|from\(\s*["']leave_requests["']/;
+  for (const [label, src] of liveVacationRuntimeSources) {
+    assert.doesNotMatch(
+      src,
+      deadLeaveObjectPattern,
+      `${label} must not reference the dead leave engine (use the v2_vacation_* tables)`,
+    );
+  }
   assert.match(parallelApprovalMigrationSource, /create table if not exists public\.v2_vacation_approval_steps/);
   assert.match(parallelApprovalMigrationSource, /step_key in \('direct_manager', 'manager_of_manager', 'hr'\)/);
   assert.match(parallelApprovalMigrationSource, /status in \('pending', 'approved', 'rejected'\)/);
@@ -173,7 +199,10 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /Compensatory Day requires the first manager name/);
   assert.match(serviceSource, /Compensatory Day has expired/);
   assert.match(serviceSource, /Vacation requests cannot be submitted retroactively/);
-  assert.match(serviceSource, /Annual vacation requests must start from tomorrow or later/);
+  // Annual vacation may now start today: the old "must start from tomorrow" floor was removed
+  // from validateVacationSubmissionDates. The retroactive guard above still blocks past dates,
+  // and resolveSubmittedVacationType still reclassifies a single-day same-day annual to emergency.
+  assert.doesNotMatch(serviceSource, /Annual vacation requests must start from tomorrow or later/);
   assert.match(serviceSource, /Vacation requests are not allowed directly before or directly after an official national holiday/);
   assert.match(serviceSource, /validateOfficialHolidayAdjacency/);
   assert.match(serviceSource, /createVacationRequestAsAdmin/);
