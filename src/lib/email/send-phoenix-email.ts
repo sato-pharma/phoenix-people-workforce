@@ -1,5 +1,7 @@
+import * as Sentry from "@sentry/nextjs";
+
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
-import { isForceTestingDelivery, systemEmail, systemIdentity } from "@/config/system-settings";
+import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage } from "@/lib/email/email-safety";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -37,9 +39,29 @@ function resolveTestingRecipients() {
   const testRecipients = splitEmailList(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS);
   // Redirect all mail to the testing recipients when the config safety switch is on
   // (isForceTestingDelivery()) OR the env delivery mode is explicitly "testing".
-  const testingEnabled = isForceTestingDelivery() || deliveryMode === "testing";
+  const forceTesting = isForceTestingDelivery();
+  const testingEnabled = forceTesting || deliveryMode === "testing";
   if (!testingEnabled) return null;
-  return testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : [...systemEmail.testingRecipientFallback];
+  const redirectTo =
+    testRecipients.length > 0 ? Array.from(new Set(testRecipients)) : [...systemEmail.testingRecipientFallback];
+  // A redirect previously fired silently and still returned a success {id}, which hid the
+  // fact that real recipients never received mail. Always leave a breadcrumb, and in
+  // production raise a warning (a redirect in prod almost always means a forgotten
+  // PHOENIX_EMAIL_FORCE_TESTING=false and real employees/candidates are not being reached).
+  Sentry.addBreadcrumb({
+    category: "email",
+    level: "warning",
+    message: "Email delivery redirected to testing recipients",
+    data: { count: redirectTo.length, reason: forceTesting ? "force_testing" : "delivery_mode" },
+  });
+  if (isProductionRuntime()) {
+    Sentry.captureMessage("Email redirected to testing recipients in production", {
+      level: "warning",
+      tags: { component: "email", redirect: "testing" },
+      extra: { reason: forceTesting ? "force_testing" : "delivery_mode" },
+    });
+  }
+  return redirectTo;
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
