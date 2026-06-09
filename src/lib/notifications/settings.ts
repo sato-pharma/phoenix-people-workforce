@@ -214,6 +214,10 @@ export async function linkTelegramConnection(input: {
   const { error: updateError } = await supabase
     .from("telegram_connections")
     .update({
+      // Consume the token: null the hash + expiry so the credential is single-use and
+      // not left at rest on the row after linking.
+      connect_token_expires_at: null,
+      connect_token_hash: null,
       connect_token_used_at: now.toISOString(),
       failure_reason: null,
       linked_at: now.toISOString(),
@@ -242,7 +246,38 @@ export async function linkTelegramConnection(input: {
     summary: "Telegram linked.",
   });
 
+  // Security alert: tell the employee (in-app + email, NEVER telegram) that their
+  // account was just linked, so a leaked-connect-link hijack is detectable. Best-effort
+  // — a notification failure must not break linking.
+  await notifyTelegramConnectionLinked({
+    hrId: row.hr_id ? String(row.hr_id) : null,
+    userId: String(row.user_id ?? ""),
+  });
+
   return { ok: true };
+}
+
+async function notifyTelegramConnectionLinked(input: { hrId: string | null; userId: string }) {
+  if (!input.userId && !input.hrId) return;
+  try {
+    // Dynamic import avoids a static cycle between settings.ts and system.ts.
+    const { createSystemNotification } = await import("@/lib/notifications/system");
+    await createSystemNotification({
+      actionUrl: "/employee-portals/profile",
+      category: "security",
+      channels: ["in_app", "email"],
+      eventType: "telegram_connection_linked",
+      message:
+        "Your Telegram account was just connected to Phoenix Workforce notifications. If this was not you, open your portal Notification Settings and disconnect Telegram immediately, then contact HR.",
+      module: "system",
+      priority: "high",
+      recipientHrId: input.hrId,
+      recipientUserId: input.userId || null,
+      title: "Telegram connected to your Phoenix account",
+    });
+  } catch {
+    // Alert is best-effort; never block the connection.
+  }
 }
 
 export async function disconnectTelegram(access: Pick<AccessContext, "hrId" | "loginId">) {
@@ -253,6 +288,8 @@ export async function disconnectTelegram(access: Pick<AccessContext, "hrId" | "l
   const { error } = await supabase
     .from("telegram_connections")
     .update({
+      connect_token_expires_at: null,
+      connect_token_hash: null,
       disabled_at: now,
       status: "disabled",
       telegram_chat_id: null,
@@ -296,6 +333,8 @@ export async function disableTelegramForIdentity(input: {
     let query = supabase
       .from("telegram_connections")
       .update({
+        connect_token_expires_at: null,
+        connect_token_hash: null,
         disabled_at: now,
         failure_reason: input.reason ?? "User or employee was deactivated.",
         status: "disabled",

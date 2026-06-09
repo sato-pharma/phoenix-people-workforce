@@ -15,7 +15,8 @@ import {
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
-import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram";
@@ -162,6 +163,23 @@ function isSensitivePayroll(input: CreateSystemNotificationInput) {
   const moduleName = cleanText(input.module).toLowerCase();
   const eventType = cleanText(input.eventType).toLowerCase();
   return sensitivePayrollModules.has(moduleName) || eventType.includes("payslip") || input.metadata?.sensitivity === "payroll";
+}
+
+// Modules whose full content is sensitive enough that an EXPLICIT recipient (one the
+// caller passed directly, bypassing governed recipient resolution) must be the data
+// subject themselves — unless the trusted server caller explicitly opts in via
+// metadata.authorizedRecipient. This closes the "explicit path skips governance" gap
+// without breaking self-notifications (module "system") or governed sends.
+const explicitSensitiveModules = new Set(["payroll", "payslip", "payslips", "deductions"]);
+
+function explicitRecipientAllowed(input: CreateSystemNotificationInput): boolean {
+  const moduleName = cleanText(input.module).toLowerCase();
+  if (!explicitSensitiveModules.has(moduleName) && !isSensitivePayroll(input)) return true;
+  if (input.metadata?.authorizedRecipient === true) return true;
+  const recipientHr = cleanHrId(input.recipientHrId);
+  const subjectHr = cleanHrId(input.subjectHrId);
+  // Only allow sensitive content on the explicit path when it targets the subject.
+  return Boolean(recipientHr && subjectHr && recipientHr === subjectHr);
 }
 
 function isCriticalWorkflow(input: CreateSystemNotificationInput) {
@@ -415,25 +433,61 @@ async function upsertDelivery(input: {
   }
 }
 
-async function deliveryAlreadySent(idempotencyKey: string) {
+function isUniqueViolation(error: unknown) {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === "23505") return true;
+  const text = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return text.includes("duplicate key") || text.includes("unique constraint") || text.includes("already exists");
+}
+
+// Atomically claim an idempotency key by INSERTing a pending delivery row. The
+// notification_deliveries_idempotency_uniq unique constraint makes this race-free: if
+// two concurrent fan-out sends target the same key, exactly one INSERT succeeds and the
+// other gets a unique violation. This replaces the old read-then-write check (TOCTOU)
+// so a key can never be double-sent. Returns whether THIS call claimed the key.
+async function claimDelivery(input: {
+  channel: SystemNotificationChannel;
+  eventId: string | null;
+  idempotencyKey: string;
+  recipient: RecipientProfile;
+}): Promise<{ alreadySent: boolean; claimed: boolean }> {
+  // No event row to anchor against (e.g. schema missing) — nothing durable to dedupe on.
+  if (!input.eventId) return { alreadySent: false, claimed: true };
+  const now = new Date().toISOString();
   try {
-    const { data, error } = await getSupabaseAdmin()
+    const { error } = await getSupabaseAdmin()
       .from("notification_deliveries")
-      .select("status")
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-    if (error) throw error;
-    return (data as { status?: string } | null)?.status === "sent";
-  } catch (error) {
-    if (!schemaMissing(error, "notification_deliveries")) {
-      console.error("Notification delivery idempotency check failed", error);
+      .insert({
+        channel: input.channel,
+        idempotency_key: input.idempotencyKey,
+        notification_event_id: input.eventId,
+        provider: input.channel,
+        recipient_hr_id: input.recipient.hrId,
+        recipient_user_id: input.recipient.userId,
+        status: "pending",
+        updated_at: now,
+      });
+    if (!error) return { alreadySent: false, claimed: true };
+    if (isUniqueViolation(error)) {
+      const existing = await getSupabaseAdmin()
+        .from("notification_deliveries")
+        .select("status")
+        .eq("idempotency_key", input.idempotencyKey)
+        .maybeSingle();
+      return { alreadySent: (existing.data as { status?: string } | null)?.status === "sent", claimed: false };
     }
-    return false;
+    throw error;
+  } catch (error) {
+    if (isUniqueViolation(error)) return { alreadySent: false, claimed: false };
+    if (schemaMissing(error, "notification_deliveries")) return { alreadySent: false, claimed: true };
+    // Fail-open on unexpected errors so a legitimate notification isn't silently dropped.
+    console.error("Notification delivery claim failed", error);
+    return { alreadySent: false, claimed: true };
   }
 }
 
 function telegramMessageFor(input: CreateSystemNotificationInput) {
-  if (isSensitivePayroll(input)) return "Your payslip is available.";
+  if (isSensitivePayroll(input)) return GENERIC_PAYSLIP_MESSAGE;
   const moduleLabel = cleanText(input.module).replace(/_/g, " ");
   return [
     `Module: ${moduleLabel.charAt(0).toUpperCase()}${moduleLabel.slice(1)}`,
@@ -454,7 +508,9 @@ function isWithinQuietHours(preferences: LoadedPreferences, now = new Date()) {
   const start = timeMinutes(preferences.quiet_hours_start);
   const end = timeMinutes(preferences.quiet_hours_end);
   if (start === null || end === null || start === end) return false;
-  const current = now.getHours() * 60 + now.getMinutes();
+  // Quiet hours are the user's LOCAL window. The server runs in UTC on Vercel, so
+  // compare against Africa/Cairo wall-clock minutes, not the server clock.
+  const current = currentCairoMinutesOfDay(now);
   return start < end ? current >= start && current < end : current >= start || current < end;
 }
 
@@ -551,8 +607,12 @@ function telegramRetryDelayMinutes(attempt: number) {
 }
 
 function nextTelegramRetryAt(attempt: number) {
+  // ±20% jitter so a provider outage with many queued messages doesn't create a
+  // thundering herd that all retry at the same instant.
+  const base = telegramRetryDelayMinutes(attempt);
+  const jittered = base * (0.8 + Math.random() * 0.4);
   const next = new Date();
-  next.setMinutes(next.getMinutes() + telegramRetryDelayMinutes(attempt));
+  next.setMinutes(next.getMinutes() + Math.max(1, Math.round(jittered)));
   return next.toISOString();
 }
 
@@ -561,7 +621,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("notification_deliveries")
-    .select("id,attempts,max_attempts,metadata,status,provider_message_id")
+    .select("id,attempts,max_attempts,metadata,status,provider_message_id,recipient_hr_id,recipient_user_id")
     .eq("channel", "telegram")
     .in("status", ["failed", "pending", "retrying"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
@@ -577,12 +637,21 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   let failed = 0;
   let sent = 0;
 
-  for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null }>) {
+  for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
     const attempts = Number(row.attempts ?? 0);
     const maxAttempts = Number(row.max_attempts ?? 5);
     if (attempts >= maxAttempts) continue;
     const telegram = row.metadata?.telegram as Partial<TelegramRetryPayload> | undefined;
     if (!telegram?.chatId || !telegram?.title || !telegram?.message) continue;
+
+    const recipientContext = {
+      eventType: telegram.eventType ?? "telegram_retry",
+      message: String(telegram.message),
+      module: telegram.module ?? "system",
+      recipientHrId: row.recipient_hr_id ?? null,
+      recipientUserId: row.recipient_user_id ?? null,
+      title: String(telegram.title),
+    };
 
     attempted += 1;
     try {
@@ -604,13 +673,33 @@ export async function processTelegramDeliveryRetries(limit = 10) {
         continue;
       }
 
+      // Re-check user preference + live connection (mirrors retryTelegramDeliveryById):
+      // a user who disabled Telegram or disconnected after the failure must not receive
+      // the retry, and we send to the CURRENT chat id, never a stale one from metadata.
+      const preferences = await loadPreferences(recipientContext);
+      if (!preferences.telegram_enabled) {
+        await supabase
+          .from("notification_deliveries")
+          .update({ attempts, last_error: "Telegram disabled by user preference.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        continue;
+      }
+      const connection = await loadTelegramConnection(recipientContext);
+      if (connection?.status !== "connected" || !connection.telegram_chat_id) {
+        await supabase
+          .from("notification_deliveries")
+          .update({ attempts, last_error: "Telegram is not connected.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        continue;
+      }
+
       const result = await sendTelegramNotification({
         actionUrl: telegram.actionUrl ?? null,
         buttons: telegram.buttons ?? null,
-        chatId: String(telegram.chatId),
+        chatId: String(connection.telegram_chat_id),
         ctaLabel: telegram.ctaLabel ?? null,
         ctaUrl: telegram.ctaUrl ?? null,
-        message: governance.genericOnly ? "Your payslip is available." : String(telegram.message),
+        message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
         title: String(telegram.title),
       });
       if (result.skipped) throw new Error(result.reason);
@@ -640,6 +729,14 @@ export async function processTelegramDeliveryRetries(limit = 10) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
+      if (terminal) {
+        await triggerTelegramRetryExhaustionFallback({
+          deliveryId: row.id,
+          recipientHrId: row.recipient_hr_id ?? null,
+          recipientUserId: row.recipient_user_id ?? null,
+          telegram,
+        });
+      }
       failed += 1;
     }
   }
@@ -745,7 +842,7 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
         chatId: String(connection.telegram_chat_id),
         ctaLabel: telegram.ctaLabel ?? null,
         ctaUrl: telegram.ctaUrl ?? null,
-      message: governance.genericOnly ? "Your payslip is available." : String(telegram.message),
+      message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
       title: String(telegram.title),
     });
     if (result.skipped) throw new Error(result.reason);
@@ -764,18 +861,27 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
     return { channel: "telegram", idempotencyKey, status: "sent" };
   } catch (retryError) {
     const nextAttempts = attempts + 1;
+    const terminal = nextAttempts >= maxAttempts;
     const message = retryError instanceof Error ? retryError.message : "Telegram retry failed.";
     await supabase
       .from("notification_deliveries")
       .update({
         attempts: nextAttempts,
         last_error: message,
-        next_attempt_at: nextAttempts >= maxAttempts ? null : nextTelegramRetryAt(nextAttempts),
-        status: nextAttempts >= maxAttempts ? "failed" : "retrying",
+        next_attempt_at: terminal ? null : nextTelegramRetryAt(nextAttempts),
+        status: terminal ? "failed" : "retrying",
         updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
-    return { channel: "telegram", error: message, idempotencyKey, status: nextAttempts >= maxAttempts ? "failed" : "retrying" };
+    if (terminal) {
+      await triggerTelegramRetryExhaustionFallback({
+        deliveryId: row.id,
+        recipientHrId: row.recipient_hr_id ?? null,
+        recipientUserId: row.recipient_user_id ?? null,
+        telegram,
+      });
+    }
+    return { channel: "telegram", error: message, idempotencyKey, status: terminal ? "failed" : "retrying" };
   }
 }
 
@@ -785,11 +891,40 @@ type TelegramRetryPayload = {
   chatId: string;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
+  emailAttempted?: boolean;
   eventType?: string | null;
   message: string;
   module?: string | null;
   title: string;
 };
+
+// Email/in-app fallback for a Telegram delivery that has exhausted its retries (cron
+// worker or manual retry). Only fires when email wasn't already attempted in the
+// original send, so a recipient is never double-emailed. Best-effort.
+async function triggerTelegramRetryExhaustionFallback(input: {
+  deliveryId: string;
+  recipientHrId: string | null;
+  recipientUserId: string | null;
+  telegram: Partial<TelegramRetryPayload>;
+}) {
+  if (input.telegram.emailAttempted) return;
+  if (!input.recipientHrId && !input.recipientUserId) return;
+  try {
+    await createSystemNotification({
+      actionUrl: input.telegram.actionUrl ?? null,
+      channels: ["email", "in_app"],
+      eventType: input.telegram.eventType ?? "telegram_retry",
+      message: String(input.telegram.message ?? ""),
+      metadata: { fallbackFrom: "telegram_exhausted", idempotencyKey: `telegram-exhausted-fallback:${input.deliveryId}` },
+      module: input.telegram.module ?? "system",
+      recipientHrId: input.recipientHrId,
+      recipientUserId: input.recipientUserId,
+      title: String(input.telegram.title ?? "Phoenix notification"),
+    });
+  } catch {
+    // Fallback is best-effort; never throw from a retry worker.
+  }
+}
 
 async function createSystemNotificationForRecipient(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {
   const eventKey = eventKeyFor(input);
@@ -811,8 +946,9 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
 
   for (const channel of channels) {
     const idempotencyKey = `${eventKey}:${channel}:${recipient.userId ?? recipient.hrId ?? "unknown"}`;
-    if (await deliveryAlreadySent(idempotencyKey)) {
-      deliveries.push({ channel, idempotencyKey, reason: "Delivery already sent.", status: "skipped" });
+    const claim = await claimDelivery({ channel, eventId, idempotencyKey, recipient });
+    if (!claim.claimed) {
+      deliveries.push({ channel, idempotencyKey, reason: claim.alreadySent ? "Delivery already sent." : "Delivery already in progress.", status: "skipped" });
       continue;
     }
 
@@ -936,7 +1072,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           chatId: String(connection.telegram_chat_id),
           ctaLabel: input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
           ctaUrl: input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
-          message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent.message,
+          message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : telegramContent.message,
           title: telegramContent.title,
         });
         const status = result.skipped ? "skipped" : "sent";
@@ -986,8 +1122,11 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
               chatId: String(connection.telegram_chat_id),
               ctaLabel: input.telegram?.ctaLabel ?? telegramContent?.ctaLabel ?? null,
               ctaUrl: input.telegram?.ctaUrl ?? telegramContent?.ctaUrl ?? null,
+              // Whether email was already attempted in the original send, so the retry
+              // worker's exhaustion-fallback doesn't double-email this recipient.
+              emailAttempted,
               eventType: input.eventType,
-              message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? "Your payslip is available." : telegramContent?.message ?? telegramMessageFor(input),
+              message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : telegramContent?.message ?? telegramMessageFor(input),
               module: input.module,
               title: telegramContent?.title ?? input.title,
             },
@@ -1018,7 +1157,14 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
 
 export async function createSystemNotification(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {
   const explicitRecipient = cleanText(input.recipientUserId) || cleanHrId(input.recipientHrId);
-  if (explicitRecipient) return createSystemNotificationForRecipient(input);
+  if (explicitRecipient) {
+    // Fail-closed: a sensitive module targeting a non-subject explicit recipient is
+    // skipped (and audited) instead of leaking full content — use the governed path.
+    if (!explicitRecipientAllowed(input)) {
+      return createGovernanceSkippedNotification(input, []);
+    }
+    return createSystemNotificationForRecipient(input);
+  }
 
   const resolution = await resolveNotificationRecipientsWithGovernance({
     actorId: input.actorId,

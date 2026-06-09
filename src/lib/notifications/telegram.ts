@@ -179,7 +179,10 @@ function appOrigin() {
 function isPhoenixTelegramButtonUrl(value: string | null | undefined) {
   const url = String(value ?? "").trim();
   if (!url) return false;
-  if (url.startsWith("/") && !url.startsWith("//")) return true;
+  // Relative Phoenix paths are only safe to accept if we have an app URL to build an
+  // absolute link from — otherwise phoenixActionUrl() would emit a bare broken relative
+  // link in the Telegram button. Disallow the relative path when the app URL is unset.
+  if (url.startsWith("/") && !url.startsWith("//")) return Boolean(appUrl());
   if (!/^https?:\/\//i.test(url)) return false;
   const origin = appOrigin();
   if (!origin) return false;
@@ -298,10 +301,15 @@ let cachedBotUsername: { at: number; value: string } | null = null;
 const BOT_USERNAME_CACHE_MS = 5 * 60 * 1000;
 
 // The connect link's bot is defined by the TOKEN, not the env username. We resolve
-// the live username from getMe (cached ~5 min) so connect deep links always point
-// at the bot that actually owns the token and the configured webhook — they can
-// never drift to a stale/old bot if TELEGRAM_BOT_USERNAME is wrong. The env value
-// is only a fallback for when getMe is briefly unavailable.
+// the live username from getMe (cached ~5 min) so connect deep links always point at
+// the bot that actually owns the token and the configured webhook — they can never
+// drift to a stale/old bot if TELEGRAM_BOT_USERNAME is wrong.
+//
+// IMPORTANT: when getMe is unavailable we return null rather than falling back to the
+// env username. A connect link is a credential; pointing it at a possibly-stale env
+// bot is worse than failing loudly ("bot temporarily unreachable, try again"). The env
+// value is only a labelled *display* fallback elsewhere (provisioning report, pilot
+// health), never a source of truth for generated connect links.
 export async function resolveTelegramBotUsername(): Promise<string | null> {
   const now = Date.now();
   if (cachedBotUsername && now - cachedBotUsername.at < BOT_USERNAME_CACHE_MS) {
@@ -313,7 +321,7 @@ export async function resolveTelegramBotUsername(): Promise<string | null> {
     cachedBotUsername = { at: now, value: liveUsername };
     return liveUsername;
   }
-  return telegramBotUsername();
+  return null;
 }
 
 export async function buildTelegramDeepLinkFromToken(token: string): Promise<string | null> {
@@ -360,10 +368,13 @@ export async function provisionTelegramBot(input?: { dropPendingUpdates?: boolea
   steps.push({ detail: expectedUrl, ok: true, step: "Resolve webhook URL" });
 
   const setWebhook = await callTelegram("setWebhook", {
-    allowed_updates: ["message"],
+    // Match the webhook handler, which reads message + edited_message.
+    allowed_updates: ["message", "edited_message"],
     drop_pending_updates: input?.dropPendingUpdates ?? true,
     max_connections: 40,
-    secret_token: secret ?? undefined,
+    // Empty string explicitly CLEARS a previously-set secret on Telegram's side when
+    // NOTIFICATION_WEBHOOK_SECRET is removed (passing undefined would leave it stale).
+    secret_token: secret ?? "",
     url: expectedUrl,
   });
   steps.push({
@@ -379,13 +390,20 @@ export async function provisionTelegramBot(input?: { dropPendingUpdates?: boolea
   });
   steps.push({ detail: setCommands.ok ? "/start command registered." : setCommands.error, ok: setCommands.ok, step: "Register /start command" });
 
-  // Bot profile copy — best effort; failures here do not block provisioning.
-  await callTelegram("setMyShortDescription", { short_description: "Phoenix Workforce notifications center." });
-  await callTelegram("setMyDescription", {
+  // Bot profile copy — best effort (does not block provisioning ok), but reported honestly.
+  const setShort = await callTelegram("setMyShortDescription", { short_description: "Phoenix Workforce notifications center." });
+  const setDesc = await callTelegram("setMyDescription", {
     description:
       "Receive your Phoenix Workforce HR notifications — approvals, payroll alerts, contracts, leave, and reminders — directly in Telegram. Send /start with your personal Phoenix connect link to link your account.",
   });
-  steps.push({ detail: "Bot name, description, and short description published.", ok: true, step: "Publish bot profile" });
+  const profileOk = setShort.ok && setDesc.ok;
+  steps.push({
+    detail: profileOk
+      ? "Bot description and short description published."
+      : `Profile partially updated: ${[setShort.ok ? null : setShort.error, setDesc.ok ? null : setDesc.error].filter(Boolean).join("; ")}`,
+    ok: profileOk,
+    step: "Publish bot profile",
+  });
 
   const webhook = await getTelegramWebhookStatus();
   const ok = identity.ok && setWebhook.ok && webhook.urlMatchesExpected === true;
@@ -442,7 +460,8 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
   } | null;
 
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.description ?? `Telegram request failed with ${response.status}.`);
+    // Redact any bot token the API might echo back, matching every other Telegram call path.
+    throw new Error(cleanWebhookError(payload?.description) ?? `Telegram request failed with ${response.status}.`);
   }
 
   return { providerMessageId: String(payload?.result?.message_id ?? ""), skipped: false };

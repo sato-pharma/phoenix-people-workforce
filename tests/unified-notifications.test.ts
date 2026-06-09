@@ -38,7 +38,7 @@ export function runUnifiedNotificationsTests() {
   assert.match(systemSource, /notification_deliveries/, "engine must record per-channel delivery status");
   assert.match(systemSource, /idempotencyKey/, "engine must use per-channel idempotency");
   assert.match(systemSource, /fallbackFrom: "telegram"/, "Telegram failure must fall back through governed channels");
-  assert.match(systemSource, /Your payslip is available\./, "payroll Telegram messages must stay generic");
+  assert.match(systemSource, /GENERIC_PAYSLIP_MESSAGE/, "payroll Telegram messages must stay generic (redacted via the shared constant)");
   assert.match(systemSource, /resolveNotificationPolicy/, "engine must resolve module/event policy centrally");
   assert.match(systemSource, /resolveNotificationRecipients/, "engine must resolve recipients centrally when not explicit");
   assert.match(systemSource, /renderNotificationTemplate/, "engine must load notification_templates by channel");

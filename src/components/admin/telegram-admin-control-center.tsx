@@ -74,6 +74,9 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [opsDetail, setOpsDetail] = useState<string[] | null>(null);
+  // Holds the eligible-recipient count once previewed, so the admin must confirm
+  // "email N people" before any mass send goes out.
+  const [inviteConfirm, setInviteConfirm] = useState<{ count: number } | null>(null);
 
   const filteredConnections = useMemo(() => {
     if (statusFilter === "all") return data.connections;
@@ -125,7 +128,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? "Telegram admin action failed.");
-      setData(payload.data?.view ?? data);
+      setData(payload.data?.view ?? initialData);
       setNotice(successMessage);
       setOpsDetail(describe(payload.data));
     } catch (opsError) {
@@ -151,7 +154,31 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
     });
   }
 
-  function sendInvitations() {
+  // Step 1: preview the eligible count (read-only) and open the confirm panel.
+  async function requestInviteConfirm() {
+    setBusy("count_invitation_targets");
+    setError(null);
+    setNotice(null);
+    setOpsDetail(null);
+    try {
+      const response = await fetch("/api/admin/notifications/telegram", {
+        body: JSON.stringify({ action: "count_invitation_targets" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Could not count eligible employees.");
+      setInviteConfirm({ count: Number(payload.data?.count ?? 0) });
+    } catch (countError) {
+      setError(countError instanceof Error ? countError.message : "Could not count eligible employees.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Step 2: only after explicit confirmation does the mass email actually send.
+  function confirmSendInvitations() {
+    setInviteConfirm(null);
     void runOpsAction({ action: "send_invitations" }, "Connect invitations processed.", (payload) => {
       const summary = (payload?.summary ?? {}) as {
         attempted?: number;
@@ -305,13 +332,41 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
           <button
             className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
             disabled={!canUpdate || Boolean(busy)}
-            onClick={sendInvitations}
+            onClick={requestInviteConfirm}
             type="button"
           >
             <Mail className="h-4 w-4" />
-            {busy === "send_invitations" ? "Sending…" : "Email connect invitations"}
+            {busy === "count_invitation_targets" ? "Checking…" : busy === "send_invitations" ? "Sending…" : "Email connect invitations"}
           </button>
         </div>
+
+        {inviteConfirm ? (
+          <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-black text-amber-900">Confirm mass email</p>
+            <p className="mt-1 text-sm font-semibold text-amber-800">
+              You are about to email <span className="font-black">{inviteConfirm.count}</span> eligible employee{inviteConfirm.count === 1 ? "" : "s"} a personal one-click Telegram connect link. This sends real email.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-50"
+                disabled={!canUpdate || Boolean(busy) || inviteConfirm.count === 0}
+                onClick={confirmSendInvitations}
+                type="button"
+              >
+                <Mail className="h-4 w-4" />
+                {`Send ${inviteConfirm.count} invitation${inviteConfirm.count === 1 ? "" : "s"}`}
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-700"
+                disabled={Boolean(busy)}
+                onClick={() => setInviteConfirm(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {opsDetail && opsDetail.length > 0 ? (
           <ul className="mt-4 space-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
@@ -323,7 +378,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
 
         <p className="mt-3 text-xs font-semibold text-slate-500">
           Invitations require email delivery to be enabled (RESEND_API_KEY + EMAIL_NOTIFICATIONS_ENABLED). Connect links are single-use and
-          expire after 7 days; employees can also reconnect any time from their portal Notification Settings.
+          expire after 48 hours; employees can also reconnect any time from their portal Notification Settings.
         </p>
       </section>
 
