@@ -1,6 +1,8 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import {
+  isDuplicateKeyError,
   parseResendWebhookEvent,
   recordResendWebhookEvent,
   verifyResendWebhookSignature,
@@ -28,7 +30,19 @@ export async function POST(request: Request) {
   }
   const eventId = request.headers.get("svix-id") ?? "";
   const event = parseResendWebhookEvent(payload, eventId);
-  await recordResendWebhookEvent(event);
 
-  return NextResponse.json({ ok: true });
+  try {
+    const { duplicate } = await recordResendWebhookEvent(event);
+    return NextResponse.json({ duplicate, ok: true });
+  } catch (error) {
+    // Already-recorded (duplicate) → ack with 200 so Resend stops retrying.
+    if (isDuplicateKeyError(error)) {
+      return NextResponse.json({ duplicate: true, ok: true });
+    }
+    // A genuine transient DB error → 503 so Resend retries; tag it so it is not silent.
+    Sentry.captureException(error, {
+      tags: { component: "email", webhook: "resend", eventType: event.event_type },
+    });
+    return NextResponse.json({ message: "Temporary error recording webhook." }, { status: 503 });
+  }
 }
