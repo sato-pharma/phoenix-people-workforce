@@ -20,11 +20,31 @@ export function runEmailEngineHardeningTests() {
     ["EMAIL_NOTIFICATIONS_ENABLED is not true.", "email_disabled_globally"],
     ["NOTIFICATION_EMAIL_FROM is missing.", "from_missing"],
     ["Email skipped: Probation routing resolved no recipient emails.", "no_recipients"],
+    ["All recipients are suppressed (bounce/complaint).", "recipient_suppressed"],
+    ["No deliverable recipient (no real mailbox on file).", "no_deliverable_recipient"],
   ];
   for (const [reason, code] of terminalCases) {
     const result = classifyOutboxSkip(reason, "birthday");
     assert.equal(result.terminal, true, `"${reason}" must be terminal`);
     if (result.terminal) assert.equal(result.code, code, `"${reason}" code`);
+  }
+
+  // Bounce/complaint suppression is deterministic AND by-design — terminal, never escalates.
+  for (const t of ["password_reset", "offer", "birthday", undefined]) {
+    const r = classifyOutboxSkip("All recipients are suppressed (bounce/complaint).", t as never);
+    assert.equal(r.terminal && r.sentryEscalate, false, "suppressed must never escalate");
+  }
+
+  // no_deliverable_recipient escalates ONLY for high-priority types (the in-app copy still
+  // delivers, but a high-priority alert that could not be emailed is worth surfacing).
+  const noMailbox = "No deliverable recipient (no real mailbox on file).";
+  for (const high of ["password_reset", "user_created", "offer", "resignation", "probation", "contract_renewal"]) {
+    const r = classifyOutboxSkip(noMailbox, high as never);
+    assert.equal(r.terminal && r.sentryEscalate, true, `no_deliverable_recipient on ${high} must escalate`);
+  }
+  for (const low of ["birthday", "general"]) {
+    const r = classifyOutboxSkip(noMailbox, low as never);
+    assert.equal(r.terminal && r.sentryEscalate, false, `no_deliverable_recipient on ${low} must NOT escalate`);
   }
 
   // Transient / unknown reasons keep retrying (NOT terminal).
