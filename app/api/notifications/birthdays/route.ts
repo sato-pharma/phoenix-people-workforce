@@ -122,17 +122,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Birthday notification run is not authorized." }, { status: 401 });
   }
   try {
-    // Sentry cron monitor: a missed or failed daily run raises an alert (email).
-    return await Sentry.withMonitor(
-      "birthday-notifications",
-      () => runBirthdayNotifications(request),
-      {
-        schedule: { type: "crontab", value: "0 4 * * *" },
-        checkinMargin: 60,
-        maxRuntime: 30,
-        timezone: "Etc/UTC",
-      },
-    );
+    // NOTE: no Sentry cron monitor here. This sub-route runs in-process from the single
+    // daily dispatcher (/api/notifications/daily), which calls runBirthdayNotifications()
+    // directly — never this GET handler — so a per-route monitor would never check in and
+    // would raise false missed-run alerts. The dispatcher owns the cron monitor.
+    return await runBirthdayNotifications(request);
   } catch (error) {
     Sentry.captureException(error, { tags: { cron: "birthday-notifications" } });
     const message = error instanceof Error ? error.message : "Birthday notification run failed.";
