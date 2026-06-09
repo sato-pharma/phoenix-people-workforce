@@ -45,7 +45,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "unauthorized", message: "Notification processing run is not authorized." }, { status: 401 });
     }
 
-    return await runNotificationOutbox(10);
+    // The external scheduler (GitHub Actions, every ~5 min) passes ?limit= so a backlog
+    // can drain faster than the once-daily Vercel cron. Clamp to [1, 50]; default 50.
+    const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
+    const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
+    return await runNotificationOutbox(limit);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Notification processing failed.";
     return NextResponse.json({ error: "notification_process_failed", message }, { status: 500 });
