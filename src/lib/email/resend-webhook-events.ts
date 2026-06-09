@@ -2,7 +2,16 @@ import crypto from "crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type ResendDeliveryStatus = "bounced" | "complained" | "delivered" | "failed" | "sent" | "suppressed" | "unknown";
+export type ResendDeliveryStatus =
+  | "bounced"
+  | "clicked"
+  | "complained"
+  | "delivered"
+  | "failed"
+  | "opened"
+  | "sent"
+  | "suppressed"
+  | "unknown";
 
 type ResendWebhookPayload = {
   created_at?: string;
@@ -102,9 +111,47 @@ function deliveryStatus(eventType: string): ResendDeliveryStatus {
       return "failed";
     case "email.suppressed":
       return "suppressed";
+    case "email.opened":
+      return "opened";
+    case "email.clicked":
+      return "clicked";
     default:
       return "unknown";
   }
+}
+
+/**
+ * Whether a recorded "duplicate key" / unique-violation error means the row already
+ * exists (safe to ack with 200 rather than make Resend retry).
+ */
+export function isDuplicateKeyError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === "23505") return true;
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return message.includes("duplicate key") || message.includes("unique constraint");
+}
+
+/**
+ * Map a delivery event to a suppression decision (or null if it should not suppress).
+ *  - complaint  → permanent (fail-closed: never re-email a spam complaint)
+ *  - hard bounce → permanent; an explicitly transient/soft bounce gets a 7-day expiry so
+ *    it auto-recovers. Unknown/empty bounce subtype is treated as hard (reputation-safe).
+ */
+export function suppressionReasonForEvent(
+  row: Pick<DeliveryEventRow, "status" | "raw_event">,
+): { reason: "hard_bounce" | "complaint"; expiresAt: string | null } | null {
+  if (row.status === "complained") return { reason: "complaint", expiresAt: null };
+  if (row.status === "bounced") {
+    const data = (row.raw_event?.data ?? {}) as Record<string, unknown>;
+    const bounce = (typeof data.bounce === "object" && data.bounce ? data.bounce : {}) as Record<string, unknown>;
+    const subtype = String(bounce.subType ?? bounce.type ?? data.type ?? "").toLowerCase();
+    const soft = subtype.includes("transient") || subtype.includes("soft") || subtype.includes("undetermined");
+    return {
+      reason: "hard_bounce",
+      expiresAt: soft ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null,
+    };
+  }
+  return null;
 }
 
 function firstText(...values: unknown[]) {
@@ -152,11 +199,42 @@ export function parseResendWebhookEvent(payload: ResendWebhookPayload, providerE
   };
 }
 
-export async function recordResendWebhookEvent(row: DeliveryEventRow) {
+export async function recordResendWebhookEvent(row: DeliveryEventRow): Promise<{ duplicate: boolean }> {
   const supabase = getSupabaseAdmin();
   const result = await supabase
     .from("email_delivery_events")
     .upsert(row, { onConflict: "provider_event_id" });
 
-  if (result.error) throw result.error;
+  if (result.error) {
+    if (isDuplicateKeyError(result.error)) return { duplicate: true };
+    throw result.error;
+  }
+
+  // Feed the durable suppression list on bounce/complaint (most-recent status wins via
+  // onConflict address). A suppression write failure must not fail the webhook ack — the
+  // delivery event is already recorded.
+  const decision = suppressionReasonForEvent(row);
+  if (decision && row.recipients.length > 0) {
+    const now = new Date().toISOString();
+    const suppressions = Array.from(new Set(row.recipients.map((address) => address.trim().toLowerCase())))
+      .filter(Boolean)
+      .map((address) => ({
+        address,
+        bounce_subtype: row.failure_reason,
+        expires_at: decision.expiresAt,
+        reason: decision.reason,
+        source: "resend_webhook",
+        updated_at: now,
+      }));
+    if (suppressions.length > 0) {
+      const suppressionResult = await supabase
+        .from("email_suppressions")
+        .upsert(suppressions, { onConflict: "address" });
+      if (suppressionResult.error && !isDuplicateKeyError(suppressionResult.error)) {
+        console.error("Failed to upsert email suppressions", suppressionResult.error);
+      }
+    }
+  }
+
+  return { duplicate: false };
 }

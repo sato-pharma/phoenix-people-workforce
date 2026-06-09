@@ -1717,8 +1717,6 @@ async function dispatchVacationManagerReview(input: {
   });
 }
 
-void dispatchVacationManagerReview;
-
 async function dispatchVacationDecision(input: {
   decision: VacationDecision;
   directory: EmployeeDirectoryData;
@@ -2647,6 +2645,19 @@ async function applyVacationDecision(input: {
 
   if (isFinalDecision) {
     await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: updated.id,
+      }).catch(() => undefined);
+    });
+  } else if (input.decision === "approve" && step.stepKey === "direct_manager") {
+    // Direct manager approved a NON-final step → hand off to HR final review. Previously
+    // this fired no notification at all (dispatchVacationManagerReview was dead `void`
+    // code), so HR/the employee were never told the request had advanced. Best-effort.
+    await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
