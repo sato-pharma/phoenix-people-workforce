@@ -44,17 +44,42 @@ export const systemEditingPolicy = {
 export const systemEmail = {
   defaultFromEmail: "phoenix@mail.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
+  // Controlled internal inboxes only. NEVER add personal/external addresses here:
+  // when testing-delivery is on, ALL mail is redirected to this list, so a personal
+  // address would receive real employee/candidate PII.
   testingRecipientFallback: [
     "omar.anwar@satopharma.com",
-    "achieverrr303@gmail.com",
     "phoenix@satopharma.com",
   ],
 } as const;
 
+/**
+ * True when the runtime is the production deployment. Mirrors the env detection used
+ * by observability (resolveSentryEnvironment): Vercel sets VERCEL_ENV to
+ * "production" | "preview" | "development"; Node sets NODE_ENV.
+ */
+export function isProductionRuntime(): boolean {
+  const env = String(process.env.VERCEL_ENV || process.env.NODE_ENV || "").toLowerCase();
+  return env === "production";
+}
+
+/**
+ * Whether every outgoing email should be redirected to the testing recipients.
+ *
+ * Resolution order:
+ *  1. An explicit PHOENIX_EMAIL_FORCE_TESTING value always wins (truthy => on, else off).
+ *  2. When unset, default to OFF in production and ON everywhere else (dev/preview).
+ *
+ * This fail-safe default keeps preview/dev from emailing real people while ensuring
+ * production does NOT silently trap real mail in the test inboxes when the flag is
+ * simply forgotten.
+ */
 export function isForceTestingDelivery(): boolean {
-  return ["1", "true", "yes", "on"].includes(
-    String(process.env.PHOENIX_EMAIL_FORCE_TESTING ?? "true").toLowerCase(),
-  );
+  const raw = process.env.PHOENIX_EMAIL_FORCE_TESTING;
+  if (raw != null && raw.trim() !== "") {
+    return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+  }
+  return !isProductionRuntime();
 }
 
 export const systemDocuments = {
