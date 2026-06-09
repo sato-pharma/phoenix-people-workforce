@@ -20,12 +20,14 @@ import {
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import {
   Activity,
+  AlertTriangle,
   ArrowUpRight,
   BriefcaseBusiness,
   Calculator,
   CalendarClock,
   CalendarDays,
   Car,
+  ClipboardList,
   Eye,
   EyeOff,
   Info,
@@ -815,47 +817,73 @@ function resolveExpenseActionHref(data: MedicalRepPortalData) {
     : "/employee-portals/submit-expense";
 }
 
+type CommandLens = "all" | "quarter" | "month";
+
 function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
-  const achievement = Number.isFinite(data.sales.overviewAchievementPercent)
-    ? data.sales.overviewAchievementPercent
-    : 0;
-  const gap = Math.max(0, data.sales.overviewTarget - data.sales.overviewSales);
+  const [lens, setLens] = useState<CommandLens>("all");
+
+  // "Quarter" is derived from the most recent three trend periods so the strip can
+  // offer a time lens without any new server data.
+  const trend = Array.isArray(data.sales.trend) ? data.sales.trend : [];
+  const lastThree = trend.slice(-3);
+  const quarterSales = lastThree.reduce((sum, point) => sum + point.sales, 0);
+  const quarterTarget = lastThree.reduce((sum, point) => sum + point.target, 0);
+
+  const lensConfig: Record<CommandLens, { sales: number; target: number; scope: string }> = {
+    all: { sales: data.sales.overviewSales, target: data.sales.overviewTarget, scope: "All-time" },
+    quarter: { sales: quarterSales, target: quarterTarget, scope: "Last 3 months" },
+    month: {
+      sales: data.sales.currentMonthSales,
+      target: data.sales.currentMonthTarget,
+      scope: data.sales.currentMonthLabel || "This month",
+    },
+  };
+  const active = lensConfig[lens];
+  const sales = Math.max(0, active.sales);
+  const target = Math.max(0, active.target);
+  const achievement = target > 0 ? (sales / target) * 100 : 0;
+  const gap = Math.max(0, target - sales);
   const performanceState = achievement >= 100
     ? "Ahead of plan"
     : achievement >= 90
       ? "Within control band"
       : "Needs attention";
   const pctFormat = (n: number) => `${n.toFixed(1)}%`;
+
+  // Pace signal: in the month lens, surface month-over-month movement (already computed
+  // server-side) instead of a calendar projection, which would be misleading on lagging
+  // sales-closing data.
+  const growth = data.sales.growthVsLastMonthPercent;
+  const gapNote = lens === "month" && growth !== null
+    ? `${growth < 0 ? "▼" : "▲"} ${Math.abs(growth).toFixed(1)}% vs last month`
+    : performanceState;
+
   const signals = [
     {
       accent: "green" as const,
       label: "Sales",
-      note: `Target ${egp(data.sales.overviewTarget)}`,
-      progress: achievement,
-      numeric: data.sales.overviewSales,
+      note: `Target ${egp(target)}`,
+      numeric: sales,
       format: egp,
     },
     {
       accent: "orange" as const,
       label: "Target",
-      progress: achievement,
-      note: "Approved sales target",
-      numeric: data.sales.overviewTarget,
+      note: `${active.scope} approved target`,
+      numeric: target,
       format: egp,
     },
     {
       accent: "blue" as const,
       label: "Achievement Rate",
-      note: "All-time sales versus target",
-      progress: achievement,
+      note: `${active.scope} sales versus target`,
       numeric: achievement,
       format: pctFormat,
     },
     {
       accent: "amber" as const,
       label: "Gap to Target",
-      note: performanceState,
-      progress: achievement,
+      note: gapNote,
       numeric: gap,
       format: egp,
     },
@@ -863,10 +891,15 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     accent: MetricAccent;
     label: string;
     note: string;
-    progress: number;
     numeric: number;
     format: (value: number) => string;
   }>;
+
+  const lensOptions = [
+    { value: "all", label: "All-time" },
+    { value: "quarter", label: "Quarter" },
+    { value: "month", label: "This Month" },
+  ];
 
   return (
     <section className="space-y-4">
@@ -875,7 +908,12 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-700">Command Metrics</p>
           <h2 className="mt-1 text-lg font-black tracking-[-0.02em] text-slate-950">Key operating signals</h2>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodSegmentedControl
+            options={lensOptions}
+            value={lens}
+            onChange={(value) => setLens(value as CommandLens)}
+          />
           <span className="rounded border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
         </div>
       </div>
@@ -1317,7 +1355,8 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const comparisonPeriods = Array.from(new Set(data.sales.trend.map((item) => String(item.period).trim()).filter(Boolean))).sort().reverse();
+  // Periods are "YYYY-MM" strings; sort descending so the newest period chip is first.
+  const comparisonPeriods = Array.from(new Set(data.sales.trend.map((item) => String(item.period).trim()).filter(Boolean))).sort((left, right) => right.localeCompare(left));
   const validPeriodSet = new Set(comparisonPeriods.map((period) => period.toLowerCase()));
   const rawSelectedPeriod = data.sales.teamComparisonPeriod?.toLowerCase().trim();
   const selectedPeriod = rawSelectedPeriod && validPeriodSet.has(rawSelectedPeriod) ? rawSelectedPeriod : "all";
@@ -1370,6 +1409,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
         {rows.map((row) => {
           const pct = row.achievementPercent;
           const fillWidth = Math.max(6, Math.min(100, pct));
+          const belowTarget = pct < 70;
           const grad = pct >= 100 ? "linear-gradient(to right, #16a34a, #86efac)" : pct >= 70 ? "linear-gradient(to right, #ca8a04, #fde047)" : "linear-gradient(to right, #dc2626, #fca5a5)";
           return (
             <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
@@ -1379,6 +1419,12 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                     {row.position}
                   </span>
                   <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
+                  {belowTarget ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-rose-700">
+                      <AlertTriangle className="h-3 w-3" />
+                      Below target
+                    </span>
+                  ) : null}
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="font-mono text-sm font-black tabular-nums text-slate-700">{pct.toFixed(1)}%</p>
@@ -1425,50 +1471,87 @@ function OverviewPagePanel({
   );
 }
 
+type InsightTone = "warning" | "positive" | "insight";
+
 function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
+  const isManager = canSeeTeamLeaveAndStructurePanels(data);
+  const territories = Array.isArray(data.sales.territories) ? data.sales.territories : [];
+  const team = Array.isArray(data.sales.teamComparison) ? data.sales.teamComparison : [];
   const topProduct = data.sales.productContribution[0];
   const totalTopSales = data.sales.productContribution.reduce((sum, p) => sum + p.sales, 0);
   const topProductContribution = topProduct && totalTopSales > 0 ? (topProduct.sales / totalTopSales) * 100 : 0;
+  const growth = data.sales.growthVsLastMonthPercent;
+  const achievement = data.sales.overviewAchievementPercent;
 
-  const raw = [
-    data.sales.overviewAchievementPercent < 100
-      ? `You are ${data.sales.overviewAchievementPercent.toFixed(1)}% towards your all-period target.`
-      : "You have reached your all-period target.",
-    data.sales.growthVsLastMonthPercent !== null
-      ? `Sales ${data.sales.growthVsLastMonthPercent < 0 ? "decreased" : "increased"} by ${Math.abs(data.sales.growthVsLastMonthPercent).toFixed(1)}% vs last month.`
-      : "Last month comparison is not available yet.",
-    data.sales.rankInTeam?.position === 1
-      ? "Top performer in your team. Keep it up."
-      : "You can close the gap with focused daily activity.",
-    topProduct 
-      ? `${topProduct.name} contributes ${topProductContribution.toFixed(1)}% to your top 5 products.`
-      : "No product contribution data available.",
-  ];
-  const cards = raw.slice(0, 4);
+  const items: Array<{ text: string; tone: InsightTone }> = [];
+
+  // Weakest territory — the clearest "where to act" signal.
+  const weakest = [...territories]
+    .filter((territory) => territory.target > 0)
+    .sort((a, b) => a.achievementPercent - b.achievementPercent)[0];
+  if (weakest && weakest.achievementPercent < 100) {
+    items.push({ text: `${weakest.name} is your lowest territory at ${weakest.achievementPercent.toFixed(0)}%.`, tone: "warning" });
+  }
+
+  // Peer comparison below the 70% line — managers only. For DSM/NSM the comparison
+  // group is fellow line-managers (District Managers), not medical reps.
+  if (isManager && team.length > 0) {
+    const below = team.filter((row) => row.achievementPercent < 70);
+    if (below.length > 0) {
+      const lowest = [...below].sort((a, b) => a.achievementPercent - b.achievementPercent)[0];
+      items.push({ text: `${below.length} of ${team.length} peer DMs below 70% — lowest is ${lowest.name}.`, tone: "warning" });
+    } else {
+      items.push({ text: `All ${team.length} peer DMs are at or above 70% achievement.`, tone: "positive" });
+    }
+  }
+
+  // Month-over-month movement.
+  if (growth !== null) {
+    items.push({
+      text: `Sales ${growth < 0 ? "decreased" : "increased"} by ${Math.abs(growth).toFixed(1)}% vs last month.`,
+      tone: growth < 0 ? "warning" : "positive",
+    });
+  }
+
+  // Overall achievement standing.
+  items.push(achievement >= 100
+    ? { text: `You have reached your all-period target at ${achievement.toFixed(0)}%.`, tone: "positive" }
+    : { text: `Overall achievement is ${achievement.toFixed(1)}% of the all-period target.`, tone: "insight" });
+
+  // Product concentration.
+  if (topProduct) {
+    items.push({ text: `${topProduct.name} drives ${topProductContribution.toFixed(0)}% of your top products.`, tone: "insight" });
+  }
+
+  const cards = items.slice(0, 4);
+
+  const toneMeta: Record<InsightTone, { badge: string; classes: string; border: string; icon: typeof Info }> = {
+    warning: { badge: "Warning", classes: "bg-rose-50 text-rose-700", border: "border-l-rose-500", icon: AlertTriangle },
+    positive: { badge: "Positive", classes: "bg-emerald-50 text-emerald-700", border: "border-l-emerald-500", icon: TrendingUp },
+    insight: { badge: "Insight", classes: "bg-slate-100 text-slate-700", border: "border-l-blue-500", icon: Info },
+  };
+
   return (
     <OverviewPagePanel title="Insights & Alerts">
-      <div className="grid gap-3 md:grid-cols-2">
-        {cards.map((text) => {
-          const meta = insightMeta(text);
-          const Icon = meta.icon;
-          const borderTone = meta.badge === "Positive"
-            ? "border-l-emerald-500"
-            : meta.badge === "Warning"
-              ? "border-l-amber-500"
-              : meta.badge === "Insight"
-                ? "border-l-blue-500"
-                : "border-l-rose-500";
-          return (
-            <div key={text} className={`rounded border border-slate-100 border-l-2 ${borderTone} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
-              <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-slate-500" />
-                <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
+      {cards.length === 0 ? (
+        <p className="text-sm text-slate-500">No insights available yet.</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {cards.map((item) => {
+            const meta = toneMeta[item.tone];
+            const Icon = meta.icon;
+            return (
+              <div key={item.text} className={`rounded border border-slate-100 border-l-2 ${meta.border} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-slate-500" />
+                  <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
+                </div>
+                <p className="mt-2 text-sm text-slate-700">{shortInsight(item.text)}</p>
               </div>
-              <p className="mt-2 text-sm text-slate-700">{shortInsight(text)}</p>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </OverviewPagePanel>
   );
 }
@@ -1734,10 +1817,31 @@ const actionIconMap: Record<string, typeof ReceiptText> = {
   "vacation-approvals": CalendarClock,
   "my-vacation-requests": CalendarDays,
   "marketing-drafts": Megaphone,
+  "probation-reviews": ClipboardList,
+  "open-vacancies": Users,
 };
 
 function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
-  const actions = data.overview.myActions;
+  // Managers (DSM/NSM) get team-management to-dos appended to the server-provided
+  // action list. These counts already exist in the payload (data.workforce) and were
+  // previously only used for display KPIs — here they become actionable, deep-linked items.
+  const managerActions = canSeeTeamLeaveAndStructurePanels(data)
+    ? [
+        {
+          count: data.workforce.probationDue,
+          href: "/employee-portals/probation",
+          id: "probation-reviews",
+          label: "Probation reviews due",
+        },
+        {
+          count: data.workforce.openVacancies,
+          href: "/employee-portals/vacancies",
+          id: "open-vacancies",
+          label: "Open vacancies to fill",
+        },
+      ].filter((item) => item.count > 0)
+    : [];
+  const actions = [...data.overview.myActions, ...managerActions];
 
   return (
     <OverviewPagePanel title="My Actions">
@@ -3682,6 +3786,82 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
+function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
+  const lines = Array.isArray(data.sales.linePerformance) ? data.sales.linePerformance : [];
+  if (lines.length === 0) return null;
+
+  const sorted = [...lines].sort((a, b) => b.achievementPercent - a.achievementPercent);
+  const totalSales = lines.reduce((sum, line) => sum + line.sales, 0);
+  const totalTarget = lines.reduce((sum, line) => sum + line.target, 0);
+
+  return (
+    <OverviewPagePanel
+      title="Line Performance"
+      action={
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          {lines.length} line{lines.length === 1 ? "" : "s"}
+        </span>
+      }
+    >
+      <ChartErrorBoundary>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
+          </div>
+          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
+            <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-1">
+          {sorted.map((line) => {
+            const pct = Math.min(line.achievementPercent, 150);
+            const grad = line.achievementPercent >= 100 ? "#16a34a,#86efac" : line.achievementPercent >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const [from, to] = grad.split(",");
+            return (
+              <PremiumTooltip
+                key={line.name}
+                triggerClassName="block"
+                content={
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black text-slate-900">{line.name}</p>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Sales</span>
+                      <span className="font-bold text-orange-600">{egp(line.sales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                      <span className="text-slate-500">Target</span>
+                      <span className="font-bold text-slate-700">{egp(line.target)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                      <span className="text-slate-500">Achievement</span>
+                      <span className="font-bold text-orange-600">{line.achievementPercent.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                }
+              >
+                <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
+                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{line.name}</span>
+                  <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-sm"
+                      style={{ width: `${Math.min(100, (pct / 150) * 100)}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
+                    />
+                    <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
+                  </div>
+                  <span className="w-10 shrink-0 text-right text-[11px] font-black text-slate-700">{line.achievementPercent.toFixed(0)}%</span>
+                </div>
+              </PremiumTooltip>
+            );
+          })}
+        </div>
+      </ChartErrorBoundary>
+    </OverviewPagePanel>
+  );
+}
+
 export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData }) {
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
@@ -3691,21 +3871,28 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
   return (
     <div className="space-y-6">
       <ExecutiveCommandStrip data={data} />
+      {/* Manager-first: daily to-dos and team operations lead the page. */}
       <div className="grid gap-5 xl:grid-cols-2">
         <MyActionsPanel data={data} />
         <QuickActionsPanel data={data} />
-        {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
         {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
+        {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
+      </div>
+      {/* Team performance + actionable signals, surfaced high for managers. */}
+      <div className="grid items-start gap-5 xl:grid-cols-2">
+        <TeamRankComparisonWidget data={data} />
+        <OverviewInsightsAlerts data={data} />
       </div>
       <OverviewPerformanceChart data={data} />
-      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <TerritoryComparisonChart data={data} />
-        <div className="self-start space-y-5">
+      <div className="grid items-start gap-5 xl:grid-cols-2">
+        <div className="space-y-5">
+          <TerritoryComparisonChart data={data} />
+          <LinePerformanceBreakdown data={data} />
+          <ToReachTargetWidget data={data} />
+        </div>
+        <div className="space-y-5">
           <ProductFamilyBreakdown data={data} />
           <OverviewTopProducts data={data} />
-          <TeamRankComparisonWidget data={data} />
-          <ToReachTargetWidget data={data} />
-          <OverviewInsightsAlerts data={data} />
         </div>
       </div>
       <div className="flex justify-center lg:justify-end">
