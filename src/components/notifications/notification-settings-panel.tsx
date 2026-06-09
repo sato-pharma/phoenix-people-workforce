@@ -47,6 +47,7 @@ export function NotificationSettingsPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connectLink, setConnectLink] = useState<string | null>(null);
+  const [connectExpiresAt, setConnectExpiresAt] = useState<string | null>(null);
 
   async function loadSettings() {
     setLoading(true);
@@ -114,6 +115,7 @@ export function NotificationSettingsPanel() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? "Unable to create Telegram link.");
       setConnectLink(payload.data?.link ?? null);
+      setConnectExpiresAt(payload.data?.expiresAt ?? null);
       if (payload.data?.link) window.open(payload.data.link, "_blank", "noopener,noreferrer");
       await loadSettings();
     } catch (connectError) {
@@ -269,9 +271,21 @@ export function NotificationSettingsPanel() {
       </div>
 
       {connectLink ? (
-        <p className="mt-3 break-all rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">
-          Telegram link: {connectLink}
-        </p>
+        <div className="mt-3 rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">
+          <p className="break-all">Telegram link: {connectLink}</p>
+          <p className="mt-1 font-semibold">
+            This personal link can be used once and expires {connectExpiresAt ? `at ${new Date(connectExpiresAt).toLocaleTimeString()}` : "in 15 minutes"}. Press START in the bot to finish connecting.
+          </p>
+          <button
+            className="mt-2 inline-flex items-center gap-2 rounded border border-orange-300 bg-white px-2.5 py-1 text-xs font-bold text-orange-800 disabled:opacity-60"
+            disabled={loading || saving}
+            onClick={connectTelegram}
+            type="button"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            Regenerate link
+          </button>
+        </div>
       ) : null}
       {message ? (
         <p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-700">

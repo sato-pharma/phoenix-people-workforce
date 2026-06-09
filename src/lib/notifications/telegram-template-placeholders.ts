@@ -128,13 +128,26 @@ export function renderTelegramCtaUrl(text: string, variables: Record<string, unk
   return rendered;
 }
 
-export function renderTelegramTemplateText(text: string, variables: Record<string, unknown>, allowedPlaceholders: string[]) {
+export function renderTelegramTemplateText(
+  text: string,
+  variables: Record<string, unknown>,
+  allowedPlaceholders: string[],
+  // When provided, ONLY these placeholders are required — any other placeholder that
+  // the live event omits renders to empty instead of throwing. This guarantees a
+  // template that passes preview (complete sampleVariables) cannot throw at live send
+  // because a real event legitimately omitted an optional variable. When omitted, every
+  // placeholder is treated as required (back-compat, used by strict CTA-URL rendering).
+  requiredPlaceholders?: string[],
+) {
   const validation = validateTelegramTemplateText(text, allowedPlaceholders);
   if (validation.errors.length > 0) {
     throw new TelegramTemplateError("invalid_template", validation.errors.join(" "));
   }
 
-  const missing = extractTelegramPlaceholders(text).filter((placeholder) => cleanText(variables[placeholder]) === "");
+  const requiredSet = requiredPlaceholders ? new Set(requiredPlaceholders) : null;
+  const missing = extractTelegramPlaceholders(text).filter(
+    (placeholder) => cleanText(variables[placeholder]) === "" && (requiredSet ? requiredSet.has(placeholder) : true),
+  );
   if (missing.length > 0) {
     throw new TelegramTemplateError("missing_variables", `Missing required variables: ${missing.join(", ")}.`);
   }

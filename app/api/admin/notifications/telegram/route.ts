@@ -11,7 +11,7 @@ import {
   setTelegramGlobalSwitch,
   updateTelegramPolicy,
 } from "@/lib/notifications/telegram-admin";
-import { runTelegramOnboardingCampaign } from "@/lib/notifications/telegram-onboarding";
+import { countTelegramOnboardingTargets, runTelegramOnboardingCampaign } from "@/lib/notifications/telegram-onboarding";
 import { provisionTelegramBot } from "@/lib/notifications/telegram";
 
 export const runtime = "nodejs";
@@ -87,10 +87,18 @@ export async function POST(request: Request) {
       const report = await provisionTelegramBot();
       return NextResponse.json({ data: { report, view: await getTelegramAdminControlCenter(access) }, success: true });
     }
+    if (body?.action === "count_invitation_targets") {
+      // Read-only preview for the confirm dialog ("you are about to email N people").
+      const count = await countTelegramOnboardingTargets();
+      return NextResponse.json({ data: { count }, success: true });
+    }
     if (body?.action === "send_invitations") {
+      // `force` (re-emails already-connected users / bypasses the unconnected filter) is
+      // a Super-Admin-only escalation; HR Specialist with communication:update cannot use it.
+      const isSuperAdmin = access.role === "Super Admin";
       const summary = await runTelegramOnboardingCampaign({
         access,
-        force: body?.force === true,
+        force: body?.force === true && isSuperAdmin,
         limit: Number.isFinite(Number(body?.limit)) ? Number(body?.limit) : undefined,
         userIds: Array.isArray(body?.userIds) ? body.userIds.map(String) : undefined,
       });
