@@ -19,6 +19,7 @@ import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram";
@@ -255,9 +256,30 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
 
     if (error) throw error;
     const row = data as { auth_email?: string | null; hr_id?: string | null; login_id?: string | null; name?: string | null } | null;
+    const resolvedHrId = cleanHrId(row?.hr_id) || hrId || null;
+
+    // app_auth_users.auth_email is the synthetic Supabase-auth login key
+    // (phx-<hex>@auth.phoenix.local), never a real mailbox. The deliverable address lives on
+    // employees.work_email. Resolve it; degrade to in-app only (null) when there is none.
+    let workEmail: string | null = null;
+    if (resolvedHrId) {
+      try {
+        const { data: employee } = await supabase
+          .from("employees")
+          .select("work_email")
+          .ilike("hr_id", resolvedHrId)
+          .maybeSingle();
+        workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
+      } catch (employeeError) {
+        if (!schemaMissing(employeeError, "employees")) {
+          console.error("Notification recipient work email lookup failed", employeeError);
+        }
+      }
+    }
+
     return {
-      email: row?.auth_email ?? null,
-      hrId: cleanHrId(row?.hr_id) || hrId || null,
+      email: pickDeliverableEmail(workEmail, row?.auth_email),
+      hrId: resolvedHrId,
       name: row?.name ?? null,
       userId: row?.login_id ?? (userId || null),
     };

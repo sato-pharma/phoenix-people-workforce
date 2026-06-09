@@ -1087,7 +1087,9 @@ export type OutboxSkipCode =
   | "type_not_approved"
   | "type_unsupported"
   | "policy_disabled"
-  | "no_recipients";
+  | "no_recipients"
+  | "recipient_suppressed"
+  | "no_deliverable_recipient";
 
 export type OutboxSkipClass =
   | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
@@ -1125,6 +1127,17 @@ export function classifyOutboxSkip(
   }
   if (r.includes("resolved no recipient")) {
     return { terminal: true, sentryEscalate: high, code: "no_recipients" };
+  }
+  // Bounce/complaint suppression is deterministic — retrying re-sends to the same dead
+  // address. Terminal skip (not a failure); do not escalate (suppression is by-design).
+  if (r.includes("suppressed")) {
+    return { terminal: true, sentryEscalate: false, code: "recipient_suppressed" };
+  }
+  // Every recipient was a synthetic/non-routable address (no real mailbox on file). Won't
+  // change on retry. Terminal skip; escalate only for high-priority types (a real alert that
+  // could not be emailed — the in-app copy still delivers).
+  if (r.includes("no deliverable recipient")) {
+    return { terminal: true, sentryEscalate: high, code: "no_deliverable_recipient" };
   }
   // Unknown reason (e.g. a missing/inactive template that may be republished, or
   // "already being processed") → transient: keep retrying within the attempt budget.
