@@ -90,7 +90,7 @@ type NotificationOutboxRow = {
   payload: NotificationEmailInput;
   provider_message_id: string | null;
   sent_at: string | null;
-  status: "pending" | "processing" | "sent" | "failed";
+  status: "pending" | "processing" | "sent" | "failed" | "skipped";
   updated_at: string;
 };
 
@@ -99,6 +99,7 @@ type NotificationOutboxProcessResult = {
   failed: number;
   processedIds: string[];
   sent: number;
+  skipped: number;
 };
 
 const emailNotificationPolicyTable = "email_notification_policies";
@@ -1061,6 +1062,69 @@ function nextAttemptAtIso(attemptNumber: number) {
   return next.toISOString();
 }
 
+/**
+ * Notification types where a "no recipients resolved" outcome means a real escalation
+ * (an approval/auth/lifecycle email) was silently dropped — worth a Sentry warning.
+ */
+const highPriorityNotificationTypes = new Set<EmailNotificationType>([
+  "password_reset",
+  "user_created",
+  "offer",
+  "resignation",
+  "probation",
+  "contract_renewal",
+]);
+
+export type OutboxSkipCode =
+  | "email_disabled_globally"
+  | "from_missing"
+  | "type_not_approved"
+  | "type_unsupported"
+  | "policy_disabled"
+  | "no_recipients";
+
+export type OutboxSkipClass =
+  | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
+  | { terminal: false };
+
+/**
+ * Classify a `skipped` send result as a DETERMINISTIC skip (a configuration/routing
+ * outcome that will not change on retry) vs a transient failure (worth retrying).
+ *
+ * Deterministic skips were previously routed through markNotificationOutboxFailed,
+ * burning all 5 retries and polluting the failure/terminalFailed metrics. They now go
+ * to a terminal `skipped` state. A `no_recipients` skip on a high-priority type ALSO
+ * escalates to Sentry because it means a real alert was dropped.
+ */
+export function classifyOutboxSkip(
+  reason: string,
+  notificationType?: EmailNotificationType | null,
+): OutboxSkipClass {
+  const r = reason.toLowerCase();
+  const high = !!notificationType && highPriorityNotificationTypes.has(notificationType);
+  if (r.includes("email_notifications_enabled")) {
+    return { terminal: true, sentryEscalate: false, code: "email_disabled_globally" };
+  }
+  if (r.includes("notification_email_from")) {
+    return { terminal: true, sentryEscalate: false, code: "from_missing" };
+  }
+  if (r.includes("not approved for automatic")) {
+    return { terminal: true, sentryEscalate: false, code: "type_not_approved" };
+  }
+  if (r.includes("unsupported notification type")) {
+    return { terminal: true, sentryEscalate: false, code: "type_unsupported" };
+  }
+  if (r.includes("notifications are disabled")) {
+    return { terminal: true, sentryEscalate: false, code: "policy_disabled" };
+  }
+  if (r.includes("resolved no recipient")) {
+    return { terminal: true, sentryEscalate: high, code: "no_recipients" };
+  }
+  // Unknown reason (e.g. a missing/inactive template that may be republished, or
+  // "already being processed") → transient: keep retrying within the attempt budget.
+  return { terminal: false };
+}
+
 const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
 
 function listUnsubscribeHeaders(notificationType: EmailNotificationType | undefined): Record<string, string> | undefined {
@@ -1222,6 +1286,44 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
       updated_at: now,
     })
     .eq("id", row.id);
+
+  // A row that has exhausted every retry is a notification that was never delivered.
+  // Surface it individually (the batch-level warning only says "something failed").
+  if (terminal) {
+    Sentry.captureMessage("Email outbox row terminally failed", {
+      level: "error",
+      tags: { component: "email", cron: "outbox-processing", notificationType: row.payload.notificationType ?? "unknown" },
+      extra: { id: row.id, attempts, last_error: errorMessage },
+    });
+  }
+}
+
+/**
+ * Terminal `skipped` state for DETERMINISTIC non-sends (disabled policy, unsupported
+ * type, missing global config, no recipients). Unlike a failure, this does not consume
+ * the retry budget or inflate the failure metric — the send will never succeed on retry.
+ */
+async function markNotificationOutboxSkipped(row: NotificationOutboxRow, reason: string, code: OutboxSkipCode) {
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from(notificationOutboxTable)
+    .update({
+      attempts: row.attempts + 1,
+      last_error: `[${code}] ${reason}`,
+      locked_at: null,
+      next_attempt_at: null,
+      status: "skipped",
+      updated_at: now,
+    })
+    .eq("id", row.id);
+
+  // The 'skipped' status requires the widening migration. If it is not applied yet, the
+  // CHECK constraint rejects the update — fall back to the failure path so the row still
+  // progresses toward terminal instead of being re-claimed forever.
+  if (error) {
+    await markNotificationOutboxFailed(row, `[${code}] ${reason}`);
+  }
 }
 
 async function loadDueNotificationOutboxRows(limit: number) {
@@ -1265,11 +1367,16 @@ export async function reapStaleProcessingOutboxRows(): Promise<number> {
   }
 }
 
-export async function cleanupOldNotificationData(): Promise<{ outboxDeleted: number; eventsRedacted: number }> {
+export async function cleanupOldNotificationData(): Promise<{
+  outboxDeleted: number;
+  outboxTerminalDeleted: number;
+  eventsRedacted: number;
+}> {
   const threshold = new Date();
   threshold.setDate(threshold.getDate() - retentionDays);
   const thresholdIso = threshold.toISOString();
   let outboxDeleted = 0;
+  let outboxTerminalDeleted = 0;
   let eventsRedacted = 0;
 
   try {
@@ -1291,9 +1398,30 @@ export async function cleanupOldNotificationData(): Promise<{ outboxDeleted: num
   try {
     const supabase = getSupabaseAdmin();
 
+    // Terminal failed/skipped rows still hold their PII-bearing payload (HR_IDs, names,
+    // candidate emails). At 90 days these are unquestionably terminal — purge them too,
+    // so retention is not limited to successfully-sent rows.
+    const { data: terminalData, error: terminalError } = await supabase
+      .from(notificationOutboxTable)
+      .delete()
+      .in("status", ["failed", "skipped"])
+      .lt("updated_at", thresholdIso)
+      .select("id");
+
+    if (terminalError && !notificationSchemaMissing(terminalError)) {
+      console.error("Outbox terminal-row retention cleanup failed", terminalError);
+    }
+    outboxTerminalDeleted = terminalData?.length ?? 0;
+  } catch { /* schema missing */ }
+
+  try {
+    const supabase = getSupabaseAdmin();
+
+    // Redact the PII-bearing payload AND the recipient addresses on aged delivery
+    // events (previously only raw_event was cleared, leaving recipients intact).
     const { data: eventsData, error: eventsError } = await supabase
       .from("email_delivery_events")
-      .update({ raw_event: {} })
+      .update({ raw_event: {}, recipients: [] })
       .lt("occurred_at", thresholdIso)
       .neq("raw_event", "{}")
       .select("id");
@@ -1304,7 +1432,7 @@ export async function cleanupOldNotificationData(): Promise<{ outboxDeleted: num
     eventsRedacted = eventsData?.length ?? 0;
   } catch { /* table missing */ }
 
-  return { eventsRedacted, outboxDeleted };
+  return { eventsRedacted, outboxDeleted, outboxTerminalDeleted };
 }
 
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
@@ -1316,6 +1444,24 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
   try {
     const result = await sendNotificationEmailDirect(claimed.payload);
     if (result.skipped) {
+      const classification = classifyOutboxSkip(result.reason, claimed.payload.notificationType);
+      if (classification.terminal) {
+        await markNotificationOutboxSkipped(claimed, result.reason, classification.code);
+        if (classification.sentryEscalate) {
+          Sentry.captureMessage("High-priority notification dropped: no recipients resolved", {
+            level: "warning",
+            tags: {
+              component: "email",
+              cron: "outbox-processing",
+              outboxSkipCode: classification.code,
+              notificationType: claimed.payload.notificationType ?? "unknown",
+            },
+            extra: { id: claimed.id, reason: result.reason },
+          });
+        }
+        return result;
+      }
+      // Transient skip (e.g. template temporarily unavailable) → retry within budget.
       await markNotificationOutboxFailed(claimed, result.reason);
       return result;
     }
@@ -1335,27 +1481,37 @@ export async function processNotificationOutbox(limit = notificationOutboxBatchS
   let attempted = 0;
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const row of rows) {
     attempted += 1;
     const result = await processNotificationOutboxRow(row);
     processedIds.push(row.id);
-    if (result.skipped) {
-      failed += 1;
-    } else {
+    if (!result.skipped) {
       sent += 1;
+      continue;
     }
+    // A row claimed by a concurrent run is neither sent nor failed here.
+    if (result.reason.toLowerCase().includes("already being processed")) {
+      skipped += 1;
+      continue;
+    }
+    // Deterministic skips (disabled policy, no recipients, …) are terminal config
+    // outcomes — count them as skipped, not failed, so they never trip the alarm.
+    const classification = classifyOutboxSkip(result.reason, row.payload.notificationType);
+    if (classification.terminal) skipped += 1;
+    else failed += 1;
   }
 
   if (failed > 0) {
     Sentry.captureMessage("Email outbox processing had failures", {
       level: "warning",
       tags: { component: "email", cron: "outbox-processing" },
-      extra: { attempted, failed, sent },
+      extra: { attempted, failed, sent, skipped },
     });
   }
 
-  return { attempted, failed, processedIds, sent };
+  return { attempted, failed, processedIds, sent, skipped };
 }
 
 export async function safeSendNotificationEmail(input: NotificationEmailInput) {

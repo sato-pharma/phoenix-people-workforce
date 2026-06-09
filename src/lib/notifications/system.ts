@@ -1,5 +1,7 @@
 import crypto from "crypto";
 
+import * as Sentry from "@sentry/nextjs";
+
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
   safeSendNotificationEmail,
@@ -616,6 +618,105 @@ function nextTelegramRetryAt(attempt: number) {
   return next.toISOString();
 }
 
+/**
+ * Drain quiet-hours-deferred EMAIL deliveries from notification_deliveries. These rows
+ * are written `pending` when a recipient is inside their quiet-hours window; before this
+ * existed, only telegram had a drainer, so deferred email was silently lost. Each row
+ * carries metadata.emailInput (the exact payload). We re-dispatch via the email outbox
+ * (idempotent on dedupe_key) and re-defer while the recipient is still in quiet hours.
+ * (in_app is never deferred — line `channel !== "in_app"` — so this only handles email.)
+ */
+export async function processDeferredDeliveryRetries(limit = 10) {
+  const nowIso = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("notification_deliveries")
+    .select("id,metadata,recipient_hr_id,recipient_user_id")
+    .eq("channel", "email")
+    .eq("status", "pending")
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
+    .order("created_at", { ascending: true })
+    .limit(Math.max(1, Math.min(limit, 50)));
+
+  if (error) {
+    if (schemaMissing(error, "notification_deliveries")) return { attempted: 0, deferred: 0, sent: 0, skipped: 0 };
+    throw error;
+  }
+
+  let attempted = 0;
+  let sent = 0;
+  let skipped = 0;
+  let deferred = 0;
+
+  for (const row of (data ?? []) as Array<{
+    id: string;
+    metadata?: Record<string, unknown> | null;
+    recipient_hr_id?: string | null;
+    recipient_user_id?: string | null;
+  }>) {
+    const emailInput = row.metadata?.emailInput as NotificationEmailInput | undefined;
+    if (!emailInput) {
+      // No stored payload (legacy deferred row) — close it terminally so it never loops.
+      await supabase
+        .from("notification_deliveries")
+        .update({ last_error: "Deferred email had no stored payload to re-dispatch.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      Sentry.captureMessage("Deferred email delivery had no stored payload", {
+        level: "warning",
+        tags: { component: "email", cron: "deferred-drain" },
+        extra: { id: row.id },
+      });
+      skipped += 1;
+      continue;
+    }
+
+    // Respect quiet hours: if the recipient is still inside their window, re-defer +1h.
+    const preferences = await loadPreferences({
+      eventType: "deferred_email",
+      message: "",
+      module: "system",
+      recipientHrId: row.recipient_hr_id ?? null,
+      recipientUserId: row.recipient_user_id ?? null,
+      title: "",
+    });
+    if (isWithinQuietHours(preferences)) {
+      await supabase
+        .from("notification_deliveries")
+        .update({ next_attempt_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      deferred += 1;
+      continue;
+    }
+
+    attempted += 1;
+    const result = await safeSendNotificationEmail(emailInput);
+    if (!result.skipped) {
+      await supabase
+        .from("notification_deliveries")
+        .update({ last_error: null, next_attempt_at: null, provider_message_id: result.id ?? null, sent_at: new Date().toISOString(), status: "sent", updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      sent += 1;
+    } else if (result.reason.startsWith("Queued for retry:")) {
+      // Handed off to the email outbox, which now owns retry + delivery (it tracks the
+      // real outcome and emits its own terminal-failure alert). Mark this row done.
+      await supabase
+        .from("notification_deliveries")
+        .update({ last_error: null, metadata: { ...(row.metadata ?? {}), handedOffToOutbox: true }, next_attempt_at: null, sent_at: new Date().toISOString(), status: "sent", updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      sent += 1;
+    } else {
+      // Deterministic skip (policy disabled, no recipients, …) — will not send.
+      await supabase
+        .from("notification_deliveries")
+        .update({ last_error: result.reason, next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+      skipped += 1;
+    }
+  }
+
+  return { attempted, deferred, sent, skipped };
+}
+
 export async function processTelegramDeliveryRetries(limit = 10) {
   const now = new Date().toISOString();
   const supabase = getSupabaseAdmin();
@@ -926,6 +1027,64 @@ async function triggerTelegramRetryExhaustionFallback(input: {
   }
 }
 
+/**
+ * Build the email NotificationEmailInput for a single recipient. Extracted so the
+ * quiet-hours deferral can persist the EXACT payload (metadata.emailInput) and the
+ * deferred-delivery drain can re-dispatch it later without reconstructing context.
+ */
+async function buildChannelEmailInput(
+  input: CreateSystemNotificationInput,
+  recipient: RecipientProfile,
+  resolvedPriority: string,
+): Promise<NotificationEmailInput> {
+  const emailContent = await renderChannelContent(input, "email");
+  return {
+    ctaHref: input.actionUrl ?? input.email?.ctaHref,
+    ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
+    employeeHrId: recipient.hrId ?? input.email?.employeeHrId ?? undefined,
+    includeHrInbox: input.email?.includeHrInbox,
+    metrics: input.email?.metrics,
+    notificationType: input.email?.notificationType ?? notificationTypeFor(input.module),
+    recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
+    recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
+    subject: input.email?.subject ?? emailContent.title,
+    summary: input.email?.summary ?? emailContent.message,
+    title: input.email?.title ?? emailContent.title,
+    tone: input.email?.tone ?? (resolvedPriority === "critical" ? "danger" : "neutral"),
+  };
+}
+
+/**
+ * Build the telegram retry payload for a quiet-hours-deferred telegram delivery, so the
+ * existing processTelegramDeliveryRetries worker (which requires metadata.telegram with
+ * chatId/title/message) can drain it after quiet hours. Returns null when telegram is
+ * not deliverable for this recipient (disabled/not connected) — i.e. nothing to defer.
+ */
+async function buildDeferredTelegramPayload(
+  input: CreateSystemNotificationInput,
+  recipient: RecipientProfile,
+  preferences: LoadedPreferences,
+  emailAttempted: boolean,
+): Promise<TelegramRetryPayload | null> {
+  const governance = await resolveTelegramGovernance({ eventType: input.eventType, module: input.module });
+  if (!governance.enabled || !preferences.telegram_enabled) return null;
+  const connection = await loadTelegramConnection({ ...input, recipientHrId: recipient.hrId, recipientUserId: recipient.userId });
+  if (connection?.status !== "connected" || !connection.telegram_chat_id) return null;
+  const content = await renderChannelContent(input, "telegram");
+  return {
+    actionUrl: input.actionUrl ?? null,
+    buttons: input.telegram?.buttons ?? content.buttons ?? null,
+    chatId: String(connection.telegram_chat_id),
+    ctaLabel: input.telegram?.ctaLabel ?? content.ctaLabel ?? null,
+    ctaUrl: input.telegram?.ctaUrl ?? content.ctaUrl ?? null,
+    emailAttempted,
+    eventType: input.eventType,
+    message: isSensitivePayroll(input) || governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : content.message,
+    module: input.module,
+    title: content.title,
+  };
+}
+
 async function createSystemNotificationForRecipient(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {
   const eventKey = eventKeyFor(input);
   const policy = resolveNotificationPolicy(input);
@@ -959,12 +1118,27 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
     }
 
     if (quietHoursActive && !policy.bypassQuietHours && channel !== "in_app") {
+      // Persist the channel payload so the deferred-delivery drain (email) and the
+      // telegram retry worker (telegram) can re-dispatch this row after quiet hours.
+      // Previously a deferred row was written `pending` with no payload and NEVER
+      // drained — the notification was silently lost.
+      const deferredMetadata: Record<string, unknown> = { quietHours: true };
+      if (channel === "email" && preferences.email_enabled) {
+        deferredMetadata.emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
+      }
+      if (channel === "telegram") {
+        const telegramPayload = await buildDeferredTelegramPayload(input, recipient, preferences, emailAttempted);
+        if (telegramPayload) {
+          deferredMetadata.telegram = telegramPayload;
+          deferredMetadata.retry = true;
+        }
+      }
       await upsertDelivery({
         channel,
         eventId,
         idempotencyKey,
         lastError: "Deferred by quiet hours.",
-        metadata: { quietHours: true },
+        metadata: deferredMetadata,
         nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         recipient,
         status: "pending",
@@ -989,21 +1163,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         continue;
       }
 
-      const emailContent = await renderChannelContent(input, "email");
-      const emailInput: NotificationEmailInput = {
-        ctaHref: input.actionUrl ?? input.email?.ctaHref,
-        ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
-        employeeHrId: recipient.hrId ?? input.email?.employeeHrId ?? undefined,
-        includeHrInbox: input.email?.includeHrInbox,
-        metrics: input.email?.metrics,
-        notificationType: input.email?.notificationType ?? notificationTypeFor(input.module),
-        recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
-        recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
-        subject: input.email?.subject ?? emailContent.title,
-        summary: input.email?.summary ?? emailContent.message,
-        title: input.email?.title ?? emailContent.title,
-        tone: input.email?.tone ?? ((input.priority ?? policy.priority) === "critical" ? "danger" : "neutral"),
-      };
+      const emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
       const result = await safeSendNotificationEmail(emailInput);
       const status = result.skipped ? "failed" : "sent";
       const error = result.skipped ? result.reason : undefined;
