@@ -11,6 +11,26 @@ export function runTelegramOperationsTests() {
   const policy = source("src/lib/notifications/policy.ts");
   const telegram = source("src/lib/notifications/telegram.ts");
   const adminService = source("src/lib/notifications/telegram-admin.ts");
+  const settings = source("src/lib/notifications/settings.ts");
+
+  // ── In-portal connect link: never silently return a null link ──────────────────
+  // The employee "Connect Telegram" flow (createTelegramConnectionToken) must resolve
+  // the bot username and build the deep link BEFORE writing the pending DB row, and
+  // throw a clear error when the link can't be produced — instead of returning a 200
+  // with link:null (which surfaced to employees as "unable to produce a Telegram link"
+  // and left a dangling pending token row behind).
+  const connectFn = settings.slice(settings.indexOf("export async function createTelegramConnectionToken"));
+  const connectBody = connectFn.slice(0, connectFn.indexOf("\nexport "));
+  assert.match(connectBody, /resolveTelegramBotUsername\(\)/, "connect-token flow must verify the bot is reachable");
+  assert.match(connectBody, /const link = await buildTelegramDeepLinkFromToken\(token\)/, "connect-token flow must build the link explicitly");
+  assert.match(connectBody, /if \(!link\) \{[\s\S]*throw new Error/, "connect-token flow must throw when the link can't be built");
+  // The link must be built/validated before the DB write, so a failed link never leaves a pending row.
+  assert.ok(
+    connectBody.indexOf("buildTelegramDeepLinkFromToken") < connectBody.indexOf(".from(\"telegram_connections\")"),
+    "the connect link must be built before writing the telegram_connections row",
+  );
+  // The success return must hand back the already-built link, not re-derive a possibly-null one.
+  assert.doesNotMatch(connectBody, /link: await buildTelegramDeepLinkFromToken/, "return must reuse the validated link, not rebuild it");
 
   assert.match(operations, /export async function runTelegramDailyHrDigest/);
   assert.match(operations, /telegramDigestPilotHrIds = \["B-10", "admin-HR"\]/, "daily digest recipients must be explicit pilot HR identities");
