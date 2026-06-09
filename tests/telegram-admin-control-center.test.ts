@@ -48,7 +48,7 @@ export function runTelegramAdminControlCenterTests() {
   assert.match(system, /last_error: "Telegram is not connected\."/);
   assert.match(system, /if \(row\.status === "sent"\) return \{ channel: "telegram", idempotencyKey, reason: "Delivery already sent\.", status: "skipped" \}/, "retry must not duplicate already-sent Telegram deliveries");
   assert.match(system, /if \(!telegramGovernance\.enabled\)[\s\S]*status: "skipped"/, "global OFF or module-disabled Telegram must create skipped delivery records");
-  assert.match(system, /Your payslip is available\./);
+  assert.match(system, /GENERIC_PAYSLIP_MESSAGE/, "payroll Telegram messages must stay generic via the centralized redaction constant");
 
   assert.match(telegramService, /telegramEnvironmentStatus/);
   assert.match(telegramService, /getTelegramWebhookStatus/);

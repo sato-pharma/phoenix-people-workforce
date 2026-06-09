@@ -8,11 +8,24 @@ import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// Email-onboarding tokens live far longer than the 15-minute in-portal connect
-// token because employees may open the invitation hours or days later. They stay
-// single-use: the webhook marks connect_token_used_at on first /start.
-const DEFAULT_TTL_MINUTES = 7 * 24 * 60; // 7 days
+// Email-onboarding tokens live longer than the 15-minute in-portal token because
+// employees may open the invitation hours later — but a connect link is a bearer
+// credential, so the window is kept short (48h) to limit exposure of a leaked link.
+// The token stays single-use: the webhook marks connect_token_used_at on first /start
+// and nulls the hash, and the post-link security alert makes any hijack detectable.
+const DEFAULT_TTL_MINUTES = 48 * 60; // 48 hours
 const DEFAULT_CAMPAIGN_LIMIT = 250;
+// Lifecycle statuses that must NOT be invited (terminal/offboarding). Mirrors the
+// active-employee definition in src/lib/employees/employee-directory.ts.
+const terminalLifecycleStatuses = new Set([
+  "terminated",
+  "resigned",
+  "inactive",
+  "offboarded",
+  "left",
+  "separated",
+  "suspended",
+]);
 
 export type TelegramOnboardingTarget = {
   email: string;
@@ -159,7 +172,7 @@ export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?
   const supabase = getSupabaseAdmin();
   const [usersRes, employeesRes, connectionsRes] = await Promise.all([
     supabase.from("app_auth_users").select("login_id,hr_id,is_active").eq("is_active", true),
-    supabase.from("employees").select("hr_id,full_name,work_email").not("work_email", "is", null),
+    supabase.from("employees").select("hr_id,full_name,work_email,employment_status").not("work_email", "is", null),
     supabase.from("telegram_connections").select("user_id,status"),
   ]);
   if (usersRes.error) throw usersRes.error;
@@ -167,9 +180,12 @@ export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?
   if (connectionsRes.error) throw connectionsRes.error;
 
   const contactByHr = new Map<string, { email: string; name: string | null }>();
-  for (const row of (employeesRes.data ?? []) as Array<{ full_name: string | null; hr_id: string | null; work_email: string | null }>) {
+  for (const row of (employeesRes.data ?? []) as Array<{ employment_status: string | null; full_name: string | null; hr_id: string | null; work_email: string | null }>) {
     const hrId = String(row.hr_id ?? "").trim();
     const email = String(row.work_email ?? "").trim().toLowerCase();
+    // Never invite terminal/offboarding employees, even if they still have an active
+    // auth row + work email (this path bypasses the directory active-filter gate).
+    if (terminalLifecycleStatuses.has(String(row.employment_status ?? "").trim().toLowerCase())) continue;
     if (hrId && email) contactByHr.set(hrId, { email, name: row.full_name ?? null });
   }
 
@@ -192,6 +208,13 @@ export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?
     targets.push({ email: contact.email, hrId: hrId || null, name: contact.name, userId });
   }
   return targets;
+}
+
+// Read-only count of eligible (active, not-yet-connected, has-email, non-terminal)
+// employees, for the "you are about to email N people" confirmation preview.
+export async function countTelegramOnboardingTargets(): Promise<number> {
+  const targets = await listTelegramOnboardingTargets({ onlyUnconnected: true });
+  return targets.length;
 }
 
 // Resolves the audience, sends the connect invitations sequentially (provider

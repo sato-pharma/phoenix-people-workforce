@@ -338,16 +338,18 @@ export async function getTelegramAdminControlCenter(access?: AccessContext | nul
   }
 
   try {
+    // Structured DB-level filter (case-insensitive) instead of regex over a capped
+    // 100-row page: matches telegram entity_ids or any summary mentioning Telegram, so
+    // history isn't silently truncated and the filter runs before the 25-row limit.
     const { data, error } = await supabase
       .from("audit_logs")
       .select("id,actor_login_id,entity_id,summary,created_at")
       .eq("entity_type", "notification")
+      .or("summary.ilike.*telegram*,entity_id.ilike.telegram*")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(25);
     if (error) throw error;
     auditLogs = ((data ?? []) as Record<string, unknown>[])
-      .filter((row) => /telegram/i.test(cleanText(row.summary)) || /telegram/i.test(cleanText(row.entity_id)))
-      .slice(0, 25)
       .map((row) => ({
         actorLoginId: cleanText(row.actor_login_id) || null,
         createdAt: cleanText(row.created_at) || null,
@@ -374,27 +376,51 @@ export async function getTelegramAdminControlCenter(access?: AccessContext | nul
   return { auditLogs, connections, deliveries, globalEnabled, pilotHealth, policies, summary };
 }
 
+async function safeWriteAuditLog(input: Parameters<typeof writeAuditLog>[0], context: string) {
+  try {
+    await writeAuditLog(input);
+  } catch (error) {
+    // An audit failure must never break the governance action it records.
+    console.error(`Telegram audit log failed (${context})`, error);
+  }
+}
+
 export async function setTelegramGlobalSwitch(access: AccessContext, enabled: boolean) {
+  let previous: boolean | null = null;
+  try {
+    previous = await getTelegramGlobalEnabled();
+  } catch {
+    previous = null;
+  }
   const value = await saveTelegramGlobalEnabled(enabled);
-  await writeAuditLog({
+  await safeWriteAuditLog({
     actorLoginId: actor(access),
     entityId: "telegram",
     entityType: "notification",
     newValues: { enabled },
+    oldValues: { enabled: previous },
     summary: "Global Telegram switch changed.",
-  });
+  }, "global_switch");
   return value;
 }
 
 export async function updateTelegramPolicy(access: AccessContext, input: TelegramModulePolicy) {
+  let previous: TelegramModulePolicy | null = null;
+  try {
+    const policies = await listTelegramModulePolicies();
+    previous = policies.find((policy) => policy.module === input.module) ?? null;
+  } catch {
+    previous = null;
+  }
   await saveTelegramModulePolicy(input);
-  await writeAuditLog({
+  await safeWriteAuditLog({
     actorLoginId: actor(access),
-    entityId: input.module,
+    entityId: `telegram:module:${input.module}`,
     entityType: "notification",
     newValues: input,
+    oldValues: previous ?? undefined,
     summary: "Telegram module policy changed.",
-  });
+  }, "module_policy");
 }
 
 export async function adminDisableTelegram(access: AccessContext, userId: string) {
