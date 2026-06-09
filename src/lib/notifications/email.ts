@@ -988,6 +988,11 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
       : EMAIL_TEMPLATE_KEYS.USER_CREATED;
   }
   if (input.notificationType === "resignation") return EMAIL_TEMPLATE_KEYS.RESIGNATION_WORKFLOW;
+  // Offer STATUS notifications (accepted/rejected/hire-approved) render via the GENERAL
+  // template — it exposes {{summary}}/{{status}}, whereas the JOB_OFFER template only has
+  // offer-LETTER tokens (jobTitle/startDate/…). The candidate offer LETTER itself goes
+  // through sendTemplatedEmail('offer') independently and is unaffected.
+  if (input.notificationType === "offer") return EMAIL_TEMPLATE_KEYS.GENERAL;
   return null;
 }
 

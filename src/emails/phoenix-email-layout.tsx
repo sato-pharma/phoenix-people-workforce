@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
 import { systemIdentity } from "@/config/system-settings";
+import { bidiIsolate } from "@/emails/bidi";
+
+export { bidiIsolate };
 
 export type PhoenixEmailMetadataRow = {
   label: string;
@@ -55,6 +58,10 @@ export function escapeEmailHtml(value: string | number | null | undefined) {
     .replace(/"/g, "&quot;");
 }
 
+function escapeAndIsolate(value: string | number | null | undefined) {
+  return bidiIsolate(escapeEmailHtml(value));
+}
+
 export function renderEmailParagraphs(value: string | null | undefined) {
   return String(value ?? "")
     .replace(/\r\n/g, "\n")
@@ -64,7 +71,7 @@ export function renderEmailParagraphs(value: string | null | undefined) {
     .map((paragraph) => {
       const lines = paragraph
         .split("\n")
-        .map((line) => escapeEmailHtml(line.trim()))
+        .map((line) => bidiIsolate(escapeEmailHtml(line.trim())))
         .filter(Boolean)
         .join("<br />");
 
@@ -83,8 +90,8 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
         .map(
           (row) => `
             <tr>
-              <td class="phoenix-muted" style="padding:10px 0;color:#475569!important;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.5">${escapeEmailHtml(row.label)}</td>
-              <td class="phoenix-text" style="padding:10px 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right">${escapeEmailHtml(row.value)}</td>
+              <td class="phoenix-muted" style="padding:10px 0;color:#475569!important;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.5">${escapeAndIsolate(row.label)}</td>
+              <td class="phoenix-text" style="padding:10px 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
             </tr>`,
         )
         .join("")}
@@ -115,7 +122,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
   }
 
   return `<!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -174,7 +181,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
             <tr>
               <td class="phoenix-header" bgcolor="#070b12" style="padding:30px 30px 28px;background:#070b12!important;background-image:linear-gradient(135deg,#070b12 0%,#0d1423 58%,#1b1008 100%);border-radius:22px 22px 0 0;color:#ffffff!important">
                 <div style="margin:0;color:#fb923c!important;-webkit-text-fill-color:#fb923c!important;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:900;letter-spacing:0.24em;line-height:1.4;text-transform:uppercase">${escapeEmailHtml(`${systemIdentity.appName} HR System`)}</div>
-                <h1 class="phoenix-title" style="margin:12px 0 0;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;font-family:Arial,Helvetica,sans-serif;font-size:25px;font-weight:900;letter-spacing:-0.02em;line-height:1.22">${escapeEmailHtml(input.title)}</h1>
+                <h1 class="phoenix-title" style="margin:12px 0 0;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;font-family:Arial,Helvetica,sans-serif;font-size:25px;font-weight:900;letter-spacing:-0.02em;line-height:1.22">${escapeAndIsolate(input.title)}</h1>
                 <p style="margin:12px 0 0;color:#dbeafe!important;-webkit-text-fill-color:#dbeafe!important;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:400;line-height:1.65">${escapeEmailHtml(subtitle)}</p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px;width:100%;border-collapse:collapse">
                   <tr>
@@ -199,7 +206,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
                     <td class="phoenix-text" style="padding-top:0;${blackTextStyle}">
                       ${
                         input.greeting
-                          ? `<p class="phoenix-text" style="margin:0 0 16px;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.7">${escapeEmailHtml(input.greeting)}</p>`
+                          ? `<p class="phoenix-text" style="margin:0 0 16px;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.7">${escapeAndIsolate(input.greeting)}</p>`
                           : ""
                       }
                       ${input.bodyHtml}
@@ -207,7 +214,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
                       ${renderPhoenixAction(input.action)}
                       ${
                         input.closingText
-                          ? `<p class="phoenix-text" style="margin:16px 0 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.75">${escapeEmailHtml(input.closingText)}</p>`
+                          ? `<p class="phoenix-text" style="margin:16px 0 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.75">${escapeAndIsolate(input.closingText)}</p>`
                           : ""
                       }
                     </td>
@@ -232,7 +239,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
                   <tr>
                     <td class="phoenix-text" style="padding-top:18px;${blackTextStyle}">
                       <p class="phoenix-text" style="margin:0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.7">Best regards,</p>
-                      <p class="phoenix-text" style="margin:4px 0 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.7">${escapeEmailHtml(input.signatureName || systemIdentity.hrSignatureName)}</p>
+                      <p class="phoenix-text" style="margin:4px 0 0;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.7">${escapeAndIsolate(input.signatureName || systemIdentity.hrSignatureName)}</p>
                       <div style="margin-top:16px;text-align:left">
                         <img
                           alt=""
