@@ -72,6 +72,38 @@ function emailDomain(email: string) {
   return email.trim().toLowerCase().split("@").pop() ?? "";
 }
 
+/**
+ * Synthetic / non-routable addresses that must never be handed to the email provider.
+ *
+ * The Supabase-auth identity address `phx-<hex(loginId)>@auth.phoenix.local`
+ * (see src/lib/auth/supabase-identity.ts) is an internal LOGIN KEY, not a mailbox. Every
+ * `app_auth_users.auth_email` is one of these. Sending to it produces a hard bounce at the
+ * provider, which then suppresses the (fake) address and damages sending-domain reputation.
+ * Also rejects the reserved `.local` mDNS TLD and anything that is not a real `user@domain.tld`.
+ */
+export function isNonDeliverableEmail(value: string | null | undefined): boolean {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!email || !email.includes("@")) return true;
+  const domain = emailDomain(email);
+  if (!domain || !domain.includes(".")) return true;
+  if (domain === "phoenix.local" || domain.endsWith(".phoenix.local")) return true;
+  if (domain === "local" || domain.endsWith(".local")) return true;
+  return false;
+}
+
+/**
+ * Return the first genuinely deliverable address from the candidates (real mailbox), else null.
+ * Used by notification recipient resolution so a missing real email degrades to in-app only
+ * instead of silently addressing mail to the synthetic auth identity address.
+ */
+export function pickDeliverableEmail(...candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    const trimmed = String(candidate ?? "").trim();
+    if (trimmed && !isNonDeliverableEmail(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 function isAllowedDomain(email: string, allowedDomains: string[]) {
   const domain = emailDomain(email);
   return allowedDomains.some((allowed) => domain === allowed || domain.endsWith(`.${allowed}`));

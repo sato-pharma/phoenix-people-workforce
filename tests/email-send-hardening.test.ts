@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { isBlockedImageHost } from "@/lib/email/email-safety.ts";
-import { guardAttachments, parseRetryAfter } from "@/lib/email/send-phoenix-email.ts";
+import { isBlockedImageHost, isNonDeliverableEmail, pickDeliverableEmail } from "@/lib/email/email-safety.ts";
+import { guardAttachments, parseRetryAfter, sendPhoenixEmail } from "@/lib/email/send-phoenix-email.ts";
 import { isDuplicateKeyError, suppressionReasonForEvent } from "@/lib/email/resend-webhook-events.ts";
 import { createUnsubscribeToken, verifyUnsubscribeToken } from "@/lib/email/unsubscribe-token.ts";
+
+function restoreEnv(key: string, value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 /**
  * Phase 2 — send layer, suppression, deliverability, unsubscribe.
  */
-export function runEmailSendHardeningTests() {
+export async function runEmailSendHardeningTests() {
   // --- Suppression decisions (hard/soft/complaint) ---------------------------------
   const complaint = suppressionReasonForEvent({ status: "complained", raw_event: { data: {} } });
   assert.equal(complaint?.reason, "complaint");
@@ -50,6 +55,102 @@ export function runEmailSendHardeningTests() {
     assert.equal(isBlockedImageHost(ok), false, `${ok} must be allowed`);
   }
 
+  // --- Non-deliverable / synthetic recipient guard ---------------------------------
+  // The Supabase-auth identity address is a login key, never a mailbox: it must be rejected
+  // so it can never be handed to the provider and hard-bounce.
+  for (const synthetic of [
+    "phx-6161@auth.phoenix.local",
+    "phx-622d3130@auth.phoenix.local",
+    "anything@phoenix.local",
+    "host@server.local",
+    "no-at-sign",
+    "missing@domain",
+    "",
+  ]) {
+    assert.equal(isNonDeliverableEmail(synthetic), true, `${synthetic || "(empty)"} must be non-deliverable`);
+  }
+  assert.equal(isNonDeliverableEmail(null), true, "null is non-deliverable");
+  for (const real of ["omar.anwar@satopharma.com", "a.b@futuretalents.satopharma.com", "person@example.com"]) {
+    assert.equal(isNonDeliverableEmail(real), false, `${real} must be deliverable`);
+  }
+  // pickDeliverableEmail prefers the first real address; synthetic auth_email is skipped.
+  assert.equal(
+    pickDeliverableEmail("real@satopharma.com", "phx-6161@auth.phoenix.local"),
+    "real@satopharma.com",
+    "real work_email wins",
+  );
+  assert.equal(
+    pickDeliverableEmail("phx-6161@auth.phoenix.local", "real@satopharma.com"),
+    "real@satopharma.com",
+    "synthetic is skipped even when listed first",
+  );
+  assert.equal(pickDeliverableEmail(null, "phx-6161@auth.phoenix.local"), null, "no real address → null (in-app only)");
+  assert.equal(
+    pickDeliverableEmail("phx-6161@auth.phoenix.local", "phx-622d3130@auth.phoenix.local"),
+    null,
+    "all-synthetic candidates → null (the production probation-reminder case)",
+  );
+  assert.equal(pickDeliverableEmail("  Mixed.Case@Satopharma.com  "), "Mixed.Case@Satopharma.com", "trims but preserves case");
+
+  // --- Behavioral: a synthetic-only send NEVER reaches the provider ----------------
+  // The load-bearing safety contract: addressing mail to the synthetic auth identity must
+  // be a deterministic skip, with ZERO POST to the Resend API (a fake-address bounce is what
+  // damaged sending-domain reputation). Stub fetch + env and assert the API is never called.
+  {
+    const savedEnv = {
+      enabled: process.env.EMAIL_NOTIFICATIONS_ENABLED,
+      key: process.env.RESEND_API_KEY,
+      from: process.env.NOTIFICATION_EMAIL_FROM,
+      force: process.env.PHOENIX_EMAIL_FORCE_TESTING,
+      vercelEnv: process.env.VERCEL_ENV,
+    };
+    const savedFetch = globalThis.fetch;
+    const calledUrls: string[] = [];
+    try {
+      process.env.EMAIL_NOTIFICATIONS_ENABLED = "true";
+      process.env.RESEND_API_KEY = "test-key";
+      process.env.NOTIFICATION_EMAIL_FROM = "Phoenix <phoenix@send.satopharma.com>";
+      process.env.PHOENIX_EMAIL_FORCE_TESTING = "false";
+      process.env.VERCEL_ENV = "production"; // ensure no testing-redirect interferes
+      // Stub: succeed the cosmetic signature-image check; record every URL touched.
+      globalThis.fetch = (async (input: unknown) => {
+        const url = typeof input === "string" ? input : String((input as { url?: string })?.url ?? input);
+        calledUrls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: (k: string) => (k.toLowerCase() === "content-type" ? "image/png" : null) },
+          json: async () => ({ id: "should-not-be-used" }),
+        } as unknown as Response;
+      }) as typeof fetch;
+
+      const result = await sendPhoenixEmail({
+        to: ["phx-6161@auth.phoenix.local", "phx-622d3130@auth.phoenix.local"],
+        subject: "probation feedback is due",
+        html: "<p>x</p>",
+        text: "x",
+        idempotencyKey: "test-synthetic-only",
+      });
+
+      assert.equal(result.skipped, true, "a synthetic-only recipient list must be skipped");
+      if (result.skipped) {
+        assert.match(result.reason, /no deliverable recipient/i, "skip reason names the no-mailbox cause");
+      }
+      assert.equal(
+        calledUrls.some((u) => u.includes("api.resend.com/emails")),
+        false,
+        "the Resend send API must NEVER be called for synthetic-only recipients",
+      );
+    } finally {
+      globalThis.fetch = savedFetch;
+      restoreEnv("EMAIL_NOTIFICATIONS_ENABLED", savedEnv.enabled);
+      restoreEnv("RESEND_API_KEY", savedEnv.key);
+      restoreEnv("NOTIFICATION_EMAIL_FROM", savedEnv.from);
+      restoreEnv("PHOENIX_EMAIL_FORCE_TESTING", savedEnv.force);
+      restoreEnv("VERCEL_ENV", savedEnv.vercelEnv);
+    }
+  }
+
   // --- Unsubscribe token sign/verify roundtrip -------------------------------------
   const savedSecret = process.env.PHOENIX_AUTH_SECRET;
   try {
@@ -84,9 +185,21 @@ export function runEmailSendHardeningTests() {
   assert.match(sendSource, /guardAttachments\(input\.attachments\)/, "attachments must be size-guarded before sending");
   assert.match(sendSource, /fanoutToBcc/, "BCC fan-out option must exist");
   assert.match(sendSource, /Signature image unreachable; sending email anyway/, "image check must be non-fatal");
+  assert.match(sendSource, /removeNonDeliverable\(testingRecipients \?\? input\.to\)/, "send layer must drop synthetic recipients before suppression");
+  assert.match(sendSource, /No deliverable recipient/, "all-synthetic must be a deterministic skip, not a send");
 
   const safetySource = readFileSync("src/lib/email/email-safety.ts", "utf8");
   assert.match(safetySource, /isBlockedImageHost\(parsed\.hostname\)/, "SSRF guard must match the parsed hostname");
+  assert.match(safetySource, /export function isNonDeliverableEmail/, "non-deliverable guard must be exported");
+  assert.match(safetySource, /export function pickDeliverableEmail/, "deliverable-email picker must be exported");
+
+  // Recipient resolution must never prefer the synthetic auth_email over the real work_email.
+  const policySource = readFileSync("src/lib/notifications/policy.ts", "utf8");
+  assert.match(policySource, /pickDeliverableEmail\(candidate\.employee\?\.work_email, candidate\.auth\?\.auth_email\)/, "policy must resolve work_email over auth_email");
+  assert.doesNotMatch(policySource, /candidate\.auth\?\.auth_email \?\? candidate\.employee\?\.work_email/, "policy must NOT prefer auth_email");
+  const systemSource = readFileSync("src/lib/notifications/system.ts", "utf8");
+  assert.match(systemSource, /pickDeliverableEmail\(workEmail, row\?\.auth_email\)/, "system recipient profile must resolve work_email over auth_email");
+  assert.doesNotMatch(systemSource, /email:\s*row\?\.auth_email \?\? null/, "system must NOT use auth_email as the deliverable address");
 
   const webhookLib = readFileSync("src/lib/email/resend-webhook-events.ts", "utf8");
   assert.match(webhookLib, /email\.opened/, "opened events must be mapped");

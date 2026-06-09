@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import {
   canAccess,
   parseRoleStrict,
@@ -221,7 +222,10 @@ function roleFrom(value: unknown) {
 
 function recipientFromCandidate(candidate: Pick<RecipientCandidate, "auth" | "employee" | "role">): NotificationRecipient {
   return {
-    email: candidate.auth?.auth_email ?? candidate.employee?.work_email ?? null,
+    // The employee work_email is the only deliverable address. `auth_email` is the synthetic
+    // Supabase-auth login key (phx-<hex>@auth.phoenix.local) and must NEVER be emailed — it
+    // hard-bounces. No real email → null (recipient still gets the in-app notification).
+    email: pickDeliverableEmail(candidate.employee?.work_email, candidate.auth?.auth_email),
     hrId: cleanHrId(candidate.auth?.hr_id ?? candidate.employee?.hr_id) || null,
     name: candidate.auth?.name ?? candidate.employee?.full_name ?? null,
     userId: candidate.auth?.login_id ?? null,

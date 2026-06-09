@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
-import { assertReachableEmailImage } from "@/lib/email/email-safety";
+import { assertReachableEmailImage, isNonDeliverableEmail } from "@/lib/email/email-safety";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const resendEndpoint = "https://api.resend.com/emails";
@@ -186,6 +186,15 @@ function removeSuppressed(emails: string[], suppressed: Set<string>): string[] {
   return emails.filter((e) => !suppressed.has(e.trim().toLowerCase()));
 }
 
+/**
+ * Defense-in-depth: drop synthetic / non-routable addresses (e.g. the Supabase-auth
+ * identity `phx-<hex>@auth.phoenix.local`) BEFORE they reach the provider, so no recipient
+ * resolution mistake can ever hard-bounce a fake address and erode domain reputation.
+ */
+function removeNonDeliverable(emails: string[]): string[] {
+  return emails.filter((e) => !isNonDeliverableEmail(e));
+}
+
 export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<SendPhoenixEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
@@ -210,15 +219,22 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   }
   const testingRecipients = resolveTestingRecipients();
 
-  const allCandidates = [...(testingRecipients ?? input.to), ...(input.cc ?? []), ...(input.bcc ?? [])];
+  // Drop synthetic / non-routable addresses up front. If every recipient was synthetic (an
+  // employee with no real mailbox on file), this is a deterministic skip — never a send.
+  const baseTo = removeNonDeliverable(testingRecipients ?? input.to);
+  if (baseTo.length === 0) {
+    return { reason: "No deliverable recipient (no real mailbox on file).", skipped: true };
+  }
+
+  const allCandidates = [...baseTo, ...(input.cc ?? []), ...(input.bcc ?? [])];
   const suppressed = await loadSuppressedRecipients(allCandidates);
 
-  const to = removeSuppressed(testingRecipients ?? input.to, suppressed);
+  const to = removeSuppressed(baseTo, suppressed);
   if (to.length === 0) {
     return { reason: "All recipients are suppressed (bounce/complaint).", skipped: true };
   }
-  let cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(input.cc, suppressed) : undefined;
-  let bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(input.bcc, suppressed) : undefined;
+  let cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(removeNonDeliverable(input.cc), suppressed) : undefined;
+  let bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(removeNonDeliverable(input.bcc), suppressed) : undefined;
 
   let finalTo = to;
   // Privacy: a multi-recipient fan-out must not expose every recipient to the others.
