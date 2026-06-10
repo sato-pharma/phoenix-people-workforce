@@ -80,6 +80,7 @@ const variableCatalog: EmailDesignerVariable[] = [
   { category: "Company", label: "Recipient Name", sampleValue: "Omar", token: "recipientName", allowedTemplateTypes: allTemplateTypes },
   { category: "Company", label: "Email Subject", sampleValue: "Phoenix Workforce notification", token: "subject", allowedTemplateTypes: allTemplateTypes },
   { category: "Company", label: "Summary", sampleValue: "A workflow update needs review.", token: "summary", allowedTemplateTypes: allTemplateTypes },
+  { category: "Company", label: "Submitted Plan Table", sampleValue: "(the submitted plan days as a table)", token: "planTable", allowedTemplateTypes: ["weekly_plans"] },
   { category: "Company", label: "Vacation Type", sampleValue: "Annual Leave", token: "vacationType", allowedTemplateTypes: ["leave_request", "leave_approval", "leave_rejection"] },
 ];
 
