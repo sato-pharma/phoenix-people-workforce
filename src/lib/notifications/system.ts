@@ -1068,6 +1068,11 @@ async function buildChannelEmailInput(
     metrics: input.email?.metrics,
     module: input.module,
     notificationType: input.email?.notificationType ?? notificationTypeFor(input.module),
+    planTableHtml: input.email?.planTableHtml,
+    planTableText: input.email?.planTableText,
+    // The notification recipient's own name, so templated greetings address the person
+    // receiving the email rather than the employee the notification is about.
+    recipientName: input.email?.recipientName ?? recipient.name ?? undefined,
     recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
     recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
     subject: input.email?.subject ?? emailContent.title,
