@@ -281,9 +281,8 @@ export function getVacationPolicyWarnings(input: {
   }
 
   if (input.vacationType === "annual") {
-    const minimumStartDate = getAnnualVacationMinimumStartDate(input.now);
-    if (input.startDate < minimumStartDate) {
-      warnings.push("Annual vacation policy: annual requests should start from tomorrow or later.");
+    if (input.startDate < getVacationPolicyToday(input.now)) {
+      warnings.push("Annual vacation policy: annual requests must start today or later.");
     }
   }
 
