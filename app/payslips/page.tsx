@@ -58,6 +58,7 @@ export default async function PayslipsPage() {
     access.role,
     data.employee.line,
     data.employee.department,
+    data.employee.hrId,
   );
 
   if (navigationMode === "admin") {

@@ -89,6 +89,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Team Operations") return BriefcaseBusiness;
   if (title === "Expenses") return FileText;
   if (title === "Support") return Headphones;
+  if (title === "Pharmacovigilance") return FileText;
   return Activity;
 }
 
@@ -119,6 +120,8 @@ function buildEmployeePortalSections({
   showTrainingManagerCreateCoachingTab = false,
   showTrainingManagerDashboardTab = false,
   showTrainingManagerFieldCoachingTab = false,
+  showReportItTab = false,
+  showReportItDashboardTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -139,6 +142,15 @@ function buildEmployeePortalSections({
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         { href: "/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
+      ],
+    },
+    {
+      title: "Pharmacovigilance",
+      items: [
+        ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
+        ...(showReportItDashboardTab
+          ? [{ href: "/admin/report-it", label: "Reports Dashboard", icon: ChartColumnBig }]
+          : []),
       ],
     },
     {
