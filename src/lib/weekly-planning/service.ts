@@ -909,10 +909,17 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   comment?: string | null;
   returnNotes?: EmployeePlanReturnNoteInput[];
 }) {
-  await assertPermission(access, "weekly_plans", "approve");
   const plan = await loadPlanRow(planId);
-  if (input.action.startsWith("manager_")) assertManagerReviewer(access, plan);
-  if (input.action.startsWith("ceo_")) assertCeoReviewer(access);
+  if (input.action.startsWith("manager_")) {
+    // The assigned direct manager (or Super Admin) decides the manager stage by virtue of the
+    // org assignment, independent of the global weekly_plans:approve grant. This lets eligible
+    // submitters' managers (e.g. Marketing/Group Product/National Sales Manager) approve, return,
+    // or reject their reports' plans even though their role lacks a company-wide approve grant.
+    assertManagerReviewer(access, plan);
+  } else if (input.action.startsWith("ceo_")) {
+    await assertPermission(access, "weekly_plans", "approve");
+    assertCeoReviewer(access);
+  }
   const nextStatus = getNextEmployeePlanStatus(plan.status, input.action, { comment: input.comment });
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status: nextStatus };
