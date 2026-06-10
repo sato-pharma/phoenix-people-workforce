@@ -87,7 +87,8 @@ export type PermissionResource =
   | "recruitment"
   | "candidates"
   | "workflow_registry"
-  | "report_it";
+  | "report_it"
+  | "attendance";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -122,6 +123,7 @@ export const permissionResources: PermissionResource[] = [
   "recruitment",
   "candidates",
   "report_it",
+  "attendance",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -179,6 +181,7 @@ export const designatedHrSpecialistHrId = "a16";
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     admin: allActions,
+    attendance: allActions,
     communication: allActions,
     overview: ["read"],
     admin_access: ["read"],
@@ -213,6 +216,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   CEO: {
     admin: allActions,
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: ["read"],
     admin_access: ["read"],
     imports: ["read", "import"],
@@ -241,6 +245,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create", "export"],
   },
   "HR Specialist": {
+    attendance: allActionsNoApprove,
     communication: ["read", "update"],
     overview: ["read"],
     imports: ["read", "import"],
@@ -269,6 +274,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create", "export"],
   },
   "Finance Manager": {
+    attendance: ["read", "export"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: allActions,
@@ -284,6 +290,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create", "export"],
   },
   Employee: {
+    attendance: ["read"],
     overview: [],
     coaching: ["read"],
     employee_documents: ["read", "export"],
@@ -299,6 +306,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Medical Rep": {
+    attendance: ["read"],
     overview: [],
     coaching: ["read"],
     employee_documents: ["read", "export"],
@@ -314,6 +322,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "District Manager": {
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -333,6 +342,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Regional Manager": {
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -352,6 +362,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -372,6 +383,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Product Manager": {
+    attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -388,6 +400,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Group Product Manager": {
+    attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -404,6 +417,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "SFE Manager": {
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -419,6 +433,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Training Manager": {
+    attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -436,6 +451,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Marketing Manager": {
+    attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -452,6 +468,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   Manager: {
+    attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
