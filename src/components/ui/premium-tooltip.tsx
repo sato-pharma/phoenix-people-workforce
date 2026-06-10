@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type TooltipPosition = {
@@ -25,24 +25,39 @@ export function PremiumTooltip({
 }: PremiumTooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<TooltipPosition>({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
 
-  const showTooltip = () => {
+  const placeAtCursor = (clientX: number, clientY: number) => {
+    const pad = 12;
+    const estWidth = Math.min(288, window.innerWidth - pad * 2);
+    const estHeight = 200;
+    const x = Math.min(clientX + pad, window.innerWidth - estWidth - pad);
+    const y = Math.min(clientY + pad, window.innerHeight - estHeight - pad);
+    setPosition({ x: Math.max(pad, x), y: Math.max(pad, y) });
+  };
+
+  const showTooltip = (event?: React.MouseEvent | React.FocusEvent) => {
     setIsVisible(true);
+    if (placement !== "cursor") return;
+    // Seed the position immediately on show so the tooltip never flashes at the
+    // viewport corner before the first mousemove (hover-enter, keyboard focus, tap).
+    if (event && "clientX" in event && event.clientX) {
+      placeAtCursor(event.clientX, event.clientY);
+    } else if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      placeAtCursor(rect.left + rect.width / 2, rect.top);
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (placement === "cursor") {
-      const pad = 12;
-      const estWidth = Math.min(288, window.innerWidth - pad * 2);
-      const estHeight = 200;
-      const x = Math.min(e.clientX + pad, window.innerWidth - estWidth - pad);
-      const y = Math.min(e.clientY + pad, window.innerHeight - estHeight - pad);
-      setPosition({ x: Math.max(pad, x), y: Math.max(pad, y) });
+      placeAtCursor(e.clientX, e.clientY);
     }
   };
 
   return (
     <div
+      ref={triggerRef}
       className={cn("relative inline-block", triggerClassName)}
       onFocus={showTooltip}
       onBlur={() => setIsVisible(false)}
