@@ -1,5 +1,6 @@
 import { isDesignatedHrSpecialist, type AccessContext } from "@/lib/auth/permissions";
 import { getDataHealthStats, getSalaryFlags, type DataHealthStats } from "@/lib/admin/service";
+import { getAttendanceIngestionHealth } from "@/lib/attendance/ingestion-health";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
@@ -131,6 +132,13 @@ export type AdminCommandCenterData = {
       totalDeviceMappings: number;
       totalPolicies: number;
     };
+    /** Fingerprint-agent ingestion freshness; null when the check itself failed. */
+    attendanceAgent: {
+      lastIngestedAt: string | null;
+      lastIngestedLabel: string;
+      missedWorkingDays: number;
+      status: "healthy" | "warning" | "attention";
+    } | null;
     // Executive attention signals (P1/P2): forward-looking risk the CEO must see at a glance.
     executive: {
       pendingResignations: number;
@@ -740,14 +748,26 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     }));
   let executiveSignals: ExecutiveSignals | null = null;
 
+  // One single-row query + cached holiday lookups — cheap, shared by both load paths.
+  const attendanceAgentPromise = getAttendanceIngestionHealth()
+    .then((health) => ({
+      lastIngestedAt: health.lastIngestedAt,
+      lastIngestedLabel: health.lastIngestedLabel,
+      missedWorkingDays: health.missedWorkingDays,
+      status: health.status,
+    }))
+    .catch(() => null);
+
   try {
-    const [executiveSignalsResult, platformMetrics, salesHealth, eligibleResult, operations] = await Promise.all([
+    const [executiveSignalsResult, platformMetrics, salesHealth, eligibleResult, operations, attendanceAgent] = await Promise.all([
       executiveSignalsPromise,
       getPlatformMetrics(accessContext),
       showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules ? fetchPayrollEligibleCount() : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
+      attendanceAgentPromise,
     ]);
+    if (!attendanceAgent) dataUnavailable.push("Attendance agent health unavailable.");
     executiveSignals = executiveSignalsResult;
     dataUnavailable.push(...executiveSignals.errors);
     dataUnavailable.push(...platformMetrics.dataUnavailable);
@@ -760,6 +780,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     const health = buildDataHealthFromMetrics(platformMetrics, salesHealth);
 
     const overview = {
+      attendanceAgent,
       attendance: {
         activeMappings: platformMetrics.attendance.activeMappings,
         activePolicies: platformMetrics.attendance.activePolicies,
@@ -855,6 +876,8 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   // Run all fetches in parallel — each is isolated so a single failure doesn't cascade
   executiveSignals ??= await executiveSignalsPromise;
   dataUnavailable.push(...executiveSignals.errors);
+  const attendanceAgent = await attendanceAgentPromise;
+  if (!attendanceAgent) dataUnavailable.push("Attendance agent health unavailable.");
 
   const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
     await Promise.allSettled([
@@ -1056,6 +1079,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       risk,
       leave,
       attendance,
+      attendanceAgent,
       executive: {
         pendingResignations: executiveSignals.pendingResignations,
         totalResignations: executiveSignals.totalResignations,
