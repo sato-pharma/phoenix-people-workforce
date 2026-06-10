@@ -132,7 +132,7 @@ function buildEmployeePortalSections({
     {
       title: "My Workspace",
       items: [
-        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Dashboard", icon: Home }] : []),
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "My Dashboard", icon: Home }] : []),
         ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
