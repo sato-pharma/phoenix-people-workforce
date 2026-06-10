@@ -61,7 +61,7 @@ export default async function EmployeePortalsHomePage({
       <EmployeePortalPageShell
         badge="Employee Portal"
         description="Performance, structure, and team comparison in one command surface."
-        title="Dashboard Overview"
+        title="My Dashboard"
       >
         <MedicalRepOverviewPage data={data} />
       </EmployeePortalPageShell>
