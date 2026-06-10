@@ -2,21 +2,56 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, Home, type LucideIcon, Plus, User } from "lucide-react";
+import {
+  CalendarDays,
+  CircleDollarSign,
+  ClipboardCheck,
+  Gift,
+  Home,
+  LineChart,
+  type LucideIcon,
+  ReceiptText,
+  Send,
+  Trophy,
+  User,
+} from "lucide-react";
 
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 type BottomNavItem = {
   href: string;
   icon: LucideIcon;
-  isActive: boolean;
   label: string;
-  primary?: boolean;
 };
 
+// Curated priority of primary portal destinations for the mobile bottom bar.
+// Each entry is gated by the same visibility flag the sidebar uses, so the bar
+// adapts to the signed-in role. Keep hrefs/flags in sync with
+// buildEmployeePortalSections in employee-portal-layout.tsx.
+const PRIMARY_CANDIDATES: Array<{
+  flag: keyof EmployeePortalNavVisibility;
+  href: string;
+  icon: LucideIcon;
+  label: string;
+}> = [
+  { flag: "showPlansTab", href: "/employee-portals/plans", icon: CalendarDays, label: "Plans" },
+  { flag: "showMyPerformanceTab", href: "/employee-portals/sales", icon: LineChart, label: "Performance" },
+  { flag: "showTeamPerformanceTab", href: "/employee-portals/team-performance", icon: Trophy, label: "Team" },
+  { flag: "showMarketingRequestsTab", href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing" },
+  { flag: "showManagementTab", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, label: "Expenses" },
+  { flag: "showMedicalRepExpensesTab", href: "/employee-portals/expenses", icon: ReceiptText, label: "Expenses" },
+  { flag: "showIncentiveTab", href: "/employee-portals/incentive", icon: Gift, label: "Incentive" },
+  { flag: "showMyCoachingTab", href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Coaching" },
+];
+
+function isActiveHref(pathname: string, href: string) {
+  if (href === "/employee-portals") return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 /**
- * Mobile-only bottom tab bar for the employee portal. Presentation only — items
- * are derived from the already-resolved navigation visibility flags (no new
+ * Mobile-only global bottom tab bar for the employee portal. Presentation only —
+ * items are derived from the already-resolved navigation visibility flags (no new
  * permission lookups), and every destination keeps its own server-side guard.
  * Hidden on lg+ where the sidebar takes over.
  */
@@ -29,39 +64,14 @@ export function EmployeePortalBottomNav({
 }) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
-  const onPlans = pathname === "/employee-portals/plans" || pathname.startsWith("/employee-portals/plans/");
 
+  // Home + up to three role-primary destinations + Profile.
+  const middle = PRIMARY_CANDIDATES.filter((candidate) => visibility[candidate.flag]).slice(0, 3);
   const items: BottomNavItem[] = [
-    {
-      href: "/employee-portals",
-      icon: Home,
-      isActive: pathname === "/employee-portals",
-      label: "Home",
-    },
+    { href: "/employee-portals", icon: Home, label: "Home" },
+    ...middle.map(({ href, icon, label }) => ({ href, icon, label })),
+    { href: "/employee-portals/profile", icon: User, label: "Profile" },
   ];
-
-  if (visibility.showPlansTab) {
-    items.push({
-      href: "/employee-portals/plans",
-      icon: CalendarDays,
-      isActive: onPlans,
-      label: "My Plans",
-    });
-    items.push({
-      href: "/employee-portals/plans?new=1",
-      icon: Plus,
-      isActive: false,
-      label: "New Plan",
-      primary: true,
-    });
-  }
-
-  items.push({
-    href: "/employee-portals/profile",
-    icon: User,
-    isActive: pathname.startsWith("/employee-portals/profile"),
-    label: "Profile",
-  });
 
   return (
     <nav
@@ -72,24 +82,13 @@ export function EmployeePortalBottomNav({
       <ul className="mx-auto flex max-w-[640px] items-stretch justify-around">
         {items.map((item) => {
           const Icon = item.icon;
-          if (item.primary) {
-            return (
-              <li className="flex flex-1 justify-center" key={item.label}>
-                <Link
-                  aria-label={item.label}
-                  className="-mt-5 flex h-14 w-14 flex-col items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-600/30 transition-transform active:scale-95"
-                  href={item.href}
-                >
-                  <Icon className="h-6 w-6" />
-                </Link>
-              </li>
-            );
-          }
+          const active = isActiveHref(pathname, item.href);
           return (
-            <li className="flex-1" key={item.label}>
+            <li className="flex-1" key={`${item.label}-${item.href}`}>
               <Link
+                aria-current={active ? "page" : undefined}
                 className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors ${
-                  item.isActive ? "text-orange-600" : "text-slate-500 active:text-slate-700"
+                  active ? "text-orange-600" : "text-slate-500 active:text-slate-700"
                 }`}
                 href={item.href}
               >
