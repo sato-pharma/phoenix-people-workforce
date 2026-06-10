@@ -557,6 +557,17 @@ export function AdminCommandCenter({
   const salesAchievement = o.sales.achievementRate * 100;
   const offerAcceptance = o.recruitment.acceptanceRate * 100;
   const pendingRisk = o.risk.expiringContracts + o.risk.probationEndings;
+  const attendanceAgent = o.attendanceAgent;
+  // ModuleCard's health style names are inverted vs. severity: "attention" renders
+  // amber (mild) while "warning" renders rose (severe). Map the ingestion-health
+  // service statuses (healthy < warning < attention) onto that scale.
+  const attendanceAgentCardHealth: "attention" | "healthy" | "warning" = !attendanceAgent
+    ? "attention"
+    : attendanceAgent.status === "healthy"
+      ? "healthy"
+      : attendanceAgent.status === "warning"
+        ? "attention"
+        : "warning";
 
   // Map unavailable-source messages to per-domain flags so cards can show "—" instead of a misleading 0.
   const isUnavailable = unavailableMatcher(dataUnavailable);
@@ -881,6 +892,19 @@ export function AdminCommandCenter({
                   title="Fingerprint Report"
                 />
                 <ModuleCard
+                  accentColor="amber"
+                  description="Fingerprint device sync freshness — flags when the local agent stops sending punches."
+                  health={attendanceAgentCardHealth}
+                  href="/attendance/device-user-mapping"
+                  icon={Fingerprint}
+                  lastSync={attendanceAgent ? attendanceAgent.lastIngestedLabel : "Check failed"}
+                  metrics={[
+                    { label: "Missed", ok: (attendanceAgent?.missedWorkingDays ?? 99) === 0, value: attendanceAgent ? n(attendanceAgent.missedWorkingDays) : "—" },
+                    { label: "Status", ok: attendanceAgent?.status === "healthy", value: attendanceAgent ? attendanceAgent.status : "—" },
+                  ]}
+                  title="Attendance Agent"
+                />
+                <ModuleCard
                   accentColor="orange"
                   description="Field coaching report visibility and coaching analytics."
                   href="/coaching/analytics"
@@ -998,6 +1022,19 @@ export function AdminCommandCenter({
                 title="Data Health"
               />
             ) : null}
+            <ModuleCard
+              accentColor="amber"
+              description="Fingerprint device sync freshness — flags when the local agent stops sending punches."
+              health={attendanceAgentCardHealth}
+              href="/attendance/device-user-mapping"
+              icon={Fingerprint}
+              lastSync={attendanceAgent ? attendanceAgent.lastIngestedLabel : "Check failed"}
+              metrics={[
+                { label: "Missed", ok: (attendanceAgent?.missedWorkingDays ?? 99) === 0, value: attendanceAgent ? n(attendanceAgent.missedWorkingDays) : "—" },
+                { label: "Status", ok: attendanceAgent?.status === "healthy", value: attendanceAgent ? attendanceAgent.status : "—" },
+              ]}
+              title="Attendance Agent"
+            />
             {!isHrSpecialistWorkspace ? (
               <ModuleCard
                 accentColor="blue"

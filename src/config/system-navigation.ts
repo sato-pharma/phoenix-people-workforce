@@ -2,6 +2,7 @@ import {
   BellRing,
   BriefcaseBusiness,
   Building2,
+  CalendarCheck,
   CalendarClock,
   CalendarDays,
   ChartColumnBig,
@@ -113,6 +114,9 @@ export const adminNavigationSections = [
     id: "attendance-management",
     items: [
       { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
+      { href: "/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
+      { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "employees" }] },
+      { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
       { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
@@ -315,6 +319,13 @@ export const employeePortalNavigationSections = [
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Finance Manager"] },
     ],
     label: "Leave Management",
+  },
+  {
+    id: "attendance",
+    items: [
+      { href: "/employee-portals/attendance", icon: Fingerprint, label: "My Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+    ],
+    label: "Attendance",
   },
   {
     id: "pharmacovigilance",
