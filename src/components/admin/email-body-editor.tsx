@@ -139,6 +139,28 @@ export function editorHtmlToStoredHtml(rootEl: HTMLElement): string {
     while (div.firstChild) paragraph.appendChild(div.firstChild);
     div.replaceWith(paragraph);
   }
+  // Canvas-only CSS (branded links, table borders) must be inlined at save time - email
+  // clients only see inline styles, so without this the sent email silently loses what
+  // the canvas showed.
+  const appendStyle = (element: Element, declaration: string) => {
+    const style = element.getAttribute("style") ?? "";
+    element.setAttribute("style", style ? `${style.replace(/;\s*$/, "")}; ${declaration}` : declaration);
+  };
+  for (const anchor of Array.from(clone.querySelectorAll("a"))) {
+    if (!/(^|;)\s*color\s*:/i.test(anchor.getAttribute("style") ?? "")) {
+      appendStyle(anchor, "color: #C2410C; font-weight: 700; text-decoration: underline");
+    }
+  }
+  for (const cell of Array.from(clone.querySelectorAll("td, th"))) {
+    const style = cell.getAttribute("style") ?? "";
+    if (!/(^|;)\s*border\s*:/i.test(style)) appendStyle(cell, "border: 1px solid #cbd5e1");
+    if (!/(^|;)\s*padding\s*:/i.test(cell.getAttribute("style") ?? "")) appendStyle(cell, "padding: 8px");
+  }
+  for (const image of Array.from(clone.querySelectorAll("img"))) {
+    // Outlook's Word renderer ignores max-width; a width attribute keeps large images
+    // inside the 680px email shell (small images get capped too - lesser evil).
+    if (!image.getAttribute("width")) image.setAttribute("width", "620");
+  }
   for (const element of Array.from(clone.querySelectorAll("*"))) {
     const allowed = allowedAttributes[element.tagName.toLowerCase()] ?? defaultKeptAttributes;
     for (const attribute of Array.from(element.attributes)) {
@@ -206,6 +228,8 @@ type ToolbarAction = {
 };
 
 type Props = {
+  /** Toolbar action labels to hide, e.g. ["Action button"] where {{ctaUrl}} cannot resolve. */
+  hiddenActions?: string[];
   onChange: (storedHtml: string) => void;
   onFocusBody?: () => void;
   value: string;
@@ -213,7 +237,7 @@ type Props = {
 };
 
 export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function EmailBodyEditor(
-  { onChange, onFocusBody, value, variables },
+  { hiddenActions, onChange, onFocusBody, value, variables },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -236,18 +260,22 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
   // copy that differs textually from what was emitted - never rebuild while the admin is
   // actively typing in the editor (it would stomp the caret and in-flight edits). A late
   // variables-catalog load DOES force one rebuild so chips show labels instead of tokens.
-  const variablesRef = useRef(variables);
+  // The catalog is compared by CONTENT, not reference - hosts may pass a fresh array on
+  // every render (e.g. after a recipient search reloads options) and a reference compare
+  // would rebuild the DOM mid-keystroke on each of those.
+  const variablesKey = variables.map((variable) => `${variable.token}:${variable.label}`).join("|");
+  const variablesRef = useRef(variablesKey);
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const variablesChanged = variablesRef.current !== variables;
-    variablesRef.current = variables;
+    const variablesChanged = variablesRef.current !== variablesKey;
+    variablesRef.current = variablesKey;
     const externalValue = value !== lastEmittedRef.current;
     if (!externalValue && !variablesChanged) return;
     if (externalValue && !variablesChanged && lastEmittedRef.current !== null && document.activeElement === editor) return;
     editor.innerHTML = storedHtmlToEditorHtml(externalValue ? value : (lastEmittedRef.current ?? value), variables);
     if (externalValue) lastEmittedRef.current = value;
-  }, [value, variables]);
+  }, [value, variables, variablesKey]);
 
   const emit = useCallback(() => {
     const editor = editorRef.current;
@@ -436,7 +464,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     { icon: ImageIcon, label: "Insert image (https link)", run: addImage },
     { icon: Minus, label: "Divider line", run: () => insertHtmlAtCaret("<hr />") },
     { icon: Eraser, label: "Clear formatting", run: () => runCommand("removeFormat") },
-  ];
+  ].filter((action) => !hiddenActions?.includes(action.label));
 
   return (
     <div className="border-y border-[#E2E8F0]">
@@ -581,7 +609,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           </button>
         ))}
         <span className="ml-auto hidden text-xs font-bold text-[#94A3B8] xl:block">
-          Write here exactly like Gmail - this is what employees receive.
+          Write here like Gmail - check the Preview for the exact employee view.
         </span>
       </div>
       <div

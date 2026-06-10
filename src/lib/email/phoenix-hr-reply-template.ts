@@ -12,6 +12,13 @@ export type PhoenixHrReplyTemplateInput = {
   cc?: string;
   recipientName?: string;
   replyMessage: string;
+  /**
+   * Optional rich body from the WYSIWYG composer. Callers MUST sanitize it
+   * (sanitizeEmailTemplateHtml) before passing it here; when present it replaces the
+   * paragraph-wrapped plain text in the HTML part, while replyMessage still feeds the
+   * plain-text part.
+   */
+  replyMessageHtml?: string;
   senderName?: string;
   signatureImageSrc?: string;
   subject: string;
@@ -70,7 +77,7 @@ export function buildPhoenixHrReplyEmail(
   const bodyText = input.replyMessage.trim() || "Write your reply message in the composer before sending this email.";
 
   const html = renderPhoenixEmailHtml({
-    bodyHtml: renderEmailParagraphs(bodyText),
+    bodyHtml: input.replyMessageHtml?.trim() ? input.replyMessageHtml : renderEmailParagraphs(bodyText),
     closingText: config.closing,
     greeting: `Dear ${recipient},`,
     previewText: config.preheader,

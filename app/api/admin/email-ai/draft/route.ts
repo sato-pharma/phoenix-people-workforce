@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { AiAssistError, draftEmailWithAi } from "@/lib/email/ai-assist";
+import { composerContextTokens } from "@/lib/email/email-composer-service";
 import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
 import { emailTemplateKeys } from "@/lib/email-templates/service";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
@@ -34,14 +35,19 @@ export async function POST(request: Request) {
     // to the template type so the AI only sees placeholders that will actually resolve.
     // An unrecognized key falls back to the unscoped catalog instead of an empty allowlist,
     // which would otherwise strip every placeholder from the AI draft.
+    const mode = body.mode === "composer" ? "composer" as const : "email_template" as const;
     const templateKey = typeof body.templateKey === "string" && (emailTemplateKeys as readonly string[]).includes(body.templateKey)
       ? body.templateKey
       : "";
     const variables = getEmailDesignerMetadata().variables
       .filter((variable) =>
-        !templateKey ||
-        variable.allowedTemplateTypes.length === 0 ||
-        (variable.allowedTemplateTypes as string[]).includes(templateKey))
+        // Manual composer sends only resolve the employee-context tokens - teaching the
+        // model anything else would produce chips that interpolate to "" in sent emails.
+        mode === "composer"
+          ? (composerContextTokens as readonly string[]).includes(variable.token)
+          : !templateKey ||
+            variable.allowedTemplateTypes.length === 0 ||
+            (variable.allowedTemplateTypes as string[]).includes(templateKey))
       .map((variable) => ({
         label: variable.label,
         sampleValue: variable.sampleValue,
@@ -62,7 +68,7 @@ export async function POST(request: Request) {
         subject: currentField("subject", 2_000),
       },
       instruction: String(body.instruction ?? "").slice(0, 6_000),
-      mode: body.mode === "composer" ? "composer" : "email_template",
+      mode,
       templateName: typeof body.templateName === "string" ? body.templateName.slice(0, 200) : undefined,
       variables,
     });

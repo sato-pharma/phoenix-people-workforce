@@ -5,6 +5,7 @@ import { invalidCommunicationEmails, splitCommunicationEmailList } from "@/lib/c
 import {
   assertReachableEmailImage,
   buildManualComposerIdempotencyKey,
+  sanitizeEmailTemplateHtml,
   validateManualEmailRecipientPolicy,
 } from "@/lib/email/email-safety";
 import {
@@ -38,6 +39,7 @@ export type ComposerPayload = ComposerRecipientSelections & {
   externalJustification?: unknown;
   recipientName?: unknown;
   replyMessage?: unknown;
+  replyMessageHtml?: unknown;
   senderName?: unknown;
   subject?: unknown;
   templateKey?: unknown;
@@ -165,9 +167,66 @@ function firstSelectedEmployee(input: ComposerPayload, employees: EmployeeDirect
   return employees.find((employee) => employeeEmail(employee) === firstEmail) ?? null;
 }
 
-export function interpolateComposerText(value: string, context: Record<string, string>) {
-  return value.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, token: string) => context[token] ?? "");
+/**
+ * Resolve a token to its own string value. Inherited Object.prototype names
+ * ({{__proto__}}, {{toString}}, ...) match the token grammar but are not data - without
+ * the hasOwnProperty/typeof guards they leak prototype members or throw.
+ */
+function contextValue(context: Record<string, string>, token: string) {
+  const resolved = Object.prototype.hasOwnProperty.call(context, token) ? context[token] : "";
+  return typeof resolved === "string" ? resolved : "";
 }
+
+export function interpolateComposerText(value: string, context: Record<string, string>) {
+  return value.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, token: string) => contextValue(context, token));
+}
+
+function escapeInterpolatedHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Rich-body counterpart of interpolateComposerText: resolved variable VALUES are
+ * HTML-escaped (an employee name must never inject markup) and the whole result goes
+ * through the server sanitizer, so the WYSIWYG client is never the security boundary.
+ */
+export function interpolateComposerHtml(value: string, context: Record<string, string>) {
+  if (!value.trim()) return "";
+  const interpolated = value.replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (_match, token: string) => escapeInterpolatedHtml(contextValue(context, token)),
+  );
+  return sanitizeEmailTemplateHtml(interpolated);
+}
+
+/**
+ * Server-side plain-text projection of the (already interpolated + sanitized) rich body.
+ * The text MIME part is derived here rather than trusted from the client, so the
+ * multipart/alternative parts can never diverge regardless of client behavior.
+ */
+export function composerHtmlToText(html: string) {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|blockquote|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Tokens composerContextFromEmployee actually fills with real values. */
+export const composerContextTokens = ["area", "employeeHrId", "employeeName", "jobTitle", "line", "managerName", "recipientName"] as const;
 
 function dedupeChannels(input: {
   bcc: Array<{ email: string; label: string; source: string }>;
@@ -234,7 +293,9 @@ export async function getEmailComposerOptions() {
       { label: "Short", value: "concise" },
       { label: "Detailed", value: "firm" },
     ],
-    variables: metadata.variables,
+    // Only tokens the composer context can actually resolve - offering the full designer
+    // catalog here would insert chips that silently interpolate to "" in sent emails.
+    variables: metadata.variables.filter((variable) => (composerContextTokens as readonly string[]).includes(variable.token)),
   };
 }
 
@@ -390,6 +451,7 @@ export function normalizeComposerBody(input: ComposerPayload) {
     externalJustification: stringField(input.externalJustification),
     recipientName: stringField(input.recipientName),
     replyMessage: stringField(input.replyMessage),
+    replyMessageHtml: stringField(input.replyMessageHtml),
     senderName: stringField(input.senderName) || systemIdentity.hrSignatureName,
     subject: stringField(input.subject),
     templateKey: stringField(input.templateKey),
@@ -402,6 +464,7 @@ export async function previewManualEmail(input: ComposerPayload, requestUrl: str
   const resolved = await resolveComposerRecipients(input);
   const subject = interpolateComposerText(normalized.subject, resolved.context);
   const replyMessage = interpolateComposerText(normalized.replyMessage, resolved.context);
+  const replyMessageHtml = interpolateComposerHtml(normalized.replyMessageHtml, resolved.context);
   const recipientPolicy = validateManualEmailRecipientPolicy({
     bcc: resolved.emails.bcc,
     cc: resolved.emails.cc,
@@ -421,7 +484,10 @@ export async function previewManualEmail(input: ComposerPayload, requestUrl: str
   const generated = buildPhoenixHrReplyEmail({
     cc: resolved.emails.cc.join(", "),
     recipientName: normalized.recipientName || resolved.context.recipientName,
-    replyMessage,
+    // With a rich body, the text part is projected from the same html server-side so the
+    // multipart/alternative parts cannot diverge.
+    replyMessage: replyMessageHtml ? composerHtmlToText(replyMessageHtml) || replyMessage : replyMessage,
+    replyMessageHtml,
     senderName: normalized.senderName,
     signatureImageSrc,
     subject,
@@ -457,7 +523,9 @@ export function buildComposerIdempotency(input: {
     cc: input.cc,
     clientRequestId: input.normalized.clientRequestId,
     recipientName: input.normalized.recipientName,
-    replyMessage: input.normalized.replyMessage,
+    // The rich body participates in the idempotency hash so editing only formatting
+    // (same plain text) still counts as a different email.
+    replyMessage: [input.normalized.replyMessage, input.normalized.replyMessageHtml].filter(Boolean).join("\n@@html@@\n"),
     senderName: input.normalized.senderName,
     subject: input.normalized.subject,
     to: input.to,

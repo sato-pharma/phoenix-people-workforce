@@ -8,7 +8,9 @@ import {
 import { assertReachableEmailImage, validateManualEmailRecipientPolicy } from "@/lib/email/email-safety";
 import {
   buildComposerIdempotency,
+  composerHtmlToText,
   emailSignatureUrl,
+  interpolateComposerHtml,
   interpolateComposerText,
   normalizeComposerBody,
   recordManualEmailSendAudit,
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
     const bcc = resolved.emails.bcc;
     const subject = interpolateComposerText(normalized.subject, resolved.context);
     const replyMessage = interpolateComposerText(normalized.replyMessage, resolved.context);
+    const replyMessageHtml = interpolateComposerHtml(normalized.replyMessageHtml, resolved.context);
     const recipientName = normalized.recipientName || resolved.context.recipientName;
 
     if (to.length === 0) {
@@ -110,7 +113,10 @@ export async function POST(request: Request) {
     const generated = buildPhoenixHrReplyEmail({
       cc: cc.join(", "),
       recipientName,
-      replyMessage,
+      // With a rich body, the text part is projected from the same html server-side so
+      // the multipart/alternative parts cannot diverge (mirrors previewManualEmail).
+      replyMessage: replyMessageHtml ? composerHtmlToText(replyMessageHtml) || replyMessage : replyMessage,
+      replyMessageHtml,
       senderName: normalized.senderName,
       signatureImageSrc,
       subject,
