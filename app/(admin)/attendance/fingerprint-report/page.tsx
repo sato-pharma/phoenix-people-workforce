@@ -27,7 +27,6 @@ export default async function AttendanceFingerprintReportPage({ searchParams }: 
   if (!await canAccess(access, "employees", "read")) {
     redirect("/employee-portals");
   }
-  const canGenerateCandidates = await canAccess(access, "attendance", "create");
 
   const filters = await searchParams;
   let initialData = null;
@@ -53,6 +52,6 @@ export default async function AttendanceFingerprintReportPage({ searchParams }: 
   ].join("|");
 
   return (
-    <FingerprintReport key={reportKey} canGenerateCandidates={canGenerateCandidates} initialData={initialData} initialError={initialError} />
+    <FingerprintReport key={reportKey} initialData={initialData} initialError={initialError} />
   );
 }

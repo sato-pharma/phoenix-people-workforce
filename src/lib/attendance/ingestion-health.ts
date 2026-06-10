@@ -1,0 +1,182 @@
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { createSystemNotification } from "@/lib/notifications/system";
+import {
+  buildAttendanceCalendarContext,
+  cairoTodayIso,
+  classifyAttendanceDay,
+  listIsoDatesInRange,
+} from "@/lib/attendance/working-days";
+
+const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
+
+/** Maximum days we look back when counting missed working days. */
+const LOOKBACK_CAP_DAYS = 60;
+
+export type AttendanceIngestionHealth = {
+  checkedAtIso: string;
+  lastIngestedAgoHours: number | null;
+  lastIngestedAt: string | null;
+  lastIngestedLabel: string;
+  /**
+   * Fully-elapsed working days (through YESTERDAY) with zero punch ingestion.
+   * Today is deliberately excluded: the daily check runs ~06:00 Cairo, before
+   * the device has synced anything for the day.
+   */
+  missedWorkingDays: number;
+  status: "healthy" | "warning" | "attention";
+  todayIsWorkingDay: boolean;
+};
+
+function localDateKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: reportTimeZone,
+    year: "numeric",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function shiftIsoDate(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function agoLabel(hours: number | null): string {
+  if (hours == null) return "never";
+  if (hours < 1) return "under 1 h ago";
+  if (hours < 48) return `${Math.round(hours)} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+/**
+ * Ingestion freshness of the fingerprint pipeline, derived from
+ * attendance_raw_punches.ingested_at. Weekend/holiday aware: a device that is
+ * silent over Friday/Saturday or a public holiday is healthy.
+ *
+ * (Distinct from checkAttendanceAgentHealth in local-agent.ts, which pings the
+ * local agent's HTTP port on the dev machine.)
+ */
+export async function getAttendanceIngestionHealth(): Promise<AttendanceIngestionHealth> {
+  const checkedAt = new Date();
+  const todayIso = cairoTodayIso();
+  const yesterdayIso = shiftIsoDate(todayIso, -1);
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("attendance_raw_punches")
+    .select("ingested_at")
+    .order("ingested_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Attendance ingestion lookup failed: ${error.message}`);
+
+  const lastIngestedAt = (data as { ingested_at: string | null } | null)?.ingested_at ?? null;
+  const lastIngestedDate = lastIngestedAt ? new Date(lastIngestedAt) : null;
+  const lastIngestedAgoHours = lastIngestedDate
+    ? Math.max(0, (checkedAt.getTime() - lastIngestedDate.getTime()) / 3_600_000)
+    : null;
+
+  const contextFrom = shiftIsoDate(todayIso, -LOOKBACK_CAP_DAYS);
+  const context = await buildAttendanceCalendarContext({ dateFromIso: contextFrom, dateToIso: todayIso });
+  const todayIsWorkingDay = classifyAttendanceDay({ context, dateIso: todayIso }).isExpectedWorkingDay;
+
+  let missedWorkingDays = 0;
+  if (!lastIngestedDate) {
+    missedWorkingDays = 99;
+  } else {
+    const lastIngestedIso = localDateKey(lastIngestedDate);
+    const countFrom = shiftIsoDate(lastIngestedIso, 1);
+    const cappedFrom = countFrom > contextFrom ? countFrom : contextFrom;
+    if (cappedFrom <= yesterdayIso) {
+      for (const dateIso of listIsoDatesInRange(cappedFrom, yesterdayIso)) {
+        // No title = office weekend policy (Friday + Saturday off): the office
+        // device being silent on those days is normal.
+        if (classifyAttendanceDay({ context, dateIso }).isExpectedWorkingDay) {
+          missedWorkingDays += 1;
+        }
+      }
+    }
+  }
+
+  const status: AttendanceIngestionHealth["status"] =
+    missedWorkingDays >= 2 ? "attention" : missedWorkingDays === 1 ? "warning" : "healthy";
+
+  return {
+    checkedAtIso: checkedAt.toISOString(),
+    lastIngestedAgoHours: lastIngestedAgoHours == null ? null : Math.round(lastIngestedAgoHours * 10) / 10,
+    lastIngestedAt,
+    lastIngestedLabel: agoLabel(lastIngestedAgoHours),
+    missedWorkingDays,
+    status,
+    todayIsWorkingDay,
+  };
+}
+
+export type AttendanceIngestionAlertResult = {
+  error?: string;
+  notified: boolean;
+  status: AttendanceIngestionHealth["status"] | "unknown";
+};
+
+/**
+ * Daily alert runner, piggybacked on scheduled notification processing (no
+ * dedicated cron). The per-calendar-day idempotency key keeps repeated runs of
+ * the scheduler from re-alerting. Never throws — outbox processing must not be
+ * blocked by a failed health check.
+ */
+export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestionAlertResult> {
+  try {
+    const health = await getAttendanceIngestionHealth();
+    if (health.status === "healthy") {
+      return { notified: false, status: health.status };
+    }
+
+    const missedLabel = health.missedWorkingDays >= 99
+      ? "no punches have ever been ingested"
+      : `${health.missedWorkingDays} working day(s) passed with zero punches ingested`;
+    const message =
+      `The fingerprint attendance agent appears to be down: ${missedLabel}. ` +
+      `Last successful sync: ${health.lastIngestedLabel}. Payroll attendance data is falling behind.`;
+
+    const result = await createSystemNotification({
+      actionUrl: "/attendance/device-user-mapping",
+      actorId: "system",
+      email: {
+        ctaHref: "/attendance/device-user-mapping",
+        ctaLabel: "Open attendance admin",
+        metrics: [
+          { label: "Last sync", value: health.lastIngestedLabel },
+          { label: "Missed working days", value: String(health.missedWorkingDays) },
+          { label: "Status", value: health.status === "attention" ? "Critical" : "Warning" },
+        ],
+        notificationType: "general",
+        recipientMode: "hr_notifications",
+        subject: `Attendance agent alert — no fingerprint sync (${health.lastIngestedLabel})`,
+        summary: message,
+        title: "Attendance agent not syncing",
+        tone: "warning",
+      },
+      eventType: "attendance_agent_ingestion_stalled",
+      message,
+      metadata: {
+        idempotencyKey: `attendance-agent-ingestion:${cairoTodayIso()}`,
+        lastIngestedAt: health.lastIngestedAt,
+        missedWorkingDays: health.missedWorkingDays,
+      },
+      module: "attendance",
+      priority: health.status === "attention" ? "high" : "normal",
+      title: "Attendance agent not syncing",
+    });
+
+    const notified = result.deliveries.some((delivery) => delivery.status === "sent" || delivery.status === "pending");
+    return { notified, status: health.status };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Attendance ingestion alert failed.",
+      notified: false,
+      status: "unknown",
+    };
+  }
+}
