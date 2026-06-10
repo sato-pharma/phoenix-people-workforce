@@ -203,7 +203,7 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
               <td class="phoenix-body" bgcolor="#ffffff" style="padding:26px 30px 30px;background:#ffffff!important;background-image:linear-gradient(#ffffff,#ffffff);color:#0f172a!important">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt">
                   <tr>
-                    <td class="phoenix-text" style="padding-top:0;${blackTextStyle}">
+                    <td class="phoenix-text" style="padding-top:0;color:#0f172a!important">
                       ${
                         input.greeting
                           ? `<p class="phoenix-text" style="margin:0 0 16px;${blackTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:400;line-height:1.7">${escapeAndIsolate(input.greeting)}</p>`

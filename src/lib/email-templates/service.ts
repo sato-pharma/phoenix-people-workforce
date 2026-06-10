@@ -104,6 +104,10 @@ export type EmailTemplateContext = {
   managerName?: string | null;
   meetingUrl?: string | null;
   nextStep?: string | null;
+  /** Pre-rendered HTML table (e.g. submitted plan rows); sanitized, not escaped, in bodyHtml. */
+  planTable?: string | null;
+  /** Plain-text projection used wherever {{planTable}} appears in text fields. */
+  planTableText?: string | null;
   recipientName?: string | null;
   startDate?: string | null;
   status?: string | null;
@@ -320,6 +324,8 @@ const placeholderHints = [
   "subject",
   "summary",
   "vacationType",
+  // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
+  "planTable",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
@@ -382,8 +388,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "General HR Notification",
   },
   weekly_plans: {
-    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{planTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{planTable}}\n\n{{status}}",
     closingText: "Please open Phoenix Workforce to review the plan details.",
     description: "Weekly and monthly plan updates: submissions, approvals, and rejections.",
     greeting: "Dear {{recipientName}},",
@@ -638,10 +644,23 @@ function escapeHtml(value: unknown) {
     .replace(/"/g, "&quot;");
 }
 
-function interpolate(template: string, variables: Record<string, string>, escapeValues: boolean) {
+/**
+ * Tokens whose values are trusted pre-rendered HTML blocks (system-built, e.g. the
+ * submitted-plan table). They bypass per-value escaping in bodyHtml; the WHOLE
+ * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
+ * the security authority. In text fields these tokens resolve to their text projection.
+ */
+const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable"]);
+
+function interpolate(
+  template: string,
+  variables: Record<string, string>,
+  escapeValues: boolean,
+  rawHtmlTokens?: ReadonlySet<string>,
+) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
     const value = variables[key] ?? "";
-    return escapeValues ? escapeHtml(value) : value;
+    return escapeValues && !rawHtmlTokens?.has(key) ? escapeHtml(value) : value;
   });
 }
 
@@ -686,6 +705,16 @@ export function validateEmailTemplatePayload(payload: EmailTemplatePayload) {
         issues.push({
           field,
           message: `Unknown variable {{${token}}}. Choose one from Available Variables.`,
+          token,
+          type: "placeholder",
+        });
+      }
+      // HTML-block tokens render multi-line tables - they only make sense in the body.
+      // Single-line fields resolve them to "" at render time; flag at save time too.
+      if (htmlBlockTokens.has(token) && field !== "bodyHtml" && field !== "bodyText") {
+        issues.push({
+          field,
+          message: `{{${token}}} is only available in the email body.`,
           token,
           type: "placeholder",
         });
@@ -1584,6 +1613,8 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     managerName: text(input.managerName),
     meetingUrl: text(input.meetingUrl),
     nextStep: text(input.nextStep),
+    planTable: text(input.planTable),
+    planTableText: text(input.planTableText),
     recipientName,
     startDate: text(input.startDate),
     status: text(input.status),
@@ -1617,12 +1648,17 @@ export function renderEmailTemplate(
   recipients: Recipient[] = [],
 ) {
   const variables = contextVariables(context, recipientNameForGreeting(recipients, context));
-  const subject = interpolate(template.subject, variables, false) || template.templateName;
-  const greeting = interpolate(template.greeting, variables, false);
-  const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true));
-  const bodyText = interpolate(template.bodyText, variables, false);
-  const closingText = interpolate(template.closingText, variables, false);
-  const previewLine = interpolate(template.previewText, variables, false);
+  // {{planTable}} is a body-only block: the plain body gets its text projection, while
+  // single-line fields (subject, greeting, closing, preview) resolve it to "" so a
+  // misplaced token can never dump multi-line employee text into a header-like field.
+  const bodyTextVariables = { ...variables, planTable: variables.planTableText };
+  const inlineVariables = { ...variables, planTable: "" };
+  const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
+  const greeting = interpolate(template.greeting, inlineVariables, false);
+  const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true, htmlBlockTokens));
+  const bodyText = interpolate(template.bodyText, bodyTextVariables, false);
+  const closingText = interpolate(template.closingText, inlineVariables, false);
+  const previewLine = interpolate(template.previewText, inlineVariables, false);
   const previewText = previewLine || subject;
   const action = templateSupportsAction(template.templateKey) && variables.ctaUrl
     ? { href: variables.ctaUrl, label: variables.ctaLabel || "Open in Phoenix Workforce" }
@@ -1654,6 +1690,31 @@ export function renderEmailTemplate(
   };
 }
 
+function samplePlanTableContext(): Partial<EmailTemplateContext> {
+  return buildSamplePlanTable();
+}
+
+function buildSamplePlanTable(): { planTable: string; planTableText: string } {
+  const cell = "border:1px solid #E5E7EB;padding:8px 10px;font-size:13px;text-align:left";
+  const head = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:8px 10px;font-size:12px;text-align:left";
+  const rows: Array<[string, string, string, string]> = [
+    ["Sun 2026-06-14", "<strong>Cairo East clinics</strong><br />Field", "Nasr City - Cairo East", "Coach the new rep on cardiology objection handling"],
+    ["Mon 2026-06-15", "<strong>Cycle meeting</strong><br />Meeting", "Head Office", "Align Q3 targets with the marketing team"],
+    ["Tue 2026-06-16", "<strong>Double visit</strong><br />Double Visit", "Heliopolis", "Double visit with Ahmed Hassan"],
+  ];
+  return {
+    planTable: [
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">',
+      `<thead><tr><th style="${head}">Date</th><th style="${head}">Activity</th><th style="${head}">Location</th><th style="${head}">Objective</th></tr></thead>`,
+      `<tbody>${rows.map((row) => `<tr>${row.map((value) => `<td style="${cell}">${value}</td>`).join("")}</tr>`).join("")}</tbody>`,
+      "</table>",
+    ].join(""),
+    planTableText: rows
+      .map((row) => `- ${row.map((value) => value.replace(/<br \/>/g, " - ").replace(/<[^>]+>/g, "")).join(" | ")}`)
+      .join("\n"),
+  };
+}
+
 export async function previewTemplate(templateKey: string, input: {
   context?: Partial<EmailTemplateContext>;
   template?: EmailTemplatePayload;
@@ -1673,7 +1734,13 @@ export async function previewTemplate(templateKey: string, input: {
     templateName: text(input.template?.templateName ?? current.templateName),
   };
   const recipients = [{ email: "preview@phoenix.local", name: input.context?.recipientName ?? "Team" }];
-  const rendered = renderEmailTemplate(draft, input.context, recipients);
+  // Admin previews have no real plan submission - substitute a small demo table so a
+  // weekly_plans template shows what {{planTable}} actually renders as. Real sends pass
+  // a real table (or "" - the token then disappears).
+  const context = templateKey === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS && !text(input.context?.planTable).includes("<table")
+    ? { ...input.context, ...samplePlanTableContext() }
+    : input.context;
+  const rendered = renderEmailTemplate(draft, context, recipients);
   return {
     html: rendered.html,
     previewText: rendered.previewText,
@@ -1835,6 +1902,9 @@ export async function sendTemplateTestEmail(input: {
     subject: "Phoenix Workforce test email",
     summary: "This is a test email rendered from the current template draft.",
     vacationType: "Annual Leave",
+    // Test sends have no real plan submission - the demo table shows what {{planTable}}
+    // renders as (mirrors previewTemplate).
+    ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
     ...(input.context ?? {}),
   };
   const rendered = renderEmailTemplate(draft, context, [{ email: to, name: context.recipientName }]);

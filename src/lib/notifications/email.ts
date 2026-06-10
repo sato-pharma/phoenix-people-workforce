@@ -59,6 +59,16 @@ export type NotificationEmailInput = {
   /** Originating module (e.g. "weekly_plans") so module-scoped templates can be selected. */
   module?: string | null;
   notificationType?: EmailNotificationType;
+  /** Pre-rendered HTML table of submitted plan rows for the {{planTable}} variable. */
+  planTableHtml?: string;
+  /** Plain-text projection of planTableHtml for the text part of the email. */
+  planTableText?: string;
+  /**
+   * Name of the person actually RECEIVING this email (for "Dear {{recipientName}},").
+   * Without it the hub falls back to the subject employee's name - wrong for emails
+   * routed to a manager/CEO/HR about someone else's record.
+   */
+  recipientName?: string;
   recipients?: string[];
   recipientMode?: EmailRecipientMode;
   includeHrInbox?: boolean;
@@ -1206,7 +1216,11 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         expiryText: metricValue(input, "Expires"),
         jobTitle: metricValue(input, "Job Title"),
         line: metricValue(input, "Line"),
-        recipientName: isAuthTemplateKey(migratedTemplateKey) ? systemNotificationEmailText.userRecipientName : employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
+        planTable: input.planTableHtml,
+        planTableText: input.planTableText,
+        recipientName: isAuthTemplateKey(migratedTemplateKey)
+          ? systemNotificationEmailText.userRecipientName
+          : input.recipientName || employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
         startDate: metricValue(input, "Hire date"),
         status: notificationMetricStatus(input),
         subject: input.subject,

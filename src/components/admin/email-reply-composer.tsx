@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Clipboard, Copy, Loader2, Mail, Search, Send } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Copy, Eye, Loader2, Mail, Send, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
@@ -12,8 +12,14 @@ import {
   adminPanelClassName,
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-system";
+import {
+  EmailBodyEditor,
+  htmlToPlainText,
+  type EmailBodyEditorHandle,
+} from "@/components/admin/email-body-editor";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import type { PhoenixHrEmailTone } from "@/lib/email/phoenix-hr-reply-template";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +38,8 @@ type EmployeeOption = {
   managerName?: string | null;
   title?: string | null;
 };
+
+type GroupOption = { description: string; key: "finance_team" | "hr_team" | "managers"; label: string };
 
 type ComposerOptions = {
   allowedDomains: string[];
@@ -52,7 +60,7 @@ type ComposerOptions = {
     skipped30d: number;
   };
   employeeOptions: EmployeeOption[];
-  groups: Array<{ description: string; key: "finance_team" | "hr_team" | "managers"; label: string }>;
+  groups: GroupOption[];
   maxRecipients: number;
   templates: Array<{ description: string; isActive: boolean; templateKey: string; templateName: string }>;
   tones: Array<{ label: string; value: PhoenixHrEmailTone }>;
@@ -68,6 +76,7 @@ type ComposerForm = {
   externalJustification: string;
   recipientName: string;
   replyMessage: string;
+  replyMessageHtml: string;
   senderName: string;
   subject: string;
   templateKey: string;
@@ -96,9 +105,8 @@ type PreviewState = {
   warnings: string[];
 };
 
-const steps = ["Choose Recipients", "Write Email", "Preview", "Confirm & Send"] as const;
-const inputClassName = "h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
-const textareaClassName = "min-h-[190px] w-full resize-y rounded-xl border border-[#D8E0EA] bg-white px-3 py-3 text-sm font-medium leading-6 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const defaultBodyHtml = "<p>Thank you for your email.</p><p>We reviewed your request and will proceed according to the HR process.</p>";
 
 function newClientRequestId() {
   return globalThis.crypto?.randomUUID?.() ?? `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -113,7 +121,8 @@ function defaultForm(): ComposerForm {
     clientRequestId: newClientRequestId(),
     externalJustification: "",
     recipientName: "",
-    replyMessage: "Thank you for your email.\n\nWe reviewed your request and will proceed according to the HR process.",
+    replyMessage: htmlToPlainText(defaultBodyHtml),
+    replyMessageHtml: defaultBodyHtml,
     senderName: "Phoenix HR Team",
     subject: "Re: HR Request",
     templateKey: "",
@@ -121,6 +130,19 @@ function defaultForm(): ComposerForm {
     toSelections: [],
     tone: "professional",
   };
+}
+
+function textToParagraphHtml(text: string) {
+  const escape = (value: string) => value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return text
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escape(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .join("");
 }
 
 function htmlDocumentToCopyFragment(html: string) {
@@ -133,36 +155,57 @@ function htmlDocumentToCopyFragment(html: string) {
   return `<div style="${wrapperStyle}">${bodyHtml}</div>`;
 }
 
+function selectionDisplayLabel(selection: RecipientSelection) {
+  return selection.label ?? ("hrId" in selection ? selection.hrId : "key" in selection ? selection.key : selection.email);
+}
+
 export function EmailReplyComposer() {
   const [form, setForm] = useState<ComposerForm>(() => defaultForm());
-  const [step, setStep] = useState(0);
   const [options, setOptions] = useState<ComposerOptions | null>(null);
-  const [employeeQuery, setEmployeeQuery] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   const richCopyRef = useRef<HTMLDivElement>(null);
+  const bodyEditorRef = useRef<EmailBodyEditorHandle | null>(null);
+  // The editor pulls external values only when they did not originate from typing; bump
+  // this key when a template or AI draft replaces the whole body so the canvas rebuilds.
+  const [bodyVersion, setBodyVersion] = useState(0);
 
   const externalRecipients = preview?.recipientPolicy.externalRecipients ?? [];
   const policyIssues = preview?.recipientPolicy.issues ?? [];
-  const totalRecipients = preview?.recipientPolicy.totalRecipients ?? 0;
-  const variablesAvailable = form.toSelections.some((selection) => selection.type === "employee") || form.to.trim().length > 0;
+  const busy = loading || aiBusy;
+  // Variables only resolve when the backend can find an employee context (matches the
+  // server's firstSelectedEmployee lookup across all channels + raw TO).
+  const variablesAvailable =
+    [...form.toSelections, ...form.ccSelections, ...form.bccSelections].some((selection) => selection.type === "employee") ||
+    form.to.trim().length > 0;
+
+  const editorVariables = useMemo(
+    () => (options?.variables ?? []).map((variable) => ({
+      label: variable.label,
+      sampleValue: variable.sampleValue,
+      token: variable.token,
+    })),
+    [options?.variables],
+  );
 
   useEffect(() => {
     void loadOptions();
   }, []);
 
-  const filteredEmployees = useMemo(() => {
-    const query = employeeQuery.trim().toLowerCase();
-    const employees = options?.employeeOptions ?? [];
-    if (!query) return employees.slice(0, 12);
-    return employees.filter((employee) => `${employee.label} ${employee.email ?? ""} ${employee.departmentName ?? ""} ${employee.managerName ?? ""}`.toLowerCase().includes(query)).slice(0, 12);
-  }, [employeeQuery, options?.employeeOptions]);
-
   function updateField<Key extends keyof ComposerForm>(key: Key, value: ComposerForm[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
+    setPreview(null);
+  }
+
+  function updateBody(html: string) {
+    setForm((current) => ({ ...current, replyMessage: htmlToPlainText(html), replyMessageHtml: html }));
     setPreview(null);
   }
 
@@ -172,7 +215,18 @@ export function EmailReplyComposer() {
       const response = await fetch(`/api/admin/email-composer/options${query ? `?q=${encodeURIComponent(query)}` : ""}`);
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.message ?? "Composer options failed to load.");
-      setOptions(payload.options);
+      setOptions((previous) => {
+        const next = payload.options as ComposerOptions;
+        if (!previous) return next;
+        // Union the employee pools across searches: each row's typeahead filters locally,
+        // so a Cc search must not shrink the To row's choices, and clearing the input
+        // must still find the originally loaded page.
+        const seen = new Set(next.employeeOptions.map((employee) => employee.hrId));
+        return {
+          ...next,
+          employeeOptions: [...next.employeeOptions, ...previous.employeeOptions.filter((employee) => !seen.has(employee.hrId))],
+        };
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Composer options failed to load.");
     } finally {
@@ -194,7 +248,7 @@ export function EmailReplyComposer() {
   }
 
   function insertVariable(token: string) {
-    updateField("replyMessage", `${form.replyMessage}{{${token}}}`);
+    bodyEditorRef.current?.insertToken(token);
   }
 
   async function applyTemplate(templateKey: string) {
@@ -206,17 +260,84 @@ export function EmailReplyComposer() {
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.message ?? "Template failed to load.");
       const template = payload.template;
+      const html = String(template.bodyHtml ?? "").trim() || textToParagraphHtml(String(template.bodyText ?? ""));
+      // The text/html pair must be replaced or kept TOGETHER - a template whose body
+      // text-extracts to empty counts as "no body change" for both representations, so
+      // the multipart parts never desynchronize.
+      const plain = htmlToPlainText(html);
       setForm((current) => ({
         ...current,
-        replyMessage: template.bodyText || template.bodyHtml || current.replyMessage,
+        replyMessage: plain || current.replyMessage,
+        replyMessageHtml: plain ? html : current.replyMessageHtml,
         subject: template.subject || current.subject,
         templateKey,
       }));
+      setBodyVersion((current) => current + 1);
       setPreview(null);
     } catch (templateError) {
       setError(templateError instanceof Error ? templateError.message : "Template failed to load.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runAiAssist(quickAction?: string) {
+    if (aiBusy || loading) return;
+    const instruction = [aiInstruction.trim(), quickAction].filter(Boolean).join(" - ");
+    if (!instruction) {
+      setError("Tell the AI what you want first (English or Arabic).");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setAiBusy(true);
+    try {
+      const response = await fetch("/api/admin/email-ai/draft", {
+        body: JSON.stringify({
+          current: {
+            bodyHtml: form.replyMessageHtml,
+            closingText: "",
+            greeting: form.recipientName ? `Dear ${form.recipientName},` : "",
+            previewText: "",
+            subject: form.subject,
+          },
+          instruction,
+          mode: "composer",
+          templateKey: "",
+          templateName: "Manual HR email",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(payload?.message ?? "AI draft failed.");
+        return;
+      }
+      const aiDraft = payload?.result?.draft as { bodyHtml: string; subject: string } | undefined;
+      if (!aiDraft?.bodyHtml) {
+        setError("The AI returned an empty draft. Try again.");
+        return;
+      }
+      const warnings: string[] = payload?.result?.warnings ?? [];
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      setForm((current) => ({
+        ...current,
+        replyMessage: htmlToPlainText(aiDraft.bodyHtml),
+        replyMessageHtml: aiDraft.bodyHtml,
+        subject: aiDraft.subject?.trim() ? aiDraft.subject : current.subject,
+      }));
+      setBodyVersion((current) => current + 1);
+      setPreview(null);
+      setMessage(
+        warnings.length > 0
+          ? `AI draft applied. ${warnings.join(" ")}`
+          : "AI draft applied - review the email, then run Preview & Check before sending.",
+      );
+    } catch {
+      setError("Could not reach the AI assistant. Check your connection and try again.");
+    } finally {
+      setAiBusy(false);
     }
   }
 
@@ -294,17 +415,19 @@ export function EmailReplyComposer() {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  const needsJustification = externalRecipients.length > 0 || policyIssues.some((issue) => issue.code === "external_justification_required");
+
   return (
     <main className="min-h-screen bg-[#F3F6FA] px-4 py-5 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px] space-y-5">
         <AdminPageHero
           actions={
             <>
-              <Button className="h-11 rounded-xl border border-[#D8E0EA] bg-white px-4 text-[#0F172A]" onClick={backendPreview} type="button" variant="secondary">
-                <Clipboard className="mr-2 h-4 w-4" />
-                Backend Preview
+              <Button className="h-11 rounded-xl border border-[#D8E0EA] bg-white px-4 text-[#0F172A]" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
+                <Eye className="mr-2 h-4 w-4" />
+                Preview &amp; Check
               </Button>
-              <Button className="h-11 rounded-xl bg-[#F97316] px-4 text-white" disabled={loading || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+              <Button className="h-11 rounded-xl bg-[#F97316] px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Send Email
               </Button>
@@ -312,12 +435,12 @@ export function EmailReplyComposer() {
           }
           badges={
             <div className="flex flex-wrap gap-2">
-              <AdminInsightChip tone="orange">Guided composer</AdminInsightChip>
+              <AdminInsightChip tone="orange">Gmail-style composer</AdminInsightChip>
               <AdminInsightChip>Backend recipient checks</AdminInsightChip>
               <AdminInsightChip tone="slate">{options?.maxRecipients ?? 25} recipient limit</AdminInsightChip>
             </div>
           }
-          description="Create manual HR emails through a four-step flow. Recipients, external justification, preview, signature validation, idempotency, and audit are enforced by the backend."
+          description="Write the email exactly as it will look. Recipients, external justification, preview, signature validation, idempotency, and audit stay enforced by the backend."
           eyebrow="HR Communications"
           icon={<Mail className="h-3.5 w-3.5" />}
           title="Email Composer"
@@ -327,192 +450,449 @@ export function EmailReplyComposer() {
         {message ? <AdminCallout tone="success"><Check className="mt-0.5 h-4 w-4" />{message}</AdminCallout> : null}
         {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
 
-        <Card className={cn(adminPanelClassName, "p-4")}>
-          <div className="grid gap-2 md:grid-cols-4">
-            {steps.map((label, index) => (
-              <button className={cn("rounded-lg border px-3 py-3 text-left text-sm font-black", step === index ? "border-[#F97316] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]")} key={label} onClick={() => setStep(index)} type="button">
-                {index + 1}. {label}
-              </button>
-            ))}
-          </div>
-        </Card>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+            <div className="flex items-center justify-between bg-[#070b12] px-5 py-3.5">
+              <p className="text-sm font-black text-white">New HR Email</p>
+              <p className="text-xs font-bold text-[#94A3B8]">From: {form.senderName}</p>
+            </div>
 
-        <DeliveryAnalyticsPanel analytics={options?.analytics} />
+            <div className="border-b border-[#E8EDF3] px-5">
+              <RecipientRow
+                chips={form.toSelections}
+                employees={options?.employeeOptions ?? []}
+                extras={
+                  <div className="flex shrink-0 gap-2 text-xs font-black text-[#64748B]">
+                    {!showCc ? <button className="hover:text-[#0F172A]" onClick={() => setShowCc(true)} type="button">Cc</button> : null}
+                    {!showBcc ? <button className="hover:text-[#0F172A]" onClick={() => setShowBcc(true)} type="button">Bcc</button> : null}
+                  </div>
+                }
+                groups={options?.groups ?? []}
+                label="To"
+                onAdd={(selection) => addSelection("toSelections", selection)}
+                onRemove={(index) => removeSelection("toSelections", index)}
+                onSearch={(query) => void loadOptions(query)}
+              />
+              {showCc || form.ccSelections.length > 0 ? (
+                <RecipientRow
+                  chips={form.ccSelections}
+                  employees={options?.employeeOptions ?? []}
+                  groups={options?.groups ?? []}
+                  label="Cc"
+                  onAdd={(selection) => addSelection("ccSelections", selection)}
+                  onRemove={(index) => removeSelection("ccSelections", index)}
+                  onSearch={(query) => void loadOptions(query)}
+                />
+              ) : null}
+              {showBcc || form.bccSelections.length > 0 ? (
+                <RecipientRow
+                  chips={form.bccSelections}
+                  employees={options?.employeeOptions ?? []}
+                  groups={options?.groups ?? []}
+                  label="Bcc"
+                  onAdd={(selection) => addSelection("bccSelections", selection)}
+                  onRemove={(index) => removeSelection("bccSelections", index)}
+                  onSearch={(query) => void loadOptions(query)}
+                />
+              ) : null}
+            </div>
 
-        {step === 0 ? (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-              <AdminSectionHeader description="Search employees or add backend-resolved groups. Raw email fields remain available for transition." title="Choose recipients" />
-              <div className="space-y-5 p-5">
-                <div className="flex gap-2">
-                  <input className={inputClassName} value={employeeQuery} onChange={(event) => setEmployeeQuery(event.target.value)} placeholder="Search name, HR ID, email, department, manager" />
-                  <Button className="h-11 rounded-xl bg-[#0F172A] text-white" onClick={() => void loadOptions(employeeQuery)} type="button"><Search className="h-4 w-4" /></Button>
-                </div>
-                <div className="grid gap-2 md:grid-cols-2">
-                  {filteredEmployees.map((employee) => (
-                    <button className="rounded-xl border border-[#E2E8F0] bg-white p-3 text-left hover:border-[#FDBA74]" key={employee.hrId} onClick={() => addSelection("toSelections", { hrId: employee.hrId, label: employee.label, type: "employee" })} type="button">
-                      <span className="block text-sm font-black text-[#0F172A]">{employee.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#64748B]">{employee.email} - {employee.title ?? "No title"}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {(options?.groups ?? []).map((group) => (
-                    <button className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-left hover:border-[#FDBA74]" key={group.key} onClick={() => addSelection("toSelections", { key: group.key, label: group.label, type: "group" })} type="button">
-                      <span className="block text-sm font-black text-[#0F172A]">{group.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#64748B]">{group.description}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <RawEmailField label="Raw TO" value={form.to} onChange={(value) => updateField("to", value)} />
-                  <RawEmailField label="Raw CC" value={form.cc} onChange={(value) => updateField("cc", value)} />
-                  <RawEmailField label="Raw BCC" value={form.bcc} onChange={(value) => updateField("bcc", value)} />
-                </div>
+            <div className="flex items-center gap-3 border-b border-[#E8EDF3] px-5 py-1.5">
+              <input
+                className="h-10 w-full border-0 bg-transparent text-[15px] font-black text-[#0F172A] outline-none placeholder:font-semibold placeholder:text-[#94A3B8]"
+                onChange={(event) => updateField("subject", event.target.value)}
+                placeholder="Subject"
+                value={form.subject}
+              />
+              <select
+                className="h-9 shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-2 text-xs font-black text-[#334155]"
+                onChange={(event) => void applyTemplate(event.target.value)}
+                value={form.templateKey}
+              >
+                <option value="">No template</option>
+                {(options?.templates ?? []).map((template) => (
+                  <option key={template.templateKey} value={template.templateKey}>{template.templateName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 border-b border-[#E8EDF3] px-5 py-2 text-sm">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Greeting</span>
+              <span className="font-semibold text-[#334155]">Dear</span>
+              <input
+                className="h-8 w-48 rounded-lg border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none placeholder:text-[#94A3B8] focus:border-[#FDBA74]"
+                onChange={(event) => updateField("recipientName", event.target.value)}
+                placeholder="auto from recipient"
+                value={form.recipientName}
+              />
+              <span className="font-semibold text-[#334155]">,</span>
+            </div>
+
+            <div className="border-b border-[#E8EDF3] bg-[#FFFBF7] px-5 py-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[#C2410C]" />
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">AI Assist</p>
               </div>
-            </Card>
-            <SelectedRecipients form={form} onRemove={removeSelection} />
-          </div>
-        ) : null}
+              <div className="mt-2 flex flex-col gap-2 md:flex-row">
+                <Input
+                  onChange={(event) => setAiInstruction(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void runAiAssist();
+                  }}
+                  placeholder='e.g. "Reply that the vacation request is approved starting Sunday" or any Arabic instruction'
+                  value={aiInstruction}
+                />
+                <Button className="shrink-0 bg-[#0F172A] text-white" disabled={busy} onClick={() => void runAiAssist()} type="button">
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {aiBusy ? "Thinking..." : "Draft with AI"}
+                </Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {["Translate to Arabic", "Make it shorter", "More formal", "More friendly"].map((quickAction) => (
+                  <button
+                    className="border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-bold text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] disabled:opacity-50"
+                    disabled={busy}
+                    key={quickAction}
+                    onClick={() => void runAiAssist(quickAction)}
+                    type="button"
+                  >
+                    {quickAction}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {step === 1 ? (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-              <AdminSectionHeader description="Write in plain language. Optional variables are inserted as backend tokens and resolved by the server." title="Write email" />
-              <div className="space-y-5 p-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Use template">
-                    <select className={inputClassName} value={form.templateKey} onChange={(event) => void applyTemplate(event.target.value)}>
-                      <option value="">No template</option>
-                      {(options?.templates ?? []).map((template) => <option key={template.templateKey} value={template.templateKey}>{template.templateName}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Recipient greeting name"><input className={inputClassName} value={form.recipientName} onChange={(event) => updateField("recipientName", event.target.value)} placeholder="Optional" /></Field>
-                </div>
-                <Field label="Subject"><input className={inputClassName} value={form.subject} onChange={(event) => updateField("subject", event.target.value)} placeholder="Email subject" /></Field>
-                <Field label="Message"><textarea className={textareaClassName} value={form.replyMessage} onChange={(event) => updateField("replyMessage", event.target.value)} placeholder="Write the email body here" /></Field>
-                <div>
-                  <FieldLabel>Tone</FieldLabel>
-                  <div className="grid gap-2 md:grid-cols-4">
-                    {(options?.tones ?? [
-                      { label: "Formal", value: "professional" as PhoenixHrEmailTone },
-                      { label: "Friendly", value: "warm" as PhoenixHrEmailTone },
-                      { label: "Short", value: "concise" as PhoenixHrEmailTone },
-                      { label: "Detailed", value: "firm" as PhoenixHrEmailTone },
-                    ]).map((tone) => (
-                      <button className={cn("rounded-xl border px-3 py-3 text-sm font-black", form.tone === tone.value ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]")} key={tone.value} onClick={() => updateField("tone", tone.value)} type="button">
-                        {tone.label}
+            <EmailBodyEditor
+              hiddenActions={["Action button"]}
+              key={bodyVersion}
+              onChange={updateBody}
+              ref={bodyEditorRef}
+              value={form.replyMessageHtml}
+              variables={editorVariables}
+            />
+
+            {needsJustification ? (
+              <div className="border-t border-[#E8EDF3] px-5 py-3">
+                <Field label="External recipient justification">
+                  <textarea
+                    className="min-h-[80px] w-full rounded-xl border border-[#D8E0EA] px-3 py-2.5 text-sm"
+                    onChange={(event) => updateField("externalJustification", event.target.value)}
+                    placeholder="Example: Candidate offer communication approved by HR."
+                    value={form.externalJustification}
+                  />
+                </Field>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E8EDF3] bg-[#F8FAFC] px-5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button className="h-10 rounded-xl bg-[#F97316] px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Send
+                </Button>
+                <Button className="h-10 rounded-xl border border-[#D8E0EA] bg-white px-3 text-[#0F172A]" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
+                  <Eye className="mr-2 h-4 w-4" />
+                  Preview &amp; Check
+                </Button>
+                {!preview ? <span className="text-xs font-bold text-[#94A3B8]">Preview is required before sending.</span> : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Tone</span>
+                {(options?.tones ?? [
+                  { label: "Formal", value: "professional" as PhoenixHrEmailTone },
+                  { label: "Friendly", value: "warm" as PhoenixHrEmailTone },
+                  { label: "Short", value: "concise" as PhoenixHrEmailTone },
+                  { label: "Detailed", value: "firm" as PhoenixHrEmailTone },
+                ]).map((tone) => (
+                  <button
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-black",
+                      form.tone === tone.value ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]",
+                    )}
+                    key={tone.value}
+                    onClick={() => updateField("tone", tone.value)}
+                    type="button"
+                  >
+                    {tone.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <details className="border-t border-[#E8EDF3] px-5 py-3">
+              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+                More options - sender name &amp; raw email lists
+              </summary>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <Field label="Sender name">
+                  <input
+                    className="h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A]"
+                    onChange={(event) => updateField("senderName", event.target.value)}
+                    value={form.senderName}
+                  />
+                </Field>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <RawEmailField label="Raw TO" onChange={(value) => updateField("to", value)} value={form.to} />
+                <RawEmailField label="Raw CC" onChange={(value) => updateField("cc", value)} value={form.cc} />
+                <RawEmailField label="Raw BCC" onChange={(value) => updateField("bcc", value)} value={form.bcc} />
+              </div>
+            </details>
+          </Card>
+
+          <div className="space-y-5">
+            <Card className={cn(adminPanelClassName, "space-y-3 p-5")}>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Variables</p>
+              {variablesAvailable ? (
+                <>
+                  <p className="text-xs leading-5 text-[#64748B]">Click to insert at the cursor. The backend fills values from the first selected employee.</p>
+                  <div className="flex max-h-[260px] flex-wrap gap-2 overflow-auto">
+                    {(options?.variables ?? []).map((variable) => (
+                      <button
+                        className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1.5 text-xs font-black text-[#C2410C]"
+                        key={variable.token}
+                        onClick={() => insertVariable(variable.token)}
+                        title={`Stores {{${variable.token}}}. Example: ${variable.sampleValue}`}
+                        type="button"
+                      >
+                        {variable.label}
                       </button>
                     ))}
                   </div>
-                </div>
-                {externalRecipients.length > 0 || policyIssues.some((issue) => issue.code === "external_justification_required") ? (
-                  <Field label="External recipient justification"><textarea className="min-h-[96px] w-full rounded-xl border border-[#D8E0EA] px-3 py-3 text-sm" value={form.externalJustification} onChange={(event) => updateField("externalJustification", event.target.value)} placeholder="Example: Candidate offer communication approved by HR." /></Field>
-                ) : null}
-              </div>
-            </Card>
-            <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Variables</p>
-              {variablesAvailable ? (
-                <div className="flex max-h-[620px] flex-wrap gap-2 overflow-auto">
-                  {(options?.variables ?? []).map((variable) => (
-                    <button className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1.5 text-xs font-black text-[#C2410C]" key={variable.token} onClick={() => insertVariable(variable.token)} title={`Stores {{${variable.token}}}. Example: ${variable.sampleValue}`} type="button">
-                      {variable.label}
-                    </button>
-                  ))}
-                </div>
-              ) : <p className="text-sm leading-6 text-[#64748B]">Choose an employee or recipient first so backend context can resolve variables.</p>}
-            </Card>
-          </div>
-        ) : null}
-
-        {step === 2 ? (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-              <AdminSectionHeader action={<Button className="rounded-xl bg-[#0F172A] text-white" onClick={backendPreview} type="button">Render</Button>} description="This is the backend-rendered email body, not a browser-only preview." title="Preview" />
-              <div className="bg-[#EEF2F7] p-4">
-                {preview?.html ? <iframe className="h-[720px] w-full rounded-xl border border-[#CBD5E1] bg-white" sandbox="" srcDoc={preview.html} title="Backend email preview" /> : <div className="flex h-[720px] items-center justify-center text-sm text-[#64748B]">Run backend preview to inspect the final email.</div>}
-              </div>
+                </>
+              ) : (
+                <p className="text-sm leading-6 text-[#64748B]">Choose an employee recipient first so the backend can fill variable values.</p>
+              )}
             </Card>
             <PreviewChecklist preview={preview} />
           </div>
-        ) : null}
-
-        {step === 3 ? (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-              <AdminSectionHeader action={<Button className="rounded-xl border border-[#D8E0EA] bg-white text-[#0F172A]" disabled={!preview} onClick={() => void copyRichEmail()} type="button" variant="secondary">{copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}Copy</Button>} description="Final confirmation uses backend recipient and policy results." title="Confirm & Send" />
-              <div className="space-y-4 p-5">
-                {!preview ? <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4" />Run backend preview before sending.</AdminCallout> : null}
-                {externalRecipients.length > 0 ? (
-                  <Field label="External recipient justification"><textarea className="min-h-[96px] w-full rounded-xl border border-[#D8E0EA] px-3 py-3 text-sm" value={form.externalJustification} onChange={(event) => updateField("externalJustification", event.target.value)} placeholder="Required for external recipients" /></Field>
-                ) : null}
-                <div className={cn(adminSoftPanelClassName, "grid gap-3 p-4 md:grid-cols-3")}>
-                  <Metric label="Internal/external" value={`${Math.max(0, totalRecipients - externalRecipients.length)} / ${externalRecipients.length}`} />
-                  <Metric label="Total recipients" value={String(totalRecipients)} />
-                  <Metric label="Limit" value={String(options?.maxRecipients ?? 25)} />
-                </div>
-                <Button className="h-12 w-full rounded-xl bg-[#F97316] text-white" disabled={loading || !preview || policyIssues.length > 0} onClick={sendEmail} type="button">
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Send Email
-                </Button>
-              </div>
-            </Card>
-            <PreviewChecklist preview={preview} />
-          </div>
-        ) : null}
-
-        <div className="flex justify-between">
-          <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} type="button" variant="secondary"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button>
-          <Button className="rounded-xl bg-[#0F172A] text-white" disabled={step === steps.length - 1} onClick={() => setStep((current) => Math.min(steps.length - 1, current + 1))} type="button">Next<ChevronRight className="ml-2 h-4 w-4" /></Button>
         </div>
+
+        {preview?.html ? (
+          <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+            <AdminSectionHeader
+              action={
+                <Button className="rounded-xl border border-[#D8E0EA] bg-white text-[#0F172A]" onClick={() => void copyRichEmail()} type="button" variant="secondary">
+                  {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                  Copy
+                </Button>
+              }
+              description="This is the backend-rendered email, exactly as recipients will see it."
+              title="Final preview"
+            />
+            <div className="bg-[#EEF2F7] p-4">
+              <iframe className="h-[680px] w-full rounded-xl border border-[#CBD5E1] bg-white" sandbox="" srcDoc={preview.html} title="Backend email preview" />
+            </div>
+          </Card>
+        ) : null}
+
+        <DeliveryAnalyticsPanel analytics={options?.analytics} />
       </div>
     </main>
+  );
+}
+
+type RecipientSuggestion =
+  | { description: string; kind: "email"; selection: RecipientSelection; title: string }
+  | { description: string; kind: "employee"; selection: RecipientSelection; title: string }
+  | { description: string; kind: "group"; selection: RecipientSelection; title: string };
+
+function RecipientRow({
+  chips,
+  employees,
+  extras,
+  groups,
+  label,
+  onAdd,
+  onRemove,
+  onSearch,
+}: {
+  chips: RecipientSelection[];
+  employees: EmployeeOption[];
+  extras?: ReactNode;
+  groups: GroupOption[];
+  label: string;
+  onAdd: (selection: RecipientSelection) => void;
+  onRemove: (index: number) => void;
+  onSearch: (query: string) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const searchTimerRef = useRef<number | null>(null);
+  const blurTimerRef = useRef<number | null>(null);
+  const listId = useId();
+
+  const query = input.trim().toLowerCase();
+  const suggestions = useMemo<RecipientSuggestion[]>(() => {
+    if (!query) return [];
+    const employeeItems = employees
+      .filter((employee) => `${employee.label} ${employee.hrId} ${employee.email ?? ""} ${employee.departmentName ?? ""} ${employee.title ?? ""}`.toLowerCase().includes(query))
+      .slice(0, 7)
+      .map<RecipientSuggestion>((employee) => ({
+        description: `${employee.email ?? "no email"} - ${employee.title ?? "No title"}`,
+        kind: "employee",
+        selection: { hrId: employee.hrId, label: employee.label, type: "employee" },
+        title: employee.label,
+      }));
+    const groupItems = groups
+      .filter((group) => `${group.label} ${group.description}`.toLowerCase().includes(query))
+      .slice(0, 3)
+      .map<RecipientSuggestion>((group) => ({
+        description: group.description,
+        kind: "group",
+        selection: { key: group.key, label: group.label, type: "group" },
+        title: `${group.label} (group)`,
+      }));
+    const emailCandidate = emailPattern.test(input.trim()) ? input.trim().toLowerCase() : null;
+    const emailItems: RecipientSuggestion[] = emailCandidate
+      ? [{
+          description: "Send to this exact address",
+          kind: "email",
+          selection: { email: emailCandidate, label: emailCandidate, type: "email" },
+          title: `Add email: ${emailCandidate}`,
+        }]
+      : [];
+    return [...employeeItems, ...groupItems, ...emailItems];
+  }, [employees, groups, input, query]);
+  const showDropdown = focused && query.length > 0;
+  const clampedActiveIndex = Math.min(activeIndex, Math.max(0, suggestions.length - 1));
+
+  function add(selection: RecipientSelection) {
+    onAdd(selection);
+    setInput("");
+    setActiveIndex(0);
+  }
+
+  function handleInput(value: string) {
+    setInput(value);
+    setActiveIndex(0);
+    // Local filtering is instant; a debounced server search widens the employee pool
+    // beyond the initially loaded page when the admin keeps typing.
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    const trimmed = value.trim();
+    if (trimmed.length >= 2) {
+      searchTimerRef.current = window.setTimeout(() => onSearch(trimmed), 350);
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-[46px] flex-wrap items-center gap-1.5 border-b border-[#F1F5F9] py-2 last:border-b-0">
+      <span className="w-8 shrink-0 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]" id={`${listId}-label`}>{label}</span>
+      {chips.map((selection, index) => (
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-black",
+            selection.type === "group" ? "border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3]" : "border-[#CBD5E1] bg-white text-[#0F172A]",
+          )}
+          key={`${label}-${index}`}
+        >
+          {selectionDisplayLabel(selection)}
+          <button aria-label={`Remove ${selectionDisplayLabel(selection)}`} className="text-[#94A3B8] hover:text-[#DC2626]" onClick={() => onRemove(index)} type="button">
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <input
+        aria-activedescendant={showDropdown && suggestions.length > 0 ? `${listId}-option-${clampedActiveIndex}` : undefined}
+        aria-controls={listId}
+        aria-expanded={showDropdown}
+        aria-labelledby={`${listId}-label`}
+        className="h-8 min-w-[180px] flex-1 border-0 bg-transparent text-sm font-semibold text-[#0F172A] outline-none placeholder:text-[#94A3B8]"
+        onBlur={() => {
+          blurTimerRef.current = window.setTimeout(() => setFocused(false), 150);
+        }}
+        onChange={(event) => handleInput(event.target.value)}
+        onFocus={() => {
+          // A pending close from a just-blurred state must not hide the dropdown the
+          // admin re-focused into.
+          if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+          setFocused(true);
+        }}
+        onKeyDown={(event) => {
+          // Mid-IME-composition Enter/arrow keys commit the composition, not the chip.
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "ArrowDown" && suggestions.length > 0) {
+            event.preventDefault();
+            setActiveIndex((current) => Math.min(current + 1, suggestions.length - 1));
+            return;
+          }
+          if (event.key === "ArrowUp" && suggestions.length > 0) {
+            event.preventDefault();
+            setActiveIndex((current) => Math.max(current - 1, 0));
+            return;
+          }
+          if (event.key === "Escape") {
+            setFocused(false);
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const target = suggestions[clampedActiveIndex];
+            if (target) add(target.selection);
+            return;
+          }
+          if (event.key === "Backspace" && input.length === 0 && chips.length > 0) onRemove(chips.length - 1);
+        }}
+        placeholder={chips.length === 0 ? "Type a name, HR ID, group, or email address" : ""}
+        role="combobox"
+        value={input}
+      />
+      {extras}
+      {showDropdown ? (
+        <div className="absolute left-8 top-full z-20 mt-1 w-[min(420px,90%)] overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-lg" id={listId} role="listbox">
+          {suggestions.map((suggestion, index) => (
+            <button
+              aria-selected={index === clampedActiveIndex}
+              className={cn(
+                "block w-full px-3 py-2 text-left",
+                suggestion.kind === "group" ? "hover:bg-[#EEF2FF]" : suggestion.kind === "email" ? "hover:bg-[#F0FDF4]" : "hover:bg-[#FFF7ED]",
+                index === clampedActiveIndex ? "bg-[#F8FAFC]" : "",
+              )}
+              id={`${listId}-option-${index}`}
+              key={`${suggestion.kind}-${suggestion.title}`}
+              onClick={() => add(suggestion.selection)}
+              onMouseDown={(event) => event.preventDefault()}
+              role="option"
+              type="button"
+            >
+              <span className={cn(
+                "block text-sm font-black",
+                suggestion.kind === "group" ? "text-[#3730A3]" : suggestion.kind === "email" ? "text-[#166534]" : "text-[#0F172A]",
+              )}>
+                {suggestion.title}
+              </span>
+              <span className="block text-xs text-[#64748B]">{suggestion.description}</span>
+            </button>
+          ))}
+          {suggestions.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-[#94A3B8]">No matches. Type a full email address to add it directly.</p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block">
-      <FieldLabel>{label}</FieldLabel>
+      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
       {children}
     </label>
   );
 }
 
-function FieldLabel({ children }: { children: ReactNode }) {
-  return <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{children}</span>;
-}
-
 function RawEmailField({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
   return (
     <Field label={label}>
-      <textarea className="min-h-[88px] w-full rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A]" onChange={(event) => onChange(event.target.value)} placeholder="email@satopharma.com" value={value} />
+      <textarea
+        className="min-h-[72px] w-full rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A]"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="email@satopharma.com"
+        value={value}
+      />
     </Field>
-  );
-}
-
-function SelectedRecipients({ form, onRemove }: { form: ComposerForm; onRemove: (channel: RecipientChannel, index: number) => void }) {
-  return (
-    <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Selected chips</p>
-      {([
-        ["toSelections", "TO"],
-        ["ccSelections", "CC"],
-        ["bccSelections", "BCC"],
-      ] as Array<[RecipientChannel, string]>).map(([channel, label]) => (
-        <div key={channel}>
-          <p className="mb-2 text-xs font-black text-[#64748B]">{label}</p>
-          <div className="flex flex-wrap gap-2">
-            {form[channel].length > 0 ? form[channel].map((selection, index) => (
-              <button className="rounded-full border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A]" key={`${channel}-${index}`} onClick={() => onRemove(channel, index)} type="button">
-                {selection.label ?? ("hrId" in selection ? selection.hrId : "key" in selection ? selection.key : selection.email)} x
-              </button>
-            )) : <span className="text-sm text-[#94A3B8]">No chips selected.</span>}
-          </div>
-        </div>
-      ))}
-    </Card>
   );
 }
 
@@ -522,16 +902,25 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
       <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Backend checks</p>
       {preview ? (
         <>
-          <Metric label="Recipients" value={String(preview.recipientPolicy.totalRecipients)} />
-          <Metric label="External" value={String(preview.recipientPolicy.externalRecipients.length)} />
+          <div className={cn(adminSoftPanelClassName, "grid gap-3 p-3 md:grid-cols-2")}>
+            <Metric label="Recipients" value={String(preview.recipientPolicy.totalRecipients)} />
+            <Metric label="External" value={String(preview.recipientPolicy.externalRecipients.length)} />
+          </div>
           {preview.warnings.length > 0 ? preview.warnings.map((warning) => (
-            <div className="rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-sm font-semibold text-[#9A3412]" key={warning}>{warning}</div>
-          )) : <div className="rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-sm font-semibold text-[#166534]">Ready after backend checks.</div>}
+            <div className="rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-sm font-semibold text-[#9A3412]" key={warning}>
+              <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+              {warning}
+            </div>
+          )) : <div className="rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-sm font-semibold text-[#166534]">All backend checks passed. Ready to send.</div>}
           <RecipientBucket label="TO" recipients={preview.recipients.to} />
           <RecipientBucket label="CC" recipients={preview.recipients.cc} />
           <RecipientBucket label="BCC" recipients={preview.recipients.bcc} />
         </>
-      ) : <p className="text-sm leading-6 text-[#64748B]">Run preview to see recipient count, external warnings, signature image status, and final subject.</p>}
+      ) : (
+        <p className="text-sm leading-6 text-[#64748B]">
+          Run <strong>Preview &amp; Check</strong> to resolve recipients, validate the policy, and render the final email exactly as it will be sent.
+        </p>
+      )}
     </Card>
   );
 }
@@ -548,36 +937,43 @@ function Metric({ label, value }: { label: string; value: string }) {
 function DeliveryAnalyticsPanel({ analytics }: { analytics: ComposerOptions["analytics"] | undefined }) {
   if (!analytics) return null;
   return (
-    <Card className={cn(adminPanelClassName, "p-4")}>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Sent 30d" value={String(analytics.sent30d)} />
-        <Metric label="Skipped 30d" value={String(analytics.skipped30d)} />
-        <Metric label="Failed 30d" value={String(analytics.failed30d)} />
-        <Metric label="External 30d" value={String(analytics.externalRecipients30d)} />
-      </div>
-      <div className="mt-4 grid gap-2 lg:grid-cols-4">
-        {analytics.recentManualSends.length > 0 ? analytics.recentManualSends.slice(0, 4).map((send, index) => (
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" key={`${send.createdAt ?? index}-${send.subject}`}>
-            <p className="truncate text-sm font-black text-[#0F172A]">{send.subject}</p>
-            <p className="mt-1 text-xs font-bold text-[#64748B]">{send.status} - {send.totalRecipients} recipient(s)</p>
-          </div>
-        )) : <p className="text-sm font-semibold text-[#64748B]">No manual sends recorded in the last 30 days.</p>}
-      </div>
-    </Card>
+    <details className="group">
+      <summary className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+        <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+        Delivery analytics - last 30 days
+      </summary>
+      <Card className={cn(adminPanelClassName, "mt-3 p-4")}>
+        <div className="grid gap-3 md:grid-cols-4">
+          <Metric label="Sent 30d" value={String(analytics.sent30d)} />
+          <Metric label="Skipped 30d" value={String(analytics.skipped30d)} />
+          <Metric label="Failed 30d" value={String(analytics.failed30d)} />
+          <Metric label="External 30d" value={String(analytics.externalRecipients30d)} />
+        </div>
+        <div className="mt-4 grid gap-2 lg:grid-cols-4">
+          {analytics.recentManualSends.length > 0 ? analytics.recentManualSends.slice(0, 4).map((send, index) => (
+            <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" key={`${send.createdAt ?? index}-${send.subject}`}>
+              <p className="truncate text-sm font-black text-[#0F172A]">{send.subject}</p>
+              <p className="mt-1 text-xs font-bold text-[#64748B]">{send.status} - {send.totalRecipients} recipient(s)</p>
+            </div>
+          )) : <p className="text-sm font-semibold text-[#64748B]">No manual sends recorded in the last 30 days.</p>}
+        </div>
+      </Card>
+    </details>
   );
 }
 
 function RecipientBucket({ label, recipients }: { label: string; recipients: Array<{ email: string; label: string; source: string }> }) {
+  if (recipients.length === 0) return null;
   return (
     <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label} ({recipients.length})</p>
       <div className="mt-2 space-y-2">
-        {recipients.length > 0 ? recipients.map((recipient) => (
+        {recipients.map((recipient) => (
           <div className="rounded-lg bg-[#F8FAFC] px-2.5 py-2" key={`${label}-${recipient.email}`}>
             <p className="truncate text-sm font-bold text-[#0F172A]">{recipient.email}</p>
             <p className="truncate text-xs font-semibold text-[#64748B]">{recipient.source}</p>
           </div>
-        )) : <p className="text-sm font-semibold text-[#94A3B8]">None</p>}
+        ))}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildEmployeePlanPeriod,
@@ -606,12 +607,24 @@ async function notifyRecipients(input: {
   recipients: Array<{ hrId: string | null; userId?: string | null }>;
   title: string;
 }) {
+  // The actual submitted plan rows ride along so the weekly_plans email template can
+  // render them as a table via the {{planTable}} variable.
+  const planTable = buildPlanEmailTable(input.plan.employee_plan_items);
   await Promise.all(input.recipients
     .filter((recipient) => recipient.hrId || recipient.userId)
     .map((recipient) => createSystemNotification({
       actionUrl: input.actionUrl,
       category: "general",
       channels: ["in_app", "email", "telegram"],
+      email: {
+        metrics: [
+          { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
+          { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
+          { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
+        ],
+        planTableHtml: planTable.html,
+        planTableText: planTable.text,
+      },
       eventType: input.eventType,
       message: input.message,
       metadata: {
