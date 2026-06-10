@@ -139,7 +139,12 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     },
     employeeHrId: input.request.employeeHrId,
     fallbackTo: [input.managerEmail],
-    overrides: { to: [input.managerEmail] },
+    // replaceRecipients: the approval workflow engine owns routing for vacation emails — each
+    // approver gets exactly their own personally-greeted copy. Without it, the template's
+    // editor-configured recipient rules (TO direct_manager, CC hr) merge into EVERY per-approver
+    // send, so copies greeted to one approver also land in other inboxes (looks like the flow
+    // "skipped the manager" / "went to the manager-of-manager").
+    overrides: { replaceRecipients: true, to: [input.managerEmail] },
     templateKey: "leave_request",
   });
   if (!isTemplateUnavailableSkip(templated)) return templated;
@@ -180,7 +185,9 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     },
     employeeHrId: input.request.employeeHrId,
     fallbackTo: [input.employeeEmail],
-    overrides: { cc: input.cc, to: [input.employeeEmail] },
+    // Engine-owned routing (see leave_request note): employee TO + approver CC, never the
+    // template's editor recipient rules.
+    overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
     templateKey: approved ? "leave_approval" : "leave_rejection",
   });
   if (!isTemplateUnavailableSkip(templated)) return templated;

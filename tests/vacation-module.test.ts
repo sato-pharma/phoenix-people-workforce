@@ -188,6 +188,16 @@ export function runVacationModuleTests() {
   assert.match(vacationEmailSource, /managerName: input\.managerName \|\| "Manager"/, "leave_request greeting placeholder {{managerName}} must be populated");
   assert.match(vacationEmailSource, /date: hireDate/, "leave_request {{date}} (hiring date) placeholder must be populated");
   assert.match(vacationEmailSource, /isTemplateUnavailableSkip/, "vacation emails must fall back to a plain send when the template is missing/inactive");
+  assert.match(
+    vacationEmailSource,
+    /overrides: \{ replaceRecipients: true, to: \[input\.managerEmail\] \}/,
+    "each approver must receive ONLY their own leave_request copy — template recipient rules must not fan personally-greeted copies to other inboxes",
+  );
+  assert.match(
+    vacationEmailSource,
+    /overrides: \{ cc: input\.cc, replaceRecipients: true, to: \[input\.employeeEmail\] \}/,
+    "decision result email routing is engine-owned (employee TO + approver CC), never the template's recipient rules",
+  );
 
   // Decision dispatch must not double-email: the generic notification is in-app + Telegram only,
   // and the employee/approvers receive the templated leave_approval/leave_rejection email instead.
