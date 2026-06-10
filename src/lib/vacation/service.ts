@@ -1618,24 +1618,55 @@ async function notifyVacationSubmittedByGovernance(input: {
 }) {
   const employee = findEmployeeByHrId(input.directory, input.request.employeeHrId);
   const period = `${input.request.startDate} - ${input.request.endDate}`;
+  const sequential = isSequentialWorkflowType(input.request.vacationType);
+  // Direct approve/reject deep links are used ONLY for the legacy (Sick) flow. Sequential types
+  // (Annual/Other/Compensatory/Emergency) must be reviewed inside the Vacation Action Center —
+  // email/Telegram never approve or reject directly for them.
+  const actionCenterUrl = `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`;
   const approveUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=approve`;
   const rejectUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=reject`;
 
+  // Role/stage-specific copy for the sequential workflow; legacy keeps the generic submit message.
+  const recipientCopy = (stepKey: VacationApprovalStepKey): { message: string; status: string } => {
+    if (!sequential) return { message: input.message, status: "Pending your approval" };
+    if (stepKey === "direct_manager") {
+      return { message: "Action required: a vacation request is waiting for your approval.", status: "Action required" };
+    }
+    if (stepKey === "manager_of_manager") {
+      return {
+        message: "FYI: a vacation request was submitted. Your approval will be available after the first management approval is completed.",
+        status: "Available after the first management approval",
+      };
+    }
+    return {
+      message: "FYI: a vacation request was submitted. You may review or reject it if there is a policy issue. HR acknowledgement will be available after management approvals are completed.",
+      status: "Review / reject only until management approves",
+    };
+  };
+
   await Promise.allSettled(
-    input.approvalRecipients.map((recipient) =>
-      createSystemNotification({
-        actionUrl: input.href,
+    input.approvalRecipients.map((recipient) => {
+      const copy = recipientCopy(recipient.stepKey);
+      const telegramButtons = sequential
+        ? [{ label: "Review Request", url: actionCenterUrl }]
+        : [
+            { label: "Open Phoenix", url: input.href },
+            { label: "Approve in Phoenix", url: approveUrl },
+            { label: "Reject in Phoenix", url: rejectUrl },
+          ];
+      return createSystemNotification({
+        actionUrl: sequential ? actionCenterUrl : input.href,
         category: "vacation_request",
         channels: ["in_app", "email", "telegram"],
         email: {
           recipients: recipient.email ? [recipient.email] : undefined,
         },
         eventType: "request_submitted",
-        message: input.message,
+        message: copy.message,
         metadata: {
           ...(input.metadata ?? {}),
-          actionUrl: input.href,
-          approveUrl,
+          actionUrl: sequential ? actionCenterUrl : input.href,
+          ...(sequential ? { reviewUrl: actionCenterUrl } : { approveUrl, rejectUrl }),
           approvalStep: recipient.stepKey,
           approverName: recipient.name,
           area: employee?.areaName ?? "",
@@ -1650,11 +1681,10 @@ async function notifyVacationSubmittedByGovernance(input: {
           policyWarnings: input.policyWarnings ?? [],
           recipientHrId: recipient.hrId,
           recipientName: recipient.name,
-          rejectUrl,
           requestId: input.request.id,
           requestType: vacationTypeLabel(input.request.vacationType),
-          requestUrl: input.href,
-          status: "Pending your approval",
+          requestUrl: sequential ? actionCenterUrl : input.href,
+          status: copy.status,
           team: employee?.teamName ?? "",
         },
         module: "vacation",
@@ -1663,15 +1693,11 @@ async function notifyVacationSubmittedByGovernance(input: {
         recipientUserId: recipient.userId,
         recordId: input.request.id,
         telegram: {
-          buttons: [
-            { label: "Open Phoenix", url: input.href },
-            { label: "Approve in Phoenix", url: approveUrl },
-            { label: "Reject in Phoenix", url: rejectUrl },
-          ],
+          buttons: telegramButtons,
         },
         title: input.title,
-      }),
-    ),
+      });
+    }),
   );
 }
 
@@ -1712,10 +1738,13 @@ async function dispatchVacationManagerReview(input: {
   request: VacationRequestRecord;
 }) {
   const hrRecipients = await getHrRecipients(input.directory);
-  const reportHref = `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
+  const sequential = isSequentialWorkflowType(input.request.vacationType);
+  const reportHref = sequential
+    ? `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`
+    : `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
-    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). HR final decision is required.`,
+    message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). ${sequential ? "HR acknowledgement is required." : "HR final decision is required."}`,
     metadata: {
       managerDecision: input.request.managerDecision,
       requestId: input.request.id,
@@ -1725,8 +1754,8 @@ async function dispatchVacationManagerReview(input: {
         { label: "Manager", value: input.request.managerName ?? "Direct manager" },
         { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
         { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
-        { label: "Status", value: "Pending HR final decision" },
-        { label: "Action", value: "Complete HR decision" },
+        { label: "Status", value: sequential ? "Pending HR acknowledgement" : "Pending HR final decision" },
+        { label: "Action", value: sequential ? "Acknowledge / record in the Action Center" : "Complete HR decision" },
       ],
     },
     recipients: [
@@ -1735,7 +1764,9 @@ async function dispatchVacationManagerReview(input: {
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
-    title: `${input.request.employeeName}'s vacation request needs HR final decision`,
+    title: sequential
+      ? `${input.request.employeeName}'s vacation request needs HR acknowledgement`
+      : `${input.request.employeeName}'s vacation request needs HR final decision`,
     type: `manager_review:${input.decision}`,
   });
 }
@@ -2945,6 +2976,11 @@ export async function decideVacationRequestByToken(input: {
 
   const request = await fetchVacationRequestById(input.requestId);
   if (!request) throw new Error("Vacation request was not found.");
+  // Sequential-workflow types (Annual/Other/Compensatory/Emergency) must be reviewed and actioned
+  // inside the Vacation Action Center — token-based direct approval is disabled for them.
+  if (isSequentialWorkflowType(request.vacationType)) {
+    throw new Error("This request must be reviewed in the Vacation Action Center; email approval links are disabled for it.");
+  }
   if (request.status !== "pending_manager") {
     throw new Error("This email approval link is no longer valid because the request is not pending direct manager review.");
   }
@@ -4110,7 +4146,9 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
   const runDate = cairoDateOnly();
   const run = await startVacationSlaRun(runDate);
   const report = await getVacationReportData(systemAccessContext, { status: "all" });
-  const pendingRows = report.rows.filter((row) => row.status === "pending_manager" || row.status === "pending_hr");
+  const pendingRows = report.rows.filter(
+    (row) => row.status === "pending_manager" || row.status === "pending_hr" || row.status === "needs_assignment",
+  );
   const overdueRows = pendingRows.filter((row) => row.slaStatus.isOverdue);
   let managerReminders = 0;
   let managerEscalations = 0;
@@ -4122,17 +4160,21 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
 
   for (const row of overdueRows) {
     try {
+      const needsAssignment = row.status === "needs_assignment";
       const isManagerStage = row.status === "pending_manager";
-      const escalationRecipients = isManagerStage
-        ? [row.managerOfManagerHrId]
-        : hrRecipients.filter((recipient) => recipient.hrId).map((recipient) => recipient.hrId);
-      const reminderRecipients = isManagerStage
-        ? [row.managerHrId]
-        : hrRecipients.map((recipient) => recipient.hrId);
+      const allHr = hrRecipients.filter((recipient) => recipient.hrId).map((recipient) => recipient.hrId);
+      // needs_assignment → remind HR to assign an approver; manager stage → the assigned manager
+      // (escalate to manager-of-manager); HR stage → the HR acknowledgement users.
+      const escalationRecipients = needsAssignment ? allHr : isManagerStage ? [row.managerOfManagerHrId] : allHr;
+      const reminderRecipients = needsAssignment ? allHr : isManagerStage ? [row.managerHrId] : allHr;
       const recipients = Array.from(new Set([...reminderRecipients, ...escalationRecipients].filter(Boolean) as string[]));
+      const reviewHref = isSequentialWorkflowType(row.vacationType)
+        ? `/leave-management/vacation-action-center?requestId=${encodeURIComponent(row.id)}`
+        : `/leave-management/vacation-report?requestId=${encodeURIComponent(row.id)}`;
+      const stageWord = needsAssignment ? "HR approver assignment" : isManagerStage ? "manager" : "HR";
       await notifyRecipients({
-        href: `/leave-management/vacation-report?requestId=${encodeURIComponent(row.id)}`,
-        message: `${row.employeeName}'s vacation request is overdue for ${isManagerStage ? "manager" : "HR"} review.`,
+        href: reviewHref,
+        message: `${row.employeeName}'s vacation request is overdue for ${stageWord} review.`,
         metadata: {
           dueAt: row.slaStatus.dueAt,
           requestId: row.id,
