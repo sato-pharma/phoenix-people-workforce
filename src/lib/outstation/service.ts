@@ -1,6 +1,4 @@
 import {
-  designatedHrSpecialistHrId,
-  isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -1159,9 +1157,11 @@ function formatEgp(value: number) {
 type OutstationNotifyRecipient = { hrId: string; name: string; role: "direct_manager" | "hr" };
 
 // Resolve who must act when an expense/outstation request is submitted: the
-// submitter's direct manager + the HR manager(s) (designated HR Specialist "a16"
-// and any Super Admin). Best-effort: a missing manager or a failed HR lookup is
-// logged and skipped, never thrown — notifications must not block a submit.
+// submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
+// manager). The designated HR Specialist (A-16) is intentionally excluded — it has no
+// outstation "approve" authority, so an "approval needed" alert there is a dead end.
+// Best-effort: a missing manager or a failed approver lookup is logged and skipped,
+// never thrown — notifications must not block a submit.
 async function resolveOutstationApprovalRecipients(
   directory: EmployeeDirectoryData,
   employee: EmployeeDirectoryRow,
@@ -1187,33 +1187,26 @@ async function resolveOutstationApprovalRecipients(
     else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
   }
 
-  // 2. HR manager(s): designated HR Specialist (a16) + Super Admin accounts.
+  // 2. Approver(s): Super Admin accounts only. The designated HR Specialist (A-16) is
+  //    deliberately NOT included: A-16 is HR review/follow-up and holds NO outstation
+  //    "approve" permission (see 20260522203000_hr_manager_approval_authority.sql), so an
+  //    "approval needed" alert to A-16 would be a dead end. B-10 is the Super Admin HR
+  //    approver and is covered by this query.
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("hr_id,role,is_active")
       .eq("is_active", true)
-      .in("role", ["HR Specialist", "Super Admin"]);
+      .eq("role", "Super Admin");
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
       const hrId = text(row.hr_id);
-      const role = text(row.role);
-      if (!hrId) continue;
-      const isHr =
-        role === "Super Admin" ||
-        isDesignatedHrSpecialist({ hrId, role: "HR Specialist" });
-      if (!isHr) continue;
+      if (!hrId || text(row.role) !== "Super Admin") continue;
       const directoryRow = byHrId(hrId);
       add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, "hr");
     }
   } catch (error) {
-    console.error("[outstation] HR recipient lookup failed; HR alert may be incomplete", error);
-  }
-
-  // Ensure the designated HR Specialist is included even if absent from app_auth_users.
-  if (![...recipients.values()].some((recipient) => recipient.role === "hr")) {
-    const hr = byHrId(designatedHrSpecialistHrId);
-    if (hr?.hrId) add(hr.hrId, hr.fullName, "hr");
+    console.error("[outstation] approver lookup failed; approval alert may be incomplete", error);
   }
 
   return [...recipients.values()];
@@ -1238,6 +1231,15 @@ async function notifyOutstationSubmitted(input: {
           actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
           category: "general",
           channels: ["in_app", "email", "telegram"],
+          email: {
+            metrics: [
+              { label: "Employee", value: r.employeeName },
+              { label: "Amount", value: amount },
+              { label: "Destination", value: destination },
+              { label: "Trip start", value: r.tripStartDate },
+              { label: "Trip end", value: r.tripEndDate },
+            ],
+          },
           eventType: "request_submitted",
           message: `${r.employeeName} submitted an ${kind} for ${amount} (${r.tripStartDate} to ${r.tripEndDate}, ${destination}). Review is pending your decision.`,
           metadata: {
@@ -1288,6 +1290,15 @@ async function notifyOutstationDecision(input: {
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
         category: "general",
         channels: ["in_app", "email", "telegram"],
+        email: {
+          metrics: [
+            { label: "Employee", value: r.employeeName },
+            { label: "Amount", value: amount },
+            { label: "Destination", value: text(r.toLabel) },
+            { label: "Trip start", value: r.tripStartDate },
+            { label: "Trip end", value: r.tripEndDate },
+          ],
+        },
         eventType: approved ? "request_approved" : "request_rejected",
         message: approved
           ? `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was approved.`
