@@ -58,6 +58,7 @@ import {
 import {
   sendVacationDecisionResultEmail,
 } from "@/lib/vacation/email";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import type {
   VacationActionAvailability,
   VacationActionCenterData,
@@ -1379,7 +1380,9 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
       matches.forEach((key) => matchedKeys.add(key));
       const employee = findEmployeeByHrId(directory, hrId);
       return [{
-        email: text(row.auth_email) || employee?.workEmail || null,
+        // Prefer the HR approver's real work mailbox over the synthetic auth_email login key
+        // (phx-<hex>@auth.phoenix.local), which is non-deliverable and gets dropped before send.
+        email: pickDeliverableEmail(employee?.workEmail, text(row.auth_email)),
         hrId,
         name: text(row.name) || employee?.fullName || hrId,
         stepKey: "hr" as const,
