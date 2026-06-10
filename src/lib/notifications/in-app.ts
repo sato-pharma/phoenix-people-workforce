@@ -343,6 +343,17 @@ export async function markInAppNotificationRead(access: AccessContext, notificat
 export async function markAllInAppNotificationsRead(access: AccessContext) {
   const notifications = await listInAppNotificationsForViewer(access, 20);
   const unread = notifications.filter((notification) => !notification.isRead);
-  await Promise.all(unread.map((notification) => markInAppNotificationRead(access, notification.id)));
-  return { marked: unread.length };
+  // allSettled so a single failing row can't sink the whole "mark all read" batch
+  // (one bad upsert previously failed the entire request with a 500).
+  const results = await Promise.allSettled(
+    unread.map((notification) => markInAppNotificationRead(access, notification.id)),
+  );
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failures.length > 0) {
+    console.error(
+      `markAllInAppNotificationsRead: ${failures.length}/${unread.length} notification(s) failed to mark read`,
+      failures[0].reason,
+    );
+  }
+  return { marked: unread.length - failures.length };
 }
