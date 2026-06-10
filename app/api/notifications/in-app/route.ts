@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     const notifications = await listInAppNotificationsForViewer(access);
     return NextResponse.json({ data: notifications, success: true });
   } catch (error) {
+    console.error("GET /api/notifications/in-app failed", error);
     const message = error instanceof Error ? error.message : "Unable to load notifications.";
     return NextResponse.json({ error: "notification_load_failed", message }, { status: 500 });
   }
@@ -37,6 +38,7 @@ export async function PATCH(request: Request) {
     if (!id) return NextResponse.json({ error: "missing_notification_id" }, { status: 400 });
     return NextResponse.json({ data: await markInAppNotificationRead(access, id), success: true });
   } catch (error) {
+    console.error("PATCH /api/notifications/in-app failed", error);
     const message = error instanceof Error ? error.message : "Unable to update notification.";
     return NextResponse.json({ error: "notification_update_failed", message }, { status: 500 });
   }
