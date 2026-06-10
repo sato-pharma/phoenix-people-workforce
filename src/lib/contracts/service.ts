@@ -417,6 +417,9 @@ async function notifyContractWorkflow(
       employeeHrId: record.employeeHrId,
       metrics: [
         { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+        { label: "Job Title", value: record.jobTitle ?? "" },
+        { label: "Area", value: record.areaName ?? "" },
+        { label: "Line", value: record.lineName ?? "" },
         { label: "Status", value: record.status },
         { label: "Renewal date", value: record.requestedRenewalDate },
       ],
