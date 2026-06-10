@@ -14,7 +14,7 @@ export default async function ReportItPage() {
 
   return (
     <main className="p-4 sm:p-6">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-6xl">
         <header className="mb-6">
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
           <h1 className="text-xl font-black text-slate-900">Report It</h1>
