@@ -23,8 +23,11 @@ export default async function AttendanceDeviceUserMappingPage() {
     initialError = error instanceof Error ? error.message : "Device user mappings failed to load.";
   }
 
+  const agentIsRemotelyReachable = !process.env.VERCEL;
+
   return (
     <DeviceUserMappingManager
+      agentIsRemotelyReachable={agentIsRemotelyReachable}
       canUpdate={canUpdate}
       initialData={initialData}
       initialError={initialError}
