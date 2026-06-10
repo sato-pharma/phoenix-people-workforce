@@ -20,6 +20,7 @@ export const VACATION_DAY_PARTS = [
 ] as const;
 
 export const VACATION_STATUSES = [
+  { label: "Needs HR Assignment", value: "needs_assignment" },
   { label: "Pending Manager", value: "pending_manager" },
   { label: "Pending HR", value: "pending_hr" },
   { label: "Approved", value: "approved" },
@@ -64,6 +65,28 @@ export type VacationTimelineEventType =
   | "sla_reminder"
   | "submitted"
   | string;
+
+// Sequential approval workflow (Annual / Other / Compensatory). Backend keeps the generic step
+// keys below; the conceptual generic identity + dynamic display labels are derived in
+// src/lib/vacation/approval-flow.ts. Emergency + Sick keep the legacy parallel flow.
+export type VacationWorkflowStepKey = "direct_manager" | "manager_of_manager" | "hr";
+export type VacationGenericStepName =
+  | "management_approval_1"
+  | "management_approval_2"
+  | "hr_acknowledgement";
+export type VacationApprovalStepStatus = "pending" | "approved" | "rejected";
+
+export type VacationApprovalStepState = {
+  order: number;
+  status: VacationApprovalStepStatus;
+  stepKey: VacationWorkflowStepKey;
+};
+
+export type VacationActionButton = "approve" | "reject" | "acknowledge" | "assign";
+export type VacationActionAvailability = Record<
+  VacationActionButton,
+  { enabled: boolean; disabledReason: string | null }
+>;
 
 export type VacationRequestInput = {
   dayPart: VacationDayPart;
@@ -253,6 +276,33 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   slaStatus: VacationSlaStatus;
   timelineEventCount: number;
   weeklyOffPolicySnapshot: VacationWeeklyOffPolicySnapshot | null;
+  // Sequential-workflow display enrichment (optional; populated for Action Center + tracking).
+  stageLabel?: string;
+  workflowSequential?: boolean;
+  genericActiveStep?: VacationGenericStepName | null;
+};
+
+export type VacationActionCenterRow = VacationRequestRecord & {
+  approvalSteps: Array<
+    VacationApprovalStepState & {
+      approverHrId: string;
+      approverName: string | null;
+      approverTitle: string | null;
+      decidedAt: string | null;
+      decisionComment: string | null;
+      genericStep: VacationGenericStepName;
+    }
+  >;
+  assignedActorName: string | null;
+  assignedActorTitle: string | null;
+  actionAvailability: VacationActionAvailability;
+  slaAgeDays: number;
+};
+
+export type VacationActionCenterData = {
+  canAssign: boolean;
+  generatedAt: string;
+  rows: VacationActionCenterRow[];
 };
 
 export type VacationReportFilters = {
