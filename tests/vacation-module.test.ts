@@ -133,8 +133,17 @@ export function runVacationModuleTests() {
   assert.match(submittedBlock, /Approve in Phoenix/, "Telegram approval button must open Phoenix");
   assert.match(submittedBlock, /Reject in Phoenix/, "Telegram rejection button must open Phoenix");
   assert.match(submittedBlock, /\/leave-management\/vacation-decision\/\$\{encodeURIComponent\(input\.request\.id\)\}\?decision=approve/, "Telegram approve URL must be a Phoenix confirmation URL");
-  assert.match(submittedBlock, /requestUrl: input\.href/, "vacation submitted metadata must include requestUrl for Telegram templates");
-  assert.match(submittedBlock, /actionUrl: input\.href/, "vacation submitted metadata must include actionUrl for Telegram templates");
+  // PR3: the sequential workflow (Annual/Other/Compensatory/Emergency) redirects email/Telegram to
+  // the Vacation Action Center instead of approving directly; only legacy Sick keeps direct buttons.
+  assert.match(submittedBlock, /Review Request/, "sequential workflow notifications use a Review Request redirect");
+  assert.match(submittedBlock, /vacation-action-center\?requestId=/, "Review button opens the Vacation Action Center by request id");
+  assert.match(
+    serviceSource,
+    /This request must be reviewed in the Vacation Action Center; email approval links are disabled/,
+    "token-based direct approval must be disabled for the sequential workflow",
+  );
+  assert.match(submittedBlock, /requestUrl: sequential \? actionCenterUrl : input\.href/, "vacation submitted metadata must include requestUrl for Telegram templates");
+  assert.match(submittedBlock, /actionUrl: sequential \? actionCenterUrl : input\.href/, "vacation submitted metadata must include actionUrl for Telegram templates");
   assert.match(submittedBlock, /approveUrl/, "vacation submitted metadata must include approveUrl for Telegram templates");
   assert.match(submittedBlock, /rejectUrl/, "vacation submitted metadata must include rejectUrl for Telegram templates");
   assert.match(submittedBlock, /employeeName: input\.request\.employeeName/, "vacation submitted metadata must include employeeName");
