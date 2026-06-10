@@ -17,6 +17,7 @@ import type {
 } from "@/lib/attendance/device-user-mapping";
 
 type Props = {
+  agentIsRemotelyReachable: boolean;
   canUpdate: boolean;
   initialData: AttendanceDeviceUserMappingDashboard | null;
   initialError: string | null;
@@ -178,7 +179,7 @@ function MappingRow({
   );
 }
 
-export function DeviceUserMappingManager({ canUpdate, initialData, initialError }: Props) {
+export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, initialData, initialError }: Props) {
   const [data, setData] = useState(initialData);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -355,14 +356,22 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
         title="Device User Mapping"
         actions={(
           <>
-            <Button disabled={!canUpdate || startingAgent} variant="secondary" type="button" onClick={() => void startAgent()}>
-              <RefreshCw className={`h-4 w-4 ${startingAgent ? "animate-spin" : ""}`} />
-              {startingAgent ? "Starting Agent" : "Run Local Agent"}
-            </Button>
-            <Button disabled={!canUpdate || syncing} type="button" onClick={() => void syncNow()}>
-              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing" : "Sync Now"}
-            </Button>
+            {agentIsRemotelyReachable ? (
+              <>
+                <Button disabled={!canUpdate || startingAgent} variant="secondary" type="button" onClick={() => void startAgent()}>
+                  <RefreshCw className={`h-4 w-4 ${startingAgent ? "animate-spin" : ""}`} />
+                  {startingAgent ? "Starting Agent" : "Run Local Agent"}
+                </Button>
+                <Button disabled={!canUpdate || syncing} type="button" onClick={() => void syncNow()}>
+                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Syncing" : "Sync Now"}
+                </Button>
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-slate-200">
+                Auto-sync: every 2 h + 5 PM daily
+              </span>
+            )}
             <a
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white"
               href="/api/attendance/device-user-mappings/template"
@@ -392,10 +401,48 @@ export function DeviceUserMappingManager({ canUpdate, initialData, initialError 
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
-      {agentHealth ? (
+      {agentIsRemotelyReachable && agentHealth ? (
         <AdminCallout tone={agentHealth.reachable ? "success" : "warning"}>
-          Local agent: {agentHealth.reachable ? "running" : "not running"}. Device:
-          {" "}{agentHealth.payload?.checks?.deviceTcpReachable ? "reachable" : "not checked/unreachable"}.
+          {agentHealth.reachable ? (
+            <>
+              Local agent: <strong>running</strong>. Device:{" "}
+              {agentHealth.payload?.checks?.deviceTcpReachable ? "reachable" : "not checked / unreachable"}.
+            </>
+          ) : (
+            <div className="space-y-1">
+              <p>
+                <strong>Local agent not running.</strong> The attendance agent is a Windows program that runs on the
+                machine connected to your ZKTeco fingerprint device. It cannot be started from the cloud.
+              </p>
+              <p className="text-xs">
+                To start it: open a PowerShell window in{" "}
+                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">local-attendance-agent\</code>
+                {" "}and run{" "}
+                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">.\start-agent.ps1</code>.
+                For automatic startup, run{" "}
+                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">.\install-scheduled-tasks.ps1</code>.
+              </p>
+            </div>
+          )}
+        </AdminCallout>
+      ) : null}
+      {!agentIsRemotelyReachable ? (
+        <AdminCallout tone="neutral">
+          <div className="space-y-1">
+            <p>
+              <strong>Sync runs automatically</strong> — every 2 hours and daily at 5 PM — once the local attendance
+              agent is running on your Windows machine.
+            </p>
+            <p className="text-xs">
+              To start the agent: open PowerShell in{" "}
+              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">local-attendance-agent\</code>
+              {" "}and run{" "}
+              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\start-agent.ps1</code>.
+              For auto-startup on login run{" "}
+              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\install-scheduled-tasks.ps1</code>{" "}
+              (requires Administrator).
+            </p>
+          </div>
         </AdminCallout>
       ) : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}
