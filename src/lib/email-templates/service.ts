@@ -30,6 +30,7 @@ export const emailTemplateKeys = [
   "password_setup",
   "password_reset",
   "user_created",
+  "weekly_plans",
   "general",
 ] as const;
 
@@ -49,6 +50,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   PROBATION_WORKFLOW: "probation_workflow",
   RESIGNATION_WORKFLOW: "resignation_workflow",
   USER_CREATED: "user_created",
+  WEEKLY_PLANS: "weekly_plans",
 } as const satisfies Record<string, EmailTemplateKey>;
 
 export const emailTemplateRecipientRoleOptions = [
@@ -57,6 +59,9 @@ export const emailTemplateRecipientRoleOptions = [
   "direct_manager",
   "manager_of_manager",
   "manager_chain",
+  "employee_team",
+  "direct_reports",
+  "employee_line",
   "hr",
   "hr_manager",
   "finance",
@@ -309,6 +314,12 @@ const placeholderHints = [
   "ctaLabel",
   "recipientName",
   "vacationBalance",
+  // These three were always offered as designer chips and filled by contextVariables, but
+  // missing here - so templates using them (general, weekly_plans, leave_*) failed
+  // validation and showed "Broken" health even with their shipped defaults.
+  "subject",
+  "summary",
+  "vacationType",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
@@ -316,6 +327,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   birthday: emptyRules(["employee"], ["district_manager"]),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
+  weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
   interview_invitation: emptyRules(["candidate"]),
   leave_approval: emptyRules(["employee"], ["hr"]),
@@ -368,6 +380,18 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "general",
     templateName: "General HR Notification",
+  },
+  weekly_plans: {
+    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{status}}",
+    closingText: "Please open Phoenix Workforce to review the plan details.",
+    description: "Weekly and monthly plan updates: submissions, approvals, and rejections.",
+    greeting: "Dear {{recipientName}},",
+    isActive: true,
+    previewText: "A weekly/monthly plan update needs your attention.",
+    subject: "{{subject}}",
+    templateKey: "weekly_plans",
+    templateName: "Weekly / Monthly Plans",
   },
   interview_feedback: {
     bodyHtml: "<p>Interview feedback has been submitted for {{candidateName}}.</p><p>Role: {{jobTitle}}.</p><p>Status: {{status}}.</p><p>Feedback: {{feedback}}</p><p>Next step: {{nextStep}}</p>",
@@ -527,6 +551,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   birthday: "Employee Lifecycle",
   contract_renewal: "Employee Lifecycle",
   general: "General",
+  weekly_plans: "General",
   interview_feedback: "Recruitment",
   interview_invitation: "Recruitment",
   leave_approval: "Leave Management",
@@ -826,19 +851,26 @@ function toTemplateRow(
   const publicationState: EmailTemplatePublicationState = hasDraftChanges
     ? (publishedIsActive ? "draft_changes" : "draft_unpublished")
     : (publishedIsActive ? "published" : "inactive");
+  const publishedUpdatedAt = row?.updated_at ?? new Date().toISOString();
+  const draftEditedAt = draft?.editedAt ?? null;
+  // "Updated" must show the LATEST change: an old draft must not mask a newer live save
+  // (a June 6 draft previously pinned the card date while saves kept landing later).
+  const draftIsNewer = Boolean(
+    draftEditedAt && Date.parse(draftEditedAt) > (Date.parse(publishedUpdatedAt) || 0),
+  );
   return {
     ...displayTemplate,
     category: templateCategories[template.templateKey],
     createdAt: row?.created_at ?? new Date().toISOString(),
-    draftEditedAt: draft?.editedAt ?? null,
+    draftEditedAt,
     draftEditedBy: draft?.editedBy ?? null,
     hasDraftChanges,
     health: getEmailTemplateHealth(displayTemplate, displayRules),
     publicationState,
     publishedIsActive,
-    publishedUpdatedAt: row?.updated_at ?? new Date().toISOString(),
+    publishedUpdatedAt,
     rules: displayRules,
-    updatedAt: draft?.editedAt ?? row?.updated_at ?? new Date().toISOString(),
+    updatedAt: draftIsNewer ? (draftEditedAt as string) : publishedUpdatedAt,
   };
 }
 
@@ -1400,6 +1432,27 @@ function resolveRoleRecipients(
     return manager ? [{ email: manager.email, name: manager.name }] : [];
   }
   if (role === "manager_chain") return managerChain(contacts, employee).map((manager) => ({ email: manager.email, name: manager.name }));
+  if (role === "employee_team") {
+    // Teammates = everyone sharing the employee's direct manager, excluding the employee
+    // (select "Employee" separately to include them). Vacant manager seats resolve to an
+    // empty team, same as the existing manager_chain behavior.
+    if (!employee?.managerHrId) return [];
+    return contacts
+      .filter((contact) => hrIdMatches(contact.managerHrId, employee.managerHrId) && !hrIdMatches(contact.hrId, employee.hrId))
+      .map((contact) => ({ email: contact.email, name: contact.name }));
+  }
+  if (role === "direct_reports") {
+    if (!employee?.hrId) return [];
+    return contacts
+      .filter((contact) => hrIdMatches(contact.managerHrId, employee.hrId))
+      .map((contact) => ({ email: contact.email, name: contact.name }));
+  }
+  if (role === "employee_line") {
+    if (!employee?.line) return [];
+    return contacts
+      .filter((contact) => lineMatches(contact.line, [employee.line as string]))
+      .map((contact) => ({ email: contact.email, name: contact.name }));
+  }
   if (managerChainScopedRoles.has(role)) {
     return managerChain(contacts, employee)
       .filter((manager) => roleMatches(manager, role, employee, rules))
@@ -1569,11 +1622,14 @@ export function renderEmailTemplate(
   const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true));
   const bodyText = interpolate(template.bodyText, variables, false);
   const closingText = interpolate(template.closingText, variables, false);
-  const previewText = interpolate(template.previewText, variables, false) || subject;
+  const previewLine = interpolate(template.previewText, variables, false);
+  const previewText = previewLine || subject;
   const action = templateSupportsAction(template.templateKey) && variables.ctaUrl
     ? { href: variables.ctaUrl, label: variables.ctaLabel || "Open in Phoenix Workforce" }
     : undefined;
-  const subtitle = templateSubtitle(template.templateKey);
+  // Curated per-key banners (birthday) win; otherwise the template's preview text doubles
+  // as the visible banner line under the header title so admins can edit it per template.
+  const subtitle = templateSubtitle(template.templateKey) ?? (previewLine || undefined);
 
   return {
     html: renderPhoenixEmailHtml({

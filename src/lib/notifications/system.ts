@@ -1066,6 +1066,7 @@ async function buildChannelEmailInput(
     employeeHrId: recipient.hrId ?? input.email?.employeeHrId ?? undefined,
     includeHrInbox: input.email?.includeHrInbox,
     metrics: input.email?.metrics,
+    module: input.module,
     notificationType: input.email?.notificationType ?? notificationTypeFor(input.module),
     recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
     recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
