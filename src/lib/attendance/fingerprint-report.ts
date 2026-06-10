@@ -37,6 +37,7 @@ export type FingerprintReportColumn = {
 };
 
 export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & {
+  dateIso: string;
   hasException?: boolean;
   sortKey: string;
 };
@@ -513,6 +514,7 @@ export async function getFingerprintAttendanceReport(input: {
       actualFirstPunch: firstPunchText,
       actualLastPunch: hasDistinctVisibleLastPunch ? lastPunchText : "",
       date: displayDate(bucket.reportDate),
+      dateIso: bucket.reportDate,
       deductionDays: hasApprovedException ? "0" : status.deductionDays,
       deductionValue: hasApprovedException ? "0" : status.deductionValue,
       department,

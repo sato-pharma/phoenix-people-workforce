@@ -35,6 +35,7 @@ import { runRecruitmentSeniorApprovalTests } from "./recruitment-senior-approval
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
+import { runAttendanceWorkingDaysTests } from "./attendance-working-days.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
@@ -206,6 +207,7 @@ await runTest("recruitment senior approval", runRecruitmentSeniorApprovalTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
+await runTest("attendance working days", runAttendanceWorkingDaysTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("company holidays", runCompanyHolidaysTests);
