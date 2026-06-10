@@ -1,4 +1,6 @@
 import {
+  designatedHrSpecialistHrId,
+  isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -17,7 +19,8 @@ import {
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
@@ -1137,6 +1140,184 @@ export async function calculateOutstationExpense(
   return calculation;
 }
 
+// ── Approval notifications ────────────────────────────────────────────────────
+// The expenses/outstation workflow historically sent NO notifications (a confirmed
+// gap in the workflow map). These best-effort dispatch helpers close that gap:
+// on submit we alert the submitter's direct manager + HR manager(s) ("approval
+// needed"); on a decision we tell the submitting employee the outcome. Every send
+// is wrapped so a notification failure can never roll back or fail the underlying
+// submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
+// to the in-app "general" bell category and the "general" email type) with explicit
+// recipients + channels, so no notification policy/governance changes are needed.
+const OUTSTATION_ADMIN_REVIEW_URL = "/admin/outstation/requests";
+const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
+
+function formatEgp(value: number) {
+  return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
+}
+
+type OutstationNotifyRecipient = { hrId: string; name: string; role: "direct_manager" | "hr" };
+
+// Resolve who must act when an expense/outstation request is submitted: the
+// submitter's direct manager + the HR manager(s) (designated HR Specialist "a16"
+// and any Super Admin). Best-effort: a missing manager or a failed HR lookup is
+// logged and skipped, never thrown — notifications must not block a submit.
+async function resolveOutstationApprovalRecipients(
+  directory: EmployeeDirectoryData,
+  employee: EmployeeDirectoryRow,
+): Promise<OutstationNotifyRecipient[]> {
+  const byHrId = (hrId: string | null | undefined) =>
+    hrId
+      ? directory.employees.find(
+          (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(hrId),
+        ) ?? null
+      : null;
+
+  const recipients = new Map<string, OutstationNotifyRecipient>();
+  const add = (hrId: string | null | undefined, name: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
+    const key = normalizeHrIdForAccess(hrId);
+    if (!key || recipients.has(key)) return;
+    recipients.set(key, { hrId: String(hrId), name: name?.trim() || String(hrId), role });
+  };
+
+  // 1. Direct manager of the submitter.
+  if (employee.managerHrId) {
+    const manager = byHrId(employee.managerHrId);
+    if (manager?.hrId) add(manager.hrId, manager.fullName, "direct_manager");
+    else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
+  }
+
+  // 2. HR manager(s): designated HR Specialist (a16) + Super Admin accounts.
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id,role,is_active")
+      .eq("is_active", true)
+      .in("role", ["HR Specialist", "Super Admin"]);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+      const hrId = text(row.hr_id);
+      const role = text(row.role);
+      if (!hrId) continue;
+      const isHr =
+        role === "Super Admin" ||
+        isDesignatedHrSpecialist({ hrId, role: "HR Specialist" });
+      if (!isHr) continue;
+      const directoryRow = byHrId(hrId);
+      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, "hr");
+    }
+  } catch (error) {
+    console.error("[outstation] HR recipient lookup failed; HR alert may be incomplete", error);
+  }
+
+  // Ensure the designated HR Specialist is included even if absent from app_auth_users.
+  if (![...recipients.values()].some((recipient) => recipient.role === "hr")) {
+    const hr = byHrId(designatedHrSpecialistHrId);
+    if (hr?.hrId) add(hr.hrId, hr.fullName, "hr");
+  }
+
+  return [...recipients.values()];
+}
+
+// Submit → "approval needed" to the direct manager + HR (in-app + email + Telegram).
+async function notifyOutstationSubmitted(input: {
+  employee: EmployeeDirectoryRow;
+  request: OutstationExpenseRequest;
+}) {
+  try {
+    const directory = await getEmployeeDirectory();
+    const recipients = await resolveOutstationApprovalRecipients(directory, input.employee);
+    if (recipients.length === 0) return;
+    const r = input.request;
+    const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
+    const kind = r.expenseType === "traveling" ? "outstation travel expense" : "expense";
+    const destination = text(r.toLabel) || "destination";
+    await Promise.allSettled(
+      recipients.map((recipient) =>
+        createSystemNotification({
+          actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
+          category: "general",
+          channels: ["in_app", "email", "telegram"],
+          eventType: "request_submitted",
+          message: `${r.employeeName} submitted an ${kind} for ${amount} (${r.tripStartDate} to ${r.tripEndDate}, ${destination}). Review is pending your decision.`,
+          metadata: {
+            actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
+            amount,
+            approvalStep: recipient.role,
+            destination,
+            employeeHrId: r.employeeHrId,
+            employeeName: r.employeeName,
+            idempotencyKey: `outstation:${r.id}:request_submitted:${recipient.hrId}`,
+            recipientHrId: recipient.hrId,
+            recipientName: recipient.name,
+            requestId: String(r.id),
+            requestType: kind,
+            requestUrl: OUTSTATION_ADMIN_REVIEW_URL,
+            status: "Pending your approval",
+            tripEndDate: r.tripEndDate,
+            tripStartDate: r.tripStartDate,
+          },
+          module: "outstation",
+          priority: "high",
+          recipientHrId: recipient.hrId,
+          recordId: String(r.id),
+          telegram: { buttons: [{ label: "Review in Phoenix", url: OUTSTATION_ADMIN_REVIEW_URL }] },
+          title: `${r.employeeName} submitted an ${kind}`,
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("[outstation] submit notification dispatch failed (non-blocking)", error);
+  }
+}
+
+// Approve/Reject → outcome to the submitting employee (reason included on reject).
+async function notifyOutstationDecision(input: {
+  comment?: string | null;
+  decision: "approve" | "reject";
+  request: OutstationExpenseRequest;
+}) {
+  try {
+    const r = input.request;
+    const approved = input.decision === "approve";
+    const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
+    const reason = text(input.comment);
+    const reasonSuffix = !approved && reason ? ` Reason: ${reason}` : "";
+    await Promise.allSettled([
+      createSystemNotification({
+        actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+        category: "general",
+        channels: ["in_app", "email", "telegram"],
+        eventType: approved ? "request_approved" : "request_rejected",
+        message: approved
+          ? `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was approved.`
+          : `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was rejected.${reasonSuffix}`,
+        metadata: {
+          actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+          amount,
+          decision: input.decision,
+          employeeHrId: r.employeeHrId,
+          employeeName: r.employeeName,
+          idempotencyKey: `outstation:${r.id}:${approved ? "request_approved" : "request_rejected"}:${r.employeeHrId.toUpperCase()}`,
+          requestId: String(r.id),
+          requestUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+          status: approved ? "Approved" : "Rejected",
+          ...(approved ? {} : { rejectionReason: reason }),
+        },
+        module: "outstation",
+        priority: "normal",
+        recipientHrId: r.employeeHrId,
+        recordId: String(r.id),
+        subjectHrId: r.employeeHrId,
+        telegram: { buttons: [{ label: "Open Phoenix", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
+        title: approved ? "Your expense request was approved" : "Your expense request was rejected",
+      }),
+    ]);
+  } catch (error) {
+    console.error("[outstation] decision notification dispatch failed (non-blocking)", error);
+  }
+}
+
 export async function submitOutstationRequest(
   access: AccessContext,
   input: OutstationCalculationInput,
@@ -1311,7 +1492,7 @@ export async function submitOutstationRequest(
     validationResult: calculation.eligibilityStatus,
   });
 
-  return mapOutstationRequestRow({
+  const submitted = mapOutstationRequestRow({
     ...data,
     car_evidence_image_path: carEvidenceImagePath,
     car_evidence_metadata: persistedCarEvidenceMetadata,
@@ -1319,6 +1500,8 @@ export async function submitOutstationRequest(
       ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
       : data.notes,
   });
+  await notifyOutstationSubmitted({ employee: identity.employee, request: submitted });
+  return submitted;
 }
 
 export async function syncOfflineOutstationRequest(
@@ -1640,7 +1823,9 @@ export async function submitMedicalRepSimpleExpenseRequest(
       throw new Error(error.message);
     }
 
-    return mapOutstationRequestRow(data as Record<string, unknown>);
+    const submitted = mapOutstationRequestRow(data as Record<string, unknown>);
+    await notifyOutstationSubmitted({ employee: identity.employee, request: submitted });
+    return submitted;
   } catch (error) {
     await deleteOutstationTicketAttachments(
       uploadedAttachments.map((attachment) => attachment.path),
@@ -1783,6 +1968,7 @@ export async function approveOutstationRequestForPayroll(
     summary: `Outstation request ${request.id} approved for payroll expense import.`,
   });
 
+  await notifyOutstationDecision({ decision: "approve", request });
   return {
     expenseTripId: expenseRecord.tripId,
     payrollExpenseRows: savedExpenses.length,
@@ -2121,6 +2307,7 @@ export async function createManagerExpenseAsAdmin(
     summary: `Admin created manual outstation expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
   });
 
+  await notifyOutstationSubmitted({ employee, request: created });
   return created;
 }
 
@@ -2391,6 +2578,7 @@ export async function rejectOutstationRequestAsAdmin(
     summary: `Admin rejected outstation request ${rejected.id}.`,
   });
 
+  await notifyOutstationDecision({ comment, decision: "reject", request: rejected });
   return rejected;
 }
 
