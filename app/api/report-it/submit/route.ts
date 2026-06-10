@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { submitReport } from "@/lib/report-it/service";
 import type { ReportItPayload } from "@/lib/report-it/types";
 
@@ -32,13 +33,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing report payload." }, { status: 400 });
     }
 
-    // Fetch employee record for submitter metadata
+    // Fetch employee record for submitter metadata. Match on canonical hr_id
+    // keys (case-insensitive + alias variants) so the name/department/line
+    // populate even when the session hr_id differs in case from the stored
+    // employee row (e.g. "ADMIN-HR" vs "admin-HR").
     const supabase = getSupabaseAdmin();
-    const { data: emp } = await supabase
+    const { data: empRows } = await supabase
       .from("employees")
       .select("name, line_name, area, department")
-      .eq("hr_id", access.hrId)
-      .maybeSingle();
+      .in("hr_id", hrIdLookupKeys(access.hrId))
+      .limit(1);
+    const emp = empRows?.[0] ?? null;
 
     const result = await submitReport({
       payload: body.payload as ReportItPayload,
