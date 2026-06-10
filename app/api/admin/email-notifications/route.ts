@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
-  buildEmailNotificationPreview,
   emailNotificationTypes,
   emailRecipientModes,
   getEmailNotificationOutboxStats,
@@ -35,19 +34,6 @@ function cleanTextArray(value: unknown) {
   return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
 }
 
-function cleanTemplate(value: unknown) {
-  if (!value || typeof value !== "object") return undefined;
-  const template = value as Record<string, unknown>;
-  return {
-    bodyText: String(template.bodyText ?? "").trim(),
-    closingText: String(template.closingText ?? "").trim(),
-    greeting: String(template.greeting ?? "").trim(),
-    previewText: String(template.previewText ?? "").trim(),
-    subject: String(template.subject ?? "").trim(),
-    title: String(template.title ?? "").trim(),
-  };
-}
-
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -55,12 +41,8 @@ export async function GET(request: Request) {
     const policies = await getEmailNotificationPolicies();
     const outboxStats = await getEmailNotificationOutboxStats();
     const routingOptions = await getEmailRoutingOptions();
-    const policyByType = new Map(policies.map((policy) => [policy.type, policy]));
-    const previews = Object.fromEntries(
-      emailNotificationTypes.map((type) => [type, buildEmailNotificationPreview(type, policyByType.get(type))]),
-    );
 
-    return NextResponse.json({ outboxStats, policies, previews, routingOptions });
+    return NextResponse.json({ outboxStats, policies, routingOptions });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email notification settings." }, { status: 403 });
@@ -83,7 +65,6 @@ export async function PATCH(request: Request) {
       recipientModes?: unknown;
       targetLines?: unknown;
       targetTitles?: unknown;
-      template?: unknown;
     };
 
     if (!isNotificationType(body.notificationType)) {
@@ -97,6 +78,9 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "invalid_mode", message: "Unsupported recipient routing mode." }, { status: 400 });
     }
 
+    // Email WORDING is owned exclusively by /admin/email-templates; this endpoint only
+    // governs delivery (on/off, recipient routing, HR-inbox copy). No template content is
+    // accepted or returned here.
     const policy = await saveEmailNotificationPolicy(
       body.notificationType,
       {
@@ -106,12 +90,11 @@ export async function PATCH(request: Request) {
         recipientModes: recipientModes.length ? recipientModes : [fallbackRecipientMode],
         targetLines: cleanTextArray(body.targetLines),
         targetTitles: cleanTextArray(body.targetTitles),
-        template: cleanTemplate(body.template),
       },
       access.hrId,
     );
 
-    return NextResponse.json({ policy, preview: buildEmailNotificationPreview(policy.type, policy) });
+    return NextResponse.json({ policy });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to update email notification settings." }, { status: 403 });

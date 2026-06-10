@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { BellRing, Check, Eye, Loader2, Mail, Route, ShieldCheck } from "lucide-react";
+import { BellRing, Check, Loader2, Mail, PencilLine, Route, ShieldCheck } from "lucide-react";
 
 import {
   AdminInsightChip,
@@ -35,15 +36,6 @@ type EmailRecipientMode =
   | "selected_titles_all_lines"
   | "selected_titles_selected_lines";
 
-type EmailTemplateContent = {
-  bodyText: string;
-  closingText: string;
-  greeting: string;
-  previewText: string;
-  subject: string;
-  title: string;
-};
-
 type EmailPolicyView = {
   description: string;
   enabled: boolean;
@@ -53,14 +45,7 @@ type EmailPolicyView = {
   recipientModes: EmailRecipientMode[];
   targetLines: string[];
   targetTitles: string[];
-  template: EmailTemplateContent;
   type: EmailNotificationType;
-};
-
-type EmailPreviewView = {
-  html: string;
-  plainText: string;
-  subject: string;
 };
 
 type EmailOutboxStats = {
@@ -75,7 +60,6 @@ type EmailOutboxStats = {
 type EmailNotificationCenterProps = {
   initialPolicies: EmailPolicyView[];
   outboxStats: EmailOutboxStats;
-  previews: Record<EmailNotificationType, EmailPreviewView>;
   routingOptions: {
     lines: string[];
     titles: string[];
@@ -139,10 +123,6 @@ const recipientModeOptions: Array<{
   },
 ];
 
-function modeLabel(mode: EmailRecipientMode) {
-  return recipientModeOptions.find((option) => option.value === mode)?.label ?? mode.replace(/_/g, " ");
-}
-
 function formatDateTime(value: string | null) {
   if (!value) return "No successful send yet";
   return new Intl.DateTimeFormat("en-US", {
@@ -154,15 +134,11 @@ function formatDateTime(value: string | null) {
 export function EmailNotificationCenter({
   initialPolicies,
   outboxStats,
-  previews,
   routingOptions,
 }: EmailNotificationCenterProps) {
   const [policies, setPolicies] = useState(initialPolicies);
-  const [emailPreviews, setEmailPreviews] = useState(previews);
-  const [activeType, setActiveType] = useState<EmailNotificationType>(initialPolicies[0]?.type ?? "probation");
   const [savingType, setSavingType] = useState<EmailNotificationType | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const activePolicy = policies.find((policy) => policy.type === activeType) ?? policies[0];
 
   function updatePolicy(type: EmailNotificationType, patch: Partial<EmailPolicyView>) {
     setPolicies((current) =>
@@ -195,14 +171,6 @@ export function EmailNotificationCenter({
     } as Partial<EmailPolicyView>);
   }
 
-  function updateTemplate(type: EmailNotificationType, patch: Partial<EmailTemplateContent>) {
-    setPolicies((current) =>
-      current.map((policy) =>
-        policy.type === type ? { ...policy, template: { ...policy.template, ...patch } } : policy,
-      ),
-    );
-  }
-
   async function savePolicy(policy: EmailPolicyView) {
     setSavingType(policy.type);
     setMessage(null);
@@ -217,7 +185,6 @@ export function EmailNotificationCenter({
           recipientModes: policy.recipientModes,
           targetLines: policy.targetLines,
           targetTitles: policy.targetTitles,
-          template: policy.template,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -227,7 +194,6 @@ export function EmailNotificationCenter({
       const payload = (await response.json().catch(() => null)) as {
         message?: string;
         policy?: EmailPolicyView;
-        preview?: EmailPreviewView;
       } | null;
 
       if (!response.ok) {
@@ -235,9 +201,6 @@ export function EmailNotificationCenter({
       }
 
       if (payload?.policy) updatePolicy(policy.type, payload.policy);
-      if (payload?.preview) {
-        setEmailPreviews((current) => ({ ...current, [policy.type]: payload.preview as EmailPreviewView }));
-      }
       setMessage(`${policy.label} routing saved.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to save notification policy.");
@@ -251,16 +214,37 @@ export function EmailNotificationCenter({
       <AdminPageHero
         badges={
           <div className="flex flex-wrap gap-2">
-            <AdminInsightChip tone="orange">Approved HR workflows only</AdminInsightChip>
+            <AdminInsightChip tone="orange">Delivery governance</AdminInsightChip>
             <AdminInsightChip>Manager hierarchy routing</AdminInsightChip>
-            <AdminInsightChip tone="slate">Live email previews</AdminInsightChip>
+            <AdminInsightChip tone="slate">On/off per workflow</AdminInsightChip>
           </div>
         }
-        description="Control which Phoenix emails are allowed to hit Resend, preview every HR workflow template, and route recipients by business logic instead of hard-coded names."
+        description="Control which Phoenix emails are allowed to send and route their recipients by business logic instead of hard-coded names."
         eyebrow="Email Governance"
         icon={<Mail className="h-3.5 w-3.5" />}
         title="Email Notification Center"
       />
+
+      <Card className={cn(adminPanelClassName, "flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between")}>
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#C2410C]">
+            <PencilLine className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-sm font-black text-[#0F172A]">Email wording lives in Email Templates</p>
+            <p className="mt-1 text-sm leading-6 text-[#64748B]">
+              This page controls only <strong>whether</strong> each email sends and <strong>who</strong> receives it.
+              To edit the actual subject and content, open the Email Templates editor.
+            </p>
+          </div>
+        </div>
+        <Link
+          className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-[#0F172A] px-4 text-sm font-black text-white hover:bg-[#1E293B]"
+          href="/admin/email-templates"
+        >
+          Open Email Templates
+        </Link>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-4">
         <AdminStatCard
@@ -295,226 +279,143 @@ export function EmailNotificationCenter({
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(420px,0.9fr)_minmax(540px,1.1fr)]">
-        <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-          <AdminSectionHeader
-            description="Enable only the workflow emails you want and select recipient logic for each type."
-            title="Routing Policies"
-          />
-          <div className="divide-y divide-[#E2E8F0]">
-            {policies.map((policy) => (
-              <div
-                className={cn(
-                  "space-y-4 p-4 transition",
-                  activeType === policy.type ? "bg-[#FFF7ED]/45" : "bg-white",
-                )}
-                key={policy.type}
-              >
-                <button
-                  className="flex w-full items-start justify-between gap-3 text-left"
-                  onClick={() => setActiveType(policy.type)}
-                  type="button"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-base font-black text-[#0F172A]">{policy.label}</span>
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em]",
-                          policy.enabled
-                            ? "bg-[#DCFCE7] text-[#166534]"
-                            : "bg-[#F1F5F9] text-[#64748B]",
-                        )}
-                      >
-                        {policy.enabled ? "Enabled" : "Paused"}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm leading-6 text-[#64748B]">{policy.description}</p>
-                  </div>
-                  <Eye className="mt-1 h-4 w-4 text-[#F97316]" />
-                </button>
-
-                <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
-                  <div>
-                    <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                      Recipient logic
+      <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+        <AdminSectionHeader
+          description="Enable only the workflow emails you want and select recipient logic for each type."
+          title="Routing Policies"
+        />
+        <div className="divide-y divide-[#E2E8F0]">
+          {policies.map((policy) => (
+            <div className="space-y-4 bg-white p-4" key={policy.type}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-black text-[#0F172A]">{policy.label}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em]",
+                        policy.enabled
+                          ? "bg-[#DCFCE7] text-[#166534]"
+                          : "bg-[#F1F5F9] text-[#64748B]",
+                      )}
+                    >
+                      {policy.enabled ? "Enabled" : "Paused"}
                     </span>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {recipientModeOptions.map((option) => (
-                        <label
-                          className={cn(
-                            "flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition",
-                            policy.recipientModes.includes(option.value)
-                              ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]"
-                              : "border-[#E2E8F0] bg-white text-[#0F172A]",
-                          )}
-                          key={option.value}
-                        >
-                          <input
-                            checked={policy.recipientModes.includes(option.value)}
-                            className="mt-1 h-4 w-4 accent-[#F97316]"
-                            onChange={(event) => toggleMode(policy, option.value, event.target.checked)}
-                            type="checkbox"
-                          />
-                          <span>
-                            <span className="block font-black">{option.label}</span>
-                            <span className="block text-xs font-semibold leading-5 text-[#64748B]">
-                              {option.description}
-                            </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#64748B]">{policy.description}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+                <div>
+                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                    Recipient logic
+                  </span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {recipientModeOptions.map((option) => (
+                      <label
+                        className={cn(
+                          "flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition",
+                          policy.recipientModes.includes(option.value)
+                            ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]"
+                            : "border-[#E2E8F0] bg-white text-[#0F172A]",
+                        )}
+                        key={option.value}
+                      >
+                        <input
+                          checked={policy.recipientModes.includes(option.value)}
+                          className="mt-1 h-4 w-4 accent-[#F97316]"
+                          onChange={(event) => toggleMode(policy, option.value, event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>
+                          <span className="block font-black">{option.label}</span>
+                          <span className="block text-xs font-semibold leading-5 text-[#64748B]">
+                            {option.description}
                           </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <Button
-                    className="h-11 rounded-xl bg-[#F97316] px-4 text-white hover:bg-[#EA580C]"
-                    disabled={savingType === policy.type}
-                    onClick={() => void savePolicy(policy)}
-                  >
-                    {savingType === policy.type ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Save
-                  </Button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
-                    <input
-                      checked={policy.enabled}
-                      className="h-4 w-4 accent-[#F97316]"
-                      onChange={(event) => updatePolicy(policy.type, { enabled: event.target.checked })}
-                      type="checkbox"
-                    />
-                    Allow Resend delivery
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
-                    <input
-                      checked={policy.includeHrInbox}
-                      className="h-4 w-4 accent-[#F97316]"
-                      onChange={(event) => updatePolicy(policy.type, { includeHrInbox: event.target.checked })}
-                      type="checkbox"
-                    />
-                    Copy HR inbox
-                  </label>
-                </div>
-
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                      Company titles
-                    </p>
-                    <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
-                      {routingOptions.titles.length ? routingOptions.titles.map((title) => (
-                        <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={title}>
-                          <input
-                            checked={policy.targetTitles.includes(title)}
-                            className="h-4 w-4 accent-[#F97316]"
-                            onChange={(event) => toggleTextValue(policy, "targetTitles", title, event.target.checked)}
-                            type="checkbox"
-                          />
-                          {title}
-                        </label>
-                      )) : (
-                        <p className="text-xs font-bold text-[#64748B]">No employee titles found yet.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                      Lines
-                    </p>
-                    <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
-                      {routingOptions.lines.length ? routingOptions.lines.map((line) => (
-                        <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={line}>
-                          <input
-                            checked={policy.targetLines.includes(line)}
-                            className="h-4 w-4 accent-[#F97316]"
-                            onChange={(event) => toggleTextValue(policy, "targetLines", line, event.target.checked)}
-                            type="checkbox"
-                          />
-                          {line}
-                        </label>
-                      )) : (
-                        <p className="text-xs font-bold text-[#64748B]">No company lines found yet.</p>
-                      )}
-                    </div>
+                        </span>
+                      </label>
+                    ))}
                   </div>
                 </div>
+                <Button
+                  className="h-11 rounded-xl bg-[#F97316] px-4 text-white hover:bg-[#EA580C]"
+                  disabled={savingType === policy.type}
+                  onClick={() => void savePolicy(policy)}
+                >
+                  {savingType === policy.type ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save
+                </Button>
+              </div>
 
-                <div className="rounded-[16px] border border-[#E2E8F0] bg-white p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+                  <input
+                    checked={policy.enabled}
+                    className="h-4 w-4 accent-[#F97316]"
+                    onChange={(event) => updatePolicy(policy.type, { enabled: event.target.checked })}
+                    type="checkbox"
+                  />
+                  Allow Resend delivery
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+                  <input
+                    checked={policy.includeHrInbox}
+                    className="h-4 w-4 accent-[#F97316]"
+                    onChange={(event) => updatePolicy(policy.type, { includeHrInbox: event.target.checked })}
+                    type="checkbox"
+                  />
+                  Copy HR inbox
+                </label>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
                   <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                    Editable template
+                    Company titles
                   </p>
-                  <div className="mt-3 grid gap-3">
-                    <input
-                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { subject: event.target.value })}
-                      placeholder="Subject"
-                      value={policy.template.subject}
-                    />
-                    <input
-                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { title: event.target.value })}
-                      placeholder="Email title"
-                      value={policy.template.title}
-                    />
-                    <input
-                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { greeting: event.target.value })}
-                      placeholder="Greeting"
-                      value={policy.template.greeting}
-                    />
-                    <textarea
-                      className="min-h-28 rounded-xl border border-[#D8E0EA] px-3 py-2 text-sm font-semibold leading-6 text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { bodyText: event.target.value })}
-                      placeholder="Body text"
-                      value={policy.template.bodyText}
-                    />
-                    <input
-                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { closingText: event.target.value })}
-                      placeholder="Closing text"
-                      value={policy.template.closingText}
-                    />
-                    <input
-                      className="h-11 rounded-xl border border-[#D8E0EA] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
-                      onChange={(event) => updateTemplate(policy.type, { previewText: event.target.value })}
-                      placeholder="Inbox preview text"
-                      value={policy.template.previewText}
-                    />
-                    <p className="text-xs font-bold leading-5 text-[#64748B]">
-                      Supported variables: {"{subject}"}, {"{title}"}, {"{summary}"}, {"{employee}"}, {"{status}"}, {"{date}"}, {"{ctaLabel}"}, {"{ctaUrl}"}, and any metric label.
-                    </p>
+                  <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
+                    {routingOptions.titles.length ? routingOptions.titles.map((title) => (
+                      <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={title}>
+                        <input
+                          checked={policy.targetTitles.includes(title)}
+                          className="h-4 w-4 accent-[#F97316]"
+                          onChange={(event) => toggleTextValue(policy, "targetTitles", title, event.target.checked)}
+                          type="checkbox"
+                        />
+                        {title}
+                      </label>
+                    )) : (
+                      <p className="text-xs font-bold text-[#64748B]">No employee titles found yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                    Lines
+                  </p>
+                  <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
+                    {routingOptions.lines.length ? routingOptions.lines.map((line) => (
+                      <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={line}>
+                        <input
+                          checked={policy.targetLines.includes(line)}
+                          className="h-4 w-4 accent-[#F97316]"
+                          onChange={(event) => toggleTextValue(policy, "targetLines", line, event.target.checked)}
+                          type="checkbox"
+                        />
+                        {line}
+                      </label>
+                    )) : (
+                      <p className="text-xs font-bold text-[#64748B]">No company lines found yet.</p>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-          <AdminSectionHeader
-            description={
-              activePolicy
-                ? `Previewing ${activePolicy.label}. Routes: ${activePolicy.recipientModes.map(modeLabel).join(", ")}.`
-                : "Previewing Phoenix email output."
-            }
-            title="Live Email Preview"
-          />
-          <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-4">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Subject</p>
-            <p className="mt-1 text-sm font-black text-[#0F172A]">{emailPreviews[activeType]?.subject}</p>
-          </div>
-          <div className="bg-[#EEF2F7] p-4">
-            <iframe
-              className="h-[640px] w-full rounded-[18px] border border-[#CBD5E1] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.10)]"
-              sandbox="allow-same-origin"
-              srcDoc={emailPreviews[activeType]?.html ?? ""}
-              title={`${activeType} email preview`}
-            />
-          </div>
-        </Card>
-      </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }
