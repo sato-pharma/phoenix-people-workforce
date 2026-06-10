@@ -958,7 +958,7 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
   rows.forEach((row) => {
     addTotals(totals, row);
 
-    const line = row.officialLine || "Unknown";
+    const line = row.officialLine || "";
     const lineSummary = lineMap.get(line) ?? { ...emptyTotals(), line };
     addTotals(lineSummary, row);
     lineMap.set(line, lineSummary);
@@ -966,8 +966,8 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
     const regionKey = `${row.regionName}\u0000${row.regionCode}`;
     const regionSummary = regionMap.get(regionKey) ?? {
       ...emptyTotals(),
-      regionCode: row.regionCode || "Unknown",
-      regionName: row.regionName || "Unknown",
+      regionCode: row.regionCode || "",
+      regionName: row.regionName || "",
     };
     addTotals(regionSummary, row);
     regionMap.set(regionKey, regionSummary);
@@ -975,10 +975,10 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
     const areaKey = `${row.areaCode}\u0000${row.areaName}\u0000${row.regionCode}`;
     const areaSummary = areaMap.get(areaKey) ?? {
       ...emptyTotals(),
-      areaCode: row.areaCode || "Unknown",
-      areaName: row.areaName || "Unknown",
-      regionCode: row.regionCode || "Unknown",
-      regionName: row.regionName || "Unknown",
+      areaCode: row.areaCode || "",
+      areaName: row.areaName || "",
+      regionCode: row.regionCode || "",
+      regionName: row.regionName || "",
     };
     addTotals(areaSummary, row);
     areaMap.set(areaKey, areaSummary);
@@ -986,14 +986,14 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
     const brickKey = `${row.brickId}\u0000${row.blockCode}\u0000${row.areaCode}\u0000${row.regionCode}`;
     const brickSummary = brickMap.get(brickKey) ?? {
       ...emptyTotals(),
-      areaCode: row.areaCode || "Unknown",
-      areaName: row.areaName || "Unknown",
-      blockCode: row.blockCode || "Unknown",
-      blockName: row.blockName || "Unknown",
-      brickId: row.brickId || "Unknown",
-      brickName: row.brickName || "Unknown",
-      regionCode: row.regionCode || "Unknown",
-      regionName: row.regionName || "Unknown",
+      areaCode: row.areaCode || "",
+      areaName: row.areaName || "",
+      blockCode: row.blockCode || "",
+      blockName: row.blockName || "",
+      brickId: row.brickId || "",
+      brickName: row.brickName || "",
+      regionCode: row.regionCode || "",
+      regionName: row.regionName || "",
     };
     addTotals(brickSummary, row);
     brickMap.set(brickKey, brickSummary);
@@ -1002,8 +1002,8 @@ function summarizeRows(rows: ParsedDistributorRow[]) {
     const productSummary = productMap.get(productKey) ?? {
       ...emptyTotals(),
       officialLine: line,
-      productCode: row.productCode || "Unknown",
-      productName: row.productName || "Unknown",
+      productCode: row.productCode || "",
+      productName: row.productName || "",
     };
     addTotals(productSummary, row);
     productMap.set(productKey, productSummary);
@@ -1210,25 +1210,25 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       || areaReference?.regionName
       || brickReference?.regionName
       || regionCode
-      || "Unknown";
+      || "";
     const areaName = normalizeDisplay(rawAreaName)
       || areaReference?.areaName
       || brickReference?.areaName
       || areaCode
-      || "Unknown";
+      || "";
     const blockCode = brickReference?.blockCode ?? "";
     const blockName = brickReference?.blockName
       || blockReference?.blockName
       || blockCode
-      || "Unknown";
+      || "";
     const brickName = normalizeDisplay(rawBrickName)
       || brickReference?.brickName
       || brickId
-      || "Unknown";
+      || "";
     const productName = productReference?.productName
       || normalizeDisplay(rawProductName)
       || productCode
-      || "Unknown";
+      || "";
 
     // Region-only channels (Direct) carry no Area/Brick, so those are neither checked for
     // #N/A nor required. Region, product, distributor, date and qty are always required.
@@ -1681,9 +1681,23 @@ export async function loadSalesReferenceData(
   };
 }
 
-export async function listSalesImportDistributors() {
-  const references = await loadSalesReferenceData();
-  return references.distributors;
+export async function listSalesImportDistributors(): Promise<SalesDistributorOption[]> {
+  // The upload dropdown only needs distributor code + name. Loading the full
+  // reference bundle here used to page the entire ~29k-row customer→brick
+  // crosswalk (and 5 other masters) on every page open — seconds of round-trips
+  // for a dropdown. Query the one table directly instead.
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_distributors")
+    .select("distributor_code,distributor_name")
+    .eq("active", true)
+    .order("distributor_name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    code: String(row.distributor_code ?? ""),
+    name: String(row.distributor_name ?? ""),
+  }));
 }
 
 function mapSourceOfSalesProduct(row: Record<string, unknown>): SourceOfSalesProduct {
@@ -2007,6 +2021,13 @@ function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSum
 
 export async function loadSourceOfSalesDashboard(period?: string | null): Promise<SourceOfSalesDashboard> {
   const supabase = getSupabaseAdmin();
+  // The brick-name master is independent of period/batch/summary selection, so fire it now
+  // in parallel instead of as a 4th sequential round-trip at the end.
+  const brickNamesPromise = supabase
+    .from("source_of_sales_bricks")
+    .select("brick_id,brick_name")
+    .eq("active", true);
+
   const periodsResult = await supabase
     .from("source_of_sales_import_batches")
     .select("period")
@@ -2067,11 +2088,9 @@ export async function loadSourceOfSalesDashboard(period?: string | null): Promis
 
   // Resolve brick display names live from the master. Historical imports were saved
   // while the brick reference query was failing, so their stored brick label is the raw
-  // ID. Overriding the label here self-heals the table without a re-import.
-  const brickNamesResult = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id,brick_name")
-    .eq("active", true);
+  // ID. Overriding the label here self-heals the table without a re-import. The query was
+  // started in parallel at the top of this function.
+  const brickNamesResult = await brickNamesPromise;
   if (!brickNamesResult.error) {
     const brickNameById = new Map<string, string>();
     for (const row of brickNamesResult.data ?? []) {
@@ -2121,7 +2140,7 @@ function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValid
       group_key: `${row.areaCode}|${row.areaName}|${row.regionCode}`,
       group_label: row.areaName,
       group_code: row.areaCode,
-      official_line: row.regionCode,
+      official_line: row.regionName || row.regionCode,
       row_count: row.rowCount,
       total_qty: row.totalQty,
       total_bonus_qty: row.totalBonusQty,
@@ -2145,7 +2164,7 @@ function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValid
       group_key: `${row.brickId}|${row.brickName}|${row.areaCode}|${row.regionCode}`,
       group_label: row.brickName,
       group_code: row.brickId,
-      official_line: row.areaCode,
+      official_line: row.areaName || row.areaCode,
       row_count: row.rowCount,
       total_qty: row.totalQty,
       total_bonus_qty: row.totalBonusQty,
