@@ -461,6 +461,35 @@ const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// Ramco (code RM). Same hybrid shape as Sofico: Ramco's own raw export with the Phoenix coded
+// columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, read straight from
+// those coded columns. Ramco keeps ARABIC raw headers, so the qty is the net "صافى كمية" (returns
+// already signed) and the date is "تاريخ" (a real Excel date cell — unambiguous, no day-first issue);
+// both are listed first, then the shared English aliases as a defensive fallback. Bonus is the net
+// "صافى بونص", discount the Ramco "خصم%". Value is RECOMPUTED from Qty x factory_price x (1 - discount)
+// (no valueField — the sheet's "صافى البيع" includes tax and is ignored). Captures the Ramco customer
+// code/name/address.
+const RAMCO_RM_TEMPLATE: DistributorSalesTemplateDef = {
+  bonusField: "صافى بونص",
+  customerFields: { address: ["عنوان"], code: ["كود"], name: ["عميل"] },
+  discountField: "خصم%",
+  distributorCodes: ["RM"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: ["تاريخ", ...INVOICE_DATE_HEADER_ALIASES],
+    productCode: "Product ID",
+    qty: ["صافى كمية", ...QTY_HEADER_ALIASES],
+    regionCode: "Region ID",
+  },
+  key: "ramco_rm",
+  name: "Ramco RM coded template",
+  optionalFields: {
+    productName: ["صنف"],
+  },
+};
+
 // Direct (company) channel — orders shipped straight from the company, not through a
 // distributor. Region-only (no area/brick), and the SALE VALUE is taken from the sheet's own
 // "Value" column (real per-deal pricing; e.g. Satoslim has Price 0 but a real Value), never
@@ -520,6 +549,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   IBN_SINA_SATO_ISS_TEMPLATE,
   EPDA_SATO_EPS_TEMPLATE,
   SOFICO_SF_TEMPLATE,
+  RAMCO_RM_TEMPLATE,
   DIRECT_TEMPLATE,
 ] as const;
 
