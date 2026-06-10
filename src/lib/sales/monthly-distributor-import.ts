@@ -334,7 +334,9 @@ type DistributorSalesTemplateDef = Omit<DistributorSalesTemplate, "fields"> & {
 // before pack/unit, and the explicit Brick ID before a duplicated "Brick ID2"). Matching is on the
 // normalized (lower-cased, space-collapsed) header, so casing/spacing differences also match.
 const QTY_HEADER_ALIASES = ["Qty", "Quantity", "QTY_INVOICE", "QTY_PACK", "qnt"];
-const INVOICE_DATE_HEADER_ALIASES = ["Invoice Date", "Date", "INVOICE_DATE", "inv_date"];
+// "BILLINGDATE" is Sofico's own invoice-date header. Appended LAST so the canonical "Invoice Date"
+// still wins on sheets that carry both — this only lets Sofico's raw date column resolve.
+const INVOICE_DATE_HEADER_ALIASES = ["Invoice Date", "Date", "INVOICE_DATE", "inv_date", "BILLINGDATE"];
 const BRICK_ID_HEADER_ALIASES = ["Brick ID", "Brick ID2"];
 
 const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplateDef = {
@@ -428,6 +430,37 @@ const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// Sofico (code SF). The canonical monthly upload is Sofico's own raw export with the Phoenix coded
+// columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, so it is read straight
+// from those coded columns like every other distributor. Sofico keeps its raw header names: the date
+// is "BILLINGDATE" (added to INVOICE_DATE_HEADER_ALIASES), the quantity is the net "qty" (returns
+// already signed), and there is no free-unit column. Value is RECOMPUTED from
+// Qty x factory_price x (1 - Discount%) (no valueField). Captures Sofico's customer code/name so
+// client_code is populated like the other distributors.
+const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
+  customerFields: {
+    address: ["ADDRESS", "ADDRESSSHIP"],
+    code: ["CUSTOMERCODE", "ORDERACCOUNT"],
+    name: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
+  },
+  discountField: "Discount%",
+  distributorCodes: ["SF"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
+    productCode: "Product ID",
+    qty: QTY_HEADER_ALIASES,
+    regionCode: "Region ID",
+  },
+  key: "sofico_sf",
+  name: "Sofico SF coded template",
+  optionalFields: {
+    productName: ["ITEMNAME"],
+  },
+};
+
 // Direct (company) channel — orders shipped straight from the company, not through a
 // distributor. Region-only (no area/brick), and the SALE VALUE is taken from the sheet's own
 // "Value" column (real per-deal pricing; e.g. Satoslim has Price 0 but a real Value), never
@@ -486,6 +519,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
   EPDA_SATO_EPS_TEMPLATE,
+  SOFICO_SF_TEMPLATE,
   DIRECT_TEMPLATE,
 ] as const;
 
@@ -774,7 +808,7 @@ function periodFromYearMonth(year: number, month: number): string | null {
 // text dates are parsed directly from their civil components — never via
 // `new Date(text)`, which interprets slash dates as *local* midnight and would roll
 // day-1 invoices back to the previous month on any host ahead of UTC.
-function invoicePeriod(value: unknown) {
+function invoicePeriod(value: unknown, dayFirst?: boolean) {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return null;
     return periodFromYearMonth(value.getUTCFullYear(), value.getUTCMonth() + 1);
@@ -791,9 +825,10 @@ function invoicePeriod(value: unknown) {
   const iso = text.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?/);
   if (iso) return periodFromYearMonth(Number(iso[1]), Number(iso[2]));
 
-  // Day/Month/Year or Month/Day/Year with a separator. Distributor system exports
-  // use US month-first (e.g. "4/27/2026"); disambiguate by the >12 rule and fall
-  // back to month-first when both parts are 1..12.
+  // Day/Month/Year or Month/Day/Year with a separator. Orientation is ambiguous per-row when both
+  // parts are 1..12, so the caller passes `dayFirst` detected ONCE across the whole column (see
+  // detectDateColumnDayFirst): Sofico's BILLINGDATE is DD-MM-YYYY, while distributor US exports are
+  // MM-DD-YYYY. When the column orientation is unknown we keep the legacy >12 rule + month-first guess.
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
   if (dmy) {
     const first = Number(dmy[1]);
@@ -801,9 +836,11 @@ function invoicePeriod(value: unknown) {
     let year = Number(dmy[3]);
     if (year < 100) year += 2000;
     let month: number;
-    if (first > 12 && second <= 12) month = second;
-    else if (second > 12 && first <= 12) month = first;
-    else month = first;
+    if (dayFirst === true) month = second >= 1 && second <= 12 ? second : first;     // DD-MM-YYYY → month is the 2nd part
+    else if (dayFirst === false) month = first >= 1 && first <= 12 ? first : second; // MM-DD-YYYY → month is the 1st part
+    else if (first > 12 && second <= 12) month = second;                            // unknown column: decisive day in 1st part
+    else if (second > 12 && first <= 12) month = first;                             // unknown column: decisive day in 2nd part
+    else month = first;                                                             // unknown + ambiguous: legacy month-first guess
     return periodFromYearMonth(year, month);
   }
 
@@ -811,6 +848,23 @@ function invoicePeriod(value: unknown) {
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return null;
   return periodFromYearMonth(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1);
+}
+
+// Decide a TEXT date column's orientation (DD-MM vs MM-DD) by scanning all its values, so every row
+// parses consistently. A value whose 1st part is > 12 can only be a day → day-first (decisive). A
+// value whose 2nd part is > 12 (1st <= 12) can only be a day there → month-first. Excel-native Date
+// objects / serials are unambiguous and skipped. Returns undefined when every value is ambiguous
+// (all parts 1..12), leaving invoicePeriod on its legacy best-guess. Mirrors the normalizer engine.
+function detectDateColumnDayFirst(values: unknown[]): boolean | undefined {
+  let sawMonthFirst = false;
+  for (const value of values) {
+    if (value instanceof Date || typeof value === "number") continue;
+    const m = normalizeDisplay(value).match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (!m) continue;
+    if (Number(m[1]) > 12) return true;           // 1st part is a day → day-first (decisive)
+    if (Number(m[2]) > 12) sawMonthFirst = true;  // 2nd part is a day → month-first
+  }
+  return sawMonthFirst ? false : undefined;
 }
 
 function addIssue(
@@ -1024,6 +1078,17 @@ async function parseDistributorSalesWorkbookBuffer(input: {
   const issues: DistributorSalesValidationIssue[] = [];
   const rows: ParsedDistributorRow[] = [];
 
+  // Detect the invoice-date column's DD-MM vs MM-DD orientation ONCE for the whole sheet, so days
+  // 1..12 are not misread as months (which made a single-month Sofico sheet look like it spanned 12
+  // months and blocked the upload). Native Excel dates are unambiguous and ignored by the detector.
+  const invoiceDateValues: unknown[] = [];
+  for (let rowNumber = headerMap.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    if (!hasAnyImportValue(row, headerMap)) continue;
+    invoiceDateValues.push(valueAt(row, headerMap, "invoiceDate"));
+  }
+  const invoiceDateDayFirst = detectDateColumnDayFirst(invoiceDateValues);
+
   for (let rowNumber = headerMap.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     if (!hasAnyImportValue(row, headerMap)) continue;
@@ -1086,7 +1151,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       bonusQty += Number.isFinite(parsedQty) ? parsedQty : 0;
     }
     const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
-    const period = invoicePeriod(rawInvoiceDate);
+    const period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
 
     // Direct (company) channel: the row value is read STRAIGHT from the sheet's value column
     // (real per-deal pricing), never recomputed from factory price. The row is flagged direct
