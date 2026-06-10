@@ -9,6 +9,7 @@ import {
   validateTelegramCta,
   validateTelegramTemplateText,
 } from "../src/lib/notifications/telegram-template-placeholders.ts";
+import { selectTemplateRow } from "../src/lib/notifications/templates.ts";
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -86,14 +87,21 @@ export function runTelegramTemplateManagementTests() {
   );
 
   assert.match(service, /telegramTemplateDefinitions/);
-  assert.match(service, /templateKey: "birthday"/);
-  assert.match(service, /templateKey: "anniversary"/);
+  // Module-wide templates: every workflow card matches ALL of its module's Telegram
+  // events via the "*" eventType, so editing one card governs the whole module.
   assert.match(service, /templateKey: "contract_renewal"/);
   assert.match(service, /templateKey: "probation"/);
   assert.match(service, /templateKey: "vacation"/);
   assert.match(service, /templateKey: "outstation"/);
-  assert.match(service, /templateKey: "payroll"/);
+  assert.match(service, /templateKey: "weekly_plans"/);
+  assert.match(service, /templateKey: "marketing_requests"/);
   assert.match(service, /templateKey: "general_admin_test"/);
+  assert.match(service, /eventType: "\*"/, "workflow templates must be module-wide");
+  assert.match(service, /contentPlaceholders = \["title", "message"\]/, "templates must expose the event wording placeholders");
+  // Phantom cards that matched no live send are gone (birthday/anniversary/payroll).
+  assert.doesNotMatch(service, /templateKey: "birthday"/);
+  assert.doesNotMatch(service, /templateKey: "anniversary"/);
+  assert.doesNotMatch(service, /payslip_available/);
   assert.match(service, /recipientName/);
   assert.match(service, /requesterName/);
   assert.match(service, /department/);
@@ -116,7 +124,6 @@ export function runTelegramTemplateManagementTests() {
   assert.match(service, /writeAuditLog/);
   assert.match(service, /Telegram template saved\./);
   assert.match(service, /Telegram template admin preview sent\/skipped\./);
-  assert.match(service, /Your payslip is available\./, "payroll default must stay generic");
   assert.doesNotMatch(service, /salary|deduction|amount|compensation/i, "Telegram template defaults must not expose sensitive payroll/offer values");
   assert.match(placeholders, /extractTelegramPlaceholders/);
   assert.match(placeholders, /HTML is not allowed/);
@@ -130,12 +137,36 @@ export function runTelegramTemplateManagementTests() {
   assert.match(telegramAdapter, /ctaLabel\?: string \| null/);
   assert.match(telegramAdapter, /ctaUrl\?: string \| null/);
   assert.match(telegramAdapter, /inline_keyboard: actionButtons\.buttons\.map/, "Telegram adapter must send safe buttons as inline keyboard");
-  assert.match(centralTemplates, /select\("title_template,message_template,is_active,metadata"\)/, "central renderer must load Telegram template metadata");
+  assert.match(centralTemplates, /select\("title_template,message_template,is_active,metadata,event_type"\)/, "central renderer must load Telegram template metadata");
+  assert.match(centralTemplates, /\.in\("event_type", \[input\.eventType, "\*"\]\)/, "central renderer must match module-wide templates");
+
+  // Executable coverage for the selection contract (exact beats "*", inactive never wins).
+  const exactRow = { event_type: "plan_submitted", is_active: true, title_template: "exact" };
+  const starRow = { event_type: "*", is_active: true, title_template: "star" };
+  const inactiveExact = { event_type: "plan_submitted", is_active: false, title_template: "off" };
+  assert.equal(selectTemplateRow([starRow, exactRow], "plan_submitted"), exactRow, "exact active row must win over the module-wide row");
+  assert.equal(selectTemplateRow([inactiveExact, starRow], "plan_submitted"), starRow, "inactive exact rows must yield to the active module-wide row");
+  assert.equal(selectTemplateRow([starRow], "plan_manager_approved"), starRow, "any event of the module must match the module-wide row");
+  assert.equal(selectTemplateRow([inactiveExact], "plan_submitted"), null, "all-inactive must fall back to hardcoded wording");
+
+  // {{title}}/{{message}} always mean the channel-composed wording - metadata keys with
+  // those names (e.g. probation reminders) must not shadow them.
+  assert.match(centralTemplates, /if \(key === "title" \|\| key === "message"\) return cleanText\(direct\[key\]\);/, "content placeholders must resolve from the composed fallbacks");
+  // A broken saved button must degrade to a buttonless send, never skip the delivery.
+  assert.match(centralTemplates, /degraded to buttonless/, "telegram action rendering must degrade instead of throwing");
+  // The quiet-hours deferral mirrors the live branch's skip semantics on template errors.
+  assert.match(system, /Mirror the live branch: a broken saved template/, "quiet-hours deferral must not reject the notification on template errors");
+  // genericOnly governance must strip the title and buttons, not just the message.
+  assert.match(system, /GENERIC_NOTIFICATION_TITLE/, "generic-only sends must genericize the title too");
+  // Save-time dry-render rejects button URLs that could not render on live sends.
+  assert.match(service, /Dry-render every enabled button\/CTA URL/, "saves must dry-render button URLs");
+  // Legacy per-event rows must not prefill (or be re-scoped into) module-wide cards.
+  assert.match(service, /const stale = Boolean\(savedRow\)/, "stale per-event rows must surface defaults, not legacy wording");
   assert.match(centralTemplates, /validateTelegramTemplateButtons/, "central renderer must validate editable Telegram buttons");
   assert.match(centralTemplates, /renderTelegramCtaUrl/, "central renderer must render safe Telegram button URLs");
   assert.match(centralTemplates, /throw new TelegramTemplateError\("invalid_buttons"/, "invalid template buttons must fail safely before Telegram send");
   assert.match(system, /telegram\?:[\s\S]*buttons\?: Array<\{ label: string; url: string \}> \| null[\s\S]*ctaLabel\?: string \| null[\s\S]*ctaUrl\?: string \| null/);
-  assert.match(system, /sendTelegramNotification\({[\s\S]*buttons: input\.telegram\?\.buttons \?\? telegramContent\.buttons \?\? null/, "central engine must pass rendered template buttons to Telegram adapter");
+  assert.match(system, /sendTelegramNotification\({[\s\S]*buttons: genericTelegram \? null : input\.telegram\?\.buttons \?\? telegramContent\.buttons \?\? null/, "central engine must pass rendered template buttons to Telegram adapter (generic-only strips them)");
   assert.match(system, /error instanceof TelegramTemplateError/, "invalid Telegram templates must skip Telegram without failing the whole notification");
   assert.match(system, /skippedBy: "telegram_template_governance"/, "Telegram template skips must be auditable");
 

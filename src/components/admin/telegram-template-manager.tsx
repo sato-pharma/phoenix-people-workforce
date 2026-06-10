@@ -326,6 +326,13 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Edit Template</p>
               <h2 className="mt-1 text-xl font-black text-slate-950">{selectedTemplate.name}</h2>
               <p className="mt-1 text-sm text-slate-600">Workflow key: {selectedTemplate.templateKey}</p>
+              {selectedTemplate.eventType === "*" ? (
+                <p className="mt-2 rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold leading-5 text-orange-800">
+                  This template applies to <strong>every Telegram notification in this module</strong> (submitted,
+                  approved, rejected, reminders). Keep {"{{title}}"} and {"{{message}}"} so each event keeps its own
+                  wording — removing them sends this exact text for all events.
+                </p>
+              ) : null}
             </div>
             <button
               className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-sm font-bold disabled:opacity-50 ${draft.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-700"}`}
