@@ -19,11 +19,50 @@ export type RecipientPolicyResult = {
 export function sanitizeEmailTemplateHtml(value: string) {
   return sanitizeHtml(value, {
     allowedAttributes: {
-      a: ["href", "rel", "target", "title"],
-      span: ["title"],
+      // `dir` enables right-to-left Arabic paragraphs in any email client.
+      "*": ["style", "dir"],
+      a: ["href", "rel", "target", "title", "style", "dir"],
+      img: ["src", "alt", "width", "height", "style"],
+      span: ["title", "style", "dir"],
+      table: ["width", "cellpadding", "cellspacing", "border", "style", "dir"],
+      td: ["colspan", "rowspan", "style", "dir"],
+      th: ["colspan", "rowspan", "style", "dir"],
     },
     allowedSchemes: ["http", "https", "mailto", "tel"],
-    allowedTags: ["a", "b", "blockquote", "br", "em", "hr", "i", "li", "ol", "p", "span", "strong", "u", "ul"],
+    // Email clients only load remote images over HTTPS; plain-http would also break the
+    // in-app preview with mixed content. Protocol-relative (//host) URLs would bypass the
+    // per-tag scheme check entirely, so they are rejected too.
+    allowProtocolRelative: false,
+    allowedSchemesByTag: { img: ["https"] },
+    // Inline styles power the rich editor (colors, font size, tables). Allow ONLY a safe,
+    // tightly pattern-matched subset; anything else is dropped.
+    allowedStyles: {
+      "*": {
+        "background-color": [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s.,%]+\)$/i],
+        border: [/^[\w\s#().,%-]+$/],
+        "border-collapse": [/^(collapse|separate)$/],
+        color: [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s.,%]+\)$/i],
+        direction: [/^(rtl|ltr)$/],
+        "font-family": [/^[\w\s,'"-]+$/],
+        "font-size": [/^\d{1,2}(px|pt)$/, /^(x-small|small|medium|large|x-large|xx-large)$/],
+        // Chrome's rich editor (styleWithCSS) writes bold/italic/strike as styled spans -
+        // without these three, basic formatting would be silently stripped on save.
+        "font-style": [/^(italic|normal)$/],
+        "font-weight": [/^(bold|bolder|normal|[1-9]00)$/],
+        "text-decoration-line": [/^(underline|line-through|underline line-through)$/],
+        "letter-spacing": [/^(normal|\d(\.\d+)?px)$/],
+        "line-height": [/^(normal|\d(\.\d+)?(px)?)$/],
+        "max-width": [/^\d{1,3}%$/, /^\d{1,4}px$/],
+        padding: [/^[\d\s]+(px|%)?( \d+(px|%)?){0,3}$/],
+        "text-align": [/^(left|right|center|justify)$/],
+        "text-decoration": [/^(underline|line-through)$/],
+        width: [/^\d{1,3}%$/, /^\d{1,4}px$/],
+      },
+    },
+    allowedTags: [
+      "a", "b", "blockquote", "br", "em", "hr", "i", "img", "li", "ol", "p", "s", "span",
+      "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
+    ],
     disallowedTagsMode: "discard",
     enforceHtmlBoundary: true,
     transformTags: {
