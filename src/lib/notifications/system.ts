@@ -1077,6 +1077,8 @@ async function buildChannelEmailInput(
     recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
     subject: input.email?.subject ?? emailContent.title,
     summary: input.email?.summary ?? emailContent.message,
+    // Lets a domain pin the exact /admin/email-templates key that frames this event.
+    templateKey: input.email?.templateKey,
     title: input.email?.title ?? emailContent.title,
     tone: input.email?.tone ?? (resolvedPriority === "critical" ? "danger" : "neutral"),
   };
