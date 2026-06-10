@@ -837,10 +837,9 @@ function validateVacationSubmissionDates(input: {
     throw new Error("Vacation requests cannot be submitted retroactively.");
   }
 
-  if (input.resolvedVacationType === "annual" && input.startDate < getAnnualVacationMinimumStartDate()) {
-    throw new Error("Annual vacation requests must start from tomorrow or later.");
-  }
-
+  // Annual vacation may start today; the retroactive guard above still blocks past dates. A
+  // single-day same-day annual request is reclassified to "emergency" upstream by
+  // resolveSubmittedVacationType, while a multi-day annual starting today stays "annual".
   if (input.resolvedVacationType === "emergency" && (input.startDate !== today || input.endDate !== today)) {
     throw new Error("Emergency vacation requests must be submitted for the current day only.");
   }
