@@ -2131,7 +2131,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     approvalRecipients = await resolveVacationPilotHrApprovers(directory);
     initialRequestStatus = "needs_assignment";
   } else {
-    // Emergency / Sick keep the existing hard requirement of a resolvable direct manager.
+    // Sick keeps the existing hard requirement of a resolvable direct manager.
     throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
   const weeklyOffPolicySnapshot = buildWeeklyOffPolicySnapshot(weeklyOffPolicy);
@@ -2546,8 +2546,8 @@ type ApplyVacationDecisionInput = {
   request: VacationRequestRecord;
 };
 
-// Dispatch on workflow type: Annual/Other/Compensatory use the sequential flow; Emergency and
-// Sick keep the legacy parallel flow (applyVacationDecisionLegacy is the original behavior, intact).
+// Dispatch on workflow type: Annual/Other/Compensatory/Emergency use the sequential flow; only
+// Sick keeps the legacy parallel flow (applyVacationDecisionLegacy is the original behavior, intact).
 async function applyVacationDecision(input: ApplyVacationDecisionInput) {
   if (isSequentialWorkflowType(input.request.vacationType)) {
     return applyVacationDecisionSequential(input);
