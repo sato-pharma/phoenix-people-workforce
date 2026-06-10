@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useCallback } from "react";
-import { Check, CheckCircle2, ChevronLeft, ChevronRight, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, ChevronLeft, ChevronRight, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { systemAssets } from "@/config/system-settings";
 import {
   MONTHS,
   REACTION_OUTCOMES,
@@ -151,13 +153,13 @@ function DateFields({
           placeholder="DD"
           value={value.day}
           onChange={(e) => onChange({ ...value, day: e.target.value })}
-          className={`${fieldClass} w-16`}
+          className={`${fieldClass} basis-16 shrink-0`}
           maxLength={2}
         />
         <select
           value={value.month}
           onChange={(e) => onChange({ ...value, month: e.target.value })}
-          className={`${selectClass} w-36`}
+          className={`${selectClass} min-w-0 flex-1`}
         >
           <option value="">Month</option>
           {MONTHS.map((m, i) => (
@@ -168,7 +170,7 @@ function DateFields({
           placeholder="YYYY"
           value={value.year}
           onChange={(e) => onChange({ ...value, year: e.target.value })}
-          className={`${fieldClass} w-24`}
+          className={`${fieldClass} basis-24 shrink-0`}
           maxLength={4}
         />
       </div>
@@ -193,12 +195,12 @@ function DurationFields({
         placeholder="Duration"
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
-        className={`${fieldClass} w-28`}
+        className={`${fieldClass} basis-28 shrink-0`}
       />
       <select
         value={unitValue}
         onChange={(e) => onUnitChange(e.target.value)}
-        className={`${selectClass} w-32`}
+        className={`${selectClass} min-w-0 flex-1`}
       >
         <option value="">Unit</option>
         {DURATION_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -218,13 +220,16 @@ function BlockHeader({
   canRemove: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between bg-slate-900 px-4 py-2.5">
-      <span className="text-[11px] font-black uppercase tracking-wide text-orange-300">{label}</span>
+    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+      <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-700">
+        <span aria-hidden className="h-3.5 w-1 bg-orange-500" />
+        {label}
+      </span>
       {canRemove && (
         <button
           type="button"
           onClick={onRemove}
-          className="p-1 text-slate-400 transition hover:text-white"
+          className="p-1 text-slate-400 transition hover:text-rose-600"
           aria-label={`Remove ${label}`}
         >
           <Trash2 className="h-4 w-4" />
@@ -247,7 +252,7 @@ function Step1PatientInfo({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
         <div>
           <FieldLabel required>Patient Initials</FieldLabel>
           <input
@@ -276,20 +281,6 @@ function Step1PatientInfo({
             {["Male", "Female", "Unknown"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-      </div>
-
-      {payload.patientSex === "Female" && (
-        <div className="grid grid-cols-2 gap-3">
-          <CheckTile checked={payload.isPregnant} onChange={(v) => set({ isPregnant: v })}>
-            Pregnant
-          </CheckTile>
-          <CheckTile checked={payload.isLactating} onChange={(v) => set({ isLactating: v })}>
-            Lactating
-          </CheckTile>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel>Weight (kg)</FieldLabel>
           <input
@@ -309,34 +300,43 @@ function Step1PatientInfo({
             className={fieldClass}
           />
         </div>
-      </div>
-
-      <DateFields
-        label="Date of birth"
-        value={payload.dateOfBirth}
-        onChange={(v) => set({ dateOfBirth: v })}
-      />
-
-      <div>
-        <FieldLabel>Age at time of reaction</FieldLabel>
-        <div className="flex gap-2">
-          <input
-            value={payload.ageAtReaction}
-            onChange={(e) => set({ ageAtReaction: e.target.value })}
-            placeholder="e.g. 45"
-            type="number"
-            className={`${fieldClass} w-28`}
-          />
-          <select
-            value={payload.ageUnit}
-            onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
-            className={`${selectClass} w-32`}
-          >
-            <option value="">Unit</option>
-            {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+        <DateFields
+          label="Date of birth"
+          value={payload.dateOfBirth}
+          onChange={(v) => set({ dateOfBirth: v })}
+        />
+        <div>
+          <FieldLabel>Age at time of reaction</FieldLabel>
+          <div className="flex gap-2">
+            <input
+              value={payload.ageAtReaction}
+              onChange={(e) => set({ ageAtReaction: e.target.value })}
+              placeholder="e.g. 45"
+              type="number"
+              className={`${fieldClass} basis-28 shrink-0`}
+            />
+            <select
+              value={payload.ageUnit}
+              onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
+              className={`${selectClass} min-w-0 flex-1`}
+            >
+              <option value="">Unit</option>
+              {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
         </div>
       </div>
+
+      {payload.patientSex === "Female" && (
+        <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+          <CheckTile checked={payload.isPregnant} onChange={(v) => set({ isPregnant: v })}>
+            Pregnant
+          </CheckTile>
+          <CheckTile checked={payload.isLactating} onChange={(v) => set({ isLactating: v })}>
+            Lactating
+          </CheckTile>
+        </div>
+      )}
     </div>
   );
 }
@@ -373,7 +373,7 @@ function ReactionBlockCard({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
           <DateFields
             label="Start date"
             value={reaction.startDate}
@@ -385,16 +385,15 @@ function ReactionBlockCard({
             value={reaction.endDate}
             onChange={(v) => set({ endDate: v })}
           />
-        </div>
-
-        <div>
-          <FieldLabel>Duration</FieldLabel>
-          <DurationFields
-            value={reaction.duration}
-            unitValue={reaction.durationUnit}
-            onValueChange={(v) => set({ duration: v })}
-            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-          />
+          <div>
+            <FieldLabel>Duration</FieldLabel>
+            <DurationFields
+              value={reaction.duration}
+              unitValue={reaction.durationUnit}
+              onValueChange={(v) => set({ duration: v })}
+              onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -434,7 +433,7 @@ function ReactionBlockCard({
             <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-rose-700">
               Reasons for seriousness
             </p>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {SERIOUSNESS_REASONS.map((reason) => (
                 <CheckTile
                   key={reason}
@@ -516,7 +515,7 @@ function MedicineBlockCard({
       <BlockHeader label={`Medicine #${index + 1}`} onRemove={onRemove} canRemove={canRemove} />
 
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div>
             <FieldLabel>Medicine name</FieldLabel>
             <input
@@ -535,9 +534,6 @@ function MedicineBlockCard({
               className={fieldClass}
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel>Batch number</FieldLabel>
             <input
@@ -556,21 +552,31 @@ function MedicineBlockCard({
               className={fieldClass}
             />
           </div>
+          <div>
+            <FieldLabel>Route of administration</FieldLabel>
+            <select
+              value={medicine.adminRoute}
+              onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
+              className={selectClass}
+            >
+              <option value="">Select route</option>
+              {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Action taken with medicine</FieldLabel>
+            <select
+              value={medicine.actionTaken}
+              onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
+              className={selectClass}
+            >
+              <option value="">Select action</option>
+              {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
         </div>
 
-        <div>
-          <FieldLabel>Route of administration</FieldLabel>
-          <select
-            value={medicine.adminRoute}
-            onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
-            className={selectClass}
-          >
-            <option value="">Select route</option>
-            {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
           <DateFields
             label="Start date"
             value={medicine.startDate}
@@ -581,46 +587,36 @@ function MedicineBlockCard({
             value={medicine.endDate}
             onChange={(v) => set({ endDate: v })}
           />
+          <div>
+            <FieldLabel>Duration of use</FieldLabel>
+            <DurationFields
+              value={medicine.duration}
+              unitValue={medicine.durationUnit}
+              onValueChange={(v) => set({ duration: v })}
+              onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
+            />
+          </div>
         </div>
 
-        <div>
-          <FieldLabel>Duration of use</FieldLabel>
-          <DurationFields
-            value={medicine.duration}
-            unitValue={medicine.durationUnit}
-            onValueChange={(v) => set({ duration: v })}
-            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-          />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel>Reason for taking</FieldLabel>
+            <input
+              value={medicine.reasonForTaking}
+              onChange={(e) => set({ reasonForTaking: e.target.value })}
+              placeholder="Indication / diagnosis"
+              className={fieldClass}
+            />
+          </div>
+          <div className="flex flex-col justify-end">
+            <CheckTile
+              checked={medicine.probablyCausingReaction}
+              onChange={(v) => set({ probablyCausingReaction: v })}
+            >
+              Probably causing the reaction
+            </CheckTile>
+          </div>
         </div>
-
-        <div>
-          <FieldLabel>Reason for taking</FieldLabel>
-          <input
-            value={medicine.reasonForTaking}
-            onChange={(e) => set({ reasonForTaking: e.target.value })}
-            placeholder="Indication / diagnosis"
-            className={fieldClass}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Action taken with medicine</FieldLabel>
-          <select
-            value={medicine.actionTaken}
-            onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
-            className={selectClass}
-          >
-            <option value="">Select action</option>
-            {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </div>
-
-        <CheckTile
-          checked={medicine.probablyCausingReaction}
-          onChange={(v) => set({ probablyCausingReaction: v })}
-        >
-          Probably causing the reaction
-        </CheckTile>
       </div>
     </div>
   );
@@ -675,14 +671,14 @@ function Step4Additional({
   const set = (patch: Partial<ReportItPayload>) => onChange({ ...payload, ...patch });
 
   return (
-    <div className="space-y-5">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <div>
         <FieldLabel>Current illnesses / diagnoses</FieldLabel>
         <textarea
           value={payload.currentIllnesses}
           onChange={(e) => set({ currentIllnesses: e.target.value })}
           placeholder="List any known current illnesses or diagnoses"
-          rows={3}
+          rows={5}
           className={textareaClass}
         />
       </div>
@@ -693,7 +689,7 @@ function Step4Additional({
           value={payload.additionalComments}
           onChange={(e) => set({ additionalComments: e.target.value })}
           placeholder="Any additional information relevant to this report"
-          rows={4}
+          rows={5}
           className={textareaClass}
         />
       </div>
@@ -703,25 +699,39 @@ function Step4Additional({
 
 // ─── Confirmation screen ───────────────────────────────────────────────────────
 
-function ConfirmationScreen({ reportNumber }: { reportNumber: string }) {
+function ConfirmationScreen({ reportNumber, onReset }: { reportNumber: string; onReset: () => void }) {
   return (
-    <div className="mx-auto max-w-xl border border-slate-200 bg-white">
-      <div className="bg-slate-900 px-6 py-8 text-center">
-        <CheckCircle2 className="mx-auto h-12 w-12 text-orange-500" />
-        <p className="mt-4 text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
-        <h2 className="mt-1 text-xl font-black text-white">Report Submitted</h2>
+    <div className="mx-auto max-w-xl border border-slate-200 bg-white shadow-sm">
+      <div className="relative overflow-hidden bg-slate-900 px-6 py-9 text-center">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-orange-500/10 blur-2xl"
+        />
+        <div className="relative">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center bg-orange-600">
+            <CheckCircle2 className="h-9 w-9 text-white" />
+          </div>
+          <p className="mt-5 text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+          <h2 className="mt-1 text-2xl font-black text-white">Report Submitted</h2>
+        </div>
       </div>
-      <div className="space-y-4 px-6 py-6 text-center">
+      <div className="space-y-5 px-6 py-7 text-center">
         <p className="text-sm text-slate-600">
-          Your adverse drug reaction report has been submitted successfully.
+          Your adverse drug reaction report has been submitted to the pharmacovigilance team.
         </p>
-        <div className="inline-block border border-slate-900 bg-slate-900 px-6 py-3">
+        <div className="inline-block border border-slate-900 bg-slate-900 px-7 py-3.5">
           <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-300">Report Number</p>
-          <p className="mt-0.5 font-mono text-lg font-black text-white">{reportNumber}</p>
+          <p className="mt-1 font-mono text-xl font-black tracking-wide text-white">{reportNumber}</p>
         </div>
         <p className="text-xs font-semibold text-slate-500">
           Please keep this reference number for your records.
         </p>
+        <div className="pt-1">
+          <button type="button" className={btnGhost} onClick={onReset}>
+            <Plus className="h-4 w-4" />
+            File another report
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -746,6 +756,102 @@ function validateStep(step: number, payload: ReportItPayload): string | null {
 
 const STEPS = ["Patient Info", "Reactions", "Medicines", "Additional Info"];
 const STEP_TITLES = ["Patient Information", "Reactions / Symptoms", "Medicines", "Additional Information"];
+const STEP_DESCRIPTIONS = [
+  "Who the report is about",
+  "Symptoms and seriousness",
+  "Suspected products",
+  "Context and comments",
+];
+
+// ─── Vertical stepper rail (desktop) ───────────────────────────────────────────
+
+function VerticalStepper({ step, onJump }: { step: number; onJump: (n: number) => void }) {
+  return (
+    <ol className="relative">
+      {STEPS.map((label, i) => {
+        const num = i + 1;
+        const active = num === step;
+        const done = num < step;
+        const clickable = num < step;
+        const last = i === STEPS.length - 1;
+        return (
+          <li key={label} className="relative">
+            {!last && (
+              <span
+                aria-hidden
+                className={["absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px", done ? "bg-orange-400" : "bg-slate-200"].join(" ")}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => clickable && onJump(num)}
+              disabled={!clickable}
+              className={[
+                "group relative flex w-full items-start gap-3 px-3 py-3 text-left transition",
+                active ? "bg-orange-50" : "bg-transparent",
+                clickable ? "cursor-pointer hover:bg-slate-50" : "cursor-default",
+              ].join(" ")}
+            >
+              {active && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-orange-500" />}
+              <span
+                className={[
+                  "z-10 flex h-8 w-8 shrink-0 items-center justify-center text-xs font-black",
+                  active
+                    ? "bg-orange-600 text-white"
+                    : done
+                      ? "bg-orange-100 text-orange-700"
+                      : "border border-slate-300 bg-white text-slate-400",
+                ].join(" ")}
+              >
+                {done ? <Check className="h-4 w-4" /> : num}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={[
+                    "block text-[11px] font-black uppercase tracking-wide",
+                    active ? "text-slate-900" : done ? "text-slate-700" : "text-slate-400",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-400">{STEP_DESCRIPTIONS[i]}</span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ─── Compact horizontal stepper (mobile) ───────────────────────────────────────
+
+function MobileStepper({ step }: { step: number }) {
+  return (
+    <div className="flex items-center lg:hidden">
+      {STEPS.map((label, i) => {
+        const num = i + 1;
+        const active = num === step;
+        const done = num < step;
+        return (
+          <div key={label} className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")}>
+            <span
+              className={[
+                "flex h-7 w-7 shrink-0 items-center justify-center text-[11px] font-black",
+                active ? "bg-orange-600 text-white" : done ? "bg-orange-100 text-orange-700" : "border border-slate-300 bg-white text-slate-400",
+              ].join(" ")}
+            >
+              {done ? <Check className="h-3.5 w-3.5" /> : num}
+            </span>
+            {i < STEPS.length - 1 && (
+              <span className={["mx-1.5 h-px flex-1", done ? "bg-orange-400" : "bg-slate-200"].join(" ")} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ReportItForm() {
   const [step, setStep] = useState(1);
@@ -764,6 +870,18 @@ export function ReportItForm() {
   const handleBack = useCallback(() => {
     setError(null);
     setStep((s) => s - 1);
+  }, []);
+
+  // Rail navigation: jump back only to an already-completed step (never skip
+  // forward past validation).
+  const handleJump = useCallback((target: number) => {
+    setStep((s) => {
+      if (target < s) {
+        setError(null);
+        return target;
+      }
+      return s;
+    });
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -785,92 +903,133 @@ export function ReportItForm() {
     }
   }, [payload]);
 
-  if (reportNumber) return <ConfirmationScreen reportNumber={reportNumber} />;
+  if (reportNumber) {
+    return (
+      <ConfirmationScreen
+        reportNumber={reportNumber}
+        onReset={() => {
+          setPayload(initialPayload());
+          setStep(1);
+          setError(null);
+          setReportNumber(null);
+        }}
+      />
+    );
+  }
+
+  const pct = Math.round((step / STEPS.length) * 100);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      {/* Stepper — numbered black chips, orange active */}
-      <div className="flex items-center">
-        {STEPS.map((label, i) => {
-          const num = i + 1;
-          const active = num === step;
-          const done = num < step;
-          return (
-            <div key={label} className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")}>
-              <div className="flex items-center gap-2">
-                <div
-                  className={[
-                    "flex h-8 w-8 shrink-0 items-center justify-center text-xs font-black",
-                    active
-                      ? "bg-orange-600 text-white"
-                      : done
-                        ? "bg-slate-900 text-white"
-                        : "border border-slate-300 bg-white text-slate-400",
-                  ].join(" ")}
-                >
-                  {done ? <Check className="h-4 w-4" /> : num}
-                </div>
-                <span
-                  className={[
-                    "hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide sm:block",
-                    active ? "text-slate-900" : done ? "text-slate-500" : "text-slate-400",
-                  ].join(" ")}
-                >
-                  {label}
-                </span>
-              </div>
-              {i < STEPS.length - 1 && (
-                <div className={["mx-3 h-px flex-1", done ? "bg-slate-900" : "bg-slate-200"].join(" ")} />
-              )}
-            </div>
-          );
-        })}
+    <div className="border border-slate-200 bg-white shadow-sm">
+      {/* ── Premium dark hero ── */}
+      <div className="relative overflow-hidden bg-slate-900 px-5 py-6 sm:px-8 sm:py-7">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
+        />
+        <div className="relative flex items-start gap-4">
+          <div className="hidden h-12 w-12 shrink-0 items-center justify-center bg-orange-600 sm:flex">
+            <Image
+              src={systemAssets.adminRailMark}
+              alt="Phoenix"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+            <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>
+            <p className="mt-2 max-w-xl text-sm text-slate-300">
+              Report an adverse drug reaction in a safe, confidential way. Fields marked
+              with <span className="font-bold text-orange-300">*</span> are required.
+            </p>
+          </div>
+          <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
+            <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+            Confidential
+          </span>
+        </div>
+
+        {/* progress */}
+        <div className="relative mt-6">
+          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-400">
+            <span>Step {step} of {STEPS.length}</span>
+            <span className="text-orange-400">{pct}%</span>
+          </div>
+          <div className="mt-1.5 h-1.5 w-full bg-white/10">
+            <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
       </div>
 
-      {/* Step card with dark command header */}
-      <section className="border border-slate-200 bg-white">
-        <div className="flex items-center justify-between bg-slate-900 px-4 py-3 sm:px-6">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">
-              Step {step} of {STEPS.length}
-            </p>
-            <h2 className="mt-0.5 text-sm font-black uppercase tracking-wide text-white">
-              {STEP_TITLES[step - 1]}
-            </h2>
+      {/* ── Two-column console ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
+        {/* Left rail — vertical stepper (desktop) */}
+        <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">
+          <nav className="p-3">
+            <VerticalStepper step={step} onJump={handleJump} />
+          </nav>
+          <div className="mt-auto border-t border-slate-200 p-4">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+              <p className="text-xs leading-relaxed text-slate-500">
+                Reports are routed only to the pharmacovigilance team for safety review.
+              </p>
+            </div>
           </div>
-          <ShieldAlert className="h-5 w-5 text-orange-500/80" />
-        </div>
+        </aside>
+
+        {/* Right — step content */}
         <div className="p-4 sm:p-6">
+          {/* mobile stepper */}
+          <div className="mb-5 lg:hidden">
+            <MobileStepper step={step} />
+          </div>
+
+          {/* step heading */}
+          <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-600">
+                Step {step} of {STEPS.length}
+              </p>
+              <h2 className="mt-0.5 text-lg font-black text-slate-900">{STEP_TITLES[step - 1]}</h2>
+            </div>
+            <span className="select-none text-4xl font-black tabular-nums text-slate-200" aria-hidden>
+              {String(step).padStart(2, "0")}
+            </span>
+          </div>
+
           {step === 1 && <Step1PatientInfo payload={payload} onChange={setPayload} />}
           {step === 2 && <Step2Reactions payload={payload} onChange={setPayload} />}
           {step === 3 && <Step3Medicines payload={payload} onChange={setPayload} />}
           {step === 4 && <Step4Additional payload={payload} onChange={setPayload} />}
+
+          {/* Error */}
+          {error && (
+            <p className="mt-5 border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+              {error}
+            </p>
+          )}
+
+          {/* Navigation */}
+          <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-5">
+            <button type="button" className={btnGhost} onClick={handleBack} disabled={step === 1}>
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </button>
+            {step < STEPS.length ? (
+              <button type="button" className={btnDark} onClick={handleNext}>
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button type="button" className={btnOrange} onClick={handleSubmit} disabled={submitting}>
+                {submitting ? "Submitting…" : "Submit Report"}
+              </button>
+            )}
+          </div>
         </div>
-      </section>
-
-      {/* Error */}
-      {error && (
-        <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
-          {error}
-        </p>
-      )}
-
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <button type="button" className={btnGhost} onClick={handleBack} disabled={step === 1}>
-          <ChevronLeft className="h-4 w-4" />
-          Back
-        </button>
-        {step < STEPS.length ? (
-          <button type="button" className={btnDark} onClick={handleNext}>
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        ) : (
-          <button type="button" className={btnOrange} onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Submitting…" : "Submit Report"}
-          </button>
-        )}
       </div>
     </div>
   );
