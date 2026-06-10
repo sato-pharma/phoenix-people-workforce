@@ -151,13 +151,13 @@ function DateFields({
           placeholder="DD"
           value={value.day}
           onChange={(e) => onChange({ ...value, day: e.target.value })}
-          className={`${fieldClass} w-16`}
+          className={`${fieldClass} basis-16 shrink-0`}
           maxLength={2}
         />
         <select
           value={value.month}
           onChange={(e) => onChange({ ...value, month: e.target.value })}
-          className={`${selectClass} w-36`}
+          className={`${selectClass} min-w-0 flex-1`}
         >
           <option value="">Month</option>
           {MONTHS.map((m, i) => (
@@ -168,7 +168,7 @@ function DateFields({
           placeholder="YYYY"
           value={value.year}
           onChange={(e) => onChange({ ...value, year: e.target.value })}
-          className={`${fieldClass} w-24`}
+          className={`${fieldClass} basis-24 shrink-0`}
           maxLength={4}
         />
       </div>
@@ -193,12 +193,12 @@ function DurationFields({
         placeholder="Duration"
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
-        className={`${fieldClass} w-28`}
+        className={`${fieldClass} basis-28 shrink-0`}
       />
       <select
         value={unitValue}
         onChange={(e) => onUnitChange(e.target.value)}
-        className={`${selectClass} w-32`}
+        className={`${selectClass} min-w-0 flex-1`}
       >
         <option value="">Unit</option>
         {DURATION_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -247,7 +247,7 @@ function Step1PatientInfo({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div>
           <FieldLabel required>Patient Initials</FieldLabel>
           <input
@@ -276,20 +276,6 @@ function Step1PatientInfo({
             {["Male", "Female", "Unknown"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-      </div>
-
-      {payload.patientSex === "Female" && (
-        <div className="grid grid-cols-2 gap-3">
-          <CheckTile checked={payload.isPregnant} onChange={(v) => set({ isPregnant: v })}>
-            Pregnant
-          </CheckTile>
-          <CheckTile checked={payload.isLactating} onChange={(v) => set({ isLactating: v })}>
-            Lactating
-          </CheckTile>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel>Weight (kg)</FieldLabel>
           <input
@@ -309,34 +295,43 @@ function Step1PatientInfo({
             className={fieldClass}
           />
         </div>
-      </div>
-
-      <DateFields
-        label="Date of birth"
-        value={payload.dateOfBirth}
-        onChange={(v) => set({ dateOfBirth: v })}
-      />
-
-      <div>
-        <FieldLabel>Age at time of reaction</FieldLabel>
-        <div className="flex gap-2">
-          <input
-            value={payload.ageAtReaction}
-            onChange={(e) => set({ ageAtReaction: e.target.value })}
-            placeholder="e.g. 45"
-            type="number"
-            className={`${fieldClass} w-28`}
-          />
-          <select
-            value={payload.ageUnit}
-            onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
-            className={`${selectClass} w-32`}
-          >
-            <option value="">Unit</option>
-            {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+        <DateFields
+          label="Date of birth"
+          value={payload.dateOfBirth}
+          onChange={(v) => set({ dateOfBirth: v })}
+        />
+        <div>
+          <FieldLabel>Age at time of reaction</FieldLabel>
+          <div className="flex gap-2">
+            <input
+              value={payload.ageAtReaction}
+              onChange={(e) => set({ ageAtReaction: e.target.value })}
+              placeholder="e.g. 45"
+              type="number"
+              className={`${fieldClass} basis-28 shrink-0`}
+            />
+            <select
+              value={payload.ageUnit}
+              onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
+              className={`${selectClass} min-w-0 flex-1`}
+            >
+              <option value="">Unit</option>
+              {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
         </div>
       </div>
+
+      {payload.patientSex === "Female" && (
+        <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+          <CheckTile checked={payload.isPregnant} onChange={(v) => set({ isPregnant: v })}>
+            Pregnant
+          </CheckTile>
+          <CheckTile checked={payload.isLactating} onChange={(v) => set({ isLactating: v })}>
+            Lactating
+          </CheckTile>
+        </div>
+      )}
     </div>
   );
 }
@@ -373,7 +368,7 @@ function ReactionBlockCard({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <DateFields
             label="Start date"
             value={reaction.startDate}
@@ -385,16 +380,15 @@ function ReactionBlockCard({
             value={reaction.endDate}
             onChange={(v) => set({ endDate: v })}
           />
-        </div>
-
-        <div>
-          <FieldLabel>Duration</FieldLabel>
-          <DurationFields
-            value={reaction.duration}
-            unitValue={reaction.durationUnit}
-            onValueChange={(v) => set({ duration: v })}
-            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-          />
+          <div>
+            <FieldLabel>Duration</FieldLabel>
+            <DurationFields
+              value={reaction.duration}
+              unitValue={reaction.durationUnit}
+              onValueChange={(v) => set({ duration: v })}
+              onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -434,7 +428,7 @@ function ReactionBlockCard({
             <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-rose-700">
               Reasons for seriousness
             </p>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {SERIOUSNESS_REASONS.map((reason) => (
                 <CheckTile
                   key={reason}
@@ -516,7 +510,7 @@ function MedicineBlockCard({
       <BlockHeader label={`Medicine #${index + 1}`} onRemove={onRemove} canRemove={canRemove} />
 
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div>
             <FieldLabel>Medicine name</FieldLabel>
             <input
@@ -535,9 +529,6 @@ function MedicineBlockCard({
               className={fieldClass}
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel>Batch number</FieldLabel>
             <input
@@ -556,21 +547,31 @@ function MedicineBlockCard({
               className={fieldClass}
             />
           </div>
+          <div>
+            <FieldLabel>Route of administration</FieldLabel>
+            <select
+              value={medicine.adminRoute}
+              onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
+              className={selectClass}
+            >
+              <option value="">Select route</option>
+              {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Action taken with medicine</FieldLabel>
+            <select
+              value={medicine.actionTaken}
+              onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
+              className={selectClass}
+            >
+              <option value="">Select action</option>
+              {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
         </div>
 
-        <div>
-          <FieldLabel>Route of administration</FieldLabel>
-          <select
-            value={medicine.adminRoute}
-            onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
-            className={selectClass}
-          >
-            <option value="">Select route</option>
-            {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <DateFields
             label="Start date"
             value={medicine.startDate}
@@ -581,46 +582,36 @@ function MedicineBlockCard({
             value={medicine.endDate}
             onChange={(v) => set({ endDate: v })}
           />
+          <div>
+            <FieldLabel>Duration of use</FieldLabel>
+            <DurationFields
+              value={medicine.duration}
+              unitValue={medicine.durationUnit}
+              onValueChange={(v) => set({ duration: v })}
+              onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
+            />
+          </div>
         </div>
 
-        <div>
-          <FieldLabel>Duration of use</FieldLabel>
-          <DurationFields
-            value={medicine.duration}
-            unitValue={medicine.durationUnit}
-            onValueChange={(v) => set({ duration: v })}
-            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-          />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel>Reason for taking</FieldLabel>
+            <input
+              value={medicine.reasonForTaking}
+              onChange={(e) => set({ reasonForTaking: e.target.value })}
+              placeholder="Indication / diagnosis"
+              className={fieldClass}
+            />
+          </div>
+          <div className="flex flex-col justify-end">
+            <CheckTile
+              checked={medicine.probablyCausingReaction}
+              onChange={(v) => set({ probablyCausingReaction: v })}
+            >
+              Probably causing the reaction
+            </CheckTile>
+          </div>
         </div>
-
-        <div>
-          <FieldLabel>Reason for taking</FieldLabel>
-          <input
-            value={medicine.reasonForTaking}
-            onChange={(e) => set({ reasonForTaking: e.target.value })}
-            placeholder="Indication / diagnosis"
-            className={fieldClass}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Action taken with medicine</FieldLabel>
-          <select
-            value={medicine.actionTaken}
-            onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
-            className={selectClass}
-          >
-            <option value="">Select action</option>
-            {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </div>
-
-        <CheckTile
-          checked={medicine.probablyCausingReaction}
-          onChange={(v) => set({ probablyCausingReaction: v })}
-        >
-          Probably causing the reaction
-        </CheckTile>
       </div>
     </div>
   );
@@ -675,14 +666,14 @@ function Step4Additional({
   const set = (patch: Partial<ReportItPayload>) => onChange({ ...payload, ...patch });
 
   return (
-    <div className="space-y-5">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <div>
         <FieldLabel>Current illnesses / diagnoses</FieldLabel>
         <textarea
           value={payload.currentIllnesses}
           onChange={(e) => set({ currentIllnesses: e.target.value })}
           placeholder="List any known current illnesses or diagnoses"
-          rows={3}
+          rows={5}
           className={textareaClass}
         />
       </div>
@@ -693,7 +684,7 @@ function Step4Additional({
           value={payload.additionalComments}
           onChange={(e) => set({ additionalComments: e.target.value })}
           placeholder="Any additional information relevant to this report"
-          rows={4}
+          rows={5}
           className={textareaClass}
         />
       </div>
@@ -788,7 +779,7 @@ export function ReportItForm() {
   if (reportNumber) return <ConfirmationScreen reportNumber={reportNumber} />;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="space-y-5">
       {/* Stepper — numbered black chips, orange active */}
       <div className="flex items-center">
         {STEPS.map((label, i) => {
