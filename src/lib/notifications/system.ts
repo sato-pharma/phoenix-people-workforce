@@ -17,7 +17,7 @@ import {
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
-import { GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -818,12 +818,12 @@ export async function processTelegramDeliveryRetries(limit = 10) {
 
       const result = await sendTelegramNotification({
         actionUrl: telegram.actionUrl ?? null,
-        buttons: telegram.buttons ?? null,
+        buttons: governance.genericOnly ? null : telegram.buttons ?? null,
         chatId: String(connection.telegram_chat_id),
-        ctaLabel: telegram.ctaLabel ?? null,
-        ctaUrl: telegram.ctaUrl ?? null,
+        ctaLabel: governance.genericOnly ? null : telegram.ctaLabel ?? null,
+        ctaUrl: governance.genericOnly ? null : telegram.ctaUrl ?? null,
         message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
-        title: String(telegram.title),
+        title: governance.genericOnly ? GENERIC_NOTIFICATION_TITLE : String(telegram.title),
       });
       if (result.skipped) throw new Error(result.reason);
       await supabase
@@ -961,12 +961,12 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
   try {
       const result = await sendTelegramNotification({
         actionUrl: telegram.actionUrl ?? null,
-        buttons: telegram.buttons ?? null,
+        buttons: governance.genericOnly ? null : telegram.buttons ?? null,
         chatId: String(connection.telegram_chat_id),
-        ctaLabel: telegram.ctaLabel ?? null,
-        ctaUrl: telegram.ctaUrl ?? null,
+        ctaLabel: governance.genericOnly ? null : telegram.ctaLabel ?? null,
+        ctaUrl: governance.genericOnly ? null : telegram.ctaUrl ?? null,
       message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
-      title: String(telegram.title),
+      title: governance.genericOnly ? GENERIC_NOTIFICATION_TITLE : String(telegram.title),
     });
     if (result.skipped) throw new Error(result.reason);
     await supabase
@@ -1101,17 +1101,18 @@ async function buildDeferredTelegramPayload(
   const connection = await loadTelegramConnection({ ...input, recipientHrId: recipient.hrId, recipientUserId: recipient.userId });
   if (connection?.status !== "connected" || !connection.telegram_chat_id) return null;
   const content = await renderChannelContent(input, "telegram");
+  const generic = isSensitivePayroll(input) || governance.genericOnly;
   return {
     actionUrl: input.actionUrl ?? null,
-    buttons: input.telegram?.buttons ?? content.buttons ?? null,
+    buttons: generic ? null : input.telegram?.buttons ?? content.buttons ?? null,
     chatId: String(connection.telegram_chat_id),
-    ctaLabel: input.telegram?.ctaLabel ?? content.ctaLabel ?? null,
-    ctaUrl: input.telegram?.ctaUrl ?? content.ctaUrl ?? null,
+    ctaLabel: generic ? null : input.telegram?.ctaLabel ?? content.ctaLabel ?? null,
+    ctaUrl: generic ? null : input.telegram?.ctaUrl ?? content.ctaUrl ?? null,
     emailAttempted,
     eventType: input.eventType,
-    message: isSensitivePayroll(input) || governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : content.message,
+    message: generic ? GENERIC_PAYSLIP_MESSAGE : content.message,
     module: input.module,
-    title: content.title,
+    title: generic ? GENERIC_NOTIFICATION_TITLE : content.title,
   };
 }
 
@@ -1157,10 +1158,21 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         deferredMetadata.emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
       }
       if (channel === "telegram") {
-        const telegramPayload = await buildDeferredTelegramPayload(input, recipient, preferences, emailAttempted);
-        if (telegramPayload) {
-          deferredMetadata.telegram = telegramPayload;
-          deferredMetadata.retry = true;
+        // Mirror the live branch: a broken saved template must degrade to a skipped
+        // delivery, never reject the whole notification after the domain DB write.
+        try {
+          const telegramPayload = await buildDeferredTelegramPayload(input, recipient, preferences, emailAttempted);
+          if (telegramPayload) {
+            deferredMetadata.telegram = telegramPayload;
+            deferredMetadata.retry = true;
+          }
+        } catch (error) {
+          if (!(error instanceof TelegramTemplateError)) throw error;
+          const message = error.message;
+          await upsertDelivery({ channel, eventId, idempotencyKey, lastError: message, metadata: { skippedBy: "telegram_template_governance", templateErrorCode: error.code }, recipient, status: "skipped" });
+          await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_template_governance" });
+          deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
+          continue;
         }
       }
       await upsertDelivery({
@@ -1256,14 +1268,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
       let telegramContent: Awaited<ReturnType<typeof renderChannelContent>> | null = null;
       try {
         telegramContent = await renderChannelContent(input, "telegram");
+        const genericTelegram = isSensitivePayroll(input) || telegramGovernance.genericOnly;
         const result = await sendTelegramNotification({
           actionUrl: input.actionUrl ?? null,
-          buttons: input.telegram?.buttons ?? telegramContent.buttons ?? null,
+          buttons: genericTelegram ? null : input.telegram?.buttons ?? telegramContent.buttons ?? null,
           chatId: String(connection.telegram_chat_id),
-          ctaLabel: input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
-          ctaUrl: input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
-          message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : telegramContent.message,
-          title: telegramContent.title,
+          ctaLabel: genericTelegram ? null : input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
+          ctaUrl: genericTelegram ? null : input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
+          message: genericTelegram ? GENERIC_PAYSLIP_MESSAGE : telegramContent.message,
+          title: genericTelegram ? GENERIC_NOTIFICATION_TITLE : telegramContent.title,
         });
         const status = result.skipped ? "skipped" : "sent";
         const reason = result.skipped ? result.reason : undefined;
@@ -1318,7 +1331,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
               eventType: input.eventType,
               message: isSensitivePayroll(input) || telegramGovernance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : telegramContent?.message ?? telegramMessageFor(input),
               module: input.module,
-              title: telegramContent?.title ?? input.title,
+              title: isSensitivePayroll(input) || telegramGovernance.genericOnly ? GENERIC_NOTIFICATION_TITLE : telegramContent?.title ?? input.title,
             },
           },
           provider: "telegram",
