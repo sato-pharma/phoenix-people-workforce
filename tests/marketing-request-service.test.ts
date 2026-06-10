@@ -177,6 +177,37 @@ export async function runMarketingRequestServiceTests() {
   assert.match(decisionPageSource, /getMarketingRequestDecisionSummary/, "marketing decision page must re-check authorization before showing details");
   assert.match(decisionPageSource, /Login Required/, "marketing decision links must require a Phoenix session");
 
+  // ── Notification wiring guard (verified end-to-end; lock against silent regression) ──
+  // The workflow map once claimed this module had "no notification trigger code"; it is
+  // fully wired. These assertions pin every transition + the daily SLA reminders so a
+  // future refactor cannot quietly drop a notification.
+  const dailyRouteSource = source("app/api/notifications/daily/route.ts");
+  for (const eventType of ["request_submitted", "request_approved", "request_rejected", "request_returned"] as const) {
+    assert.match(serviceSource, new RegExp(`"${eventType}"`), `marketing workflow must emit ${eventType}`);
+  }
+  // Reject/return branch to the right event; final approval notifies requester + participants.
+  assert.match(serviceSource, /eventType:\s*decision === "reject" \? "request_rejected" : "request_returned"/, "decision must branch reject vs return");
+  assert.match(serviceSource, /workflowParticipantHrIds:\s*steps\.map/, "final approval must notify all step participants");
+  // SLA reminders exist, classify all three tiers, and are scheduled on the daily cron.
+  assert.match(serviceSource, /export async function runMarketingSlaDaily/, "marketing SLA daily job must exist");
+  for (const slaEvent of ["due_date_reminder", "overdue_reminder", "escalation"] as const) {
+    assert.match(serviceSource, new RegExp(slaEvent), `SLA classifier must cover ${slaEvent}`);
+  }
+  assert.match(dailyRouteSource, /runMarketingSlaDaily/, "marketing SLA reminders must be invoked by the daily cron route");
+  // Routing metadata keys the policy strategies depend on must be present.
+  for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds", "escalationOwnerHrId"] as const) {
+    assert.match(serviceSource, new RegExp(key), `notification routing must set ${key}`);
+  }
+  // Idempotency keys (helper + explicit submit) prevent double-sends.
+  assert.match(serviceSource, /marketing-request:\$\{params\.eventType\}:/, "workflow notifications must carry a per-event idempotency key");
+  assert.match(serviceSource, /marketing-request-submitted:/, "submit notification must carry an idempotency key");
+  // Notification failures surface (Sentry) but never throw into the workflow.
+  assert.match(serviceSource, /Sentry\.captureException/, "marketing notification failures must be surfaced, not silently swallowed");
+  // Telegram delivery on the decision events too (not just request_assigned).
+  for (const event of ["request_approved", "request_rejected", "request_returned"] as const) {
+    assert.match(policySource, new RegExp(`"marketing_requests\\.${event}":[^\\n]*telegramAllowed:\\s*true`), `${event} must allow Telegram`);
+  }
+
   const normalized = normalizeMarketingRequestDraftInput({
     ...baseInput,
     products: [

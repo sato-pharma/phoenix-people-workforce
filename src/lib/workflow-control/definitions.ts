@@ -904,18 +904,16 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         steps: [
           {
             id: "notify",
-            name: "Notify requester / manager",
+            name: "Notify requester / approver",
             actor: "System",
             role: "System",
             statusProduced: "(no status change)",
-            notificationRecipients: n("Requester", "Manager"),
-            emailRecipients: n("Requester", "Manager"),
-            notificationGap: true,
-            sideEffects: "request_submitted / approved / rejected events.",
-            knownGap: "No notification trigger code is wired in the marketing-requests service (Beta).",
+            notificationRecipients: n("Assigned approver (per step)", "Requester", "CC steps"),
+            emailRecipients: n("Assigned approver (per step)", "Requester"),
+            sideEffects:
+              "Wired via notifyMarketingWorkflow → createSystemNotification: request_submitted/assigned (approver), request_approved (requester + all participants), request_rejected/returned (requester); plus daily SLA reminders (due_date_reminder/overdue_reminder/escalation) from runMarketingSlaDaily on the daily cron.",
           },
         ],
-        gaps: ["No notification trigger code identified in the marketing-requests module (Beta)."],
       },
     ],
   },
