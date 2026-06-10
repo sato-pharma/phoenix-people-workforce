@@ -117,11 +117,18 @@ export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Phase 1.5: notification gaps are surfaced where producers are missing.
   // ---------------------------------------------------------------------------
+  // The expenses-outstation notifications are now fully wired: submit (notifyOutstation
+  // Submitted), approve/reject (notifyOutstationDecision), and payroll import
+  // (notifyExpensesAddedToPayroll). No step in that domain is a gap anymore.
   const expenseSubmitStep = getWorkflowSubflow("expenses-outstation", "expense")?.steps.find((s) => s.id === "submit");
-  assert.equal(expenseSubmitStep?.notificationGap, true, "expense submit is flagged as a notification gap");
+  assert.notEqual(expenseSubmitStep?.notificationGap, true, "expense submit alert is wired (no longer a gap)");
+  const addToPayrollStep = getWorkflowSubflow("expenses-outstation", "payroll-queue")?.steps.find((s) => s.id === "add_to_payroll");
+  assert.notEqual(addToPayrollStep?.notificationGap, true, "add-to-payroll completion alert is wired (no longer a gap)");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), false, "expenses-outstation notifications are fully wired");
+  // The payslip publish notification remains a genuine, unwired gap.
   const payslipStep = getWorkflowSubflow("payroll", "payslip-notification")?.steps.find((s) => s.id === "publish");
   assert.equal(payslipStep?.notificationGap, true, "payslip publish is flagged as a notification gap");
-  assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), true, "expenses domain has a notification gap");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("payroll")!), true, "payroll domain still has a notification gap (payslip publish)");
   assert.equal(domainHasNotificationGap(getWorkflowDomain("leave")!), false, "leave domain has no notification gap (producers wired)");
   assert.ok(domainGaps(getWorkflowDomain("payroll")!).length > 0, "payroll domain surfaces open gaps");
   // The map renders the notification-gap and the action-required grouping.
@@ -170,7 +177,9 @@ export function runWorkflowControlTests() {
   assert.ok(sim.steps.some((s) => s.notificationRecipients.length > 0), "simulator returns in-app notification recipients");
   assert.ok(sim.warnings.some((w) => /runtime editing is disabled in phase 1/i.test(w)), "simulator warns runtime editing is disabled in Phase 1");
 
-  const gapSim = simulateWorkflow({ domainKey: "expenses-outstation", subflowKey: "expense", employeeHrId: "B-52" });
+  // Expenses-outstation is fully wired now; the payslip publish notification remains a
+  // declared-but-unimplemented producer the simulator must still warn about.
+  const gapSim = simulateWorkflow({ domainKey: "payroll", subflowKey: "payslip-notification" });
   assert.ok(gapSim.warnings.some((w) => /no in-app notification producer/i.test(w)), "simulator warns about a missing notification producer");
 
   const readOnlySim = simulateWorkflow({ domainKey: "notifications", subflowKey: "recipient-resolver" });
@@ -320,9 +329,9 @@ export function runWorkflowControlTests() {
   assert.ok(vEmail.warnings.some((w) => /email enabled but no email recipients/i.test(w)), "missing email recipient warning fires");
   assert.equal(typeof vEmail.publishBlocked, "string", "validation surfaces a publish-blocked message");
   assert.match(vEmail.publishBlocked, /Phase 3/, "publish-blocked references Phase 3");
-  const expenseGapSteps = getWorkflowSubflow("expenses-outstation", "expense")?.steps ?? [];
-  const expSubmitId = expenseGapSteps.find((s) => s.id === "submit")?.id ?? "submit";
-  const vGap = validateWorkflowDraft(expenseGapSteps, { [expSubmitId]: { description: "edit" } });
+  const payslipGapSteps = getWorkflowSubflow("payroll", "payslip-notification")?.steps ?? [];
+  const payslipGapId = payslipGapSteps.find((s) => s.id === "publish")?.id ?? "publish";
+  const vGap = validateWorkflowDraft(payslipGapSteps, { [payslipGapId]: { description: "edit" } });
   assert.ok(vGap.warnings.some((w) => /notification producer is not implemented/i.test(w)), "validation surfaces a notification gap warning on an edited gap step");
 
   // Editor UX: comparison summary, Reset Draft, draft-only label, local-preview note.

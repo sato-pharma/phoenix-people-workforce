@@ -74,4 +74,19 @@ export function runOutstationNotificationsTests() {
 
   // ── Governance non-regression: must NOT mark these as payroll-sensitive ────────
   assert.doesNotMatch(service, /sensitivity: "payroll"/, "outstation notifications must not be flagged payroll-sensitive (would strip Telegram/email)");
+
+  // ── Added-to-payroll completion alert (in the payroll expenses importer) ───────
+  const expenses = source("src/lib/payroll/expenses.ts");
+  assert.match(expenses, /async function notifyExpensesAddedToPayroll/, "added-to-payroll completion alert must exist");
+  const addedHelper = functionSlice(expenses, "async function notifyExpensesAddedToPayroll");
+  assert.match(addedHelper, /eventType: "added_to_payroll"/, "completion alert eventType");
+  assert.match(addedHelper, /module: "outstation"/, "completion alert reuses the outstation module (Telegram-enabled, not payroll-sensitive)");
+  assert.match(addedHelper, /channels: \["in_app", "email", "telegram"\]/, "completion alert delivers on all three channels");
+  assert.match(addedHelper, /recipientHrId: hrId/, "completion alert targets the imported employee");
+  assert.match(addedHelper, /outstation:added_to_payroll:\$\{input\.batchId\}:\$\{hrId\.toUpperCase\(\)\}/, "completion alert is idempotent per (batch, employee)");
+  assert.match(addedHelper, /Promise\.allSettled/, "completion alert fans out with allSettled");
+  assert.match(addedHelper, /catch \(error\)/, "completion alert is best-effort (non-blocking)");
+  // The importer must invoke it after a successful import.
+  assert.match(functionSlice(expenses, "async function importApprovedExpensesToPayroll"), /notifyExpensesAddedToPayroll\(/, "payroll import must emit the added-to-payroll alert");
+  assert.doesNotMatch(addedHelper, /sensitivity: "payroll"/, "completion alert must not be flagged payroll-sensitive");
 }

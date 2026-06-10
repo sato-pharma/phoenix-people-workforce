@@ -13,6 +13,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -900,6 +901,46 @@ export async function savePayrollExpenseApprovals(input: {
   return saved;
 }
 
+// Best-effort completion alert: when approved expenses are imported into a payroll
+// run, tell each matched employee their expense is now in payroll (in-app + email +
+// Telegram, generic — no amounts). Uses module "outstation" to match the rest of the
+// expense-notification chain (Telegram-enabled, not payroll-sensitive). Idempotent per
+// (batch, employee) so re-running an import never double-notifies. Never throws.
+async function notifyExpensesAddedToPayroll(input: { batchId: string; hrIds: string[]; month: number; year: number }) {
+  try {
+    const unique = Array.from(new Set(input.hrIds.map((hrId) => String(hrId ?? "").trim()).filter(Boolean)));
+    if (unique.length === 0) return;
+    const period = `${String(input.month).padStart(2, "0")}/${input.year}`;
+    await Promise.allSettled(
+      unique.map((hrId) =>
+        createSystemNotification({
+          actionUrl: "/employee-portals/expenses",
+          category: "general",
+          channels: ["in_app", "email", "telegram"],
+          eventType: "added_to_payroll",
+          message: `Your approved expense has been added to the ${period} payroll run and will be paid with that payroll.`,
+          metadata: {
+            actionUrl: "/employee-portals/expenses",
+            idempotencyKey: `outstation:added_to_payroll:${input.batchId}:${hrId.toUpperCase()}`,
+            month: input.month,
+            period,
+            year: input.year,
+          },
+          module: "outstation",
+          priority: "normal",
+          recipientHrId: hrId,
+          recordId: input.batchId,
+          subjectHrId: hrId,
+          telegram: { buttons: [{ label: "Open Phoenix", url: "/employee-portals/expenses" }] },
+          title: "Your expense was added to payroll",
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("[outstation] add-to-payroll notification dispatch failed (non-blocking)", error);
+  }
+}
+
 export async function importApprovedExpensesToPayroll(input: {
   fileName: string;
   month: number;
@@ -962,11 +1003,18 @@ export async function importApprovedExpensesToPayroll(input: {
   }
 
   invalidateExecutiveDashboardCache("expenses imported to payroll", ["expenses", "payroll"]);
+  const matchedEmployees = Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [];
+  await notifyExpensesAddedToPayroll({
+    batchId: String(result.target_batch_id),
+    hrIds: matchedEmployees,
+    month: Number(result.target_batch_month ?? input.month),
+    year: Number(result.target_batch_year ?? input.year),
+  });
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
     lockedExpenses: Number(result.locked_expenses ?? 0),
-    matchedEmployees: Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [],
+    matchedEmployees,
     saved: savedExpenses.length,
     targetBatch: {
       id: String(result.target_batch_id),
