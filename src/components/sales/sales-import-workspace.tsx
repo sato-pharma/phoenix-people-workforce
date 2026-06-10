@@ -7,9 +7,11 @@ import {
   Copy,
   Database,
   FileSpreadsheet,
+  Filter,
   Loader2,
   Package,
   RefreshCw,
+  Search,
   Table2,
   Trash2,
   UploadCloud,
@@ -26,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   DistributorSalesAreaSummary,
@@ -145,161 +149,296 @@ function TotalsGrid({ result }: { result: DistributorSalesValidationResult }) {
   );
 }
 
+function cellDisplay(value: string | undefined | null) {
+  return value || "-";
+}
+
 function LineTable({ rows }: { rows: DistributorSalesLineSummary[] }) {
-  return (
-    <SummaryTable
-      columns={["Line", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.line,
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Line", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    cellDisplay(row.line),
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "line", label: "Line" },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    line: row.line, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Line" rows={mapped} />;
 }
 
 function RegionTable({ rows }: { rows: DistributorSalesRegionSummary[] }) {
-  return (
-    <SummaryTable
-      columns={["Region Name", "Region Code", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.regionName,
-        row.regionCode,
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Region", "Code", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    cellDisplay(row.regionName),
+    row.regionCode || "-",
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "name", label: "Region" },
+    { key: "code", label: "Code" },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    name: row.regionName, code: row.regionCode, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Region" rows={mapped} />;
 }
 
 function AreaTable({ rows }: { rows: DistributorSalesAreaSummary[] }) {
-  return (
-    <SummaryTable
-      columns={["Area Name", "Area Code", "Region Code", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.areaName,
-        row.areaCode,
-        row.regionCode,
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Area", "Code", "Region", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    cellDisplay(row.areaName),
+    row.areaCode || "-",
+    cellDisplay(row.regionName),
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "area", label: "Area" },
+    { key: "code", label: "Code" },
+    { key: "region", label: "Region" },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    area: row.areaName, code: row.areaCode, region: row.regionName, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Area" rows={mapped} />;
 }
 
 function BrickTable({ rows }: { rows: DistributorSalesBrickSummary[] }) {
-  return (
-    <SummaryTable
-      columns={["Brick", "Brick ID", "Area Code", "Region Code", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.brickName,
-        row.brickId,
-        row.areaCode,
-        row.regionCode,
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Brick", "Block", "Area", "Region", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    cellDisplay(row.brickName),
+    cellDisplay(row.blockName),
+    cellDisplay(row.areaName),
+    cellDisplay(row.regionName),
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "brick", label: "Brick" },
+    { key: "block", label: "Block" },
+    { key: "area", label: "Area" },
+    { key: "region", label: "Region" },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    brick: row.brickName, block: row.blockName, area: row.areaName, region: row.regionName, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Brick" rows={mapped} />;
 }
 
 function ProductTable({ rows }: { rows: DistributorSalesProductSummary[] }) {
-  return (
-    <SummaryTable
-      columns={["Product Name", "Product Code", "Official Line", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.productName,
-        row.productCode,
-        row.officialLine,
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Product", "Code", "Line", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    cellDisplay(row.productName),
+    row.productCode || "-",
+    cellDisplay(row.officialLine),
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "product", label: "Product" },
+    { key: "code", label: "Code" },
+    { key: "line", label: "Line" },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    product: row.productName, code: row.productCode, line: row.officialLine, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Product" rows={mapped} />;
 }
 
 function DashboardGroupTable({
-  codeLabel,
+  exportTitle,
+  parentLabel,
   rows,
   titleLabel,
 }: {
-  codeLabel: string;
+  exportTitle: string;
+  parentLabel: string | null;
   rows: SourceOfSalesDashboardGroup[];
   titleLabel: string;
 }) {
-  return (
-    <SummaryTable
-      columns={[titleLabel, codeLabel, "Line / Parent", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.slice(0, 100).map((row) => [
-        row.label,
-        row.code ?? "-",
-        row.line ?? "-",
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
+  const hasParent = parentLabel !== null;
+  const columns = hasParent
+    ? [titleLabel, parentLabel, "Rows", "Qty", "B. Qty", "Value"]
+    : [titleLabel, "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) =>
+    hasParent
+      ? [
+          cellDisplay(row.label),
+          cellDisplay(row.line),
+          formatNumber(row.rowCount),
+          numberWithDecimals(row.totalQty),
+          numberWithDecimals(row.totalBonusQty),
+          formatCurrency(row.totalValue),
+        ]
+      : [
+          cellDisplay(row.label),
+          formatNumber(row.rowCount),
+          numberWithDecimals(row.totalQty),
+          numberWithDecimals(row.totalBonusQty),
+          formatCurrency(row.totalValue),
+        ],
   );
+  const exportColumns: ExportColumn[] = [
+    { key: "name", label: titleLabel },
+    ...(hasParent ? [{ key: "parent", label: parentLabel }] : []),
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    name: row.label,
+    ...(hasParent ? { parent: row.line } : {}),
+    rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle={exportTitle} rows={mapped} />;
 }
 
 function DashboardDistributorTable({ rows }: { rows: SourceOfSalesDashboardDistributor[] }) {
-  return (
-    <SummaryTable
-      columns={["Distributor", "Code", "Sheets", "Rows", "Qty", "B. Qty", "Value"]}
-      rows={rows.map((row) => [
-        row.distributorName,
-        row.distributorCode,
-        formatNumber(row.sheetCount),
-        formatNumber(row.rowCount),
-        numberWithDecimals(row.totalQty),
-        numberWithDecimals(row.totalBonusQty),
-        formatCurrency(row.totalValue),
-      ])}
-    />
-  );
+  const columns = ["Distributor", "Code", "Sheets", "Rows", "Qty", "B. Qty", "Value"];
+  const mapped = rows.map((row) => [
+    row.distributorName,
+    row.distributorCode,
+    formatNumber(row.sheetCount),
+    formatNumber(row.rowCount),
+    numberWithDecimals(row.totalQty),
+    numberWithDecimals(row.totalBonusQty),
+    formatCurrency(row.totalValue),
+  ]);
+  const exportColumns: ExportColumn[] = [
+    { key: "name", label: "Distributor" },
+    { key: "code", label: "Code" },
+    { key: "sheets", label: "Sheets", numeric: true },
+    { key: "rows", label: "Rows", numeric: true },
+    { key: "qty", label: "Qty", numeric: true },
+    { key: "bqty", label: "B. Qty", numeric: true },
+    { key: "value", label: "Value", numeric: true },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    name: row.distributorName, code: row.distributorCode, sheets: row.sheetCount, rows: row.rowCount, qty: row.totalQty, bqty: row.totalBonusQty, value: row.totalValue,
+  }));
+  return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Distributor" rows={mapped} />;
 }
 
-function SummaryTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
+function SummaryTable({
+  columns,
+  exportColumns,
+  exportRows,
+  exportTitle,
+  rows,
+}: {
+  columns: string[];
+  exportColumns?: ExportColumn[];
+  exportRows?: ExportRow[];
+  exportTitle?: string;
+  rows: string[][];
+}) {
+  const [filter, setFilter] = useState("");
+  const lowerFilter = filter.toLowerCase();
+  const filtered = lowerFilter
+    ? rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(lowerFilter)))
+    : rows;
+
   return (
-    <div className="overflow-x-auto p-4 md:p-5">
-      <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-[#F8FAFC]">
-            <tr>
-              {columns.map((column) => (
-                <th className={tableHeaderClassName} key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#E2E8F0]">
-            {rows.map((row, rowIndex) => (
-              <tr className="text-[#64748B]" key={`${row.join(":")}:${rowIndex}`}>
-                {row.map((cell, cellIndex) => (
-                  <td
-                    className={cn(
-                      "px-4 py-2.5 align-top",
-                      cellIndex === 0 ? "font-semibold text-[#0F172A]" : "",
-                    )}
-                    key={`${cell}:${cellIndex}`}
-                  >
-                    {cell}
-                  </td>
+    <div className="space-y-0 p-4 md:p-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="relative min-w-[200px] max-w-xs flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
+          <input
+            className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/10"
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Filter rows..."
+            type="text"
+            value={filter}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {filter && (
+            <span className="text-xs text-[#64748B]">
+              <Filter className="mr-1 inline h-3 w-3" />
+              {filtered.length} of {rows.length}
+            </span>
+          )}
+          {exportColumns && exportRows && exportTitle && (
+            <ExportXlsxButton
+              columns={exportColumns}
+              rows={filter ? exportRows.filter((_row, index) =>
+                rows[index] && rows[index].some((cell) => cell.toLowerCase().includes(lowerFilter)),
+              ) : exportRows}
+              title={exportTitle}
+            />
+          )}
+        </div>
+      </div>
+      <div className="overflow-hidden border border-[#E2E8F0]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-[#F8FAFC]">
+              <tr>
+                {columns.map((column) => (
+                  <th className={tableHeaderClassName} key={column}>{column}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-6 text-center text-sm text-[#94A3B8]" colSpan={columns.length}>
+                    {filter ? "No rows match the filter." : "No data."}
+                  </td>
+                </tr>
+              ) : filtered.map((row, rowIndex) => (
+                <tr className="text-[#64748B]" key={`${row.join(":")}:${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      className={cn(
+                        "px-4 py-2.5 align-top",
+                        cellIndex === 0 ? "font-semibold text-[#0F172A]" : "",
+                      )}
+                      key={`${cell}:${cellIndex}`}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -498,19 +637,19 @@ function SourceOfSalesDashboardPanel({
         <DashboardDistributorTable rows={dashboard.byDistributor} />
       </AdminTableShell>
       <AdminTableShell description="Qty, bonus quantity, and value by official line." title="By Line">
-        <DashboardGroupTable codeLabel="Code" rows={dashboard.byLine} titleLabel="Line" />
+        <DashboardGroupTable exportTitle="Dashboard — By Line" parentLabel={null} rows={dashboard.byLine} titleLabel="Line" />
       </AdminTableShell>
       <AdminTableShell description="Qty, bonus quantity, and value by region." title="By Region">
-        <DashboardGroupTable codeLabel="Region Code" rows={dashboard.byRegion} titleLabel="Region" />
+        <DashboardGroupTable exportTitle="Dashboard — By Region" parentLabel={null} rows={dashboard.byRegion} titleLabel="Region" />
       </AdminTableShell>
       <AdminTableShell description="Qty, bonus quantity, and value by area." title="By Area">
-        <DashboardGroupTable codeLabel="Area Code" rows={dashboard.byArea} titleLabel="Area" />
+        <DashboardGroupTable exportTitle="Dashboard — By Area" parentLabel="Region" rows={dashboard.byArea} titleLabel="Area" />
       </AdminTableShell>
       <AdminTableShell description="Qty, bonus quantity, and value by product." title="By Product">
-        <DashboardGroupTable codeLabel="Product Code" rows={dashboard.byProduct} titleLabel="Product" />
+        <DashboardGroupTable exportTitle="Dashboard — By Product" parentLabel="Line" rows={dashboard.byProduct} titleLabel="Product" />
       </AdminTableShell>
       <AdminTableShell description="Qty, bonus quantity, and value by brick." title="By Brick">
-        <DashboardGroupTable codeLabel="Brick ID" rows={dashboard.byBrick} titleLabel="Brick" />
+        <DashboardGroupTable exportTitle="Dashboard — By Brick" parentLabel="Area" rows={dashboard.byBrick} titleLabel="Brick" />
       </AdminTableShell>
     </div>
   );
@@ -969,28 +1108,28 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             </AdminTableShell>
 
             <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by Region Name and Region Code."
-              title="By Region Name + Region Code"
+              description="Qty, bonus quantity, and value grouped by region."
+              title="By Region"
             >
               <RegionTable rows={result.byRegion} />
             </AdminTableShell>
 
             <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by Area Code and its region."
+              description="Qty, bonus quantity, and value grouped by area and its parent region."
               title="By Area"
             >
               <AreaTable rows={result.byArea} />
             </AdminTableShell>
 
             <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by Product Name and Product Code."
-              title="By Product Name + Product Code"
+              description="Qty, bonus quantity, and value grouped by product."
+              title="By Product"
             >
               <ProductTable rows={result.byProduct} />
             </AdminTableShell>
 
             <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by Brick ID."
+              description="Qty, bonus quantity, and value grouped by brick with full hierarchy."
               title="By Brick"
             >
               <BrickTable rows={result.byBrick} />
