@@ -165,6 +165,24 @@ function repForArea(options: MedicalRepOption[], area: string): MedicalRepOption
   return options.find((r) => r.areaName?.toLowerCase() === area.toLowerCase()) ?? null;
 }
 
+/** Map raw service/DB/workflow errors to short, friendly, action-oriented messages. UI-only. */
+function friendlyError(message: string): string {
+  const text = message || "Action failed.";
+  if (/duplicate key|already exists|active_period_uidx|23505/i.test(text)) {
+    return "You already have an active plan for this period.";
+  }
+  if (/comment.*requires|requires a comment|COMMENT_REQUIRED/i.test(text)) {
+    return "Please add a comment explaining the return or rejection.";
+  }
+  if (/Double Visit requires|not available for this employee line/i.test(text)) {
+    return "Each Double Visit day needs a same-line Medical Rep selected.";
+  }
+  if (/^forbidden/i.test(text)) {
+    return "You do not have permission to perform this action.";
+  }
+  return text;
+}
+
 export function PlansWorkspace({
   access,
   initialWorkspace,
@@ -247,7 +265,7 @@ export function PlansWorkspace({
         await action();
         await reload();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Action failed.");
+        setMessage(friendlyError(error instanceof Error ? error.message : "Action failed."));
       }
     });
   }
@@ -844,6 +862,11 @@ function ReviewCard({
                 ))}
               </div>
             ) : null}
+            {type !== "hr" && comment.trim().length === 0 ? (
+              <p className="mt-2 text-xs font-semibold text-amber-700">
+                A comment is required to return or reject a plan.
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {type === "manager" ? (
                 <>
@@ -852,7 +875,7 @@ function ReviewCard({
                     Approve
                   </Button>
                   <Button
-                    disabled={isPending}
+                    disabled={isPending || comment.trim().length === 0}
                     onClick={() => onDecision(p.id, "manager_return")}
                     variant="secondary"
                   >
@@ -860,7 +883,7 @@ function ReviewCard({
                     Return
                   </Button>
                   <Button
-                    disabled={isPending}
+                    disabled={isPending || comment.trim().length === 0}
                     onClick={() => onDecision(p.id, "manager_reject")}
                     variant="destructive"
                   >
@@ -876,7 +899,7 @@ function ReviewCard({
                     Approve
                   </Button>
                   <Button
-                    disabled={isPending}
+                    disabled={isPending || comment.trim().length === 0}
                     onClick={() => onDecision(p.id, "ceo_return")}
                     variant="secondary"
                   >
@@ -884,7 +907,7 @@ function ReviewCard({
                     Return
                   </Button>
                   <Button
-                    disabled={isPending}
+                    disabled={isPending || comment.trim().length === 0}
                     onClick={() => onDecision(p.id, "ceo_reject")}
                     variant="destructive"
                   >
