@@ -20,7 +20,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -57,6 +57,7 @@ import {
 } from "@/lib/vacation/approval-flow";
 import {
   sendVacationDecisionResultEmail,
+  sendVacationManagerDecisionEmail,
 } from "@/lib/vacation/email";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import type {
@@ -1578,7 +1579,21 @@ function throwVacationDatabaseError(error: unknown) {
   throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
 }
 
+/**
+ * Build an absolute app URL for email links from the canonical deploy base
+ * (NOTIFICATION_DASHBOARD_URL — the same base the notification/email layer uses). Email
+ * clients can't follow a relative href, so vacation emails must carry an absolute CTA.
+ * Falls back to the relative path locally when the base is unset.
+ */
+function toAbsoluteAppUrl(path: string): string {
+  const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+  if (!base) return path;
+  if (/^https?:\/\//.test(path)) return path;
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function notifyRecipients(input: {
+  channels?: SystemNotificationChannel[];
   href: string;
   message: string;
   metadata?: Record<string, unknown>;
@@ -1594,6 +1609,7 @@ async function notifyRecipients(input: {
   await Promise.allSettled(
     recipientHrIds.map((recipientHrId) =>
       createSystemNotification({
+        ...(input.channels ? { channels: input.channels } : {}),
         actionUrl: input.href,
         category: "vacation_request",
         eventType: input.type,
@@ -1625,6 +1641,7 @@ async function notifyVacationSubmittedByGovernance(input: {
   // (Annual/Other/Compensatory/Emergency) must be reviewed inside the Vacation Action Center —
   // email/Telegram never approve or reject directly for them.
   const actionCenterUrl = `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`;
+  const absoluteReviewUrl = toAbsoluteAppUrl(actionCenterUrl);
   const approveUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=approve`;
   const rejectUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=reject`;
 
@@ -1656,13 +1673,28 @@ async function notifyVacationSubmittedByGovernance(input: {
             { label: "Approve in Phoenix", url: approveUrl },
             { label: "Reject in Phoenix", url: rejectUrl },
           ];
-      return createSystemNotification({
+      // Sequential types (Annual/Other/Compensatory/Emergency) send the styled "leave_request"
+      // WYSIWYG template directly per approver — it carries the full vacation record (balance,
+      // duration, hire date) the generic notification email can't — so the createSystemNotification
+      // "email" channel is dropped here to avoid a duplicate generic email. The legacy Sick flow
+      // keeps the generic email + direct approve/reject links unchanged.
+      const deliverableEmail = sequential ? pickDeliverableEmail(recipient.email) : null;
+      const templatedEmail = deliverableEmail
+        ? sendVacationManagerDecisionEmail({
+            managerEmail: deliverableEmail,
+            managerName: recipient.name,
+            policyWarnings: input.policyWarnings,
+            request: input.request,
+            reviewUrl: absoluteReviewUrl,
+          }).catch(() => undefined)
+        : Promise.resolve(undefined);
+      const notification = createSystemNotification({
         actionUrl: sequential ? actionCenterUrl : input.href,
         category: "vacation_request",
-        channels: ["in_app", "email", "telegram"],
-        email: {
-          recipients: recipient.email ? [recipient.email] : undefined,
-        },
+        channels: sequential ? ["in_app", "telegram"] : ["in_app", "email", "telegram"],
+        ...(sequential
+          ? {}
+          : { email: { recipients: recipient.email ? [recipient.email] : undefined } }),
         eventType: "request_submitted",
         message: copy.message,
         metadata: {
@@ -1699,6 +1731,7 @@ async function notifyVacationSubmittedByGovernance(input: {
         },
         title: input.title,
       });
+      return Promise.all([notification, templatedEmail]);
     }),
   );
 }
@@ -1782,6 +1815,10 @@ async function dispatchVacationDecision(input: {
   const approvalSteps = await fetchVacationApprovalStepsForRequest(input.request.id).catch(() => []);
   const approvalRecipientHrIds = approvalSteps.map((step) => step.approverHrId);
   await notifyRecipients({
+    // Email is delivered by the templated sendVacationDecisionResultEmail below
+    // (leave_approval / leave_rejection); keep this generic notification to in-app + Telegram
+    // so the employee/approvers don't also receive a duplicate generic email.
+    channels: ["in_app", "telegram"],
     href: reportHref,
     message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by the vacation approval workflow.`,
     metadata: {
