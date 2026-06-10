@@ -28,6 +28,7 @@ import {
   ScrollText,
   Send,
   Settings2,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   UsersRound,
@@ -189,6 +190,14 @@ export const adminNavigationSections = [
     ],
     label: "Access & Communication",
   },
+  {
+    id: "pharmacovigilance",
+    items: [
+      { href: "/admin/report-it", icon: ShieldAlert, label: "Reports Dashboard", permissions: [{ resource: "report_it", action: "export" }] },
+      { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It", permissions: [{ resource: "report_it", action: "create" }] },
+    ],
+    label: "Pharmacovigilance",
+  },
 ] as const satisfies readonly NavigationSection[];
 
 export const employeePortalNavigationSections = [
@@ -306,6 +315,13 @@ export const employeePortalNavigationSections = [
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Finance Manager"] },
     ],
     label: "Leave Management",
+  },
+  {
+    id: "pharmacovigilance",
+    items: [
+      { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It", permissions: [{ resource: "report_it", action: "create" }] },
+    ],
+    label: "Pharmacovigilance",
   },
 ] as const satisfies readonly NavigationSection[];
 
