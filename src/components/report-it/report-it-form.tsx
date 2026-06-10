@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, ChevronLeft, ChevronRight, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import {
   MONTHS,
   REACTION_OUTCOMES,
@@ -79,17 +77,57 @@ function initialPayload(): ReportItPayload {
   };
 }
 
-// ─── Reusable field primitives ────────────────────────────────────────────────
+// ─── Premium field primitives (square corners, slate + orange) ───────────────
 
-const fieldClass = "w-full rounded border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
+const fieldClass =
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50";
 const selectClass = `${fieldClass} cursor-pointer`;
-const labelClass = "mb-1 block text-sm font-medium text-text";
+const textareaClass =
+  "w-full resize-y border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+
+const btnGhost =
+  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
+const btnDark =
+  "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
+const btnOrange =
+  "inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:pointer-events-none disabled:opacity-50";
+const btnAddBlock =
+  "flex w-full items-center justify-center gap-1.5 border border-dashed border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:border-orange-500 hover:text-orange-600";
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className={labelClass}>
+    <label className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500">
       {children}
-      {required && <span className="text-danger ml-0.5">*</span>}
+      {required && <span className="ml-0.5 text-rose-600">*</span>}
+    </label>
+  );
+}
+
+function CheckTile({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      className={[
+        "flex cursor-pointer select-none items-center gap-2.5 border px-3 py-2.5 text-sm font-semibold transition",
+        checked
+          ? "border-orange-500 bg-orange-50 text-slate-900"
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
+      ].join(" ")}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 shrink-0 accent-orange-600"
+      />
+      {children}
     </label>
   );
 }
@@ -109,11 +147,11 @@ function DateFields({
     <div>
       <FieldLabel required={required}>{label}</FieldLabel>
       <div className="flex gap-2">
-        <Input
+        <input
           placeholder="DD"
           value={value.day}
           onChange={(e) => onChange({ ...value, day: e.target.value })}
-          className="w-16"
+          className={`${fieldClass} w-16`}
           maxLength={2}
         />
         <select
@@ -126,11 +164,11 @@ function DateFields({
             <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
           ))}
         </select>
-        <Input
+        <input
           placeholder="YYYY"
           value={value.year}
           onChange={(e) => onChange({ ...value, year: e.target.value })}
-          className="w-24"
+          className={`${fieldClass} w-24`}
           maxLength={4}
         />
       </div>
@@ -151,11 +189,11 @@ function DurationFields({
 }) {
   return (
     <div className="flex gap-2">
-      <Input
+      <input
         placeholder="Duration"
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
-        className="w-28"
+        className={`${fieldClass} w-28`}
       />
       <select
         value={unitValue}
@@ -165,6 +203,33 @@ function DurationFields({
         <option value="">Unit</option>
         {DURATION_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
       </select>
+    </div>
+  );
+}
+
+// Dark block header used by repeating reaction/medicine cards.
+function BlockHeader({
+  label,
+  onRemove,
+  canRemove,
+}: {
+  label: string;
+  onRemove: () => void;
+  canRemove: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between bg-slate-900 px-4 py-2.5">
+      <span className="text-[11px] font-black uppercase tracking-wide text-orange-300">{label}</span>
+      {canRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1 text-slate-400 transition hover:text-white"
+          aria-label={`Remove ${label}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }
@@ -182,16 +247,15 @@ function Step1PatientInfo({
 
   return (
     <div className="space-y-5">
-      <h2 className="text-base font-semibold border-b pb-2">Step 1 — Patient Information</h2>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel required>Patient Initials</FieldLabel>
-          <Input
+          <input
             value={payload.patientInitials}
             onChange={(e) => set({ patientInitials: e.target.value })}
             placeholder="e.g. J.D."
             maxLength={10}
+            className={fieldClass}
           />
         </div>
         <div>
@@ -215,44 +279,34 @@ function Step1PatientInfo({
       </div>
 
       {payload.patientSex === "Female" && (
-        <div className="flex gap-6">
-          <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input
-              type="checkbox"
-              checked={payload.isPregnant}
-              onChange={(e) => set({ isPregnant: e.target.checked })}
-              className="h-4 w-4 accent-primary"
-            />
+        <div className="grid grid-cols-2 gap-3">
+          <CheckTile checked={payload.isPregnant} onChange={(v) => set({ isPregnant: v })}>
             Pregnant
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input
-              type="checkbox"
-              checked={payload.isLactating}
-              onChange={(e) => set({ isLactating: e.target.checked })}
-              className="h-4 w-4 accent-primary"
-            />
+          </CheckTile>
+          <CheckTile checked={payload.isLactating} onChange={(v) => set({ isLactating: v })}>
             Lactating
-          </label>
+          </CheckTile>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <FieldLabel>Weight (kg)</FieldLabel>
-          <Input
+          <input
             value={payload.weight}
             onChange={(e) => set({ weight: e.target.value })}
             placeholder="e.g. 70"
             type="number"
+            className={fieldClass}
           />
         </div>
         <div>
           <FieldLabel>Country</FieldLabel>
-          <Input
+          <input
             value={payload.country}
             onChange={(e) => set({ country: e.target.value })}
             placeholder="Egypt"
+            className={fieldClass}
           />
         </div>
       </div>
@@ -263,25 +317,25 @@ function Step1PatientInfo({
         onChange={(v) => set({ dateOfBirth: v })}
       />
 
-      <div className="flex items-end gap-3">
-        <div>
-          <FieldLabel>Age at time of reaction</FieldLabel>
-          <Input
+      <div>
+        <FieldLabel>Age at time of reaction</FieldLabel>
+        <div className="flex gap-2">
+          <input
             value={payload.ageAtReaction}
             onChange={(e) => set({ ageAtReaction: e.target.value })}
             placeholder="e.g. 45"
             type="number"
-            className="w-28"
+            className={`${fieldClass} w-28`}
           />
+          <select
+            value={payload.ageUnit}
+            onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
+            className={`${selectClass} w-32`}
+          >
+            <option value="">Unit</option>
+            {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
         </div>
-        <select
-          value={payload.ageUnit}
-          onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
-          className={`${selectClass} w-32`}
-        >
-          <option value="">Unit</option>
-          {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-        </select>
       </div>
     </div>
   );
@@ -305,108 +359,100 @@ function ReactionBlockCard({
   const set = (patch: Partial<ReactionBlock>) => onUpdate({ ...reaction, ...patch });
 
   return (
-    <div className="border rounded p-4 space-y-4 bg-bg-muted/30">
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-sm">Reaction #{index + 1}</span>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="p-1 text-danger hover:bg-danger/10 rounded"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+    <div className="border border-slate-200">
+      <BlockHeader label={`Reaction #${index + 1}`} onRemove={onRemove} canRemove={canRemove} />
 
-      <div>
-        <FieldLabel required>Reaction / Symptom</FieldLabel>
-        <Input
-          value={reaction.symptom}
-          onChange={(e) => set({ symptom: e.target.value })}
-          placeholder="Describe the reaction or symptom"
-        />
-      </div>
+      <div className="space-y-4 p-4">
+        <div>
+          <FieldLabel required>Reaction / Symptom</FieldLabel>
+          <input
+            value={reaction.symptom}
+            onChange={(e) => set({ symptom: e.target.value })}
+            placeholder="Describe the reaction or symptom"
+            className={fieldClass}
+          />
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <DateFields
-          label="Start date"
-          value={reaction.startDate}
-          onChange={(v) => set({ startDate: v })}
-          required
-        />
-        <DateFields
-          label="End date"
-          value={reaction.endDate}
-          onChange={(v) => set({ endDate: v })}
-        />
-      </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <DateFields
+            label="Start date"
+            value={reaction.startDate}
+            onChange={(v) => set({ startDate: v })}
+            required
+          />
+          <DateFields
+            label="End date"
+            value={reaction.endDate}
+            onChange={(v) => set({ endDate: v })}
+          />
+        </div>
 
-      <div>
-        <FieldLabel>Duration</FieldLabel>
-        <DurationFields
-          value={reaction.duration}
-          unitValue={reaction.durationUnit}
-          onValueChange={(v) => set({ duration: v })}
-          onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-        />
-      </div>
+        <div>
+          <FieldLabel>Duration</FieldLabel>
+          <DurationFields
+            value={reaction.duration}
+            unitValue={reaction.durationUnit}
+            onValueChange={(v) => set({ duration: v })}
+            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
+          />
+        </div>
 
-      <div>
-        <FieldLabel>Outcome of reaction</FieldLabel>
-        <select
-          value={reaction.outcome}
-          onChange={(e) => set({ outcome: e.target.value as ReactionOutcome | "" })}
-          className={selectClass}
-        >
-          <option value="">Select outcome</option>
-          {REACTION_OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel>Outcome of reaction</FieldLabel>
+            <select
+              value={reaction.outcome}
+              onChange={(e) => set({ outcome: e.target.value as ReactionOutcome | "" })}
+              className={selectClass}
+            >
+              <option value="">Select outcome</option>
+              {REACTION_OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Is this reaction serious?</FieldLabel>
+            <select
+              value={reaction.isSerious}
+              onChange={(e) => {
+                const v = e.target.value as "Yes" | "No" | "";
+                set({
+                  isSerious: v,
+                  seriousnessReasons: v !== "Yes" ? [] : reaction.seriousnessReasons,
+                });
+              }}
+              className={selectClass}
+            >
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+        </div>
 
-      <div>
-        <FieldLabel>Is this reaction serious?</FieldLabel>
-        <select
-          value={reaction.isSerious}
-          onChange={(e) => {
-            const v = e.target.value as "Yes" | "No" | "";
-            set({
-              isSerious: v,
-              seriousnessReasons: v !== "Yes" ? [] : reaction.seriousnessReasons,
-            });
-          }}
-          className={selectClass}
-        >
-          <option value="">Select</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-        </select>
-      </div>
-
-      {reaction.isSerious === "Yes" && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Reasons for seriousness</p>
-          <div className="grid grid-cols-1 gap-2">
-            {SERIOUSNESS_REASONS.map((reason) => (
-              <label key={reason} className="flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
+        {reaction.isSerious === "Yes" && (
+          <div className="border border-rose-200 bg-rose-50/50 p-3">
+            <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-rose-700">
+              Reasons for seriousness
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {SERIOUSNESS_REASONS.map((reason) => (
+                <CheckTile
+                  key={reason}
                   checked={reaction.seriousnessReasons.includes(reason)}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
+                  onChange={(checked) => {
                     const next = checked
                       ? [...reaction.seriousnessReasons, reason]
                       : reaction.seriousnessReasons.filter((r) => r !== reason);
                     set({ seriousnessReasons: next as SeriousnessReason[] });
                   }}
-                  className="h-4 w-4 accent-primary"
-                />
-                {reason}
-              </label>
-            ))}
+                >
+                  {reason}
+                </CheckTile>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -425,8 +471,7 @@ function Step2Reactions({
   };
 
   return (
-    <div className="space-y-5">
-      <h2 className="text-base font-semibold border-b pb-2">Step 2 — Reactions / Symptoms</h2>
+    <div className="space-y-4">
       {payload.reactions.map((r, i) => (
         <ReactionBlockCard
           key={r.id}
@@ -437,14 +482,14 @@ function Step2Reactions({
           canRemove={payload.reactions.length > 1}
         />
       ))}
-      <Button
+      <button
         type="button"
-        variant="secondary"
+        className={btnAddBlock}
         onClick={() => onChange({ ...payload, reactions: [...payload.reactions, emptyReaction()] })}
       >
-        <Plus className="h-4 w-4 mr-1" />
+        <Plus className="h-4 w-4" />
         Add another reaction
-      </Button>
+      </button>
     </div>
   );
 }
@@ -467,123 +512,116 @@ function MedicineBlockCard({
   const set = (patch: Partial<MedicineBlock>) => onUpdate({ ...medicine, ...patch });
 
   return (
-    <div className="border rounded p-4 space-y-4 bg-bg-muted/30">
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-sm">Medicine #{index + 1}</span>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="p-1 text-danger hover:bg-danger/10 rounded"
+    <div className="border border-slate-200">
+      <BlockHeader label={`Medicine #${index + 1}`} onRemove={onRemove} canRemove={canRemove} />
+
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel>Medicine name</FieldLabel>
+            <input
+              value={medicine.name}
+              onChange={(e) => set({ name: e.target.value })}
+              placeholder="Brand or generic name"
+              className={fieldClass}
+            />
+          </div>
+          <div>
+            <FieldLabel>Producer / Manufacturer</FieldLabel>
+            <input
+              value={medicine.producer}
+              onChange={(e) => set({ producer: e.target.value })}
+              placeholder="Company name"
+              className={fieldClass}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel>Batch number</FieldLabel>
+            <input
+              value={medicine.batchNumber}
+              onChange={(e) => set({ batchNumber: e.target.value })}
+              placeholder="Lot / batch"
+              className={fieldClass}
+            />
+          </div>
+          <div>
+            <FieldLabel>Dosage</FieldLabel>
+            <input
+              value={medicine.dosage}
+              onChange={(e) => set({ dosage: e.target.value })}
+              placeholder="e.g. 500 mg twice daily"
+              className={fieldClass}
+            />
+          </div>
+        </div>
+
+        <div>
+          <FieldLabel>Route of administration</FieldLabel>
+          <select
+            value={medicine.adminRoute}
+            onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
+            className={selectClass}
           >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+            <option value="">Select route</option>
+            {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <FieldLabel>Medicine name</FieldLabel>
-          <Input
-            value={medicine.name}
-            onChange={(e) => set({ name: e.target.value })}
-            placeholder="Brand or generic name"
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <DateFields
+            label="Start date"
+            value={medicine.startDate}
+            onChange={(v) => set({ startDate: v })}
+          />
+          <DateFields
+            label="End date"
+            value={medicine.endDate}
+            onChange={(v) => set({ endDate: v })}
           />
         </div>
+
         <div>
-          <FieldLabel>Producer / Manufacturer</FieldLabel>
-          <Input
-            value={medicine.producer}
-            onChange={(e) => set({ producer: e.target.value })}
-            placeholder="Company name"
+          <FieldLabel>Duration of use</FieldLabel>
+          <DurationFields
+            value={medicine.duration}
+            unitValue={medicine.durationUnit}
+            onValueChange={(v) => set({ duration: v })}
+            onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <FieldLabel>Batch number</FieldLabel>
-          <Input
-            value={medicine.batchNumber}
-            onChange={(e) => set({ batchNumber: e.target.value })}
-            placeholder="Lot / batch"
+          <FieldLabel>Reason for taking</FieldLabel>
+          <input
+            value={medicine.reasonForTaking}
+            onChange={(e) => set({ reasonForTaking: e.target.value })}
+            placeholder="Indication / diagnosis"
+            className={fieldClass}
           />
         </div>
+
         <div>
-          <FieldLabel>Dosage</FieldLabel>
-          <Input
-            value={medicine.dosage}
-            onChange={(e) => set({ dosage: e.target.value })}
-            placeholder="e.g. 500 mg twice daily"
-          />
+          <FieldLabel>Action taken with medicine</FieldLabel>
+          <select
+            value={medicine.actionTaken}
+            onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
+            className={selectClass}
+          >
+            <option value="">Select action</option>
+            {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
         </div>
-      </div>
 
-      <div>
-        <FieldLabel>Route of administration</FieldLabel>
-        <select
-          value={medicine.adminRoute}
-          onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
-          className={selectClass}
-        >
-          <option value="">Select route</option>
-          {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <DateFields
-          label="Start date"
-          value={medicine.startDate}
-          onChange={(v) => set({ startDate: v })}
-        />
-        <DateFields
-          label="End date"
-          value={medicine.endDate}
-          onChange={(v) => set({ endDate: v })}
-        />
-      </div>
-
-      <div>
-        <FieldLabel>Duration of use</FieldLabel>
-        <DurationFields
-          value={medicine.duration}
-          unitValue={medicine.durationUnit}
-          onValueChange={(v) => set({ duration: v })}
-          onUnitChange={(v) => set({ durationUnit: v as DurationUnit | "" })}
-        />
-      </div>
-
-      <div>
-        <FieldLabel>Reason for taking</FieldLabel>
-        <Input
-          value={medicine.reasonForTaking}
-          onChange={(e) => set({ reasonForTaking: e.target.value })}
-          placeholder="Indication / diagnosis"
-        />
-      </div>
-
-      <div>
-        <FieldLabel>Action taken with medicine</FieldLabel>
-        <select
-          value={medicine.actionTaken}
-          onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
-          className={selectClass}
-        >
-          <option value="">Select action</option>
-          {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-        </select>
-      </div>
-
-      <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
-        <input
-          type="checkbox"
+        <CheckTile
           checked={medicine.probablyCausingReaction}
-          onChange={(e) => set({ probablyCausingReaction: e.target.checked })}
-          className="h-4 w-4 accent-primary"
-        />
-        Probably causing the reaction
-      </label>
+          onChange={(v) => set({ probablyCausingReaction: v })}
+        >
+          Probably causing the reaction
+        </CheckTile>
+      </div>
     </div>
   );
 }
@@ -602,8 +640,7 @@ function Step3Medicines({
   };
 
   return (
-    <div className="space-y-5">
-      <h2 className="text-base font-semibold border-b pb-2">Step 3 — Medicines</h2>
+    <div className="space-y-4">
       {payload.medicines.map((m, i) => (
         <MedicineBlockCard
           key={m.id}
@@ -614,14 +651,14 @@ function Step3Medicines({
           canRemove={payload.medicines.length > 1}
         />
       ))}
-      <Button
+      <button
         type="button"
-        variant="secondary"
+        className={btnAddBlock}
         onClick={() => onChange({ ...payload, medicines: [...payload.medicines, emptyMedicine()] })}
       >
-        <Plus className="h-4 w-4 mr-1" />
+        <Plus className="h-4 w-4" />
         Add another medicine
-      </Button>
+      </button>
     </div>
   );
 }
@@ -639,8 +676,6 @@ function Step4Additional({
 
   return (
     <div className="space-y-5">
-      <h2 className="text-base font-semibold border-b pb-2">Step 4 — Additional Information</h2>
-
       <div>
         <FieldLabel>Current illnesses / diagnoses</FieldLabel>
         <textarea
@@ -648,7 +683,7 @@ function Step4Additional({
           onChange={(e) => set({ currentIllnesses: e.target.value })}
           placeholder="List any known current illnesses or diagnoses"
           rows={3}
-          className={`${fieldClass} resize-y`}
+          className={textareaClass}
         />
       </div>
 
@@ -659,7 +694,7 @@ function Step4Additional({
           onChange={(e) => set({ additionalComments: e.target.value })}
           placeholder="Any additional information relevant to this report"
           rows={4}
-          className={`${fieldClass} resize-y`}
+          className={textareaClass}
         />
       </div>
     </div>
@@ -670,15 +705,24 @@ function Step4Additional({
 
 function ConfirmationScreen({ reportNumber }: { reportNumber: string }) {
   return (
-    <div className="text-center py-10 space-y-4">
-      <CheckCircle2 className="mx-auto h-14 w-14 text-success" />
-      <h2 className="text-xl font-semibold">Report Submitted</h2>
-      <p className="text-text-secondary">Your adverse drug reaction report has been submitted successfully.</p>
-      <div className="inline-block bg-bg-muted rounded px-4 py-2">
-        <span className="text-sm text-text-secondary mr-2">Report Number:</span>
-        <span className="font-mono font-semibold">{reportNumber}</span>
+    <div className="mx-auto max-w-xl border border-slate-200 bg-white">
+      <div className="bg-slate-900 px-6 py-8 text-center">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-orange-500" />
+        <p className="mt-4 text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+        <h2 className="mt-1 text-xl font-black text-white">Report Submitted</h2>
       </div>
-      <p className="text-sm text-text-secondary">Please keep this reference number for your records.</p>
+      <div className="space-y-4 px-6 py-6 text-center">
+        <p className="text-sm text-slate-600">
+          Your adverse drug reaction report has been submitted successfully.
+        </p>
+        <div className="inline-block border border-slate-900 bg-slate-900 px-6 py-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-300">Report Number</p>
+          <p className="mt-0.5 font-mono text-lg font-black text-white">{reportNumber}</p>
+        </div>
+        <p className="text-xs font-semibold text-slate-500">
+          Please keep this reference number for your records.
+        </p>
+      </div>
     </div>
   );
 }
@@ -701,6 +745,7 @@ function validateStep(step: number, payload: ReportItPayload): string | null {
 // ─── Main form ─────────────────────────────────────────────────────────────────
 
 const STEPS = ["Patient Info", "Reactions", "Medicines", "Additional Info"];
+const STEP_TITLES = ["Patient Information", "Reactions / Symptoms", "Medicines", "Additional Information"];
 
 export function ReportItForm() {
   const [step, setStep] = useState(1);
@@ -743,64 +788,88 @@ export function ReportItForm() {
   if (reportNumber) return <ConfirmationScreen reportNumber={reportNumber} />;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      {/* Progress */}
-      <div className="flex items-center gap-1">
+    <div className="mx-auto max-w-2xl space-y-5">
+      {/* Stepper — numbered black chips, orange active */}
+      <div className="flex items-center">
         {STEPS.map((label, i) => {
           const num = i + 1;
           const active = num === step;
           const done = num < step;
           return (
-            <div key={label} className="flex items-center gap-1 flex-1">
-              <div
-                className={[
-                  "flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold border shrink-0",
-                  active ? "bg-primary text-white border-primary" : "",
-                  done ? "bg-success text-white border-success" : "",
-                  !active && !done ? "border-text-secondary text-text-secondary" : "",
-                ].join(" ")}
-              >
-                {done ? "✓" : num}
+            <div key={label} className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")}>
+              <div className="flex items-center gap-2">
+                <div
+                  className={[
+                    "flex h-8 w-8 shrink-0 items-center justify-center text-xs font-black",
+                    active
+                      ? "bg-orange-600 text-white"
+                      : done
+                        ? "bg-slate-900 text-white"
+                        : "border border-slate-300 bg-white text-slate-400",
+                  ].join(" ")}
+                >
+                  {done ? <Check className="h-4 w-4" /> : num}
+                </div>
+                <span
+                  className={[
+                    "hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide sm:block",
+                    active ? "text-slate-900" : done ? "text-slate-500" : "text-slate-400",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
               </div>
-              <span className={["text-xs hidden sm:block truncate", active ? "font-medium" : "text-text-secondary"].join(" ")}>
-                {label}
-              </span>
-              {i < STEPS.length - 1 && <div className="flex-1 h-px bg-border mx-1" />}
+              {i < STEPS.length - 1 && (
+                <div className={["mx-3 h-px flex-1", done ? "bg-slate-900" : "bg-slate-200"].join(" ")} />
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Step content */}
-      <div className="border rounded p-5 bg-card">
-        {step === 1 && <Step1PatientInfo payload={payload} onChange={setPayload} />}
-        {step === 2 && <Step2Reactions payload={payload} onChange={setPayload} />}
-        {step === 3 && <Step3Medicines payload={payload} onChange={setPayload} />}
-        {step === 4 && <Step4Additional payload={payload} onChange={setPayload} />}
-      </div>
+      {/* Step card with dark command header */}
+      <section className="border border-slate-200 bg-white">
+        <div className="flex items-center justify-between bg-slate-900 px-4 py-3 sm:px-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">
+              Step {step} of {STEPS.length}
+            </p>
+            <h2 className="mt-0.5 text-sm font-black uppercase tracking-wide text-white">
+              {STEP_TITLES[step - 1]}
+            </h2>
+          </div>
+          <ShieldAlert className="h-5 w-5 text-orange-500/80" />
+        </div>
+        <div className="p-4 sm:p-6">
+          {step === 1 && <Step1PatientInfo payload={payload} onChange={setPayload} />}
+          {step === 2 && <Step2Reactions payload={payload} onChange={setPayload} />}
+          {step === 3 && <Step3Medicines payload={payload} onChange={setPayload} />}
+          {step === 4 && <Step4Additional payload={payload} onChange={setPayload} />}
+        </div>
+      </section>
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded px-3 py-2">
+        <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
           {error}
         </p>
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between items-center">
-        <Button type="button" variant="secondary" onClick={handleBack} disabled={step === 1}>
-          <ChevronLeft className="h-4 w-4 mr-1" />
+      <div className="flex items-center justify-between">
+        <button type="button" className={btnGhost} onClick={handleBack} disabled={step === 1}>
+          <ChevronLeft className="h-4 w-4" />
           Back
-        </Button>
+        </button>
         {step < STEPS.length ? (
-          <Button type="button" onClick={handleNext}>
+          <button type="button" className={btnDark} onClick={handleNext}>
             Next
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
+            <ChevronRight className="h-4 w-4" />
+          </button>
         ) : (
-          <Button type="button" onClick={handleSubmit} disabled={submitting}>
+          <button type="button" className={btnOrange} onClick={handleSubmit} disabled={submitting}>
             {submitting ? "Submitting…" : "Submit Report"}
-          </Button>
+          </button>
         )}
       </div>
     </div>
