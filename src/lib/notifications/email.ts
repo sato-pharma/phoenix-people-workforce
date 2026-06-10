@@ -56,6 +56,8 @@ export type NotificationEmailInput = {
   ctaLabel?: string;
   employeeHrId?: string | null;
   metrics?: NotificationMetric[];
+  /** Originating module (e.g. "weekly_plans") so module-scoped templates can be selected. */
+  module?: string | null;
   notificationType?: EmailNotificationType;
   recipients?: string[];
   recipientMode?: EmailRecipientMode;
@@ -975,7 +977,16 @@ function isPasswordSetupNotification(input: NotificationEmailInput) {
 function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
   if (input.notificationType === "birthday") return EMAIL_TEMPLATE_KEYS.BIRTHDAY;
   if (input.notificationType === "contract_renewal") return EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
-  if (input.notificationType === "general") return EMAIL_TEMPLATE_KEYS.GENERAL;
+  if (input.notificationType === "general") {
+    // Module-scoped notifications arrive as "general"; the originating module rides along
+    // (createSystemNotification → buildEmailInput). Weekly/monthly plan updates get their
+    // own editable template instead of sharing the General HR Notification wording.
+    const moduleLabel = String(input.module ?? "").trim().toLowerCase().replace(/_/g, " ");
+    if (moduleLabel === "weekly plans" || moduleLabel === "monthly plans" || moduleLabel === "weekly planning") {
+      return EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS;
+    }
+    return EMAIL_TEMPLATE_KEYS.GENERAL;
+  }
   if (input.notificationType === "password_reset") return EMAIL_TEMPLATE_KEYS.PASSWORD_RESET;
   if (input.notificationType === "probation") {
     return isProbationReminderNotification(input)
@@ -1188,10 +1199,13 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         ctaLabel: input.ctaLabel ?? systemNotificationEmailText.openInAppCtaLabel,
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
+        area: metricValue(input, "Area"),
         endDate: metricValue(input, "Renewal date"),
         employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
         expiryText: metricValue(input, "Expires"),
+        jobTitle: metricValue(input, "Job Title"),
+        line: metricValue(input, "Line"),
         recipientName: isAuthTemplateKey(migratedTemplateKey) ? systemNotificationEmailText.userRecipientName : employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
         startDate: metricValue(input, "Hire date"),
         status: notificationMetricStatus(input),

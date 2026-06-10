@@ -21,7 +21,10 @@ export type EmailDesignerVariable = {
 export type EmailRecipientPresetKey =
   | "candidate"
   | "direct_manager"
+  | "direct_reports"
   | "employee"
+  | "employee_line"
+  | "employee_team"
   | "finance_team"
   | "hr_team"
   | "manager_chain";
@@ -84,6 +87,9 @@ const recipientPresets: EmailRecipientPreset[] = [
   { description: "Send directly to the employee in the selected context.", key: "employee", label: "Employee", role: "employee" },
   { description: "Send to the employee's direct manager.", key: "direct_manager", label: "Direct Manager", role: "direct_manager" },
   { description: "Send to every manager above the employee.", key: "manager_chain", label: "Manager Chain", role: "manager_chain" },
+  { description: "Send to the employee's teammates - everyone reporting to the same direct manager.", key: "employee_team", label: "Employee's Team", role: "employee_team" },
+  { description: "Send to everyone who reports directly to the employee.", key: "direct_reports", label: "Direct Reports", role: "direct_reports" },
+  { description: "Send to every active employee in the same line as the employee.", key: "employee_line", label: "Employee's Line", role: "employee_line" },
   { description: "Send to HR users found in the employee directory.", key: "hr_team", label: "HR Team", role: "hr" },
   { description: "Send to Finance users found in the employee directory.", key: "finance_team", label: "Finance Team", role: "finance" },
   { description: "Send to a candidate email provided by the workflow.", key: "candidate", label: "Candidate", role: "candidate" },
