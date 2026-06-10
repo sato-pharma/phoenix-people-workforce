@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
 import "./globals.css";
@@ -13,6 +13,13 @@ export const metadata: Metadata = {
       { type: "image/png", sizes: "512x512", url: "/icon.png?v=phoenix-transparent-3" },
     ],
   },
+};
+
+// viewport-fit=cover is required for env(safe-area-inset-*) to resolve to real
+// values on notched devices; the mobile employee-portal bottom nav and planner
+// bars rely on it to clear the iOS home indicator.
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
