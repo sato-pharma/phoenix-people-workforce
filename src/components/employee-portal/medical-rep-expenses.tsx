@@ -103,7 +103,7 @@ function ReadOnlyField({
   value: string;
 }) {
   return (
-    <div className="flex min-h-12 min-w-0 items-center gap-2 rounded border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800">
+    <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800">
       <Icon className="h-4 w-4 shrink-0 text-orange-500" />
       <span className="min-w-0 whitespace-nowrap">{value}</span>
     </div>
@@ -190,7 +190,7 @@ async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbac
 
 function tabButtonClassName(active: boolean) {
   return [
-    "flex min-h-12 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-black transition",
+    "flex min-h-12 flex-1 items-center justify-center gap-2 rounded-none px-4 text-sm font-black transition",
     active
       ? "bg-orange-500 text-white shadow-[0_14px_28px_rgba(249,115,22,0.24)]"
       : "bg-white text-slate-600 hover:bg-slate-50",
@@ -327,7 +327,7 @@ export function MedicalRepExpensesWorkspace({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-2 rounded border border-slate-200 bg-slate-100/70 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.08)] sm:grid-cols-2">
+      <div className="grid gap-2 rounded-none border border-slate-200 bg-slate-100/70 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.08)] sm:grid-cols-2">
         <button
           className={tabButtonClassName(activeTab === "submit")}
           onClick={() => setActiveTab("submit")}
@@ -347,13 +347,13 @@ export function MedicalRepExpensesWorkspace({
       </div>
 
       {message ? (
-        <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
+        <div className="rounded-none border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
           {message}
         </div>
       ) : null}
 
       {activeTab === "submit" ? (
-        <Card className="overflow-hidden rounded border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
+        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
           <form aria-busy={isSubmitting} onSubmit={submitExpense}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-6 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -393,7 +393,7 @@ export function MedicalRepExpensesWorkspace({
 
               <div className="lg:col-span-4">
                 <Field label="Attachment">
-                  <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
+                  <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
                     <Upload className="h-4 w-4" />
                     <span className="whitespace-nowrap">
                       {attachments.length > 0
@@ -418,7 +418,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="From Date">
                   <Input
-                    className="h-12 rounded border-slate-200 bg-white"
+                    className="h-12 rounded-none border-slate-200 bg-white"
                     onChange={(event) => setTripStartDate(event.target.value)}
                     required
                     type="date"
@@ -430,7 +430,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="To Date">
                   <Input
-                    className="h-12 rounded border-slate-200 bg-white"
+                    className="h-12 rounded-none border-slate-200 bg-white"
                     min={tripStartDate || undefined}
                     onChange={(event) => setTripEndDate(event.target.value)}
                     required
@@ -443,7 +443,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="Go Ticket Amount">
                   <Input
-                    className="h-12 rounded border-slate-200 bg-white"
+                    className="h-12 rounded-none border-slate-200 bg-white"
                     min="0"
                     onChange={(event) => setGoTicketAmount(event.target.value)}
                     placeholder="EGP"
@@ -457,7 +457,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="Return Ticket Amount">
                   <Input
-                    className="h-12 rounded border-slate-200 bg-white"
+                    className="h-12 rounded-none border-slate-200 bg-white"
                     min="0"
                     onChange={(event) => setReturnTicketAmount(event.target.value)}
                     placeholder="EGP"
@@ -471,7 +471,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-6">
                 <Field label="To">
                   <Input
-                    className="h-12 rounded border-slate-200 bg-white"
+                    className="h-12 rounded-none border-slate-200 bg-white"
                     onChange={(event) => setToLocation(event.target.value)}
                     placeholder="Destination"
                     required
@@ -483,7 +483,7 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-6">
                 <Field label="Note">
                   <textarea
-                    className="min-h-40 w-full rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                    className="min-h-40 w-full rounded-none border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                     onChange={(event) => setNotes(event.target.value)}
                     placeholder="Reason for this expense"
                     required
@@ -494,7 +494,7 @@ export function MedicalRepExpensesWorkspace({
 
               {!canSubmit ? (
                 <div className="lg:col-span-6">
-                  <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  <div className="rounded-none border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
                     Residence must be configured before this request can be submitted.
                   </div>
                 </div>
@@ -507,7 +507,7 @@ export function MedicalRepExpensesWorkspace({
                 <span>Total: {egp(ticketTotal)}</span>
               </div>
               <Button
-                className="min-h-12 min-w-[220px] gap-2 rounded bg-orange-500 px-6 text-white hover:bg-orange-600"
+                className="min-h-12 min-w-[220px] gap-2 rounded-none bg-orange-500 px-6 text-white hover:bg-orange-600"
                 disabled={!canSend}
                 type="submit"
               >
@@ -518,7 +518,7 @@ export function MedicalRepExpensesWorkspace({
           </form>
         </Card>
       ) : (
-        <Card className="overflow-hidden rounded border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
+        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
           <div className="border-b border-slate-100 p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -533,7 +533,7 @@ export function MedicalRepExpensesWorkspace({
                 <Badge variant="neutral">{filteredRequests.length} row(s)</Badge>
                 <Badge variant="neutral">{egp(filteredTotal)}</Badge>
                 <Button
-                  className="min-h-10 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
+                  className="min-h-10 gap-2 rounded-none border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
                   onClick={() => void downloadExpenseWorkbook(filteredRequests, employeeName)}
                   type="button"
                 >
@@ -548,7 +548,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Free filter</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
-                  className="h-11 rounded border-slate-200 bg-white pl-9"
+                  className="h-11 rounded-none border-slate-200 bg-white pl-9"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Free filter by employee, request, destination, note"
                   value={query}
@@ -559,7 +559,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Status filter</span>
                 <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <select
-                  className="h-11 w-full appearance-none rounded border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                   onChange={(event) => setStatusFilter(event.target.value as ExpenseStatusFilter)}
                   value={statusFilter}
                 >
@@ -574,7 +574,7 @@ export function MedicalRepExpensesWorkspace({
                 <span className="sr-only">Order rows</span>
                 <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <select
-                  className="h-11 w-full appearance-none rounded border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                  className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                   onChange={(event) => setOrderBy(event.target.value as ExpenseOrder)}
                   value={orderBy}
                 >
@@ -589,8 +589,8 @@ export function MedicalRepExpensesWorkspace({
           </div>
 
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1320px] divide-y divide-slate-100 text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <table className="min-w-[1320px] divide-y divide-orange-100 text-left text-sm">
+              <thead className="bg-slate-900 text-xs font-black uppercase tracking-[0.14em] text-white">
                 <tr>
                   <th className="px-4 py-3">Request</th>
                   <th className="px-4 py-3">Employee Name</th>
@@ -605,7 +605,7 @@ export function MedicalRepExpensesWorkspace({
                   <th className="px-4 py-3">Note</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-orange-100 bg-white">
                 {filteredRequests.map((request) => (
                   <tr className="transition hover:bg-orange-50/40" key={getRequestKey(request)}>
                     <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">
@@ -652,7 +652,7 @@ export function MedicalRepExpensesWorkspace({
           <div className="space-y-3 p-4 md:hidden">
             {filteredRequests.map((request) => (
               <div
-                className="rounded border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                className="rounded-none border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
                 key={`${getRequestKey(request)}-mobile`}
               >
                 <div className="flex items-start justify-between gap-2">
