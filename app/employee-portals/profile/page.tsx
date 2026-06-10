@@ -18,6 +18,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { BottomNavCustomizer } from "@/components/employee-portal/bottom-nav-customizer";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
@@ -25,6 +26,7 @@ import { Card } from "@/components/ui/card";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { formatDateOnly } from "@/lib/date-only";
+import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -90,6 +92,12 @@ export default async function EmployeePortalProfilePage() {
 
   const { employee, hrContract } = data;
   const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
+  const navVisibility = resolveEmployeePortalNavVisibility(
+    employee.roleLabel,
+    access.role,
+    employee.line,
+    employee.department,
+  );
 
   const employmentRows: Array<{
     icon: typeof CalendarDays;
@@ -159,6 +167,8 @@ export default async function EmployeePortalProfilePage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
+          <BottomNavCustomizer visibility={navVisibility} />
+
           <Card className="rounded border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">

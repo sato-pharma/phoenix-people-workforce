@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { isEmployeePortalOwnedRoute } from "../src/lib/employee-portal/routes.ts";
 
 /**
- * Guard against drift between the mobile bottom nav and the canonical portal
- * navigation. The bottom nav keeps its own curated, priority-ordered hrefs; this
- * test ensures every one of them is (a) an employee-portal owned route and
- * (b) still present in the sidebar/layout nav, so a route rename can't silently
+ * Guard against drift between the portal nav registry (which feeds the mobile
+ * bottom nav and the profile quick-navigation customizer) and the canonical
+ * sidebar/layout nav. Every registry href must be (a) an employee-portal owned
+ * route and (b) still present in the layout nav, so a route rename can't silently
  * leave the bottom bar pointing at a dead link.
  */
 function extractHrefs(source: string): string[] {
@@ -17,6 +17,10 @@ function extractHrefs(source: string): string[] {
 }
 
 export function runEmployeePortalBottomNavTests() {
+  const registrySource = readFileSync(
+    "src/components/employee-portal/employee-portal-nav-registry.ts",
+    "utf8",
+  );
   const bottomNavSource = readFileSync(
     "src/components/employee-portal/employee-portal-bottom-nav.tsx",
     "utf8",
@@ -26,28 +30,32 @@ export function runEmployeePortalBottomNavTests() {
     "utf8",
   );
 
-  const bottomNavHrefs = [...new Set(extractHrefs(bottomNavSource))];
-  assert.ok(bottomNavHrefs.length >= 3, "bottom nav should declare navigable hrefs");
+  const registryHrefs = [...new Set(extractHrefs(registrySource))];
+  assert.ok(registryHrefs.length >= 5, "nav registry should declare navigable hrefs");
 
-  // The bottom nav must be mobile-only and never take over the desktop sidebar.
+  const layoutHrefs = new Set(extractHrefs(layoutSource));
+
+  for (const href of registryHrefs) {
+    assert.ok(
+      isEmployeePortalOwnedRoute(href),
+      `registry href ${href} must be an employee-portal owned route`,
+    );
+    assert.ok(
+      layoutHrefs.has(href),
+      `registry href ${href} must also exist in the employee portal sidebar/layout nav (keep in sync)`,
+    );
+  }
+
+  // The bottom nav must remain mobile-only, safe-area aware, and preference-driven.
   assert.match(bottomNavSource, /lg:hidden/, "bottom nav must be hidden on lg+ (sidebar territory)");
-  // Safe-area handling must remain so the bar clears the iOS home indicator.
   assert.match(
     bottomNavSource,
     /env\(safe-area-inset-bottom\)/,
     "bottom nav must pad for the iOS safe area",
   );
-
-  const layoutHrefs = new Set(extractHrefs(layoutSource));
-
-  for (const href of bottomNavHrefs) {
-    assert.ok(
-      isEmployeePortalOwnedRoute(href),
-      `bottom nav href ${href} must be an employee-portal owned route`,
-    );
-    assert.ok(
-      layoutHrefs.has(href),
-      `bottom nav href ${href} must also exist in the employee portal sidebar/layout nav (keep in sync)`,
-    );
-  }
+  assert.match(
+    bottomNavSource,
+    /useBottomNavPreference/,
+    "bottom nav must honor the user's pinned-shortcut preference",
+  );
 }
