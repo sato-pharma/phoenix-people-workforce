@@ -26,12 +26,12 @@ export function runOutstationNotificationsTests() {
   assert.match(service, /OUTSTATION_ADMIN_REVIEW_URL = "\/admin\/outstation\/requests"/, "approvers deep-link must be the admin review queue");
   assert.match(service, /OUTSTATION_EMPLOYEE_PORTAL_URL = "\/employee-portals\/expenses"/, "employee deep-link must be the expenses portal");
 
-  // ── Recipient resolution: submitter's direct manager + HR manager(s) ───────────
+  // ── Recipient resolution: submitter's direct manager + Super Admin approver(s) ──
   assert.match(service, /async function resolveOutstationApprovalRecipients/, "approval recipient resolver must exist");
   const resolver = functionSlice(service, "async function resolveOutstationApprovalRecipients");
   assert.match(resolver, /employee\.managerHrId/, "submit alert must target the submitter's direct manager");
-  assert.match(resolver, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/, "HR audience must query HR Specialist + Super Admin");
-  assert.match(resolver, /isDesignatedHrSpecialist/, "HR audience must restrict HR Specialist to the designated HR manager");
+  assert.match(resolver, /\.eq\("role", "Super Admin"\)/, "approver audience must query Super Admin accounts (the real approvers)");
+  assert.doesNotMatch(resolver, /isDesignatedHrSpecialist/, "A-16 (HR Specialist) must NOT be an approval recipient — it has no outstation approve authority");
   // Best-effort: a missing manager / failed HR lookup must never throw.
   assert.match(resolver, /console\.warn/, "missing direct manager must warn, not throw");
   assert.match(resolver, /console\.error/, "failed HR lookup must log, not throw");

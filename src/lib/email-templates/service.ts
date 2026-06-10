@@ -31,6 +31,7 @@ export const emailTemplateKeys = [
   "password_reset",
   "user_created",
   "weekly_plans",
+  "outstation",
   "general",
 ] as const;
 
@@ -44,6 +45,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   LEAVE_APPROVAL: "leave_approval",
   LEAVE_REJECTION: "leave_rejection",
   LEAVE_REQUEST: "leave_request",
+  OUTSTATION: "outstation",
   PASSWORD_SETUP: "password_setup",
   PASSWORD_RESET: "password_reset",
   PROBATION_REMINDER: "probation_reminder",
@@ -82,11 +84,13 @@ export type EmailTemplateKey = (typeof emailTemplateKeys)[number];
 export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptions)[number];
 
 export type EmailTemplateContext = {
+  amount?: string | null;
   area?: string | null;
   candidateName?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
   date?: string | null;
+  destination?: string | null;
   approvalFlow?: string | null;
   duration?: string | null;
   endDate?: string | null;
@@ -299,6 +303,8 @@ const placeholderHints = [
   "managerName",
   "line",
   "area",
+  "amount",
+  "destination",
   "approvalFlow",
   "status",
   "date",
@@ -334,6 +340,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
+  outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
   interview_invitation: emptyRules(["candidate"]),
   leave_approval: emptyRules(["employee"], ["hr"]),
@@ -398,6 +405,20 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "weekly_plans",
     templateName: "Weekly / Monthly Plans",
+  },
+  outstation: {
+    bodyHtml:
+      "<p>{{summary}}</p><p><strong>Employee:</strong> {{employeeName}}</p><p><strong>Amount:</strong> {{amount}}</p><p><strong>Destination:</strong> {{destination}}</p><p><strong>Trip dates:</strong> {{startDate}} to {{endDate}}</p>",
+    bodyText:
+      "{{summary}}\n\nEmployee: {{employeeName}}\nAmount: {{amount}}\nDestination: {{destination}}\nTrip dates: {{startDate}} to {{endDate}}",
+    closingText: "Open Phoenix Workforce to review the full request and supporting evidence.",
+    description: "Outstation and expense updates: submission (to the approver), approval, and rejection (to the employee).",
+    greeting: "Dear {{recipientName}},",
+    isActive: true,
+    previewText: "An outstation / expense request needs your attention.",
+    subject: "{{subject}}",
+    templateKey: "outstation",
+    templateName: "Outstation / Expense",
   },
   interview_feedback: {
     bodyHtml: "<p>Interview feedback has been submitted for {{candidateName}}.</p><p>Role: {{jobTitle}}.</p><p>Status: {{status}}.</p><p>Feedback: {{feedback}}</p><p>Next step: {{nextStep}}</p>",
@@ -558,6 +579,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   contract_renewal: "Employee Lifecycle",
   general: "General",
   weekly_plans: "General",
+  outstation: "General",
   interview_feedback: "Recruitment",
   interview_invitation: "Recruitment",
   leave_approval: "Leave Management",
@@ -1591,12 +1613,14 @@ export async function simulateTemplateRecipients(input: {
 
 function contextVariables(input: Partial<EmailTemplateContext>, recipientName: string) {
   return {
+    amount: text(input.amount),
     area: text(input.area),
     approvalFlow: text(input.approvalFlow),
     candidateName: text(input.candidateName),
     ctaLabel: text(input.ctaLabel || "Open in Phoenix Workforce"),
     ctaUrl: text(input.ctaUrl),
     date: text(input.date || new Date().toISOString().slice(0, 10)),
+    destination: text(input.destination),
     duration: text(input.duration),
     endDate: text(input.endDate),
     employeeHrId: text(input.employeeHrId),
