@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, Search } from "lucide-react";
+import { BarChart2, Download, FileSpreadsheet, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -19,9 +19,25 @@ import type {
 } from "@/lib/attendance/fingerprint-report";
 
 type Props = {
+  canGenerateCandidates: boolean;
   initialData: FingerprintReportData | null;
   initialError: string | null;
 };
+
+type GenerateResult = {
+  employees: number;
+  generated: number;
+  monthKey: string;
+  skipped: number;
+  updated: number;
+};
+
+function prevMonthKey() {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function statusBadge(value: string) {
   if (value === "Complete") return <Badge variant="success">{value}</Badge>;
@@ -41,7 +57,7 @@ function stickyClass(column: FingerprintReportColumn, area: "body" | "head") {
   return "";
 }
 
-export function FingerprintReport({ initialData, initialError }: Props) {
+export function FingerprintReport({ canGenerateCandidates, initialData, initialError }: Props) {
   const router = useRouter();
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +72,28 @@ export function FingerprintReport({ initialData, initialError }: Props) {
   const [jobTitle, setJobTitle] = useState(initialData?.filters.jobTitle ?? "");
   const [search, setSearch] = useState(initialData?.filters.search ?? "");
   const [status, setStatus] = useState(initialData?.filters.status ?? "");
+  const [generateMonth, setGenerateMonth] = useState(prevMonthKey);
+  const [generating, setGenerating] = useState(false);
+  const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  function runGenerate() {
+    setGenerating(true);
+    setGenerateResult(null);
+    setGenerateError(null);
+    fetch("/api/attendance/generate-deduction-candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: generateMonth }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message ?? "Generation failed.");
+        setGenerateResult(data as GenerateResult);
+      })
+      .catch((err) => setGenerateError(err instanceof Error ? err.message : "Failed."))
+      .finally(() => setGenerating(false));
+  }
 
   const visibleColumns = useMemo(() => {
     const rows = initialData?.rows ?? [];
@@ -340,6 +378,45 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         </div>
       </AdminTableShell>
       )}
+
+      {canGenerateCandidates ? (
+        <AdminTableShell
+          description="Lock attendance deductions for the month and push them to the payroll governance queue."
+          title="Month Closing — Generate Payroll Candidates"
+        >
+          <div className="p-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Month</span>
+                <input
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                  type="month"
+                  value={generateMonth}
+                  onChange={(e) => { setGenerateMonth(e.target.value); setGenerateResult(null); setGenerateError(null); }}
+                />
+              </label>
+              <Button
+                className="h-10 gap-2"
+                disabled={generating || !generateMonth}
+                type="button"
+                onClick={runGenerate}
+              >
+                <BarChart2 className="h-4 w-4" />
+                {generating ? "Generating…" : "Generate Payroll Candidates"}
+              </Button>
+            </div>
+            {generateResult ? (
+              <AdminCallout tone="neutral">
+                Generated <strong>{generateResult.generated}</strong> new + updated <strong>{generateResult.updated}</strong> existing candidates for <strong>{generateResult.employees}</strong> employees in {generateResult.monthKey} ({generateResult.skipped} skipped — no violations).{" "}
+                <a className="font-semibold underline hover:text-orange-600" href="/payroll">View in Deductions Governance →</a>
+              </AdminCallout>
+            ) : null}
+            {generateError ? (
+              <AdminCallout tone="danger">{generateError}</AdminCallout>
+            ) : null}
+          </div>
+        </AdminTableShell>
+      ) : null}
     </div>
   );
 }

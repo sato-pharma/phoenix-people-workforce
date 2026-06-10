@@ -5,6 +5,7 @@ import {
   resolvePolicyAttendanceStatus,
   summarizeFingerprintRows,
 } from "@/lib/attendance/metrics";
+import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -36,6 +37,7 @@ export type FingerprintReportColumn = {
 };
 
 export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & {
+  hasException?: boolean;
   sortKey: string;
 };
 
@@ -451,6 +453,8 @@ export async function getFingerprintAttendanceReport(input: {
     if (hrId && employeeHrIds.includes(hrId)) employeeMap.set(hrId, employee);
   }
 
+  const exceptionMap = await getAttendanceExceptionMap(employeeHrIds, dateFrom, dateTo);
+
   const buckets = new Map<string, PunchBucket>();
   for (const punch of punches) {
     const employeeHrId = normalizeHrId(punch.employee_hr_id);
@@ -500,25 +504,35 @@ export async function getFingerprintAttendanceReport(input: {
       ? departmentMap.get(employee.department_id) ?? ""
       : "";
 
+    const exceptionKey = `${bucket.employeeHrId}|${bucket.reportDate}`;
+    const exception = exceptionMap.get(exceptionKey);
+    const hasApprovedException = exception?.status === "approved";
+    const hasPendingException = !hasApprovedException && exception?.status === "pending";
+
     return {
       actualFirstPunch: firstPunchText,
       actualLastPunch: hasDistinctVisibleLastPunch ? lastPunchText : "",
       date: displayDate(bucket.reportDate),
-      deductionDays: status.deductionDays,
-      deductionValue: status.deductionValue,
+      deductionDays: hasApprovedException ? "0" : status.deductionDays,
+      deductionValue: hasApprovedException ? "0" : status.deductionValue,
       department,
       deviceUserId: bucket.deviceUserId,
+      earlyLeaveMinutes: hasApprovedException ? "0" : status.earlyLeaveMinutes,
       employeeHrId: bucket.employeeHrId,
       employeeName: employee?.full_name?.trim() || bucket.employeeHrId,
-      earlyLeaveMinutes: status.earlyLeaveMinutes,
       graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
+      hasException: hasApprovedException,
       jobTitle: employee?.job_title?.trim() || "",
-      lateMinutes: status.lateMinutes,
-      recommendedAction: status.recommendedAction,
+      lateMinutes: hasApprovedException ? "0" : status.lateMinutes,
+      recommendedAction: hasApprovedException
+        ? `Exception: ${exception!.reason}`
+        : hasPendingException
+          ? `Pending review: ${exception!.reason}`
+          : status.recommendedAction,
       scheduledEnd: displayPolicyTime(policy?.scheduled_end),
       scheduledStart: displayPolicyTime(policy?.scheduled_start),
       sortKey: `${bucket.reportDate}\u0000${bucket.employeeHrId}`,
-      status: status.status,
+      status: hasApprovedException ? "Exception" : status.status,
       timeLong: durationText(durationMs),
       validTime: durationText(durationMs),
     };
