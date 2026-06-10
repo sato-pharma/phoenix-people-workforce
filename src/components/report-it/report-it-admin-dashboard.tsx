@@ -1,23 +1,48 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
 import type { ReportItKpis } from "@/lib/report-it/service";
 import type { ReportItReportRow } from "@/lib/report-it/types";
 
+// ─── Premium primitives (square corners, slate + orange) ─────────────────────
+
+const fieldClass =
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const selectClass = `${fieldClass} cursor-pointer`;
+const microLabel = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
+
+const btnGhost =
+  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
+const btnDark =
+  "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
+
+function SeriousChip({ serious }: { serious: boolean }) {
+  return serious ? (
+    <span className="inline-block border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+      Serious
+    </span>
+  ) : (
+    <span className="inline-block border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+      No
+    </span>
+  );
+}
+
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  const hot = Boolean(highlight) && value > 0;
   return (
-    <div className={["border p-4 space-y-1", highlight ? "border-warning bg-warning/5" : "bg-card"].join(" ")}>
-      <p className="text-xs text-text-secondary font-medium uppercase tracking-wide">{label}</p>
-      <p className={["text-2xl font-bold tabular-nums", highlight ? "text-warning" : ""].join(" ")}>
-        {value.toLocaleString()}
-      </p>
+    <div className="border border-slate-200 bg-white">
+      <div className={["h-1", hot ? "bg-rose-600" : "bg-slate-900"].join(" ")} />
+      <div className="p-4">
+        <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+        <p className={["mt-1 text-2xl font-black tabular-nums", hot ? "text-rose-600" : "text-slate-900"].join(" ")}>
+          {value.toLocaleString()}
+        </p>
+      </div>
     </div>
   );
 }
@@ -28,83 +53,102 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   if (!value && value !== 0) return null;
   return (
     <div className="flex gap-3 text-sm">
-      <span className="text-text-secondary w-40 shrink-0">{label}</span>
-      <span className="flex-1">{value}</span>
+      <span className="w-40 shrink-0 pt-0.5 text-[11px] font-black uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="flex-1 font-semibold text-slate-800">{value}</span>
     </div>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="border-b border-slate-200 pb-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+      {children}
+    </p>
   );
 }
 
 function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end">
-      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-10 h-full w-full max-w-xl bg-bg border-l shadow-xl overflow-y-auto p-6 space-y-5">
-        <div className="flex items-start justify-between">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white shadow-xl">
+        {/* Dark command header */}
+        <div className="flex items-start justify-between bg-slate-900 px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold">Report Detail</h2>
-            <p className="text-xs text-text-secondary font-mono mt-0.5">{report.report_number}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">Report Detail</p>
+            <p className="mt-0.5 font-mono text-base font-black text-white">{report.report_number}</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-bg-muted">
-            <X className="h-4 w-4" />
+          <button
+            onClick={onClose}
+            className="p-1 text-slate-400 transition hover:text-white"
+            aria-label="Close detail"
+          >
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary border-b pb-1">Submitter</p>
-          <DetailRow label="HR ID" value={report.submitted_by_hr_id} />
-          <DetailRow label="Name" value={report.submitted_by_name} />
-          <DetailRow label="Role" value={report.submitted_by_role} />
-          <DetailRow label="Department" value={report.department} />
-          <DetailRow label="Line" value={report.line} />
-          <DetailRow label="Area" value={report.area} />
-          <DetailRow label="Submitted" value={new Date(report.created_at).toLocaleString()} />
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary border-b pb-1">Patient</p>
-          <DetailRow label="Initials" value={report.patient_initials} />
-          <DetailRow label="Sex" value={report.patient_sex} />
-          <DetailRow label="Country" value={report.patient_country} />
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary border-b pb-1">Reactions</p>
-          {report.reactions_summary.length > 0 ? (
-            <ul className="list-disc list-inside text-sm space-y-1">
-              {report.reactions_summary.map((r, i) => <li key={i}>{r}</li>)}
-            </ul>
-          ) : (
-            <p className="text-sm text-text-secondary">—</p>
-          )}
-          <DetailRow
-            label="Serious"
-            value={report.is_serious ? <Badge variant="danger">Yes — Serious</Badge> : <Badge variant="neutral">No</Badge>}
-          />
-          <DetailRow label="Outcome" value={report.outcome_summary} />
-        </div>
-
-        {report.suspected_medicines.length > 0 && (
+        <div className="space-y-5 p-5">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary border-b pb-1">Suspected Medicines</p>
-            <div className="flex flex-wrap gap-1">
-              {report.suspected_medicines.map((m, i) => (
-                <Badge key={i} variant="warning">{m}</Badge>
-              ))}
+            <SectionHeading>Submitter</SectionHeading>
+            <DetailRow label="HR ID" value={report.submitted_by_hr_id} />
+            <DetailRow label="Name" value={report.submitted_by_name} />
+            <DetailRow label="Role" value={report.submitted_by_role} />
+            <DetailRow label="Department" value={report.department} />
+            <DetailRow label="Line" value={report.line} />
+            <DetailRow label="Area" value={report.area} />
+            <DetailRow label="Submitted" value={new Date(report.created_at).toLocaleString()} />
+          </div>
+
+          <div className="space-y-2">
+            <SectionHeading>Patient</SectionHeading>
+            <DetailRow label="Initials" value={report.patient_initials} />
+            <DetailRow label="Sex" value={report.patient_sex} />
+            <DetailRow label="Country" value={report.patient_country} />
+          </div>
+
+          <div className="space-y-2">
+            <SectionHeading>Reactions</SectionHeading>
+            {report.reactions_summary.length > 0 ? (
+              <ul className="list-inside list-disc space-y-1 text-sm font-semibold text-slate-800">
+                {report.reactions_summary.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-400">—</p>
+            )}
+            <DetailRow label="Serious" value={<SeriousChip serious={report.is_serious} />} />
+            <DetailRow label="Outcome" value={report.outcome_summary} />
+          </div>
+
+          {report.suspected_medicines.length > 0 && (
+            <div className="space-y-2">
+              <SectionHeading>Suspected Medicines</SectionHeading>
+              <div className="flex flex-wrap gap-1.5">
+                {report.suspected_medicines.map((m, i) => (
+                  <span
+                    key={i}
+                    className="inline-block border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800"
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {(report.report_payload.currentIllnesses || report.report_payload.additionalComments) && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary border-b pb-1">Additional Info</p>
-            {report.report_payload.currentIllnesses && (
-              <DetailRow label="Current illnesses" value={report.report_payload.currentIllnesses} />
-            )}
-            {report.report_payload.additionalComments && (
-              <DetailRow label="Comments" value={report.report_payload.additionalComments} />
-            )}
-          </div>
-        )}
+          {(report.report_payload.currentIllnesses || report.report_payload.additionalComments) && (
+            <div className="space-y-2">
+              <SectionHeading>Additional Info</SectionHeading>
+              {report.report_payload.currentIllnesses && (
+                <DetailRow label="Current illnesses" value={report.report_payload.currentIllnesses} />
+              )}
+              {report.report_payload.additionalComments && (
+                <DetailRow label="Comments" value={report.report_payload.additionalComments} />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -157,8 +201,6 @@ function rowToExport(r: ReportItReportRow) {
     suspected_medicines: r.suspected_medicines.join("; "),
   };
 }
-
-const fieldClass = "w-full rounded border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -215,20 +257,20 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
   const hasPrev = offset > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Total Reports" value={kpis.total} />
-        <KpiCard label="Serious" value={kpis.serious} highlight={kpis.serious > 0} />
+        <KpiCard label="Serious" value={kpis.serious} highlight />
         <KpiCard label="This Month" value={kpis.thisMonth} />
         <KpiCard label="With Suspected Medicine" value={kpis.withSuspectedMedicine} />
       </div>
 
       {/* Filter bar */}
-      <div className="border bg-card">
+      <div className="border border-slate-200 bg-white">
         <button
           type="button"
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-bg-muted/50 transition"
+          className="flex w-full items-center justify-between px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-700 transition hover:bg-slate-50"
           onClick={() => setShowFilters((v) => !v)}
         >
           <span>Filters</span>
@@ -236,21 +278,22 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
         </button>
 
         {showFilters && (
-          <div className="px-4 pb-4 border-t pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 px-4 pb-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">Submitted by (HR ID or name)</label>
-              <Input
+              <label className={microLabel}>Submitted by (HR ID or name)</label>
+              <input
                 value={filters.submittedBy}
                 onChange={(e) => setFilters((f) => ({ ...f, submittedBy: e.target.value }))}
                 placeholder="Search…"
+                className={fieldClass}
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">Seriousness</label>
+              <label className={microLabel}>Seriousness</label>
               <select
                 value={filters.isSerious}
                 onChange={(e) => setFilters((f) => ({ ...f, isSerious: e.target.value }))}
-                className={fieldClass}
+                className={selectClass}
               >
                 <option value="">All</option>
                 <option value="true">Serious only</option>
@@ -258,35 +301,38 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">Department</label>
-              <Input
+              <label className={microLabel}>Department</label>
+              <input
                 value={filters.department}
                 onChange={(e) => setFilters((f) => ({ ...f, department: e.target.value }))}
                 placeholder="Filter by department"
+                className={fieldClass}
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">From date</label>
-              <Input
+              <label className={microLabel}>From date</label>
+              <input
                 type="date"
                 value={filters.dateFrom}
                 onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+                className={fieldClass}
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">To date</label>
-              <Input
+              <label className={microLabel}>To date</label>
+              <input
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+                className={fieldClass}
               />
             </div>
             <div className="flex items-end gap-2">
-              <Button onClick={applyFilters} disabled={loading}>
-                {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" />}
+              <button type="button" className={btnDark} onClick={applyFilters} disabled={loading}>
+                {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
                 Apply
-              </Button>
-              <Button variant="secondary" onClick={clearFilters}>Clear</Button>
+              </button>
+              <button type="button" className={btnGhost} onClick={clearFilters}>Clear</button>
             </div>
           </div>
         )}
@@ -294,7 +340,7 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
 
       {/* Table toolbar */}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-text-secondary">
+        <p className="text-sm font-semibold text-slate-600">
           {loading ? "Loading…" : `${total.toLocaleString()} report${total !== 1 ? "s" : ""}`}
         </p>
         <ExportXlsxButton
@@ -308,68 +354,61 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 text-sm text-danger bg-danger/5 border border-danger/20 rounded px-3 py-2">
+        <div className="flex items-center gap-2 border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto border">
-        <table className="w-full text-sm">
+      {/* Table — black header, thin light-orange grid */}
+      <div className="overflow-x-auto border border-slate-200">
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-[#0F172A] text-white">
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Report #</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Date</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Submitted By</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Patient</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Reactions</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Serious</th>
-              <th className="px-3 py-2.5 text-left font-medium text-xs">Outcome</th>
+            <tr className="bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+              <th className="px-3 py-2.5">Report #</th>
+              <th className="px-3 py-2.5">Date</th>
+              <th className="px-3 py-2.5">Submitted By</th>
+              <th className="px-3 py-2.5">Patient</th>
+              <th className="px-3 py-2.5">Reactions</th>
+              <th className="px-3 py-2.5">Serious</th>
+              <th className="px-3 py-2.5">Outcome</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="text-center py-10 text-text-secondary text-sm">
+                <td colSpan={7} className="px-3 py-10 text-center text-sm font-semibold text-slate-500">
                   No reports found.
                 </td>
               </tr>
             )}
-            {rows.map((row, i) => (
+            {rows.map((row) => (
               <tr
                 key={row.id}
-                className={[
-                  "border-b border-primary/10 cursor-pointer transition",
-                  i % 2 === 0 ? "bg-white hover:bg-primary/5" : "bg-bg-muted/30 hover:bg-primary/5",
-                ].join(" ")}
+                className="cursor-pointer border-t border-orange-100 bg-white transition hover:bg-orange-50/60"
                 onClick={() => setSelected(row)}
               >
-                <td className="px-3 py-2 font-mono text-xs text-primary font-medium">{row.report_number}</td>
-                <td className="px-3 py-2 text-xs text-text-secondary whitespace-nowrap">
+                <td className="px-3 py-2 font-mono text-xs font-bold text-orange-600">{row.report_number}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
                   {new Date(row.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-3 py-2">
-                  <span className="font-medium text-sm">{row.submitted_by_name ?? "—"}</span>
+                  <span className="text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
                   {row.submitted_by_hr_id && (
-                    <span className="ml-1 text-xs text-text-secondary">({row.submitted_by_hr_id})</span>
+                    <span className="ml-1 text-xs text-slate-500">({row.submitted_by_hr_id})</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs">
+                <td className="px-3 py-2 text-xs text-slate-700">
                   {row.patient_initials ?? "—"}
-                  {row.patient_sex && <span className="ml-1 text-text-secondary">({row.patient_sex})</span>}
+                  {row.patient_sex && <span className="ml-1 text-slate-500">({row.patient_sex})</span>}
                 </td>
-                <td className="px-3 py-2 text-xs max-w-[180px]">
+                <td className="max-w-[180px] px-3 py-2 text-xs text-slate-700">
                   <span className="line-clamp-2">{row.reactions_summary.join(", ") || "—"}</span>
                 </td>
                 <td className="px-3 py-2">
-                  {row.is_serious ? (
-                    <Badge variant="danger">Yes</Badge>
-                  ) : (
-                    <Badge variant="neutral">No</Badge>
-                  )}
+                  <SeriousChip serious={row.is_serious} />
                 </td>
-                <td className="px-3 py-2 text-xs max-w-[140px]">
+                <td className="max-w-[140px] px-3 py-2 text-xs text-slate-700">
                   <span className="line-clamp-1">{row.outcome_summary ?? "—"}</span>
                 </td>
               </tr>
@@ -381,23 +420,25 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
       {/* Pagination */}
       {(hasPrev || hasMore) && (
         <div className="flex items-center justify-between text-sm">
-          <Button
-            variant="secondary"
+          <button
+            type="button"
+            className={btnGhost}
             onClick={() => { void fetchReports(filters, offset - LIMIT); }}
             disabled={!hasPrev || loading}
           >
             Previous
-          </Button>
-          <span className="text-text-secondary text-xs">
+          </button>
+          <span className="text-xs font-semibold text-slate-500">
             {offset + 1}–{Math.min(offset + LIMIT, total)} of {total}
           </span>
-          <Button
-            variant="secondary"
+          <button
+            type="button"
+            className={btnGhost}
             onClick={() => { void fetchReports(filters, offset + LIMIT); }}
             disabled={!hasMore || loading}
           >
             Next
-          </Button>
+          </button>
         </div>
       )}
 
