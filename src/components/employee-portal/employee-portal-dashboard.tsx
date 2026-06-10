@@ -281,6 +281,15 @@ function metricTone(accent: MetricAccent = "orange") {
   return tones[accent];
 }
 
+// Muted RAG palette for achievement/status bars. Returns a "from,to" hex pair so
+// callers can build a left-to-right gradient. Softer than the previous neon green/
+// yellow/red for a calmer, more premium read while keeping the status meaning.
+function achievementGradient(pct: number) {
+  if (pct >= 100) return "#059669,#34d399";
+  if (pct >= 70) return "#d97706,#fbbf24";
+  return "#e11d48,#fb7185";
+}
+
 function chartTooltipStyle() {
   return {
     backdropFilter: "blur(18px)",
@@ -928,7 +937,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
               <div className="flex flex-1 flex-col justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
-                  <p className={`mt-2 break-words text-2xl font-black leading-none tracking-[-0.03em] tabular-nums ${tone.value}`}>
+                  <p className="mt-2 break-words text-2xl font-black leading-none tracking-[-0.03em] tabular-nums text-slate-900">
                     <CountUpNumber value={signal.numeric} format={signal.format} />
                   </p>
                   <p className="mt-1.5 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
@@ -1192,10 +1201,10 @@ function ToReachTargetWidget({ data }: { data: MedicalRepPortalData }) {
                 style={{
                   width: `${percent}%`,
                   background: percent >= 90
-                    ? "linear-gradient(to right, #16a34a, #86efac)"
+                    ? "linear-gradient(to right, #059669, #34d399)"
                     : percent >= 70
-                      ? "linear-gradient(to right, #ca8a04, #fde047)"
-                      : "linear-gradient(to right, #dc2626, #fca5a5)",
+                      ? "linear-gradient(to right, #d97706, #fbbf24)"
+                      : "linear-gradient(to right, #e11d48, #fb7185)",
                 }}
               />
             </div>
@@ -1410,7 +1419,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
           const pct = row.achievementPercent;
           const fillWidth = Math.max(6, Math.min(100, pct));
           const belowTarget = pct < 70;
-          const grad = pct >= 100 ? "linear-gradient(to right, #16a34a, #86efac)" : pct >= 70 ? "linear-gradient(to right, #ca8a04, #fde047)" : "linear-gradient(to right, #dc2626, #fca5a5)";
+          const [fromColor, toColor] = achievementGradient(pct).split(",");
           return (
             <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
               <div className="flex items-center justify-between gap-3">
@@ -1420,8 +1429,8 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                   </span>
                   <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
                   {belowTarget ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-rose-700">
-                      <AlertTriangle className="h-3 w-3" />
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+                      <AlertTriangle className="h-2.5 w-2.5" />
                       Below target
                     </span>
                   ) : null}
@@ -1434,7 +1443,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
               <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
                 <div
                   className="h-full rounded-sm"
-                  style={{ width: `${fillWidth}%`, background: grad }}
+                  style={{ width: `${fillWidth}%`, background: `linear-gradient(to right, ${fromColor}, ${toColor})` }}
                 />
               </div>
             </div>
@@ -1580,9 +1589,9 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
           const width = Math.max(8, Math.round((value / max) * 100));
           const contributionPercent = total > 0 ? (value / total) * 100 : 0;
           const tier = rows.length <= 1 ? 0 : idx / (rows.length - 1);
-          const grad = tier <= 0.33 ? "linear-gradient(to right, #16a34a, #86efac)" : tier <= 0.66 ? "linear-gradient(to right, #ca8a04, #fde047)" : "linear-gradient(to right, #dc2626, #fca5a5)";
+          const grad = tier <= 0.33 ? "linear-gradient(to right, #ea580c, #fb923c)" : tier <= 0.66 ? "linear-gradient(to right, #f97316, #fdba74)" : "linear-gradient(to right, #fb923c, #fed7aa)";
           return (
-            <div key={row.name} className="rounded border border-slate-100 bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+            <div key={row.name} className="rounded border border-slate-100 bg-white p-3 shadow-sm">
               <div className="mb-1 flex items-center justify-between text-sm">
                 <div className="flex flex-col">
                   <span className="font-bold text-slate-800">{row.name}</span>
@@ -1777,7 +1786,7 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
               <div className="space-y-1">
                 {chartData.map((point) => {
                   const pct = Math.min(point.achievement, 150);
-                  const grad = point.achievement >= 100 ? "#16a34a,#86efac" : point.achievement >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+                  const grad = achievementGradient(point.achievement);
                   const [from, to] = grad.split(",");
                   return (
                     <div key={point.period} className="flex items-center gap-2">
@@ -1854,37 +1863,23 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
       ) : (
         <div className="space-y-3">
           {actions.map((item) => (
-            <PremiumTooltip
-              content={(
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-slate-900">{item.label}</p>
-                  <p className="text-[11px] text-slate-500">Pending items in your visible queue.</p>
-                  <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px]">
-                    <span className="text-slate-500">Visible count</span>
-                    <span className="font-semibold text-slate-900">{item.count}</span>
-                  </div>
-                </div>
-              )}
+            <Link
               key={item.id}
-              triggerClassName="block"
+              className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
+              href={item.href}
             >
-              <Link
-                className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
-                href={item.href}
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
-                  {(() => {
-                    const Icon = actionIconMap[item.id] ?? ReceiptText;
-                    return <Icon className="h-5 w-5" />;
-                  })()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
-                </div>
-                <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
-              </Link>
-            </PremiumTooltip>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
+                {(() => {
+                  const Icon = actionIconMap[item.id] ?? ReceiptText;
+                  return <Icon className="h-5 w-5" />;
+                })()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
+              <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
+            </Link>
           ))}
         </div>
       )}
@@ -1912,32 +1907,22 @@ function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel title="Quick Actions">
       <div className="grid grid-cols-1 auto-rows-fr gap-3 sm:grid-cols-3">
         {actions.map((item) => (
-          <PremiumTooltip
-            content={(
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-900">{item.label}</p>
-                <p className="text-[11px] text-slate-500">Open the relevant workflow directly from your dashboard.</p>
-              </div>
-            )}
+          <Link
             key={item.href}
-            triggerClassName="block"
+            className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded border border-slate-200 bg-white px-3 py-3 text-center shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
+            href={item.href}
           >
-            <Link
-              className="group flex h-full min-h-[116px] flex-col items-center justify-between rounded border border-slate-200 bg-white px-3 py-3 text-center shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
-              href={item.href}
-            >
-              <span className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
-                <item.icon className="h-5 w-5" />
-              </span>
-              <span className="flex min-h-[40px] items-center text-[14px] font-medium leading-5 text-slate-800">
-                {item.label}
-              </span>
-              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 transition-colors duration-200 group-hover:text-slate-500">
-                Open
-                <ArrowUpRight className="h-3 w-3" />
-              </span>
-            </Link>
-          </PremiumTooltip>
+            <span className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
+              <item.icon className="h-5 w-5" />
+            </span>
+            <span className="flex min-h-[40px] items-center text-[14px] font-medium leading-5 text-slate-800">
+              {item.label}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 transition-colors duration-200 group-hover:text-slate-500">
+              Open
+              <ArrowUpRight className="h-3 w-3" />
+            </span>
+          </Link>
         ))}
       </div>
     </OverviewPagePanel>
@@ -1959,7 +1944,7 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
         <div className="space-y-3">
           {rows.slice(0, 6).map((row) => (
             <div
-              className="flex items-start justify-between gap-3 rounded border border-slate-200 bg-white/80 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+              className="flex items-start justify-between gap-3 rounded border border-slate-200 bg-white/80 px-4 py-3 shadow-sm"
               key={row.id}
             >
               <div className="min-w-0">
@@ -2016,15 +2001,15 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel title="Team Structure">
       {/* Summary metrics */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
           <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Structure</p>
           <p className="mt-1.5 text-xl font-black text-slate-900">{formatUnits(totalStructure)}</p>
         </div>
-        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
           <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Filled</p>
           <p className="mt-1.5 text-xl font-black text-emerald-600">{formatUnits(actualNow)}</p>
         </div>
-        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+        <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
           <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Vacant</p>
           <p className="mt-1.5 text-xl font-black text-orange-600">{formatUnits(vacancies)}</p>
         </div>
@@ -3662,7 +3647,7 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
         <div className="mt-3 space-y-1">
           {sorted.map((t) => {
             const pct = Math.min(t.achievementPercent, 150);
-            const grad = t.achievementPercent >= 100 ? "#16a34a,#86efac" : t.achievementPercent >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const grad = achievementGradient(t.achievementPercent);
             const [from, to] = grad.split(",");
             return (
               <PremiumTooltip
@@ -3743,7 +3728,7 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
             const pct = totalSales > 0 ? (f.sales / totalSales) * 100 : 0;
             const barWidth = maxSales > 0 ? (f.sales / maxSales) * 100 : 0;
             const tier = sorted.length <= 1 ? 0 : i / (sorted.length - 1);
-            const grad = tier <= 0.33 ? "#16a34a,#86efac" : tier <= 0.66 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const grad = tier <= 0.33 ? "#ea580c,#fb923c" : tier <= 0.66 ? "#f97316,#fdba74" : "#fb923c,#fed7aa";
             const [from, to] = grad.split(",");
             return (
               <PremiumTooltip
@@ -3818,7 +3803,7 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
         <div className="mt-3 space-y-1">
           {sorted.map((line) => {
             const pct = Math.min(line.achievementPercent, 150);
-            const grad = line.achievementPercent >= 100 ? "#16a34a,#86efac" : line.achievementPercent >= 70 ? "#ca8a04,#fde047" : "#dc2626,#fca5a5";
+            const grad = achievementGradient(line.achievementPercent);
             const [from, to] = grad.split(",");
             return (
               <PremiumTooltip
