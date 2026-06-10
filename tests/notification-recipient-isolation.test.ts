@@ -460,7 +460,7 @@ export function runNotificationRecipientIsolationTests() {
   );
   assert.match(
     vacationSource,
-    /title: `\$\{input\.request\.employeeName\}'s vacation request needs HR final decision`/,
+    /`\$\{input\.request\.employeeName\}'s vacation request needs HR acknowledgement`/,
     "vacation manager-review title must lead with the employee name",
   );
   assert.match(
@@ -471,8 +471,8 @@ export function runNotificationRecipientIsolationTests() {
   // WP-N2: structured details rows (Status + Action) present on vacation producers.
   assert.match(vacationSource, /label: "Status", value: "Pending manager decision"/, "submitted details include manager-pending status");
   assert.match(vacationSource, /label: "Action", value: "Review request"/, "submitted details include the review action");
-  assert.match(vacationSource, /label: "Status", value: "Pending HR final decision"/, "manager-review details include HR-pending status");
-  assert.match(vacationSource, /label: "Action", value: "Complete HR decision"/, "manager-review details include the HR action");
+  assert.match(vacationSource, /label: "Status", value: sequential \? "Pending HR acknowledgement" : "Pending HR final decision"/, "manager-review details include HR-pending status (acknowledgement for the sequential workflow)");
+  assert.match(vacationSource, /label: "Action", value: sequential \? "Acknowledge \/ record in the Action Center" : "Complete HR decision"/, "manager-review details include the HR action");
   assert.match(vacationSource, /label: "Manager"/, "manager-review details include the manager");
 
   // ===========================================================================
