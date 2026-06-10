@@ -58,7 +58,7 @@ const variableCatalog: EmailDesignerVariable[] = [
   { category: "Employee", label: "Line", sampleValue: "Cardio Line", token: "line", allowedTemplateTypes: allTemplateTypes },
   { category: "Employee", label: "Area", sampleValue: "Cairo", token: "area", allowedTemplateTypes: allTemplateTypes },
   { category: "Manager", label: "Manager Name", sampleValue: "Omar Nabil", token: "managerName", allowedTemplateTypes: allTemplateTypes },
-  { category: "Candidate", label: "Candidate Name", sampleValue: "Ahmed Hassan", token: "candidateName", allowedTemplateTypes: ["offer", "interview_invitation", "interview_feedback", "password_setup", "password_reset"] },
+  { category: "Candidate", label: "Candidate Name", sampleValue: "Ahmed Hassan", token: "candidateName", allowedTemplateTypes: ["offer", "offer_status", "interview_invitation", "interview_feedback", "recruitment_update", "password_setup", "password_reset"] },
   { category: "Candidate", label: "Interview Date", sampleValue: "2026-06-10", token: "interviewDate", allowedTemplateTypes: ["interview_invitation", "interview_feedback"] },
   { category: "Candidate", label: "Interview Time", sampleValue: "10:30 AM", token: "interviewTime", allowedTemplateTypes: ["interview_invitation"] },
   { category: "Candidate", label: "Interview Location", sampleValue: "Cairo Office", token: "interviewLocation", allowedTemplateTypes: ["interview_invitation"] },
