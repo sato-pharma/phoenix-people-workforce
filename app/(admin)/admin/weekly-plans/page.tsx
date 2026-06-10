@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { adminHeroDescriptionClassName, adminHeroKickerClassName, adminHeroSurfaceClassName, adminHeroTitleClassName } from "@/components/admin/admin-design-tokens";
 import { PlansWorkspace } from "@/components/employee-portal/plans-workspace";
+import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
@@ -27,15 +27,11 @@ export default async function AdminWeeklyPlansPage({
 
   return (
     <div className="space-y-6">
-      <section className={`${adminHeroSurfaceClassName} p-6 sm:p-7`}>
-        <div className="relative z-10 space-y-3">
-          <p className={adminHeroKickerClassName}>Planning Workflow</p>
-          <h1 className={adminHeroTitleClassName}>Weekly / Monthly Plans</h1>
-          <p className={adminHeroDescriptionClassName}>
-            Review manager-approved plans, finalize CEO decisions, and track HR acknowledgements after approval.
-          </p>
-        </div>
-      </section>
+      <PremiumHero
+        kicker="Planning Workflow"
+        title="Weekly / Monthly Plans"
+        subtitle="Review manager-approved plans, finalize CEO decisions, and track HR acknowledgements after approval."
+      />
       <PlansWorkspace
         access={access}
         basePath="/admin/weekly-plans"

@@ -5,6 +5,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
@@ -46,6 +47,13 @@ export default async function PlansPage({
     <EmployeePortalPageShell
       badge="Weekly / Monthly Plan"
       description="Submit structured weekly and monthly plans and route approvals through your manager, CEO, and HR."
+      hero={
+        <PremiumHero
+          kicker="Planning Workflow"
+          title="Weekly / Monthly Plan"
+          subtitle="Submit structured weekly and monthly plans and route approvals through your manager, CEO, and HR."
+        />
+      }
       title="Weekly / Monthly Plan"
     >
       <PlansWorkspace
