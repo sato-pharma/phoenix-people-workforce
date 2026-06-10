@@ -995,6 +995,11 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
     if (moduleLabel === "weekly plans" || moduleLabel === "monthly plans" || moduleLabel === "weekly planning") {
       return EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS;
     }
+    // Outstation / expense workflow updates (submit, approve, reject) get their own
+    // editable template instead of the generic General HR Notification wording.
+    if (moduleLabel === "outstation" || moduleLabel === "expenses" || moduleLabel === "expense") {
+      return EMAIL_TEMPLATE_KEYS.OUTSTATION;
+    }
     return EMAIL_TEMPLATE_KEYS.GENERAL;
   }
   if (input.notificationType === "password_reset") return EMAIL_TEMPLATE_KEYS.PASSWORD_RESET;
@@ -1208,9 +1213,11 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       context: {
         ctaLabel: input.ctaLabel ?? systemNotificationEmailText.openInAppCtaLabel,
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
+        amount: metricValue(input, "Amount"),
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
         area: metricValue(input, "Area"),
-        endDate: metricValue(input, "Renewal date"),
+        destination: metricValue(input, "Destination"),
+        endDate: metricValue(input, "Renewal date") || metricValue(input, "Trip end"),
         employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
         expiryText: metricValue(input, "Expires"),
@@ -1221,7 +1228,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         recipientName: isAuthTemplateKey(migratedTemplateKey)
           ? systemNotificationEmailText.userRecipientName
           : input.recipientName || employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
-        startDate: metricValue(input, "Hire date"),
+        startDate: metricValue(input, "Hire date") || metricValue(input, "Trip start"),
         status: notificationMetricStatus(input),
         subject: input.subject,
         summary: input.summary,
