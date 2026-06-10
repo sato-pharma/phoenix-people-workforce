@@ -12,7 +12,7 @@ import {
   systemIdentity,
   systemNotificationEmailText,
 } from "@/config/system-settings";
-import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
+import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail } from "@/lib/email-templates/service";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -58,6 +58,12 @@ export type NotificationEmailInput = {
   metrics?: NotificationMetric[];
   /** Originating module (e.g. "weekly_plans") so module-scoped templates can be selected. */
   module?: string | null;
+  /**
+   * Explicit /admin/email-templates key for this send. Takes precedence over the
+   * module/type mapping; invalid keys are ignored (the mapping then applies), so a
+   * stale key can never silently drop an email.
+   */
+  templateKey?: string | null;
   notificationType?: EmailNotificationType;
   /** Pre-rendered HTML table of submitted plan rows for the {{planTable}} variable. */
   planTableHtml?: string;
@@ -985,20 +991,50 @@ function isPasswordSetupNotification(input: NotificationEmailInput) {
 }
 
 function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
+  // A domain can pin its admin-editable template explicitly (the strongest form of the
+  // one-source-of-truth contract): /admin/email-templates governs the wording, the
+  // domain only declares WHICH template frames the event. Unknown keys are ignored so a
+  // typo can never silently kill an email. Auth and birthday keys cannot be pinned -
+  // those keys also switch recipient expansion and List-Unsubscribe behavior, which a
+  // wording override must never do.
+  const explicit = normalizeEmailTemplateKey(input.templateKey);
+  if (explicit && !isAuthTemplateKey(explicit) && explicit !== EMAIL_TEMPLATE_KEYS.BIRTHDAY) {
+    return explicit;
+  }
   if (input.notificationType === "birthday") return EMAIL_TEMPLATE_KEYS.BIRTHDAY;
   if (input.notificationType === "contract_renewal") return EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
   if (input.notificationType === "general") {
     // Module-scoped notifications arrive as "general"; the originating module rides along
-    // (createSystemNotification → buildEmailInput). Weekly/monthly plan updates get their
-    // own editable template instead of sharing the General HR Notification wording.
+    // (createSystemNotification → buildEmailInput). Every business module routes to its
+    // own editable template so /admin/email-templates is the single source of truth;
+    // GENERAL is reserved for genuinely generic system notices (internal messages,
+    // employee import, telegram/attendance alerts).
     const moduleLabel = String(input.module ?? "").trim().toLowerCase().replace(/_/g, " ");
     if (moduleLabel === "weekly plans" || moduleLabel === "monthly plans" || moduleLabel === "weekly planning") {
       return EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS;
     }
-    // Outstation / expense workflow updates (submit, approve, reject) get their own
-    // editable template instead of the generic General HR Notification wording.
     if (moduleLabel === "outstation" || moduleLabel === "expenses" || moduleLabel === "expense") {
       return EMAIL_TEMPLATE_KEYS.OUTSTATION;
+    }
+    if (moduleLabel === "marketing requests" || moduleLabel === "marketing request") {
+      return EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST;
+    }
+    if (moduleLabel === "excuse" || moduleLabel === "excuses") {
+      return EMAIL_TEMPLATE_KEYS.EXCUSE_REQUEST;
+    }
+    if (moduleLabel === "coaching") {
+      return EMAIL_TEMPLATE_KEYS.COACHING_REPORT;
+    }
+    if (moduleLabel === "payroll") {
+      return EMAIL_TEMPLATE_KEYS.PAYROLL_UPDATE;
+    }
+    if (moduleLabel === "recruitment") {
+      // External candidates (interview cancellation notices) have no Phoenix login -
+      // keep candidate-addressed sends on the audience-neutral GENERAL template; the
+      // Recruitment Update template frames internal staff notices.
+      return String(input.candidateEmail ?? "").trim()
+        ? EMAIL_TEMPLATE_KEYS.GENERAL
+        : EMAIL_TEMPLATE_KEYS.RECRUITMENT_UPDATE;
     }
     return EMAIL_TEMPLATE_KEYS.GENERAL;
   }
@@ -1014,11 +1050,16 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
       : EMAIL_TEMPLATE_KEYS.USER_CREATED;
   }
   if (input.notificationType === "resignation") return EMAIL_TEMPLATE_KEYS.RESIGNATION_WORKFLOW;
-  // Offer STATUS notifications (accepted/rejected/hire-approved) render via the GENERAL
-  // template — it exposes {{summary}}/{{status}}, whereas the JOB_OFFER template only has
-  // offer-LETTER tokens (jobTitle/startDate/…). The candidate offer LETTER itself goes
-  // through sendTemplatedEmail('offer') independently and is unaffected.
-  if (input.notificationType === "offer") return EMAIL_TEMPLATE_KEYS.GENERAL;
+  // Offer STATUS notifications (accepted/rejected/hire-approved) use the dedicated
+  // Offer Status template — the JOB_OFFER template stays reserved for the candidate
+  // offer LETTER, which goes through sendTemplatedEmail('offer') independently.
+  // Candidate-addressed confirmations stay on the audience-neutral GENERAL template
+  // (candidates have no Phoenix login; Offer Status frames internal HR alerts).
+  if (input.notificationType === "offer") {
+    return String(input.candidateEmail ?? "").trim()
+      ? EMAIL_TEMPLATE_KEYS.GENERAL
+      : EMAIL_TEMPLATE_KEYS.OFFER_STATUS;
+  }
   return null;
 }
 
@@ -1214,6 +1255,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         ctaLabel: input.ctaLabel ?? systemNotificationEmailText.openInAppCtaLabel,
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
         amount: metricValue(input, "Amount"),
+        candidateName: metricValue(input, "Candidate") || metricValue(input, "Candidate Name"),
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
         area: metricValue(input, "Area"),
         destination: metricValue(input, "Destination"),
@@ -1221,7 +1263,8 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
         expiryText: metricValue(input, "Expires"),
-        jobTitle: metricValue(input, "Job Title"),
+        // Offer/recruitment callers label the position metric "Role".
+        jobTitle: metricValue(input, "Job Title") || metricValue(input, "Role"),
         line: metricValue(input, "Line"),
         planTable: input.planTableHtml,
         planTableText: input.planTableText,
