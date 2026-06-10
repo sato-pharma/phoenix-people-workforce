@@ -33,6 +33,22 @@ function plansForScope(workspacePlans: EmployeePlan[], scope: string, accessHrId
   return workspacePlans;
 }
 
+function scopeLabel(scope: string, planId: string | null) {
+  if (planId) return "Selected plan";
+  switch (scope) {
+    case "own":
+      return "My Plans";
+    case "manager":
+      return "Manager review";
+    case "ceo":
+      return "CEO review";
+    case "hr":
+      return "HR acknowledgement";
+    default:
+      return "All visible plans";
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -58,8 +74,13 @@ export async function GET(request: Request) {
       );
     }
 
+    const exportOptions = {
+      medicalRepOptions: workspace.medicalRepOptions,
+      scopeLabel: scopeLabel(scope, planId),
+    };
+
     if (format === "pdf") {
-      const pdf = buildEmployeePlansPdf(plans);
+      const pdf = await buildEmployeePlansPdf(plans, exportOptions);
       return new Response(pdf, {
         headers: {
           "Content-Disposition": `attachment; filename="phoenix-weekly-monthly-plans-${fileDate()}.pdf"`,
@@ -68,7 +89,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const workbook = await buildEmployeePlansWorkbook(plans);
+    const workbook = await buildEmployeePlansWorkbook(plans, exportOptions);
     return new Response(workbook, {
       headers: {
         "Content-Disposition": `attachment; filename="phoenix-weekly-monthly-plans-${fileDate()}.xlsx"`,
