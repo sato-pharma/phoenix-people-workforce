@@ -47,6 +47,7 @@ export async function EmployeePortalServerShell({
     access.role,
     data.employee.line,
     data.employee.department,
+    data.employee.hrId,
   );
 
   return (

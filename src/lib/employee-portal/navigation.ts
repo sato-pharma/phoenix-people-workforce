@@ -1,4 +1,5 @@
 import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 
 export type EmployeePortalNavVisibility = {
@@ -28,6 +29,8 @@ export type EmployeePortalNavVisibility = {
   showTrainingManagerCreateCoachingTab?: boolean;
   showTrainingManagerDashboardTab?: boolean;
   showTrainingManagerFieldCoachingTab?: boolean;
+  showReportItTab?: boolean;
+  showReportItDashboardTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -130,6 +133,7 @@ export function resolveEmployeePortalNavVisibility(
   accessRole?: string | null | undefined,
   employeeLineName?: string | null | undefined,
   employeeDepartmentName?: string | null | undefined,
+  viewerHrId?: string | null | undefined,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -137,6 +141,7 @@ export function resolveEmployeePortalNavVisibility(
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
+  const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
@@ -173,13 +178,15 @@ export function resolveEmployeePortalNavVisibility(
     "Regional Manager",
     "HR Specialist",
   ].includes(resolvedRole);
+  const baseShowMyPerformanceTab = !isTrainingManager;
+  const baseShowIncentiveTab = !isTrainingManager;
 
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showExcusesTab: isHeadOffice || isNationalSalesManager,
     showExpenseActionTab,
-    showIncentiveTab: !isTrainingManager,
+    showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
     showManagementTab,
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
@@ -188,10 +195,12 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingRoiTrackingTab,
     showMedRepsPerformanceTab,
     showMedicalRepExpensesTab: isMedicalRep,
-    showMyPerformanceTab: !isTrainingManager,
+    showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
+    showReportItTab: isA3Account,
+    showReportItDashboardTab: isA3Account,
     showOrganogramTab: showMedRepsPerformanceTab,
-    showPlansTab,
+    showPlansTab: isA3Account || showPlansTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
     showSupportTab: betaNavEnabled,
     showTeamCoachingTab,

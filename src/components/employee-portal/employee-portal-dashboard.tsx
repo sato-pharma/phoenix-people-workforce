@@ -33,6 +33,8 @@ import {
   Info,
   MapPin,
   Megaphone,
+  FileText,
+  LineChart,
   ReceiptText,
   RefreshCw,
   Send,
@@ -60,7 +62,7 @@ import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 export { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
@@ -1927,6 +1929,79 @@ function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
       </div>
     </OverviewPagePanel>
   );
+}
+
+type A3QuickCard = {
+  href: string;
+  icon: typeof Activity;
+  label: string;
+  value: string;
+};
+
+function getActionValue(count: number | undefined | null, emptyStateLabel = "No pending") {
+  return count && count > 0 ? `${count} pending` : emptyStateLabel;
+}
+
+function A3DashboardQuickCards({ data }: { data: MedicalRepPortalData }) {
+  const vacationApprovals = data.overview.myActions.find((action) => action.id === "vacation-approvals");
+  const myVacationRequests = data.overview.myActions.find((action) => action.id === "my-vacation-requests");
+
+  const cards: A3QuickCard[] = [
+    {
+      href: vacationApprovals?.href ?? "/leave-management/vacation-report?status=pending_manager",
+      icon: CalendarClock,
+      label: vacationApprovals?.label ?? "Vacation approvals waiting",
+      value: getActionValue(vacationApprovals?.count),
+    },
+    {
+      href: myVacationRequests?.href ?? "/leave-management/vacation-report?status=pending_manager",
+      icon: CalendarDays,
+      label: myVacationRequests?.label ?? "Vacation requests pending decision",
+      value: getActionValue(myVacationRequests?.count),
+    },
+    {
+      href: "/employee-portals/excuses",
+      icon: ClipboardList,
+      label: "Excuses",
+      value: "Open",
+    },
+    {
+      href: "/employee-portals/report-it",
+      icon: FileText,
+      label: "Report It",
+      value: "Open",
+    },
+    {
+      href: "/admin/report-it",
+      icon: LineChart,
+      label: "Reports Dashboard",
+      value: "Open",
+    },
+  ];
+
+  return (
+    <OverviewPagePanel title="Quick Access">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
+          <Link
+            className="group flex min-h-[124px] flex-col justify-between rounded border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/50"
+            href={card.href}
+            key={`${card.label}-${card.href}`}
+          >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
+              <card.icon className="h-5 w-5" />
+            </span>
+            <span className="mt-2 block text-base font-semibold text-slate-900">{card.label}</span>
+            <span className="text-sm font-medium text-slate-500">{card.value}</span>
+          </Link>
+        ))}
+      </div>
+    </OverviewPagePanel>
+  );
+}
+
+function isA3EmployeePortalUser(data: MedicalRepPortalData) {
+  return canonicalHrIdKey(data.employee.hrId) === "a-3";
 }
 
 function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
@@ -3851,6 +3926,14 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
+  if (isA3EmployeePortalUser(data)) {
+    return (
+      <div className="space-y-6">
+        <A3DashboardQuickCards data={data} />
+      </div>
+    );
+  }
+
   const showTeamLeaveAndStructurePanels = canSeeTeamLeaveAndStructurePanels(data);
 
   return (

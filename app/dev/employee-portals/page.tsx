@@ -31,6 +31,7 @@ export default async function EmployeePortalDevPreviewPage() {
     undefined,
     data.employee.line,
     data.employee.department,
+    data.employee.hrId,
   );
 
   return (

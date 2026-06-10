@@ -93,6 +93,13 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
 
+  const a3Account = resolveEmployeePortalNavVisibility("Medical Rep", undefined, undefined, undefined, "A-3");
+  assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
+  assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");
+  assert.equal(a3Account.showPlansTab, true, "A-3 should always see the Weekly / Monthly Plan tab");
+  assert.equal(a3Account.showReportItTab, true, "A-3 should see Report It");
+  assert.equal(a3Account.showReportItDashboardTab, true, "A-3 should see Reports Dashboard");
+
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
   assert.equal(nationalSalesManager.showTeamCoachingTab, true, "NSM should see Team Coaching Reports");

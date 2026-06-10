@@ -96,6 +96,7 @@ export default async function SalesDevPreviewPage() {
     undefined,
     data.employee.line,
     data.employee.department,
+    data.employee.hrId,
   );
 
   return (
