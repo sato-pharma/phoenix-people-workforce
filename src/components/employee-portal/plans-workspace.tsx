@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { createPortal } from "react-dom";
+
+// Client-only flag without setState-in-effect: false on the server/during
+// hydration, true on the client. Used to gate document.body portals.
+const emptySubscribe = () => () => {};
 import {
   BadgeCheck,
   CheckCircle2,
@@ -196,6 +201,7 @@ function friendlyError(message: string): string {
 
 export function PlansWorkspace({
   access,
+  basePath,
   initialWorkspace,
   selectedPlanId,
 }: PlansWorkspaceProps) {
@@ -209,6 +215,18 @@ export function PlansWorkspace({
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
   const [sheetKey, setSheetKey] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // The fixed mobile bars and sheet are portalled to document.body so they escape
+  // the employee-portal page-transition wrapper's CSS transform (which would
+  // otherwise re-anchor position:fixed to that scrolling container).
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+
+  // The global portal bottom nav (≈56px + safe area) only exists on the employee
+  // portal surface, not the admin review page. Offset the action bar accordingly.
+  const onAdminSurface = basePath === "/admin/weekly-plans";
+  const actionBarBottom = onAdminSurface
+    ? "env(safe-area-inset-bottom)"
+    : "calc(56px + env(safe-area-inset-bottom))";
 
   const period = useMemo(
     () => buildEmployeePlanPeriod(activeKind, anchorDate),
@@ -595,45 +613,49 @@ export function PlansWorkspace({
       </div>
 
       {/* Mobile sticky action bar (sits above the global bottom nav, clears safe area) */}
-      {workspace.canSubmitPlans ? (
-        <div
-          className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
-          style={{
-            bottom: "var(--portal-bottom-nav-h, env(safe-area-inset-bottom))",
-          }}
-        >
-          <Button
-            className="flex-1"
-            disabled={isPending || !canEdit}
-            onClick={() => runAction(() => submitPlan(false))}
-            variant="secondary"
-          >
-            Save draft
-          </Button>
-          <Button
-            className="flex-1"
-            disabled={isPending || submitBlocked}
-            onClick={() => runAction(() => submitPlan(true))}
-          >
-            <Send className="mr-2 h-4 w-4" />
-            Submit
-          </Button>
-        </div>
-      ) : null}
+      {mounted && workspace.canSubmitPlans
+        ? createPortal(
+            <div
+              className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+              style={{ bottom: actionBarBottom }}
+            >
+              <Button
+                className="flex-1"
+                disabled={isPending || !canEdit}
+                onClick={() => runAction(() => submitPlan(false))}
+                variant="secondary"
+              >
+                Save draft
+              </Button>
+              <Button
+                className="flex-1"
+                disabled={isPending || submitBlocked}
+                onClick={() => runAction(() => submitPlan(true))}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Submit
+              </Button>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {/* Mobile bottom-sheet row editor */}
-      {sheetRow ? (
-        <RowEditSheet
-          canEdit={canEdit}
-          medicalRepOptions={workspace.medicalRepOptions}
-          onClose={() => setSheetKey(null)}
-          onDelete={() => deleteRow(sheetRow.key)}
-          onRep={(hrId) => setRowRep(sheetRow.key, hrId)}
-          onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
-          regions={regions}
-          row={sheetRow}
-        />
-      ) : null}
+      {mounted && sheetRow
+        ? createPortal(
+            <RowEditSheet
+              canEdit={canEdit}
+              medicalRepOptions={workspace.medicalRepOptions}
+              onClose={() => setSheetKey(null)}
+              onDelete={() => deleteRow(sheetRow.key)}
+              onRep={(hrId) => setRowRep(sheetRow.key, hrId)}
+              onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
+              regions={regions}
+              row={sheetRow}
+            />,
+            document.body,
+          )
+        : null}
 
       {/* ===================== DESKTOP / TABLET (>= md) ===================== */}
       <div className="hidden min-w-0 space-y-5 md:block">
