@@ -155,10 +155,35 @@ function statusBadgeVariant(status: VacationRequestStatus) {
 }
 
 function statusLabel(status: VacationRequestStatus) {
+  if (status === "needs_assignment") return "Needs HR Assignment";
   if (status === "pending_manager") return "Pending Manager";
   if (status === "pending_hr") return "Pending HR";
   if (status === "approved") return "Approved";
   return "Rejected";
+}
+
+// Dynamic, role-aware stage label for employee tracking. Built from fields already on the row
+// (no extra fetch). For the sequential workflow (Annual/Other/Compensatory/Emergency) HR
+// "records" the leave; Sick keeps its plain labels.
+function dynamicStatusLabel(row: Pick<
+  VacationRequestRecord,
+  "status" | "vacationType" | "managerName" | "managerDecision" | "hrDecision"
+>): string {
+  const sequential = ["annual", "other", "compensatory", "emergency"].includes(row.vacationType);
+  if (row.status === "needs_assignment") return "Needs HR Assignment";
+  if (row.status === "pending_manager") {
+    return row.managerName ? `Waiting for ${row.managerName} approval` : "Waiting for management approval";
+  }
+  if (row.status === "pending_hr") {
+    return sequential ? "Approved by Management - Pending HR Acknowledgement" : "Pending HR";
+  }
+  if (row.status === "approved") return sequential ? "Recorded by HR" : "Approved";
+  if (row.status === "rejected") {
+    if (row.hrDecision === "rejected") return "Rejected by HR";
+    if (row.managerDecision === "rejected") return row.managerName ? `Rejected by ${row.managerName}` : "Rejected by Management";
+    return "Rejected";
+  }
+  return statusLabel(row.status);
 }
 
 function paymentBadgeVariant(status: VacationPaymentStatus) {
@@ -916,7 +941,7 @@ function RequestCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+          <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
           <Badge variant={paymentBadgeVariant(row.paymentStatus)}>{paymentStatusLabel(row.paymentStatus)}</Badge>
         </div>
       </div>
@@ -2079,7 +2104,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           {row.unpaidReason ? <p className="mt-1 text-[10px] font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                          <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
                           {row.slaStatus.isOverdue ? (
                             <p className="mt-1 text-[10px] font-bold text-rose-700">SLA overdue</p>
                           ) : null}
@@ -2200,7 +2225,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
                 <h3 className="mt-1 text-lg font-black text-slate-900">{vacationRequestDisplayId(selectedRequest.id)}</h3>
-                <p className="text-[12px] font-semibold text-slate-500">{selectedRequest.employeeName} / {statusLabel(selectedRequest.status)}</p>
+                <p className="text-[12px] font-semibold text-slate-500">{selectedRequest.employeeName} / {dynamicStatusLabel(selectedRequest)}</p>
               </div>
               <button className="rounded-sm p-2 text-slate-500 hover:bg-slate-100" onClick={() => setSelectedRequest(null)} type="button">
                 <XCircle className="h-4 w-4" />

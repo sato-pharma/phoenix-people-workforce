@@ -297,6 +297,7 @@ export type VacationActionCenterRow = VacationRequestRecord & {
   assignedActorTitle: string | null;
   actionAvailability: VacationActionAvailability;
   slaAgeDays: number;
+  viewerStepKind: "management" | "hr" | "none";
 };
 
 export type VacationActionCenterData = {
