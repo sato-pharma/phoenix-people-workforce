@@ -11,13 +11,13 @@ import type {
 /**
  * Pure, database-free decision core for the sequential vacation approval workflow.
  *
- * Scope: the sequential flow applies ONLY to `annual`, `other`, and `compensatory`.
- * `emergency` and `sick` keep the legacy parallel flow (see service.ts) and must not be
- * routed through these helpers. HR is an ACKNOWLEDGEMENT/RECORDING step — never "final
+ * Scope: the sequential flow applies to `annual`, `other`, `compensatory`, and `emergency`.
+ * Only `sick` keeps the legacy parallel flow (see service.ts) and must not be routed
+ * through these helpers. HR is an ACKNOWLEDGEMENT/RECORDING step — never "final
  * approval" — and may reject at any time with a mandatory reason.
  */
 
-const SEQUENTIAL_WORKFLOW_TYPES = new Set<VacationType>(["annual", "other", "compensatory"]);
+const SEQUENTIAL_WORKFLOW_TYPES = new Set<VacationType>(["annual", "other", "compensatory", "emergency"]);
 
 export function isSequentialWorkflowType(type: VacationType | string | null | undefined): boolean {
   return SEQUENTIAL_WORKFLOW_TYPES.has(String(type ?? "").trim() as VacationType);

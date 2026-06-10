@@ -25,12 +25,10 @@ function step(
 
 export function runVacationApprovalFlowTests() {
   // ---- Type scope: only Annual / Other / Compensatory are sequential ----
-  for (const type of ["annual", "other", "compensatory"] as const) {
+  for (const type of ["annual", "other", "compensatory", "emergency"] as const) {
     assert.equal(isSequentialWorkflowType(type), true, `${type} should use the sequential workflow`);
   }
-  for (const type of ["emergency", "sick"] as const) {
-    assert.equal(isSequentialWorkflowType(type), false, `${type} must keep the legacy parallel flow`);
-  }
+  assert.equal(isSequentialWorkflowType("sick"), false, "only sick keeps the legacy parallel flow");
 
   // ---- Generic backend step identity ----
   assert.equal(genericStepName("direct_manager"), "management_approval_1");
@@ -204,7 +202,7 @@ export function runVacationApprovalFlowTests() {
   });
   assert.equal(assignAvail.assign.enabled, true, "HR can assign on a Needs-HR-Assignment request");
 
-  // ---- Source guards: Sick/Emergency keep the legacy path; new engine functions exist ----
+  // ---- Source guards: Sick keeps the legacy path; new engine functions exist ----
   const serviceSource = readFileSync(new URL("../src/lib/vacation/service.ts", import.meta.url), "utf8");
   assert.match(serviceSource, /isSequentialWorkflowType\(input\.request\.vacationType\)/, "decision path branches by workflow type");
   assert.match(serviceSource, /async function applyVacationDecisionLegacy\(/, "legacy parallel path is preserved for Sick/Emergency");
