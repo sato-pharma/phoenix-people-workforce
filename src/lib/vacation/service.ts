@@ -3109,6 +3109,13 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
       assignedActorTitle: activeRawStep ? titleOf(activeRawStep.approverHrId) : null,
       actionAvailability,
       slaAgeDays: row.slaStatus.businessDaysPending,
+      viewerStepKind: actorRawStep
+        ? actorRawStep.stepKey === "hr"
+          ? "hr"
+          : "management"
+        : isHrActor
+          ? "hr"
+          : "none",
     });
   }
 

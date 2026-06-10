@@ -210,4 +210,21 @@ export function runVacationApprovalFlowTests() {
   assert.match(serviceSource, /export async function assignVacationManagementApprover\(/, "needs-assignment resume exists");
   assert.match(serviceSource, /export async function getVacationActionCenterData\(/, "action center feed exists");
   assert.match(serviceSource, /initialRequestStatus = "needs_assignment"/, "missing first manager routes to needs_assignment for sequential types");
+  assert.match(serviceSource, /export async function getVacationActionCenterData\(/, "action center feed exists");
+
+  // ---- PR2 source guards: Action Center page/component/route/nav + employee tracking ----
+  const navSource = readFileSync(new URL("../src/config/system-navigation.ts", import.meta.url), "utf8");
+  assert.match(navSource, /\/leave-management\/vacation-action-center/, "nav exposes the Vacation Action Center");
+  const acPage = readFileSync(new URL("../app/leave-management/vacation-action-center/page.tsx", import.meta.url), "utf8");
+  assert.match(acPage, /getVacationActionCenterData/, "action center page loads action-center data");
+  const acComponent = readFileSync(new URL("../src/components/vacation/vacation-action-center.tsx", import.meta.url), "utf8");
+  assert.match(acComponent, /Acknowledge \/ Record by HR/, "HR action is acknowledgement/recording");
+  assert.doesNotMatch(acComponent, /Final Approval/i, "Action Center must never label HR as 'Final Approval'");
+  assert.match(acComponent, /Reject with reason/, "reject-with-reason action present");
+  assert.match(acComponent, /disabledReason/, "disabled buttons explain why");
+  const assignRoute = readFileSync(new URL("../app/api/vacations/requests/[id]/assign/route.ts", import.meta.url), "utf8");
+  assert.match(assignRoute, /assignVacationManagementApprover/, "assign route resumes a needs-assignment request");
+  const reportSource = readFileSync(new URL("../src/components/vacation/vacation-report.tsx", import.meta.url), "utf8");
+  assert.match(reportSource, /dynamicStatusLabel/, "employee tracking uses dynamic role-aware stage labels");
+  assert.match(reportSource, /Recorded by HR/, "approved sequential leave shows 'Recorded by HR'");
 }
