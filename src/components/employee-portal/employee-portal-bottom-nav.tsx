@@ -2,47 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  CalendarDays,
-  CircleDollarSign,
-  ClipboardCheck,
-  Gift,
-  Home,
-  LineChart,
-  type LucideIcon,
-  ReceiptText,
-  Send,
-  Trophy,
-  User,
-} from "lucide-react";
 
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
-
-type BottomNavItem = {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-};
-
-// Curated priority of primary portal destinations for the mobile bottom bar.
-// Each entry is gated by the same visibility flag the sidebar uses, so the bar
-// adapts to the signed-in role. Keep hrefs/flags in sync with
-// buildEmployeePortalSections in employee-portal-layout.tsx.
-const PRIMARY_CANDIDATES: Array<{
-  flag: keyof EmployeePortalNavVisibility;
-  href: string;
-  icon: LucideIcon;
-  label: string;
-}> = [
-  { flag: "showPlansTab", href: "/employee-portals/plans", icon: CalendarDays, label: "Plans" },
-  { flag: "showMyPerformanceTab", href: "/employee-portals/sales", icon: LineChart, label: "Performance" },
-  { flag: "showTeamPerformanceTab", href: "/employee-portals/team-performance", icon: Trophy, label: "Team" },
-  { flag: "showMarketingRequestsTab", href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing" },
-  { flag: "showManagementTab", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, label: "Expenses" },
-  { flag: "showMedicalRepExpensesTab", href: "/employee-portals/expenses", icon: ReceiptText, label: "Expenses" },
-  { flag: "showIncentiveTab", href: "/employee-portals/incentive", icon: Gift, label: "Incentive" },
-  { flag: "showMyCoachingTab", href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Coaching" },
-];
+import {
+  DEFAULT_BOTTOM_NAV_HREFS,
+  HOME_ENTRY,
+  MAX_BOTTOM_NAV_CUSTOM,
+  PROFILE_ENTRY,
+  type PortalNavEntry,
+  entryByHref,
+  visiblePortalNavEntries,
+} from "./employee-portal-nav-registry";
+import { useBottomNavPreference } from "./use-bottom-nav-preference";
 
 function isActiveHref(pathname: string, href: string) {
   if (href === "/employee-portals") return pathname === href;
@@ -51,9 +22,9 @@ function isActiveHref(pathname: string, href: string) {
 
 /**
  * Mobile-only global bottom tab bar for the employee portal. Presentation only —
- * items are derived from the already-resolved navigation visibility flags (no new
- * permission lookups), and every destination keeps its own server-side guard.
- * Hidden on lg+ where the sidebar takes over.
+ * destinations are derived from the resolved navigation visibility flags (no new
+ * permission lookups) and an optional per-device user preference; every page
+ * keeps its own server-side guard. Hidden on lg+ where the sidebar takes over.
  */
 export function EmployeePortalBottomNav({
   activePathOverride,
@@ -64,14 +35,22 @@ export function EmployeePortalBottomNav({
 }) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
+  const [selected] = useBottomNavPreference();
 
-  // Home + up to three role-primary destinations + Profile.
-  const middle = PRIMARY_CANDIDATES.filter((candidate) => visibility[candidate.flag]).slice(0, 3);
-  const items: BottomNavItem[] = [
-    { href: "/employee-portals", icon: Home, label: "Home" },
-    ...middle.map(({ href, icon, label }) => ({ href, icon, label })),
-    { href: "/employee-portals/profile", icon: User, label: "Profile" },
-  ];
+  const visibleHrefs = new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
+
+  // User-pinned shortcuts (kept only if still visible), else the role defaults.
+  const pinned = selected.filter((href) => visibleHrefs.has(href));
+  const middleHrefs = (pinned.length > 0
+    ? pinned
+    : DEFAULT_BOTTOM_NAV_HREFS.filter((href) => visibleHrefs.has(href))
+  ).slice(0, MAX_BOTTOM_NAV_CUSTOM);
+
+  const middle = middleHrefs
+    .map((href) => entryByHref(href))
+    .filter((entry): entry is PortalNavEntry => Boolean(entry));
+
+  const items: PortalNavEntry[] = [HOME_ENTRY, ...middle, PROFILE_ENTRY];
 
   return (
     <nav
@@ -93,7 +72,7 @@ export function EmployeePortalBottomNav({
                 href={item.href}
               >
                 <Icon className="h-5 w-5" />
-                {item.label}
+                <span className="max-w-full truncate px-0.5">{item.label}</span>
               </Link>
             </li>
           );
