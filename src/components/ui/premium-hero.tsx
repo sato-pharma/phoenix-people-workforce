@@ -2,6 +2,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { systemAssets } from "@/config/system-settings";
+import { cn } from "@/lib/utils";
 
 type PremiumHeroProps = {
   /** Small orange uppercase label above the title. */
@@ -10,6 +11,8 @@ type PremiumHeroProps = {
   title: string;
   /** Optional supporting line under the title. */
   subtitle?: ReactNode;
+  /** Optional extra classes for the subtitle (e.g. truncation). */
+  subtitleClassName?: string;
   /** Optional right-aligned element (e.g. a status pill). Hidden on mobile. */
   badge?: ReactNode;
 };
@@ -21,7 +24,7 @@ type PremiumHeroProps = {
  * Square corners (matches the locked admin design language; the admin shell
  * also zeroes radii). Use it as the header for any premium module page.
  */
-export function PremiumHero({ kicker, title, subtitle, badge }: PremiumHeroProps) {
+export function PremiumHero({ kicker, title, subtitle, subtitleClassName, badge }: PremiumHeroProps) {
   return (
     <section className="relative overflow-hidden border border-slate-800 bg-slate-900 px-5 py-6 shadow-sm sm:px-8 sm:py-7">
       <div
@@ -45,7 +48,9 @@ export function PremiumHero({ kicker, title, subtitle, badge }: PremiumHeroProps
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">{kicker}</p>
           <h1 className="mt-1 text-2xl font-black leading-tight text-white sm:text-[1.9rem]">{title}</h1>
-          {subtitle ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{subtitle}</p> : null}
+          {subtitle ? (
+            <p className={cn("mt-2 max-w-2xl text-sm leading-6 text-slate-300", subtitleClassName)}>{subtitle}</p>
+          ) : null}
         </div>
         {badge ? <div className="hidden shrink-0 self-start sm:block">{badge}</div> : null}
       </div>

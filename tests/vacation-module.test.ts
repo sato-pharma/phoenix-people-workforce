@@ -5,6 +5,10 @@ const serviceSource = readFileSync(
   new URL("../src/lib/vacation/service.ts", import.meta.url),
   "utf8",
 );
+const vacationEmailSource = readFileSync(
+  new URL("../src/lib/vacation/email.ts", import.meta.url),
+  "utf8",
+);
 const navigationSource = readFileSync(
   new URL("../src/config/system-navigation.ts", import.meta.url),
   "utf8",
@@ -163,6 +167,46 @@ export function runVacationModuleTests() {
   // the Vacation Action Center instead of approving directly; only legacy Sick keeps direct buttons.
   assert.match(submittedBlock, /Review Request/, "sequential workflow notifications use a Review Request redirect");
   assert.match(submittedBlock, /vacation-action-center\?requestId=/, "Review button opens the Vacation Action Center by request id");
+
+  // Email-template wiring: sequential submit emails render from the user-edited "leave_request"
+  // WYSIWYG template (sendVacationManagerDecisionEmail) and the generic notification's email
+  // channel is dropped so there is no duplicate generic email. Legacy Sick keeps the generic email.
+  assert.match(submittedBlock, /sendVacationManagerDecisionEmail\(/, "sequential submit must send the templated leave_request email per approver");
+  assert.match(
+    submittedBlock,
+    /channels: sequential \? \["in_app", "telegram"\] : \["in_app", "email", "telegram"\]/,
+    "sequential submit must drop the duplicate generic email channel (templated leave_request is the only submit email)",
+  );
+  assert.match(submittedBlock, /pickDeliverableEmail\(recipient\.email\)/, "templated submit email must guard against non-deliverable (synthetic) addresses");
+  assert.match(submittedBlock, /reviewUrl: absoluteReviewUrl/, "templated submit email CTA must be the absolute Action Center review link");
+
+  // The dedicated vacation email senders must map to the edited templates and fully populate the
+  // leave_request greeting ({{managerName}}) and hiring-date ({{date}}) placeholders, with a safe
+  // plain-email fallback when a template has been deactivated/deleted.
+  assert.match(vacationEmailSource, /templateKey: "leave_request"/, "manager submit email must use the leave_request template");
+  assert.match(vacationEmailSource, /templateKey: approved \? "leave_approval" : "leave_rejection"/, "decision result email must use leave_approval / leave_rejection");
+  assert.match(vacationEmailSource, /managerName: input\.managerName \|\| "Manager"/, "leave_request greeting placeholder {{managerName}} must be populated");
+  assert.match(vacationEmailSource, /date: hireDate/, "leave_request {{date}} (hiring date) placeholder must be populated");
+  assert.match(vacationEmailSource, /isTemplateUnavailableSkip/, "vacation emails must fall back to a plain send when the template is missing/inactive");
+  assert.match(
+    vacationEmailSource,
+    /overrides: \{ replaceRecipients: true, to: \[input\.managerEmail\] \}/,
+    "each approver must receive ONLY their own leave_request copy — template recipient rules must not fan personally-greeted copies to other inboxes",
+  );
+  assert.match(
+    vacationEmailSource,
+    /overrides: \{ cc: input\.cc, replaceRecipients: true, to: \[input\.employeeEmail\] \}/,
+    "decision result email routing is engine-owned (employee TO + approver CC), never the template's recipient rules",
+  );
+
+  // Decision dispatch must not double-email: the generic notification is in-app + Telegram only,
+  // and the employee/approvers receive the templated leave_approval/leave_rejection email instead.
+  const decisionStart = serviceSource.indexOf("async function dispatchVacationDecision");
+  const decisionEnd = serviceSource.indexOf("async function resolveManagerEmail", decisionStart);
+  assert.ok(decisionStart >= 0 && decisionEnd > decisionStart, "dispatchVacationDecision must exist as a dedicated helper");
+  const decisionBlock = serviceSource.slice(decisionStart, decisionEnd);
+  assert.match(decisionBlock, /channels: \["in_app", "telegram"\]/, "decision dispatch must suppress the generic email so only the templated decision email sends");
+  assert.match(decisionBlock, /sendVacationDecisionResultEmail\(/, "decision dispatch must send the templated decision result email");
   assert.match(
     serviceSource,
     /This request must be reviewed in the Vacation Action Center; email approval links are disabled/,
