@@ -14,14 +14,12 @@ import { TelegramTemplateError } from "@/lib/notifications/telegram-template-typ
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TelegramTemplateWorkflowKey =
-  | "birthday"
-  | "anniversary"
-  | "contract_renewal"
-  | "probation"
   | "vacation"
   | "outstation"
+  | "weekly_plans"
   | "marketing_requests"
-  | "payroll"
+  | "contract_renewal"
+  | "probation"
   | "general_admin_test";
 
 export type TelegramTemplateButton = {
@@ -98,324 +96,169 @@ const workflowPlaceholders = [
   "reason",
 ];
 const linkPlaceholders = ["actionUrl", "approveUrl", "rejectUrl", "requestUrl", "employeePortalUrl"];
+// {{title}}/{{message}} carry the event's domain-composed wording (see templates.ts), so a
+// single module-wide template can reframe every event without losing per-event facts.
+const contentPlaceholders = ["title", "message"];
 const globalPlaceholders = [
+  ...contentPlaceholders,
   ...identityPlaceholders,
   ...organizationPlaceholders,
   ...workflowPlaceholders,
   ...linkPlaceholders,
 ];
 
+const baseSampleVariables: Record<string, string> = {
+  approvalStep: "Manager review",
+  approveUrl: "/leave-management/vacation-decision/REQ-2026-014?decision=approve",
+  rejectUrl: "/leave-management/vacation-decision/REQ-2026-014?decision=reject",
+  period: "14 Jun 2026 - 18 Jun 2026",
+  location: "Alexandria",
+  approverName: "Omar Nabil",
+  area: "Cairo East",
+  department: "Sales",
+  dueDate: "14 Jun 2026",
+  employeeHrId: "PHX-1024",
+  employeeName: "Ahmed Hassan",
+  employeePortalUrl: "/employee-portals",
+  eventDate: "14 Jun 2026",
+  line: "Cardio Line",
+  managerName: "Omar Nabil",
+  moduleName: "Phoenix Workforce",
+  priority: "High",
+  reason: "Workflow update",
+  recipientHrId: "B-10",
+  recipientName: "Omar Anwar",
+  requesterHrId: "PHX-1024",
+  requesterName: "Ahmed Hassan",
+  requestId: "REQ-2026-014",
+  requestType: "Annual",
+  requestUrl: "/employee-portals",
+  role: "District Manager",
+  status: "Pending approval",
+  submittedAt: "14 Jun 2026",
+  team: "Cairo East Team",
+  updatedAt: "14 Jun 2026",
+  workflowName: "Approval workflow",
+};
+
 export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
   {
     allowedPlaceholders: [...globalPlaceholders],
-    defaultMessage: "Birthday reminder\nEmployee: {{employeeName}}\nHR ID: {{employeeHrId}}\nDate: {{eventDate}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Birthday Reminder",
-    eventType: "birthday",
-    module: "birthdays",
-    name: "Birthday",
-    recommendedPlaceholders: ["employeeName", "eventDate", "actionUrl"],
-    sampleVariables: {
-      actionUrl: "/admin/employees/EMP001",
-      approvalStep: "HR review",
-      approverName: "Sara Hassan",
-      area: "Cairo",
-      department: "People",
-      dueDate: "15 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals/profile",
-      eventDate: "15 Jun 2026",
-      line: "Sales",
-      managerName: "Sara Hassan",
-      moduleName: "Birthdays",
-      priority: "Normal",
-      reason: "Birthday reminder",
-      recipientHrId: "admin-HR",
-      recipientName: "Phoenix Admin",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      requestId: "BD-1001",
-      requestUrl: "/admin/employees/EMP001",
-      requestType: "Birthday",
-      role: "HR Manager",
-      status: "Scheduled",
-      submittedAt: "14 Jun 2026",
-      team: "HR Operations",
-      updatedAt: "15 Jun 2026",
-      workflowName: "Birthday reminder",
-    },
-    templateKey: "birthday",
-  },
-  {
-    allowedPlaceholders: [...globalPlaceholders],
-    defaultMessage: "Work anniversary reminder\nEmployee: {{employeeName}}\nHR ID: {{employeeHrId}}\nDate: {{eventDate}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Work Anniversary Reminder",
-    eventType: "anniversary_today",
-    module: "anniversary",
-    name: "Anniversary",
-    recommendedPlaceholders: ["employeeName", "eventDate", "actionUrl"],
-    sampleVariables: {
-      actionUrl: "/admin/employees/EMP001",
-      approvalStep: "HR review",
-      approverName: "Sara Hassan",
-      area: "Cairo",
-      department: "People",
-      dueDate: "15 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals/profile",
-      eventDate: "15 Jun 2026",
-      line: "Sales",
-      managerName: "Sara Hassan",
-      moduleName: "Anniversary",
-      priority: "Normal",
-      reason: "Work anniversary reminder",
-      recipientHrId: "admin-HR",
-      recipientName: "Phoenix Admin",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      requestId: "ANN-1001",
-      requestUrl: "/admin/employees/EMP001",
-      requestType: "Work anniversary",
-      role: "HR Manager",
-      status: "Scheduled",
-      submittedAt: "14 Jun 2026",
-      team: "HR Operations",
-      updatedAt: "15 Jun 2026",
-      workflowName: "Work anniversary reminder",
-    },
-    templateKey: "anniversary",
-  },
-  {
-    allowedPlaceholders: [...globalPlaceholders],
-    defaultMessage: "Contract renewal reminder\nEmployee: {{employeeName}}\nHR ID: {{employeeHrId}}\nDue date: {{eventDate}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Contract Renewal Reminder",
-    eventType: "contract_renewal_reminder",
-    module: "contract_renewal",
-    name: "Contract Renewal",
-    recommendedPlaceholders: ["employeeName", "employeeHrId", "eventDate", "actionUrl"],
-    sampleVariables: {
-      actionUrl: "/admin/contracts/EMP001",
-      approvalStep: "Manager review",
-      approverName: "Sara Hassan",
-      area: "Cairo",
-      department: "Sales",
-      dueDate: "30 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals/profile",
-      eventDate: "30 Jun 2026",
-      line: "Sales",
-      managerName: "Sara Hassan",
-      moduleName: "Contract Renewal",
-      priority: "Critical",
-      reason: "Contract renewal due",
-      recipientHrId: "DSM001",
-      recipientName: "Sara Hassan",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      requestId: "CON-1001",
-      requestUrl: "/admin/contracts/EMP001",
-      requestType: "Contract renewal",
-      role: "District Sales Manager",
-      status: "Pending review",
-      submittedAt: "1 Jun 2026",
-      team: "Cairo East",
-      updatedAt: "10 Jun 2026",
-      workflowName: "Contract renewal",
-    },
-    templateKey: "contract_renewal",
-  },
-  {
-    allowedPlaceholders: [...globalPlaceholders],
-    defaultMessage: "Probation reminder\nEmployee: {{employeeName}}\nHR ID: {{employeeHrId}}\nManager: {{managerName}}\nDue date: {{eventDate}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Probation Reminder",
-    eventType: "probation_reminder",
-    module: "probation",
-    name: "Probation",
-    recommendedPlaceholders: ["employeeName", "employeeHrId", "managerName", "eventDate", "actionUrl"],
-    sampleVariables: {
-      actionUrl: "/admin/probation/EMP001",
-      approvalStep: "Manager decision",
-      approverName: "Sara Hassan",
-      area: "Cairo",
-      department: "Sales",
-      dueDate: "18 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals/probation",
-      eventDate: "18 Jun 2026",
-      line: "Sales",
-      managerName: "Sara Hassan",
-      moduleName: "Probation",
-      priority: "Critical",
-      reason: "Probation decision due",
-      recipientHrId: "DSM001",
-      recipientName: "Sara Hassan",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      requestId: "PROB-1001",
-      requestUrl: "/admin/probation/EMP001",
-      requestType: "Probation",
-      role: "District Sales Manager",
-      status: "Pending decision",
-      submittedAt: "1 Mar 2026",
-      team: "Cairo East",
-      updatedAt: "10 Jun 2026",
-      workflowName: "Probation decision",
-    },
-    templateKey: "probation",
-  },
-  {
-    allowedPlaceholders: [...globalPlaceholders, "period", "status"],
-    defaultMessage: "New vacation request\nEmployee: {{employeeName}}\nPeriod: {{period}}\nStatus: {{status}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "New Vacation Request",
-    eventType: "request_submitted",
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Vacation Telegram event (submitted, manager decision, final decision, SLA reminders).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
     module: "vacation",
     name: "Vacation",
-    recommendedPlaceholders: ["employeeName", "period", "status", "actionUrl", "approveUrl", "rejectUrl"],
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
-      actionUrl: "/admin/vacations/REQ-1001",
-      approveUrl: "/leave-management/vacation-decision/REQ-1001?decision=approve",
-      approvalStep: "Direct manager review",
-      approverName: "Sara Hassan",
-      area: "Cairo",
-      department: "Sales",
-      dueDate: "12 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals",
-      eventDate: "15 Jun 2026",
-      line: "Sales",
-      managerName: "Sara Hassan",
-      moduleName: "Vacation",
-      priority: "Critical",
-      reason: "Annual leave",
-      recipientHrId: "DSM001",
-      recipientName: "Sara Hassan",
-      rejectUrl: "/leave-management/vacation-decision/REQ-1001?decision=reject",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      period: "15 Jun 2026 - 18 Jun 2026",
-      requestId: "REQ-1001",
-      requestUrl: "/admin/vacations/REQ-1001",
-      requestType: "Vacation request",
-      role: "District Sales Manager",
-      status: "Pending your approval",
-      submittedAt: "10 Jun 2026",
-      team: "Cairo East",
-      updatedAt: "10 Jun 2026",
-      workflowName: "Vacation approval",
+      ...baseSampleVariables,
+      actionUrl: "/leave-management/vacation-control",
+      message: "Module: Vacation\nAhmed Hassan submitted an Annual vacation request (2026-06-14 to 2026-06-18).",
+      title: "Vacation request submitted",
     },
     templateKey: "vacation",
   },
   {
     allowedPlaceholders: [...globalPlaceholders],
-    defaultMessage: "Outstation request\nEmployee: {{employeeName}}\nRequest: {{requestId}}\nStatus: {{status}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Outstation Request",
-    eventType: "request_submitted",
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Outstation / Expense Telegram event (submitted, approved, rejected, added to payroll).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
     module: "outstation",
-    name: "Outstation",
-    recommendedPlaceholders: ["employeeName", "requestId", "status", "actionUrl"],
+    name: "Outstation / Expense",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
-      actionUrl: "/admin/outstation/requests",
-      approvalStep: "Finance review",
-      approverName: "Mona Adel",
-      area: "Alexandria",
-      department: "Sales",
-      dueDate: "20 Jun 2026",
-      employeeHrId: "EMP001",
-      employeeName: "Omar Anwar",
-      employeePortalUrl: "/employee-portals/expenses",
-      eventDate: "18 Jun 2026",
-      line: "Sales",
-      location: "Alexandria",
-      managerName: "Sara Hassan",
-      moduleName: "Outstation",
-      priority: "High",
-      reason: "Field visit",
-      recipientHrId: "FIN001",
-      recipientName: "Mona Adel",
-      requesterHrId: "EMP001",
-      requesterName: "Omar Anwar",
-      requestId: "OUT-1001",
-      requestUrl: "/admin/outstation/requests",
-      requestType: "Outstation request",
-      role: "Finance Manager",
-      status: "Pending review",
-      submittedAt: "18 Jun 2026",
-      team: "Cairo East",
-      updatedAt: "18 Jun 2026",
-      workflowName: "Outstation review",
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/expenses",
+      message: "Module: Outstation\nYour outstation expense (EGP 1,250) was approved by Omar Nabil.",
+      title: "Outstation request approved",
     },
     templateKey: "outstation",
   },
   {
-    allowedPlaceholders: [
-      ...globalPlaceholders,
-      "requestCode",
-      "approveUrl",
-      "rejectUrl",
-      "returnUrl",
-    ],
-    defaultMessage: "Marketing request\nRequester: {{requesterName}}\nRequest: {{requestCode}}\nStep: {{approvalStep}}\nStatus: {{status}}\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Marketing Request Approval",
-    eventType: "request_assigned",
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Weekly / Monthly Plans Telegram event (submitted, manager approved, CEO approved, returned/rejected).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "weekly_plans",
+    name: "Weekly / Monthly Plans",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/plans",
+      message: "Module: Weekly plans\nMariam Adel submitted a weekly plan for 2026-W25.",
+      title: "Weekly plan needs manager review",
+    },
+    templateKey: "weekly_plans",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders, "requestCode", "returnUrl"],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Marketing Requests Telegram event (submitted, assigned, returned, approved, rejected, SLA reminders).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
     module: "marketing_requests",
     name: "Marketing Requests",
-    recommendedPlaceholders: ["requestCode", "requesterName", "approvalStep", "status", "actionUrl", "approveUrl", "rejectUrl"],
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
-      actionUrl: "/employee-portals/marketing-requests/decision/MKT-1001",
-      approvalStep: "Marketing review",
-      approveUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=approve",
-      approverName: "Mona Adel",
-      area: "Alexandria",
-      department: "Commercial",
-      dueDate: "20 Jun 2026",
-      employeeHrId: "MR001",
-      employeeName: "Med Rep One",
-      employeePortalUrl: "/employee-portals/marketing-requests",
-      eventDate: "18 Jun 2026",
-      hireDate: "1 Jan 2024",
-      hiringDate: "1 Jan 2024",
-      line: "Anti infective",
-      managerName: "District Manager",
-      moduleName: "Marketing Requests",
-      priority: "High",
-      reason: "Customer activity request",
-      recipientHrId: "MKT001",
-      recipientName: "Mona Adel",
-      rejectUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=reject",
-      requesterHrId: "MR001",
-      requesterName: "Med Rep One",
-      requestCode: "MKT-1001",
-      requestId: "MKT-1001",
-      requestUrl: "/employee-portals/marketing-requests/decision/MKT-1001",
-      requestType: "Marketing activity",
-      returnUrl: "/employee-portals/marketing-requests/decision/MKT-1001?decision=return",
-      role: "Marketing Manager",
-      status: "Pending approval",
-      submittedAt: "18 Jun 2026",
-      team: "Alex Team",
-      updatedAt: "18 Jun 2026",
-      workflowName: "Marketing request approval",
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/marketing-requests/inbox",
+      approveUrl: "/employee-portals/marketing-requests/decision/REQ-2026-014?decision=approve",
+      rejectUrl: "/employee-portals/marketing-requests/decision/REQ-2026-014?decision=reject",
+      requestCode: "REQ-2026-014",
+      returnUrl: "/employee-portals/marketing-requests/decision/REQ-2026-014?decision=return",
+      message: "Module: Marketing requests\nRequest REQ-2026-014 is assigned to you for approval.",
+      title: "Marketing request assigned",
     },
     templateKey: "marketing_requests",
   },
   {
-    allowedPlaceholders: ["actionUrl", "employeePortalUrl", "eventDate"],
-    defaultMessage: "Your payslip is available.\n\nOpen in Phoenix: {{actionUrl}}",
-    defaultTitle: "Payslip Available",
-    eventType: "payslip_available",
-    module: "payroll",
-    name: "Payroll",
-    recommendedPlaceholders: ["actionUrl"],
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Contract Renewal Telegram event (daily renewal reminders + workflow updates).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "contract_renewal",
+    name: "Contract Renewal",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
-      actionUrl: "/employee-portals/payroll",
-      employeePortalUrl: "/employee-portals/payroll",
-      eventDate: "June 2026",
+      ...baseSampleVariables,
+      actionUrl: "/contracts/renewals",
+      message: "Module: Contract renewal\nContract renewal for Mariam Nabil is due in 14 days. Pending manager recommendation.",
+      title: "Contract renewal reminder",
     },
-    templateKey: "payroll",
+    templateKey: "contract_renewal",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Probation Telegram event (daily reminder checkpoints + workflow updates).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "probation",
+    name: "Probation",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/probation",
+      message: "Module: Probation\nProbation review for Ahmed Hassan needs your feedback (15 days remaining).",
+      title: "Probation feedback required",
+    },
+    templateKey: "probation",
   },
   {
     allowedPlaceholders: [...globalPlaceholders],
@@ -533,6 +376,7 @@ function getDefinition(templateKey: string) {
 }
 
 type NotificationTemplateRow = {
+  event_type?: string | null;
   is_active?: boolean | null;
   message_template?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -545,7 +389,7 @@ async function loadTelegramTemplateRows() {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("notification_templates")
-      .select("template_key,title_template,message_template,is_active,metadata,updated_at")
+      .select("template_key,event_type,title_template,message_template,is_active,metadata,updated_at")
       .eq("channel", "telegram");
     if (error) throw error;
     return new Map(((data ?? []) as NotificationTemplateRow[]).map((row) => [cleanText(row.template_key), row]));
@@ -558,7 +402,12 @@ async function loadTelegramTemplateRows() {
 export async function listTelegramTemplates(): Promise<TelegramTemplateView[]> {
   const rows = await loadTelegramTemplateRows();
   return telegramTemplateDefinitions.map((definition) => {
-    const row = rows.get(definition.templateKey);
+    const savedRow = rows.get(definition.templateKey);
+    // A row saved under an old per-event catalog (event_type differs from the current
+    // definition) is LEGACY: surface the safe defaults instead of silently re-scoping
+    // its per-event wording/buttons to the whole module on the next save.
+    const stale = Boolean(savedRow) && cleanText(savedRow?.event_type) !== definition.eventType;
+    const row = stale ? undefined : savedRow;
     const isActive = row?.is_active === true;
     const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
     const buttons = buttonsFromMetadata(metadata);
@@ -594,6 +443,22 @@ export async function saveTelegramTemplate(access: AccessContext, input: Telegra
   const buttonValidation = validateTelegramTemplateButtons({ allowedPlaceholders: definition.allowedPlaceholders, buttons });
   if (titleValidation.errors.length > 0 || validation.errors.length > 0 || ctaValidation.errors.length > 0 || buttonValidation.errors.length > 0) {
     throw new TelegramTemplateError("invalid_template", [...titleValidation.errors, ...validation.errors, ...ctaValidation.errors, ...buttonValidation.errors].join(" "));
+  }
+  // Dry-render every enabled button/CTA URL against the sample variables (exactly what
+  // the live renderer does). A URL that cannot render here would degrade EVERY send of
+  // the module to buttonless - reject it at save instead of persisting it.
+  try {
+    for (const button of enabledButtons(buttons)) {
+      renderTelegramCtaUrl(cleanText(button.url), definition.sampleVariables, definition.allowedPlaceholders);
+    }
+    if (buttons[0]?.enabled === true) {
+      renderTelegramCtaUrl(cleanText(buttons[0].url), definition.sampleVariables, definition.allowedPlaceholders);
+    }
+  } catch (error) {
+    if (error instanceof TelegramTemplateError) {
+      throw new TelegramTemplateError("invalid_template", `Button link cannot render: ${error.message}`);
+    }
+    throw error;
   }
 
   const now = new Date().toISOString();
