@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight, CircleDashed } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { PremiumHero } from "@/components/ui/premium-hero";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
 /*  Canonical cross-cutting stylesheet                                 */
@@ -77,34 +77,12 @@ export function EmployeePortalPageShell({
       {/* Portal-wide print + prefers-reduced-motion stylesheet (one inject per page) */}
       <style dangerouslySetInnerHTML={{ __html: portalGlobalStyles }} />
       {hero ?? (
-      <section
-        className="relative box-border w-full overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.20)]"
-        style={{ boxSizing: "border-box" }}
-      >
-        <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:44px_44px]" />
-        {/* Subtle decorative glow (hidden from a11y) */}
-        <div className="absolute -right-16 -top-24 h-64 w-64 rounded bg-orange-500/20 blur-3xl" aria-hidden="true" />
-        <div className="absolute -bottom-28 left-8 h-56 w-56 rounded bg-sky-500/10 blur-3xl" aria-hidden="true" />
-        <div className="relative box-border grid w-full min-w-0 gap-5 p-5 sm:p-6 lg:grid-cols-12 lg:p-8">
-          <div className="min-w-0 lg:col-span-12">
-            <p className="inline-flex items-center gap-2 rounded border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-orange-100">
-              <span className="h-1.5 w-1.5 rounded-sm bg-orange-300" />
-              {badge ?? "Employee Portal"}
-            </p>
-            <h1 className="mt-5 max-w-4xl text-[26px] font-black leading-[1.05] tracking-[-0.03em] text-white sm:text-[32px] lg:text-[36px]">
-              {title}
-            </h1>
-            <p
-              className={cn(
-                "mt-3 max-w-2xl text-[15px] leading-[1.78] text-slate-300 lg:text-[15.5px]",
-                descriptionClassName,
-              )}
-            >
-              {description}
-            </p>
-          </div>
-        </div>
-      </section>
+        <PremiumHero
+          kicker={badge ?? "Employee Portal"}
+          title={title}
+          subtitle={description}
+          subtitleClassName={descriptionClassName}
+        />
       )}
       <div className="space-y-6">{body}</div>
     </div>
