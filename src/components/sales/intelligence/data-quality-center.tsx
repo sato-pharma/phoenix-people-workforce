@@ -80,7 +80,7 @@ export function DataQualityCenter({ data, error }: { data: SiDataQuality | null;
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Month</span>
         <select
-          className="h-9 border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+          className="h-9 border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#6B8FB5]"
           disabled={pending || data.availablePeriods.length === 0}
           onChange={(event) => selectPeriod(event.target.value)}
           value={data.period ?? ""}

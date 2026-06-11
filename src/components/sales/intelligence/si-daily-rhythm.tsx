@@ -123,8 +123,8 @@ export function DailyRhythmChart({
         />
         <YAxis yAxisId="day" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
         <YAxis yAxisId="mtd" orientation="right" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
-        <Tooltip content={<RhythmTooltip />} cursor={{ fill: "rgba(249,115,22,0.07)" }} />
-        <Bar yAxisId="day" dataKey="value" fill="#F97316" radius={[2, 2, 0, 0]} maxBarSize={22} />
+        <Tooltip content={<RhythmTooltip />} cursor={{ fill: "rgba(30,58,95,0.07)" }} />
+        <Bar yAxisId="day" dataKey="value" fill="#1E3A5F" radius={[2, 2, 0, 0]} maxBarSize={22} />
         {points.some((point) => point.priorCumulative !== null) && (
           <Line
             yAxisId="mtd"
@@ -174,7 +174,7 @@ export function SiDailyRhythm({
             {runRate && (
               <span className={cn(
                 "border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide",
-                runRate.reliable ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-slate-50 text-slate-500",
+                runRate.reliable ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-500",
               )}
                 title={`${runRate.daysElapsed}/${runRate.daysInMonth} days traded · ${(runRate.datedValueShare * 100).toFixed(0)}% dated`}
               >
@@ -206,7 +206,7 @@ export function SiDailyRhythm({
             {weekdayAverages.map((entry) => (
               <div className="flex flex-col items-center gap-1" key={entry.label} title={`EGP ${compactEGP(entry.avg)}`}>
                 <div className="flex h-8 w-full items-end">
-                  <div className="w-full bg-[#F97316]" style={{ height: `${entry.heightPct}%`, opacity: 0.25 + (entry.heightPct / 100) * 0.7 }} />
+                  <div className="w-full bg-[#1E3A5F]" style={{ height: `${entry.heightPct}%`, opacity: 0.25 + (entry.heightPct / 100) * 0.7 }} />
                 </div>
                 <span className="text-[9px] font-bold text-[#94A3B8]">{entry.label}</span>
               </div>

@@ -83,7 +83,7 @@ export function SiLineMix({ lines, totalValue }: { lines: LineSlice[]; totalValu
               </span>
               <span className="flex shrink-0 items-baseline gap-2">
                 <span className="text-sm font-black tabular-nums text-[#0F172A]">{formatCurrency(line.value)}</span>
-                <span className="text-xs font-black text-[#F97316]">{shareText(line.share)}</span>
+                <span className="text-xs font-black text-[#1E3A5F]">{shareText(line.share)}</span>
               </span>
             </div>
           ))}

@@ -42,7 +42,7 @@ function ParetoTooltip({ active, payload }: ParetoTooltipProps) {
       <p className="text-xs font-black text-slate-900">{point.name}</p>
       <p className="text-[11px] font-bold text-slate-500">{point.distributorName}</p>
       <p className="mt-1 text-[12px] font-black tabular-nums text-slate-900">{formatCurrency(point.value)}</p>
-      <p className="text-[10px] font-bold text-[#F97316]">Top {point.rank} = {point.cumulativePct.toFixed(0)}% of customer value</p>
+      <p className="text-[10px] font-bold text-[#1E3A5F]">Top {point.rank} = {point.cumulativePct.toFixed(0)}% of customer value</p>
     </div>
   );
 }
@@ -114,7 +114,7 @@ export function SiCustomerPareto({
                 <XAxis dataKey="rank" tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "#E2E8F0" }} />
                 <YAxis yAxisId="value" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
                 <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={36} />
-                <Tooltip content={<ParetoTooltip />} cursor={{ fill: "rgba(249,115,22,0.07)" }} />
+                <Tooltip content={<ParetoTooltip />} cursor={{ fill: "rgba(30,58,95,0.07)" }} />
                 <ReferenceLine
                   label={{
                     value: eightyAt ? `Top ${eightyAt} = 80% of sales` : "80%",
@@ -128,7 +128,7 @@ export function SiCustomerPareto({
                   y={80}
                   yAxisId="pct"
                 />
-                <Bar yAxisId="value" dataKey="value" fill="#F97316" radius={[2, 2, 0, 0]} maxBarSize={26} />
+                <Bar yAxisId="value" dataKey="value" fill="#1E3A5F" radius={[2, 2, 0, 0]} maxBarSize={26} />
                 <Line yAxisId="pct" type="monotone" dataKey="cumulativePct" stroke="#0F172A" strokeWidth={2.5} dot={{ r: 2.5, fill: "#0F172A" }} />
               </ComposedChart>
             </SafeResponsiveContainer>
@@ -168,7 +168,7 @@ export function SiCustomerPareto({
                     <tr key={`${customer.name}:${customer.distributorName}:${index}`}>
                       <td
                         className="w-10 px-2.5 py-2 text-center text-xs font-black tabular-nums text-[#0F172A]"
-                        style={index < 10 ? { backgroundColor: `rgba(249,115,22,${(0.32 - index * 0.03).toFixed(2)})` } : undefined}
+                        style={index < 10 ? { backgroundColor: `rgba(30,58,95,${(0.32 - index * 0.03).toFixed(2)})` } : undefined}
                       >
                         {index + 1}
                       </td>

@@ -46,7 +46,7 @@ function SiExportButton({ includeRestricted, period, table }: { includeRestricte
   }
   return (
     <button
-      className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+      className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#6B8FB5] hover:text-[#1E3A5F] disabled:opacity-50"
       disabled={busy}
       onClick={run}
       type="button"
@@ -67,7 +67,7 @@ function FilterableTable({ columns, rows }: { columns: Column[]; rows: Row[] }) 
       <div className="relative max-w-xs">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
         <input
-          className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+          className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none focus:border-[#6B8FB5]"
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter rows…"
           type="text"
@@ -245,7 +245,7 @@ function DetailsInner({ bundle }: { bundle: SiDetailsBundle }) {
           <button
             className={cn(
               "h-9 px-3 text-xs font-black transition",
-              tab === entry.key ? "bg-[#0B0B0B] text-white" : "bg-[#F8FAFC] text-[#0F172A] hover:bg-[#FFF7ED]",
+              tab === entry.key ? "bg-[#0B0B0B] text-white" : "bg-[#F8FAFC] text-[#0F172A] hover:bg-[#F1F5F9]",
             )}
             key={entry.key}
             onClick={() => setTab(entry.key)}

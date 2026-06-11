@@ -27,6 +27,7 @@ import {
   loadSiDistProduct,
   loadSiPeriodTotals,
   loadSiReference,
+  type SiCustomerProductRow,
   type SiDistProductRow,
   type SiPeriodTotalRow,
   type SiReference,
@@ -34,12 +35,16 @@ import {
 import { shiftPeriod } from "@/lib/sales/periods";
 import type {
   SiCompare,
+  SiCoverage,
   SiCustomerChurn,
   SiCustomerDrill,
   SiCustomerInsights,
   SiDashboardBundle,
   SiDetailsBundle,
   SiDistributorPerformance,
+  SiFilterFacets,
+  SiFilterOption,
+  SiFilters,
   SiGeography,
   SiInsight,
   SiKpiSummary,
@@ -51,6 +56,7 @@ import type {
   SiTrend,
   SiTrendPoint,
 } from "@/lib/sales/intelligence/types";
+import { EMPTY_SI_FILTERS } from "@/lib/sales/intelligence/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +77,101 @@ const distinct = <T>(rows: T[], pick: (row: T) => string) => {
 };
 
 const normCode = (value: string) => value.trim().toUpperCase();
+
+const SI_FILTER_DIMS: Array<keyof SiFilters> = ["regions", "areas", "lines", "distributors", "products", "customers"];
+
+/**
+ * Map customer×product fact rows onto the distributor×product shape so the existing aggregation
+ * pipeline (totals, region/area/distributor/product splits, KPIs) can re-derive the whole month
+ * from a customer-filtered slice. `officialLine` is empty by construction — the customer grain
+ * carries no Source-of-Sales line — so Line Mix is intentionally unavailable under a customer
+ * filter and the dashboard says so rather than inventing a blank line.
+ */
+function customerProductToDistRows(rows: SiCustomerProductRow[]): SiDistProductRow[] {
+  return rows.map((row) => ({
+    distributorCode: row.distributorCode,
+    officialLine: "",
+    regionCode: row.regionCode,
+    areaCode: row.areaCode,
+    productCode: row.productCode,
+    productName: row.productName,
+    units: row.units,
+    value: row.value,
+  }));
+}
+
+/** The selected customers resolved to display names (deduped by client code), for the picker chips. */
+function resolveSelectedCustomers(rows: SiCustomerProductRow[]): SiFilterOption[] {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.clientCode && !map.has(row.clientCode)) map.set(row.clientCode, row.clientName || row.clientCode);
+  }
+  return [...map.entries()]
+    .map(([code, name]) => ({ code, name }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * Build ONE month's fact rows under the active filters. With a customer filter the source switches
+ * to the customer×product grain (selected clients only); the line constraint is dropped because
+ * that grain has no line. Without it, the plain distributor×product month scan is filtered as usual.
+ */
+async function loadFilteredMonthRows(
+  period: string,
+  scope: SalesAccessScope,
+  reference: SiReference,
+  filters: SiFilters,
+): Promise<SiDistProductRow[]> {
+  if (filters.customers.length > 0) {
+    const cp = await loadSiCustomerProduct(period, scope, reference, { clientCodes: filters.customers, limit: 500 });
+    return applySiFilters(customerProductToDistRows(cp), { ...filters, lines: [] });
+  }
+  return applySiFilters(await loadSiDistProduct(period, scope, reference), filters);
+}
+
+/** The selectable values for each dimension, built from the UNFILTERED month scan, by name. */
+function buildSiFacets(rows: SiDistProductRow[], reference: SiReference): SiFilterFacets {
+  const reg = new Map<string, string>();
+  const area = new Map<string, string>();
+  const line = new Map<string, string>();
+  const dist = new Map<string, string>();
+  const prod = new Map<string, string>();
+  for (const row of rows) {
+    if (row.regionCode) reg.set(row.regionCode, reference.regionName.get(row.regionCode) || row.regionCode);
+    if (row.areaCode) area.set(row.areaCode, reference.areaName.get(row.areaCode) || row.areaCode);
+    if (row.officialLine) line.set(row.officialLine, row.officialLine);
+    if (row.distributorCode) dist.set(row.distributorCode, reference.distributorName.get(row.distributorCode) || row.distributorCode);
+    if (row.productCode) prod.set(row.productCode, row.productName || row.productCode);
+  }
+  const toOptions = (map: Map<string, string>) =>
+    [...map.entries()].map(([code, name]) => ({ code, name })).sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    regions: toOptions(reg),
+    areas: toOptions(area),
+    lines: toOptions(line),
+    distributors: toOptions(dist),
+    products: toOptions(prod),
+    // Customers are not in the distributor×product scan; the picker fetches them lazily and this
+    // is filled with the resolved selection afterwards.
+    customers: [],
+  };
+}
+
+/** Filter the distributor×product scan to the active selection (empty dim = no constraint). */
+function applySiFilters(rows: SiDistProductRow[], filters: SiFilters): SiDistProductRow[] {
+  const regions = new Set(filters.regions);
+  const areas = new Set(filters.areas);
+  const lines = new Set(filters.lines);
+  const distributors = new Set(filters.distributors);
+  const products = new Set(filters.products);
+  return rows.filter((row) =>
+    (regions.size === 0 || regions.has(row.regionCode)) &&
+    (areas.size === 0 || areas.has(row.areaCode)) &&
+    (lines.size === 0 || lines.has(row.officialLine)) &&
+    (distributors.size === 0 || distributors.has(row.distributorCode)) &&
+    (products.size === 0 || products.has(row.productCode)),
+  );
+}
 
 /** Validated batches reduced to (period, distributorCode) for month-completeness. */
 async function loadValidatedBatchKeys(): Promise<Array<{ period: string; distributorCode: string }>> {
@@ -205,23 +306,43 @@ function accessBadge(scope: SalesAccessScope) {
 
 // ── Page 1: the executive bundle ─────────────────────────────────────────────────────────────
 
-export async function getSiDashboardBundle(period: string | null, scope: SalesAccessScope): Promise<SiDashboardBundle> {
+export async function getSiDashboardBundle(
+  period: string | null,
+  scope: SalesAccessScope,
+  filters: SiFilters = EMPTY_SI_FILTERS,
+): Promise<SiDashboardBundle> {
   const reference = await loadSiReference();
   const availablePeriods = await listSalesPeriods();
   const selectedPeriod = period && availablePeriods.includes(period) ? period : availablePeriods[0] ?? null;
 
   // Heavy scan #1: the selected month at distributor×product grain.
-  const rows = await loadSiDistProduct(selectedPeriod, scope, reference);
+  const allRows = await loadSiDistProduct(selectedPeriod, scope, reference);
+  // Filter menus come from the UNFILTERED month; the rest of the bundle derives from the filtered
+  // slice so every card, chart, and breakdown re-computes to the viewer's selection at once.
+  const facets = buildSiFacets(allRows, reference);
+  const filtersActive = SI_FILTER_DIMS.some((dim) => filters[dim].length > 0);
+  const customersActive = filters.customers.length > 0 && selectedPeriod !== null;
+  // With a customer filter active the month's fact rows are rebuilt from the customer×product grain
+  // (selected clients only), then the other dims (region/area/distributor/product) are applied on
+  // top. Without it, the distributor×product month scan is filtered as usual.
+  let rows: SiDistProductRow[];
+  if (customersActive && selectedPeriod) {
+    const cp = await loadSiCustomerProduct(selectedPeriod, scope, reference, { clientCodes: filters.customers, limit: 500 });
+    rows = applySiFilters(customerProductToDistRows(cp), { ...filters, lines: [] });
+    facets.customers = resolveSelectedCustomers(cp);
+  } else {
+    rows = filtersActive ? applySiFilters(allRows, filters) : allRows;
+  }
   // Heavy scan #2: ONE grouped scan over all validated months → trend + sparks + MoM/YoY.
   const periodTotals = await loadSiPeriodTotals(scope, reference);
   // Cheap day-grain reads (≤ ~320 rows each), sequential after the heavy scans.
   const compare = buildCompare(periodTotals, selectedPeriod, availablePeriods);
-  const daily = selectedPeriod
-    ? buildDailyCurve(await loadSiDaily(selectedPeriod, scope, reference), selectedPeriod)
-    : null;
-  const dailyPrior = compare.priorPeriod
-    ? buildDailyCurve(await loadSiDaily(compare.priorPeriod, scope, reference), compare.priorPeriod)
-    : null;
+  // Keep the raw day rows around: they carry distributorCode, so the like-for-like comparison
+  // below needs no extra heavy scan.
+  const dailyRows = selectedPeriod ? await loadSiDaily(selectedPeriod, scope, reference) : [];
+  const daily = selectedPeriod ? buildDailyCurve(dailyRows, selectedPeriod) : null;
+  const dailyPriorRows = compare.priorPeriod ? await loadSiDaily(compare.priorPeriod, scope, reference) : [];
+  const dailyPrior = compare.priorPeriod ? buildDailyCurve(dailyPriorRows, compare.priorPeriod) : null;
 
   const batches = await loadValidatedBatchKeys();
   const completeness = computeMonthCompleteness(batches, [...reference.distributorName.keys()], reference.distributorName);
@@ -232,7 +353,10 @@ export async function getSiDashboardBundle(period: string | null, scope: SalesAc
   const byProduct = aggregateByProduct(rows);
   const byArea = aggregateByArea(rows, reference);
   const byDistributor = aggregateByDistributor(rows, reference);
-  const lineMix = aggregateByLine(rows);
+  // The customer×product grain carries no Source-of-Sales line, so Line Mix is genuinely unknown
+  // under a customer filter — leave it empty (the UI shows its empty state) rather than collapsing
+  // every product into a single "—" line at 100%.
+  const lineMix = customersActive ? [] : aggregateByLine(rows);
 
   // White-space: master areas (inside the viewer's region scope when set) with no sales rows.
   const soldAreaNames = new Set(byArea.map((area) => area.name));
@@ -248,7 +372,12 @@ export async function getSiDashboardBundle(period: string | null, scope: SalesAc
     distributorCount: distinct(rows, (row) => row.distributorCode),
     lineCount: distinct(rows, (row) => row.officialLine),
     productCount: distinct(rows, (row) => row.productCode),
-    areaCount: distinct(rows, (row) => row.areaCode),
+    // Real geographic areas only — the Direct channel is bucketed under the synthetic 'DIRECT'
+    // area code (National → Region → Area → Brick); counting it would inflate coverage.
+    areaCount: distinct(
+      rows.filter((row) => row.areaCode && normCode(row.areaCode) !== "DIRECT"),
+      (row) => row.areaCode,
+    ),
     regionCount: distinct(rows, (row) => row.regionCode),
     topRegion: byRegion[0] ? { name: byRegion[0].name, value: byRegion[0].value } : null,
     topProduct: byProduct[0] ? { name: byProduct[0].name, value: byProduct[0].value } : null,
@@ -256,6 +385,61 @@ export async function getSiDashboardBundle(period: string | null, scope: SalesAc
     restrictedIncluded: scope.restrictedIncluded,
     monthComplete: selectedCompleteness?.complete ?? true,
     missingDistributors: selectedCompleteness?.missing ?? [],
+  };
+
+  // ── Honest comparison: like-for-like by distributor ────────────────────────────────────────
+  // Distributor files land independently, so a "month" can hold 2 distributors or 9. Comparing a
+  // partly-uploaded month's TOTAL against a full prior month reads as a -50% collapse when nothing
+  // actually fell. The headline MoM therefore compares only the distributors present in BOTH months
+  // (the prior figures come from the already-loaded prior day rows — no extra scan). When every
+  // expected distributor has reported, the common set is the whole month and this is a plain MoM.
+  const sumByDistributor = (entries: Array<{ distributorCode: string; value: number; units: number }>) => {
+    const map = new Map<string, { value: number; units: number }>();
+    for (const entry of entries) {
+      const acc = map.get(entry.distributorCode) ?? { value: 0, units: 0 };
+      acc.value += entry.value;
+      acc.units += entry.units;
+      map.set(entry.distributorCode, acc);
+    }
+    return map;
+  };
+  const currentByDistributor = sumByDistributor(rows);
+  // The prior side must be filtered IDENTICALLY or the like-for-like delta would compare different
+  // slices. With no filters we reuse the already-loaded prior day rows (fast path); with filters
+  // active we scan the prior month at full grain and apply the same filter.
+  const priorRowsForLfl = filtersActive && compare.priorPeriod
+    ? await loadFilteredMonthRows(compare.priorPeriod, scope, reference, filters)
+    : dailyPriorRows;
+  const priorByDistributor = sumByDistributor(priorRowsForLfl);
+  const commonDistributors = [...currentByDistributor.keys()].filter((code) => priorByDistributor.has(code));
+  const lfl = { curValue: 0, curUnits: 0, priorValue: 0, priorUnits: 0 };
+  for (const code of commonDistributors) {
+    const cur = currentByDistributor.get(code)!;
+    const prior = priorByDistributor.get(code)!;
+    lfl.curValue += cur.value;
+    lfl.curUnits += cur.units;
+    lfl.priorValue += prior.value;
+    lfl.priorUnits += prior.units;
+  }
+  const hasBaseline = compare.priorPeriod !== null && commonDistributors.length > 0;
+  if (hasBaseline) {
+    // Override the aggregate MoM (full month vs full month) so the hero AND the KPI band stop
+    // reporting coverage gaps as performance. YoY stays on the aggregate baseline.
+    compare.value.mom = makeDelta(lfl.curValue, lfl.priorValue);
+    compare.units.mom = makeDelta(lfl.curUnits, lfl.priorUnits);
+  }
+  const coverage: SiCoverage = {
+    reporting: selectedCompleteness?.uploaded.length ?? kpis.distributorCount,
+    expected: selectedCompleteness?.expected.length ?? kpis.distributorCount,
+    incomplete: (selectedCompleteness?.missing.length ?? 0) > 0,
+    priorPeriod: compare.priorPeriod,
+    commonDistributors: commonDistributors.length,
+    avgPrice: hasBaseline
+      ? makeDelta(
+          lfl.curUnits > 0 ? lfl.curValue / lfl.curUnits : 0,
+          lfl.priorUnits > 0 ? lfl.priorValue / lfl.priorUnits : null,
+        )
+      : makeDelta(totals.units > 0 ? totals.value / totals.units : 0, null),
   };
 
   const trendPoints: SiTrendPoint[] = periodTotals.slice(-12).map((row) => {
@@ -298,6 +482,9 @@ export async function getSiDashboardBundle(period: string | null, scope: SalesAc
     trend: { points: trendPoints },
     access: accessBadge(scope),
     compare,
+    coverage,
+    facets,
+    filters,
     kpiSparks: buildKpiSparks(periodTotals, completeness),
     daily,
     dailyPrior,
@@ -501,7 +688,12 @@ export async function getSiKpiSummary(period: string | null, scope: SalesAccessS
     distributorCount: distinct(rows, (row) => row.distributorCode),
     lineCount: distinct(rows, (row) => row.officialLine),
     productCount: distinct(rows, (row) => row.productCode),
-    areaCount: distinct(rows, (row) => row.areaCode),
+    // Real geographic areas only — the Direct channel is bucketed under the synthetic 'DIRECT'
+    // area code (National → Region → Area → Brick); counting it would inflate coverage.
+    areaCount: distinct(
+      rows.filter((row) => row.areaCode && normCode(row.areaCode) !== "DIRECT"),
+      (row) => row.areaCode,
+    ),
     regionCount: distinct(rows, (row) => row.regionCode),
     topRegion: byRegion[0] ? { name: byRegion[0].name, value: byRegion[0].value } : null,
     topProduct: byProduct[0] ? { name: byProduct[0].name, value: byProduct[0].value } : null,
@@ -561,6 +753,34 @@ export async function getSiTrend(scope: SalesAccessScope, maxPoints = 12): Promi
     };
   });
   return { points };
+}
+
+/**
+ * The customer picker menu for the advanced-filters panel: every customer that sold in the period
+ * (within the viewer's scope), deduped by client code and ranked by value so the most important
+ * accounts surface first. Fetched lazily by the panel (the customer scan is the heaviest SI read)
+ * and filtered in the browser — never shipped in the dashboard bundle.
+ */
+export async function getSiCustomerOptions(
+  period: string | null,
+  scope: SalesAccessScope,
+  opts?: { limit?: number },
+): Promise<SiFilterOption[]> {
+  const reference = await loadSiReference();
+  const rows = await loadSiCustomers(period, scope, reference);
+  const map = new Map<string, { name: string; value: number }>();
+  for (const row of rows) {
+    if (!row.clientCode) continue;
+    const current = map.get(row.clientCode);
+    if (current) current.value += row.value;
+    else map.set(row.clientCode, { name: row.clientName || row.clientCode, value: row.value });
+  }
+  const limit = Math.max(1, Math.min(opts?.limit ?? 8000, 10000));
+  return [...map.entries()]
+    .map(([code, entry]) => ({ code, name: entry.name, value: entry.value }))
+    .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name))
+    .slice(0, limit)
+    .map(({ code, name }) => ({ code, name }));
 }
 
 // ── Page 2: details bundle (unchanged behavior) ──────────────────────────────────────────────

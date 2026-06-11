@@ -73,13 +73,13 @@ export function SiGeoMatrix({
           return (
             <div key={region.name}>
               {/* Region header strip — light, softly shaded, orange accent. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-l-4 border-orange-500 bg-gradient-to-r from-[#FFF7ED] to-white px-4 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-l-4 border-blue-500 bg-gradient-to-r from-[#F1F5F9] to-white px-4 py-2.5">
                 <span className="text-xs font-black uppercase tracking-wide text-[#0F172A]">{region.name}</span>
                 <span className="text-xs font-bold tabular-nums text-[#475569]">{formatCurrency(region.value)}</span>
-                <span className="text-[11px] font-black text-[#F97316]">{shareText(region.share)}</span>
+                <span className="text-[11px] font-black text-[#1E3A5F]">{shareText(region.share)}</span>
                 <span className="text-[10px] font-bold text-[#94A3B8]">{regionAreas.length} areas</span>
-                <div className="ml-auto hidden h-1.5 w-24 bg-orange-500/15 sm:block">
-                  <div className="h-full bg-[#F97316]" style={{ width: `${Math.max((region.value / maxRegionValue) * 100, 2)}%` }} />
+                <div className="ml-auto hidden h-1.5 w-24 bg-blue-500/15 sm:block">
+                  <div className="h-full bg-[#1E3A5F]" style={{ width: `${Math.max((region.value / maxRegionValue) * 100, 2)}%` }} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5 border border-t-0 border-[#F1F5F9] p-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
@@ -95,7 +95,7 @@ export function SiGeoMatrix({
                           <p className="text-xs font-black text-[#0F172A]">{area.name}</p>
                           <p className="text-[11px] font-bold text-[#64748B]">{area.regionName}</p>
                           <p className="text-[11px] font-black text-[#0F172A]">{formatCurrency(area.value)}</p>
-                          <p className="text-[10px] font-bold text-[#F97316]">{shareText(area.share)} of scoped value</p>
+                          <p className="text-[10px] font-bold text-[#1E3A5F]">{shareText(area.share)} of scoped value</p>
                           {weak && <p className="text-[10px] font-black text-rose-600">Bottom quartile</p>}
                         </div>
                       )}
@@ -107,7 +107,7 @@ export function SiGeoMatrix({
                           "flex min-h-[62px] flex-col justify-between p-2 transition",
                           weak && "ring-2 ring-inset ring-rose-300",
                         )}
-                        style={{ backgroundColor: `rgba(249,115,22,${alpha.toFixed(3)})` }}
+                        style={{ backgroundColor: `rgba(30,58,95,${alpha.toFixed(3)})` }}
                       >
                         <p className={cn("truncate text-[11px] font-black", deep ? "text-white" : "text-[#0F172A]")}>{area.name}</p>
                         <p className={cn("text-[10px] font-black tabular-nums", deep ? "text-white/90" : "text-[#B45309]")}>
@@ -119,7 +119,7 @@ export function SiGeoMatrix({
                 })}
                 {regionAreas.length > cap && (
                   <button
-                    className="flex min-h-[62px] items-center justify-center border border-dashed border-[#CBD5E1] text-[11px] font-black text-[#64748B] transition hover:border-[#F97316] hover:text-[#F97316]"
+                    className="flex min-h-[62px] items-center justify-center border border-dashed border-[#CBD5E1] text-[11px] font-black text-[#64748B] transition hover:border-[#1E3A5F] hover:text-[#1E3A5F]"
                     onClick={() => setExpanded((current) => ({ ...current, [region.name]: true }))}
                     type="button"
                   >
@@ -133,7 +133,7 @@ export function SiGeoMatrix({
       </div>
       <div className="mt-3 flex items-center gap-3 text-[10px] font-bold text-[#94A3B8]">
         <span>Low</span>
-        <div className="h-2 flex-1" style={{ background: "linear-gradient(90deg, rgba(249,115,22,0.14), rgba(249,115,22,0.96))" }} />
+        <div className="h-2 flex-1" style={{ background: "linear-gradient(90deg, rgba(30,58,95,0.14), rgba(30,58,95,0.96))" }} />
         <span>High</span>
         <span className="ml-2 inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 ring-2 ring-rose-300" /> Bottom quartile

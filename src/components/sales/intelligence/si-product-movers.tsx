@@ -25,7 +25,7 @@ function MoverBar({ mover, maxAbs, direction, onOpen }: {
     >
       <div className="min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-xs font-bold text-[#0F172A] transition group-hover:text-[#F97316]">
+          <p className="truncate text-xs font-bold text-[#0F172A] transition group-hover:text-[#1E3A5F]">
             {mover.name}
             {mover.officialLine && <span className="ml-2 text-[10px] font-bold text-[#94A3B8]">{mover.officialLine}</span>}
           </p>
@@ -138,9 +138,9 @@ export function SiProductMovers({
                   type="button"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-bold text-[#0F172A] transition group-hover:text-[#F97316]">{product.name}</p>
+                    <p className="truncate text-xs font-bold text-[#0F172A] transition group-hover:text-[#1E3A5F]">{product.name}</p>
                     <div className="mt-1 h-2 bg-[#F1F5F9]">
-                      <div className="h-full bg-gradient-to-r from-orange-500 to-orange-300" style={{ width: `${Math.max((product.value / max) * 100, 4)}%` }} />
+                      <div className="h-full bg-gradient-to-r from-blue-500 to-blue-300" style={{ width: `${Math.max((product.value / max) * 100, 4)}%` }} />
                     </div>
                   </div>
                   <p className="text-right text-xs font-black tabular-nums text-[#0F172A]">EGP {compactEGP(product.value)}</p>

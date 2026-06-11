@@ -9,11 +9,13 @@ import { compactEGP, shareText } from "@/components/sales/intelligence/si-format
 import type { SiConcentration, SiInsight, SiKpiSummary } from "@/lib/sales/intelligence/types";
 import { cn } from "@/lib/utils";
 
+// Executive Navy category chips — distinct within the navy/slate/clay family (risk + coverage keep
+// their semantic red/green); no saturated violet/rainbow.
 const CATEGORY_STYLE: Record<SiInsight["category"], { tone: string; icon: typeof Package }> = {
-  products: { tone: "bg-violet-100 text-violet-600", icon: Package },
-  distributors: { tone: "bg-orange-100 text-orange-600", icon: Truck },
-  geography: { tone: "bg-blue-100 text-blue-600", icon: MapIcon },
-  customers: { tone: "bg-amber-100 text-amber-600", icon: Users },
+  products: { tone: "bg-[#EEF2F7] text-[#1E3A5F]", icon: Package },
+  distributors: { tone: "bg-[#EEF3F8] text-[#3B6B9A]", icon: Truck },
+  geography: { tone: "bg-[#F1F5F9] text-[#475569]", icon: MapIcon },
+  customers: { tone: "bg-[#F6F1EC] text-[#8C6A4E]", icon: Users },
   risk: { tone: "bg-rose-100 text-rose-600", icon: ShieldAlert },
   coverage: { tone: "bg-emerald-100 text-emerald-600", icon: MapIcon },
 };
@@ -27,9 +29,9 @@ function scrollToAnchor(anchor: string) {
 // baseline omits its insight, it never fabricates one). Sits beside the Daily Rhythm chart.
 export function SiInsightRail({ insights }: { insights: SiInsight[] }) {
   return (
-    <section className="flex h-full flex-col border border-[#E2E8F0] bg-gradient-to-b from-[#FFF7ED] to-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+    <section className="flex h-full flex-col border border-[#E2E8F0] bg-gradient-to-b from-[#F1F5F9] to-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
       <div className="flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400" />
+        <span className="h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-amber-400" />
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#0F172A]">Executive Signals</p>
       </div>
       <div className="mt-4 flex-1 space-y-3.5">
@@ -41,7 +43,7 @@ export function SiInsightRail({ insights }: { insights: SiInsight[] }) {
             const Icon = style.icon;
             return (
               <button
-                className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2 text-left transition hover:border-[#FED7AA] hover:bg-white"
+                className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2 text-left transition hover:border-[#C7D6E5] hover:bg-white"
                 key={`${insight.category}:${insight.headline}`}
                 onClick={() => scrollToAnchor(insight.anchor)}
                 type="button"
@@ -51,12 +53,12 @@ export function SiInsightRail({ insights }: { insights: SiInsight[] }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-[12px] font-black text-[#0F172A] transition group-hover:text-[#F97316]">{insight.headline}</span>
+                    <span className="truncate text-[12px] font-black text-[#0F172A] transition group-hover:text-[#1E3A5F]">{insight.headline}</span>
                     {insight.deltaPct !== undefined && <SiDeltaBadge pct={insight.deltaPct} />}
                   </span>
                   <span className="mt-0.5 block truncate text-[11px] font-bold text-[#64748B]">{insight.detail}</span>
                 </span>
-                <ChevronRight className="mt-1.5 h-3.5 w-3.5 shrink-0 text-[#CBD5E1] transition group-hover:text-[#F97316]" />
+                <ChevronRight className="mt-1.5 h-3.5 w-3.5 shrink-0 text-[#CBD5E1] transition group-hover:text-[#1E3A5F]" />
               </button>
             );
           })
@@ -118,7 +120,7 @@ export function SiRisksBand({
             {kpis.monthComplete
               ? `${period ?? "This month"} is complete — every expected distributor uploaded.`
               : `${period ?? "This month"} is missing: ${kpis.missingDistributors.join(", ") || "—"}.`}{" "}
-            <Link className="font-bold text-[#F97316] underline-offset-2 hover:underline" href="/sales-intelligence/data-quality">
+            <Link className="font-bold text-[#1E3A5F] underline-offset-2 hover:underline" href="/sales-intelligence/data-quality">
               Data Quality Center →
             </Link>
           </p>
