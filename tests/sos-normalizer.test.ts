@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
@@ -127,4 +128,8 @@ export async function runSosNormalizerTests() {
   assert.equal(du.customers[0]!.raw, "C3");
   assert.equal(du.customers[0]!.count, 2);
   assert.equal(du.customers[0]!.rawName, "Pharma C");
+
+  const workspaceSource = readFileSync("src/components/sales/normalizer-workspace.tsx", "utf8");
+  assert.match(workspaceSource, /quietFailure/, "post-save coverage refresh must not overwrite a successful save with a generic fetch error");
+  assert.match(workspaceSource, /Automatic coverage refresh could not complete/, "post-save refresh fallback must keep the successful save visible");
 }
