@@ -60,6 +60,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
   const accessRegistrySource = readFileSync("src/lib/security/access-registry.ts", "utf8");
   const exportRouteSource = readFileSync("app/api/weekly-plans/export/route.ts", "utf8");
   const exportSource = readFileSync("src/lib/weekly-planning/export.ts", "utf8");
+  const calendarServiceSource = readFileSync("src/lib/calendar/service.ts", "utf8");
 
   assert.match(serviceSource, /medicalRepOptionsForEmployee/, "double-visit Medical Rep options must be resolved from the employee line");
   assert.match(serviceSource, /Double Visit requires selecting a same-line Medical Rep/, "Double Visit must require a Medical Rep");
@@ -98,6 +99,10 @@ export function runWeeklyMonthlyPlansV1Tests() {
   // The 5-column cascade rewrite consolidated the standalone "Calendar view" preview into the
   // main vertical day-per-row grid; assert that per-day calendar rendering is still present.
   assert.match(workspaceSource, /formatDayName\(row\.activityDate\)/, "in-app per-day calendar layout (day-per-row grid) must be preserved");
+  assert.match(workspaceSource, /calendarHref/, "weekly/monthly plans must expose a calendar navigation target");
+  assert.match(workspaceSource, /\/employee-portals\/calendar/, "employee planning must link to the company calendar");
+  assert.match(workspaceSource, /\/hr-calendar/, "admin planning must link to the HR calendar");
+  assert.match(workspaceSource, /<CalendarDays className=/, "calendar navigation must use the calendar icon action");
   assert.doesNotMatch(workspaceSource, /Retry Calendar/, "Google Calendar sync retry UI must be removed");
   assert.match(workspaceSource, /workspace\.summary/);
   assert.match(workspaceSource, /Export XLSX/);
@@ -105,4 +110,8 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(exportRouteSource, /format=xlsx\|pdf|format/);
   assert.match(exportSource, /buildEmployeePlansWorkbook/);
   assert.match(exportSource, /buildEmployeePlansPdf/);
+  assert.match(calendarServiceSource, /loadPlanItems/, "company calendar must automatically project saved plan rows");
+  assert.match(calendarServiceSource, /employee_plan_headers/, "calendar plan source must read employee plan headers");
+  assert.match(calendarServiceSource, /employee_plan_items/, "calendar plan source must read employee plan items");
+  assert.match(calendarServiceSource, /source:\s*"plan"/, "calendar plan source must emit plan calendar items");
 }

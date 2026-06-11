@@ -1,7 +1,5 @@
-import Image from "next/image";
 import type { ReactNode } from "react";
 
-import { systemAssets } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 
 type PremiumHeroProps = {
@@ -19,8 +17,8 @@ type PremiumHeroProps = {
 
 /**
  * The premium "command" hero from the Report It module, extracted for reuse:
- * a near-black slate-900 banner with the Phoenix mark, an orange kicker, the
- * title/subtitle, a decorative orange glow, and a thin orange accent strip.
+ * a near-black slate-900 banner with an orange kicker, the title/subtitle,
+ * a decorative orange glow, and a thin orange accent strip.
  * Square corners (matches the locked admin design language; the admin shell
  * also zeroes radii). Use it as the header for any premium module page.
  */
@@ -36,15 +34,6 @@ export function PremiumHero({ kicker, title, subtitle, subtitleClassName, badge 
         className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full bg-orange-500/10 blur-2xl"
       />
       <div className="relative flex items-start gap-4">
-        <div className="hidden h-12 w-12 shrink-0 items-center justify-center bg-orange-600 sm:flex">
-          <Image
-            src={systemAssets.adminRailMark}
-            alt="Phoenix"
-            width={32}
-            height={32}
-            className="h-8 w-8 object-contain"
-          />
-        </div>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">{kicker}</p>
           <h1 className="mt-1 text-2xl font-black leading-tight text-white sm:text-[1.9rem]">{title}</h1>
