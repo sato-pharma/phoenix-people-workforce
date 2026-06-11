@@ -56,6 +56,11 @@ export function runAccessRegistryCoverageTests() {
     }
   }
 
+  const normalizerSaveEntry = findAccessRegistryEntry("/api/sales/normalizer/mappings/save", "POST");
+  assert.equal(normalizerSaveEntry?.pattern, "/api/sales/normalizer/mappings/save", "normalizer mapping save must not fall through to /api/sales/**");
+  assert.equal(normalizerSaveEntry?.audit.classification, "mutation", "normalizer mapping save must be classified as a mutation");
+  assert.deepEqual(normalizerSaveEntry?.permission, { resource: "sales", action: "import" }, "normalizer mapping save must require sales import access");
+
   const files = walkRouteFiles(apiRoot);
   assert.ok(files.length > 0, "route file scan must find app/api route handlers");
 

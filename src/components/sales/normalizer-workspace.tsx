@@ -22,6 +22,13 @@ type Preview = {
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
 
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof TypeError && error.message === "Failed to fetch") {
+    return "Could not reach the server. Please check the connection and try again.";
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 // One-click copy of a raw value (so it can be pasted into the Phoenix search).
 function CopyBtn({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -101,13 +108,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     return f;
   }
 
-  async function analyze(keepNotice = false): Promise<Preview | null> {
-    if (!file) { setError("Choose a raw distributor file first."); return null; }
+  async function analyze(keepNotice = false, options: { quietFailure?: boolean } = {}): Promise<Preview | null> {
+    if (!file) {
+      if (!options.quietFailure) setError("Choose a raw distributor file first.");
+      return null;
+    }
     setBusy("analyze"); setError(null); if (!keepNotice) setNotice(null);
     try {
       const res = await fetch("/api/sales/normalizer/preview", { body: fd(), method: "POST" });
-      const json = await res.json();
-      if (json.success) {
+      const json = await res.json().catch(() => null) as { data?: Preview; error?: string; success?: boolean } | null;
+      if (json?.success && json.data) {
         const p: Preview = json.data;
         setPreview(p);
         const seed: Record<string, string> = {};
@@ -115,9 +125,12 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         setPicks(seed);
         return p;
       }
-      setError(json.error ?? "Failed to analyze.");
+      if (!options.quietFailure) setError(json?.error ?? `Failed to analyze. (${res.status})`);
       return null;
-    } catch (e) { setError(e instanceof Error ? e.message : "Failed to analyze."); return null; }
+    } catch (e) {
+      if (!options.quietFailure) setError(requestErrorMessage(e, "Failed to analyze."));
+      return null;
+    }
     finally { setBusy(null); }
   }
 
@@ -146,17 +159,23 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     setBusy("save"); setError(null); setNotice(null);
     try {
       const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ mappings }), headers: { "Content-Type": "application/json" }, method: "POST" });
-      const json = await res.json();
-      if (!json.success) { setError(json.error ?? "Save failed."); return; }
-      setNotice(`Saved ${json.data.saved} mapping(s). Refreshing coverage…`);
-      const p = await analyze(true);
+      const json = await res.json().catch(() => null) as { data?: { invalid?: number; saved?: number; skipped?: number }; error?: string; success?: boolean } | null;
+      if (!res.ok || !json?.success || !json.data) { setError(json?.error ?? `Save failed. (${res.status})`); return; }
+      const saved = Number(json.data.saved ?? 0);
+      const skipped = Number(json.data.skipped ?? 0);
+      const invalid = Number(json.data.invalid ?? 0);
+      const detail = skipped || invalid ? ` ${skipped} skipped, ${invalid} invalid.` : "";
+      setNotice(`Saved ${saved} mapping(s). Refreshing coverage...`);
+      const p = await analyze(true, { quietFailure: true });
       if (p) {
         const remaining = p.unknownProducts.length + p.unknownTerritories.length + p.unknownCustomers.length;
         setNotice(remaining === 0
-          ? `Saved ${json.data.saved} mapping(s). Everything is mapped now.`
-          : `Saved ${json.data.saved} mapping(s). ${remaining} item(s) still need mapping.`);
-      } else setNotice(null);
-    } catch (e) { setError(e instanceof Error ? e.message : "Save failed."); }
+          ? `Saved ${saved} mapping(s). Everything is mapped now.${detail}`
+          : `Saved ${saved} mapping(s). ${remaining} item(s) still need mapping.${detail}`);
+      } else {
+        setNotice(`Saved ${saved} mapping(s). Automatic coverage refresh could not complete. Click Analyze to refresh coverage.${detail}`);
+      }
+    } catch (e) { setError(requestErrorMessage(e, "Save failed.")); }
     finally { setBusy(null); }
   }
 
