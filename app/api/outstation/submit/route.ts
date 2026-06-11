@@ -51,6 +51,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const result = await submitOutstationRequest(access, {
+      amWorkload: typeof body.amWorkload === "number" ? body.amWorkload : 0,
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: Number(body.capturedLatitude),
@@ -65,8 +66,11 @@ export async function POST(request: Request) {
         typeof body.medicalTripHrId === "string" ? body.medicalTripHrId : undefined,
       medicalTripName:
         typeof body.medicalTripName === "string" ? body.medicalTripName : undefined,
+      meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : 0,
       notes: typeof body.notes === "string" ? body.notes : undefined,
       offlineCaptured: Boolean(body.offlineCaptured),
+      otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : 0,
+      pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : 0,
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
       transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
