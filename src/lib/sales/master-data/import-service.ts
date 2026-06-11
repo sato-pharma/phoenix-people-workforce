@@ -28,6 +28,32 @@ export type MasterImportResult = {
   updated: number;
 };
 
+// System sales distributors that live in CODE, not in the user's uploaded distributor master:
+//   • "Direct" — the company-direct channel (region-only; sale value taken straight from the sheet's
+//     Value column — see DIRECT_TEMPLATE in monthly-distributor-import.ts).
+//   • "EP-B" — the EPDA Bulk (wholesale) branch (normalizer profile in normalizer/profiles.ts).
+// Both are code-defined and are NOT in the user's distributor-master file, so the add-only master
+// import + a data reset would silently drop them (exactly how "Direct" vanished from the Upload Sales
+// dropdown after the 2026-06-08 reset). They are re-ensured after every distributor-master import.
+// Idempotent; mirror of their seed migrations.
+const SYSTEM_DISTRIBUTORS = [
+  { distributor_code: "Direct", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
+  { distributor_code: "EP-B", distributor_name: "EPDA Bulk", normalized_distributor_name: "epda bulk" },
+] as const;
+
+// Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never
+// block the user's master import (the channels are also restorable via their seed migration).
+async function ensureSystemDistributors(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<number> {
+  let ensured = 0;
+  for (const channel of SYSTEM_DISTRIBUTORS) {
+    const { error } = await supabase
+      .from("source_of_sales_distributors")
+      .upsert({ ...channel, active: true }, { onConflict: "distributor_code" });
+    if (!error) ensured += 1;
+  }
+  return ensured;
+}
+
 type ColumnMap = Map<number, string>; // 1-based column index -> DB column key
 
 const HEADER_SCAN_ROWS = 12;
@@ -291,6 +317,14 @@ export async function importMasterWorkbook(input: {
     }
   }
 
+  // System channels (e.g. the company-direct "Direct" distributor) are not in the user's master file,
+  // so an add-only re-import after a data reset would drop them. Re-ensure them on every distributor
+  // import. Non-fatal — never blocks the user's import.
+  let systemEnsured = 0;
+  if (def.master === "distributors") {
+    systemEnsured = await ensureSystemDistributors(supabase);
+  }
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: def.master,
@@ -301,6 +335,7 @@ export async function importMasterWorkbook(input: {
       master: def.master,
       skipped,
       source: "database_mapping_import",
+      systemEnsured,
       totalRead,
       updated,
     },
