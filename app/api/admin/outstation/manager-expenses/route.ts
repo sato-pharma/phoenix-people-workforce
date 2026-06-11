@@ -95,6 +95,7 @@ export async function POST(request: Request) {
     }
 
     const input: ManagerExpenseAdminInput = {
+      amWorkload: typeof body.amWorkload === "number" ? body.amWorkload : null,
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
       destination,
       distanceKm,
@@ -102,7 +103,10 @@ export async function POST(request: Request) {
         body.durationMinutes != null ? Number(body.durationMinutes) : null,
       employeeHrId,
       expenseType,
+      meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : null,
       notes: typeof body.notes === "string" ? body.notes.trim() || null : null,
+      otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : null,
+      pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : null,
       routePolyline:
         typeof body.routePolyline === "string" ? body.routePolyline : null,
       transportationType,

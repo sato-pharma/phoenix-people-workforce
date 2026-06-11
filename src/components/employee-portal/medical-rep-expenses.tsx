@@ -216,6 +216,8 @@ export function MedicalRepExpensesWorkspace({
   const [notes, setNotes] = useState("");
   const [goTicketAmount, setGoTicketAmount] = useState("");
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
+  const [amWorkload, setAmWorkload] = useState("");
+  const [pmWorkload, setPmWorkload] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -293,6 +295,8 @@ export function MedicalRepExpensesWorkspace({
     formData.set("notes", notes);
     formData.set("goTicketAmount", goTicketAmount);
     formData.set("returnTicketAmount", returnTicketAmount);
+    formData.set("amWorkload", amWorkload || "0");
+    formData.set("pmWorkload", pmWorkload || "0");
     attachments.forEach((file) => formData.append("attachments", file));
 
     setIsSubmitting(true);
@@ -314,6 +318,8 @@ export function MedicalRepExpensesWorkspace({
       setNotes("");
       setGoTicketAmount("");
       setReturnTicketAmount("");
+      setAmWorkload("");
+      setPmWorkload("");
       setAttachments([]);
       setFileInputKey((value) => value + 1);
       setMessage("Expense submitted.");
@@ -488,6 +494,32 @@ export function MedicalRepExpensesWorkspace({
                     placeholder="Reason for this expense"
                     required
                     value={notes}
+                  />
+                </Field>
+              </div>
+
+              <div className="lg:col-span-3">
+                <Field label="AM Visits">
+                  <Input
+                    className="h-12 rounded-none border-slate-200 bg-white"
+                    min="0"
+                    onChange={(event) => setAmWorkload(event.target.value)}
+                    placeholder="0"
+                    type="number"
+                    value={amWorkload}
+                  />
+                </Field>
+              </div>
+
+              <div className="lg:col-span-3">
+                <Field label="PM Visits">
+                  <Input
+                    className="h-12 rounded-none border-slate-200 bg-white"
+                    min="0"
+                    onChange={(event) => setPmWorkload(event.target.value)}
+                    placeholder="0"
+                    type="number"
+                    value={pmWorkload}
                   />
                 </Field>
               </div>

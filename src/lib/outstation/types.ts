@@ -139,6 +139,7 @@ export type OutstationCaptureResult = {
 };
 
 export type OutstationCalculationInput = {
+  amWorkload?: number;
   attachmentCount?: number;
   capturedAccuracyMeters: number;
   capturedAt?: string;
@@ -152,8 +153,11 @@ export type OutstationCalculationInput = {
   kilometerReading?: number;
   medicalTripHrId?: string | null;
   medicalTripName?: string | null;
+  meetingAmount?: number;
   notes?: string | null;
   offlineCaptured?: boolean;
+  otherAmount?: number;
+  pmWorkload?: number;
   returnTicketAmount?: number;
   carEvidenceMetadata?: OutstationCarEvidenceMetadata;
   transportationType: OutstationTransportationType;
@@ -254,6 +258,10 @@ export type OutstationExpenseRequest = {
   tripEndDate: string;
   tripStartDate: string;
   updatedAt: string;
+  amWorkload: number;
+  meetingAmount: number;
+  otherAmount: number;
+  pmWorkload: number;
   varianceAmount: number;
   variancePercent: number;
 };
@@ -274,13 +282,17 @@ export type ManagerExpenseDestination = {
 };
 
 export type ManagerExpenseAdminInput = {
+  amWorkload?: number | null;
   claimedTotalAmount: number;
   destination: ManagerExpenseDestination;
   distanceKm: number;
   durationMinutes: number | null;
   employeeHrId: string;
   expenseType: OutstationExpenseType;
+  meetingAmount?: number | null;
   notes: string | null;
+  otherAmount?: number | null;
+  pmWorkload?: number | null;
   routePolyline: string | null;
   transportationType: OutstationTransportationType;
   tripEndDate: string;

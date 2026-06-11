@@ -6,9 +6,11 @@ export type MedicalRepSimpleExpenseAttachment = {
 };
 
 export type MedicalRepSimpleExpenseInput = {
+  amWorkload?: number;
   attachments: MedicalRepSimpleExpenseAttachment[];
   goTicketAmount: number;
   notes: string;
+  pmWorkload?: number;
   returnTicketAmount: number;
   toLocation: string;
   tripEndDate: string;

@@ -432,6 +432,10 @@ export function MobileOutstationWizard({
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
   const [kilometerReading, setKilometerReading] = useState("");
   const [notes, setNotes] = useState("");
+  const [meetingAmount, setMeetingAmount] = useState("");
+  const [otherAmount, setOtherAmount] = useState("");
+  const [amWorkload, setAmWorkload] = useState("");
+  const [pmWorkload, setPmWorkload] = useState("");
   const [medicalTripHrId, setMedicalTripHrId] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
   const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
@@ -517,9 +521,13 @@ export function MobileOutstationWizard({
     setCarEvidenceDraftId(buildDraftId());
     setExpenseType("traveling");
     setGoTicketAmount("");
+    setAmWorkload("");
     setKilometerReading("");
     setMedicalTripHrId("");
+    setMeetingAmount("");
     setNotes("");
+    setOtherAmount("");
+    setPmWorkload("");
     setReturnTicketAmount("");
     setTripStartDate("");
     setTripEndDate("");
@@ -742,6 +750,7 @@ export function MobileOutstationWizard({
 
   const requestPayload = useMemo(
     () => ({
+      amWorkload: Number(amWorkload || 0),
       attachmentCount: ticketFiles.length,
       capturedAccuracyMeters: captured?.capturedAccuracyMeters ?? 0,
       capturedAt: captured?.capturedAt,
@@ -755,14 +764,18 @@ export function MobileOutstationWizard({
       kilometerReading: Number(kilometerReading || 0),
       medicalTripHrId,
       medicalTripName: selectedMedicalTripName,
+      meetingAmount: Number(meetingAmount || 0),
       notes,
       offlineCaptured: isOffline,
+      otherAmount: Number(otherAmount || 0),
+      pmWorkload: Number(pmWorkload || 0),
       returnTicketAmount: Number(returnTicketAmount || 0),
       transportationType,
       tripEndDate,
       tripStartDate,
     }),
     [
+      amWorkload,
       captured,
       expenseType,
       goTicketAmount,
@@ -770,7 +783,10 @@ export function MobileOutstationWizard({
       isOffline,
       kilometerReading,
       medicalTripHrId,
+      meetingAmount,
       notes,
+      otherAmount,
+      pmWorkload,
       returnTicketAmount,
       carEvidenceMetadata,
       selectedMedicalTripName,
@@ -1408,6 +1424,49 @@ export function MobileOutstationWizard({
               value={notes}
             />
           </Field>
+
+          {expenseType === "meeting" ? (
+            <Field label="Meeting Amount (EGP)">
+              <Input
+                min="0"
+                onChange={(event) => setMeetingAmount(event.target.value)}
+                placeholder="EGP"
+                type="number"
+                value={meetingAmount}
+              />
+            </Field>
+          ) : expenseType === "other" ? (
+            <Field label="Other Amount (EGP)">
+              <Input
+                min="0"
+                onChange={(event) => setOtherAmount(event.target.value)}
+                placeholder="EGP"
+                type="number"
+                value={otherAmount}
+              />
+            </Field>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="AM Visits">
+              <Input
+                min="0"
+                onChange={(event) => setAmWorkload(event.target.value)}
+                placeholder="0"
+                type="number"
+                value={amWorkload}
+              />
+            </Field>
+            <Field label="PM Visits">
+              <Input
+                min="0"
+                onChange={(event) => setPmWorkload(event.target.value)}
+                placeholder="0"
+                type="number"
+                value={pmWorkload}
+              />
+            </Field>
+          </div>
         </div>
 
         <div className="mt-5">

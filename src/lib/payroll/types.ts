@@ -99,6 +99,7 @@ export type ExpenseTripRecord = {
   location: string;
   meetingAmount: number;
   open: string;
+  otherAmount?: number;
   pmWorkload: number;
   requestType: string;
   row: number;

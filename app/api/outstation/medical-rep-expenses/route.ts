@@ -65,9 +65,11 @@ export async function POST(request: Request) {
     );
 
     const requestRecord = await submitMedicalRepSimpleExpenseRequest(access, {
+      amWorkload: Number(formText(formData, "amWorkload") || "0"),
       attachments,
       goTicketAmount: Number(formText(formData, "goTicketAmount")),
       notes: formText(formData, "notes"),
+      pmWorkload: Number(formText(formData, "pmWorkload") || "0"),
       returnTicketAmount: Number(formText(formData, "returnTicketAmount")),
       toLocation: formText(formData, "toLocation"),
       tripEndDate: formText(formData, "tripEndDate"),

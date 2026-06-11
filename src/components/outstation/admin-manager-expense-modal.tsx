@@ -139,6 +139,18 @@ export function AdminManagerExpenseModal({
   const [claimedAmount, setClaimedAmount] = useState(
     request?.claimedTotalAmount ? String(request.claimedTotalAmount) : "",
   );
+  const [meetingAmount, setMeetingAmount] = useState(
+    request?.meetingAmount ? String(request.meetingAmount) : "",
+  );
+  const [otherAmount, setOtherAmount] = useState(
+    request?.otherAmount ? String(request.otherAmount) : "",
+  );
+  const [amWorkload, setAmWorkload] = useState(
+    request?.amWorkload ? String(request.amWorkload) : "",
+  );
+  const [pmWorkload, setPmWorkload] = useState(
+    request?.pmWorkload ? String(request.pmWorkload) : "",
+  );
 
   const [destination, setDestination] = useState<ManagerExpenseDestination | null>(
     request
@@ -400,13 +412,17 @@ export function AdminManagerExpenseModal({
     setSubmitError(null);
 
     const input: ManagerExpenseAdminInput = {
+      amWorkload: amWorkload ? Number(amWorkload) : 0,
       claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
       destination,
       distanceKm,
       durationMinutes: distanceResult?.durationMinutes ?? null,
       employeeHrId,
       expenseType,
+      meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
       notes: notes.trim() || null,
+      otherAmount: otherAmount ? Number(otherAmount) : 0,
+      pmWorkload: pmWorkload ? Number(pmWorkload) : 0,
       routePolyline: distanceResult?.routePolyline ?? null,
       transportationType,
       tripEndDate,
@@ -459,7 +475,7 @@ export function AdminManagerExpenseModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-3xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-6 py-5">
           <div>
@@ -719,6 +735,57 @@ export function AdminManagerExpenseModal({
                 <option value="bus">Bus</option>
                 <option value="other">Other</option>
               </SelectField>
+            </div>
+          </div>
+
+          {/* Meeting / Other amount — conditional on expense type */}
+          {expenseType === "meeting" ? (
+            <div>
+              <FieldLabel>Meeting amount (EGP)</FieldLabel>
+              <InputField
+                min="0"
+                onChange={(e) => setMeetingAmount(e.target.value)}
+                placeholder="e.g. 250"
+                step="0.01"
+                type="number"
+                value={meetingAmount}
+              />
+            </div>
+          ) : expenseType === "other" ? (
+            <div>
+              <FieldLabel>Other amount (EGP)</FieldLabel>
+              <InputField
+                min="0"
+                onChange={(e) => setOtherAmount(e.target.value)}
+                placeholder="e.g. 150"
+                step="0.01"
+                type="number"
+                value={otherAmount}
+              />
+            </div>
+          ) : null}
+
+          {/* AM / PM workload */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <FieldLabel>AM visits</FieldLabel>
+              <InputField
+                min="0"
+                onChange={(e) => setAmWorkload(e.target.value)}
+                placeholder="0"
+                type="number"
+                value={amWorkload}
+              />
+            </div>
+            <div>
+              <FieldLabel>PM visits</FieldLabel>
+              <InputField
+                min="0"
+                onChange={(e) => setPmWorkload(e.target.value)}
+                placeholder="0"
+                type="number"
+                value={pmWorkload}
+              />
             </div>
           </div>
 

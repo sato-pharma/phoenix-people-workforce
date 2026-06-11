@@ -282,7 +282,7 @@ function RequestDetailsModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-7xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -327,6 +327,14 @@ function RequestDetailsModal({
             <Info label="Transportation" value={formatStatus(request.transportationType)} />
             <Info label="Expense type" value={formatStatus(request.expenseType)} />
             <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
+            <Info label="AM visits" value={String(request.amWorkload ?? 0)} />
+            <Info label="PM visits" value={String(request.pmWorkload ?? 0)} />
+            {request.expenseType === "meeting" ? (
+              <Info label="Meeting amount" value={formatCurrency(request.meetingAmount ?? 0)} />
+            ) : null}
+            {request.expenseType === "other" ? (
+              <Info label="Other amount" value={formatCurrency(request.otherAmount ?? 0)} />
+            ) : null}
           </div>
 
           <Card className={`${panelClassName} p-5`}>
