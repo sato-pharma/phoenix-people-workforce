@@ -13,6 +13,11 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Group Product Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Training Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("National Sales Manager"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Admin HR"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Senior Admin HR Specialist"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("HR Manager"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Employee", "Super Admin"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("HR Specialist", "HR Specialist"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Marketing Manager"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("SFE Manager"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Regional Manager"), false);

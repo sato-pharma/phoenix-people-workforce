@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 // Client-only flag without setState-in-effect: false on the server/during
@@ -58,12 +58,11 @@ const statusLabels: Record<EmployeePlanStatus, string> = {
   submitted: "Submitted",
 };
 
-// Premium field controls (square corners, slate-300 border, orange focus ring) —
+// Premium field controls (square corners, slate-300 border, orange focus ring) -
 // matched to the Report It module's design language.
 const cin = "h-8 w-full border border-slate-300 bg-white px-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
-const csel = "h-8 w-full cursor-pointer border border-slate-300 bg-white px-2 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
-const cinNotes = "h-8 w-full border border-orange-300 bg-orange-50/70 px-2 text-sm text-slate-800 placeholder:text-orange-400 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/25 transition-colors duration-150 disabled:opacity-60 disabled:cursor-not-allowed";
-const ROW_GRID = "grid grid-cols-[minmax(0,0.75fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_minmax(0,1.6fr)] gap-x-3";
+const tableSelectClass = "h-10 w-full min-w-0 cursor-pointer border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+const tableInputClass = "h-10 w-full min-w-0 border border-orange-200 bg-orange-50/50 px-3 text-sm font-semibold text-slate-800 placeholder:text-orange-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-60";
 // Taller field controls for the touch-friendly mobile bottom-sheet editor.
 const mobileField = "h-11 w-full border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
 
@@ -75,6 +74,22 @@ function addDays(date: string, days: number) {
   const parsed = new Date(`${date}T00:00:00Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
+}
+
+function dateRange(startDate: string, endDate: string) {
+  const result: string[] = [];
+  const cursor = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    result.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return result;
+}
+
+function isDefaultWorkingDay(value: string) {
+  const day = new Date(`${value}T00:00:00Z`).getUTCDay();
+  return day >= 0 && day <= 4;
 }
 
 function formatDate(value: string) {
@@ -92,21 +107,9 @@ function formatDayName(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
-  const period = buildEmployeePlanPeriod(kind, anchorDate);
-  const count =
-    kind === "weekly"
-      ? 5
-      : Math.min(
-          31,
-          Math.round(
-            (Date.parse(`${period.periodEndDate}T00:00:00Z`) -
-              Date.parse(`${period.periodStartDate}T00:00:00Z`)) /
-              86400000,
-          ) + 1,
-        );
-  return Array.from({ length: count }, (_, index) => ({
-    activityDate: addDays(period.periodStartDate, index),
+function createDraftRow(activityDate: string, index: number, keySeed = "row"): DraftItem {
+  return {
+    activityDate,
     activityTitle: "",
     activityType: "Office",
     area: "",
@@ -114,17 +117,30 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
     doubleVisitMedicalRepHrId: "",
     doubleVisitMedicalRepName: "",
     endTime: "",
-    key: `row-${index}-${period.periodStartDate}`,
+    key: `${keySeed}-${activityDate}-${index}`,
     locationText: "",
     notes: "",
     objective: "",
     sortOrder: index,
     startTime: "",
-  }));
+  };
+}
+
+function sortDraftRows(rows: DraftItem[]) {
+  return [...rows]
+    .sort((left, right) => left.activityDate.localeCompare(right.activityDate))
+    .map((row, index) => ({ ...row, sortOrder: index }));
+}
+
+function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
+  const period = buildEmployeePlanPeriod(kind, anchorDate);
+  const days = dateRange(period.periodStartDate, period.periodEndDate);
+  const selectedDays = kind === "monthly" ? days.filter(isDefaultWorkingDay) : days;
+  return selectedDays.map((date, index) => createDraftRow(date, index));
 }
 
 function rowPayload(rows: DraftItem[]): EmployeePlanItemInput[] {
-  return rows.map((row, index) => ({
+  return sortDraftRows(rows).map((row, index) => ({
     activityDate: row.activityDate,
     activityTitle: row.activityType,
     activityType: row.activityType,
@@ -234,6 +250,18 @@ export function PlansWorkspace({
     () => buildEmployeePlanPeriod(activeKind, anchorDate),
     [activeKind, anchorDate],
   );
+  const periodDays = useMemo(
+    () => dateRange(period.periodStartDate, period.periodEndDate),
+    [period.periodEndDate, period.periodStartDate],
+  );
+  const selectedDateSet = useMemo(
+    () => new Set(rows.map((row) => row.activityDate)),
+    [rows],
+  );
+  const workingDayCount = useMemo(
+    () => periodDays.filter(isDefaultWorkingDay).length,
+    [periodDays],
+  );
   const plans = workspace.plans;
   const plan = plans.find((item) => item.id === selectedPlan) ?? null;
   const ownPlans = plans.filter(
@@ -261,7 +289,8 @@ export function PlansWorkspace({
     (row) => row.activityType === "Double Visit" && !row.doubleVisitMedicalRepHrId,
   );
   const noSameLineReps = hasDoubleVisit && workspace.medicalRepOptions.length === 0;
-  const submitBlocked = !canEdit || doubleVisitMissingRep;
+  const noPlanRows = rows.length === 0;
+  const submitBlocked = !canEdit || doubleVisitMissingRep || noPlanRows;
 
   const sheetRow = rows.find((row) => row.key === sheetKey) ?? null;
 
@@ -314,33 +343,17 @@ export function PlansWorkspace({
   }
 
   function deleteRow(key: string) {
-    setRows((current) => current.filter((row) => row.key !== key));
+    setRows((current) => sortDraftRows(current.filter((row) => row.key !== key)));
     setSheetKey(null);
   }
 
   function addRow() {
     setRows((current) => {
-      const last = current[current.length - 1];
-      const nextDate = last ? addDays(last.activityDate, 1) : period.periodStartDate;
-      return [
-        ...current,
-        {
-          activityDate: nextDate,
-          activityTitle: "",
-          activityType: "Office",
-          area: "",
-          attendees: "",
-          doubleVisitMedicalRepHrId: "",
-          doubleVisitMedicalRepName: "",
-          endTime: "",
-          key: `row-add-${Date.now()}`,
-          locationText: "",
-          notes: "",
-          objective: "",
-          sortOrder: current.length,
-          startTime: "",
-        },
-      ];
+      const used = new Set(current.map((row) => row.activityDate));
+      const nextDate =
+        periodDays.find((date) => !used.has(date)) ??
+        addDays(current[current.length - 1]?.activityDate ?? period.periodEndDate, 1);
+      return sortDraftRows([...current, createDraftRow(nextDate, current.length, `row-add-${Date.now()}`)]);
     });
   }
 
@@ -555,6 +568,13 @@ export function PlansWorkspace({
           </div>
         ) : null}
 
+        {noPlanRows ? (
+          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Add at least one planning day before saving or submitting.</span>
+          </div>
+        ) : null}
+
         {/* Day cards */}
         <div className="space-y-2.5">
           {rows.map((row) => (
@@ -691,31 +711,60 @@ export function PlansWorkspace({
         </div>
 
         {/* Kind toggle + date picker */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex border border-slate-200 bg-white p-0.5">
-            {(["weekly", "monthly"] as const).map((kind) => (
-              <button
-                className={`px-4 py-1.5 text-sm font-bold transition-colors duration-150 ${
-                  activeKind === kind ? "bg-orange-600 text-white" : "text-slate-700 hover:bg-slate-50"
-                }`}
-                key={kind}
-                onClick={() => onKindChange(kind)}
-                type="button"
-              >
-                {kind === "weekly" ? "Weekly Plan" : "Monthly Plan"}
-              </button>
-            ))}
+        <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.07)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">My Plan</p>
+              <h2 className="mt-1 text-xl font-black text-slate-950">
+                {activeKind === "weekly" ? "Weekly plan table" : "Monthly plan table"}
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                {formatDate(period.periodStartDate)} to {formatDate(period.periodEndDate)} - {period.periodKey}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-orange-700">
+                {rows.length} selected day{rows.length === 1 ? "" : "s"}
+              </span>
+              {activeKind === "monthly" ? (
+                <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
+                  {workingDayCount} working days default
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              className="h-9 border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
-              onChange={(event) => onAnchorChange(event.target.value)}
-              type="date"
-              value={anchorDate}
-            />
-            <span className="border border-slate-200 bg-white px-3 py-1.5 text-sm font-bold text-slate-600">
-              {period.periodKey}
-            </span>
+          <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="inline-flex w-full border border-slate-200 bg-slate-50 p-1 sm:w-auto">
+              {(["weekly", "monthly"] as const).map((kind) => (
+                <button
+                  className={`min-h-10 flex-1 px-4 text-sm font-black transition-colors duration-150 sm:flex-none ${
+                    activeKind === kind
+                      ? "bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]"
+                      : "text-slate-700 hover:bg-white"
+                  }`}
+                  key={kind}
+                  onClick={() => onKindChange(kind)}
+                  type="button"
+                >
+                  {kind === "weekly" ? "Weekly Plan" : "Monthly Plan"}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor="plan-anchor-date">
+                Anchor date
+              </label>
+              <input
+                className="h-10 border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                id="plan-anchor-date"
+                onChange={(event) => onAnchorChange(event.target.value)}
+                type="date"
+                value={anchorDate}
+              />
+              <span className="border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700">
+                {period.periodKey}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -730,251 +779,300 @@ export function PlansWorkspace({
           </div>
         ) : null}
 
+        {noPlanRows ? (
+          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Add at least one planning day before saving or submitting.</span>
+          </div>
+        ) : null}
+
         {/* Main grid */}
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           {/* Plan table */}
-          <section className="min-w-0 overflow-hidden border border-slate-200 bg-white">
-            {/* Dark header */}
-            <div className="bg-slate-900 px-4 pb-3 pt-4">
-              <div className={`${ROW_GRID} min-w-0 text-xs font-black uppercase tracking-[0.1em]`}>
-                <div className="flex items-center gap-1.5 text-slate-300">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                  Date
+          <section className="min-w-0 overflow-hidden border border-slate-200 bg-white shadow-[0_24px_58px_rgba(15,23,42,0.08)]">
+            <div className="bg-slate-950 px-4 py-4 text-white sm:px-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
+                  <h3 className="mt-1 text-lg font-black">
+                    {activeKind === "weekly" ? "Weekly activities" : "Monthly activities"}
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-300">
+                    Build each day with activity, geography, medical rep context, and notes.
+                  </p>
                 </div>
-                <div className="flex items-center gap-1.5 text-sky-400">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
-                  Type
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="inline-flex h-9 items-center gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
+                    type="button"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export XLSX
+                  </button>
+                  <button
+                    className="inline-flex h-9 items-center gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
+                    type="button"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export PDF
+                  </button>
+                  {plan ? (
+                    <>
+                      <button
+                        className="inline-flex h-9 items-center gap-1.5 border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        onClick={() =>
+                          window.location.assign(
+                            `/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`,
+                          )
+                        }
+                        type="button"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Selected XLSX
+                      </button>
+                      <button
+                        className="inline-flex h-9 items-center gap-1.5 border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        onClick={() =>
+                          window.location.assign(
+                            `/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`,
+                          )
+                        }
+                        type="button"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Selected PDF
+                      </button>
+                    </>
+                  ) : null}
                 </div>
-                <div className="flex items-center gap-1.5 text-emerald-400">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                  Region
-                </div>
-                <div className="flex items-center gap-1.5 text-orange-400">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
-                  Area
-                </div>
-                <div className="flex items-center gap-1.5 text-violet-400">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
-                  Medical Rep
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-orange-500/50 pt-3">
-                <button
-                  className="inline-flex h-7 items-center gap-1.5 border border-slate-600 bg-slate-800 px-2.5 text-xs font-bold text-slate-300 transition-colors duration-150 hover:border-orange-500/60 hover:text-orange-300"
-                  onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
-                  type="button"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export XLSX
-                </button>
-                <button
-                  className="inline-flex h-7 items-center gap-1.5 border border-slate-600 bg-slate-800 px-2.5 text-xs font-bold text-slate-300 transition-colors duration-150 hover:border-orange-500/60 hover:text-orange-300"
-                  onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
-                  type="button"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export PDF
-                </button>
-                {plan ? (
-                  <>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 border border-orange-500/40 bg-orange-900/20 px-2.5 text-xs font-bold text-orange-300 transition-colors duration-150 hover:border-orange-400 hover:text-orange-200"
-                      onClick={() =>
-                        window.location.assign(
-                          `/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`,
-                        )
-                      }
-                      type="button"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Selected XLSX
-                    </button>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 border border-orange-500/40 bg-orange-900/20 px-2.5 text-xs font-bold text-orange-300 transition-colors duration-150 hover:border-orange-400 hover:text-orange-200"
-                      onClick={() =>
-                        window.location.assign(
-                          `/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`,
-                        )
-                      }
-                      type="button"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Selected PDF
-                    </button>
-                  </>
-                ) : null}
               </div>
             </div>
 
-            {/* Day rows */}
-            <div className="divide-y divide-slate-100">
-              {rows.map((row, rowIndex) => {
-                const hasReturnNotes = Boolean(row.returnNotes?.length);
-                const rowBg = hasReturnNotes
-                  ? "bg-amber-50/60"
-                  : rowIndex % 2 === 0
-                    ? ""
-                    : "bg-slate-50/40";
-                const autoRep = repForArea(workspace.medicalRepOptions, row.area ?? "");
-                const availableAreas = areasForRegion(
-                  workspace.medicalRepOptions,
-                  row.locationText ?? "",
-                );
+            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canEdit || selectedDateSet.size >= periodDays.length}
+                  onClick={addRow}
+                  type="button"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add day
+                </button>
+                <button
+                  className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canEdit}
+                  onClick={() => resetRows(activeKind, anchorDate)}
+                  type="button"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset working days
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+                <span className="border border-slate-200 bg-white px-2.5 py-1.5">Rows: {rows.length}</span>
+                <span className="border border-slate-200 bg-white px-2.5 py-1.5">Period days: {periodDays.length}</span>
+              </div>
+            </div>
 
-                return (
-                  <div
-                    className={`group transition-colors duration-100 hover:bg-orange-50/25 ${rowBg}`}
-                    key={row.key}
-                  >
-                    {/* 5-column row — all cells h-8 and items-center */}
-                    <div className={`${ROW_GRID} min-w-0 items-center px-4 py-2`}>
-                      {/* Date */}
-                      <div className="flex h-8 min-w-0 flex-col justify-center border-l-2 border-orange-400/60 pl-2">
-                        <span className="text-[11px] font-black uppercase leading-none tracking-[0.08em] text-orange-500">
-                          {formatDayName(row.activityDate)}
-                        </span>
-                        <span className="mt-0.5 text-xs font-bold leading-none text-slate-700">
-                          {formatDate(row.activityDate)}
-                        </span>
-                      </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1180px] border-collapse">
+                <thead className="bg-white">
+                  <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    <th className="w-[132px] px-4 py-3">Date</th>
+                    <th className="w-[160px] px-3 py-3">Activity</th>
+                    <th className="w-[190px] px-3 py-3">Region</th>
+                    <th className="w-[190px] px-3 py-3">Area</th>
+                    <th className="w-[220px] px-3 py-3">Medical Rep</th>
+                    <th className="px-3 py-3">Notes</th>
+                    <th className="w-[84px] px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row, rowIndex) => {
+                    const hasReturnNotes = Boolean(row.returnNotes?.length);
+                    const autoRep = repForArea(workspace.medicalRepOptions, row.area ?? "");
+                    const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "");
+                    const rowTone = hasReturnNotes
+                      ? "bg-amber-50/70"
+                      : rowIndex % 2 === 0
+                        ? "bg-white"
+                        : "bg-slate-50/45";
 
-                      {/* Type */}
-                      <select
-                        className={csel}
-                        disabled={!canEdit}
-                        onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
-                        value={row.activityType}
-                      >
-                        {employeePlanActivityTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Region */}
-                      <select
-                        className={csel}
-                        disabled={!canEdit}
-                        onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
-                        value={row.locationText ?? ""}
-                      >
-                        <option value="">Select region</option>
-                        {row.locationText &&
-                        !regions.some(
-                          (r) => r.toLowerCase() === (row.locationText ?? "").toLowerCase(),
-                        ) ? (
-                          <option value={row.locationText}>{row.locationText}</option>
+                    return (
+                      <Fragment key={row.key}>
+                        <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-12 w-14 shrink-0 flex-col items-center justify-center border border-orange-200 bg-orange-50">
+                                <span className="text-[10px] font-black uppercase tracking-wide text-orange-500">
+                                  {formatDayName(row.activityDate)}
+                                </span>
+                                <span className="mt-0.5 text-sm font-black text-slate-900">
+                                  {formatDate(row.activityDate).split(" ")[0]}
+                                </span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-slate-900">{formatDate(row.activityDate)}</p>
+                                <p className="text-xs font-semibold text-slate-500">Day {rowIndex + 1}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <select
+                              className={tableSelectClass}
+                              disabled={!canEdit}
+                              onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
+                              value={row.activityType}
+                            >
+                              {employeePlanActivityTypes.map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-3">
+                            <select
+                              className={tableSelectClass}
+                              disabled={!canEdit}
+                              onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
+                              value={row.locationText ?? ""}
+                            >
+                              <option value="">Select region</option>
+                              {row.locationText &&
+                              !regions.some((region) => region.toLowerCase() === (row.locationText ?? "").toLowerCase()) ? (
+                                <option value={row.locationText}>{row.locationText}</option>
+                              ) : null}
+                              {regions.map((region) => (
+                                <option key={region} value={region}>
+                                  {region}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-3">
+                            <select
+                              className={tableSelectClass}
+                              disabled={!canEdit || !row.locationText}
+                              onChange={(e) => updateRow(row.key, "area", e.target.value)}
+                              value={row.area ?? ""}
+                            >
+                              <option value="">{row.locationText ? "Select area" : "Choose region first"}</option>
+                              {row.area &&
+                              !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
+                                <option value={row.area}>{row.area}</option>
+                              ) : null}
+                              {availableAreas.map((area) => (
+                                <option key={area} value={area}>
+                                  {area}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-3">
+                            {row.activityType === "Double Visit" ? (
+                              <select
+                                className={tableSelectClass}
+                                disabled={!canEdit || workspace.medicalRepOptions.length === 0}
+                                onChange={(e) => setRowRep(row.key, e.target.value)}
+                                value={row.doubleVisitMedicalRepHrId ?? ""}
+                              >
+                                <option value="">Select Medical Rep</option>
+                                {row.doubleVisitMedicalRepHrId &&
+                                !workspace.medicalRepOptions.some((rep) => rep.hrId === row.doubleVisitMedicalRepHrId) ? (
+                                  <option value={row.doubleVisitMedicalRepHrId}>
+                                    {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
+                                  </option>
+                                ) : null}
+                                {workspace.medicalRepOptions.map((rep) => (
+                                  <option key={rep.hrId} value={rep.hrId}>
+                                    {rep.fullName}
+                                    {rep.areaName ? ` - ${rep.areaName}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : autoRep ? (
+                              <div className="flex h-10 min-w-0 items-center border border-violet-200 bg-violet-50/70 px-3">
+                                <span className="truncate text-sm font-black text-violet-700">{autoRep.fullName}</span>
+                              </div>
+                            ) : (
+                              <div className="flex h-10 min-w-0 items-center border border-slate-200 bg-white px-3">
+                                <span className="text-xs font-semibold text-slate-400">
+                                  {row.area ? "No rep for this area" : "Select area first"}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
+                            <input
+                              className={tableInputClass}
+                              disabled={!canEdit}
+                              onChange={(e) => updateRow(row.key, "notes", e.target.value)}
+                              placeholder="Notes for this day..."
+                              value={row.notes ?? ""}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              aria-label={`Remove ${formatDate(row.activityDate)}`}
+                              className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                              disabled={!canEdit || rows.length <= 1}
+                              onClick={() => deleteRow(row.key)}
+                              type="button"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                        {hasReturnNotes ? (
+                          <tr className="bg-amber-50/80">
+                            <td className="px-4 py-2" colSpan={7}>
+                              <div className="space-y-1 border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
+                                {row.returnNotes?.map((note) => (
+                                  <p key={note.id}>
+                                    {note.actorRole ?? "Reviewer"}: {note.note}
+                                  </p>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
                         ) : null}
-                        {regions.map((region) => (
-                          <option key={region} value={region}>
-                            {region}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Area — cascades from region */}
-                      <select
-                        className={csel}
-                        disabled={!canEdit || !row.locationText}
-                        onChange={(e) => updateRow(row.key, "area", e.target.value)}
-                        value={row.area ?? ""}
-                      >
-                        <option value="">
-                          {row.locationText ? "Select area" : "Choose region first"}
-                        </option>
-                        {row.area &&
-                        !availableAreas.some(
-                          (a) => a.toLowerCase() === (row.area ?? "").toLowerCase(),
-                        ) ? (
-                          <option value={row.area}>{row.area}</option>
-                        ) : null}
-                        {availableAreas.map((area) => (
-                          <option key={area} value={area}>
-                            {area}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Medical Rep — DV selector or auto-derived display */}
-                      {row.activityType === "Double Visit" ? (
-                        <select
-                          className={csel}
-                          disabled={!canEdit || workspace.medicalRepOptions.length === 0}
-                          onChange={(e) => setRowRep(row.key, e.target.value)}
-                          value={row.doubleVisitMedicalRepHrId ?? ""}
-                        >
-                          <option value="">Select Medical Rep</option>
-                          {row.doubleVisitMedicalRepHrId &&
-                          !workspace.medicalRepOptions.some(
-                            (r) => r.hrId === row.doubleVisitMedicalRepHrId,
-                          ) ? (
-                            <option value={row.doubleVisitMedicalRepHrId}>
-                              {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
-                            </option>
-                          ) : null}
-                          {workspace.medicalRepOptions.map((rep) => (
-                            <option key={rep.hrId} value={rep.hrId}>
-                              {rep.fullName}
-                              {rep.areaName ? ` – ${rep.areaName}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      ) : autoRep ? (
-                        <div className="flex h-8 min-w-0 items-center border border-violet-200 bg-violet-50/60 px-2">
-                          <span className="truncate text-sm font-semibold text-violet-700">
-                            {autoRep.fullName}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex h-8 min-w-0 items-center border border-slate-200 bg-slate-50 px-2">
-                          <span className="text-xs text-slate-400">
-                            {row.area ? "No rep for this area" : "Select area first"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Notes — full width, orange tinted */}
-                    <div className="border-t border-orange-100 bg-orange-50/40 px-4 py-2">
-                      <input
-                        className={cinNotes}
-                        disabled={!canEdit}
-                        onChange={(e) => updateRow(row.key, "notes", e.target.value)}
-                        placeholder="Notes for this day..."
-                        value={row.notes ?? ""}
-                      />
-                      {hasReturnNotes ? (
-                        <div className="mt-2 space-y-1 border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
-                          {row.returnNotes?.map((note) => (
-                            <p key={note.id}>
-                              {note.actorRole ?? "Reviewer"}: {note.note}
-                            </p>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
             {/* Footer actions */}
-            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 p-4">
-              <Button
-                disabled={isPending || !canEdit}
-                onClick={() => runAction(() => submitPlan(false))}
-                variant="secondary"
-              >
-                Save draft
-              </Button>
-              <Button
-                disabled={isPending || submitBlocked}
-                onClick={() => runAction(() => submitPlan(true))}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Submit
-              </Button>
+            <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+                <span className={`border px-2.5 py-1.5 ${statusTone(plan?.status ?? "draft")}`}>
+                  {statusLabels[plan?.status ?? "draft"]}
+                </span>
+                <span className="border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                  {workspace.canSubmitPlans ? "Creator access" : "Review access only"}
+                </span>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  disabled={isPending || !canEdit || noPlanRows}
+                  onClick={() => runAction(() => submitPlan(false))}
+                  variant="secondary"
+                >
+                  Save draft
+                </Button>
+                <Button
+                  disabled={isPending || submitBlocked}
+                  onClick={() => runAction(() => submitPlan(true))}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Submit
+                </Button>
+              </div>
             </div>
           </section>
 

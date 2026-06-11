@@ -142,6 +142,9 @@ export function isWeeklyMonthlyPlanEligibleTitle(
   title: string | null | undefined,
   fallbackRole?: PhoenixRole | null,
 ): boolean {
+  const normalizedTitle = String(title ?? "").trim().toLowerCase();
+  if (normalizedTitle.includes("admin hr") || normalizedTitle.includes("hr manager")) return true;
+  if (fallbackRole === "Super Admin") return true;
   const resolved = resolveJobFunctionRole(title);
   if (eligibleRoleSet.has(resolved)) return true;
   return fallbackRole ? eligibleRoleSet.has(fallbackRole) : false;
