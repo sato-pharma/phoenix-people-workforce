@@ -1,6 +1,6 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getFingerprintAttendanceReport, type FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { getAttendanceRoster, isWithinEmploymentSpan, type AttendanceRosterEmployee } from "@/lib/attendance/roster";
 import {
   buildAttendanceCalendarContext,
   cairoTodayIso,
@@ -10,6 +10,8 @@ import {
   listIsoDatesInRange,
   type AttendanceCalendarContext,
 } from "@/lib/attendance/working-days";
+
+type RosterEmployee = AttendanceRosterEmployee;
 
 export type AttendanceAnalyticsData = {
   chronicLate: Array<{
@@ -53,24 +55,6 @@ export type AttendanceAnalyticsData = {
   windowTo: string;
 };
 
-type MappingRow = { employee_hr_id: string | null };
-
-type EmployeeMetadataRow = {
-  department_id: number | null;
-  full_name: string | null;
-  hr_id: string;
-  job_title: string | null;
-};
-
-type DepartmentRow = { id: number; name: string | null };
-
-type RosterEmployee = {
-  department: string;
-  employeeName: string;
-  hrId: string;
-  jobTitle: string;
-};
-
 const CHRONIC_LATE_WINDOW_DAYS = 30;
 const CHRONIC_LATE_MIN_DAYS = 3;
 const TREND_WEEKS = 8;
@@ -101,10 +85,11 @@ function shiftIsoDate(dateIso: string, days: number): string {
 }
 
 /**
- * Company-wide attendance analytics for device-mapped employees: today's
- * snapshot, chronic late offenders (last 30 days), department rollup (last 30
- * days), and an 8-week trend. The fingerprint engine is invoked once per
- * calendar-month slice to stay inside its punch-row cap.
+ * Company-wide attendance analytics for the shared attendance roster (see
+ * roster.ts: device-mapped head-office employees; field staff and exited
+ * employees excluded): today's snapshot, chronic late offenders (last 30 days),
+ * department rollup (last 30 days), and an 8-week trend. The fingerprint engine
+ * is invoked once per calendar-month slice to stay inside its punch-row cap.
  */
 export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData> {
   const dataUnavailable: string[] = [];
@@ -113,45 +98,8 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
   const windowFrom = shiftIsoDate(currentWeekMonday, -7 * (TREND_WEEKS - 1));
   const windowTo = todayIso;
 
-  const supabase = getSupabaseAdmin();
-  const [mappingResult, employeeResult, departmentResult] = await Promise.all([
-    supabase
-      .from("attendance_device_user_map")
-      .select("employee_hr_id")
-      .eq("is_active", true)
-      .not("employee_hr_id", "is", null),
-    supabase.from("employees").select("hr_id,full_name,job_title,department_id"),
-    supabase.from("departments").select("id,name"),
-  ]);
-
-  if (mappingResult.error) throw mappingResult.error;
-  if (employeeResult.error) throw employeeResult.error;
-  if (departmentResult.error) throw departmentResult.error;
-
-  const employeeMap = new Map<string, EmployeeMetadataRow>();
-  for (const employee of (employeeResult.data ?? []) as EmployeeMetadataRow[]) {
-    const hrId = normalizeAttendanceHrId(employee.hr_id);
-    if (hrId) employeeMap.set(hrId, employee);
-  }
-  const departmentMap = new Map<number, string>(
-    ((departmentResult.data ?? []) as DepartmentRow[]).map((row) => [row.id, row.name?.trim() ?? ""]),
-  );
-
-  const roster: RosterEmployee[] = Array.from(new Set(
-    ((mappingResult.data ?? []) as MappingRow[])
-      .map((row) => normalizeAttendanceHrId(row.employee_hr_id))
-      .filter((value): value is string => Boolean(value)),
-  )).map((hrId) => {
-    const employee = employeeMap.get(hrId);
-    return {
-      department: typeof employee?.department_id === "number"
-        ? departmentMap.get(employee.department_id) || "Unassigned"
-        : "Unassigned",
-      employeeName: employee?.full_name?.trim() || hrId,
-      hrId,
-      jobTitle: employee?.job_title?.trim() ?? "",
-    };
-  });
+  const roster = (await getAttendanceRoster({ dateFromIso: windowFrom, dateToIso: windowTo }))
+    .map((employee) => ({ ...employee, department: employee.department || "Unassigned" }));
 
   // One engine call per calendar-month slice (punch query is capped per call).
   const slices = monthSlices(windowFrom, windowTo);
@@ -239,6 +187,7 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
       }
       const bucket = byWeek.get(week.key)!;
       for (const employee of roster) {
+        if (!isWithinEmploymentSpan(employee, dateIso)) continue;
         const day = classifyAttendanceDay({ context, dateIso, jobTitle: employee.jobTitle });
         if (!day.isExpectedWorkingDay) continue;
         if (leaveMap.get(employee.hrId)?.has(dateIso)) continue;
@@ -289,6 +238,7 @@ function buildTodaySnapshot(input: {
   let holidayName: string | null = null;
 
   for (const employee of roster) {
+    if (!isWithinEmploymentSpan(employee, todayIso)) continue;
     const day = classifyAttendanceDay({ context, dateIso: todayIso, jobTitle: employee.jobTitle });
     holidayName = day.holidayName ?? holidayName;
     if (!day.isWeeklyOff && !day.isHoliday) isWorkingDay = true;
@@ -339,6 +289,7 @@ function aggregatePerEmployee(input: {
     let totalLateMinutes = 0;
 
     for (const dateIso of days) {
+      if (!isWithinEmploymentSpan(employee, dateIso)) continue;
       const day = classifyAttendanceDay({ context: input.context, dateIso, jobTitle: employee.jobTitle });
       if (!day.isExpectedWorkingDay) continue;
       if (input.leaveMap.get(employee.hrId)?.has(dateIso)) continue;

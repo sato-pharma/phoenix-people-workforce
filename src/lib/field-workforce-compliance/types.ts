@@ -77,6 +77,8 @@ export type FieldWorkforceEmployeeReference = {
   hireDate?: string | null;
   hrId: string;
   jobTitle?: string | null;
+  /** Last working date for resigned/terminated employees — days after it are ignored. */
+  lastWorkingDate?: string | null;
   lineName?: string | null;
   managerHrId?: string | null;
   managerName?: string | null;
