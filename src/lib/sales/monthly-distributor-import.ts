@@ -430,6 +430,31 @@ const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// EPDA "Bulk" (wholesale / جملة) branch (code EP-R). Same coded EPDA layout as EP-S — qty "qnt", date
+// "inv_date", whole-line is_bonus flag, customer cust_code/cust_name/cust_address — for the user's
+// canonical monthly sheet (raw EPDA export + appended Product ID / Brick ID / Area ID / Region ID /
+// Distrub ID, where Distrub ID = "EP-R"). Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
+const EPDA_BULK_EPR_TEMPLATE: DistributorSalesTemplateDef = {
+  bonusFlagField: "is_bonus",
+  customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
+  discountField: "Discount%",
+  distributorCodes: ["EP-R"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
+    productCode: "Product ID",
+    qty: QTY_HEADER_ALIASES,
+    regionCode: "Region ID",
+  },
+  key: "epda_bulk_epr",
+  name: "EPDA Bulk coded template",
+  optionalFields: {
+    productName: ["class_name"],
+  },
+};
+
 // Sofico (code SF). The canonical monthly upload is Sofico's own raw export with the Phoenix coded
 // columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, so it is read straight
 // from those coded columns like every other distributor. Sofico keeps its raw header names: the date
@@ -548,6 +573,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
   EPDA_SATO_EPS_TEMPLATE,
+  EPDA_BULK_EPR_TEMPLATE,
   SOFICO_SF_TEMPLATE,
   RAMCO_RM_TEMPLATE,
   DIRECT_TEMPLATE,

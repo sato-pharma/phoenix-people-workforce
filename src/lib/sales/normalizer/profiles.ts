@@ -110,7 +110,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     // EPDA "Bulk" (wholesale / جملة) branch — same raw EPDA layout as EP-S, but each row carries the
     // resolved Phoenix Brick ID in its own column ("Column1"), so the brick is read DIRECTLY (no
     // address-alias guess). Products still resolve from class_code/class_name via the dictionary.
-    distributorCode: "EP-B",
+    distributorCode: "EP-R",
     distributorName: "EPDA Bulk",
     productColumns: ["class_code", "class_name"],
     qtyColumns: ["qnt"],
