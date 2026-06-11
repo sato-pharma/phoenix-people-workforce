@@ -142,6 +142,7 @@ function explainCell(input: {
   visitCount?: number;
 }) {
   if (input.ignoreReason === "before_hiring_date") return "Ignored because before hiring date.";
+  if (input.ignoreReason === "after_exit_date") return "Ignored because the employee resigned/exited before this day.";
   if (input.ignoreReason === "national_holiday") return `Excluded — national holiday${input.holidayName ? `: ${input.holidayName}` : ""}.`;
   if (input.ignoreReason === "weekly_off") return "Excluded because weekly day off.";
   if (input.status === "UNKNOWN") return "Review needed: unknown value in monthly file.";
@@ -325,6 +326,8 @@ function warningFromCandidate(candidate: FieldWorkforceReviewCandidate): FieldWo
 function buildTimeline(input: {
   employee: FieldWorkforceParsedEmployeeRow;
   employeeName: string;
+  /** Last working date of an exited employee; days after it are ignored. */
+  exitDateIso: string | null;
   holidayByDate: Map<string, string>;
   hrId: string;
   month: number;
@@ -337,19 +340,23 @@ function buildTimeline(input: {
     const friday = isFriday(dateIso);
     const isWeeklyOff = isFieldWorkforceWeeklyOff({ dateIso, title: input.title });
     const isPreHire = Boolean(input.employee.hiringDateIso && dateIso < input.employee.hiringDateIso);
+    const isPostExit = Boolean(input.exitDateIso && dateIso > input.exitDateIso);
     const holidayName = input.holidayByDate.get(dateIso);
     const isPublicHoliday = Boolean(holidayName);
     // National holidays and weekly-off days (Friday always; Saturday too unless the title is
     // Medical Rep / District Manager) are NOT working days — they never count as activity or
-    // as absence, and they raise no review candidates.
-    const ignored = isPreHire || isWeeklyOff || isPublicHoliday;
+    // as absence, and they raise no review candidates. Days outside the employment span
+    // (before hire / after a resigned employee's last working date) are likewise ignored.
+    const ignored = isPreHire || isPostExit || isWeeklyOff || isPublicHoliday;
     const ignoreReason = isPreHire
       ? "before_hiring_date"
-      : isPublicHoliday
-        ? "national_holiday"
-        : isWeeklyOff
-          ? "weekly_off"
-          : undefined;
+      : isPostExit
+        ? "after_exit_date"
+        : isPublicHoliday
+          ? "national_holiday"
+          : isWeeklyOff
+            ? "weekly_off"
+            : undefined;
     const eligible = !ignored;
     const countedAsWorkedDay = eligible && (status === "VISITS" || status === "CP");
     const countedAsVisitTotal = eligible && status === "VISITS";
@@ -454,9 +461,19 @@ function buildEmployeeSummary(input: {
     });
   }
 
+  const employmentStatus = String(input.employeeReference?.employmentStatus ?? "").trim().toLowerCase();
+  const isExited = employmentStatus.length > 0 && !["active", "on_leave"].includes(employmentStatus);
+  // Exited employees: days after the recorded last working date are ignored. When the
+  // exit date was never recorded, the whole month is treated as post-exit — a resigned
+  // employee must not generate no-activity warnings just because the CRM still lists them.
+  const exitDateIso = isExited
+    ? input.employeeReference?.lastWorkingDate?.slice(0, 10) ?? "1900-01-01"
+    : null;
+
   const timeline = buildTimeline({
     employee: rowWithResolvedHireDate,
     employeeName,
+    exitDateIso,
     holidayByDate: input.holidayByDate,
     hrId: displayHrId,
     month: input.month,
