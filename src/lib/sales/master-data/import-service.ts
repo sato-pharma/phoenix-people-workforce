@@ -32,13 +32,15 @@ export type MasterImportResult = {
 //   • "Direct" — the company-direct channel (region-only; sale value taken straight from the sheet's
 //     Value column — see DIRECT_TEMPLATE in monthly-distributor-import.ts).
 //   • "EP-R" — the EPDA Bulk (wholesale) branch (coded template + normalizer profile).
-// Both are code-defined and are NOT in the user's distributor-master file, so the add-only master
+//   • "EGD-PH" — a branch of EGD (parent EG), coded template only.
+// These are code-defined and are NOT in the user's distributor-master file, so the add-only master
 // import + a data reset would silently drop them (exactly how "Direct" vanished from the Upload Sales
 // dropdown after the 2026-06-08 reset). They are re-ensured after every distributor-master import.
 // Idempotent; mirror of their seed migrations.
 const SYSTEM_DISTRIBUTORS = [
   { distributor_code: "Direct", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
   { distributor_code: "EP-R", distributor_name: "EPDA Bulk", normalized_distributor_name: "epda bulk" },
+  { distributor_code: "EGD-PH", distributor_name: "EGD-PH", normalized_distributor_name: "egd-ph" },
 ] as const;
 
 // Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never
