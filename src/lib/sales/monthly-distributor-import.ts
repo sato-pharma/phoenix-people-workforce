@@ -251,6 +251,8 @@ type ParsedDistributorRow = {
   discount: number;
   distributorCode: string;
   isDirect: boolean;
+  /** Full day-level ISO date (YYYY-MM-DD); null when unparseable or outside the row's period. */
+  invoiceDate: string | null;
   invoicePeriod: string | null;
   officialLine: string;
   productCode: string;
@@ -906,6 +908,68 @@ function invoicePeriod(value: unknown, dayFirst?: boolean) {
   return periodFromYearMonth(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1);
 }
 
+function isoFromYmd(year: number, month: number, day: number): string | null {
+  if (!Number.isInteger(year) || year < 1900 || year > 9999) return null;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  // Reject impossible civil dates (e.g. Feb 30) via UTC round-trip.
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Resolves the row's full DAY-level invoice date (ISO YYYY-MM-DD) for daily analytics. Runs
+// BESIDE invoicePeriod() — never replaces it — and is guarded by it: a candidate date is accepted
+// ONLY when its YYYY-MM equals the row's derived period, so a slash-date misread (the EP-S
+// "4/9/2026" m/d-vs-d/m ambiguity) can never land in the wrong month; it resolves to null and the
+// row simply stays "undated" in day-grain views. When the column orientation is unknown and a
+// value is ambiguous, BOTH orientations are tried and the period match picks the right one.
+export function resolveInvoiceDate(
+  value: unknown,
+  dayFirst: boolean | undefined,
+  period: string | null,
+): string | null {
+  const guard = (iso: string | null) => (iso && period && iso.slice(0, 7) === period ? iso : null);
+  if (!period) return null;
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return guard(isoFromYmd(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate()));
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = excelSerialToDate(value);
+    return guard(isoFromYmd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+  }
+
+  const text = normalizeDisplay(value);
+  if (!text) return null;
+
+  // ISO-like: YYYY-MM-DD (or YYYY/MM/DD) — unambiguous.
+  const iso = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return guard(isoFromYmd(Number(iso[1]), Number(iso[2]), Number(iso[3])));
+
+  // D/M/Y or M/D/Y with a separator.
+  const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (dmy) {
+    const first = Number(dmy[1]);
+    const second = Number(dmy[2]);
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    const asDayFirst = guard(isoFromYmd(year, second, first));   // DD-MM-YYYY
+    const asMonthFirst = guard(isoFromYmd(year, first, second)); // MM-DD-YYYY
+    if (dayFirst === true) return asDayFirst;
+    if (dayFirst === false) return asMonthFirst;
+    // Unknown column orientation: the period guard arbitrates. When both survive it,
+    // day == month and they are the same date.
+    return asDayFirst ?? asMonthFirst;
+  }
+
+  // Last resort: native parse, read in UTC (handles JS Date.toString text).
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return guard(isoFromYmd(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate()));
+}
+
 // Decide a TEXT date column's orientation (DD-MM vs MM-DD) by scanning all its values, so every row
 // parses consistently. A value whose 1st part is > 12 can only be a day → day-first (decisive). A
 // value whose 2nd part is > 12 (1st <= 12) can only be a day there → month-first. Excel-native Date
@@ -1208,6 +1272,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     }
     const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
     const period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
+    const invoiceDate = resolveInvoiceDate(rawInvoiceDate, invoiceDateDayFirst, period);
 
     // Direct (company) channel: the row value is read STRAIGHT from the sheet's value column
     // (real per-deal pricing), never recomputed from factory price. The row is flagged direct
@@ -1398,6 +1463,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       discount: discountRate,
       distributorCode: rowDistributorCode,
       isDirect,
+      invoiceDate,
       invoicePeriod: period,
       officialLine: productReference?.line ?? "Unknown",
       productCode: productCode || normalizeDisplay(rawProductCode),
@@ -2215,6 +2281,7 @@ async function insertSourceOfSalesRows(
     client_name: row.clientName,
     row_number: row.rowNumber,
     distributor_code: row.distributorCode,
+    invoice_date: row.invoiceDate,
     invoice_period: row.invoicePeriod,
     region_name: row.regionName,
     region_code: row.regionCode,

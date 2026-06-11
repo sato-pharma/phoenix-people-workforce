@@ -1,63 +1,43 @@
 "use client";
 
-import {
-  AlertTriangle,
-  BarChart3,
-  Boxes,
-  Layers,
-  MapPin,
-  Package,
-  ShieldAlert,
-  ShieldCheck,
-  Table2,
-  TrendingDown,
-  TrendingUp,
-  Truck,
-} from "lucide-react";
+import { AlertTriangle, Layers, ShieldCheck, Table2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  AdminCallout,
-  AdminInsightChip,
-  AdminPageHero,
-  AdminTableShell,
-} from "@/components/admin/admin-design-system";
-import { InsightCard } from "@/components/cards/insight-card";
-import { KPICard } from "@/components/cards/kpi-card";
+import { AdminCallout } from "@/components/admin/admin-design-system";
+import { ChartCard } from "@/components/cards/chart-card";
 import { StackedChart } from "@/components/charts/stacked-chart";
+import { SectionHeader } from "@/components/ui/section-header";
+import { SiCommandHero } from "@/components/sales/intelligence/si-command-hero";
+import { SiCustomerPareto } from "@/components/sales/intelligence/si-customer-pareto";
+import { SiDailyRhythm } from "@/components/sales/intelligence/si-daily-rhythm";
+import { SiDistributorDependency } from "@/components/sales/intelligence/si-distributor-dependency";
 import { SiFilterBar } from "@/components/sales/intelligence/si-filter-bar";
-import { SiGeoHeatmap } from "@/components/sales/intelligence/si-geo-heatmap";
-import { SiTrendChart } from "@/components/sales/intelligence/si-trend-chart";
-import { formatCurrency, formatNumber } from "@/lib/sales/format";
-import type { SiCustomerInsights, SiDashboardBundle, SiRanked } from "@/lib/sales/intelligence/types";
+import { SiGeoMatrix } from "@/components/sales/intelligence/si-geo-matrix";
+import { SiInsightRail, SiRisksBand } from "@/components/sales/intelligence/si-insight-rail";
+import { SiKpiBand } from "@/components/sales/intelligence/si-kpi-band";
+import { SiProductDrilldown } from "@/components/sales/intelligence/si-product-drilldown";
+import { SiProductMovers } from "@/components/sales/intelligence/si-product-movers";
+import { SiProductsTable } from "@/components/sales/intelligence/si-products-table";
+import { compactEGP } from "@/components/sales/intelligence/si-format";
+import type {
+  SiCustomerChurn,
+  SiCustomerInsights,
+  SiDashboardBundle,
+  SiMovers,
+  SiProductDrill,
+} from "@/lib/sales/intelligence/types";
 
 const LINE_COLORS = ["#F97316", "#0F172A", "#3B82F6", "#22C55E", "#8B5CF6", "#EF4444", "#14B8A6", "#EAB308"];
 
-function pctDelta(points: { value: number }[]): string {
-  if (points.length < 2) return "Single month";
-  const latest = points[points.length - 1].value;
-  const prior = points[points.length - 2].value;
-  if (prior <= 0) return "New month";
-  const delta = ((latest - prior) / prior) * 100;
-  return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% MoM`;
-}
-
-function ShareBars({ rows, max }: { rows: SiRanked[]; max: number }) {
-  return (
-    <div className="space-y-2 p-4 md:p-5">
-      {rows.map((row) => (
-        <div className="flex items-center gap-3" key={row.name}>
-          <span className="w-40 shrink-0 truncate text-xs font-bold text-[#0F172A]" title={row.name}>{row.name}</span>
-          <div className="relative h-6 flex-1 bg-[#F1F5F9]">
-            <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${Math.max((row.value / max) * 100, 1.5)}%` }} />
-          </div>
-          <span className="w-24 shrink-0 text-right text-xs font-black text-[#0F172A]">{formatCurrency(row.value)}</span>
-          <span className="w-12 shrink-0 text-right text-[11px] font-bold text-[#64748B]">{(row.share * 100).toFixed(1)}%</span>
-        </div>
-      ))}
-    </div>
-  );
+async function fetchJson<T>(url: string): Promise<T | null> {
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    const payload = (await response.json()) as { success?: boolean; data?: T };
+    return payload?.success ? (payload.data as T) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function SalesIntelligenceDashboard({ bundle, error }: { bundle: SiDashboardBundle | null; error: string | null }) {
@@ -78,10 +58,108 @@ export function SalesIntelligenceDashboard({ bundle, error }: { bundle: SiDashbo
 }
 
 function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
-  const { kpis, products, geography, distributors, trend, access } = bundle;
-  const spark = trend.points.map((point) => point.value);
-  const momDelta = pctDelta(trend.points);
-  const momPositive = momDelta.startsWith("+");
+  const { kpis, products, geography, distributors, access, compare } = bundle;
+  const bundleKey = `${bundle.period ?? ""}|${access.restrictedIncluded ? "1" : "0"}`;
+
+  // ── Progressive lazy chain (strictly sequential: movers → customers → churn) ──────────
+  const [lazy, setLazy] = useState<{
+    key: string;
+    movers: SiMovers | null;
+    customers: SiCustomerInsights | null;
+    churn: SiCustomerChurn | null;
+    moversDone: boolean;
+    customersDone: boolean;
+  }>({ key: "", movers: null, customers: null, churn: null, moversDone: false, customersDone: false });
+  const fresh = lazy.key === bundleKey;
+  const moversPending = !fresh || !lazy.moversDone;
+  const customersPending = !fresh || !lazy.customersDone;
+  const movers = fresh ? lazy.movers : null;
+  const customers = fresh ? lazy.customers : null;
+  const churn = fresh ? lazy.churn : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (bundle.period) params.set("period", bundle.period);
+    if (access.restrictedIncluded) params.set("includeRestricted", "1");
+    const query = params.toString();
+
+    (async () => {
+      const moversData = await fetchJson<SiMovers>(`/api/sales/intelligence/movers?${query}`);
+      if (cancelled) return;
+      setLazy({ key: bundleKey, movers: moversData, customers: null, churn: null, moversDone: true, customersDone: false });
+
+      const customerData = await fetchJson<SiCustomerInsights>(`/api/sales/intelligence/customers?${query}`);
+      if (cancelled) return;
+      setLazy((current) => ({ ...current, key: bundleKey, customers: customerData, customersDone: true }));
+
+      const churnData = await fetchJson<SiCustomerChurn>(`/api/sales/intelligence/churn?${query}`);
+      if (cancelled) return;
+      setLazy((current) => ({ ...current, key: bundleKey, churn: churnData }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bundleKey, bundle.period, access.restrictedIncluded]);
+
+  // ── Product drill-down (URL-driven: ?product=CODE) ────────────────────────────────────
+  const [drillState, setDrillState] = useState<{
+    open: boolean;
+    code: string | null;
+    name: string | null;
+    data: SiProductDrill | null;
+    loading: boolean;
+    error: string | null;
+  }>({ open: false, code: null, name: null, data: null, loading: false, error: null });
+
+  const openProduct = (code: string, name?: string) => {
+    setDrillState({ open: true, code, name: name ?? null, data: null, loading: true, error: null });
+    const url = new URL(window.location.href);
+    url.searchParams.set("product", code);
+    window.history.replaceState(null, "", url.toString());
+  };
+  const closeProduct = () => {
+    setDrillState((current) => ({ ...current, open: false }));
+    const url = new URL(window.location.href);
+    url.searchParams.delete("product");
+    window.history.replaceState(null, "", url.toString());
+  };
+
+  // Deep link: open the drill if ?product= is present on first mount (scheduled async so the
+  // effect never sets state synchronously).
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const fromUrl = new URL(window.location.href).searchParams.get("product");
+      if (fromUrl) {
+        setDrillState({ open: true, code: fromUrl, name: null, data: null, loading: true, error: null });
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    if (!drillState.open || !drillState.code || !bundle.period) return;
+    let cancelled = false;
+    const params = new URLSearchParams({ period: bundle.period, product: drillState.code });
+    if (access.restrictedIncluded) params.set("includeRestricted", "1");
+    fetch(`/api/sales/intelligence/product-drill?${params.toString()}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload?.success) {
+          setDrillState((current) => ({ ...current, data: payload.data as SiProductDrill, loading: false }));
+        } else {
+          setDrillState((current) => ({ ...current, loading: false, error: String(payload?.error ?? "Drill-down unavailable.") }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDrillState((current) => ({ ...current, loading: false, error: "Drill-down unavailable." }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [drillState.open, drillState.code, bundle.period, access.restrictedIncluded]);
 
   const lineMixData = useMemo(
     () => products.lineMix.slice(0, 8).map((line, index) => ({
@@ -92,206 +170,124 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
     })),
     [products.lineMix],
   );
-  const topProducts = products.products.slice(0, 12);
-  const maxDistributor = Math.max(...distributors.distributors.map((distributor) => distributor.value), 1);
 
-  // Customer insights are the heaviest aggregate — load them lazily after first paint. State is
-  // keyed by (period, restricted) so "loading" is derived (no synchronous setState in the effect)
-  // and a stale month's customers never flash under a newly selected month.
-  const customerKey = `${bundle.period ?? ""}|${access.restrictedIncluded ? "1" : "0"}`;
-  const [customerState, setCustomerState] = useState<{ key: string; data: SiCustomerInsights | null }>({ key: "", data: null });
-  const customersLoading = customerState.key !== customerKey;
-  const customers = customerState.key === customerKey ? customerState.data : null;
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams();
-    if (bundle.period) params.set("period", bundle.period);
-    if (access.restrictedIncluded) params.set("includeRestricted", "1");
-    fetch(`/api/sales/intelligence/customers?${params.toString()}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!cancelled) setCustomerState({ key: customerKey, data: payload?.success ? (payload.data as SiCustomerInsights) : null });
-      })
-      .catch(() => {
-        if (!cancelled) setCustomerState({ key: customerKey, data: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [customerKey, bundle.period, access.restrictedIncluded]);
-
-  const insights = useMemo(() => {
-    const items: { l: string; s: string; c: string }[] = [];
-    if (products.lineMix[0]) {
-      items.push({ l: `${products.lineMix[0].name} leads the mix`, s: `${(products.lineMix[0].share * 100).toFixed(1)}% of value`, c: "bg-orange-100 text-orange-600" });
-    }
-    if (geography.regions[0]) {
-      items.push({ l: `${geography.regions[0].name} is the top region`, s: `${formatCurrency(geography.regions[0].value)} · ${(geography.regions[0].share * 100).toFixed(1)}%`, c: "bg-blue-100 text-blue-600" });
-    }
-    if (distributors.distributors[0] && distributors.distributors[0].share > 0.4) {
-      items.push({ l: `Distributor concentration risk`, s: `${distributors.distributors[0].name} carries ${(distributors.distributors[0].share * 100).toFixed(0)}% of value`, c: "bg-rose-100 text-rose-600" });
-    }
-    if (!kpis.monthComplete) {
-      items.push({ l: `${bundle.period} is incomplete`, s: `Missing: ${kpis.missingDistributors.join(", ") || "—"}`, c: "bg-amber-100 text-amber-600" });
-    }
-    if (topProducts[0]) {
-      items.push({ l: `${topProducts[0].name} is the top product`, s: `${formatCurrency(topProducts[0].value)}`, c: "bg-emerald-100 text-emerald-600" });
-    }
-    return items;
-  }, [products.lineMix, geography.regions, distributors.distributors, kpis.monthComplete, kpis.missingDistributors, bundle.period, topProducts]);
+  const topDistributor = distributors.distributors[0]
+    ? { name: distributors.distributors[0].name, share: distributors.distributors[0].share, value: distributors.distributors[0].value }
+    : null;
 
   return (
-    <div className="space-y-5 p-4 sm:p-5 xl:p-6">
-      <AdminPageHero
-        actions={(
-          <div className="flex flex-wrap gap-2">
-            <Link href="/sales-intelligence/details">
-              <span className="inline-flex h-10 items-center gap-2 border border-white/20 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/20">
-                <Table2 className="h-4 w-4" /> Sales Details
-              </span>
-            </Link>
-            <Link href="/sales-intelligence/data-quality">
-              <span className="inline-flex h-10 items-center gap-2 border border-white/20 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/20">
-                <ShieldCheck className="h-4 w-4" /> Data Quality
-              </span>
-            </Link>
-          </div>
-        )}
-        badges={(
-          <>
-            <AdminInsightChip tone="orange">{bundle.period ?? "No month"}</AdminInsightChip>
-            <AdminInsightChip>{formatNumber(kpis.distributorCount)} distributors</AdminInsightChip>
-            <AdminInsightChip>{formatNumber(kpis.lineCount)} lines</AdminInsightChip>
-            {access.restrictedIncluded ? (
-              <AdminInsightChip tone="slate"><ShieldAlert className="mr-1 inline h-3 w-3" />Including Lacto Basic 1 &amp; 2</AdminInsightChip>
-            ) : (
-              <AdminInsightChip tone="emerald">Restricted products excluded</AdminInsightChip>
-            )}
-          </>
-        )}
-        description="Distributor-sourced sales, scoped to your line and region and shown by name. Restricted products are excluded by default."
-        eyebrow="Sales Intelligence"
-        icon={<BarChart3 className="h-5 w-5" />}
-        title="Executive Sales Dashboard"
+    <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-5 xl:p-6">
+      <SiCommandHero
+        access={access}
+        compare={compare}
+        customerCount={customers?.customerCount ?? null}
+        customerPending={customersPending}
+        insights={bundle.insights}
+        kpis={kpis}
+        period={bundle.period}
       />
 
-      <SiFilterBar access={access} availablePeriods={bundle.availablePeriods} period={bundle.period} />
-
-      {!kpis.monthComplete && (
-        <AdminCallout tone="warning">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-semibold">{bundle.period} is incomplete.</p>
-            <p className="mt-1 text-sm">
-              Not every expected distributor has uploaded a validated file yet. Missing: {kpis.missingDistributors.join(", ") || "—"}.
-              Totals below understate the real month.
-            </p>
-          </div>
-        </AdminCallout>
-      )}
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <KPICard delta={momDelta} icon={momPositive ? TrendingUp : TrendingDown} label="Net Sales" spark={spark} tone="orange" value={formatCurrency(kpis.totals.value)} />
-        <KPICard delta={`${formatNumber(kpis.totals.units)} units`} icon={Boxes} label="Total Units" spark={spark} tone="blue" value={formatNumber(kpis.totals.units)} />
-        <KPICard delta="in scope" icon={Package} label="Products" spark={spark} tone="violet" value={formatNumber(kpis.productCount)} />
-        <KPICard delta="reporting" icon={Truck} label="Distributors" spark={spark} tone="emerald" value={formatNumber(kpis.distributorCount)} />
-        <KPICard delta={kpis.topRegion?.name ?? "—"} icon={MapPin} label="Top Region" spark={spark} tone="slate" value={kpis.topRegion ? formatCurrency(kpis.topRegion.value) : "—"} />
-        <KPICard delta={kpis.topProduct?.name ?? "—"} icon={Layers} label="Top Product" spark={spark} tone="rose" value={kpis.topProduct ? formatCurrency(kpis.topProduct.value) : "—"} />
+      {/* Sticky control bar */}
+      <div className="sticky top-0 z-30 -mx-1 bg-[#F3F6FA]/95 px-1 py-1 backdrop-blur">
+        <SiFilterBar access={access} availablePeriods={bundle.availablePeriods} period={bundle.period} />
       </div>
 
-      {/* Trend */}
-      <AdminTableShell description="Monthly net sales value (bars) and units (line). Amber bars are incomplete months." title="Sales Trend">
-        <SiTrendChart points={trend.points} />
-      </AdminTableShell>
+      <SiKpiBand
+        compare={compare}
+        concentration={bundle.concentration}
+        customerPending={customersPending}
+        customerTop10Share={customers?.top10Share ?? null}
+        kpis={kpis}
+        sparks={bundle.kpiSparks}
+      />
 
-      {/* Product mix + top products */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <AdminTableShell description="Share of net sales value by line." title="Line Mix">
-          <div className="p-5">
-            <StackedChart centerLabel={`${(kpis.totals.value / 1_000_000).toFixed(1)}M`} centerSub="Total" data={lineMixData} type="donut" />
-          </div>
-        </AdminTableShell>
-        <AdminTableShell description="Top products by net sales value, with contribution and running share." title="Top Products">
-          <div className="overflow-x-auto p-4 md:p-5">
-            <table className="w-full min-w-[460px] text-left text-sm">
-              <thead>
-                <tr>
-                  <th className="px-3 py-2 text-xs font-black uppercase tracking-wide">Product</th>
-                  <th className="px-3 py-2 text-xs font-black uppercase tracking-wide">Line</th>
-                  <th className="px-3 py-2 text-right text-xs font-black uppercase tracking-wide">Value</th>
-                  <th className="px-3 py-2 text-right text-xs font-black uppercase tracking-wide">Share</th>
-                  <th className="px-3 py-2 text-right text-xs font-black uppercase tracking-wide">Cum.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topProducts.map((product) => (
-                  <tr key={`${product.name}:${product.officialLine}`}>
-                    <td className="px-3 py-2 font-bold text-[#0F172A]">{product.name}</td>
-                    <td className="px-3 py-2 text-[#64748B]">{product.officialLine}</td>
-                    <td className="px-3 py-2 text-right font-black text-[#0F172A]">{formatCurrency(product.value)}</td>
-                    <td className="px-3 py-2 text-right text-[#64748B]">{(product.share * 100).toFixed(1)}%</td>
-                    <td className="px-3 py-2 text-right text-[#94A3B8]">{(product.cumulativeShare * 100).toFixed(0)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </AdminTableShell>
+      {/* Act II — time */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12" id="rhythm">
+        <div className="lg:col-span-8">
+          <SiDailyRhythm curve={bundle.daily} prior={bundle.dailyPrior} runRate={bundle.runRate} />
+        </div>
+        <div className="lg:col-span-4">
+          <SiInsightRail insights={bundle.insights} />
+        </div>
       </div>
 
-      {/* Geography heatmap */}
-      <AdminTableShell description="Net sales value by area, shaded by intensity and grouped by region. Hover for detail." title="Geographic Performance">
-        <SiGeoHeatmap areas={geography.areas} regions={geography.regions} />
-      </AdminTableShell>
-
-      {/* Distributor performance */}
-      <AdminTableShell description="Net sales value by distributor with contribution share." title="Distributor Performance">
-        <ShareBars max={maxDistributor} rows={distributors.distributors} />
-      </AdminTableShell>
-
-      {/* Customers + executive insights */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <AdminTableShell
-          description={customers ? `${formatNumber(customers.customerCount)} active customers · top 10 hold ${(customers.top10Share * 100).toFixed(0)}% of value` : "Loading customer concentration…"}
-          title="Top Customers / Pharmacies"
-        >
-          <div className="overflow-x-auto p-4 md:p-5">
-            {customersLoading ? (
-              <p className="py-8 text-center text-sm text-[#94A3B8]">Loading customers…</p>
-            ) : !customers || customers.customers.length === 0 ? (
-              <p className="py-8 text-center text-sm text-[#94A3B8]">No customers in scope for this month.</p>
-            ) : (
-              <table className="w-full min-w-[460px] text-left text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2 text-xs font-black uppercase tracking-wide">Customer</th>
-                    <th className="px-3 py-2 text-xs font-black uppercase tracking-wide">Distributor</th>
-                    <th className="px-3 py-2 text-right text-xs font-black uppercase tracking-wide">Value</th>
-                    <th className="px-3 py-2 text-right text-xs font-black uppercase tracking-wide">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers.customers.slice(0, 15).map((customer, index) => (
-                    <tr key={`${customer.name}:${customer.distributorName}:${index}`}>
-                      <td className="px-3 py-2 font-bold text-[#0F172A]">{customer.name}</td>
-                      <td className="px-3 py-2 text-[#64748B]">{customer.distributorName}</td>
-                      <td className="px-3 py-2 text-right font-black text-[#0F172A]">{formatCurrency(customer.value)}</td>
-                      <td className="px-3 py-2 text-right text-[#64748B]">{(customer.share * 100).toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </AdminTableShell>
-
-        <InsightCard
-          className="h-fit"
-          insights={insights.length > 0 ? insights : [{ l: "No signals yet", s: "Upload a validated month to generate insights", c: "bg-slate-100 text-slate-500" }]}
-          title="Executive Insights"
-        />
+      {/* Act III — product */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="lg:col-span-5">
+          <ChartCard className="h-full p-5">
+            <SectionHeader icon={Layers} subtitle="Share of net sales value by line." title="Line Mix" />
+            <div className="mt-4">
+              <StackedChart
+                centerLabel={compactEGP(kpis.totals.value)}
+                centerSub={`across ${products.lineMix.length} lines`}
+                data={lineMixData}
+                type="donut"
+              />
+            </div>
+          </ChartCard>
+        </div>
+        <div className="lg:col-span-7">
+          <SiProductMovers
+            movers={movers}
+            onOpenProduct={(code) => openProduct(code)}
+            pending={moversPending}
+            topProducts={products.products}
+          />
+        </div>
       </div>
+
+      <SiProductsTable
+        movers={movers}
+        moversPending={moversPending}
+        onOpenProduct={(code, name) => openProduct(code, name)}
+        products={products.products}
+      />
+
+      {/* Act IV — geography + network */}
+      <div id="geography">
+        <SiGeoMatrix areas={geography.areas} regions={geography.regions} zeroSalesAreasCount={bundle.zeroSalesAreas.length} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="lg:col-span-5" id="distributors">
+          <SiDistributorDependency distributors={distributors.distributors} />
+        </div>
+        <div className="lg:col-span-7">
+          <SiCustomerPareto churn={churn} customers={customers} loading={customersPending} />
+        </div>
+      </div>
+
+      <SiRisksBand
+        concentration={bundle.concentration}
+        customerTop10Share={customers?.top10Share ?? null}
+        kpis={kpis}
+        period={bundle.period}
+        topDistributor={topDistributor}
+        zeroSalesAreas={bundle.zeroSalesAreas}
+      />
+
+      {/* Footer nav to the sibling pages */}
+      <div className="flex flex-wrap gap-2 pb-2">
+        <Link href="/sales-intelligence/details">
+          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]">
+            <Table2 className="h-4 w-4" /> Sales Details
+          </span>
+        </Link>
+        <Link href="/sales-intelligence/data-quality">
+          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]">
+            <ShieldCheck className="h-4 w-4" /> Data Quality Center
+          </span>
+        </Link>
+      </div>
+
+      <SiProductDrilldown
+        drill={drillState.data}
+        error={drillState.error}
+        loading={drillState.loading}
+        onClose={closeProduct}
+        open={drillState.open}
+        productName={drillState.name}
+      />
     </div>
   );
 }

@@ -220,6 +220,140 @@ export async function loadSiBrick(
   return applyLineRegionScope(rows, { allowedLineNames: null, allowedRegionCodes });
 }
 
+export type SiPeriodTotalRow = {
+  period: string;
+  units: number;
+  value: number;
+  customerCount: number;
+  productCount: number;
+  areaCount: number;
+};
+
+/**
+ * One grouped scan across ALL validated months: per-period totals + distinct customer/product/
+ * area counts. Replaces the O(months) sequential trend loop and feeds headline MoM/YoY and every
+ * KPI sparkline. Restricted-product exclusion and line/region scope are enforced in SQL.
+ */
+export async function loadSiPeriodTotals(
+  scope: SalesAccessScope,
+  reference: SiReference,
+): Promise<SiPeriodTotalRow[]> {
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 30000 });
+  const { args } = buildSiRpcArgs(scope, reference);
+  const data = await rpcAll(supabase, "phx_si_period_totals", { ...args }, ["period"]);
+  return (data as Array<Record<string, unknown>>)
+    .map((row) => ({
+      period: str(row.period),
+      units: num(row.units),
+      value: num(row.value),
+      customerCount: num(row.customer_count),
+      productCount: num(row.product_count),
+      areaCount: num(row.area_count),
+    }))
+    .filter((row) => row.period)
+    .sort((left, right) => left.period.localeCompare(right.period));
+}
+
+export type SiDailyRow = {
+  /** ISO date, or null = the undated bucket (rows whose day could not be parsed). */
+  invoiceDate: string | null;
+  distributorCode: string;
+  units: number;
+  value: number;
+  customerCount: number;
+};
+
+/**
+ * Day grain for ONE month (sales + active customers per day, per distributor). The RPC returns
+ * nothing for a null period (a day-grain scan across history is never allowed) and includes the
+ * NULL-date bucket so undated residue is reported honestly.
+ */
+export async function loadSiDaily(
+  period: string,
+  scope: SalesAccessScope,
+  reference: SiReference,
+  filter?: { productCodes?: string[]; distributorCodes?: string[] },
+): Promise<SiDailyRow[]> {
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 30000 });
+  const { args } = buildSiRpcArgs(scope, reference);
+  // ≤ ~31 days × distributors + the undated bucket — bounded, single fetch.
+  const { data, error } = await supabase.rpc("phx_si_daily", {
+    p_period: period,
+    ...args,
+    p_product_codes: filter?.productCodes ?? [],
+    p_distributor_codes: filter?.distributorCodes ?? [],
+  });
+  if (error) throw error;
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    invoiceDate: row.invoice_date === null || row.invoice_date === undefined ? null : str(row.invoice_date),
+    distributorCode: str(row.distributor_code),
+    units: num(row.units),
+    value: num(row.value),
+    customerCount: num(row.customer_count),
+  }));
+}
+
+export type SiCustomerProductRow = {
+  clientCode: string;
+  clientName: string;
+  distributorCode: string;
+  regionCode: string;
+  areaCode: string;
+  productCode: string;
+  productName: string;
+  units: number;
+  value: number;
+};
+
+/**
+ * Bounded customer×product drill (the 28,877-pair grain). FAIL-CLOSED: callers MUST narrow by
+ * product and/or client codes — with both empty this throws (and the SQL independently returns
+ * zero rows). Output is value-ranked and LIMIT-clamped in SQL (≤500).
+ */
+export async function loadSiCustomerProduct(
+  period: string,
+  scope: SalesAccessScope,
+  reference: SiReference,
+  filter: { productCodes?: string[]; clientCodes?: string[]; limit?: number },
+): Promise<SiCustomerProductRow[]> {
+  const productCodes = (filter.productCodes ?? []).filter(Boolean);
+  const clientCodes = (filter.clientCodes ?? []).filter(Boolean);
+  if (productCodes.length === 0 && clientCodes.length === 0) {
+    throw new Error("Customer×product drill requires a product or client filter.");
+  }
+  // Requesting a restricted product while the scope excludes it can never return data — short-
+  // circuit so the answer is uniformly empty rather than RPC-dependent.
+  const excluded = new Set(scope.excludedProductCodes.map((code) => code.trim().toUpperCase()));
+  if (productCodes.some((code) => excluded.has(code.trim().toUpperCase()))) return [];
+
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 30000 });
+  const { args, allowedRegionCodes } = buildSiRpcArgs(scope, reference);
+  const { data, error } = await supabase.rpc("phx_si_customer_product", {
+    p_period: period,
+    ...args,
+    p_product_codes: productCodes,
+    p_client_codes: clientCodes,
+    p_limit: Math.max(1, Math.min(filter.limit ?? 100, 500)),
+  });
+  if (error) throw error;
+  const rows: SiCustomerProductRow[] = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    clientCode: str(row.client_code),
+    clientName: str(row.client_name) || str(row.client_code),
+    distributorCode: str(row.distributor_code),
+    regionCode: str(row.region_code),
+    areaCode: str(row.area_code),
+    productCode: str(row.product_code),
+    productName: str(row.product_name) || str(row.product_code),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+  // Defense in depth: re-strip restricted products and re-apply region scope in TS.
+  return applyLineRegionScope(stripRestrictedRows(rows, scope.excludedProductCodes), {
+    allowedLineNames: null,
+    allowedRegionCodes,
+  });
+}
+
 export async function loadSiCustomers(
   period: string | null,
   scope: SalesAccessScope,
