@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useCallback } from "react";
 import { Check, CheckCircle2, ChevronLeft, ChevronRight, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { systemAssets } from "@/config/system-settings";
 import {
   MONTHS,
   REACTION_OUTCOMES,
@@ -928,15 +926,6 @@ export function ReportItForm() {
           className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
         />
         <div className="relative flex items-start gap-4">
-          <div className="hidden h-12 w-12 shrink-0 items-center justify-center bg-orange-600 sm:flex">
-            <Image
-              src={systemAssets.adminRailMark}
-              alt="Phoenix"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain"
-            />
-          </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
             <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>

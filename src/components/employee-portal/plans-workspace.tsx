@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 
@@ -8,6 +9,7 @@ import { createPortal } from "react-dom";
 const emptySubscribe = () => () => {};
 import {
   BadgeCheck,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
@@ -97,6 +99,21 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatDayNumber(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatMonthYear(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
@@ -242,6 +259,7 @@ export function PlansWorkspace({
   // The global portal bottom nav (≈56px + safe area) only exists on the employee
   // portal surface, not the admin review page. Offset the action bar accordingly.
   const onAdminSurface = basePath === "/admin/weekly-plans";
+  const calendarHref = onAdminSurface ? "/hr-calendar" : "/employee-portals/calendar";
   const actionBarBottom = onAdminSurface
     ? "env(safe-area-inset-bottom)"
     : "calc(56px + env(safe-area-inset-bottom))";
@@ -519,21 +537,31 @@ export function PlansWorkspace({
             />
           </div>
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-col gap-2">
             <input
-              className="h-11 flex-1 border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+              className="h-11 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) => onAnchorChange(event.target.value)}
               type="date"
               value={anchorDate}
             />
-            <button
-              className="inline-flex h-11 items-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
-              onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
-              type="button"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                aria-label="Open calendar"
+                className="inline-flex h-11 items-center justify-center gap-1.5 border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 active:bg-orange-100"
+                href={calendarHref}
+              >
+                <CalendarDays className="h-4 w-4" />
+                Calendar
+              </Link>
+              <button
+                className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
+                onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
+                type="button"
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </button>
+            </div>
           </div>
         </div>
 
@@ -599,7 +627,9 @@ export function PlansWorkspace({
 
         {/* My plans + review queues */}
         <div className="space-y-3">
-          <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+          {ownPlans.length > 0 ? (
+            <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+          ) : null}
           <ReviewCard
             comment={comment}
             isPending={isPending}
@@ -764,6 +794,14 @@ export function PlansWorkspace({
               <span className="border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700">
                 {period.periodKey}
               </span>
+              <Link
+                aria-label="Open calendar"
+                className="inline-flex h-10 items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100"
+                href={calendarHref}
+              >
+                <CalendarDays className="h-4 w-4" />
+                Calendar
+              </Link>
             </div>
           </div>
         </div>
@@ -786,9 +824,8 @@ export function PlansWorkspace({
           </div>
         ) : null}
 
-        {/* Main grid */}
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Plan table */}
+        {/* Full-width plan table */}
+        <div className="min-w-0 space-y-5">
           <section className="min-w-0 overflow-hidden border border-slate-200 bg-white shadow-[0_24px_58px_rgba(15,23,42,0.08)]">
             <div className="bg-slate-950 px-4 py-4 text-white sm:px-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -877,15 +914,15 @@ export function PlansWorkspace({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] border-collapse">
-                <thead className="bg-white">
+            <div className="overflow-x-auto bg-white">
+              <table className="w-full min-w-[1280px] border-collapse">
+                <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    <th className="w-[132px] px-4 py-3">Date</th>
-                    <th className="w-[160px] px-3 py-3">Activity</th>
-                    <th className="w-[190px] px-3 py-3">Region</th>
-                    <th className="w-[190px] px-3 py-3">Area</th>
-                    <th className="w-[220px] px-3 py-3">Medical Rep</th>
+                    <th className="w-[190px] px-4 py-3">Date</th>
+                    <th className="w-[180px] px-3 py-3">Activity</th>
+                    <th className="w-[210px] px-3 py-3">Region</th>
+                    <th className="w-[210px] px-3 py-3">Area</th>
+                    <th className="w-[250px] px-3 py-3">Medical Rep</th>
                     <th className="px-3 py-3">Notes</th>
                     <th className="w-[84px] px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -905,20 +942,29 @@ export function PlansWorkspace({
                       <Fragment key={row.key}>
                         <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`}>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-12 w-14 shrink-0 flex-col items-center justify-center border border-orange-200 bg-orange-50">
+                            <time
+                              className="flex items-center gap-3"
+                              dateTime={row.activityDate}
+                              title={row.activityDate}
+                            >
+                              <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white shadow-[0_6px_18px_rgba(249,115,22,0.08)]">
                                 <span className="text-[10px] font-black uppercase tracking-wide text-orange-500">
                                   {formatDayName(row.activityDate)}
                                 </span>
-                                <span className="mt-0.5 text-sm font-black text-slate-900">
-                                  {formatDate(row.activityDate).split(" ")[0]}
+                                <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
+                                  {formatDayNumber(row.activityDate)}
                                 </span>
-                              </div>
+                                <span className="mt-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                  {formatMonthYear(row.activityDate)}
+                                </span>
+                              </span>
                               <div className="min-w-0">
-                                <p className="text-sm font-black text-slate-900">{formatDate(row.activityDate)}</p>
-                                <p className="text-xs font-semibold text-slate-500">Day {rowIndex + 1}</p>
+                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
+                                  Plan day
+                                </p>
+                                <p className="mt-1 text-sm font-black text-slate-900">Day {rowIndex + 1}</p>
                               </div>
-                            </div>
+                            </time>
                           </td>
                           <td className="px-3 py-3">
                             <select
@@ -1076,41 +1122,48 @@ export function PlansWorkspace({
             </div>
           </section>
 
-          {/* Sidebar */}
-          <aside className="space-y-4">
-            <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
-            <ReviewCard
-              comment={comment}
-              isPending={isPending}
-              onComment={setComment}
-              onDecision={(planId, action) => runAction(() => decide(planId, action))}
-              onReturnNote={updateReturnNote}
-              plans={managerQueue}
-              returnNotes={returnNotes}
-              title="Manager Review"
-              type="manager"
-            />
-            <ReviewCard
-              comment={comment}
-              isPending={isPending}
-              onComment={setComment}
-              onDecision={(planId, action) => runAction(() => decide(planId, action))}
-              onReturnNote={updateReturnNote}
-              plans={ceoQueue}
-              returnNotes={returnNotes}
-              title="CEO Review"
-              type="ceo"
-            />
-            <ReviewCard
-              comment={comment}
-              isPending={isPending}
-              onComment={setComment}
-              onDecision={(planId) => runAction(() => acknowledge(planId))}
-              plans={hrQueue}
-              title="HR Acknowledgement"
-              type="hr"
-            />
-          </aside>
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            {ownPlans.length > 0 ? (
+              <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+            ) : null}
+            {managerQueue.length > 0 ? (
+              <ReviewCard
+                comment={comment}
+                isPending={isPending}
+                onComment={setComment}
+                onDecision={(planId, action) => runAction(() => decide(planId, action))}
+                onReturnNote={updateReturnNote}
+                plans={managerQueue}
+                returnNotes={returnNotes}
+                title="Manager Review"
+                type="manager"
+              />
+            ) : null}
+            {ceoQueue.length > 0 ? (
+              <ReviewCard
+                comment={comment}
+                isPending={isPending}
+                onComment={setComment}
+                onDecision={(planId, action) => runAction(() => decide(planId, action))}
+                onReturnNote={updateReturnNote}
+                plans={ceoQueue}
+                returnNotes={returnNotes}
+                title="CEO Review"
+                type="ceo"
+              />
+            ) : null}
+            {hrQueue.length > 0 ? (
+              <ReviewCard
+                comment={comment}
+                isPending={isPending}
+                onComment={setComment}
+                onDecision={(planId) => runAction(() => acknowledge(planId))}
+                plans={hrQueue}
+                title="HR Acknowledgement"
+                type="hr"
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </>
