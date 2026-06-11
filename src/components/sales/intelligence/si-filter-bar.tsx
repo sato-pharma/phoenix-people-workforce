@@ -34,7 +34,7 @@ export function SiFilterBar({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Month</span>
         <select
-          className="h-9 border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+          className="h-9 border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#6B8FB5]"
           disabled={pending || availablePeriods.length === 0}
           onChange={(event) => setParams((params) => params.set("period", event.target.value))}
           value={period ?? ""}
@@ -47,7 +47,7 @@ export function SiFilterBar({
             ))
           )}
         </select>
-        {pending && <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />}
+        {pending && <Loader2 className="h-4 w-4 animate-spin text-[#1E3A5F]" />}
 
         {/* Scope badges — what this viewer is bounded to (geography by name). */}
         {!access.canViewAllSales && access.lineNames.length > 0 && (
@@ -69,7 +69,7 @@ export function SiFilterBar({
             "inline-flex h-9 items-center gap-2 border px-3 text-xs font-black transition",
             access.restrictedIncluded
               ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-              : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#FDBA74] hover:text-[#F97316]",
+              : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#6B8FB5] hover:text-[#1E3A5F]",
           )}
           disabled={pending}
           onClick={() =>

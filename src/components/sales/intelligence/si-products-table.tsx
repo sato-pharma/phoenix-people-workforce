@@ -60,20 +60,20 @@ export function SiProductsTable({
           <tbody>
             {visible.map((product, index) => (
               <tr
-                className="group cursor-pointer transition hover:bg-orange-50"
+                className="group cursor-pointer transition hover:bg-blue-50"
                 key={product.code}
                 onClick={() => onOpenProduct(product.code, product.name)}
               >
                 <td className="w-10 px-3 py-2 text-center text-xs font-black tabular-nums text-[#64748B]">{index + 1}</td>
-                <td className="px-3 py-2 font-bold text-[#0F172A] transition group-hover:text-[#F97316]">{product.name}</td>
+                <td className="px-3 py-2 font-bold text-[#0F172A] transition group-hover:text-[#1E3A5F]">{product.name}</td>
                 <td className="px-3 py-2 text-[#64748B]">{product.officialLine}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-[#64748B]">{formatNumber(product.units)}</td>
                 <td className="px-3 py-2 text-right font-black tabular-nums text-[#0F172A]">{formatCurrency(product.value)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-[#64748B]">{shareText(product.share)}</td>
                 <td className="w-32 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <div className="h-2 w-16 shrink-0 bg-orange-500/15">
-                      <div className="h-full bg-orange-500" style={{ width: `${Math.min(product.cumulativeShare * 100, 100)}%` }} />
+                    <div className="h-2 w-16 shrink-0 bg-blue-500/15">
+                      <div className="h-full bg-blue-500" style={{ width: `${Math.min(product.cumulativeShare * 100, 100)}%` }} />
                     </div>
                     <span className="text-[11px] font-bold tabular-nums text-[#94A3B8]">{(product.cumulativeShare * 100).toFixed(0)}%</span>
                   </div>
@@ -82,7 +82,7 @@ export function SiProductsTable({
                   <SiDeltaBadge pct={momByKey ? momByKey.get(product.code) ?? null : null} pending={moversPending} />
                 </td>
                 <td className="w-8 px-2 py-2">
-                  <ChevronRight className="h-3.5 w-3.5 text-transparent transition group-hover:text-[#F97316]" />
+                  <ChevronRight className="h-3.5 w-3.5 text-transparent transition group-hover:text-[#1E3A5F]" />
                 </td>
               </tr>
             ))}
@@ -91,7 +91,7 @@ export function SiProductsTable({
       </div>
       {products.length > PREVIEW_ROWS && (
         <button
-          className={cn("mt-3 text-[11px] font-black text-[#F97316] hover:underline")}
+          className={cn("mt-3 text-[11px] font-black text-[#1E3A5F] hover:underline")}
           onClick={() => setShowAll((current) => !current)}
           type="button"
         >

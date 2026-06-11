@@ -41,7 +41,7 @@ export function SiTrendChart({ points }: { points: SiTrendPoint[] }) {
           <YAxis yAxisId="value" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
           <YAxis yAxisId="units" orientation="right" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={40} />
           <Tooltip
-            cursor={{ fill: "rgba(249,115,22,0.06)" }}
+            cursor={{ fill: "rgba(30,58,95,0.06)" }}
             content={({ active, payload }: TooltipPayload) => {
               const point = active ? payload?.[0]?.payload : undefined;
               if (!point) return null;
@@ -61,7 +61,7 @@ export function SiTrendChart({ points }: { points: SiTrendPoint[] }) {
           />
           <Bar yAxisId="value" dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={54}>
             {points.map((point) => (
-              <Cell key={point.period} fill={point.monthComplete ? "#F97316" : "#FBBF24"} />
+              <Cell key={point.period} fill={point.monthComplete ? "#1E3A5F" : "#FBBF24"} />
             ))}
           </Bar>
           <Line yAxisId="units" type="monotone" dataKey="units" stroke="#0F172A" strokeWidth={2} dot={{ r: 3, fill: "#0F172A" }} />

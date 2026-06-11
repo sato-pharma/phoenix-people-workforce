@@ -21,7 +21,7 @@ function SplitBars({ rows, title }: { rows: SiRanked[]; title: string }) {
             <div className="min-w-0">
               <p className="truncate text-[11px] font-bold text-[#0F172A]">{row.name}</p>
               <div className="mt-0.5 h-1.5 bg-[#F1F5F9]">
-                <div className="h-full bg-gradient-to-r from-orange-500 to-orange-300" style={{ width: `${Math.max((row.value / max) * 100, 4)}%` }} />
+                <div className="h-full bg-gradient-to-r from-blue-500 to-blue-300" style={{ width: `${Math.max((row.value / max) * 100, 4)}%` }} />
               </div>
             </div>
             <p className="text-right text-[11px] font-black tabular-nums text-[#0F172A]">{compactEGP(row.value)}</p>
@@ -67,10 +67,10 @@ export function SiProductDrilldown({
       <aside className="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-[-24px_0_60px_rgba(0,0,0,0.25)] md:w-[560px]">
         {/* Dark header band */}
         <div className="relative shrink-0 bg-[#0B0B0B] p-5 text-white">
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0" />
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500/0 via-blue-400/80 to-blue-500/0" />
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-orange-300">Product Drill-Down</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-blue-300">Product Drill-Down</p>
               <h2 className="mt-1 truncate text-lg font-black">{drill?.productName ?? productName ?? "…"}</h2>
               {drill && (
                 <p className="mt-0.5 text-[11px] font-bold text-slate-400">
@@ -106,7 +106,7 @@ export function SiProductDrilldown({
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-2 text-sm font-bold text-[#94A3B8]">
-              <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> Loading product intelligence…
+              <Loader2 className="h-4 w-4 animate-spin text-[#1E3A5F]" /> Loading product intelligence…
             </div>
           ) : error ? (
             <p className="border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">{error}</p>
@@ -138,7 +138,7 @@ export function SiProductDrilldown({
                     <tbody>
                       {drill.customers.map((customer, index) => (
                         <tr key={`${customer.name}:${index}`}>
-                          <td className={cn("px-2 py-1.5 text-xs font-bold text-[#0F172A]", index < 3 && "bg-orange-50")}>{customer.name}</td>
+                          <td className={cn("px-2 py-1.5 text-xs font-bold text-[#0F172A]", index < 3 && "bg-blue-50")}>{customer.name}</td>
                           <td className="px-2 py-1.5 text-xs text-[#64748B]">{customer.distributorName}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-black tabular-nums text-[#0F172A]">{formatCurrency(customer.value)}</td>
                         </tr>

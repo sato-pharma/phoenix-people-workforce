@@ -6,7 +6,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { getSiDashboardBundle } from "@/lib/sales/intelligence/service";
-import type { SiDashboardBundle } from "@/lib/sales/intelligence/types";
+import type { SiDashboardBundle, SiFilters } from "@/lib/sales/intelligence/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,10 +48,24 @@ export default async function SalesIntelligencePage({
 
   const scope = await resolveSalesAccessScope(access, { includeRestricted });
 
+  // Advanced filters arrive as comma-separated codes (line uses its name as the code).
+  const parseList = (value: string | string[] | undefined): string[] =>
+    typeof value === "string" && value.trim()
+      ? value.split(",").map((part) => part.trim()).filter(Boolean)
+      : [];
+  const filters: SiFilters = {
+    regions: parseList(params.regions),
+    areas: parseList(params.areas),
+    lines: parseList(params.lines),
+    distributors: parseList(params.distributors),
+    products: parseList(params.products),
+    customers: parseList(params.customers),
+  };
+
   let bundle: SiDashboardBundle | null = null;
   let error: string | null = null;
   try {
-    bundle = await getSiDashboardBundle(period, scope);
+    bundle = await getSiDashboardBundle(period, scope, filters);
   } catch (caught) {
     console.error("[sales-intelligence] bundle load failed:", caught);
     error = describeError(caught);

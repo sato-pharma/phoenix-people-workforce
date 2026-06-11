@@ -41,9 +41,10 @@ export function SiDeltaBadge({
   }
   const up = pct >= 0;
   const good = invert ? !up : up;
+  // Muted green/red — professional, not neon (#15803D / #B91C1C on light surfaces).
   const tone = surface === "dark"
-    ? good ? "text-emerald-400" : "text-rose-400"
-    : good ? "text-emerald-600" : "text-rose-600";
+    ? good ? "text-emerald-300" : "text-rose-300"
+    : good ? "text-[#15803D]" : "text-[#B91C1C]";
   return (
     <span className={cn("text-xs font-black tabular-nums", tone, className)}>
       {prefix}{up ? "▲" : "▼"} {(Math.abs(pct) * 100).toFixed(1)}%
