@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 
 export const runtime = "nodejs";
@@ -18,12 +19,13 @@ export async function GET(request: Request) {
       const value = params.get(key);
       return value && value.trim() ? value.trim() : null;
     };
+    const accessScope = await resolveWeeklyAccessScope(access);
     const data = await loadWeeklyDashboard({
       weekStart: str("week"),
       distributorCode: str("distributor"),
       regionCode: str("region"),
       productCode: str("product"),
-      viewerRole: access.role,
+      accessScope,
     });
     return NextResponse.json({ success: true, data });
   } catch (error) {
