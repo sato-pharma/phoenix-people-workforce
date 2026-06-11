@@ -1,4 +1,5 @@
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
+import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
   cleanupOldNotificationData,
   processNotificationOutbox,
@@ -12,9 +13,11 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const probationReminders = await processDueProbationReminderEvents(limit);
   // Never throws; per-day idempotency key prevents duplicate alerts across runs.
   const attendanceAgent = await runAttendanceIngestionAlert();
+  // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
+  const exitedDeductions = await supersedeExitedEmployeeDeductionCandidates();
   const outbox = await processNotificationOutbox(limit);
   const deferred = await processDeferredDeliveryRetries(limit);
   const telegram = await processTelegramDeliveryRetries(limit);
   const retention = await cleanupOldNotificationData();
-  return { attendanceAgent, deferred, outbox, probationReminders, reaped, retention, telegram };
+  return { attendanceAgent, deferred, exitedDeductions, outbox, probationReminders, reaped, retention, telegram };
 }

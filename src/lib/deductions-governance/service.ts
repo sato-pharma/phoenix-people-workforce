@@ -787,6 +787,81 @@ export async function listDeductionCandidates(input: {
   return { page, pageSize, total, rows };
 }
 
+export type ExitedCandidateSweepResult = {
+  checked: number;
+  error?: string;
+  superseded: number;
+};
+
+/**
+ * Supersedes still-undecided deduction candidates that belong to employees who
+ * had already exited before the candidate's month even started — a resigned
+ * employee must not sit in the inbox as a pending warning for months they never
+ * worked. Candidates for months the employee actually worked (including the
+ * final month) are left untouched: those can be legitimate final-settlement
+ * deductions. Candidates with any human decision are never touched. Idempotent;
+ * safe to run on every scheduled-processing pass.
+ */
+export async function supersedeExitedEmployeeDeductionCandidates(): Promise<ExitedCandidateSweepResult> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: employeeData, error: employeeError } = await supabase
+      .from("employees")
+      .select("hr_id,employment_status,last_working_date");
+    if (employeeError) throw employeeError;
+
+    // compact HR id -> last working date (null when the exit date was never recorded)
+    const exitedByCompact = new Map<string, string | null>();
+    for (const row of (employeeData ?? []) as Array<{ employment_status: string | null; hr_id: string; last_working_date: string | null }>) {
+      const status = String(row.employment_status ?? "").trim().toLowerCase();
+      if (!status || status === "active" || status === "on_leave") continue;
+      const compact = compactDeductionHrId(row.hr_id);
+      if (compact) exitedByCompact.set(compact, row.last_working_date ?? null);
+    }
+    if (exitedByCompact.size === 0) return { checked: 0, superseded: 0 };
+
+    const { data: candidateData, error: candidateError } = await supabase
+      .from("deduction_candidates")
+      .select("id,employee_hr_id_compact,month_key")
+      .is("superseded_at", null)
+      .in("employee_hr_id_compact", Array.from(exitedByCompact.keys()));
+    if (candidateError) throw candidateError;
+
+    const candidates = (candidateData ?? []) as Array<{ employee_hr_id_compact: string; id: string; month_key: string }>;
+    const staleIds: string[] = [];
+    for (const candidate of candidates) {
+      const lastWorkingDate = exitedByCompact.get(candidate.employee_hr_id_compact);
+      const monthStart = `${candidate.month_key}-01`;
+      // No recorded exit date means we cannot place the exit — treat as pre-dating the month.
+      if (!lastWorkingDate || lastWorkingDate < monthStart) staleIds.push(candidate.id);
+    }
+    if (staleIds.length === 0) return { checked: candidates.length, superseded: 0 };
+
+    const { data: decisionData, error: decisionError } = await supabase
+      .from("deduction_decisions")
+      .select("candidate_id")
+      .in("candidate_id", staleIds);
+    if (decisionError) throw decisionError;
+    const decidedIds = new Set(((decisionData ?? []) as Array<{ candidate_id: string }>).map((row) => row.candidate_id));
+    const toSupersede = staleIds.filter((id) => !decidedIds.has(id));
+    if (toSupersede.length === 0) return { checked: candidates.length, superseded: 0 };
+
+    const { error: updateError } = await supabase
+      .from("deduction_candidates")
+      .update({ superseded_at: new Date().toISOString() })
+      .in("id", toSupersede);
+    if (updateError) throw updateError;
+
+    return { checked: candidates.length, superseded: toSupersede.length };
+  } catch (error) {
+    return {
+      checked: 0,
+      error: error instanceof Error ? error.message : "Exited-employee candidate sweep failed.",
+      superseded: 0,
+    };
+  }
+}
+
 async function fetchInboxRowsForAggregation(
   filters: DeductionInboxFilters,
   limit: number,
