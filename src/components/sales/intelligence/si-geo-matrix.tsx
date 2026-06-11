@@ -72,13 +72,13 @@ export function SiGeoMatrix({
           const visible = regionAreas.slice(0, cap);
           return (
             <div key={region.name}>
-              {/* Region header strip — echoes the locked black table-header language. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-[#0B0B0B] px-4 py-2.5 text-white">
-                <span className="text-xs font-black uppercase tracking-wide">{region.name}</span>
-                <span className="text-xs font-bold tabular-nums text-slate-300">{formatCurrency(region.value)}</span>
-                <span className="text-[11px] font-black text-orange-300">{shareText(region.share)}</span>
-                <span className="text-[10px] font-bold text-slate-500">{regionAreas.length} areas</span>
-                <div className="ml-auto hidden h-1.5 w-24 bg-white/10 sm:block">
+              {/* Region header strip — light, softly shaded, orange accent. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-l-4 border-orange-500 bg-gradient-to-r from-[#FFF7ED] to-white px-4 py-2.5">
+                <span className="text-xs font-black uppercase tracking-wide text-[#0F172A]">{region.name}</span>
+                <span className="text-xs font-bold tabular-nums text-[#475569]">{formatCurrency(region.value)}</span>
+                <span className="text-[11px] font-black text-[#F97316]">{shareText(region.share)}</span>
+                <span className="text-[10px] font-bold text-[#94A3B8]">{regionAreas.length} areas</span>
+                <div className="ml-auto hidden h-1.5 w-24 bg-orange-500/15 sm:block">
                   <div className="h-full bg-[#F97316]" style={{ width: `${Math.max((region.value / maxRegionValue) * 100, 2)}%` }} />
                 </div>
               </div>

@@ -10,12 +10,12 @@ import type { SiConcentration, SiInsight, SiKpiSummary } from "@/lib/sales/intel
 import { cn } from "@/lib/utils";
 
 const CATEGORY_STYLE: Record<SiInsight["category"], { tone: string; icon: typeof Package }> = {
-  products: { tone: "bg-violet-500/20 text-violet-300", icon: Package },
-  distributors: { tone: "bg-orange-500/20 text-orange-300", icon: Truck },
-  geography: { tone: "bg-blue-500/20 text-blue-300", icon: MapIcon },
-  customers: { tone: "bg-amber-500/20 text-amber-300", icon: Users },
-  risk: { tone: "bg-rose-500/20 text-rose-300", icon: ShieldAlert },
-  coverage: { tone: "bg-emerald-500/20 text-emerald-300", icon: MapIcon },
+  products: { tone: "bg-violet-100 text-violet-600", icon: Package },
+  distributors: { tone: "bg-orange-100 text-orange-600", icon: Truck },
+  geography: { tone: "bg-blue-100 text-blue-600", icon: MapIcon },
+  customers: { tone: "bg-amber-100 text-amber-600", icon: Users },
+  risk: { tone: "bg-rose-100 text-rose-600", icon: ShieldAlert },
+  coverage: { tone: "bg-emerald-100 text-emerald-600", icon: MapIcon },
 };
 
 function scrollToAnchor(anchor: string) {
@@ -23,43 +23,46 @@ function scrollToAnchor(anchor: string) {
   if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Dark EXECUTIVE SIGNALS rail — computed narratives only (a missing baseline omits its insight,
-// it never fabricates one). Sits beside the Daily Rhythm chart.
+// EXECUTIVE SIGNALS rail — light, softly shaded card. Computed narratives only (a missing
+// baseline omits its insight, it never fabricates one). Sits beside the Daily Rhythm chart.
 export function SiInsightRail({ insights }: { insights: SiInsight[] }) {
   return (
-    <section className="flex h-full flex-col border border-[#1a1a1a] bg-[#0B0B0B] p-5">
-      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-orange-300">Executive Signals</p>
-      <div className="mt-4 flex-1 space-y-4">
+    <section className="flex h-full flex-col border border-[#E2E8F0] bg-gradient-to-b from-[#FFF7ED] to-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400" />
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#0F172A]">Executive Signals</p>
+      </div>
+      <div className="mt-4 flex-1 space-y-3.5">
         {insights.length === 0 ? (
-          <p className="text-xs font-bold text-slate-500">No signals yet — upload a validated month.</p>
+          <p className="text-xs font-bold text-[#94A3B8]">No signals yet — upload a validated month.</p>
         ) : (
           insights.map((insight) => {
             const style = CATEGORY_STYLE[insight.category];
             const Icon = style.icon;
             return (
               <button
-                className="group flex w-full items-start gap-3 text-left"
+                className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2 text-left transition hover:border-[#FED7AA] hover:bg-white"
                 key={`${insight.category}:${insight.headline}`}
                 onClick={() => scrollToAnchor(insight.anchor)}
                 type="button"
               >
-                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center", style.tone)}>
+                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", style.tone)}>
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="truncate text-[11px] font-black text-white transition group-hover:text-orange-300">{insight.headline}</span>
-                    {insight.deltaPct !== undefined && <SiDeltaBadge pct={insight.deltaPct} surface="dark" />}
+                    <span className="truncate text-[12px] font-black text-[#0F172A] transition group-hover:text-[#F97316]">{insight.headline}</span>
+                    {insight.deltaPct !== undefined && <SiDeltaBadge pct={insight.deltaPct} />}
                   </span>
-                  <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-400">{insight.detail}</span>
+                  <span className="mt-0.5 block truncate text-[11px] font-bold text-[#64748B]">{insight.detail}</span>
                 </span>
-                <ChevronRight className="mt-1.5 h-3.5 w-3.5 shrink-0 text-slate-600 transition group-hover:text-orange-300" />
+                <ChevronRight className="mt-1.5 h-3.5 w-3.5 shrink-0 text-[#CBD5E1] transition group-hover:text-[#F97316]" />
               </button>
             );
           })
         )}
       </div>
-      <p className="mt-4 border-t border-white/10 pt-3 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
+      <p className="mt-4 border-t border-[#F1F5F9] pt-3 text-[9px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">
         Computed from scoped data only — never fabricated
       </p>
     </section>

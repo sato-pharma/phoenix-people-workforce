@@ -1,13 +1,10 @@
 "use client";
 
-import { AlertTriangle, Layers, ShieldCheck, Table2 } from "lucide-react";
+import { AlertTriangle, ShieldCheck, Table2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
-import { ChartCard } from "@/components/cards/chart-card";
-import { StackedChart } from "@/components/charts/stacked-chart";
-import { SectionHeader } from "@/components/ui/section-header";
 import { SiCommandHero } from "@/components/sales/intelligence/si-command-hero";
 import { SiCustomerPareto } from "@/components/sales/intelligence/si-customer-pareto";
 import { SiDailyRhythm } from "@/components/sales/intelligence/si-daily-rhythm";
@@ -16,10 +13,10 @@ import { SiFilterBar } from "@/components/sales/intelligence/si-filter-bar";
 import { SiGeoMatrix } from "@/components/sales/intelligence/si-geo-matrix";
 import { SiInsightRail, SiRisksBand } from "@/components/sales/intelligence/si-insight-rail";
 import { SiKpiBand } from "@/components/sales/intelligence/si-kpi-band";
+import { SiLineMix } from "@/components/sales/intelligence/si-line-mix";
 import { SiProductDrilldown } from "@/components/sales/intelligence/si-product-drilldown";
 import { SiProductMovers } from "@/components/sales/intelligence/si-product-movers";
 import { SiProductsTable } from "@/components/sales/intelligence/si-products-table";
-import { compactEGP } from "@/components/sales/intelligence/si-format";
 import type {
   SiCustomerChurn,
   SiCustomerInsights,
@@ -164,9 +161,9 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
   const lineMixData = useMemo(
     () => products.lineMix.slice(0, 8).map((line, index) => ({
       name: line.name,
-      value: Math.round(line.value),
+      value: line.value,
       color: LINE_COLORS[index % LINE_COLORS.length],
-      percent: Number((line.share * 100).toFixed(1)),
+      share: line.share,
     })),
     [products.lineMix],
   );
@@ -212,29 +209,14 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
       </div>
 
       {/* Act III — product */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-5">
-          <ChartCard className="h-full p-5">
-            <SectionHeader icon={Layers} subtitle="Share of net sales value by line." title="Line Mix" />
-            <div className="mt-4">
-              <StackedChart
-                centerLabel={compactEGP(kpis.totals.value)}
-                centerSub={`across ${products.lineMix.length} lines`}
-                data={lineMixData}
-                type="donut"
-              />
-            </div>
-          </ChartCard>
-        </div>
-        <div className="lg:col-span-7">
-          <SiProductMovers
-            movers={movers}
-            onOpenProduct={(code) => openProduct(code)}
-            pending={moversPending}
-            topProducts={products.products}
-          />
-        </div>
-      </div>
+      <SiLineMix lines={lineMixData} totalValue={kpis.totals.value} />
+
+      <SiProductMovers
+        movers={movers}
+        onOpenProduct={(code) => openProduct(code)}
+        pending={moversPending}
+        topProducts={products.products}
+      />
 
       <SiProductsTable
         movers={movers}
