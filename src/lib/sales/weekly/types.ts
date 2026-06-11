@@ -1,0 +1,164 @@
+// Weekly Sales — serializable shapes for the upload pipeline and dashboard. A separate module from
+// the monthly Source-of-Sales surface; nothing here is read by or merged with the monthly tables.
+
+export type WeeklyValidationIssue = {
+  field: string;
+  message: string;
+  rowNumber: number;
+  severity: "failure" | "warning";
+  value: string | null;
+};
+
+export type WeeklyTotals = {
+  rowCount: number;
+  salesQty: number;
+  bonusQty: number;
+  salesValue: number;
+  /** stock is units only — there is deliberately no stock value */
+  stockQty: number;
+};
+
+export type WeeklyRegionSummary = WeeklyTotals & { regionCode: string; regionName: string };
+export type WeeklyProductSummary = WeeklyTotals & {
+  productCode: string;
+  productName: string;
+  officialLine: string;
+};
+export type WeeklyBranchSummary = WeeklyTotals & {
+  branchCode: string;
+  branchName: string;
+  regionCode: string;
+  regionName: string;
+};
+
+// One parsed fact row (branch × product × week). Internal — persisted to weekly_sales_rows.
+export type WeeklyParsedRow = {
+  rowNumber: number;
+  weekStart: string | null; // YYYY-MM-DD
+  distributorCode: string;
+  distributorName: string;
+  regionCode: string;
+  regionName: string;
+  branchCode: string;
+  branchName: string;
+  itemCode: string;
+  productCode: string;
+  productName: string;
+  officialLine: string;
+  salesQty: number;
+  bonusQty: number;
+  discount: number; // fraction (0.25 = 25%)
+  salesValue: number; // qty × factory_price × (1 - discount)
+  stockQty: number; // units only
+  validationState: "valid" | "warning" | "failed";
+  validationIssues: WeeklyValidationIssue[];
+  rawRow: Record<string, string>;
+};
+
+export type WeeklyDistributorOption = { code: string; name: string };
+
+export type WeeklySalesValidationResult = {
+  advisories?: string[];
+  batchId?: string;
+  createdAt?: string;
+  distributor: WeeklyDistributorOption;
+  fileName: string;
+  sheetName: string;
+  templateKey: string;
+  templateName: string;
+  /** the single week-start date carried in the sheet (YYYY-MM-DD), or null when undated */
+  weekStart: string | null;
+  status: "blocked" | "validated";
+  blockingReasons: string[];
+  rowCount: number;
+  importableRows: number;
+  failedRows: number;
+  warningRows: number;
+  totals: WeeklyTotals;
+  byRegion: WeeklyRegionSummary[];
+  byProduct: WeeklyProductSummary[];
+  byBranch: WeeklyBranchSummary[];
+  issues: WeeklyValidationIssue[];
+};
+
+// Upload-history list item (weekly_sales_batches).
+export type WeeklyBatch = {
+  id: string;
+  distributorCode: string;
+  distributorName: string;
+  templateKey: string;
+  fileName: string;
+  sheetName: string;
+  weekStart: string | null;
+  status: "blocked" | "validated";
+  totalRows: number;
+  importableRows: number;
+  failedRows: number;
+  warningRows: number;
+  totalSalesQty: number;
+  totalBonusQty: number;
+  totalSalesValue: number;
+  totalStockQty: number;
+  blockingReasons: string[];
+  uploadedBy: string | null;
+  createdAt: string;
+};
+
+// ── Dashboard ────────────────────────────────────────────────────────────────────────────────
+
+export type WeeklyRanked = {
+  name: string;
+  code: string;
+  salesValue: number;
+  salesUnits: number;
+  stockUnits: number;
+  /** share 0..1 of the scoped total sales value */
+  share: number;
+};
+
+export type WeeklyDelta = {
+  current: number;
+  /** null = prior week not uploaded — render an em dash, never a fake 0 baseline */
+  prior: number | null;
+  pct: number | null;
+};
+
+export type WeeklyBranchRow = {
+  branchCode: string;
+  branchName: string;
+  regionName: string;
+  salesValue: number;
+  salesUnits: number;
+  stockUnits: number;
+};
+
+export type WeeklyDashboard = {
+  weekStart: string | null;
+  priorWeekStart: string | null;
+  availableWeeks: string[];
+  distributors: WeeklyDistributorOption[];
+  appliedFilters: {
+    weekStart: string | null;
+    distributorCode: string | null;
+    regionCode: string | null;
+    productCode: string | null;
+  };
+  kpis: {
+    salesValue: number;
+    salesUnits: number;
+    stockUnits: number;
+    branchCount: number;
+    regionCount: number;
+    productCount: number;
+    distributorCount: number;
+  };
+  compare: { salesValue: WeeklyDelta; salesUnits: WeeklyDelta; stockUnits: WeeklyDelta };
+  /** consolidated across all distributors for the selected week */
+  regions: WeeklyRanked[];
+  products: WeeklyRanked[];
+  distributorBreakdown: WeeklyRanked[];
+  /** branches with stock on hand but zero sales this week */
+  zeroSalesBranches: WeeklyBranchRow[];
+  /** simple value trend across the available weeks (in-scope) */
+  trend: { weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }[];
+};
