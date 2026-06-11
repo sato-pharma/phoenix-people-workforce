@@ -8,6 +8,7 @@ import {
   applyLineRegionScope,
   canonicalizeRegionName,
   isRestrictedProductCode,
+  normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -138,7 +139,11 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   if (TERRITORY_SCOPED_ROLES.has(ctx.role)) {
     const scope = await resolveSalesAccessScope(ctx);
     if (scope.canViewAllSales) return { tier: "full", canViewRestricted: scope.canViewRestrictedProducts };
-    const allowedRegionCodes = await resolveRegionCodesForNames(scope.allowedRegionNames);
+    let allowedRegionCodes = await resolveRegionCodesForNames(scope.allowedRegionNames);
+    // RSM in the Pedia line has system-wide coverage across all Pedia regions (AB, D1, D2).
+    if (ctx.role === "Regional Manager" && hasPediaLine(scope.allowedLineNames)) {
+      allowedRegionCodes = new Set(["AB", "D1", "D2"]);
+    }
     return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes };
   }
 
@@ -146,6 +151,15 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   if (ctx.role === "SFE Manager") return { tier: "full", canViewRestricted: false };
 
   return { tier: "none" };
+}
+
+/** True when the viewer's allowed lines include Pedia (any case/whitespace variant). */
+function hasPediaLine(lineNames: Set<string> | null): boolean {
+  if (!lineNames) return false;
+  for (const name of lineNames) {
+    if (normalizeLineKey(name) === "pedia") return true;
+  }
+  return false;
 }
 
 /** Map canonical employee region NAMES onto Source-of-Sales region CODES via the master. */
