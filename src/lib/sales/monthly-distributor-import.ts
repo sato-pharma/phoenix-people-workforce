@@ -457,6 +457,30 @@ const EPDA_BULK_EPR_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// EGD-PH (code EGD-PH) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
+// EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
+// Distrub ID, where Distrub ID = "EGD-PH") appended. Date is "Invoice Date", qty the net "Qty",
+// customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
+const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
+  customerFields: { address: ["CUSTOMER_ADDRESS"], code: ["CUSTOMER_CODE"], name: ["CUSTOMER_NAME"] },
+  discountField: "Discount%",
+  distributorCodes: ["EGD-PH"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
+    productCode: "Product ID",
+    qty: QTY_HEADER_ALIASES,
+    regionCode: "Region ID",
+  },
+  key: "egd_ph",
+  name: "EGD-PH coded template",
+  optionalFields: {
+    productName: ["ITEM_NAME"],
+  },
+};
+
 // Sofico (code SF). The canonical monthly upload is Sofico's own raw export with the Phoenix coded
 // columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, so it is read straight
 // from those coded columns like every other distributor. Sofico keeps its raw header names: the date
@@ -576,6 +600,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   IBN_SINA_SATO_ISS_TEMPLATE,
   EPDA_SATO_EPS_TEMPLATE,
   EPDA_BULK_EPR_TEMPLATE,
+  EGD_PH_TEMPLATE,
   SOFICO_SF_TEMPLATE,
   RAMCO_RM_TEMPLATE,
   DIRECT_TEMPLATE,
