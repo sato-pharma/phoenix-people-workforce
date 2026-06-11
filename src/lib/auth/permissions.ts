@@ -64,6 +64,7 @@ export type PermissionResource =
   | "admin_access"
   | "imports"
   | "sales"
+  | "weekly_sales"
   | "payroll"
   | "payslips"
   | "deductions"
@@ -96,6 +97,7 @@ export const permissionResources: PermissionResource[] = [
   "admin_access",
   "imports",
   "sales",
+  "weekly_sales",
   "payroll",
   "deductions",
   "weekly_plans",
@@ -206,6 +208,7 @@ const defaultPermissionMatrix: PermissionMap = {
     permission_admin: allActions,
     workflow_registry: allActions,
     sales: allActions,
+    weekly_sales: allActions,
     support_requests: allActions,
     team: allActions,
     user_admin: allActions,
@@ -236,6 +239,7 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_plans: ["read", "approve", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
+    weekly_sales: ["read", "export"],
     support_requests: ["read", "export"],
     team: ["read", "export"],
     user_admin: ["read"],
@@ -428,6 +432,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: allActions,
+    weekly_sales: allActions,
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],

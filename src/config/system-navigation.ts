@@ -151,6 +151,14 @@ export const adminNavigationSections = [
     label: "Sales & Performance",
   },
   {
+    id: "weekly-sales",
+    items: [
+      { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }] },
+    ],
+    label: "Weekly Sales",
+  },
+  {
     id: "marketing-requests",
     items: [
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "SFE Manager", "Super Admin"] },
