@@ -1,6 +1,6 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getFingerprintAttendanceReport, type FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { getAttendanceRoster, isWithinEmploymentSpan } from "@/lib/attendance/roster";
 import {
   buildAttendanceCalendarContext,
   cairoTodayIso,
@@ -45,17 +45,6 @@ export type MonthlyAttendanceSummaryData = {
   };
 };
 
-type MappingRow = { employee_hr_id: string | null };
-
-type EmployeeMetadataRow = {
-  department_id: number | null;
-  full_name: string | null;
-  hr_id: string;
-  job_title: string | null;
-};
-
-type DepartmentRow = { id: number; name: string | null };
-
 function lastDayOfMonthIso(year: number, month: number): string {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
@@ -71,9 +60,10 @@ export function resolveSummaryMonth(month: string | undefined): string {
 }
 
 /**
- * Per-employee attendance rollup for one calendar month. Scope is employees with
- * an active fingerprint device mapping — field staff without device access are
- * intentionally excluded so they are not reported absent.
+ * Per-employee attendance rollup for one calendar month. Scope is the shared
+ * attendance roster (see roster.ts): device-mapped head-office employees only —
+ * field staff (medical reps, district managers) and exited employees are
+ * excluded so they are not reported absent.
  */
 export async function getMonthlyAttendanceSummary(input: { month?: string } = {}): Promise<MonthlyAttendanceSummaryData> {
   const month = resolveSummaryMonth(input.month);
@@ -106,44 +96,12 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
     };
   }
 
-  const supabase = getSupabaseAdmin();
-  const [mappingResult, employeeResult, departmentResult] = await Promise.all([
-    supabase
-      .from("attendance_device_user_map")
-      .select("employee_hr_id")
-      .eq("is_active", true)
-      .not("employee_hr_id", "is", null),
-    supabase
-      .from("employees")
-      .select("hr_id,full_name,job_title,department_id"),
-    supabase
-      .from("departments")
-      .select("id,name"),
-  ]);
-
-  if (mappingResult.error) throw mappingResult.error;
-  if (employeeResult.error) throw employeeResult.error;
-  if (departmentResult.error) throw departmentResult.error;
-
-  const rosterHrIds = Array.from(new Set(
-    ((mappingResult.data ?? []) as MappingRow[])
-      .map((row) => normalizeAttendanceHrId(row.employee_hr_id))
-      .filter((value): value is string => Boolean(value)),
-  ));
-
-  const employeeMap = new Map<string, EmployeeMetadataRow>();
-  for (const employee of (employeeResult.data ?? []) as EmployeeMetadataRow[]) {
-    const hrId = normalizeAttendanceHrId(employee.hr_id);
-    if (hrId) employeeMap.set(hrId, employee);
-  }
-  const departmentMap = new Map<number, string>(
-    ((departmentResult.data ?? []) as DepartmentRow[]).map((row) => [row.id, row.name?.trim() ?? ""]),
-  );
+  const roster = await getAttendanceRoster({ dateFromIso: dateFrom, dateToIso: dateTo });
 
   const [report, context, leaveMap] = await Promise.all([
     getFingerprintAttendanceReport({ dateFrom, dateTo }),
     buildAttendanceCalendarContext({ dateFromIso: dateFrom, dateToIso: dateTo }),
-    getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: rosterHrIds }),
+    getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: roster.map((entry) => entry.hrId) }),
   ]);
 
   // hrId -> dateIso -> engine row (engine rows only exist for days with punches).
@@ -159,9 +117,8 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
   const monthDays = listIsoDatesInRange(dateFrom, dateTo);
   const summaryRows: MonthlyAttendanceSummaryRow[] = [];
 
-  for (const hrId of rosterHrIds) {
-    const employee = employeeMap.get(hrId);
-    const jobTitle = employee?.job_title?.trim() ?? "";
+  for (const employee of roster) {
+    const { hrId, jobTitle } = employee;
     const byDate = rowsByEmployee.get(hrId) ?? new Map<string, FingerprintReportRow>();
     const leaveDates = leaveMap.get(hrId) ?? new Set<string>();
 
@@ -177,6 +134,8 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
     let totalDeductionValue = 0;
 
     for (const dateIso of monthDays) {
+      // Days outside the employment span (before hire / after exit) are not expected.
+      if (!isWithinEmploymentSpan(employee, dateIso)) continue;
       const day = classifyAttendanceDay({ context, dateIso, jobTitle });
       if (day.isFuture) continue;
       if (day.isHoliday && !day.isWeeklyOff) holidayDays += 1;
@@ -201,12 +160,10 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
 
     summaryRows.push({
       absentDays: Math.max(0, expectedWorkingDays - presentDays),
-      department: typeof employee?.department_id === "number"
-        ? departmentMap.get(employee.department_id) ?? ""
-        : "",
+      department: employee.department,
       earlyLeaveCount,
       employeeHrId: hrId,
-      employeeName: employee?.full_name?.trim() || hrId,
+      employeeName: employee.employeeName,
       exceptionDays,
       expectedWorkingDays,
       holidayDays,

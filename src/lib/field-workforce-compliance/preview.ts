@@ -52,6 +52,7 @@ async function loadEmployeeReferences(): Promise<{
         hireDate: employee.hireDate,
         hrId: employee.hrId,
         jobTitle: employee.jobTitle,
+        lastWorkingDate: employee.lastWorkingDate,
         lineName: employee.lineName,
         managerHrId: employee.managerHrId,
         managerName: employee.managerName,
