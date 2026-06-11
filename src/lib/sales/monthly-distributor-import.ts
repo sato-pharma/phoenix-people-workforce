@@ -481,6 +481,31 @@ const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
+// MEC (code MC). Fully-coded MEC monthly sheet (MEC's raw Arabic export + appended Product ID / Brick
+// ID / Area ID / Region ID / Distrub ID, where Distrub ID = "MC"). MEC keeps ARABIC raw headers: qty
+// "الكمية" (net), date "تاريخ المستند" (the invoice date — NOT the creation date "تاريخ الإنشاء"),
+// customer كود/العميل/address, bonus "بونص", discount "خصم", productName "إسم الصنف". Value RECOMPUTED.
+const MEC_MC_TEMPLATE: DistributorSalesTemplateDef = {
+  bonusField: "بونص",
+  customerFields: { address: ["address"], code: ["كود"], name: ["العميل"] },
+  discountField: "خصم",
+  distributorCodes: ["MC"],
+  fields: {
+    areaCode: "Area ID",
+    brickId: BRICK_ID_HEADER_ALIASES,
+    distributorCode: "Distrub ID",
+    invoiceDate: ["تاريخ المستند", ...INVOICE_DATE_HEADER_ALIASES],
+    productCode: "Product ID",
+    qty: ["الكمية", ...QTY_HEADER_ALIASES],
+    regionCode: "Region ID",
+  },
+  key: "mec_mc",
+  name: "MEC coded template",
+  optionalFields: {
+    productName: ["إسم الصنف"],
+  },
+};
+
 // Sofico (code SF). The canonical monthly upload is Sofico's own raw export with the Phoenix coded
 // columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, so it is read straight
 // from those coded columns like every other distributor. Sofico keeps its raw header names: the date
@@ -601,6 +626,7 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   EPDA_SATO_EPS_TEMPLATE,
   EPDA_BULK_EPR_TEMPLATE,
   EGD_PH_TEMPLATE,
+  MEC_MC_TEMPLATE,
   SOFICO_SF_TEMPLATE,
   RAMCO_RM_TEMPLATE,
   DIRECT_TEMPLATE,
