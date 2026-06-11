@@ -1,5 +1,12 @@
+import { normalizeRole } from "@/lib/auth/permissions";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { isRestrictedProductCode } from "@/lib/sales/access-scope";
+import {
+  applyWeeklyAccessScope,
+  listWeeklyProductScopeAssignments,
+  type WeeklyAccessScope,
+} from "@/lib/sales/weekly/access";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { weeklyTemplateDistributorCodes } from "@/lib/sales/weekly/templates";
@@ -9,6 +16,7 @@ import type {
   WeeklyDelta,
   WeeklyDistributorOption,
   WeeklyParsedRow,
+  WeeklyProductScopeAdmin,
   WeeklyRanked,
   WeeklySalesValidationResult,
 } from "@/lib/sales/weekly/types";
@@ -217,6 +225,7 @@ type FactRow = {
   branchName: string;
   productCode: string;
   productName: string;
+  officialLine: string;
   salesValue: number;
   salesQty: number;
   stockQty: number;
@@ -257,8 +266,8 @@ export async function loadWeeklyDashboard(filters?: {
   distributorCode?: string | null;
   regionCode?: string | null;
   productCode?: string | null;
-  /** Caller's role — used to enforce the Lacto Basic product restriction for SFE Manager. */
-  viewerRole?: string | null;
+  /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
+  accessScope?: WeeklyAccessScope;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -316,7 +325,7 @@ export async function loadWeeklyDashboard(filters?: {
     let query = supabase
       .from("weekly_sales_rows")
       .select(
-        "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, sales_value, sales_qty, stock_qty",
+        "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, stock_qty",
       )
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -338,6 +347,7 @@ export async function loadWeeklyDashboard(filters?: {
         branchName: String(row.branch_name ?? ""),
         productCode: String(row.product_code ?? ""),
         productName: String(row.product_name ?? ""),
+        officialLine: String(row.official_line ?? ""),
         salesValue: Number(row.sales_value ?? 0),
         salesQty: Number(row.sales_qty ?? 0),
         stockQty: Number(row.stock_qty ?? 0),
@@ -347,11 +357,10 @@ export async function loadWeeklyDashboard(filters?: {
     from += pageSize;
   }
 
-  // Lacto Basic 1 & 2 (LA003, LA004) are confidential and only visible to CEO and Super Admin.
-  // SFE Manager and any other weekly_sales reader never sees these rows.
-  const viewerRole = filters?.viewerRole ?? null;
-  const canSeeRestricted = viewerRole === "CEO" || viewerRole === "Super Admin";
-  const visibleRows = canSeeRestricted ? allRows : allRows.filter((row) => !isRestrictedProductCode(row.productCode));
+  // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
+  // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
+  const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true };
+  const visibleRows = applyWeeklyAccessScope(allRows, accessScope);
 
   const weekRows = visibleRows.filter((row) => row.weekStart === selectedWeek);
   const priorRows = priorWeek ? visibleRows.filter((row) => row.weekStart === priorWeek) : [];
@@ -422,4 +431,54 @@ export async function loadWeeklyDashboard(filters?: {
     zeroSalesBranches: zeroSalesBranches.slice(0, 100),
     trend,
   };
+}
+
+// ── product-scope administration ─────────────────────────────────────────────────────────────
+
+const PRODUCT_SCOPE_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
+
+/**
+ * Assemble the product-scope admin view: the product master, every current assignment (resolved
+ * to a display name + role), and the eligible people (PM/GPM/Marketing Manager) without a scope yet.
+ */
+export async function loadWeeklyProductScopeAdmin(): Promise<WeeklyProductScopeAdmin> {
+  const [references, directory, assignmentsByHrId] = await Promise.all([
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+    getEmployeeDirectory(),
+    listWeeklyProductScopeAssignments(),
+  ]);
+
+  const products = references.products
+    .filter((product) => product.productCode)
+    .map((product) => ({ code: product.productCode, name: product.productName || product.productCode, line: product.line ?? "" }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  // Resolve display name + role for any HR_ID via the directory (canonical key match).
+  const byHrKey = new Map<string, { name: string; role: string }>();
+  for (const employee of directory.employees) {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (!key) continue;
+    const role = normalizeRole(employee.positionTitle ?? employee.jobTitle);
+    byHrKey.set(key, { name: employee.fullName || employee.hrId, role });
+  }
+
+  const assignments = [...assignmentsByHrId.entries()]
+    .map(([hrKey, codes]) => {
+      const info = byHrKey.get(hrKey);
+      return {
+        hrId: canonicalHrIdForDisplay(hrKey) ?? hrKey,
+        name: info?.name ?? (canonicalHrIdForDisplay(hrKey) ?? hrKey),
+        role: info?.role ?? "—",
+        productCodes: [...codes].sort(),
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  const assignedKeys = new Set(assignmentsByHrId.keys());
+  const eligibleWithoutScope = [...byHrKey.entries()]
+    .filter(([key, info]) => PRODUCT_SCOPE_ROLES.has(info.role) && !assignedKeys.has(key))
+    .map(([key, info]) => ({ hrId: canonicalHrIdForDisplay(key) ?? key, name: info.name, role: info.role }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  return { products, assignments, eligibleWithoutScope };
 }

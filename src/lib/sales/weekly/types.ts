@@ -162,3 +162,22 @@ export type WeeklyDashboard = {
   /** simple value trend across the available weeks (in-scope) */
   trend: { weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }[];
 };
+
+// ── product-scope administration (which PM/GPM/Marketing Manager owns which products) ──────────
+
+export type WeeklyProductOption = { code: string; name: string; line: string };
+
+export type WeeklyScopeAssignment = {
+  hrId: string;
+  name: string;
+  role: string;
+  productCodes: string[];
+};
+
+export type WeeklyProductScopeAdmin = {
+  products: WeeklyProductOption[];
+  /** People who currently hold (or are eligible to hold) a product scope. */
+  assignments: WeeklyScopeAssignment[];
+  /** Eligible people with no assignment yet (for the "add" picker). */
+  eligibleWithoutScope: { hrId: string; name: string; role: string }[];
+};
