@@ -83,6 +83,15 @@ export const adminNavigationSections = [
     label: "Executive",
   },
   {
+    id: "sales-intelligence",
+    items: [
+      { href: "/sales-intelligence", icon: ChartColumnBig, label: "Executive Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/sales-intelligence/details", icon: FileSpreadsheet, label: "Sales Details", permissions: [{ resource: "sales" }] },
+      { href: "/sales-intelligence/data-quality", icon: ShieldCheck, label: "Data Quality Center", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Sales Intelligence",
+  },
+  {
     id: "command-center",
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },

@@ -31,11 +31,11 @@ function routeFromFile(filePath: string) {
 }
 
 function hasSessionGuard(source: string) {
-  return /resolveAccessContext|requireWorkflowControlAdmin|requireCoaching(?:Access|Permission|ManagementPermission)|requireRecruitmentAccess/.test(source);
+  return /resolveAccessContext|requireWorkflowControlAdmin|requireCoaching(?:Access|Permission|ManagementPermission)|requireRecruitmentAccess|handleSiRequest|resolveSiContext/.test(source);
 }
 
 function hasPermissionGuard(source: string) {
-  return /assertPermission\(|canAccess\(|require[A-Za-z]*Permission|assertCanExportProbation|requireWorkflowControlAdmin|requireRecruitmentAccess/.test(source);
+  return /assertPermission\(|canAccess\(|require[A-Za-z]*Permission|assertCanExportProbation|requireWorkflowControlAdmin|requireRecruitmentAccess|handleSiRequest|resolveSiContext/.test(source);
 }
 
 export function runAccessRegistryCoverageTests() {
