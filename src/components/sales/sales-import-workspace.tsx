@@ -839,15 +839,52 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
     setError(null);
     setResult(null);
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    formData.append("distributorCode", selectedDistributorCode);
+    // Large workbooks (> ~4MB) cannot be POSTed through the serverless function — Vercel caps the request
+    // body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE). Those upload straight to Storage via a short-lived
+    // signed URL, then validate by reference. Small files keep the original direct multipart POST.
+    const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
 
     try {
-      const response = await fetch("/api/sales/monthly-import/validate", {
-        body: formData,
-        method: "POST",
-      });
+      let response: Response;
+      if (selectedFile.size > LARGE_FILE_THRESHOLD) {
+        const urlResponse = await fetch("/api/sales/monthly-import/upload-url", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fileName: selectedFile.name }),
+        });
+        const urlPayload = (await urlResponse.json().catch(() => ({}))) as {
+          signedUrl?: string;
+          path?: string;
+          error?: string;
+        };
+        if (!urlResponse.ok || !urlPayload.signedUrl || !urlPayload.path) {
+          throw new Error(urlPayload.error ?? "Could not start the upload for this large file.");
+        }
+        const putResponse = await fetch(urlPayload.signedUrl, {
+          method: "PUT",
+          headers: {
+            "content-type": selectedFile.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "x-upsert": "false",
+          },
+          body: selectedFile,
+        });
+        if (!putResponse.ok) {
+          throw new Error("The file could not be uploaded. Please try again.");
+        }
+        response = await fetch("/api/sales/monthly-import/validate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ storagePath: urlPayload.path, distributorCode: selectedDistributorCode }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("distributorCode", selectedDistributorCode);
+        response = await fetch("/api/sales/monthly-import/validate", {
+          body: formData,
+          method: "POST",
+        });
+      }
       const payload = await readJsonResponse(response);
       const data = payload.data ?? null;
       setResult(data);
