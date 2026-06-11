@@ -159,6 +159,8 @@ import { runEmailSendHardeningTests } from "./email-send-hardening.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
+import { runSalesIntelligenceScopeTests } from "./sales-intelligence-scope.test.ts";
+import { runSalesIntelligenceServiceTests } from "./sales-intelligence-service.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -331,3 +333,5 @@ await runTest("email send hardening", runEmailSendHardeningTests);
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
+await runTest("sales intelligence scope", runSalesIntelligenceScopeTests);
+await runTest("sales intelligence service", runSalesIntelligenceServiceTests);
