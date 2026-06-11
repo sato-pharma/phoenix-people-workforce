@@ -140,6 +140,7 @@ function buildEmployeePortalSections({
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
+        { href: "/employee-portals/calendar", label: "Calendar", icon: CalendarDays },
         { href: "/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
       ],

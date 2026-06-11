@@ -105,6 +105,7 @@ import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
+import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
@@ -273,6 +274,7 @@ await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
+await runTest("company calendar", runCompanyCalendarTests);
 await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
