@@ -658,7 +658,59 @@ function SourceOfSalesDashboardPanel({
 type SourceOfSalesTab = "dashboard" | "products" | "sheets";
 
 // Coded headers to paste into Excel. TAB-separated so each header lands in its OWN cell on paste.
-const CODED_PASTE_HEADERS = "Discount%\tProduct ID\tBrick ID\tArea ID\tRegion ID\tDistrub ID";
+const CODED_PASTE_HEADER_VALUES = ["Discount%", "Product ID", "Brick ID", "Area ID", "Region ID", "Distrub ID"] as const;
+const CODED_PASTE_HEADERS = `${CODED_PASTE_HEADER_VALUES.join("\t")}\r\n`;
+
+function escapeClipboardHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function codedHeadersClipboardHtml() {
+  const cells = CODED_PASTE_HEADER_VALUES.map((header) => `<td>${escapeClipboardHtml(header)}</td>`).join("");
+  return `<table><tbody><tr>${cells}</tr></tbody></table>`;
+}
+
+async function copyCodedHeadersToClipboard() {
+  if (typeof navigator !== "undefined" && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([codedHeadersClipboardHtml()], { type: "text/html" }),
+          "text/plain": new Blob([CODED_PASTE_HEADERS], { type: "text/plain" }),
+        }),
+      ]);
+      return;
+    } catch {
+      // Fall through to the wider-supported plain text path below.
+    }
+  }
+
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(CODED_PASTE_HEADERS);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = CODED_PASTE_HEADERS;
+  textArea.setAttribute("readonly", "");
+  textArea.style.left = "-9999px";
+  textArea.style.position = "fixed";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textArea);
+  }
+}
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -863,7 +915,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                 className="gap-2"
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(CODED_PASTE_HEADERS);
+                    await copyCodedHeadersToClipboard();
                     setHeadersCopied(true);
                     setTimeout(() => setHeadersCopied(false), 1800);
                   } catch { /* clipboard blocked — nothing to surface */ }
