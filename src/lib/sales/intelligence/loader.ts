@@ -69,13 +69,17 @@ const str = (value: unknown) => String(value ?? "");
  */
 export async function loadSiReference(): Promise<SiReference> {
   const supabase = getSupabaseAdmin();
-  const [references, brickResult, aliasResult] = await Promise.all([
+  const [references, brickResult, aliasResult, areaResult] = await Promise.all([
     loadSalesReferenceData({ includeCustomerBricks: false }),
     supabase.from("source_of_sales_bricks").select("brick_id,brick_name").eq("active", true),
     supabase
       .from("source_of_sales_region_aliases")
       .select("region_code,alias,normalized_alias")
       .eq("active", true),
+    // The import rows stored the area CODE as the area_name (AB5 → "AB5"); the authoritative
+    // human names (AB5 → "Behira 2", D14 → "Gharbia 1 (Tanta)") live in this master. Load it
+    // directly so the dashboard never shows raw area codes.
+    supabase.from("source_of_sales_areas").select("area_code,area_name").eq("active", true),
   ]);
 
   const regionName = new Map<string, string>();
@@ -101,6 +105,15 @@ export async function loadSiReference(): Promise<SiReference> {
   (references.areas ?? []).forEach((area) => {
     if (area.areaCode) areaName.set(area.areaCode, area.areaName || area.areaCode);
   });
+  // Override with the authoritative area master — real human names, never the raw code.
+  if (!areaResult.error) {
+    for (const row of (areaResult.data ?? []) as Array<Record<string, unknown>>) {
+      const code = str(row.area_code);
+      const name = str(row.area_name);
+      // Only take a name that is actually friendlier than the code itself.
+      if (code && name && name.toUpperCase() !== code.toUpperCase()) areaName.set(code, name);
+    }
+  }
   // The Direct channel carries no area; phx_si_distributor_product buckets it under 'DIRECT'.
   areaName.set("DIRECT", "Direct (company)");
   references.distributors.forEach((distributor) => {
