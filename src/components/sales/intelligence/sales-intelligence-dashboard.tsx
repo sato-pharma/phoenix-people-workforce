@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
-import { SiAdvancedFilters } from "@/components/sales/intelligence/si-advanced-filters";
 import { SiCommandHero } from "@/components/sales/intelligence/si-command-hero";
 import { SiCustomerPareto } from "@/components/sales/intelligence/si-customer-pareto";
 import { SiDailyRhythm } from "@/components/sales/intelligence/si-daily-rhythm";
 import { SiDistributorDependency } from "@/components/sales/intelligence/si-distributor-dependency";
-import { SiFilterBar } from "@/components/sales/intelligence/si-filter-bar";
+import { SiAdvancedFilters } from "@/components/sales/intelligence/si-advanced-filters";
 import { SiGeoMatrix } from "@/components/sales/intelligence/si-geo-matrix";
+import { SiIncompleteBanner } from "@/components/sales/intelligence/si-incomplete-banner";
 import { SiInsightRail, SiRisksBand } from "@/components/sales/intelligence/si-insight-rail";
 import { SiKpiBand } from "@/components/sales/intelligence/si-kpi-band";
 import { SiLineMix } from "@/components/sales/intelligence/si-line-mix";
@@ -26,8 +26,7 @@ import type {
   SiProductDrill,
 } from "@/lib/sales/intelligence/types";
 
-// Executive Navy categorical ramp: deep navy → steel → dusty blue → slate → muted clay (+ extras).
-const LINE_COLORS = ["#1E3A5F", "#3B6B9A", "#6B8FB5", "#94A3B8", "#B08968", "#475569", "#5B7B8A", "#7C8DA6"];
+const LINE_COLORS = ["#F97316", "#0F172A", "#3B82F6", "#22C55E", "#8B5CF6", "#EF4444", "#14B8A6", "#EAB308"];
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -58,7 +57,18 @@ export function SalesIntelligenceDashboard({ bundle, error }: { bundle: SiDashbo
 
 function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
   const { kpis, products, geography, distributors, access, compare } = bundle;
-  const bundleKey = `${bundle.period ?? ""}|${access.restrictedIncluded ? "1" : "0"}`;
+  const af = bundle.appliedFilters;
+  // Lazy sections (movers/customers/churn) refetch whenever the period, Lacto state, OR any filter
+  // changes — so a filtered dashboard never leaves those cards showing the unfiltered month.
+  const bundleKey = [
+    bundle.period ?? "",
+    access.restrictedIncluded ? "1" : "0",
+    af.distributorCode ?? "",
+    af.regionCode ?? "",
+    af.areaCode ?? "",
+    af.officialLine ?? "",
+    af.productCode ?? "",
+  ].join("|");
 
   // ── Progressive lazy chain (strictly sequential: movers → customers → churn) ──────────
   const [lazy, setLazy] = useState<{
@@ -81,6 +91,12 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
     const params = new URLSearchParams();
     if (bundle.period) params.set("period", bundle.period);
     if (access.restrictedIncluded) params.set("includeRestricted", "1");
+    // Mirror the toolbar filters so the lazy endpoints narrow the same slice as the SSR aggregates.
+    if (af.distributorCode) params.set("distributor", af.distributorCode);
+    if (af.regionCode) params.set("region", af.regionCode);
+    if (af.areaCode) params.set("area", af.areaCode);
+    if (af.officialLine) params.set("line", af.officialLine);
+    if (af.productCode) params.set("productFilter", af.productCode);
     const query = params.toString();
 
     (async () => {
@@ -100,7 +116,7 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
     return () => {
       cancelled = true;
     };
-  }, [bundleKey, bundle.period, access.restrictedIncluded]);
+  }, [bundleKey, bundle.period, access.restrictedIncluded, af.distributorCode, af.regionCode, af.areaCode, af.officialLine, af.productCode]);
 
   // ── Product drill-down (URL-driven: ?product=CODE) ────────────────────────────────────
   const [drillState, setDrillState] = useState<{
@@ -186,19 +202,29 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
         period={bundle.period}
       />
 
-      {/* Sticky control bar — pinned BELOW the app topbar (sticky top-0 z-20) and at a lower
-          z-index so it can never slide over the global navigation header on scroll. */}
-      <div className="sticky top-[5rem] z-10 -mx-1 flex flex-wrap items-start gap-2 bg-[#F3F6FA]/95 px-1 py-1 backdrop-blur sm:top-[5.5rem]">
-        <div className="min-w-0 flex-1">
-          <SiFilterBar access={access} availablePeriods={bundle.availablePeriods} period={bundle.period} />
-        </div>
-        <SiAdvancedFilters facets={bundle.facets} filters={bundle.filters} period={bundle.period} />
+      <SiIncompleteBanner
+        basePath="/sales-intelligence"
+        includeRestricted={access.restrictedIncluded}
+        latestCompletePeriod={bundle.latestCompletePeriod}
+        newerPartial={bundle.newerPartial}
+        period={bundle.period}
+        selectedCompleteness={bundle.selectedCompleteness}
+      />
+
+      {/* Sticky control bar */}
+      <div className="sticky top-0 z-30 -mx-1 bg-[#F3F6FA]/95 px-1 py-1 backdrop-blur">
+        <SiAdvancedFilters
+          access={access}
+          appliedFilters={bundle.appliedFilters}
+          availablePeriods={bundle.availablePeriods}
+          filterOptions={bundle.filterOptions}
+          period={bundle.period}
+        />
       </div>
 
       <SiKpiBand
         compare={compare}
         concentration={bundle.concentration}
-        coverage={bundle.coverage}
         customerPending={customersPending}
         customerTop10Share={customers?.top10Share ?? null}
         kpis={kpis}
@@ -239,7 +265,11 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="lg:col-span-5" id="distributors">
-          <SiDistributorDependency distributors={distributors.distributors} />
+          <SiDistributorDependency
+            distributors={distributors.distributors}
+            missingDistributors={kpis.missingDistributors}
+            period={bundle.period}
+          />
         </div>
         <div className="lg:col-span-7">
           <SiCustomerPareto churn={churn} customers={customers} loading={customersPending} />
@@ -258,12 +288,12 @@ function DashboardInner({ bundle }: { bundle: SiDashboardBundle }) {
       {/* Footer nav to the sibling pages */}
       <div className="flex flex-wrap gap-2 pb-2">
         <Link href="/sales-intelligence/details">
-          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#6B8FB5] hover:text-[#1E3A5F]">
+          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]">
             <Table2 className="h-4 w-4" /> Sales Details
           </span>
         </Link>
         <Link href="/sales-intelligence/data-quality">
-          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#6B8FB5] hover:text-[#1E3A5F]">
+          <span className="inline-flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]">
             <ShieldCheck className="h-4 w-4" /> Data Quality Center
           </span>
         </Link>

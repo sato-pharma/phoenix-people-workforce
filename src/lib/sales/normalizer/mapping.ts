@@ -91,7 +91,10 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
 export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer" };
 
 export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: number; skipped: number; invalid: number }> {
-  const refs = await loadSalesReferenceData();
+  // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
+  // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
+  // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   productCodes.add(IGNORE_PRODUCT_CODE); // "neglect this item" is a valid product target
   const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), b]));

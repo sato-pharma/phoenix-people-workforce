@@ -2,15 +2,20 @@ import assert from "node:assert/strict";
 
 import {
   aggregateByProductKeyed,
+  applyDetailsFilters,
   buildDailyCurve,
   buildKpiSparks,
   computeMovers,
   computeRunRate,
   concentrationIndices,
   diffCustomerSets,
+  geographicRows,
+  latestCompletePeriod,
   makeDelta,
+  pickDefaultPeriod,
 } from "../src/lib/sales/intelligence/derive.ts";
 import type { SiDailyRow, SiDistProductRow, SiReference } from "../src/lib/sales/intelligence/loader.ts";
+import type { SiMonthCompleteness } from "../src/lib/sales/intelligence/types.ts";
 import { daysInPeriod, shiftPeriod } from "../src/lib/sales/periods.ts";
 
 function reference(): SiReference {
@@ -147,4 +152,57 @@ export function runSalesIntelligenceAnalyticsTests() {
   assert.equal(sparks[0].monthComplete, true);
   assert.equal(sparks[1].monthComplete, false, "incomplete month flagged in sparks (amber bars)");
   approx(sparks[0].avgPrice, 10, "avg realized price derived");
+
+  // ── geographicRows: the whole Direct (company) channel is non-geographic ─────────────
+  const geo = geographicRows([
+    dp({ regionCode: "R1", value: 100 }),
+    dp({ regionCode: "NATIONAL", value: 500 }), // Direct's synthetic national region
+    dp({ regionCode: "national", value: 30 }), // case-insensitive
+    dp({ regionCode: "", value: 7 }), // blank is not a region
+    dp({ regionCode: "CA", distributorCode: "DIRECT", value: 999 }), // Direct even with a real region
+    dp({ regionCode: "GZ", areaCode: "DIRECT", value: 50 }), // synthetic DIRECT area bucket
+  ]);
+  assert.equal(geo.length, 1, "only the real field-region, non-Direct row survives");
+  assert.equal(geo[0].regionCode, "R1", "NATIONAL/blank/Direct dropped from geography");
+
+  // ── applyDetailsFilters: AND across dimensions, empty = match-all ────────────────────
+  const filterRows = [
+    dp({ distributorCode: "PS", regionCode: "R1", officialLine: "CNS", productCode: "CN001" }),
+    dp({ distributorCode: "EG", regionCode: "R1", officialLine: "CNS", productCode: "CN002" }),
+    dp({ distributorCode: "PS", regionCode: "R2", officialLine: "Pedia", productCode: "PD001" }),
+  ];
+  assert.equal(applyDetailsFilters(filterRows, {}).length, 3, "no filters → all rows");
+  assert.equal(applyDetailsFilters(filterRows, { distributorCode: "ps" }).length, 2, "distributor filter is case-insensitive");
+  assert.equal(applyDetailsFilters(filterRows, { distributorCode: "PS", regionCode: "R2" }).length, 1, "filters AND together");
+  assert.equal(applyDetailsFilters(filterRows, { officialLine: "cns" }).length, 2, "line matches by display text, case-insensitive");
+  assert.equal(applyDetailsFilters(filterRows, { productCode: "CN002" }).length, 1, "product filter narrows to one");
+
+  // ── default period = latest COMPLETE month (the May-empty-dashboard fix) ─────────────
+  const completeness = new Map<string, SiMonthCompleteness>([
+    ["2026-03", { period: "2026-03", expected: ["PS", "EG"], uploaded: ["PS", "EG"], missing: [], complete: true }],
+    ["2026-04", { period: "2026-04", expected: ["PS", "EG"], uploaded: ["PS", "EG"], missing: [], complete: true }],
+    ["2026-05", { period: "2026-05", expected: ["PS", "EG"], uploaded: ["PS"], missing: ["EG"], complete: false }],
+  ]);
+  const periods = ["2026-05", "2026-03", "2026-04"]; // any order
+  assert.equal(latestCompletePeriod(periods, completeness), "2026-04", "newest complete month, not partial May");
+  assert.equal(pickDefaultPeriod(periods, completeness), "2026-04", "default lands on the latest complete month");
+  const allPartial = new Map<string, SiMonthCompleteness>([
+    ["2026-05", { period: "2026-05", expected: ["PS", "EG"], uploaded: ["PS"], missing: ["EG"], complete: false }],
+  ]);
+  assert.equal(latestCompletePeriod(["2026-05"], allPartial), null, "none complete → null");
+  assert.equal(pickDefaultPeriod(["2026-05"], allPartial), "2026-05", "fallback to newest when none complete");
+  assert.equal(pickDefaultPeriod([], new Map()), null, "no periods → null");
+
+  // When NO month is complete (the real-world ratcheting case), land on the RICHEST month — the
+  // one with the most distributors uploaded — not the freshest thin partial.
+  const noneComplete = new Map<string, SiMonthCompleteness>([
+    ["2026-03", { period: "2026-03", expected: ["PS", "EG", "IS"], uploaded: ["PS"], missing: ["EG", "IS"], complete: false }],
+    ["2026-04", { period: "2026-04", expected: ["PS", "EG", "IS"], uploaded: ["PS", "EG", "IS"], missing: [], complete: false }],
+    ["2026-05", { period: "2026-05", expected: ["PS", "EG", "IS"], uploaded: ["PS"], missing: ["EG", "IS"], complete: false }],
+  ]);
+  assert.equal(
+    pickDefaultPeriod(["2026-05", "2026-04", "2026-03"], noneComplete),
+    "2026-04",
+    "none complete → richest month (most distributors), not the thin newest",
+  );
 }

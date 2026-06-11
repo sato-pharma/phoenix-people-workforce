@@ -13,12 +13,17 @@ import type { SiDistributorRow } from "@/lib/sales/intelligence/types";
 import { cn } from "@/lib/utils";
 
 // Orange family for the top 3 segments, slate ramp for the tail — "how orange is our dependence".
-const SPINE_COLORS = ["#1E3A5F", "#3B6B9A", "#6B8FB5", "#0F172A", "#334155", "#64748B", "#94A3B8", "#CBD5E1"];
+const SPINE_COLORS = ["#F97316", "#FB923C", "#FDBA74", "#0F172A", "#334155", "#64748B", "#94A3B8", "#CBD5E1"];
 
 export function SiDistributorDependency({
   distributors,
+  period,
+  missingDistributors = [],
 }: {
   distributors: SiDistributorRow[];
+  period?: string | null;
+  /** Active distributors that have NOT uploaded for this period (display names). */
+  missingDistributors?: string[];
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -33,6 +38,16 @@ export function SiDistributorDependency({
         title="Distributor Dependency"
       />
 
+      {/* Why only N distributors? Some have not uploaded yet — say so plainly instead of letting the
+          chart read as "only one distributor exists". */}
+      {missingDistributors.length > 0 && (
+        <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-bold text-amber-800">
+          Showing the {distributors.length} distributor{distributors.length === 1 ? "" : "s"} that uploaded for{" "}
+          {period ?? "this month"}. Not yet uploaded: {missingDistributors.slice(0, 8).join(", ")}
+          {missingDistributors.length > 8 ? `, +${missingDistributors.length - 8} more` : ""}.
+        </div>
+      )}
+
       {/* The dependency spine */}
       <div className="mt-4 flex h-7 w-full overflow-hidden">
         {distributors.map((distributor, index) => (
@@ -41,7 +56,7 @@ export function SiDistributorDependency({
               <div className="space-y-1">
                 <p className="text-xs font-black text-[#0F172A]">{distributor.name}</p>
                 <p className="text-[11px] font-black text-[#0F172A]">{formatCurrency(distributor.value)}</p>
-                <p className="text-[10px] font-bold text-[#1E3A5F]">{shareText(distributor.share)} of value</p>
+                <p className="text-[10px] font-bold text-[#F97316]">{shareText(distributor.share)} of value</p>
               </div>
             )}
             key={distributor.name}
@@ -75,7 +90,7 @@ export function SiDistributorDependency({
             <div className="border border-[#E2E8F0] bg-white p-3" key={distributor.name}>
               <div className="flex items-start justify-between gap-2">
                 <p className="truncate text-sm font-black text-[#0F172A]">{distributor.name}</p>
-                <span className="shrink-0 text-[11px] font-black text-[#1E3A5F]">{shareText(distributor.share)}</span>
+                <span className="shrink-0 text-[11px] font-black text-[#F97316]">{shareText(distributor.share)}</span>
               </div>
               <p className="mt-0.5 text-xs font-bold tabular-nums text-[#64748B]">{formatCurrency(distributor.value)} · {compactEGP(distributor.units)} units</p>
               {distributor.productMix.length > 0 && (
@@ -93,7 +108,7 @@ export function SiDistributorDependency({
       </div>
       {distributors.length > 6 && !showAll && (
         <button
-          className="mt-2 text-[11px] font-black text-[#1E3A5F] hover:underline"
+          className="mt-2 text-[11px] font-black text-[#F97316] hover:underline"
           onClick={() => setShowAll(true)}
           type="button"
         >

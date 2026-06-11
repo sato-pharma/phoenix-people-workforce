@@ -79,6 +79,92 @@ function rank<T>(
     .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name));
 }
 
+// Geography (region/area) views show FIELD regions only. The whole Direct (company) channel is
+// non-geographic — it carries a synthetic NATIONAL region and/or a 'DIRECT' area bucket and is
+// head-office, not field-rep, sales — so it is dropped here. Direct still surfaces in the
+// distributor breakdown and the net-sales total, which use the UNFILTERED rows. This mirrors the
+// monthly closing keeping "Direct – National" out of the region subtotals.
+const NON_GEOGRAPHIC_REGION_CODES = new Set(["NATIONAL", ""]);
+const DIRECT_CHANNEL_CODE = "DIRECT";
+
+export function geographicRows<T extends { regionCode: string; distributorCode?: string; areaCode?: string }>(
+  rows: T[],
+): T[] {
+  return rows.filter((row) => {
+    if (NON_GEOGRAPHIC_REGION_CODES.has((row.regionCode || "").trim().toUpperCase())) return false;
+    if ((row.distributorCode || "").trim().toUpperCase() === DIRECT_CHANNEL_CODE) return false;
+    if ((row.areaCode || "").trim().toUpperCase() === DIRECT_CHANNEL_CODE) return false;
+    return true;
+  });
+}
+
+/**
+ * Resolve a code to its human display name — and NEVER fall back to the raw code. The executive
+ * surface is a hard "no codes on screen" zone: an unmapped code collapses to a humane label
+ * ("Unmapped area") instead of leaking a value like "B117" or "DIRECT". Lookup is case-insensitive
+ * so a master keyed "Direct" still resolves an import row coded "DIRECT".
+ */
+export function displayName(map: Map<string, string>, code: string | undefined, unmappedLabel: string): string {
+  const raw = (code ?? "").trim();
+  if (!raw) return unmappedLabel;
+  const name = map.get(raw) ?? map.get(raw.toUpperCase()) ?? map.get(raw.toLowerCase());
+  if (name && name.trim() && name.trim().toUpperCase() !== raw.toUpperCase()) return name.trim();
+  return unmappedLabel;
+}
+
+export type SiDetailsFilters = {
+  distributorCode?: string | null;
+  regionCode?: string | null;
+  areaCode?: string | null;
+  officialLine?: string | null;
+  productCode?: string | null;
+};
+
+/** Narrow detail rows by any combination of distributor / region / area / line / product. Empty
+ *  fields match everything. Codes compare case-insensitively; line compares by its display text. */
+export function applyDetailsFilters<
+  T extends { distributorCode: string; regionCode: string; areaCode: string; officialLine: string; productCode: string },
+>(rows: T[], filters: SiDetailsFilters): T[] {
+  const norm = (value?: string | null) => (value ?? "").trim().toUpperCase();
+  const wantDist = norm(filters.distributorCode);
+  const wantRegion = norm(filters.regionCode);
+  const wantArea = norm(filters.areaCode);
+  const wantLine = (filters.officialLine ?? "").trim().toLowerCase();
+  const wantProduct = norm(filters.productCode);
+  return rows.filter(
+    (row) =>
+      (!wantDist || norm(row.distributorCode) === wantDist) &&
+      (!wantRegion || norm(row.regionCode) === wantRegion) &&
+      (!wantArea || norm(row.areaCode) === wantArea) &&
+      (!wantLine || (row.officialLine ?? "").trim().toLowerCase() === wantLine) &&
+      (!wantProduct || norm(row.productCode) === wantProduct),
+  );
+}
+
+/** Narrow CUSTOMER-grain rows (which carry no line/product dimension — a customer spans many
+ *  products) by the geography/channel filters they DO support: distributor / region / area.
+ *  Line/product filters are intentionally ignored here; callers surface that to the user. */
+export function applyGeoChannelFilters<
+  T extends { distributorCode: string; regionCode: string; areaCode: string },
+>(rows: T[], filters: SiDetailsFilters): T[] {
+  const norm = (value?: string | null) => (value ?? "").trim().toUpperCase();
+  const wantDist = norm(filters.distributorCode);
+  const wantRegion = norm(filters.regionCode);
+  const wantArea = norm(filters.areaCode);
+  if (!wantDist && !wantRegion && !wantArea) return rows;
+  return rows.filter(
+    (row) =>
+      (!wantDist || norm(row.distributorCode) === wantDist) &&
+      (!wantRegion || norm(row.regionCode) === wantRegion) &&
+      (!wantArea || norm(row.areaCode) === wantArea),
+  );
+}
+
+/** True when a filter set narrows by a dimension a customer/daily aggregate can't follow. */
+export function hasProductOrLineFilter(filters: SiDetailsFilters): boolean {
+  return Boolean((filters.officialLine ?? "").trim() || (filters.productCode ?? "").trim());
+}
+
 export function aggregateByLine(rows: SiDistProductRow[]): SiRanked[] {
   return rank(
     rows,
@@ -132,7 +218,7 @@ export function aggregateByRegion(rows: SiDistProductRow[], reference: SiReferen
   return rank(
     rows,
     (row) => row.regionCode || "—",
-    (row) => reference.regionName.get(row.regionCode) || row.regionCode || "—",
+    (row) => displayName(reference.regionName, row.regionCode, "Unmapped region"),
     (row) => row.value,
     (row) => row.units,
   );
@@ -150,8 +236,8 @@ export function aggregateByArea(rows: SiDistProductRow[], reference: SiReference
       current.units += row.units;
     } else {
       groups.set(key, {
-        name: reference.areaName.get(row.areaCode) || row.areaCode || "—",
-        regionName: reference.regionName.get(row.regionCode) || row.regionCode || "—",
+        name: displayName(reference.areaName, row.areaCode, "Unmapped area"),
+        regionName: displayName(reference.regionName, row.regionCode, "Unmapped region"),
         value: row.value,
         units: row.units,
       });
@@ -181,7 +267,7 @@ export function aggregateByDistributor(rows: SiDistProductRow[], reference: SiRe
       current.products.push(row);
     } else {
       groups.set(key, {
-        name: reference.distributorName.get(row.distributorCode) || row.distributorCode || "—",
+        name: displayName(reference.distributorName, row.distributorCode, "Unmapped distributor"),
         value: row.value,
         units: row.units,
         products: [row],
@@ -209,7 +295,7 @@ export function aggregateCustomers(
   reference: SiReference,
   topN = 50,
 ): Omit<SiCustomerInsights, "period"> {
-  const groups = new Map<string, { name: string; distributorName: string; value: number; units: number }>();
+  const groups = new Map<string, { name: string; distributorName: string; brick: string; value: number; units: number }>();
   let total = 0;
   for (const row of rows) {
     total += row.value;
@@ -219,9 +305,14 @@ export function aggregateCustomers(
       current.value += row.value;
       current.units += row.units;
     } else {
+      // Locate the customer by its finest mapped place — brick first, area as fallback. Never a
+      // raw code: an unmapped brick/area collapses to "—".
+      const brickLabel = displayName(reference.brickName, row.brickId, "");
+      const brick = brickLabel || displayName(reference.areaName, row.areaCode, "") || "—";
       groups.set(key, {
         name: row.clientName || row.clientCode,
-        distributorName: reference.distributorName.get(row.distributorCode) || row.distributorCode || "—",
+        distributorName: displayName(reference.distributorName, row.distributorCode, "Unmapped distributor"),
+        brick,
         value: row.value,
         units: row.units,
       });
@@ -231,6 +322,7 @@ export function aggregateCustomers(
     .map((group) => ({
       name: group.name,
       distributorName: group.distributorName,
+      brick: group.brick,
       value: round2(group.value),
       units: round2(group.units),
       share: total > 0 ? round(group.value / total) : 0,
@@ -461,7 +553,8 @@ export function diffCustomerSets(
   const keyOf = (row: SiCustomerFactRow) => `${normCode(row.clientCode)} ${normCode(row.distributorCode)}`;
   const toRow = (row: SiCustomerFactRow, value: number): SiCustomerRow => ({
     name: row.clientName || row.clientCode,
-    distributorName: reference.distributorName.get(row.distributorCode) || row.distributorCode || "—",
+    distributorName: displayName(reference.distributorName, row.distributorCode, "Unmapped distributor"),
+    brick: displayName(reference.brickName, row.brickId, "") || displayName(reference.areaName, row.areaCode, "") || "—",
     value: round2(value),
     units: round2(row.units),
     share: 0,
@@ -537,4 +630,45 @@ export function computeMonthCompleteness(
     });
   }
   return result;
+}
+
+/** The newest period that is COMPLETE (every distributor seen so far also uploaded). null when
+ *  there are no periods or none is complete. `availablePeriods` may arrive in any order. */
+export function latestCompletePeriod(
+  availablePeriods: string[],
+  completeness: Map<string, SiMonthCompleteness>,
+): string | null {
+  return (
+    [...availablePeriods]
+      .sort((left, right) => right.localeCompare(left))
+      .find((period) => completeness.get(period)?.complete) ?? null
+  );
+}
+
+/**
+ * Default landing month. Prefer the latest COMPLETE period. But "complete" ratchets — every
+ * distributor ever seen is expected forever — so with sporadic uploads no month is ever complete
+ * and a naive "newest" default lands on the freshest THIN partial (e.g. a month where only the one
+ * fast distributor has reported), which reads as "only one distributor exists". So when nothing is
+ * complete, land on the RICHEST recent month — the one with the most distributors uploaded — and
+ * break ties toward the newest. The viewer can always switch months from the filter bar.
+ */
+export function pickDefaultPeriod(
+  availablePeriods: string[],
+  completeness: Map<string, SiMonthCompleteness>,
+): string | null {
+  if (availablePeriods.length === 0) return null;
+  const byNewest = [...availablePeriods].sort((left, right) => right.localeCompare(left));
+  const complete = latestCompletePeriod(availablePeriods, completeness);
+  if (complete) return complete;
+  let best = byNewest[0] ?? null;
+  let bestCount = -1;
+  for (const period of byNewest) {
+    const count = completeness.get(period)?.uploaded.length ?? 0;
+    if (count > bestCount) {
+      bestCount = count;
+      best = period;
+    }
+  }
+  return best;
 }
