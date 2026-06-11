@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
   | "auth_session"
+  | "calendar_event"
   | "deduction_candidate"
   | "deduction_comment"
   | "deduction_decision"
