@@ -19,6 +19,15 @@ export type SiMonthCompleteness = {
   complete: boolean;
 };
 
+/** A period NEWER than the one being shown that is still incomplete — drives the "view the newer
+ *  partial month" banner so a complete default month never hides fresh-but-partial data. */
+export type SiNewerPartial = {
+  period: string;
+  uploadedCount: number;
+  expectedCount: number;
+  missing: string[];
+};
+
 export type SiKpiSummary = {
   period: string | null;
   totals: SiTotals;
@@ -64,7 +73,7 @@ export type SiDistributorPerformance = {
   distributors: SiDistributorRow[];
 };
 
-export type SiCustomerRow = SiRanked & { distributorName: string };
+export type SiCustomerRow = SiRanked & { distributorName: string; brick: string };
 
 export type SiCustomerInsights = {
   period: string | null;
@@ -132,6 +141,24 @@ export type SiTransactionRow = {
 
 // Page 2 (Sales Details) — condensed, scoped tables from a single distributor×product scan.
 // Transactions are bounded (top-N by value) — the raw 75k rows never reach the browser.
+export type SiFilterOption = { code: string; name: string };
+
+export type SiDetailsFilterOptions = {
+  distributors: SiFilterOption[];
+  regions: SiFilterOption[];
+  areas: SiFilterOption[];
+  lines: SiFilterOption[];
+  products: SiFilterOption[];
+};
+
+export type SiDetailsAppliedFilters = {
+  distributorCode: string | null;
+  regionCode: string | null;
+  areaCode: string | null;
+  officialLine: string | null;
+  productCode: string | null;
+};
+
 export type SiDetailsBundle = {
   period: string | null;
   availablePeriods: string[];
@@ -141,6 +168,13 @@ export type SiDetailsBundle = {
   regions: SiRanked[];
   areas: SiAreaRow[];
   access: SiAccessBadge;
+  /** dropdown options computed from the UNFILTERED period rows (so filters can always change) */
+  filterOptions: SiDetailsFilterOptions;
+  appliedFilters: SiDetailsAppliedFilters;
+  /** completeness of the shown month + the newest complete month, for the partial-month banner */
+  selectedCompleteness: SiMonthCompleteness | null;
+  newerPartial: SiNewerPartial | null;
+  latestCompletePeriod: string | null;
 };
 
 // ── v2 executive analytics ────────────────────────────────────────────────────────────────────
@@ -159,54 +193,6 @@ export type SiCompare = {
   value: { mom: SiDelta; yoy: SiDelta };
   units: { mom: SiDelta; yoy: SiDelta };
 };
-
-// Upload coverage for the selected month. Distributor files arrive independently, so a month can
-// legitimately hold 2 distributors or 9. This surfaces how much of the month has actually landed
-// and carries the like-for-like avg-price delta (computed over only the distributors present in
-// BOTH the selected and prior month) so coverage gaps are never read as performance swings.
-export type SiCoverage = {
-  /** distributors that uploaded a validated batch for the selected period */
-  reporting: number;
-  /** distributors expected for the selected period (ever-seen and still active) */
-  expected: number;
-  /** the selected period is still missing one or more expected distributors */
-  incomplete: boolean;
-  /** prior period used as the like-for-like baseline (null = none imported yet) */
-  priorPeriod: string | null;
-  /** distributors present in BOTH the selected and prior period — the like-for-like basis */
-  commonDistributors: number;
-  /** avg realized price (value ÷ units) over the common distributor set: current vs prior */
-  avgPrice: SiDelta;
-};
-
-// ── Advanced filters ───────────────────────────────────────────────────────────────────────────
-// A selectable value (opaque code + display name) for one filter dimension.
-export type SiFilterOption = { code: string; name: string };
-
-// The available values for each dimension, built from the UNFILTERED month scan so the chips
-// always offer the full menu regardless of the active selection. `customers` is the exception:
-// the full customer list (~thousands) is fetched lazily by the picker, so here it carries only the
-// currently-selected customers resolved to names (so the panel can render them with labels).
-export type SiFilterFacets = {
-  regions: SiFilterOption[];
-  areas: SiFilterOption[];
-  lines: SiFilterOption[];
-  distributors: SiFilterOption[];
-  products: SiFilterOption[];
-  customers: SiFilterOption[];
-};
-
-// The active selection (codes; line uses its name as the code). Empty array = no filter on that dim.
-export type SiFilters = {
-  regions: string[];
-  areas: string[];
-  lines: string[];
-  distributors: string[];
-  products: string[];
-  customers: string[];
-};
-
-export const EMPTY_SI_FILTERS: SiFilters = { regions: [], areas: [], lines: [], distributors: [], products: [], customers: [] };
 
 export type SiMoverRow = {
   /** stable code (product/distributor/region) — joins never use display names */
@@ -359,11 +345,6 @@ export type SiDashboardBundle = {
   trend: SiTrend;
   access: SiAccessBadge;
   compare: SiCompare;
-  coverage: SiCoverage;
-  /** the menu of values for each filter dimension (from the unfiltered month) */
-  facets: SiFilterFacets;
-  /** the filter selection this bundle was computed under */
-  filters: SiFilters;
   kpiSparks: SiKpiSparkPoint[];
   daily: SiDailyCurve | null;
   dailyPrior: SiDailyCurve | null;
@@ -372,4 +353,12 @@ export type SiDashboardBundle = {
   insights: SiInsight[];
   /** zero-sales areas within scope (white-space), by name */
   zeroSalesAreas: string[];
+  /** dropdown options computed from the UNFILTERED in-scope month (so a filter can always change) */
+  filterOptions: SiDetailsFilterOptions;
+  /** the filters currently applied to this bundle (drives the toolbar + the lazy fetches) */
+  appliedFilters: SiDetailsAppliedFilters;
+  /** completeness of the shown month + the newest complete month, for the partial-month banner */
+  selectedCompleteness: SiMonthCompleteness | null;
+  newerPartial: SiNewerPartial | null;
+  latestCompletePeriod: string | null;
 };

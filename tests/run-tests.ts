@@ -164,6 +164,7 @@ import { runSalesIntelligenceScopeTests } from "./sales-intelligence-scope.test.
 import { runSalesIntelligenceServiceTests } from "./sales-intelligence-service.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSalesIntelligenceAnalyticsTests } from "./sales-intelligence-analytics.test.ts";
+import { runSalesIntelligenceFiltersTests } from "./sales-intelligence-filters.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -341,3 +342,4 @@ await runTest("sales intelligence scope", runSalesIntelligenceScopeTests);
 await runTest("sales intelligence service", runSalesIntelligenceServiceTests);
 await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("sales intelligence analytics", runSalesIntelligenceAnalyticsTests);
+await runTest("sales intelligence filters", runSalesIntelligenceFiltersTests);

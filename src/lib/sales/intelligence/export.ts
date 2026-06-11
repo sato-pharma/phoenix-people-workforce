@@ -6,6 +6,8 @@ import {
   aggregateByProduct,
   aggregateByRegion,
   aggregateCustomers,
+  displayName,
+  geographicRows,
 } from "@/lib/sales/intelligence/derive";
 import { loadSiCustomers, loadSiDistProduct, loadSiReference } from "@/lib/sales/intelligence/loader";
 
@@ -41,6 +43,7 @@ export async function buildSiExportWorkbook(
     title = "Sales Intelligence — Customers";
     columns = [
       { key: "customer", label: "Customer" },
+      { key: "brick", label: "Brick" },
       { key: "distributor", label: "Distributor" },
       moneyCol("value", "Value"),
       moneyCol("units", "Units"),
@@ -48,6 +51,7 @@ export async function buildSiExportWorkbook(
     ];
     rows = customers.customers.map((customer) => ({
       customer: customer.name,
+      brick: customer.brick,
       distributor: customer.distributorName,
       value: customer.value,
       units: customer.units,
@@ -68,10 +72,10 @@ export async function buildSiExportWorkbook(
       ];
       rows = distProduct
         .map((row) => ({
-          distributor: reference.distributorName.get(row.distributorCode) || row.distributorCode,
+          distributor: displayName(reference.distributorName, row.distributorCode, "Unmapped distributor"),
           line: row.officialLine,
-          region: reference.regionName.get(row.regionCode) || row.regionCode,
-          area: reference.areaName.get(row.areaCode) || row.areaCode,
+          region: displayName(reference.regionName, row.regionCode, "Unmapped region"),
+          area: displayName(reference.areaName, row.areaCode, "Unmapped area"),
           product: row.productName || row.productCode,
           units: Number(row.units.toFixed(2)),
           value: Number(row.value.toFixed(2)),
@@ -115,7 +119,7 @@ export async function buildSiExportWorkbook(
         moneyCol("units", "Units"),
         moneyCol("share", "Share %"),
       ];
-      rows = aggregateByRegion(distProduct, reference).map((region) => ({
+      rows = aggregateByRegion(geographicRows(distProduct), reference).map((region) => ({
         region: region.name,
         value: region.value,
         units: region.units,
@@ -130,7 +134,7 @@ export async function buildSiExportWorkbook(
         moneyCol("units", "Units"),
         moneyCol("share", "Share %"),
       ];
-      rows = aggregateByArea(distProduct, reference).map((area) => ({
+      rows = aggregateByArea(geographicRows(distProduct), reference).map((area) => ({
         area: area.name,
         region: area.regionName,
         value: area.value,

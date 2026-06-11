@@ -5,8 +5,9 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import type { SiDetailsFilters } from "@/lib/sales/intelligence/derive";
 import { getSiDashboardBundle } from "@/lib/sales/intelligence/service";
-import type { SiDashboardBundle, SiFilters } from "@/lib/sales/intelligence/types";
+import type { SiDashboardBundle } from "@/lib/sales/intelligence/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,18 +49,17 @@ export default async function SalesIntelligencePage({
 
   const scope = await resolveSalesAccessScope(access, { includeRestricted });
 
-  // Advanced filters arrive as comma-separated codes (line uses its name as the code).
-  const parseList = (value: string | string[] | undefined): string[] =>
-    typeof value === "string" && value.trim()
-      ? value.split(",").map((part) => part.trim()).filter(Boolean)
-      : [];
-  const filters: SiFilters = {
-    regions: parseList(params.regions),
-    areas: parseList(params.areas),
-    lines: parseList(params.lines),
-    distributors: parseList(params.distributors),
-    products: parseList(params.products),
-    customers: parseList(params.customers),
+  // Advanced-filter toolbar (?distributor/region/area/line/productFilter). These NARROW within the
+  // already-resolved scope — they can only subtract, never widen. `productFilter` is distinct from
+  // the drill deep-link `?product=` so opening a product drill never doubles as a page filter.
+  const str = (value: string | string[] | undefined) =>
+    typeof value === "string" && value.trim() ? value : null;
+  const filters: SiDetailsFilters = {
+    distributorCode: str(params.distributor),
+    regionCode: str(params.region),
+    areaCode: str(params.area),
+    officialLine: str(params.line),
+    productCode: str(params.productFilter),
   };
 
   let bundle: SiDashboardBundle | null = null;

@@ -1,10 +1,12 @@
 "use client";
 
-import { AlertTriangle, Download, Loader2, Search } from "lucide-react";
+import { AlertTriangle, ChevronDown, Download, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { SiIncompleteBanner } from "@/components/sales/intelligence/si-incomplete-banner";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { SiCustomerInsights, SiDetailsBundle } from "@/lib/sales/intelligence/types";
 import type { SiExportTable } from "@/lib/sales/intelligence/export";
@@ -46,7 +48,7 @@ function SiExportButton({ includeRestricted, period, table }: { includeRestricte
   }
   return (
     <button
-      className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#6B8FB5] hover:text-[#1E3A5F] disabled:opacity-50"
+      className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
       disabled={busy}
       onClick={run}
       type="button"
@@ -67,7 +69,7 @@ function FilterableTable({ columns, rows }: { columns: Column[]; rows: Row[] }) 
       <div className="relative max-w-xs">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
         <input
-          className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none focus:border-[#6B8FB5]"
+          className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter rows…"
           type="text"
@@ -128,6 +130,106 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "areas", label: "Areas" },
   { key: "customers", label: "Customers" },
 ];
+
+function FilterSelect({
+  includeAll = true,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  includeAll?: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  options: { code: string; name: string }[];
+  value: string;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-[#64748B]">{label}</span>
+      <select
+        className="h-9 w-full border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {includeAll ? <option value="">All</option> : null}
+        {options.map((option) => (
+          <option key={option.code} value={option.code}>{option.name}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Compact, collapsed-by-default filter bar. Filtering is server-side: each change pushes a new URL
+// (?distributor/region/line/product/period) so the page re-populates every tab/table from the
+// already-loaded period scan — the raw rows never reach the browser.
+function DetailsFilterBar({ bundle }: { bundle: SiDetailsBundle }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const { access, appliedFilters, availablePeriods, filterOptions, period } = bundle;
+  const activeCount = [appliedFilters.distributorCode, appliedFilters.regionCode, appliedFilters.areaCode, appliedFilters.officialLine, appliedFilters.productCode].filter(Boolean).length;
+
+  const navigate = (next: {
+    period?: string | null;
+    distributor?: string | null;
+    region?: string | null;
+    area?: string | null;
+    line?: string | null;
+    product?: string | null;
+  }) => {
+    const params = new URLSearchParams();
+    const put = (key: string, value: string | null | undefined) => {
+      if (value) params.set(key, value);
+    };
+    put("period", next.period !== undefined ? next.period : period);
+    put("distributor", next.distributor !== undefined ? next.distributor : appliedFilters.distributorCode);
+    put("region", next.region !== undefined ? next.region : appliedFilters.regionCode);
+    put("area", next.area !== undefined ? next.area : appliedFilters.areaCode);
+    put("line", next.line !== undefined ? next.line : appliedFilters.officialLine);
+    put("product", next.product !== undefined ? next.product : appliedFilters.productCode);
+    if (access.restrictedIncluded) params.set("includeRestricted", "1");
+    router.push(`/sales-intelligence/details?${params.toString()}`);
+  };
+
+  return (
+    <div className="border border-[#E2E8F0] bg-white">
+      <button
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-[#0F172A] transition hover:bg-[#F8FAFC]"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <SlidersHorizontal className="h-4 w-4 text-[#F97316]" />
+        Filters
+        {activeCount > 0 ? (
+          <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#0B0B0B] px-1.5 text-[11px] font-black text-white">{activeCount}</span>
+        ) : (
+          <span className="text-[11px] font-bold normal-case text-[#94A3B8]">narrow every table by month, distributor, region, area, line or product</span>
+        )}
+        <ChevronDown className={cn("ml-auto h-4 w-4 text-[#94A3B8] transition", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="grid gap-3 border-t border-[#E2E8F0] p-4 sm:grid-cols-2 lg:grid-cols-6">
+          <FilterSelect includeAll={false} label="Month" onChange={(value) => navigate({ period: value })} options={availablePeriods.map((entry) => ({ code: entry, name: entry }))} value={period ?? ""} />
+          <FilterSelect label="Distributor" onChange={(value) => navigate({ distributor: value })} options={filterOptions.distributors} value={appliedFilters.distributorCode ?? ""} />
+          <FilterSelect label="Region" onChange={(value) => navigate({ region: value })} options={filterOptions.regions} value={appliedFilters.regionCode ?? ""} />
+          <FilterSelect label="Area" onChange={(value) => navigate({ area: value })} options={filterOptions.areas} value={appliedFilters.areaCode ?? ""} />
+          <FilterSelect label="Line" onChange={(value) => navigate({ line: value })} options={filterOptions.lines} value={appliedFilters.officialLine ?? ""} />
+          <FilterSelect label="Product" onChange={(value) => navigate({ product: value })} options={filterOptions.products} value={appliedFilters.productCode ?? ""} />
+          {activeCount > 0 ? (
+            <button
+              className="inline-flex h-9 items-center gap-1 self-end justify-self-start border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#64748B] transition hover:border-rose-300 hover:text-rose-600"
+              onClick={() => navigate({ area: null, distributor: null, line: null, product: null, region: null })}
+              type="button"
+            >
+              <X className="h-3.5 w-3.5" /> Clear filters
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function SalesDetailsPage({ bundle, error }: { bundle: SiDetailsBundle | null; error: string | null }) {
   if (error || !bundle) {
@@ -240,12 +342,23 @@ function DetailsInner({ bundle }: { bundle: SiDetailsBundle }) {
         title="Sales Details"
       />
 
+      <SiIncompleteBanner
+        basePath="/sales-intelligence/details"
+        includeRestricted={access.restrictedIncluded}
+        latestCompletePeriod={bundle.latestCompletePeriod}
+        newerPartial={bundle.newerPartial}
+        period={bundle.period}
+        selectedCompleteness={bundle.selectedCompleteness}
+      />
+
+      <DetailsFilterBar bundle={bundle} />
+
       <div className="flex flex-wrap gap-2 border border-[#E2E8F0] bg-white p-2">
         {TABS.map((entry) => (
           <button
             className={cn(
               "h-9 px-3 text-xs font-black transition",
-              tab === entry.key ? "bg-[#0B0B0B] text-white" : "bg-[#F8FAFC] text-[#0F172A] hover:bg-[#F1F5F9]",
+              tab === entry.key ? "bg-[#0B0B0B] text-white" : "bg-[#F8FAFC] text-[#0F172A] hover:bg-[#FFF7ED]",
             )}
             key={entry.key}
             onClick={() => setTab(entry.key)}

@@ -25,6 +25,7 @@ type ParetoPoint = {
   rank: number;
   name: string;
   distributorName: string;
+  brick: string;
   value: number;
   cumulativePct: number;
 };
@@ -40,9 +41,9 @@ function ParetoTooltip({ active, payload }: ParetoTooltipProps) {
   return (
     <div className="border border-slate-200 bg-white p-3 shadow-xl">
       <p className="text-xs font-black text-slate-900">{point.name}</p>
-      <p className="text-[11px] font-bold text-slate-500">{point.distributorName}</p>
+      <p className="text-[11px] font-bold text-slate-500">{point.brick} · {point.distributorName}</p>
       <p className="mt-1 text-[12px] font-black tabular-nums text-slate-900">{formatCurrency(point.value)}</p>
-      <p className="text-[10px] font-bold text-[#1E3A5F]">Top {point.rank} = {point.cumulativePct.toFixed(0)}% of customer value</p>
+      <p className="text-[10px] font-bold text-[#F97316]">Top {point.rank} = {point.cumulativePct.toFixed(0)}% of customer value</p>
     </div>
   );
 }
@@ -69,6 +70,7 @@ export function SiCustomerPareto({
         rank: index + 1,
         name: customer.name,
         distributorName: customer.distributorName,
+        brick: customer.brick,
         value: customer.value,
         cumulativePct,
       };
@@ -114,7 +116,7 @@ export function SiCustomerPareto({
                 <XAxis dataKey="rank" tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "#E2E8F0" }} />
                 <YAxis yAxisId="value" tickFormatter={compactEGP} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
                 <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: "#94A3B8", fontSize: 10 }} tickLine={false} axisLine={false} width={36} />
-                <Tooltip content={<ParetoTooltip />} cursor={{ fill: "rgba(30,58,95,0.07)" }} />
+                <Tooltip content={<ParetoTooltip />} cursor={{ fill: "rgba(249,115,22,0.07)" }} />
                 <ReferenceLine
                   label={{
                     value: eightyAt ? `Top ${eightyAt} = 80% of sales` : "80%",
@@ -128,7 +130,7 @@ export function SiCustomerPareto({
                   y={80}
                   yAxisId="pct"
                 />
-                <Bar yAxisId="value" dataKey="value" fill="#1E3A5F" radius={[2, 2, 0, 0]} maxBarSize={26} />
+                <Bar yAxisId="value" dataKey="value" fill="#F97316" radius={[2, 2, 0, 0]} maxBarSize={26} />
                 <Line yAxisId="pct" type="monotone" dataKey="cumulativePct" stroke="#0F172A" strokeWidth={2.5} dot={{ r: 2.5, fill: "#0F172A" }} />
               </ComposedChart>
             </SafeResponsiveContainer>
@@ -153,11 +155,12 @@ export function SiCustomerPareto({
 
             {/* Top-15 table — rank cells bind table to curve via the orange ramp. */}
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[480px] text-left text-sm">
+              <table className="w-full min-w-[560px] text-left text-sm">
                 <thead>
                   <tr>
                     <th className="px-2.5 py-2 text-xs font-black uppercase tracking-wide">#</th>
                     <th className="px-2.5 py-2 text-xs font-black uppercase tracking-wide">Customer</th>
+                    <th className="px-2.5 py-2 text-xs font-black uppercase tracking-wide">Brick</th>
                     <th className="px-2.5 py-2 text-xs font-black uppercase tracking-wide">Distributor</th>
                     <th className="px-2.5 py-2 text-right text-xs font-black uppercase tracking-wide">Value</th>
                     <th className="px-2.5 py-2 text-right text-xs font-black uppercase tracking-wide">Share</th>
@@ -168,11 +171,12 @@ export function SiCustomerPareto({
                     <tr key={`${customer.name}:${customer.distributorName}:${index}`}>
                       <td
                         className="w-10 px-2.5 py-2 text-center text-xs font-black tabular-nums text-[#0F172A]"
-                        style={index < 10 ? { backgroundColor: `rgba(30,58,95,${(0.32 - index * 0.03).toFixed(2)})` } : undefined}
+                        style={index < 10 ? { backgroundColor: `rgba(249,115,22,${(0.32 - index * 0.03).toFixed(2)})` } : undefined}
                       >
                         {index + 1}
                       </td>
                       <td className="px-2.5 py-2 font-bold text-[#0F172A]">{customer.name}</td>
+                      <td className="px-2.5 py-2 text-[#475569]">{customer.brick}</td>
                       <td className="px-2.5 py-2 text-[#64748B]">{customer.distributorName}</td>
                       <td className="px-2.5 py-2 text-right font-black tabular-nums text-[#0F172A]">{formatCurrency(customer.value)}</td>
                       <td className="px-2.5 py-2 text-right tabular-nums text-[#64748B]">{shareText(customer.share)}</td>

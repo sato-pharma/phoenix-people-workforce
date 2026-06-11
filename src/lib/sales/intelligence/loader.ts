@@ -117,7 +117,13 @@ export async function loadSiReference(): Promise<SiReference> {
   // The Direct channel carries no area; phx_si_distributor_product buckets it under 'DIRECT'.
   areaName.set("DIRECT", "Direct (company)");
   references.distributors.forEach((distributor) => {
-    if (distributor.code) distributorName.set(distributor.code, distributor.name || distributor.code);
+    if (!distributor.code) return;
+    const name = distributor.name || distributor.code;
+    distributorName.set(distributor.code, name);
+    // Import rows code the Direct channel "DIRECT" but the master stores "Direct" — add an
+    // upper-case alias so the lookup resolves a real name instead of leaking the bare code.
+    const upper = distributor.code.toUpperCase();
+    if (upper !== distributor.code && !distributorName.has(upper)) distributorName.set(upper, name);
   });
 
   if (!brickResult.error) {

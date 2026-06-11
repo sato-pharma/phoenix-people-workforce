@@ -31,16 +31,25 @@ export default async function SalesIntelligenceDetailsPage({
   }
 
   const params = await searchParams;
-  const requested = typeof params.period === "string" ? params.period : undefined;
+  const str = (value: string | string[] | undefined) =>
+    typeof value === "string" && value.trim() ? value : undefined;
+  const requested = str(params.period);
   const period = !requested || requested === "all" ? null : requested;
   const includeRestricted = params.includeRestricted === "1";
 
   const scope = await resolveSalesAccessScope(access, { includeRestricted });
+  const filters = {
+    distributorCode: str(params.distributor),
+    regionCode: str(params.region),
+    areaCode: str(params.area),
+    officialLine: str(params.line),
+    productCode: str(params.product),
+  };
 
   let bundle: SiDetailsBundle | null = null;
   let error: string | null = null;
   try {
-    bundle = await getSiDetailsBundle(period, scope);
+    bundle = await getSiDetailsBundle(period, scope, filters);
   } catch (caught) {
     console.error("[sales-intelligence/details] load failed:", caught);
     error = describeError(caught);

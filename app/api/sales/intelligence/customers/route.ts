@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  return handleSiRequest(request, (scope, period) => getSiCustomerInsights(period, scope));
+  return handleSiRequest(request, (scope, period, filters) => getSiCustomerInsights(period, scope, filters));
 }
