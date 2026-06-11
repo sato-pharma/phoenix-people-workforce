@@ -5,30 +5,13 @@ import { getAdminCommandCenterData, type AdminCommandCenterData } from "@/lib/ad
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listSalesPeriods, loadExecutiveReport, type ExecutiveReport } from "@/lib/sales/executive-report";
+import { shiftPeriod } from "@/lib/sales/periods";
 
 export const dynamic = "force-dynamic";
 // The Source-of-Sales aggregates scan the full month of fact rows server-side and can take
 // well over the platform's default function limit. Raise the ceiling so the page renders the
 // real report instead of being killed mid-load. (Vercel clamps to the plan's max.)
 export const maxDuration = 60;
-
-// Shift a YYYY-MM period back N months for the month-over-month (N=1) and year-over-year (N=12)
-// comparison columns. Returns null for anything that is not a clean YYYY-MM string.
-function shiftPeriod(period: string, monthsBack: number): string | null {
-  const match = /^(\d{4})-(\d{2})$/.exec(period);
-  if (!match) return null;
-  let year = Number(match[1]);
-  let month = Number(match[2]) - monthsBack;
-  while (month <= 0) {
-    month += 12;
-    year -= 1;
-  }
-  while (month > 12) {
-    month -= 12;
-    year += 1;
-  }
-  return `${year}-${String(month).padStart(2, "0")}`;
-}
 
 // A Supabase PostgrestError is a plain object (not an Error subclass), so `instanceof Error`
 // silently swallows its `message`/`details`/`hint`/`code`. Extract a human string from whatever

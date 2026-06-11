@@ -199,4 +199,69 @@ export function runSalesIntelligenceScopeTests() {
     /RESTRICTED_PRODUCT_CODES\s*=\s*\["LA003",\s*"LA004"\]/,
     "RESTRICTED_PRODUCT_CODES must remain exactly LA003 + LA004",
   );
+
+  // ── v2 RPC migration: every function must carry the full scope contract ─────────────
+  const v2Source = readFileSync(
+    new URL("../supabase/migrations/20260611142000_sales_intelligence_v2_rpcs.sql", import.meta.url),
+    "utf8",
+  );
+  const v2Functions = [
+    "phx_si_distributor_product",
+    "phx_si_brick",
+    "phx_si_customers",
+    "phx_si_period_totals",
+    "phx_si_daily",
+    "phx_si_customer_product",
+  ];
+  for (const fn of v2Functions) {
+    const bodyMatch = v2Source.match(
+      new RegExp(`create or replace function public\\.${fn}\\([\\s\\S]*?\\$\\$;`),
+    );
+    assert.ok(bodyMatch, `v2 migration must define ${fn}`);
+    const body = bodyMatch[0];
+    assert.match(body, /unnest\(p_exclude_codes\)/, `${fn} must exclude restricted products in SQL`);
+    assert.match(body, /cardinality\(p_lines\)/, `${fn} must accept line scope`);
+    assert.match(body, /cardinality\(p_regions\)/, `${fn} must accept region scope`);
+    assert.match(body, /security definer/, `${fn} must be security definer`);
+    assert.match(body, /statement_timeout/, `${fn} must carry its own statement timeout`);
+    assert.match(body, /b\.status = 'validated'/, `${fn} must only read validated batches`);
+    assert.match(
+      v2Source,
+      new RegExp(`revoke all on function public\\.${fn}\\([^)]*\\) from public, anon, authenticated`),
+      `${fn} must be revoked from anon/authenticated`,
+    );
+    assert.match(
+      v2Source,
+      new RegExp(`grant execute on function public\\.${fn}\\([^)]*\\) to service_role`),
+      `${fn} must be granted only to service_role`,
+    );
+  }
+  // The Direct-channel fix: stored value for is_direct rows + the 'DIRECT' area bucket.
+  assert.match(v2Source, /case when coalesce\(r\.is_direct, false\)/, "v2 must honor the Direct channel's stored value");
+  assert.match(v2Source, /coalesce\(nullif\(r\.area_code, ''\), 'DIRECT'\)/, "v2 must bucket Direct rows under the DIRECT area");
+  // The 28,877-pair customer×product grain must be fail-closed and LIMIT-clamped in SQL.
+  assert.match(
+    v2Source,
+    /cardinality\(p_product_codes\) > 0 or cardinality\(p_client_codes\) > 0/,
+    "customer×product must return nothing without an explicit drill filter",
+  );
+  assert.match(v2Source, /least\(coalesce\(p_limit, 100\), 500\)/, "customer×product must clamp its limit in SQL");
+  // Day grain must be month-bounded (null period scans nothing).
+  assert.match(v2Source, /p_period is not null/, "phx_si_daily must reject a null period");
+
+  // ── Anti-loop pin: the per-period trend scan must never return ──────────────────────
+  const serviceSource = readFileSync(
+    new URL("../src/lib/sales/intelligence/service.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /for\s*\(const trendPeriod of/,
+    "the O(months) per-period trend loop must stay dead — trend rides phx_si_period_totals",
+  );
+  assert.match(serviceSource, /loadSiPeriodTotals/, "dashboard trend must use the one-scan period totals");
+  // New loaders must flow through the single scope→args implementation.
+  assert.match(loaderSource, /export async function loadSiPeriodTotals[\s\S]*?buildSiRpcArgs/, "period totals must use buildSiRpcArgs");
+  assert.match(loaderSource, /export async function loadSiDaily[\s\S]*?buildSiRpcArgs/, "daily must use buildSiRpcArgs");
+  assert.match(loaderSource, /export async function loadSiCustomerProduct[\s\S]*?buildSiRpcArgs/, "customer×product must use buildSiRpcArgs");
 }
