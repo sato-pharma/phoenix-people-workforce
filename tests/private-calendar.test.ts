@@ -198,6 +198,8 @@ export function runPrivateCalendarTests() {
   assert.match(privateCalendarUiSource, /Manager Team Calendar/, "private calendar UI must include manager team calendar snapshot");
   assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
   assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
+  assert.doesNotMatch(privateCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_420px\]/, "private calendar must not narrow the month grid with a right-side timeline rail");
+  assert.match(privateCalendarUiSource, /grid gap-3 lg:grid-cols-2 2xl:grid-cols-3/, "private calendar timeline must render below the calendar as a responsive card grid");
 
   const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
   assert.match(adminPageSource, /viewMode: "team"/, "admin private calendars must default to team mode");

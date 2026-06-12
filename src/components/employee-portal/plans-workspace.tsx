@@ -221,6 +221,35 @@ function addDays(date: string, days: number) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function isDateInput(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function nextWeeklyPlanStart(referenceDate = today()) {
+  const currentWeekStart = buildEmployeePlanPeriod("weekly", referenceDate).periodStartDate;
+  return addDays(currentWeekStart, 7);
+}
+
+function defaultPlanAnchorDate(kind: EmployeePlanKind) {
+  return kind === "weekly" ? nextWeeklyPlanStart() : today();
+}
+
+function normalizeAnchorForKind(kind: EmployeePlanKind, value: string) {
+  if (!isDateInput(value)) return defaultPlanAnchorDate(kind);
+  const period = buildEmployeePlanPeriod(kind, value);
+  return kind === "weekly" ? period.periodStartDate : value;
+}
+
+function weeklyPlanWeekOptions(anchorDate: string) {
+  const starts = new Set<string>();
+  starts.add(buildEmployeePlanPeriod("weekly", anchorDate).periodStartDate);
+  const firstFutureWeek = nextWeeklyPlanStart();
+  for (let index = 0; index < 12; index += 1) {
+    starts.add(addDays(firstFutureWeek, index * 7));
+  }
+  return Array.from(starts).sort();
+}
+
 function dateRange(startDate: string, endDate: string) {
   const result: string[] = [];
   const cursor = new Date(`${startDate}T00:00:00Z`);
@@ -316,6 +345,26 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
   const days = dateRange(period.periodStartDate, period.periodEndDate);
   const selectedDays = kind === "monthly" ? days.filter(isDefaultWorkingDay) : days;
   return selectedDays.map((date, index) => createDraftRow(date, index));
+}
+
+function draftRowsFromPlan(plan: EmployeePlan): DraftItem[] {
+  return plan.items.map((item, index) => ({
+    activityDate: item.activityDate,
+    activityTitle: item.activityTitle,
+    activityType: item.activityType,
+    area: item.area ?? "",
+    attendees: item.attendees ?? "",
+    doubleVisitMedicalRepHrId: item.doubleVisitMedicalRepHrId ?? "",
+    doubleVisitMedicalRepName: item.doubleVisitMedicalRepName ?? "",
+    endTime: item.endTime ?? "",
+    key: item.id,
+    locationText: item.locationText ?? "",
+    notes: item.notes,
+    objective: item.objective ?? "",
+    returnNotes: item.returnNotes,
+    sortOrder: index,
+    startTime: item.startTime ?? "",
+  }));
 }
 
 function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): EmployeePlanItemInput[] {
@@ -428,10 +477,82 @@ function friendlyError(message: string): string {
   if (/Double Visit requires|Coaching requires|not available for this employee line|not assigned to the selected area|assigned same-line Medical Rep/i.test(text)) {
     return "Double Visit and Coaching need an assigned same-line Medical Rep from the selected area.";
   }
+  if (/position is not eligible to submit weekly\/monthly plans/i.test(text)) {
+    return "This account is not eligible to submit weekly/monthly plans. Check the signed-in HR ID, title, and plan permissions.";
+  }
+  if (/Direct manager is missing from employee profile/i.test(text)) {
+    return "Direct manager is missing from this employee profile. Add the manager before submitting the plan.";
+  }
   if (/^forbidden/i.test(text)) {
-    return "You do not have permission to perform this action.";
+    return text.replace(/^Forbidden:\s*/i, "") || "You do not have permission to perform this action.";
   }
   return text;
+}
+
+function PlanPeriodControl({
+  activeKind,
+  anchorDate,
+  disabled,
+  idPrefix,
+  onAnchorChange,
+}: {
+  activeKind: EmployeePlanKind;
+  anchorDate: string;
+  disabled: boolean;
+  idPrefix: string;
+  onAnchorChange: (value: string) => void;
+}) {
+  const period = buildEmployeePlanPeriod(activeKind, anchorDate);
+  const inputClass =
+    "h-10 w-full border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+
+  if (activeKind === "weekly") {
+    return (
+      <div className="w-full min-w-0 space-y-1.5 sm:w-72">
+        <label
+          className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500"
+          htmlFor={`${idPrefix}-plan-week`}
+        >
+          Plan week
+        </label>
+        <select
+          className={inputClass}
+          disabled={disabled}
+          id={`${idPrefix}-plan-week`}
+          onChange={(event) => onAnchorChange(event.target.value)}
+          value={period.periodStartDate}
+        >
+          {weeklyPlanWeekOptions(anchorDate).map((weekStart) => {
+            const optionPeriod = buildEmployeePlanPeriod("weekly", weekStart);
+            return (
+              <option key={weekStart} value={weekStart}>
+                {formatDate(optionPeriod.periodStartDate)} to {formatDate(optionPeriod.periodEndDate)} - {optionPeriod.periodKey}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full min-w-0 space-y-1.5 sm:w-72">
+      <label
+        className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500"
+        htmlFor={`${idPrefix}-plan-month`}
+      >
+        Plan month
+      </label>
+      <input
+        className={inputClass}
+        disabled={disabled}
+        id={`${idPrefix}-plan-month`}
+        onChange={(event) => onAnchorChange(event.target.value)}
+        type="date"
+        value={anchorDate}
+      />
+    </div>
+  );
 }
 
 export function PlansWorkspace({
@@ -440,11 +561,18 @@ export function PlansWorkspace({
   initialWorkspace,
   selectedPlanId,
 }: PlansWorkspaceProps) {
+  const initialSelectedPlan = selectedPlanId
+    ? initialWorkspace.plans.find((item) => item.id === selectedPlanId) ?? null
+    : null;
+  const initialKind = initialSelectedPlan?.planKind ?? "weekly";
+  const initialAnchorDate = initialSelectedPlan?.periodStartDate ?? defaultPlanAnchorDate(initialKind);
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [activeKind, setActiveKind] = useState<EmployeePlanKind>("weekly");
-  const [anchorDate, setAnchorDate] = useState(today());
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(selectedPlanId ?? null);
-  const [rows, setRows] = useState<DraftItem[]>(() => defaultRows("weekly", today()));
+  const [activeKind, setActiveKind] = useState<EmployeePlanKind>(initialKind);
+  const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(initialSelectedPlan?.id ?? null);
+  const [rows, setRows] = useState<DraftItem[]>(() =>
+    initialSelectedPlan ? draftRowsFromPlan(initialSelectedPlan) : defaultRows(initialKind, initialAnchorDate),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
@@ -508,6 +636,7 @@ export function PlansWorkspace({
       workspace.canAcknowledgeHr,
   );
   const canEdit = planCanEdit(plan) && workspace.canSubmitPlans;
+  const periodLocked = Boolean(plan);
   const dayGroups = useMemo(() => groupDraftRows(rows), [rows]);
   const dayGroupByDate = useMemo(
     () => new Map(dayGroups.map((group) => [group.activityDate, group])),
@@ -580,7 +709,8 @@ export function PlansWorkspace({
   }, [period.periodEndDate, period.periodStartDate, sameLineBookingScopeKey, workspace.currentEmployee?.hrId]);
 
   function resetRows(kind: EmployeePlanKind, date: string) {
-    setRows(defaultRows(kind, date));
+    const normalizedDate = normalizeAnchorForKind(kind, date);
+    setRows(defaultRows(kind, normalizedDate));
     setSheetKey(null);
   }
 
@@ -770,36 +900,30 @@ export function PlansWorkspace({
     setActiveKind(target.planKind);
     setAnchorDate(target.periodStartDate);
     setSheetKey(null);
-    setRows(
-      target.items.map((item, index) => ({
-        activityDate: item.activityDate,
-        activityTitle: item.activityTitle,
-        activityType: item.activityType,
-        area: item.area ?? "",
-        attendees: item.attendees ?? "",
-        doubleVisitMedicalRepHrId: item.doubleVisitMedicalRepHrId ?? "",
-        doubleVisitMedicalRepName: item.doubleVisitMedicalRepName ?? "",
-        endTime: item.endTime ?? "",
-        key: item.id,
-        locationText: item.locationText ?? "",
-        notes: item.notes,
-        objective: item.objective ?? "",
-        returnNotes: item.returnNotes,
-        sortOrder: index,
-        startTime: item.startTime ?? "",
-      })),
-    );
+    setRows(draftRowsFromPlan(target));
+  }
+
+  function startNewPlan(kind: EmployeePlanKind = activeKind) {
+    const nextAnchorDate = defaultPlanAnchorDate(kind);
+    setSelectedPlan(null);
+    setActiveKind(kind);
+    setAnchorDate(nextAnchorDate);
+    resetRows(kind, nextAnchorDate);
+    setMessage(null);
   }
 
   function onKindChange(kind: EmployeePlanKind) {
+    const nextAnchorDate = defaultPlanAnchorDate(kind);
     setActiveKind(kind);
     setSelectedPlan(null);
-    resetRows(kind, anchorDate);
+    setAnchorDate(nextAnchorDate);
+    resetRows(kind, nextAnchorDate);
   }
 
   function onAnchorChange(value: string) {
-    setAnchorDate(value);
-    resetRows(activeKind, value);
+    const nextAnchorDate = normalizeAnchorForKind(activeKind, value);
+    setAnchorDate(nextAnchorDate);
+    resetRows(activeKind, nextAnchorDate);
   }
 
   const validationWarning = noSameLineReps
@@ -846,6 +970,7 @@ export function PlansWorkspace({
             <ChoiceGroup
               aria-label="Plan type"
               className="grid-cols-2"
+              disabled={periodLocked || isPending || !workspace.canSubmitPlans}
               onChange={onKindChange}
               options={[
                 { label: "Weekly Plan", value: "weekly" },
@@ -856,12 +981,23 @@ export function PlansWorkspace({
           </div>
 
           <div className="mt-3 flex flex-col gap-2">
-            <input
-              className="h-11 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
-              onChange={(event) => onAnchorChange(event.target.value)}
-              type="date"
-              value={anchorDate}
+            <PlanPeriodControl
+              activeKind={activeKind}
+              anchorDate={anchorDate}
+              disabled={periodLocked || isPending || !workspace.canSubmitPlans}
+              idPrefix="mobile"
+              onAnchorChange={onAnchorChange}
             />
+            {periodLocked && workspace.canSubmitPlans ? (
+              <button
+                className="inline-flex h-10 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 active:bg-slate-50"
+                onClick={() => startNewPlan(activeKind)}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                New plan
+              </button>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <Link
                 aria-label="Open calendar"
@@ -885,6 +1021,10 @@ export function PlansWorkspace({
 
         {/* Info chips */}
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          <InfoChip
+            label="HR ID"
+            value={workspace.currentEmployee?.hrId ?? access.hrId ?? "Unknown"}
+          />
           <InfoChip
             label="Eligibility"
             value={workspace.canSubmitPlans ? "Can submit" : "Review only"}
@@ -1097,11 +1237,12 @@ export function PlansWorkspace({
             <div className="inline-flex w-full border border-slate-200 bg-slate-50 p-1 sm:w-auto">
               {(["weekly", "monthly"] as const).map((kind) => (
                 <button
-                  className={`min-h-10 flex-1 px-4 text-sm font-black transition-colors duration-150 sm:flex-none ${
+                  className={`min-h-10 flex-1 px-4 text-sm font-black transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
                     activeKind === kind
                       ? "bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]"
                       : "text-slate-700 hover:bg-white"
                   }`}
+                  disabled={periodLocked || isPending || !workspace.canSubmitPlans}
                   key={kind}
                   onClick={() => onKindChange(kind)}
                   type="button"
@@ -1111,19 +1252,26 @@ export function PlansWorkspace({
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor="plan-anchor-date">
-                Anchor date
-              </label>
-              <input
-                className="h-10 border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                id="plan-anchor-date"
-                onChange={(event) => onAnchorChange(event.target.value)}
-                type="date"
-                value={anchorDate}
+              <PlanPeriodControl
+                activeKind={activeKind}
+                anchorDate={anchorDate}
+                disabled={periodLocked || isPending || !workspace.canSubmitPlans}
+                idPrefix="desktop"
+                onAnchorChange={onAnchorChange}
               />
               <span className="border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700">
                 {period.periodKey}
               </span>
+              {periodLocked && workspace.canSubmitPlans ? (
+                <button
+                  className="inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                  onClick={() => startNewPlan(activeKind)}
+                  type="button"
+                >
+                  <Plus className="h-4 w-4" />
+                  New plan
+                </button>
+              ) : null}
               <Link
                 aria-label="Open calendar"
                 className="inline-flex h-10 items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100"
