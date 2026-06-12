@@ -109,6 +109,7 @@ export function SystemCleanupCenter({
   const [results, setResults] = useState<SystemCleanupActionResult[]>([]);
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [executeError, setExecuteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -122,7 +123,24 @@ export function SystemCleanupCenter({
       .map(recordTarget);
   }, [records, selected]);
   const previewSafeCount = preview.filter((record) => record.canDelete).length;
-  const executeDisabled = actionLoading || previewSafeCount === 0 || reason.trim().length < 10 || !confirmed;
+  const reasonIsValid = reason.trim().length >= 10;
+
+  function handleExecuteClick() {
+    if (previewSafeCount === 0) {
+      setExecuteError("There are no safe records in this preview.");
+      return;
+    }
+    if (!reasonIsValid) {
+      setExecuteError("Enter a cleanup reason with at least 10 characters.");
+      return;
+    }
+    if (!confirmed) {
+      setExecuteError("Check the confirmation box before deleting.");
+      return;
+    }
+    setExecuteError(null);
+    void postAction("execute", preview.filter((record) => record.canDelete).map(recordTarget));
+  }
 
   async function refresh(nextFilters = filters) {
     setLoading(true);
@@ -166,10 +184,12 @@ export function SystemCleanupCenter({
         setPreview(payload.previews as SystemCleanupPreviewResult[]);
         setResults([]);
         setConfirmed(false);
+        setExecuteError(null);
       } else {
         setResults(payload.results as SystemCleanupActionResult[]);
         setPreview([]);
         setConfirmed(false);
+        setExecuteError(null);
         setReason("");
         await refresh();
       }
@@ -479,7 +499,10 @@ export function SystemCleanupCenter({
                   Reason
                   <textarea
                     className="mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                    onChange={(event) => setReason(event.target.value)}
+                    onChange={(event) => {
+                      setReason(event.target.value);
+                      setExecuteError(null);
+                    }}
                     placeholder="Required reason"
                     value={reason}
                   />
@@ -488,15 +511,27 @@ export function SystemCleanupCenter({
                   <input
                     checked={confirmed}
                     className="mt-1 h-4 w-4 rounded border-slate-300"
-                    onChange={(event) => setConfirmed(event.target.checked)}
+                    onChange={(event) => {
+                      setConfirmed(event.target.checked);
+                      setExecuteError(null);
+                    }}
                     type="checkbox"
                   />
                   I confirm deletion for the safe records in this preview.
                 </label>
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                  Delete requires a safe preview, a reason of at least 10 characters, and confirmation.
+                </div>
+                {executeError ? (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{executeError}</span>
+                  </div>
+                ) : null}
                 <Button
                   className="mt-4 w-full gap-2"
-                  disabled={executeDisabled}
-                  onClick={() => void postAction("execute", preview.filter((record) => record.canDelete).map(recordTarget))}
+                  disabled={actionLoading}
+                  onClick={handleExecuteClick}
                   variant="destructive"
                 >
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
