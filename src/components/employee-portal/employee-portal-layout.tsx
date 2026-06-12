@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox } from "lucide-react";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -57,6 +57,7 @@ function navIconClass(active: boolean) {
 function isEmployeePortalNavItemActive(pathname: string, href: string) {
   const hrefPath = href.split("#")[0];
   if (hrefPath === "/employee-portals") return pathname === hrefPath;
+  if (hrefPath === "/employee-portals/plans") return pathname === hrefPath;
   if (hrefPath === "/employee-portals/training-manager") return pathname === hrefPath;
   if (hrefPath === "/employee-portals/marketing-requests") return pathname === hrefPath;
   return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
@@ -140,7 +141,8 @@ function buildEmployeePortalSections({
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
-        { href: "/employee-portals/calendar", label: "Calendar", icon: CalendarDays },
+        ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
+        { href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint },
         { href: "/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
       ],

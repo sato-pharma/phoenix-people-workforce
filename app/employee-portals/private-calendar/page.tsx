@@ -1,0 +1,56 @@
+import { redirect } from "next/navigation";
+
+import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
+import {
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+
+export const dynamic = "force-dynamic";
+
+export default async function EmployeePrivateCalendarPage() {
+  const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
+  if (resolveNavigationMode(access) !== "employee-portal") {
+    redirect("/overview");
+  }
+
+  const now = new Date();
+  let workspace = null;
+  try {
+    workspace = await getPrivateCalendarWorkspace({
+      access,
+      month: now.getUTCMonth() + 1,
+      year: now.getUTCFullYear(),
+    });
+  } catch (error) {
+    logPortalFailure(
+      { route: "/employee-portals/private-calendar", module: "private_calendar", role: access.role, hrId: access.hrId },
+      error,
+    );
+    workspace = null;
+  }
+
+  return (
+    <EmployeePortalPageShell
+      badge="Private Calendar"
+      description="Attendance, approved vacations, approved excuses, plans, and national vacations for the selected employee."
+      title="Private Calendar"
+    >
+      {workspace ? (
+        <PrivateCalendar initialWorkspace={workspace} />
+      ) : (
+        <EmployeePortalEmptyState
+          message="We could not load the private calendar right now. Please refresh in a moment."
+          title="Private Calendar Unavailable"
+        />
+      )}
+    </EmployeePortalPageShell>
+  );
+}
