@@ -23,6 +23,7 @@ import {
 } from "@/lib/i18n/format";
 import type {
   ExpenseAnalysisResult,
+  ExpenseAnalysisValidation,
   ExpenseTripRecord,
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
@@ -64,7 +65,10 @@ const expenseTemplateHeaders = [
   "PM Workload",
   "Status",
   "Comments",
-];
+] as const;
+
+type ExpenseTemplateHeader = (typeof expenseTemplateHeaders)[number];
+type ExpenseTemplateRow = Record<ExpenseTemplateHeader, Date | string | number>;
 
 function expenseTemplateComment(record: ExpenseTripRecord, hrApprovalState: { hrComment: string; hrApproved: boolean }) {
   return [record.hrNotes, hrApprovalState.hrComment]
@@ -75,6 +79,119 @@ function expenseTemplateComment(record: ExpenseTripRecord, hrApprovalState: { hr
 function escapeForExcel(value: unknown) {
   const textValue = String(value ?? "");
   return /^[=+\-@]/.test(textValue) ? `'${textValue}` : textValue;
+}
+
+type ExpenseReviewColumnKey = keyof ExpenseTripRecord | "validation";
+
+const expenseCurrencyKeys = new Set<ExpenseReviewColumnKey>([
+  "allowance",
+  "meetingAmount",
+  "otherAmount",
+  "total",
+  "travelCost",
+]);
+
+const expenseNumericKeys = new Set<ExpenseReviewColumnKey>([
+  "amWorkload",
+  "km",
+  "pmWorkload",
+  "row",
+]);
+
+const expenseDateKeys = new Set<ExpenseReviewColumnKey>(["date", "toDate"]);
+
+const expenseReviewColumns: Array<{
+  className?: string;
+  key: ExpenseReviewColumnKey;
+  label: string;
+}> = [
+  { className: "min-w-[130px]", key: "validation", label: "Validation" },
+  { className: "min-w-[90px]", key: "row", label: "Source Row" },
+  { className: "min-w-[130px]", key: "tripId", label: "Trip ID" },
+  { className: "min-w-[180px]", key: "specialist", label: "Employee" },
+  { className: "min-w-[120px]", key: "hrId", label: "HR ID" },
+  { className: "min-w-[140px]", key: "requestType", label: "Expense Type" },
+  { className: "min-w-[150px]", key: "tripType", label: "Travel Stay Type" },
+  { className: "min-w-[150px]", key: "date", label: "Start Date" },
+  { className: "min-w-[150px]", key: "toDate", label: "End Date" },
+  { className: "min-w-[240px]", key: "from", label: "From" },
+  { className: "min-w-[180px]", key: "to", label: "To" },
+  { className: "min-w-[280px]", key: "location", label: "Destination" },
+  { className: "min-w-[150px]", key: "transportationType", label: "Transported By" },
+  { className: "min-w-[100px]", key: "km", label: "KM" },
+  { className: "min-w-[130px]", key: "travelCost", label: "Travel Cost" },
+  { className: "min-w-[140px]", key: "meetingAmount", label: "Meeting Amount" },
+  { className: "min-w-[120px]", key: "allowance", label: "Allowance" },
+  { className: "min-w-[120px]", key: "total", label: "Total" },
+  { className: "min-w-[120px]", key: "amWorkload", label: "AM Workload" },
+  { className: "min-w-[120px]", key: "pmWorkload", label: "PM Workload" },
+  { className: "min-w-[300px]", key: "description", label: "Description" },
+  { className: "min-w-[160px]", key: "status", label: "Status" },
+  { className: "min-w-[160px]", key: "hr", label: "HR Status" },
+  { className: "min-w-[300px]", key: "hrNotes", label: "HR Notes" },
+  { className: "min-w-[120px]", key: "open", label: "Open" },
+];
+
+function expenseRecordIssues(record: ExpenseTripRecord) {
+  const issues: string[] = [];
+  const calculatedTotal = record.travelCost + record.meetingAmount + record.allowance;
+
+  if (!record.hrId) issues.push("Missing HR ID");
+  if (!record.date) issues.push("Missing date");
+  if (!record.to && !record.location) issues.push("Missing destination");
+  if (record.total <= 0) issues.push("Zero total");
+  if (record.total > 0 && Math.abs(record.total - calculatedTotal) > 1) issues.push("Total mismatch");
+
+  return issues;
+}
+
+function expenseColumnRawValue(record: ExpenseTripRecord, key: ExpenseReviewColumnKey) {
+  if (key === "validation") {
+    const issues = expenseRecordIssues(record);
+    return issues.length > 0 ? issues.join(", ") : "Ready";
+  }
+
+  return record[key] ?? "";
+}
+
+function expenseColumnDisplayValue(record: ExpenseTripRecord, key: ExpenseReviewColumnKey) {
+  if (key === "validation") return expenseColumnRawValue(record, key);
+  if (expenseDateKeys.has(key)) return formatPayrollDate(String(record[key] ?? ""));
+  if (expenseCurrencyKeys.has(key)) return formatEGP(Number(record[key] ?? 0));
+  if (expenseNumericKeys.has(key)) return formatNumber(Number(record[key] ?? 0));
+
+  return String(record[key] ?? "") || "-";
+}
+
+function buildExpenseValidation(records: ExpenseTripRecord[], warnings: string[] = []): ExpenseAnalysisValidation {
+  const missingHrIdRows = records.filter((record) => !record.hrId).length;
+  const missingTripDateRows = records.filter((record) => !record.date).length;
+  const missingDestinationRows = records.filter((record) => !record.to && !record.location).length;
+  const zeroTotalRows = records.filter((record) => record.total <= 0).length;
+  const totalMismatchRows = records.filter((record) =>
+    record.total > 0 && Math.abs(record.total - (record.travelCost + record.meetingAmount + record.allowance)) > 1,
+  ).length;
+  const payrollReadyRows = records.filter((record) =>
+    record.hrId && record.date && (record.to || record.location) && record.total > 0,
+  ).length;
+  const errors = records.length === 0 ? ["No expense rows were detected."] : [];
+
+  return {
+    errors,
+    invalidRows: records.length - payrollReadyRows,
+    missingDestinationRows,
+    missingHrIdRows,
+    missingRequiredColumns: [],
+    missingTripDateRows,
+    payrollReadyRows,
+    recognizedColumns: 0,
+    requiredColumns: 0,
+    status: errors.length > 0 ? "failed" : warnings.length > 0 || payrollReadyRows < records.length ? "warning" : "passed",
+    totalMismatchRows,
+    totalRows: records.length,
+    warnings,
+    zeroTotalRows,
+  };
 }
 
 function ExpenseErrorBanner({
@@ -91,16 +208,6 @@ function ExpenseErrorBanner({
       </div>
     </AdminCallout>
   );
-}
-
-function expenseColumnValue(record: ExpenseTripRecord, key: string) {
-  if (key === "hrId") return record.hrId ?? "";
-
-  const value = record[key as keyof ExpenseTripRecord];
-
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
-  return "";
 }
 
 export function buildExpenseAnalysis(fileName: string, records: ExpenseTripRecord[]): ExpenseAnalysisResult {
@@ -150,6 +257,7 @@ export function buildExpenseAnalysis(fileName: string, records: ExpenseTripRecor
       totalTravelCost: records.reduce((sum, record) => sum + record.travelCost, 0),
       trips: records.length,
     },
+    validation: buildExpenseValidation(records),
     warnings: [],
   };
 }
@@ -213,20 +321,6 @@ export function ExpenseReport({
       }
     );
   };
-  const columns = [
-    { asc: "specialist-asc", desc: "specialist-desc", key: "specialist", label: "Specialist" },
-    { asc: "hrId-asc", desc: "hrId-desc", key: "hrId", label: "HR ID" },
-    { asc: "date-asc", desc: "date-desc", key: "date", label: "Date" },
-    { asc: "tripId-asc", desc: "tripId-desc", key: "tripId", label: "Trip ID" },
-    { asc: "from-asc", desc: "from-desc", key: "from", label: "From" },
-    { asc: "to-asc", desc: "to-desc", key: "to", label: "To" },
-    { asc: "transportationType-asc", desc: "transportationType-desc", key: "transportationType", label: "Transport" },
-    { asc: "travelCost-asc", desc: "travelCost-desc", key: "travelCost", label: "Travel" },
-    { asc: "meetingAmount-asc", desc: "meetingAmount-desc", key: "meetingAmount", label: "Meeting" },
-    { asc: "allowance-asc", desc: "allowance-desc", key: "allowance", label: "Allowance" },
-    { asc: "total-asc", desc: "total-desc", key: "total", label: "Total" },
-    { asc: "status-asc", desc: "status-desc", key: "status", label: "Status" },
-  ];
   const records = useMemo(() => {
     const query = search.trim().toLowerCase();
     const fromDate = tripDateFrom ? new Date(`${tripDateFrom}T00:00:00`) : null;
@@ -252,8 +346,7 @@ export function ExpenseReport({
       const matchesSearch = !query || haystack.includes(query);
       const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
         const filter = value.trim().toLowerCase();
-        const columnValue =
-          key === "hrId" ? record.hrId ?? "" : expenseColumnValue(record, key);
+        const columnValue = String(expenseColumnRawValue(record, key as ExpenseReviewColumnKey));
 
         return !filter || columnValue.toLowerCase().includes(filter);
       });
@@ -263,22 +356,25 @@ export function ExpenseReport({
 
     return filtered.slice().sort((left, right) => {
       const [key, direction] = sort.split("-");
-      const leftValue =
-        key === "hrId" ? left.hrId ?? "" : expenseColumnValue(left, key);
-      const rightValue =
-        key === "hrId" ? right.hrId ?? "" : expenseColumnValue(right, key);
-      const numericKeys = new Set(["travelCost", "meetingAmount", "allowance", "total"]);
-      const recordKey = key;
+      const columnKey = key as ExpenseReviewColumnKey;
+      const leftValue = expenseColumnRawValue(left, columnKey);
+      const rightValue = expenseColumnRawValue(right, columnKey);
 
-      if (numericKeys.has(key)) {
-        const leftNumber = Number(left[recordKey as keyof ExpenseTripRecord] ?? 0);
-        const rightNumber = Number(right[recordKey as keyof ExpenseTripRecord] ?? 0);
+      if (expenseCurrencyKeys.has(columnKey) || expenseNumericKeys.has(columnKey)) {
+        const leftNumber = Number(leftValue ?? 0);
+        const rightNumber = Number(rightValue ?? 0);
         return direction === "desc" ? rightNumber - leftNumber : leftNumber - rightNumber;
       }
 
+      if (expenseDateKeys.has(columnKey)) {
+        const leftTime = leftValue ? new Date(String(leftValue)).getTime() : 0;
+        const rightTime = rightValue ? new Date(String(rightValue)).getTime() : 0;
+        return direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
+      }
+
       return direction === "desc"
-        ? rightValue.localeCompare(leftValue)
-        : leftValue.localeCompare(rightValue);
+        ? String(rightValue).localeCompare(String(leftValue))
+        : String(leftValue).localeCompare(String(rightValue));
     });
   }, [analysis?.records, columnFilters, search, sort, tripDateFrom, tripDateTo]);
 
@@ -287,6 +383,7 @@ export function ExpenseReport({
   const unmappedRecords = (analysis?.records ?? []).filter((record) => !record.hrId);
   const missingTripDateRecords = (analysis?.records ?? []).filter((record) => !record.date);
   const filteredTotal = records.reduce((sum, record) => sum + record.total, 0);
+  const validation = analysis?.validation ?? buildExpenseValidation(analysis?.records ?? []);
   const expenseFilterCount =
     (search.trim() ? 1 : 0) +
     (tripDateFrom ? 1 : 0) +
@@ -316,7 +413,12 @@ export function ExpenseReport({
       const ExcelJS = (await import("exceljs")).default;
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Outstation expenses");
-      const title = `Outstation expenses · ${records.length} trip(s)`;
+
+      workbook.creator = "Phoenix Workforce";
+      workbook.created = new Date();
+      sheet.properties.defaultRowHeight = 22;
+      sheet.views = [{ state: "frozen", ySplit: 2 }];
+      const title = `Outstation expenses - ${records.length} trip(s)`;
 
       sheet.mergeCells(1, 1, 1, expenseTemplateHeaders.length);
       sheet.getCell("A1").value = title;
@@ -338,19 +440,29 @@ export function ExpenseReport({
       }));
 
       const headerRow = sheet.getRow(2);
-      headerRow.values = expenseTemplateHeaders;
-      headerRow.font = { bold: true };
+      headerRow.values = [...expenseTemplateHeaders];
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1F2937" },
+      };
       headerRow.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      headerRow.height = 28;
+      sheet.autoFilter = {
+        from: { column: 1, row: 2 },
+        to: { column: expenseTemplateHeaders.length, row: 2 },
+      };
 
-      const rows = records.map((record) => {
+      const rows: ExpenseTemplateRow[] = records.map((record): ExpenseTemplateRow => {
         const approvalState = approvalFor(record);
         return {
           "TripID": record.tripId,
           "Employee": escapeForExcel(record.specialist),
           "HR ID": record.hrId ?? "",
           "Role": escapeForExcel(record.requestType),
-          "Start Date": record.date || "",
-          "End Date": record.toDate || "",
+          "Start Date": record.date ? new Date(record.date) : "",
+          "End Date": record.toDate ? new Date(record.toDate) : "",
           "Expense Type": escapeForExcel(record.requestType),
           "Transported By": escapeForExcel(record.transportationType),
           "Travel Stay Type": escapeForExcel(record.tripType),
@@ -368,8 +480,51 @@ export function ExpenseReport({
         };
       });
 
-      const rowValues = rows.map((row) => expenseTemplateHeaders.map((header) => row[header]));
+      const rowValues = rows.map((row) => [
+        row.TripID,
+        row.Employee,
+        row["HR ID"],
+        row.Role,
+        row["Start Date"],
+        row["End Date"],
+        row["Expense Type"],
+        row["Transported By"],
+        row["Travel Stay Type"],
+        row.To,
+        row.Destination,
+        row.KM,
+        row["Travel Cost (auto)"],
+        row["Meeting Amount"],
+        row.Allowance,
+        row.Total,
+        row["AM Workload"],
+        row["PM Workload"],
+        row.Status,
+        row.Comments,
+      ]);
       sheet.addRows(rowValues);
+      [5, 6].forEach((columnNumber) => {
+        sheet.getColumn(columnNumber).numFmt = "yyyy-mm-dd";
+      });
+      [12, 13, 14, 15, 16, 17, 18].forEach((columnNumber) => {
+        sheet.getColumn(columnNumber).numFmt = "#,##0.00";
+      });
+      sheet.eachRow((row, rowNumber) => {
+        row.height = rowNumber === 1 ? 30 : rowNumber === 2 ? 28 : 22;
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.alignment = {
+            horizontal: rowNumber <= 2 ? "center" : "left",
+            vertical: "middle",
+            wrapText: rowNumber > 1,
+          };
+          cell.border = {
+            bottom: { color: { argb: "FFE5E7EB" }, style: "thin" },
+            left: { color: { argb: "FFE5E7EB" }, style: "thin" },
+            right: { color: { argb: "FFE5E7EB" }, style: "thin" },
+            top: { color: { argb: "FFE5E7EB" }, style: "thin" },
+          };
+        });
+      });
       const output = await workbook.xlsx.writeBuffer();
       const blob = new Blob([output], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -542,7 +697,7 @@ export function ExpenseReport({
 
       {analysis ? (
         <div className="space-y-5">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             {[
               { label: "Trips", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.trips) },
               { label: "Specialists", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.specialists) },
@@ -557,6 +712,51 @@ export function ExpenseReport({
               </div>
             ))}
           </div>
+
+          <AdminCallout
+            tone={validation.status === "failed" ? "danger" : validation.status === "warning" ? "warning" : "success"}
+          >
+            {validation.status === "passed" ? (
+              <FileCheck2 className="mt-0.5 h-5 w-5 shrink-0" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold">
+                  Validation {validation.status === "passed" ? "passed" : validation.status === "failed" ? "failed" : "has warnings"}
+                </p>
+                <Badge variant={validation.status === "passed" ? "success" : validation.status === "failed" ? "danger" : "warning"}>
+                  {formatNumber(validation.payrollReadyRows)} payroll-ready / {formatNumber(validation.totalRows)} rows
+                </Badge>
+              </div>
+              <div className="mt-3 grid gap-2 text-xs md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  ["Template columns", `${formatNumber(validation.recognizedColumns)} / ${formatNumber(validation.requiredColumns)}`],
+                  ["Missing HR ID", formatNumber(validation.missingHrIdRows)],
+                  ["Missing dates", formatNumber(validation.missingTripDateRows)],
+                  ["Missing destination", formatNumber(validation.missingDestinationRows)],
+                  ["Zero totals", formatNumber(validation.zeroTotalRows)],
+                  ["Total mismatches", formatNumber(validation.totalMismatchRows)],
+                ].map(([label, value]) => (
+                  <div className="rounded-lg border border-current/10 bg-white/65 px-3 py-2" key={label}>
+                    <p className="font-bold uppercase tracking-[0.12em] opacity-70">{label}</p>
+                    <p className="mt-1 font-mono text-sm font-semibold">{value}</p>
+                  </div>
+                ))}
+              </div>
+              {validation.missingRequiredColumns.length > 0 ? (
+                <p className="mt-3 text-xs leading-5">
+                  Missing template columns: {validation.missingRequiredColumns.join(", ")}
+                </p>
+              ) : null}
+              {(validation.errors.length > 0 || validation.warnings.length > 0) ? (
+                <p className="mt-2 text-xs leading-5">
+                  {[...validation.errors, ...validation.warnings].slice(0, 4).join(" ")}
+                </p>
+              ) : null}
+            </div>
+          </AdminCallout>
 
           <div className="flex flex-wrap items-center gap-2 rounded-[28px] border border-[#D8E0EA] bg-white/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
             <div className="mr-2">
@@ -585,7 +785,7 @@ export function ExpenseReport({
                 </option>
               ))}
             </select>
-            <Button disabled={!analysis || importingToPayroll} onClick={importToPayroll}>
+            <Button disabled={!analysis || importingToPayroll || validation.invalidRows > 0} onClick={importToPayroll}>
               {importingToPayroll ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -594,7 +794,7 @@ export function ExpenseReport({
               Import to Payroll
             </Button>
             <p className="text-xs text-text-secondary">
-              Import uses only approvals already saved by HR/admin, not unsaved switches on this screen.
+              Import requires all rows to pass validation and uses only approvals already saved by HR/admin.
             </p>
           </div>
 
@@ -632,12 +832,12 @@ export function ExpenseReport({
 
           <div>
             <div className="min-w-0">
-              <div className="overflow-x-auto rounded-[28px] border border-[#E2E8F0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
-                <table className="w-full min-w-[1420px] text-left text-sm">
+              <div className="overflow-x-scroll rounded-[28px] border border-[#E2E8F0] bg-white pb-2 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+                <table className="w-full min-w-[4100px] table-fixed text-left text-sm">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
-                      {columns.map((column) => (
-                        <th className="sticky top-0 z-10 px-3 py-3 font-semibold" key={column.key}>
+                      {expenseReviewColumns.map((column) => (
+                        <th className={cn("sticky top-0 z-10 px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
                           <TableHeaderMenu
                             filterValue={columnFilters[column.key] ?? ""}
                             label={column.label}
@@ -647,8 +847,8 @@ export function ExpenseReport({
                                 [column.key]: value,
                               }))
                             }
-                            onSortAsc={() => setSort(column.asc)}
-                            onSortDesc={() => setSort(column.desc)}
+                            onSortAsc={() => setSort(`${column.key}-asc`)}
+                            onSortDesc={() => setSort(`${column.key}-desc`)}
                           />
                         </th>
                       ))}
@@ -663,29 +863,59 @@ export function ExpenseReport({
                   <tbody className="divide-y divide-slate-100">
                     {records.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={columns.length + 2}>
+                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={expenseReviewColumns.length + 2}>
                           No expenses match the current filters.
                         </td>
                       </tr>
                     ) : (
-                      records.slice(0, 250).map((record) => (
+                      records.slice(0, 250).map((record) => {
+                        const issues = expenseRecordIssues(record);
+
+                        return (
                         <tr className="transition-colors hover:bg-[#FFF7ED]/65" key={`${record.tripId}-${record.row}`}>
-                          <td className="px-3 py-3 font-medium text-text">{record.specialist}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">
-                            {record.hrId ? record.hrId : (
-                              <Badge variant="warning">Not mapped</Badge>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-text-secondary">{formatPayrollDate(record.date)}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{record.tripId}</td>
-                          <td className="px-3 py-3 text-text-secondary">{record.from || "-"}</td>
-                          <td className="px-3 py-3 text-text-secondary">{record.to || "-"}</td>
-                          <td className="px-3 py-3 text-text-secondary">{record.transportationType || "-"}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.travelCost)}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.meetingAmount)}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-text-secondary">{formatEGP(record.allowance)}</td>
-                          <td className="px-3 py-3 font-mono font-semibold text-text">{formatEGP(record.total)}</td>
-                          <td className="px-3 py-3 text-text-secondary">{record.status || "-"}</td>
+                          {expenseReviewColumns.map((column) => {
+                            const rawValue = expenseColumnRawValue(record, column.key);
+                            const displayValue = expenseColumnDisplayValue(record, column.key);
+                            const isMoney = expenseCurrencyKeys.has(column.key);
+                            const isNumeric = expenseNumericKeys.has(column.key);
+                            const isLongText = ["description", "from", "hrNotes", "location"].includes(column.key);
+
+                            if (column.key === "validation") {
+                              return (
+                                <td className={cn("px-3 py-3 align-top", column.className)} key={column.key}>
+                                  <Badge variant={issues.length > 0 ? "warning" : "success"}>
+                                    {issues.length > 0 ? issues.join(", ") : "Ready"}
+                                  </Badge>
+                                </td>
+                              );
+                            }
+
+                            if (column.key === "hrId") {
+                              return (
+                                <td className={cn("px-3 py-3 align-top font-mono text-xs text-text-secondary", column.className)} key={column.key}>
+                                  {record.hrId ? record.hrId : (
+                                    <Badge variant="warning">Not mapped</Badge>
+                                  )}
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                className={cn(
+                                  "px-3 py-3 align-top text-text-secondary",
+                                  column.className,
+                                  (isMoney || isNumeric) && "text-right font-mono text-xs",
+                                  column.key === "total" && "font-semibold text-text",
+                                  isLongText && "whitespace-normal break-words leading-5",
+                                )}
+                                key={column.key}
+                                title={String(rawValue ?? "")}
+                              >
+                                {displayValue}
+                              </td>
+                            );
+                          })}
                           <td className="px-3 py-3">
                             <Switch
                               checked={approvalFor(record).hrApproved}
@@ -718,7 +948,8 @@ export function ExpenseReport({
                             />
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
