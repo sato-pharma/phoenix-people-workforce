@@ -122,6 +122,29 @@ const OVERSEAS_POS_WEEKLY_MATRIX: WeeklyTemplate = {
   required: ["weekStart", "salesQty", "productCode"],
 };
 
+const OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL: WeeklyTemplate = {
+  key: "overseas_pos_weekly_matrix_no_total",
+  name: "Overseas weekly POS matrix (legacy no Total Qty)",
+  layout: "overseasPosMatrix",
+  distributorCodes: ["PS"],
+  sheetNameIncludes: "Data",
+  fields: {
+    weekStart: ["Date"],
+    itemCode: ["Mat. Code"],
+    itemName: ["Mat. Desc."],
+    branchCode: [],
+    branchName: [],
+    stockQty: [],
+    salesQty: [],
+    bonusQty: [],
+    discount: [],
+    regionCode: [],
+    productCode: ["Product ID", "Item Code"],
+    distributorId: [],
+  },
+  required: ["itemCode", "productCode"],
+};
+
 const WEEKLY_DISTRIBUTOR_FALLBACK_NAMES: Record<string, string> = {
   IS: "Ibn Sina",
   "IS-S": "Ibn Sina Sato",
@@ -133,6 +156,7 @@ export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [
   IBN_SINA_WEEKLY_PAS_VARIANT,
   IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE,
   OVERSEAS_POS_WEEKLY_MATRIX,
+  OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL,
 ];
 
 export function weeklyTemplatesForDistributor(distributorCode: string): WeeklyTemplate[] {
