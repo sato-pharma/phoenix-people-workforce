@@ -7,7 +7,10 @@ import {
   safeSendNotificationEmail,
   type EmailNotificationType,
   type EmailRecipientMode,
+  type NotificationEmailIdentityGuard,
+  type NotificationEmailIdentitySource,
   type NotificationEmailInput,
+  validateNotificationEmailIdentity,
 } from "@/lib/notifications/email";
 import {
   resolveNotificationPolicy,
@@ -113,6 +116,20 @@ const criticalWorkflowModules = new Set([
   "leave",
 ]);
 const systemAnnouncementEvents = new Set(["announcement", "system_announcement"]);
+const employeeSubjectWorkflowModules = new Set([
+  "contract_renewal",
+  "deductions",
+  "excuse",
+  "excuses",
+  "leave",
+  "marketing_requests",
+  "outstation",
+  "probation",
+  "resignations",
+  "support_requests",
+  "vacation",
+  "weekly_plans",
+]);
 
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
@@ -120,6 +137,88 @@ function cleanText(value: string | null | undefined) {
 
 function cleanHrId(value: string | null | undefined) {
   return cleanText(value).toUpperCase();
+}
+
+function metadataHrId(metadata: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata?.[key];
+    if (typeof value !== "string") continue;
+    const hrId = cleanHrId(value);
+    if (hrId) return hrId;
+  }
+  return "";
+}
+
+function employeeMetricHrId(metrics: NotificationEmailInput["metrics"]) {
+  const employee = metrics?.find((metric) => metric.label.trim().toLowerCase() === "employee");
+  const match = String(employee?.value ?? "").match(/\(([^)]+)\)\s*$/);
+  return cleanHrId(match?.[1]);
+}
+
+function emailSubjectIdentityRequired(input: CreateSystemNotificationInput, hasSubjectCandidate: boolean) {
+  if (hasSubjectCandidate) return true;
+  return employeeSubjectWorkflowModules.has(cleanText(input.module).toLowerCase());
+}
+
+function resolvedEmailIdentity(input: CreateSystemNotificationInput, recipient: RecipientProfile): {
+  employeeHrId: string | undefined;
+  error: string | null;
+  guard: NotificationEmailIdentityGuard;
+  source: NotificationEmailIdentitySource | null;
+  status: "failed" | "not_required" | "verified";
+} {
+  const rawCandidates: Array<{ hrId: string; source: NotificationEmailIdentitySource }> = [
+    { hrId: cleanHrId(input.email?.employeeHrId), source: "email.employeeHrId" },
+    { hrId: cleanHrId(input.subjectHrId), source: "subjectHrId" },
+    { hrId: metadataHrId(input.metadata, ["employeeHrId"]), source: "metadata.employeeHrId" },
+    { hrId: metadataHrId(input.metadata, ["subjectHrId"]), source: "metadata.subjectHrId" },
+    { hrId: metadataHrId(input.metadata, ["requestOwnerHrId"]), source: "metadata.requestOwnerHrId" },
+    { hrId: employeeMetricHrId(input.email?.metrics), source: "metrics.Employee" },
+  ];
+  const candidates = rawCandidates.filter((candidate) => candidate.hrId);
+  const required = emailSubjectIdentityRequired(input, candidates.length > 0);
+  const guard: NotificationEmailIdentityGuard = required ? "subject_required" : "none";
+  const unique = Array.from(new Set(candidates.map((candidate) => candidate.hrId)));
+
+  if (unique.length > 1) {
+    return {
+      employeeHrId: unique[0],
+      error: `Conflicting subject HR IDs were provided for email identity: ${unique.join(", ")}.`,
+      guard,
+      source: candidates[0]?.source ?? null,
+      status: "failed",
+    };
+  }
+
+  const subjectHrId = unique[0] ?? "";
+  if (required && !subjectHrId) {
+    return {
+      employeeHrId: undefined,
+      error: "Subject employee HR ID is missing for an official workflow email.",
+      guard,
+      source: null,
+      status: "failed",
+    };
+  }
+
+  if (!subjectHrId && input.metadata?.identityScope === "self") {
+    const recipientHrId = cleanHrId(recipient.hrId);
+    return {
+      employeeHrId: recipientHrId || undefined,
+      error: null,
+      guard: recipientHrId ? "self" : "none",
+      source: recipientHrId ? "recipient.self" : null,
+      status: recipientHrId ? "verified" : "not_required",
+    };
+  }
+
+  return {
+    employeeHrId: subjectHrId || undefined,
+    error: null,
+    guard,
+    source: candidates[0]?.source ?? null,
+    status: subjectHrId ? "verified" : "not_required",
+  };
 }
 
 function schemaMissing(error: unknown, table: string) {
@@ -676,7 +775,10 @@ export async function processDeferredDeliveryRetries(limit = 10) {
     recipient_hr_id?: string | null;
     recipient_user_id?: string | null;
   }>) {
-    const emailInput = row.metadata?.emailInput as NotificationEmailInput | undefined;
+    const storedEmailInput = row.metadata?.emailInput as NotificationEmailInput | undefined;
+    const emailInput = storedEmailInput
+      ? { ...storedEmailInput, recipientHrId: storedEmailInput.recipientHrId ?? row.recipient_hr_id ?? null }
+      : undefined;
     if (!emailInput) {
       // No stored payload (legacy deferred row) — close it terminally so it never loops.
       await supabase
@@ -711,6 +813,26 @@ export async function processDeferredDeliveryRetries(limit = 10) {
     }
 
     attempted += 1;
+    const identity = validateNotificationEmailIdentity(emailInput);
+    if (!identity.ok) {
+      await supabase
+        .from("notification_deliveries")
+        .update({
+          last_error: identity.reason,
+          metadata: { ...(row.metadata ?? {}), emailIdentity: identity.metadata },
+          next_attempt_at: null,
+          status: "skipped",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      Sentry.captureMessage("Deferred email delivery blocked by identity guard", {
+        level: "error",
+        tags: { component: "email", cron: "deferred-drain" },
+        extra: { id: row.id, ...identity.metadata },
+      });
+      skipped += 1;
+      continue;
+    }
     const result = await safeSendNotificationEmail(emailInput);
     if (!result.skipped) {
       await supabase
@@ -1060,11 +1182,15 @@ async function buildChannelEmailInput(
   resolvedPriority: string,
 ): Promise<NotificationEmailInput> {
   const emailContent = await renderChannelContent(input, "email");
+  const identity = resolvedEmailIdentity(input, recipient);
   return {
     ctaHref: input.actionUrl ?? input.email?.ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
-    employeeHrId: input.email?.employeeHrId ?? input.subjectHrId ?? recipient.hrId ?? undefined,
+    employeeHrId: identity.employeeHrId,
     includeHrInbox: input.email?.includeHrInbox,
+    identityError: identity.error,
+    identityGuard: identity.guard,
+    identityStatus: identity.status,
     metrics: input.email?.metrics,
     module: input.module,
     notificationType: input.email?.notificationType ?? notificationTypeFor(input.module),
@@ -1073,11 +1199,13 @@ async function buildChannelEmailInput(
     // The notification recipient's own name, so templated greetings address the person
     // receiving the email rather than the employee the notification is about.
     recipientName: input.email?.recipientName ?? recipient.name ?? undefined,
+    recipientHrId: recipient.hrId ?? undefined,
     recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
     recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
     subject: input.email?.subject ?? emailContent.title,
     summary: input.email?.summary ?? emailContent.message,
     // Lets a domain pin the exact /admin/email-templates key that frames this event.
+    subjectHrIdSource: identity.source,
     templateKey: input.email?.templateKey,
     title: input.email?.title ?? emailContent.title,
     tone: input.email?.tone ?? (resolvedPriority === "critical" ? "danger" : "neutral"),
@@ -1155,7 +1283,24 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
       // drained — the notification was silently lost.
       const deferredMetadata: Record<string, unknown> = { quietHours: true };
       if (channel === "email" && preferences.email_enabled) {
-        deferredMetadata.emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
+        const emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
+        const identity = validateNotificationEmailIdentity(emailInput);
+        deferredMetadata.emailIdentity = identity.metadata;
+        if (!identity.ok) {
+          await upsertDelivery({
+            channel,
+            eventId,
+            idempotencyKey,
+            lastError: identity.reason,
+            metadata: deferredMetadata,
+            recipient,
+            status: "skipped",
+          });
+          await audit("delivery skipped", input, eventId, { channel, emailIdentity: identity.metadata, error: identity.reason, reason: "email_identity_guard" });
+          deliveries.push({ channel, idempotencyKey, reason: identity.reason, status: "skipped" });
+          continue;
+        }
+        deferredMetadata.emailInput = emailInput;
       }
       if (channel === "telegram") {
         // Mirror the live branch: a broken saved template must degrade to a skipped
@@ -1206,6 +1351,23 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
       }
 
       const emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
+      const identity = validateNotificationEmailIdentity(emailInput);
+      if (!identity.ok) {
+        await upsertDelivery({
+          channel,
+          eventId,
+          idempotencyKey,
+          lastError: identity.reason,
+          metadata: { emailIdentity: identity.metadata },
+          provider: "email",
+          recipient,
+          recipientAddress: recipient.email,
+          status: "skipped",
+        });
+        await audit("delivery skipped", input, eventId, { channel, emailIdentity: identity.metadata, error: identity.reason, reason: "email_identity_guard" });
+        deliveries.push({ channel, idempotencyKey, reason: identity.reason, status: "skipped" });
+        continue;
+      }
       const result = await safeSendNotificationEmail(emailInput);
       const status = result.skipped ? "failed" : "sent";
       const error = result.skipped ? result.reason : undefined;
@@ -1214,6 +1376,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         eventId,
         idempotencyKey,
         lastError: error ?? null,
+        metadata: { emailIdentity: identity.metadata },
         provider: "email",
         providerMessageId: result.skipped ? null : result.id,
         recipient,

@@ -16,6 +16,10 @@ function assertNotContains(text: string, pattern: RegExp, message: string) {
 export function runNotificationGovernanceHardeningTests() {
   const policySource = source("src/lib/notifications/policy.ts");
   const systemSource = source("src/lib/notifications/system.ts");
+  const emailSource = source("src/lib/notifications/email.ts");
+  const auditScriptSource = source("scripts/audit-notification-email-identity.ts");
+  const outstationSource = source("src/lib/outstation/service.ts");
+  const vacationSource = source("src/lib/vacation/service.ts");
   const accessRegistrySource = source("src/lib/security/access-registry.ts");
 
   assertContains(
@@ -40,8 +44,78 @@ export function runNotificationGovernanceHardeningTests() {
   );
   assertContains(
     systemSource,
-    /employeeHrId:\s*input\.email\?\.employeeHrId\s*\?\?\s*input\.subjectHrId\s*\?\?\s*recipient\.hrId/,
-    "email payloads must use the subject employee HR ID before falling back to the notification recipient HR ID",
+    /resolvedEmailIdentity\(input,\s*recipient\)/,
+    "email payloads must resolve subject identity through the centralized identity contract",
+  );
+  assertContains(
+    systemSource,
+    /employeeHrId:\s*identity\.employeeHrId/,
+    "email payloads must use the resolved subject employee HR ID",
+  );
+  assertContains(
+    systemSource,
+    /source:\s*"email\.employeeHrId"[\s\S]*source:\s*"subjectHrId"[\s\S]*source:\s*"metadata\.employeeHrId"[\s\S]*source:\s*"metadata\.subjectHrId"[\s\S]*source:\s*"metadata\.requestOwnerHrId"[\s\S]*source:\s*"metrics\.Employee"/,
+    "email payload HR ID precedence must be explicit email subject, notification subject, metadata subject, then Employee metric",
+  );
+  assertContains(
+    systemSource,
+    /validateNotificationEmailIdentity\(emailInput\)/,
+    "system notification email sends and deferred drains must validate identity before delivery",
+  );
+  assertContains(
+    systemSource,
+    /deferredMetadata\.emailIdentity = identity\.metadata[\s\S]*status:\s*"skipped"/,
+    "quiet-hours deferral must skip unsafe email identity instead of persisting a bad emailInput",
+  );
+  assertContains(
+    emailSource,
+    /export function validateNotificationEmailIdentity/,
+    "email layer must expose a reusable identity validator for immediate sends, outbox retry, and audits",
+  );
+  assertContains(
+    emailSource,
+    /employee HR ID \$\{employeeHrId\} conflicts with Employee metric HR ID/,
+    "email identity validator must catch historical recipient/subject HR ID mismatches using the Employee metric",
+  );
+  assertContains(
+    emailSource,
+    /markNotificationOutboxSkipped\(claimed,\s*identity\.reason,\s*"unsafe_identity"\)/,
+    "unsafe queued email payloads must be terminally skipped before retry delivery",
+  );
+  assertContains(
+    auditScriptSource,
+    /notification_outbox/,
+    "production audit must inspect notification_outbox payloads",
+  );
+  assertContains(
+    auditScriptSource,
+    /notification_deliveries/,
+    "production audit must inspect deferred delivery emailInput payloads",
+  );
+  assertContains(
+    auditScriptSource,
+    /notification_events/,
+    "production audit must inspect notification event metadata",
+  );
+  assertContains(
+    auditScriptSource,
+    /--allow-production-readonly/,
+    "production audit must require an explicit read-only production flag",
+  );
+  assertContains(
+    auditScriptSource,
+    /ozucdzovmcqvepbozvqf/,
+    "production audit must refuse non-Phoenix-production Supabase targets",
+  );
+  assertContains(
+    outstationSource,
+    /subjectHrId:\s*r\.employeeHrId/,
+    "outstation approval fan-out must explicitly carry the submitting employee as subject",
+  );
+  assertContains(
+    vacationSource,
+    /subjectHrId:\s*input\.request\.employeeHrId/,
+    "vacation approval fan-out must explicitly carry the requesting employee as subject",
   );
   assertNotContains(
     systemSource,
