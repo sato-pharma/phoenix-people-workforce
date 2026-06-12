@@ -136,12 +136,16 @@ export type WeeklyDashboard = {
   weekStart: string | null;
   priorWeekStart: string | null;
   availableWeeks: string[];
+  availableLines: string[];
   distributors: WeeklyDistributorOption[];
   appliedFilters: {
     weekStart: string | null;
+    weekStarts: string[];
+    allWeeks: boolean;
     distributorCode: string | null;
     regionCode: string | null;
     productCode: string | null;
+    lineCode: string | null;
   };
   kpis: {
     salesValue: number;

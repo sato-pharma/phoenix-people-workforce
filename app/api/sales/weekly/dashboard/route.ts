@@ -15,13 +15,23 @@ export async function GET(request: Request) {
     await assertPermission(access, "weekly_sales", "read");
 
     const params = new URL(request.url).searchParams;
+    const parseList = (key: string) =>
+      params
+        .getAll(key)
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter(Boolean);
     const str = (key: string) => {
       const value = params.get(key);
       return value && value.trim() ? value.trim() : null;
     };
+    const allWeeks = ["1", "true", "yes", "all"].includes((params.get("allWeeks") ?? "").toLowerCase());
     const accessScope = await resolveWeeklyAccessScope(access);
     const data = await loadWeeklyDashboard({
+      weekStarts: parseList("week"),
+      allWeeks,
       weekStart: str("week"),
+      line: str("line"),
       distributorCode: str("distributor"),
       regionCode: str("region"),
       productCode: str("product"),
