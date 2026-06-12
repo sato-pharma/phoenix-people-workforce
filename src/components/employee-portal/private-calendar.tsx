@@ -538,7 +538,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
       {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-5">
         <section className="border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
             {weekdays.map((weekday) => (
@@ -610,43 +610,47 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           </div>
         </section>
 
-        <aside className="border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-              <CalendarDays className="h-4 w-4" />
-              Daily Timeline
+        <section className="border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                <CalendarDays className="h-4 w-4" />
+                Daily Timeline
+              </div>
+              <h3 className="mt-2 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
-            <h3 className="mt-2 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
-            <p className="mt-1 text-sm font-semibold text-slate-500">
+            <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
               {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} / {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
-            </p>
+            </span>
           </div>
-          <div className="max-h-[720px] overflow-y-auto p-4">
+          <div className="grid gap-5 p-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             {selectedExceptions.length > 0 ? (
-              <section className="mb-5">
+              <section>
                 <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-700">
                   <AlertTriangle className="h-4 w-4" />
                   Exception Warnings
                 </div>
-                <div className="space-y-2">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                   {selectedExceptions.map((exception) => <ExceptionItem exception={exception} key={exception.id} />)}
                 </div>
               </section>
             ) : null}
 
-            {timelineItems.length === 0 ? (
-              <div className="border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">
-                No private calendar items for this day.
-              </div>
-            ) : (
-              <div className="relative space-y-3 border-l-2 border-slate-200 pl-4">
-                {timelineItems.map((item) => (
-                  <TimelineItem item={item} key={item.id} viewMode={viewMode} />
-                ))}
-              </div>
-            )}
+            <section className={selectedExceptions.length > 0 ? "min-w-0" : "min-w-0 xl:col-span-2"}>
+              {timelineItems.length === 0 ? (
+                <div className="border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">
+                  No private calendar items for this day.
+                </div>
+              ) : (
+                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                  {timelineItems.map((item) => (
+                    <TimelineItem item={item} key={item.id} viewMode={viewMode} />
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
-        </aside>
+        </section>
       </div>
     </div>
   );
@@ -733,8 +737,7 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
 
 function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
   return (
-    <article className={["relative border p-3", sourceTone(item.source, item.severity)].join(" ")}>
-      <span className="absolute -left-[23px] top-4 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-current" />
+    <article className={["border p-3", sourceTone(item.source, item.severity)].join(" ")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
