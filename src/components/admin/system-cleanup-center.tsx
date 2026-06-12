@@ -123,15 +123,10 @@ export function SystemCleanupCenter({
       .map(recordTarget);
   }, [records, selected]);
   const previewSafeCount = preview.filter((record) => record.canDelete).length;
-  const reasonIsValid = reason.trim().length >= 10;
 
   function handleExecuteClick() {
     if (previewSafeCount === 0) {
       setExecuteError("There are no safe records in this preview.");
-      return;
-    }
-    if (!reasonIsValid) {
-      setExecuteError("Enter a cleanup reason with at least 10 characters.");
       return;
     }
     if (!confirmed) {
@@ -496,14 +491,14 @@ export function SystemCleanupCenter({
               </div>
               <div className="rounded-lg border border-slate-200 p-4">
                 <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                  Reason
+                  Cleanup note (optional)
                   <textarea
                     className="mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     onChange={(event) => {
                       setReason(event.target.value);
                       setExecuteError(null);
                     }}
-                    placeholder="Required reason"
+                    placeholder="Optional note"
                     value={reason}
                   />
                 </label>
@@ -520,7 +515,7 @@ export function SystemCleanupCenter({
                   I confirm deletion for the safe records in this preview.
                 </label>
                 <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                  Delete requires a safe preview, a reason of at least 10 characters, and confirmation.
+                  Delete requires a safe preview and confirmation.
                 </div>
                 {executeError ? (
                   <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
