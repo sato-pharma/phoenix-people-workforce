@@ -95,6 +95,7 @@ const expenseHeaderAliases = {
     "Expense Type",
   ],
   columnLocation: ["Location", "Destination", "Destination Name"],
+  columnComments: ["Comments", "Comment", "Notes"],
 };
 
 const expenseHeaderAliasSet = new Set(
@@ -104,7 +105,7 @@ const expenseHeaderAliasSet = new Set(
 type ExpenseTemplateDefinition = {
   key: string;
   name: string;
-  requiredColumns: string[];
+  requiredColumns: Array<keyof typeof expenseHeaderAliases>;
   sheetNames: string[];
 };
 
@@ -113,20 +114,22 @@ const expenseTemplateDefinitions: ExpenseTemplateDefinition[] = [
     key: "phoenix-outstation-expenses-v1",
     name: "Phoenix Outstation Expenses",
     requiredColumns: [
-      "tripid",
-      "employee",
-      "hrid",
-      "startdate",
-      "enddate",
-      "to",
-      "km",
-      "travelcost",
-      "meetingamount",
-      "allowance",
-      "total",
-      "amworkload",
-      "pmworkload",
-      "status",
+      "columnTripId",
+      "columnSpecialist",
+      "columnDate",
+      "columnToDate",
+      "columnRequestType",
+      "columnTransportation",
+      "columnTripType",
+      "columnTo",
+      "columnTravelCost",
+      "columnMeeting",
+      "columnAllowance",
+      "columnTotal",
+      "columnKm",
+      "columnAmWorkload",
+      "columnPmWorkload",
+      "columnStatus",
     ],
     sheetNames: ["outstationexpenses", "outstation expenses"],
   },
@@ -141,6 +144,7 @@ function detectExpenseTemplate(
   const templateFileHint = normalizeHeaderName(fileName);
   const sheetHint = normalizeHeaderName(sheetName);
   const outstationHint = templateFileHint.includes("outstation");
+  const historicalUploadHint = templateFileHint.includes("historical") && templateFileHint.includes("expense");
 
   let bestMatch = {
     recognized: false,
@@ -151,14 +155,17 @@ function detectExpenseTemplate(
 
   for (const template of expenseTemplateDefinitions) {
     const sheetMatch = template.sheetNames.some((name) => normalizeHeaderName(name) === sheetHint);
-    const requiredMatchCount = template.requiredColumns.filter((column) =>
-      normalizedSet.has(normalizeHeaderName(column)),
-    ).length;
+    const requiredMatchCount = template.requiredColumns.filter((column) => {
+      const aliases = expenseHeaderAliases[column];
+      return aliases.some((alias) => normalizedSet.has(normalizeHeaderName(alias)));
+    }).length;
     const score = requiredMatchCount + (sheetMatch ? 2 : 0);
 
     if (score > bestMatch.score) {
       bestMatch = {
-        recognized: score >= 10 || (sheetMatch && score >= 8) || (outstationHint && score >= 8),
+        recognized:
+          score >= 13 || (sheetMatch && score >= 11) || (outstationHint && score >= 11) ||
+          (historicalUploadHint && score >= 12),
         key: template.key,
         name: template.name,
         score,
@@ -495,6 +502,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
     const expectedFrom = text(rowValueByAlias(...expenseHeaderAliases.columnFrom));
     const residenceFrom = resolveFromFromEmployeeMaps(employeeMaps, hrId, specialist);
     const resolvedFrom = expectedFrom || residenceFrom;
+    const comments = text(rowValueByAlias(...expenseHeaderAliases.columnComments));
 
     if (template.recognized && !expectedFrom && !residenceFrom && specialist !== "Unassigned") {
       warnings.push(`Row ${rowNumber} / ${tripId}: '${specialist}' has no From column and no residence match in employee records.`);
@@ -521,7 +529,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       hrId,
       from: resolvedFrom,
       hr: text(rowValueByAlias(...expenseHeaderAliases.columnHr)),
-      hrNotes: text(rowValueByAlias(...expenseHeaderAliases.columnHr, ...expenseHeaderAliases.columnRecommendation)),
+      hrNotes: comments || text(rowValueByAlias(...expenseHeaderAliases.columnHr, ...expenseHeaderAliases.columnRecommendation)),
       km: numberValue(rowValueByAlias(...expenseHeaderAliases.columnKm)),
       location: text(rowValueByAlias(...expenseHeaderAliases.columnLocation)),
       meetingAmount,

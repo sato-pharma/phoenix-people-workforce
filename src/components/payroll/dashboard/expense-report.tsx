@@ -43,6 +43,40 @@ function formatPayrollDate(value: string | null | undefined) {
   return formatDateValue(value);
 }
 
+const expenseTemplateHeaders = [
+  "TripID",
+  "Employee",
+  "HR ID",
+  "Role",
+  "Start Date",
+  "End Date",
+  "Expense Type",
+  "Transported By",
+  "Travel Stay Type",
+  "To",
+  "Destination",
+  "KM",
+  "Travel Cost (auto)",
+  "Meeting Amount",
+  "Allowance",
+  "Total",
+  "AM Workload",
+  "PM Workload",
+  "Status",
+  "Comments",
+];
+
+function expenseTemplateComment(record: ExpenseTripRecord, hrApprovalState: { hrComment: string; hrApproved: boolean }) {
+  return [record.hrNotes, hrApprovalState.hrComment]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function escapeForExcel(value: unknown) {
+  const textValue = String(value ?? "");
+  return /^[=+\-@]/.test(textValue) ? `'${textValue}` : textValue;
+}
+
 function ExpenseErrorBanner({
   message,
 }: {
@@ -278,47 +312,75 @@ export function ExpenseReport({
   }
 
   function downloadFilteredExpenses() {
-    const headers = [
-      "Specialist",
-      "HR ID",
-      "Date",
-      "Trip ID",
-      "From",
-      "To",
-      "Transport",
-      "Travel",
-      "Meeting",
-      "Allowance",
-      "Total",
-      "Status",
-      "HR/Admin Approved",
-      "Comment",
-    ];
-    const escapeCsv = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const rows = records.map((record) => [
-      record.specialist,
-      record.hrId ?? "",
-      formatPayrollDate(record.date),
-      record.tripId,
-      record.from,
-      record.to,
-      record.transportationType,
-      record.travelCost,
-      record.meetingAmount,
-      record.allowance,
-      record.total,
-      record.status,
-      approvalFor(record).hrApproved ? "Approved" : "",
-      approvalFor(record).hrComment,
-    ]);
-    const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `outstation-expenses-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    void (async () => {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Outstation expenses");
+      const title = `Outstation expenses · ${records.length} trip(s)`;
+
+      sheet.mergeCells(1, 1, 1, expenseTemplateHeaders.length);
+      sheet.getCell("A1").value = title;
+      sheet.getCell("A1").alignment = {
+        horizontal: "left",
+        vertical: "middle",
+      };
+      sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" } };
+      sheet.getCell("A1").fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF0F172A" },
+      };
+
+      sheet.columns = expenseTemplateHeaders.map((header, index) => ({
+        header,
+        key: header,
+        width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 24, 30][index],
+      }));
+
+      const headerRow = sheet.getRow(2);
+      headerRow.values = expenseTemplateHeaders;
+      headerRow.font = { bold: true };
+      headerRow.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+
+      const rows = records.map((record) => {
+        const approvalState = approvalFor(record);
+        return {
+          "TripID": record.tripId,
+          "Employee": escapeForExcel(record.specialist),
+          "HR ID": record.hrId ?? "",
+          "Role": escapeForExcel(record.requestType),
+          "Start Date": record.date || "",
+          "End Date": record.toDate || "",
+          "Expense Type": escapeForExcel(record.requestType),
+          "Transported By": escapeForExcel(record.transportationType),
+          "Travel Stay Type": escapeForExcel(record.tripType),
+          "To": escapeForExcel(record.to),
+          "Destination": escapeForExcel(record.location || record.to),
+          "KM": record.km,
+          "Travel Cost (auto)": record.travelCost,
+          "Meeting Amount": record.meetingAmount,
+          "Allowance": record.allowance,
+          "Total": record.total,
+          "AM Workload": record.amWorkload,
+          "PM Workload": record.pmWorkload,
+          "Status": escapeForExcel(record.status),
+          "Comments": escapeForExcel(expenseTemplateComment(record, approvalState)),
+        };
+      });
+
+      const rowValues = rows.map((row) => expenseTemplateHeaders.map((header) => row[header]));
+      sheet.addRows(rowValues);
+      const output = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([output], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `phoenix-outstation-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    })();
   }
 
   return (
