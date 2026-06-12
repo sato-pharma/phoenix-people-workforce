@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     }
     if (body?.action === "send_invitations") {
       // `force` (re-emails already-connected users / bypasses the unconnected filter) is
-      // a Super-Admin-only escalation; HR Specialist with communication:update cannot use it.
+      // a Super-Admin-only escalation; broad HR/recruitment roles cannot use it.
       const isSuperAdmin = access.role === "Super Admin";
       const summary = await runTelegramOnboardingCampaign({
         access,

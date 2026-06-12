@@ -2,7 +2,7 @@
 //
 // Pure helpers (computeRequiredApprovers, evaluateChainState, canCastOfferApproval)
 // plus thin data-access helpers over the `offer_approval_steps` table. The chain is
-// threshold based: HR Specialist + Finance Manager (roles) + the requisition's hiring
+// threshold based: HR Manager/Super Admin + Finance Manager (roles) + the requisition's hiring
 // manager (person) are always required; CEO is added above the per-position cap.
 //
 // Authority is enforced data-drivenly (canCastOfferApproval) — the permission matrix
@@ -47,8 +47,8 @@ export type ApprovalStepRow = {
 // when net salary exceeds the per-position cap. Sequence is for display order only.
 //
 // Governance: the "HR Manager" approval is reserved for Super Admin (Admin-HR) and the
-// HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role. HR Specialist
-// (incl. the designated A-16) must NOT approve offers.
+// HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role. The retired
+// HR access role and A-16 must NOT approve offers.
 export function computeRequiredApprovers(input: {
   netSalary: number | null;
   hiringManagerHrId: string | null;

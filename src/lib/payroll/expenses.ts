@@ -52,7 +52,6 @@ export type PayrollExpenseDashboardData = {
 
 const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "Super Admin",
-  "HR Specialist",
   "Finance Manager",
   "CEO",
 ]);

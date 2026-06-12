@@ -8,7 +8,7 @@ function source(path: string) {
 export function runExpenseRiskHardeningTests() {
   const adminAccess = source("src/lib/outstation/admin-access.ts");
   assert.match(adminAccess, /"Super Admin"/);
-  assert.match(adminAccess, /"HR Specialist"/);
+  assert.doesNotMatch(adminAccess, /"HR Specialist"/);
   assert.match(adminAccess, /"Finance Manager"/);
   assert.match(adminAccess, /"CEO"/);
   assert.match(adminAccess, /assertPermission\(access,\s*"outstation",\s*action\)/);
@@ -16,11 +16,10 @@ export function runExpenseRiskHardeningTests() {
   const permissions = source("src/lib/auth/permissions.ts");
   // Governance: HR Specialist (incl. designated A-16) must NOT have `approve` on any
   // resource — approval authority is reserved for Super Admin (Admin-HR) + HR Manager B-10.
-  assert.match(permissions, /"HR Specialist": \{[\s\S]*expenses: \["read", "update", "delete", "export"\]/);
-  assert.match(permissions, /"HR Specialist": \{[\s\S]*outstation: \["read", "update", "delete", "export"\]/);
-  const hrSpecialistBlock = permissions.match(/"HR Specialist": \{[\s\S]*?\n {2}\},/);
-  assert.ok(hrSpecialistBlock, "HR Specialist permission block must be present");
-  assert.doesNotMatch(hrSpecialistBlock[0], /"approve"/, "HR Specialist must not be granted the approve action on any resource");
+  assert.doesNotMatch(permissions, /"HR Specialist": \{/);
+  const talentAcquisitionBlock = permissions.match(/"Talent Acquisition": \{[\s\S]*?\n {2}\},/);
+  assert.ok(talentAcquisitionBlock, "Talent Acquisition permission block must be present");
+  assert.doesNotMatch(talentAcquisitionBlock[0], /expenses|outstation|"approve"/);
 
   const adminOutstationSources = [
     "app/api/admin/outstation/requests/route.ts",
@@ -46,7 +45,7 @@ export function runExpenseRiskHardeningTests() {
   assert.match(payrollExpenses, /row\.imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/);
   assert.match(payrollExpenses, /lockedExpenses: Number\(result\.locked_expenses \?\? 0\)/);
   assert.match(payrollExpenses, /manualPayrollExpenseApproverRoles/);
-  assert.match(payrollExpenses, /"HR Specialist"/);
+  assert.doesNotMatch(payrollExpenses, /"HR Specialist"/);
   assert.match(payrollExpenses, /assertManualPayrollExpenseApprovalAccess\(accessContext\)/);
   assert.match(payrollExpenses, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
   assert.match(payrollExpenses, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "add_to_payroll"/);

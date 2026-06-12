@@ -71,7 +71,7 @@ function configuredRoutes() {
 }
 
 function roleForHref(href) {
-  if (href === "/payslips") return "HR Specialist";
+  if (href === "/payslips") return "Employee";
   if (href.startsWith("/employee-portals/training-manager")) return "Training Manager";
   if (href.startsWith("/employee-portals/expense-dashboard")) return "Training Manager";
   if (href.startsWith("/employee-portals/submit-expense")) return "District Manager";

@@ -254,7 +254,7 @@ export async function runAuthSessionTests() {
   assert.match(appSessionsSource, /revoked_reason:\s*reason/, "logout must persist a revocation reason");
   assert.match(
     appSessionsSource,
-    /"Super Admin"[\s\S]*"CEO"[\s\S]*"Finance Manager"[\s\S]*"HR Specialist"[\s\S]*"SFE Manager"[\s\S]*"National Sales Manager"/,
+    /"Super Admin"[\s\S]*"CEO"[\s\S]*"Finance Manager"[\s\S]*"SFE Manager"[\s\S]*"National Sales Manager"/,
     "privileged bridge enforcement must cover all specified roles",
   );
   assert.match(appSessionsSource, /shouldBlockLoginWhenSupabaseBridgeUnavailable/, "privileged bridge strictness must be environment-aware");

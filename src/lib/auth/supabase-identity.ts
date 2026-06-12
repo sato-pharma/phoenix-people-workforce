@@ -4,8 +4,8 @@ import { getSupabaseAdmin, getSupabaseAuthBridgeClient } from "@/lib/supabase/se
 export const phoenixSupabaseAccessTokenCookieName = "phoenix_supabase_access_token";
 export const phoenixSupabaseRefreshTokenCookieName = "phoenix_supabase_refresh_token";
 
-type CoarseAccessRole = "company_reader" | "employee" | "finance" | "hr" | "manager" | "super_admin";
-type AccessScopeType = "COMPANY_READ" | "FINANCE" | "HIERARCHY" | "HR" | "LINE" | "SELF" | "SUPER_ADMIN" | "TEAM";
+type CoarseAccessRole = "company_reader" | "employee" | "finance" | "manager" | "super_admin";
+type AccessScopeType = "COMPANY_READ" | "FINANCE" | "HIERARCHY" | "LINE" | "SELF" | "SUPER_ADMIN" | "TEAM";
 
 export type SupabaseAuthIdentity = {
   authEmail: string;
@@ -50,8 +50,6 @@ export function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole): CoarseAcces
       return "company_reader";
     case "Finance Manager":
       return "finance";
-    case "HR Specialist":
-      return "hr";
     case "District Manager":
     case "Regional Manager":
     case "National Sales Manager":
@@ -75,8 +73,6 @@ export function mapPhoenixRoleToAccessScopeType(role: PhoenixRole): AccessScopeT
       return "COMPANY_READ";
     case "Finance Manager":
       return "FINANCE";
-    case "HR Specialist":
-      return "HR";
     case "District Manager":
     case "Manager":
       return "TEAM";

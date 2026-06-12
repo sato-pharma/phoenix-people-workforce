@@ -1158,7 +1158,7 @@ type OutstationNotifyRecipient = { hrId: string; name: string; role: "direct_man
 
 // Resolve who must act when an expense/outstation request is submitted: the
 // submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
-// manager). The designated HR Specialist (A-16) is intentionally excluded — it has no
+// manager). A-16 is intentionally excluded because it has no
 // outstation "approve" authority, so an "approval needed" alert there is a dead end.
 // Best-effort: a missing manager or a failed approver lookup is logged and skipped,
 // never thrown — notifications must not block a submit.
@@ -1187,7 +1187,7 @@ async function resolveOutstationApprovalRecipients(
     else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
   }
 
-  // 2. Approver(s): Super Admin accounts only. The designated HR Specialist (A-16) is
+  // 2. Approver(s): Super Admin accounts only. A-16 is
   //    deliberately NOT included: A-16 is HR review/follow-up and holds NO outstation
   //    "approve" permission (see 20260522203000_hr_manager_approval_authority.sql), so an
   //    "approval needed" alert to A-16 would be a dead end. B-10 is the Super Admin HR

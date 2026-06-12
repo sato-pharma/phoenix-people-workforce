@@ -1,4 +1,4 @@
-import { isDesignatedHrSpecialist, type AccessContext } from "@/lib/auth/permissions";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { getDataHealthStats, getSalaryFlags, type DataHealthStats } from "@/lib/admin/service";
 import { getAttendanceIngestionHealth } from "@/lib/attendance/ingestion-health";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
@@ -720,9 +720,9 @@ async function fetchExecutiveSignals(
 
 export async function getAdminCommandCenterData(accessContext: AccessContext): Promise<AdminCommandCenterData> {
   const dataUnavailable: string[] = [];
-  const showFinancialModules = !isDesignatedHrSpecialist(accessContext);
+  const showFinancialModules = true;
   const showAdminModules = showFinancialModules;
-  const showSalesModules = !isDesignatedHrSpecialist(accessContext);
+  const showSalesModules = true;
   const emptyOperations: OperationalActivitySummary = {
     failureCount24h: 0,
     lastEventAt: null,

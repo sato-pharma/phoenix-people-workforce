@@ -17,7 +17,7 @@ type PhoenixRole =
   | "Training Manager"
   | "Marketing Manager"
   | "Finance Manager"
-  | "HR Specialist"
+  | "Talent Acquisition"
   | "Manager"
   | "CEO"
   | "Super Admin";
@@ -51,7 +51,7 @@ const roles: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "Manager",
   "CEO",
   "Super Admin",
@@ -70,7 +70,7 @@ const testUserCreationOrder: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "CEO",
   "Super Admin",
 ];
@@ -153,12 +153,12 @@ const roleSpecs: Record<PhoenixRole, RoleSpec> = {
     managerHrId: null,
     role: "Finance Manager",
   },
-  "HR Specialist": {
+  "Talent Acquisition": {
     hrId: "RLS-HR-001",
     line: "Office",
     loginId: "rls-test-hr-specialist",
     managerHrId: null,
-    role: "HR Specialist",
+    role: "Talent Acquisition",
   },
   Manager: {
     hrId: "RLS-MGR-001",
@@ -282,7 +282,7 @@ function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole) {
       return "company_reader";
     case "Finance Manager":
       return "finance";
-    case "HR Specialist":
+    case "Talent Acquisition":
       return "hr";
     case "District Manager":
     case "Regional Manager":
@@ -304,7 +304,7 @@ function mapPhoenixRoleToLegacyBootstrapRole(role: PhoenixRole) {
     case "CEO":
     case "Finance Manager":
       return "admin";
-    case "HR Specialist":
+    case "Talent Acquisition":
       return "hr";
     case "District Manager":
     case "Regional Manager":
@@ -330,7 +330,7 @@ function mapPhoenixRoleToScopeType(role: PhoenixRole) {
       return "COMPANY_READ";
     case "Finance Manager":
       return "FINANCE";
-    case "HR Specialist":
+    case "Talent Acquisition":
       return "HR";
     case "District Manager":
     case "Manager":

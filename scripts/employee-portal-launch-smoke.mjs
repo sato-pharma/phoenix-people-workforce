@@ -272,7 +272,7 @@ async function run() {
       },
     ]));
 
-    results.push(...await runForRole(browser, "HR Specialist", "PHASE23-HR", [
+    results.push(...await runForRole(browser, "Talent Acquisition", "A-16", [
       {
         expectedText: ["Access unavailable"],
         forbiddenText: ["Application error", "Employee portal unavailable"],

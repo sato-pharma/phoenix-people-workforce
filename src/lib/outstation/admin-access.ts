@@ -7,7 +7,6 @@ import {
 
 const adminOutstationRoles = new Set<PhoenixRole>([
   "Super Admin",
-  "HR Specialist",
   "Finance Manager",
   "CEO",
 ]);

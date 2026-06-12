@@ -1,6 +1,5 @@
 import {
   type AccessContext,
-  isDesignatedHrSpecialist,
   normalizeHrId,
   normalizeLineName,
 } from "@/lib/auth/permissions";
@@ -59,8 +58,7 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
   return (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "CEO" ||
-    isDesignatedHrSpecialist(access)
+    access.role === "CEO"
   );
 }
 

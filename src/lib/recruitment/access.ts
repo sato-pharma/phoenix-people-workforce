@@ -2,7 +2,7 @@
 //
 // Route handlers already gate the resource/action via assertPermission. These
 // helpers add row-level scoping so hiring-manager roles only see/act on the
-// requisitions they own, while Super Admin / HR Specialist / CEO see everything.
+// requisitions they own, while Super Admin / Talent Acquisition / CEO see everything.
 // Candidate PII is gated separately (the `candidates` resource) at the route.
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -10,11 +10,11 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import type { Application, Requisition } from "@/lib/recruitment/types";
 
 // Roles that manage the pipeline end to end.
-export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "HR Specialist"];
+export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "Talent Acquisition"];
 // Roles that may read every requisition/application (managers see only their own).
 export const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
   "Super Admin",
-  "HR Specialist",
+  "Talent Acquisition",
   "CEO",
 ];
 
