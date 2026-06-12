@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
+import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -327,12 +328,13 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, plans, holidays] = await Promise.all([
+  const [attendance, vacations, excuses, plans, holidays, doubleVisits] = await Promise.all([
     loadAttendanceItems(scopeHrIds, start, end),
     loadVacationItems(scopeHrIds, start, end),
     loadExcuseItems(scopeHrIds, start, end),
     loadPlanItems(scopeHrIds, start, end),
     loadHolidayItems(input.year, input.month, start, end),
+    loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
   ]);
 
   const items = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
@@ -341,6 +343,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...excuses.items,
     ...plans.items,
     ...holidays,
+    ...doubleVisits.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
   const mappedScopeEmployees = scopeEmployees.map(mapPrivateCalendarEmployee);
@@ -352,6 +355,7 @@ export async function getPrivateCalendarWorkspace(input: {
   });
   const sourceReadiness: Record<PrivateCalendarSource, boolean> = {
     attendance: attendance.ready,
+    double_visit: doubleVisits.ready,
     excuse: excuses.ready,
     holiday: true,
     plan: plans.ready,

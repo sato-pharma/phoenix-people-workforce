@@ -14,6 +14,7 @@ export type AuditEntityType =
   | "deduction_payroll_import"
   | "deduction_payroll_preview"
   | "deduction_summary"
+  | "double_visit_import"
   | "employee_resignation"
   | "field_workforce_compliance_import"
   | "marketing_request"

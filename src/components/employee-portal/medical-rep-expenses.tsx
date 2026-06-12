@@ -216,8 +216,8 @@ export function MedicalRepExpensesWorkspace({
   const [notes, setNotes] = useState("");
   const [goTicketAmount, setGoTicketAmount] = useState("");
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
-  const [amWorkload, setAmWorkload] = useState("");
-  const [pmWorkload, setPmWorkload] = useState("");
+  const amWorkload = "";
+  const pmWorkload = "";
   const [attachments, setAttachments] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -318,8 +318,6 @@ export function MedicalRepExpensesWorkspace({
       setNotes("");
       setGoTicketAmount("");
       setReturnTicketAmount("");
-      setAmWorkload("");
-      setPmWorkload("");
       setAttachments([]);
       setFileInputKey((value) => value + 1);
       setMessage("Expense submitted.");
@@ -501,11 +499,10 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="AM Visits">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
-                    min="0"
-                    onChange={(event) => setAmWorkload(event.target.value)}
-                    placeholder="0"
-                    type="number"
+                    className="h-12 rounded-none border-slate-200 bg-slate-50"
+                    disabled
+                    placeholder="Auto from Double Visit Analytics"
+                    readOnly
                     value={amWorkload}
                   />
                 </Field>
@@ -514,14 +511,19 @@ export function MedicalRepExpensesWorkspace({
               <div className="lg:col-span-3">
                 <Field label="PM Visits">
                   <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
-                    min="0"
-                    onChange={(event) => setPmWorkload(event.target.value)}
-                    placeholder="0"
-                    type="number"
+                    className="h-12 rounded-none border-slate-200 bg-slate-50"
+                    disabled
+                    placeholder="Auto from Double Visit Analytics"
+                    readOnly
                     value={pmWorkload}
                   />
                 </Field>
+              </div>
+
+              <div className="lg:col-span-6">
+                <p className="text-xs font-semibold text-slate-500">
+                  Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission.
+                </p>
               </div>
 
               {!canSubmit ? (

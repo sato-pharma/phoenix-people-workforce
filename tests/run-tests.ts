@@ -42,6 +42,7 @@ import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governanc
 import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-completion.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
+import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
@@ -228,6 +229,7 @@ await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcC
 await runTest("deductions governance completion", runDeductionsGovernanceCompletionTests);
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
+await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);

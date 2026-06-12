@@ -1,4 +1,5 @@
 import {
+  Activity,
   BellRing,
   BriefcaseBusiness,
   Building2,
@@ -150,6 +151,7 @@ export const adminNavigationSections = [
       { href: "/sales/executive-report", icon: Building2, label: "Executive Report", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
     ],

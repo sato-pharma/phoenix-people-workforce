@@ -91,7 +91,7 @@ export default async function TeamExpensesPage(
   return (
     <EmployeePortalPageShell
       badge="Expenses"
-      description={`${data.scopeLabel} - DSM expense workload`}
+      description={`${data.scopeLabel} - Team expense workload`}
       title="Team Expenses"
     >
       {/* Print stylesheet */}

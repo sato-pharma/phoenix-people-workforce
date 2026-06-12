@@ -8,6 +8,8 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
+import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
@@ -168,6 +170,51 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function fallbackWorkloadEvidence(params: {
+  sourceLabel: string;
+  tripEndDate: string;
+  tripStartDate: string;
+}): DoubleVisitExpenseWorkloadEvidence {
+  const start = params.tripStartDate.slice(0, 10);
+  const end = params.tripEndDate.slice(0, 10);
+  return {
+    amWorkload: 0,
+    dateBreakdown: [{ am: 0, date: start, evidenceRows: 0, pm: 0, total: 0 }],
+    importId: null,
+    matchedDates: [],
+    matchStatus: "stale_import",
+    missingDates: start && end ? [start, end].filter((value, index, list) => value && list.indexOf(value) === index) : [],
+    pmWorkload: 0,
+    source: "manual",
+    sourceLabel: params.sourceLabel,
+  };
+}
+
+async function resolveOutstationWorkloadPayload(params: {
+  employeeHrId: string | null;
+  tripEndDate: string;
+  tripStartDate: string;
+}) {
+  const evidence = await getDoubleVisitExpenseWorkloadEvidence(params).catch((error) =>
+    fallbackWorkloadEvidence({
+      sourceLabel: error instanceof Error
+        ? `Double Visit evidence unavailable: ${error.message}`
+        : "Double Visit evidence unavailable.",
+      tripEndDate: params.tripEndDate,
+      tripStartDate: params.tripStartDate,
+    }),
+  );
+  return {
+    am_workload: evidence.amWorkload,
+    pm_workload: evidence.pmWorkload,
+    workload_evidence_snapshot: evidence,
+    workload_match_status: evidence.matchStatus,
+    workload_matched_at: new Date().toISOString(),
+    workload_source: evidence.source,
+    workload_source_import_id: evidence.importId,
+  };
 }
 
 function isMissingSupabaseRelation(error: { code?: string; message?: string } | null) {
@@ -1381,6 +1428,12 @@ export async function submitOutstationRequest(
     });
   }
 
+  const workloadPayload = await resolveOutstationWorkloadPayload({
+    employeeHrId: calculation.employeeHrId,
+    tripEndDate: calculation.tripEndDate,
+    tripStartDate: calculation.tripStartDate,
+  });
+
   const insertPayload = {
     allowance_amount: calculation.allowanceAmount,
     allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
@@ -1429,10 +1482,9 @@ export async function submitOutstationRequest(
     suspicious_location_score: calculation.suspiciousLocationScore,
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
-    am_workload: input.amWorkload ?? 0,
+    ...workloadPayload,
     meeting_amount: input.meetingAmount ?? 0,
     other_amount: input.otherAmount ?? 0,
-    pm_workload: input.pmWorkload ?? 0,
     ticket_amount: calculation.ticketAmount,
     to_area: calculation.toArea,
     to_city: calculation.toCity,
@@ -1643,6 +1695,15 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     meetingAmount: numberValue(row.meeting_amount),
     otherAmount: numberValue(row.other_amount),
     pmWorkload: numberValue(row.pm_workload),
+    workloadEvidenceSnapshot: safeJsonParse<DoubleVisitExpenseWorkloadEvidence | Record<string, unknown>>(
+      row.workload_evidence_snapshot,
+      {},
+    ),
+    workloadMatchedAt: isoString(row.workload_matched_at) || null,
+    workloadMatchStatus: text(row.workload_match_status) || "manual",
+    workloadOverrideReason: text(row.workload_override_reason) || null,
+    workloadSource: text(row.workload_source) || "manual",
+    workloadSourceImportId: text(row.workload_source_import_id) || null,
     ticketAmount: numberValue(row.ticket_amount),
     toArea: text(row.to_area) || null,
     toCity: text(row.to_city) || null,
@@ -1770,6 +1831,11 @@ export async function submitMedicalRepSimpleExpenseRequest(
     const capturedLatitude = residence?.residenceLatitude ?? 0;
     const capturedLongitude = residence?.residenceLongitude ?? 0;
     const attachmentPaths = uploadedAttachments.map((attachment) => attachment.path);
+    const workloadPayload = await resolveOutstationWorkloadPayload({
+      employeeHrId: identity.employeeHrId,
+      tripEndDate: normalized.tripEndDate,
+      tripStartDate: normalized.tripStartDate,
+    });
     const { data, error } = await getSupabaseAdmin()
       .from("outstation_expense_requests")
       .insert({
@@ -1825,10 +1891,9 @@ export async function submitMedicalRepSimpleExpenseRequest(
         ticket_amount: normalized.ticketAmount,
         ticket_attachment_metadata: uploadedAttachments,
         ticket_attachment_paths: attachmentPaths,
-        am_workload: input.amWorkload ?? 0,
+        ...workloadPayload,
         meeting_amount: 0,
         other_amount: 0,
-        pm_workload: input.pmWorkload ?? 0,
         to_area: null,
         to_city: null,
         to_label: normalized.toLocation,
@@ -2244,6 +2309,11 @@ export async function createManagerExpenseAsAdmin(
 
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const workloadPayload = await resolveOutstationWorkloadPayload({
+    employeeHrId: employee.hrId,
+    tripEndDate: input.tripEndDate,
+    tripStartDate: input.tripStartDate,
+  });
 
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
@@ -2292,10 +2362,9 @@ export async function createManagerExpenseAsAdmin(
       suspicious_location_score: 0,
       territory_validation_reason: "Admin-created expense; territory check not applicable.",
       territory_validation_status: "not_available",
-      am_workload: input.amWorkload ?? 0,
+      ...workloadPayload,
       meeting_amount: input.meetingAmount ?? 0,
       other_amount: input.otherAmount ?? 0,
-      pm_workload: input.pmWorkload ?? 0,
       ticket_amount: 0,
       ticket_attachment_metadata: [],
       ticket_attachment_paths: [],
@@ -2413,11 +2482,16 @@ export async function updateManagerExpenseAsAdmin(
     expectedTotalAmount > 0
       ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
       : 0;
+  const workloadPayload = await resolveOutstationWorkloadPayload({
+    employeeHrId,
+    tripEndDate,
+    tripStartDate,
+  });
 
   const updatePayload: Record<string, unknown> = {
     allowance_amount: allowance.allowanceAmount,
     allowance_breakdown_json: JSON.stringify(allowance.breakdown),
-    am_workload: input.amWorkload ?? existing.amWorkload ?? 0,
+    ...workloadPayload,
     claimed_total_amount: claimedTotalAmount,
     distance_from_residence_km: distanceKm,
     distance_km: distanceKm,
@@ -2431,7 +2505,6 @@ export async function updateManagerExpenseAsAdmin(
     notes: notes,
     other_amount: input.otherAmount ?? existing.otherAmount ?? 0,
     overnight_days: allowance.overnightDays,
-    pm_workload: input.pmWorkload ?? existing.pmWorkload ?? 0,
     route_polyline: routePolyline,
     same_day_trip: allowance.sameDayTrip,
     transportation_type: transportationType,

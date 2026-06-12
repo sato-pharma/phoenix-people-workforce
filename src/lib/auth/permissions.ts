@@ -69,6 +69,7 @@ export type PermissionResource =
   | "payroll"
   | "payslips"
   | "deductions"
+  | "double_visit_analytics"
   | "weekly_plans"
   | "expenses"
   | "vacancies"
@@ -102,6 +103,7 @@ export const permissionResources: PermissionResource[] = [
   "weekly_sales",
   "payroll",
   "deductions",
+  "double_visit_analytics",
   "weekly_plans",
   "expenses",
   "employees",
@@ -202,6 +204,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payroll: allActions,
     payslips: allActions,
     deductions: allActions,
+    double_visit_analytics: allActions,
     weekly_plans: allActions,
     probation: allActions,
     resignations: allActions,
@@ -236,6 +239,7 @@ const defaultPermissionMatrix: PermissionMap = {
     workflow_registry: ["read"],
     payslips: ["read", "export"],
     deductions: ["read", "approve", "export"],
+    double_visit_analytics: ["read", "import", "update", "export"],
     weekly_plans: ["read", "approve", "export"],
     resignations: ["read", "approve", "export"],
     sales: ["read", "export"],
@@ -312,6 +316,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create", "approve", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
@@ -333,6 +338,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create", "approve", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
@@ -354,6 +360,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "approve", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create", "approve", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
@@ -376,6 +383,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
     coaching: ["read"],
@@ -394,6 +402,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
     coaching: ["read"],
@@ -412,6 +421,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: allActions,
     coaching: ["read"],
@@ -430,6 +440,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     employees: ["read", "export"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "export"],
     coaching: ["read", "create", "update"],
@@ -466,6 +477,7 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_profile: ["read", "update"],
     employees: ["read", "export"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
