@@ -47,6 +47,16 @@ export async function POST(request: Request) {
     }
 
     const analysis = await analyzeExpenseWorkbook(file);
+    if (!analysis.template?.recognized) {
+      return NextResponse.json(
+        {
+          error: "unrecognized_expense_template",
+          message: "Unrecognized expense template. Please upload the Phoenix Outstation Expenses template.",
+        },
+        { status: 400 },
+      );
+    }
+
     const expenses = await savePayrollExpenseApprovals({
       fileName: analysis.fileName,
       records: analysis.records,

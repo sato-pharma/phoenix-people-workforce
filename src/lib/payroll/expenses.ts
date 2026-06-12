@@ -56,6 +56,10 @@ const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "CEO",
 ]);
 
+function canBypassPayrollExpenseLocks(accessContext: Pick<AccessContext, "role">) {
+  return accessContext.role === "Super Admin";
+}
+
 export function canManuallyApprovePayrollExpenses(access: AccessContext) {
   return access.scope === "system" || manualPayrollExpenseApproverRoles.has(access.role);
 }
@@ -655,6 +659,10 @@ async function assertPayrollExpenseReportCanMutate(
       throw new PayrollExpenseLockSchemaError();
     }
     throw error;
+  }
+
+  if (canBypassPayrollExpenseLocks(accessContext)) {
+    return;
   }
 
   const locked = ((data ?? []) as Array<Record<string, unknown>>).some(
