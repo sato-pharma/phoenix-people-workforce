@@ -357,7 +357,7 @@ export function PlanningCalendar({
         </section>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="space-y-5">
         <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
             {weekdays.map((weekday) => (
@@ -430,12 +430,17 @@ export function PlanningCalendar({
           </div>
         </div>
 
-        <aside className="border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-4">
-            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Selected day</p>
-            <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+        <section className="border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Selected day</p>
+              <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+            </div>
+            <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
+              {selectedPlans.length} plan{selectedPlans.length === 1 ? "" : "s"}
+            </span>
           </div>
-          <div className="space-y-4 p-4">
+          <div className="grid gap-4 p-4 lg:grid-cols-3">
             {selectedConflicts.length > 0 ? (
               <DetailGroup title="Conflict warnings">
                 {selectedConflicts.map((conflict) => (
@@ -457,7 +462,18 @@ export function PlanningCalendar({
               </DetailGroup>
             ) : null}
 
-            <DetailGroup title={`Plan activities (${selectedPlans.length})`}>
+            <DetailGroup
+              className={[
+                "min-w-0",
+                selectedConflicts.length > 0 && selectedHolidays.length > 0
+                  ? ""
+                  : selectedConflicts.length > 0 || selectedHolidays.length > 0
+                    ? "lg:col-span-2"
+                    : "lg:col-span-3",
+              ].join(" ")}
+              contentClassName="grid gap-2 md:grid-cols-2 2xl:grid-cols-3"
+              title={`Plan activities (${selectedPlans.length})`}
+            >
               {selectedPlans.length === 0 ? (
                 <p className="border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-500">
                   No submitted planning activity for this day.
@@ -507,7 +523,7 @@ export function PlanningCalendar({
               )}
             </DetailGroup>
           </div>
-        </aside>
+        </section>
       </section>
     </div>
   );
@@ -541,11 +557,21 @@ function Metric({
   );
 }
 
-function DetailGroup({ children, title }: { children: ReactNode; title: string }) {
+function DetailGroup({
+  children,
+  className = "",
+  contentClassName = "space-y-2",
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+  title: string;
+}) {
   return (
-    <section>
+    <section className={className}>
       <h4 className="mb-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{title}</h4>
-      <div className="space-y-2">{children}</div>
+      <div className={contentClassName}>{children}</div>
     </section>
   );
 }
