@@ -10,7 +10,9 @@ import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 import { sharedPlanningCalendarStatuses } from "@/lib/weekly-planning/calendar";
 import {
   canReadPrivateCalendarEmployee,
+  buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
+  derivePrivateCalendarExceptions,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
@@ -25,6 +27,7 @@ import {
   type PrivateCalendarItem,
   type PrivateCalendarPlanRow,
   type PrivateCalendarSource,
+  type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
 
@@ -109,6 +112,40 @@ function selectedEmployeeFromRequest(input: {
   return fallback;
 }
 
+function normalizeViewMode(value: string | null | undefined): PrivateCalendarViewMode {
+  return value === "team" ? "team" : "employee";
+}
+
+function sortEmployees(employees: EmployeeDirectoryRow[]) {
+  return [...employees].sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
+function employeeMetadataByHrId(employees: EmployeeDirectoryRow[]) {
+  return new Map(employees.map((employee) => [privateCalendarHrIdKey(employee.hrId), mapPrivateCalendarEmployee(employee)]));
+}
+
+function decorateItemsWithEmployeeMetadata(items: PrivateCalendarItem[], employees: EmployeeDirectoryRow[]) {
+  const byHrId = employeeMetadataByHrId(employees);
+  return items.map((item) => {
+    if (!item.employeeHrId) return item;
+    const employee = byHrId.get(privateCalendarHrIdKey(item.employeeHrId));
+    if (!employee) return item;
+    return {
+      ...item,
+      employeeDepartmentName: employee.departmentName,
+      employeeJobTitle: employee.jobTitle,
+      employeeLineName: employee.lineName,
+      employeeName: item.employeeName || employee.fullName,
+      managerName: employee.managerName,
+    };
+  });
+}
+
+function filterItemsByEmployees(items: PrivateCalendarItem[], employees: EmployeeDirectoryRow[]) {
+  const allowed = new Set(employees.map((employee) => privateCalendarHrIdKey(employee.hrId)).filter(Boolean));
+  return items.filter((item) => !item.employeeHrId || allowed.has(privateCalendarHrIdKey(item.employeeHrId)));
+}
+
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PrivateCalendarItem[]> {
   try {
     const result = await getEgyptianNationalHolidays({ month, year });
@@ -134,13 +171,13 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
   }
 }
 
-async function loadAttendanceItems(employeeHrId: string, start: string, end: string) {
+async function loadAttendanceItems(employeeHrIds: string[], start: string, end: string) {
   try {
-    const selectedKey = privateCalendarHrIdKey(employeeHrId);
-    const report = await getFingerprintAttendanceReport({ dateFrom: start, dateTo: end, employeeHrId });
+    const selectedKeys = new Set(employeeHrIds.map(privateCalendarHrIdKey).filter(Boolean));
+    const report = await getFingerprintAttendanceReport({ dateFrom: start, dateTo: end });
     return {
       items: report.rows
-        .filter((row) => privateCalendarHrIdKey(row.employeeHrId) === selectedKey)
+        .filter((row) => selectedKeys.has(privateCalendarHrIdKey(row.employeeHrId)))
         .map(mapAttendanceRowToPrivateCalendarItem),
       ready: true,
     };
@@ -152,17 +189,22 @@ async function loadAttendanceItems(employeeHrId: string, start: string, end: str
   }
 }
 
-async function loadVacationItems(employeeHrId: string, start: string, end: string) {
+async function loadVacationItems(employeeHrIds: string[], start: string, end: string) {
   try {
-    const { data, error } = await getSupabaseAdmin()
+    const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+    if (normalizedHrIds.length === 0) return { items: [], ready: true };
+    let query = getSupabaseAdmin()
       .from("v2_vacation_requests")
       .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,day_part,duration_days,paid_duration_days,payment_status,notes")
-      .ilike("employee_hr_id", employeeHrId)
       .eq("status", "approved")
       .lte("start_date", end)
       .gte("end_date", start)
       .order("start_date", { ascending: true })
       .limit(100);
+    query = normalizedHrIds.length === 1
+      ? query.ilike("employee_hr_id", normalizedHrIds[0])
+      : query.in("employee_hr_id", normalizedHrIds);
+    const { data, error } = await query;
     if (error) throw error;
     return { items: ((data ?? []) as VacationCalendarRow[]).map(mapVacationRowToPrivateCalendarItem), ready: true };
   } catch (error) {
@@ -171,17 +213,22 @@ async function loadVacationItems(employeeHrId: string, start: string, end: strin
   }
 }
 
-async function loadExcuseItems(employeeHrId: string, start: string, end: string) {
+async function loadExcuseItems(employeeHrIds: string[], start: string, end: string) {
   try {
-    const { data, error } = await getSupabaseAdmin()
+    const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+    if (normalizedHrIds.length === 0) return { items: [], ready: true };
+    let query = getSupabaseAdmin()
       .from("v2_excuse_requests")
       .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
-      .ilike("employee_hr_id", employeeHrId)
       .eq("status", "approved")
       .gte("excuse_date", start)
       .lte("excuse_date", end)
       .order("excuse_date", { ascending: true })
       .limit(100);
+    query = normalizedHrIds.length === 1
+      ? query.ilike("employee_hr_id", normalizedHrIds[0])
+      : query.in("employee_hr_id", normalizedHrIds);
+    const { data, error } = await query;
     if (error) throw error;
     return { items: ((data ?? []) as ExcuseCalendarRow[]).map(mapExcuseRowToPrivateCalendarItem), ready: true };
   } catch (error) {
@@ -190,18 +237,23 @@ async function loadExcuseItems(employeeHrId: string, start: string, end: string)
   }
 }
 
-async function loadPlanItems(employeeHrId: string, start: string, end: string) {
+async function loadPlanItems(employeeHrIds: string[], start: string, end: string) {
   try {
     const supabase = getSupabaseAdmin();
-    const { data: headersData, error: headersError } = await supabase
+    const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
+    if (normalizedHrIds.length === 0) return { items: [], ready: true };
+    let headersQuery = supabase
       .from("employee_plan_headers")
       .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
-      .ilike("employee_hr_id", employeeHrId)
       .in("status", [...sharedPlanningCalendarStatuses])
       .lte("period_start_date", end)
       .gte("period_end_date", start)
       .order("period_start_date", { ascending: true })
-      .limit(100);
+      .limit(1000);
+    headersQuery = normalizedHrIds.length === 1
+      ? headersQuery.ilike("employee_hr_id", normalizedHrIds[0])
+      : headersQuery.in("employee_hr_id", normalizedHrIds);
+    const { data: headersData, error: headersError } = await headersQuery;
     if (headersError) throw headersError;
 
     const headers = (headersData ?? []) as PlanHeaderRow[];
@@ -217,7 +269,7 @@ async function loadPlanItems(employeeHrId: string, start: string, end: string) {
       .lte("activity_date", end)
       .order("activity_date", { ascending: true })
       .order("sort_order", { ascending: true })
-      .limit(500);
+      .limit(5000);
     if (itemsError) throw itemsError;
 
     const items = ((itemsData ?? []) as PlanItemRow[]).flatMap((item) => {
@@ -255,6 +307,7 @@ export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
   employeeHrId?: string | null;
   month: number;
+  viewMode?: PrivateCalendarViewMode | string | null;
   year: number;
 }): Promise<PrivateCalendarWorkspace> {
   await assertPermission(input.access, "employee_profile", "read");
@@ -263,30 +316,40 @@ export async function getPrivateCalendarWorkspace(input: {
   const { start, end } = monthBounds(input.year, input.month);
   const employees = await getEmployeeDirectoryRows();
   const globalHrIds = configuredPrivateCalendarGlobalHrIds();
-  const visibleEmployees = employees.filter((employee) => canReadPrivateCalendarEmployee(input.access, employee, globalHrIds));
+  const visibleEmployees = sortEmployees(employees.filter((employee) => canReadPrivateCalendarEmployee(input.access, employee, globalHrIds)));
   const selectedEmployee = selectedEmployeeFromRequest({
     access: input.access,
     employees,
     requestedEmployeeHrId: input.employeeHrId,
     visibleEmployees,
   });
-  const selectedHrId = selectedEmployee.hrId;
+  const viewMode = normalizeViewMode(input.viewMode);
+  const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
+  const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
   const [attendance, vacations, excuses, plans, holidays] = await Promise.all([
-    loadAttendanceItems(selectedHrId, start, end),
-    loadVacationItems(selectedHrId, start, end),
-    loadExcuseItems(selectedHrId, start, end),
-    loadPlanItems(selectedHrId, start, end),
+    loadAttendanceItems(scopeHrIds, start, end),
+    loadVacationItems(scopeHrIds, start, end),
+    loadExcuseItems(scopeHrIds, start, end),
+    loadPlanItems(scopeHrIds, start, end),
     loadHolidayItems(input.year, input.month, start, end),
   ]);
 
-  const items = [
+  const items = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
     ...attendance.items,
     ...vacations.items,
     ...excuses.items,
     ...plans.items,
     ...holidays,
-  ].sort((left, right) => `${left.startDate}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.source}-${right.title}`));
+  ], scopeEmployees), employees)
+    .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
+  const mappedScopeEmployees = scopeEmployees.map(mapPrivateCalendarEmployee);
+  const exceptions = derivePrivateCalendarExceptions({
+    employees: mappedScopeEmployees,
+    end,
+    items,
+    start,
+  });
   const sourceReadiness: Record<PrivateCalendarSource, boolean> = {
     attendance: attendance.ready,
     excuse: excuses.ready,
@@ -306,7 +369,14 @@ export async function getPrivateCalendarWorkspace(input: {
     selectedEmployee: mapPrivateCalendarEmployee(selectedEmployee),
     sourceReadiness,
     summary: summarizePrivateCalendarItems(items),
+    exceptions,
+    teamSummary: buildPrivateCalendarTeamSummary({
+      employees: mappedScopeEmployees,
+      exceptions,
+      items,
+    }),
     visibleEmployees: resolvePrivateCalendarVisibleEmployees(input.access, employees, globalHrIds),
+    viewMode,
     weeks: buildMonthGrid(input.year, input.month),
     year: input.year,
   };

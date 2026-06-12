@@ -266,6 +266,13 @@ function RequestDetail(props: {
           <Field label="Pending" value={`${row.slaAgeDays} business day(s)`} />
         </dl>
 
+        <ApprovalImpactPreview
+          employeeName={row.employeeName}
+          range={formatRange(row.startDate, row.endDate)}
+          status={row.status}
+          type={vacationTypeLabel(row.vacationType)}
+        />
+
         {/* Timeline of approval steps */}
         <div>
           <h3 className="text-[11px] font-black uppercase tracking-wide text-slate-500">Approval timeline</h3>
@@ -363,6 +370,19 @@ function RequestDetail(props: {
         )}
       </div>
     </section>
+  );
+}
+
+function ApprovalImpactPreview({ employeeName, range, status, type }: { employeeName: string; range: string; status: string; type: string }) {
+  const hrAcknowledgement = status === "pending_hr";
+  return (
+    <div className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-900">
+      <p className="font-black uppercase tracking-[0.12em] text-emerald-700">Approval impact preview</p>
+      <p>
+        {hrAcknowledgement ? "HR acknowledgement" : "Approval"} will place this {type.toLowerCase()} vacation on the private calendar for {employeeName} covering {range}.
+      </p>
+      <p className="text-emerald-700">The entry will be visible to the employee, direct manager, HR/global viewers, and CEO according to private-calendar access rules.</p>
+    </div>
   );
 }
 

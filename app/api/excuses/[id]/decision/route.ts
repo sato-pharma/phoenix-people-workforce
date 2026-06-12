@@ -57,7 +57,9 @@ export async function GET(
 
     return new Response(
       resultHtml({
-        message: `Manager review was recorded as ${result.status}.`,
+        message: result.status === "approved"
+          ? "Manager review was recorded as approved. This 2-hour excuse will appear on the employee private calendar."
+          : `Manager review was recorded as ${result.status}.`,
         success: true,
         title: "Excuse Review Recorded",
       }),

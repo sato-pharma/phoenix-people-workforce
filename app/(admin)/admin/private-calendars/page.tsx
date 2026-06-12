@@ -17,6 +17,7 @@ export default async function AdminPrivateCalendarsPage() {
   const workspace = await getPrivateCalendarWorkspace({
     access,
     month: now.getUTCMonth() + 1,
+    viewMode: "team",
     year: now.getUTCFullYear(),
   });
 

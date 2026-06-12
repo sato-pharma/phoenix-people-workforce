@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 import {
   canReadPrivateCalendarEmployee,
+  buildPrivateCalendarTeamSummary,
+  derivePrivateCalendarExceptions,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
@@ -54,7 +56,25 @@ export function runPrivateCalendarTests() {
   });
   assert.equal(attendance.source, "attendance");
   assert.equal(attendance.time, "9:03 AM - 5:04 PM");
+  assert.equal(attendance.sourceTable, "attendance_raw_punches");
   assert.ok(attendance.detailLines.some((line) => line.includes("Working hours: 08:01")));
+
+  const lateAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "9:45 AM",
+    actualLastPunch: "5:04 PM",
+    dateIso: "2026-06-18",
+    deductionDays: "0.25",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "45",
+    recommendedAction: "Late arrival",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Late",
+    timeLong: "07:19",
+  });
+  assert.ok(lateAttendance.exceptionFlags.includes("Late arrival"), "attendance mapper must highlight late exceptions");
 
   const vacation = mapVacationRowToPrivateCalendarItem({
     day_part: "full_day",
@@ -72,6 +92,8 @@ export function runPrivateCalendarTests() {
   assert.equal(vacation.source, "vacation");
   assert.equal(vacation.startDate, "2026-06-20");
   assert.equal(vacation.endDate, "2026-06-21");
+  assert.equal(vacation.sourceRecordId, "vac-1");
+  assert.match(vacation.approvalImpact ?? "", /private calendar/i);
 
   const excuse = mapExcuseRowToPrivateCalendarItem({
     duration_hours: "2",
@@ -84,6 +106,7 @@ export function runPrivateCalendarTests() {
   });
   assert.equal(excuse.source, "excuse");
   assert.equal(excuse.time, "Afternoon (2h)");
+  assert.equal(excuse.sourceTable, "v2_excuse_requests");
 
   const plan = mapPlanRowToPrivateCalendarItem({
     activity_date: "2026-06-23",
@@ -102,6 +125,41 @@ export function runPrivateCalendarTests() {
   });
   assert.equal(plan.source, "plan");
   assert.equal(plan.title, "Single Visit - Munufia 2");
+  assert.equal(plan.sourceTable, "employee_plan_items");
+
+  const exceptions = derivePrivateCalendarExceptions({
+    employees: [{
+      departmentName: "Marketing",
+      fullName: "Employee One",
+      hrId: "E-1",
+      jobTitle: "Product Manager",
+      lineName: "Line A",
+      managerHrId: "M-1",
+      managerName: "Manager One",
+    }],
+    end: "2026-06-18",
+    items: [lateAttendance],
+    start: "2026-06-17",
+    today: "2026-06-18",
+  });
+  assert.ok(exceptions.some((item) => item.title === "Late arrival"), "exceptions must include attendance warning flags");
+  assert.ok(exceptions.some((item) => item.title === "Missing attendance cover"), "exceptions must include uncovered workdays");
+
+  const teamSummary = buildPrivateCalendarTeamSummary({
+    employees: [{
+      departmentName: "Marketing",
+      fullName: "Employee One",
+      hrId: "E-1",
+      jobTitle: "Product Manager",
+      lineName: "Line A",
+      managerHrId: "M-1",
+      managerName: "Manager One",
+    }],
+    exceptions,
+    items: [attendance, vacation, excuse, plan],
+  });
+  assert.equal(teamSummary[0]?.sourceCounts.attendance, 1);
+  assert.ok((teamSummary[0]?.exceptionCount ?? 0) >= 1, "team summary must count exceptions per employee");
 
   assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse, plan]), {
     attendance: 1,
@@ -116,9 +174,12 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /\.eq\("status", "approved"\)/, "vacation and excuse loaders must only read approved rows");
   assert.match(serviceSource, /sharedPlanningCalendarStatuses/, "plan loader must use submitted-or-approved planning statuses");
   assert.match(serviceSource, /canReadPrivateCalendarEmployee/, "service must enforce server-side employee scope");
+  assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
+  assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
 
   const apiSource = readFileSync("app/api/private-calendar/route.ts", "utf8");
   assert.match(apiSource, /getPrivateCalendarWorkspace/, "private calendar API must load through the scoped service");
+  assert.match(apiSource, /url\.searchParams\.get\("view"\)/, "private calendar API must accept view mode");
 
   const accessRegistrySource = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(accessRegistrySource, /\/api\/private-calendar/, "private calendar API must be in access registry");
@@ -131,4 +192,19 @@ export function runPrivateCalendarTests() {
   const navRegistrySource = readFileSync("src/components/employee-portal/employee-portal-nav-registry.ts", "utf8");
   assert.match(navRegistrySource, /\/employee-portals\/private-calendar/, "bottom nav registry must include Private Calendar");
   assert.match(navRegistrySource, /Planning Calendar/, "bottom nav registry must include Planning Calendar for plan users");
+
+  const privateCalendarUiSource = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
+  assert.match(privateCalendarUiSource, /Daily Timeline/, "private calendar UI must include daily timeline view");
+  assert.match(privateCalendarUiSource, /Manager Team Calendar/, "private calendar UI must include manager team calendar snapshot");
+  assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
+  assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
+
+  const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
+  assert.match(adminPageSource, /viewMode: "team"/, "admin private calendars must default to team mode");
+
+  const vacationActionCenterSource = readFileSync("src/components/vacation/vacation-action-center.tsx", "utf8");
+  assert.match(vacationActionCenterSource, /Approval impact preview/, "vacation action center must show approval impact preview");
+
+  const excuseDecisionRouteSource = readFileSync("app/api/excuses/[id]/decision/route.ts", "utf8");
+  assert.match(excuseDecisionRouteSource, /private calendar/, "excuse approval result must mention private calendar impact");
 }

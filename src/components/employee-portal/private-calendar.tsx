@@ -2,25 +2,32 @@
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import {
+  AlertTriangle,
   CalendarCheck,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock,
+  FileSearch,
   Fingerprint,
+  ListFilter,
   Plane,
   Search,
   ShieldCheck,
   UserRound,
+  UsersRound,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  privateCalendarHrIdKey,
   privateCalendarItemOccursOn,
   privateCalendarSourceLabels,
   privateCalendarSources,
+  type PrivateCalendarException,
   type PrivateCalendarItem,
   type PrivateCalendarSource,
+  type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
 
@@ -70,6 +77,11 @@ function sourceTone(source: PrivateCalendarSource, severity?: string) {
   return "border-teal-200 bg-teal-50 text-teal-800";
 }
 
+function exceptionTone(severity: string) {
+  if (severity === "danger") return "border-red-200 bg-red-50 text-red-800";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
 function itemSearchText(item: PrivateCalendarItem) {
   return [
     item.title,
@@ -78,7 +90,26 @@ function itemSearchText(item: PrivateCalendarItem) {
     item.description,
     item.employeeHrId,
     item.employeeName,
+    item.employeeDepartmentName,
+    item.employeeLineName,
+    item.managerName,
+    item.sourceLabel,
+    item.sourceRecordId,
+    item.sourceSystem,
+    item.sourceTable,
+    item.approvalImpact,
+    item.exceptionFlags.join(" "),
     item.detailLines.join(" "),
+  ].join(" ").toLowerCase();
+}
+
+function exceptionSearchText(exception: PrivateCalendarException) {
+  return [
+    exception.title,
+    exception.description,
+    exception.employeeHrId,
+    exception.employeeName,
+    exception.code,
   ].join(" ").toLowerCase();
 }
 
@@ -88,15 +119,29 @@ function uniqueSorted(values: Array<string | null | undefined>) {
   );
 }
 
-function groupBySource(items: PrivateCalendarItem[]) {
-  const groups = new Map<PrivateCalendarSource, PrivateCalendarItem[]>();
-  for (const source of privateCalendarSources) groups.set(source, []);
-  for (const item of items) {
-    groups.set(item.source, [...(groups.get(item.source) ?? []), item]);
-  }
-  return privateCalendarSources
-    .map((source) => ({ items: groups.get(source) ?? [], source }))
-    .filter((group) => group.items.length > 0);
+function timelineRank(item: PrivateCalendarItem) {
+  if (item.source === "holiday") return 0;
+  if (item.source === "vacation") return 1;
+  if (item.source === "excuse") return 2;
+  if (item.source === "plan") return 3;
+  return 4;
+}
+
+function sortTimelineItems(items: PrivateCalendarItem[]) {
+  return [...items].sort((left, right) => {
+    const rank = timelineRank(left) - timelineRank(right);
+    if (rank !== 0) return rank;
+    return `${left.time ?? ""}-${left.employeeName ?? ""}-${left.title}`.localeCompare(`${right.time ?? ""}-${right.employeeName ?? ""}-${right.title}`);
+  });
+}
+
+function chipTitle(item: PrivateCalendarItem, viewMode: PrivateCalendarViewMode) {
+  if (viewMode === "team" && item.employeeName) return `${item.employeeName} - ${item.title}`;
+  return item.title;
+}
+
+function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitle: string | null; lineName: string | null }) {
+  return `${employee.fullName} (${employee.hrId})${employee.lineName ? ` - ${employee.lineName}` : ""}${employee.jobTitle ? ` - ${employee.jobTitle}` : ""}`;
 }
 
 export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: PrivateCalendarWorkspace }) {
@@ -104,24 +149,70 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [sourceFilter, setSourceFilter] = useState<string>(allValue);
   const [statusFilter, setStatusFilter] = useState<string>(allValue);
+  const [employeeFilter, setEmployeeFilter] = useState<string>(allValue);
+  const [departmentFilter, setDepartmentFilter] = useState<string>(allValue);
+  const [lineFilter, setLineFilter] = useState<string>(allValue);
+  const [exceptionOnly, setExceptionOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const { items, month, selectedEmployee, sourceReadiness, summary, visibleEmployees, weeks, year } = workspace;
+  const {
+    exceptions,
+    items,
+    month,
+    selectedEmployee,
+    sourceReadiness,
+    summary,
+    teamSummary,
+    viewMode,
+    visibleEmployees,
+    weeks,
+    year,
+  } = workspace;
   const today = todayIso();
+  const isTeamView = viewMode === "team";
 
+  const employeeByHrId = useMemo(
+    () => new Map(visibleEmployees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee])),
+    [visibleEmployees],
+  );
+  const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const statusOptions = useMemo(() => uniqueSorted(items.map((item) => item.status)), [items]);
+  const departmentOptions = useMemo(() => uniqueSorted(visibleEmployees.map((employee) => employee.departmentName)), [visibleEmployees]);
+  const lineOptions = useMemo(() => uniqueSorted(visibleEmployees.map((employee) => employee.lineName)), [visibleEmployees]);
 
   const filteredItems = useMemo(() => {
     const search = query.trim().toLowerCase();
     return items.filter((item) => {
+      const employee = item.employeeHrId ? employeeByHrId.get(privateCalendarHrIdKey(item.employeeHrId)) : null;
       if (sourceFilter !== allValue && item.source !== sourceFilter) return false;
       if (statusFilter !== allValue && item.status !== statusFilter) return false;
+      if (employeeFilter !== allValue && item.employeeHrId && privateCalendarHrIdKey(item.employeeHrId) !== privateCalendarHrIdKey(employeeFilter)) return false;
+      if (departmentFilter !== allValue && item.employeeHrId && employee?.departmentName !== departmentFilter) return false;
+      if (lineFilter !== allValue && item.employeeHrId && employee?.lineName !== lineFilter) return false;
+      if (exceptionOnly && item.exceptionFlags.length === 0) return false;
       if (search && !itemSearchText(item).includes(search)) return false;
       return true;
     });
-  }, [items, query, sourceFilter, statusFilter]);
+  }, [departmentFilter, employeeByHrId, employeeFilter, exceptionOnly, items, lineFilter, query, sourceFilter, statusFilter]);
+
+  const filteredExceptions = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return exceptions.filter((exception) => {
+      const employee = exception.employeeHrId ? employeeByHrId.get(privateCalendarHrIdKey(exception.employeeHrId)) : null;
+      if (employeeFilter !== allValue && privateCalendarHrIdKey(exception.employeeHrId) !== privateCalendarHrIdKey(employeeFilter)) return false;
+      if (departmentFilter !== allValue && employee?.departmentName !== departmentFilter) return false;
+      if (lineFilter !== allValue && employee?.lineName !== lineFilter) return false;
+      if (sourceFilter !== allValue) {
+        const relatedSources = exception.relatedItemIds.map((id) => itemById.get(id)?.source).filter(Boolean);
+        if (relatedSources.length === 0 && sourceFilter !== "attendance") return false;
+        if (relatedSources.length > 0 && !relatedSources.includes(sourceFilter as PrivateCalendarSource)) return false;
+      }
+      if (search && !exceptionSearchText(exception).includes(search)) return false;
+      return true;
+    });
+  }, [departmentFilter, employeeByHrId, employeeFilter, exceptions, itemById, lineFilter, query, sourceFilter]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, PrivateCalendarItem[]>();
@@ -130,22 +221,40 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
         const date = day.date;
         if (!date) continue;
         const dayItems = filteredItems.filter((item) => privateCalendarItemOccursOn(item, date));
+        const hasException = filteredExceptions.some((exception) => exception.date === date);
+        if (exceptionOnly && !hasException) continue;
         if (dayItems.length) map.set(date, dayItems);
       }
     }
     return map;
-  }, [filteredItems, weeks]);
+  }, [exceptionOnly, filteredExceptions, filteredItems, weeks]);
+
+  const exceptionsByDay = useMemo(() => {
+    const map = new Map<string, PrivateCalendarException[]>();
+    for (const exception of filteredExceptions) {
+      map.set(exception.date, [...(map.get(exception.date) ?? []), exception]);
+    }
+    return map;
+  }, [filteredExceptions]);
 
   const selectedItems = useMemo(
     () => filteredItems.filter((item) => privateCalendarItemOccursOn(item, selectedDate)),
     [filteredItems, selectedDate],
   );
-  const selectedGroups = useMemo(() => groupBySource(selectedItems), [selectedItems]);
+  const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
+  const timelineItems = useMemo(() => sortTimelineItems(selectedItems), [selectedItems]);
 
-  async function loadWorkspace(nextYear: number, nextMonth: number, employeeHrId: string, nextSelectedDate: string) {
+  async function loadWorkspace(
+    nextYear: number,
+    nextMonth: number,
+    employeeHrId: string,
+    nextSelectedDate: string,
+    nextViewMode: PrivateCalendarViewMode = viewMode,
+  ) {
     const params = new URLSearchParams({
       employeeHrId,
       month: String(nextMonth),
+      view: nextViewMode,
       year: String(nextYear),
     });
     const response = await fetch(`/api/private-calendar?${params.toString()}`, { cache: "no-store" });
@@ -185,9 +294,24 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
   function changeEmployee(employeeHrId: string) {
     setMessage(null);
+    setEmployeeFilter(allValue);
     startTransition(async () => {
       try {
-        await loadWorkspace(year, month, employeeHrId, selectedDate);
+        await loadWorkspace(year, month, employeeHrId, selectedDate, "employee");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Unable to load private calendar.");
+      }
+    });
+  }
+
+  function changeViewMode(nextViewMode: PrivateCalendarViewMode) {
+    setMessage(null);
+    setEmployeeFilter(allValue);
+    setDepartmentFilter(allValue);
+    setLineFilter(allValue);
+    startTransition(async () => {
+      try {
+        await loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, nextViewMode);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to load private calendar.");
       }
@@ -197,6 +321,10 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   function resetFilters() {
     setSourceFilter(allValue);
     setStatusFilter(allValue);
+    setEmployeeFilter(allValue);
+    setDepartmentFilter(allValue);
+    setLineFilter(allValue);
+    setExceptionOnly(false);
     setQuery("");
   }
 
@@ -221,10 +349,17 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                   Global view
                 </span>
               ) : null}
+              {isTeamView ? (
+                <span className="inline-flex items-center gap-1 border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-700">
+                  <UsersRound className="h-3.5 w-3.5" />
+                  Team mode
+                </span>
+              ) : null}
             </div>
             <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
             <p className="mt-1 text-sm font-semibold text-slate-600">
-              {selectedEmployee.fullName} <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span>
+              {isTeamView ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}` : selectedEmployee.fullName}{" "}
+              {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -252,12 +387,13 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
           <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} />
           <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} />
           <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} />
           <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} />
           <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} />
+          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} tone="warning" />
         </div>
       </section>
 
@@ -266,7 +402,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
       ) : null}
 
       <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,240px)_minmax(160px,200px)_minmax(160px,220px)_auto] lg:items-end">
+        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end">
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
             <span className="relative block">
@@ -274,26 +410,83 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               <input
                 className="h-10 w-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search month"
+                placeholder="Search calendar"
                 value={query}
               />
             </span>
           </label>
+
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
             <select
               className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300 disabled:bg-slate-50"
               disabled={!workspace.access.canSelectEmployee || isPending}
-              onChange={(event) => changeEmployee(event.target.value)}
-              value={selectedEmployee.hrId}
+              onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
+              value={viewMode}
             >
-              {visibleEmployees.map((employee) => (
-                <option key={employee.hrId} value={employee.hrId}>
-                  {employee.fullName} ({employee.hrId})
-                </option>
-              ))}
+              <option value="employee">Employee</option>
+              <option value="team">Team</option>
             </select>
           </label>
+
+          {!isTeamView ? (
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+              <select
+                className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300 disabled:bg-slate-50"
+                disabled={!workspace.access.canSelectEmployee || isPending}
+                onChange={(event) => changeEmployee(event.target.value)}
+                value={selectedEmployee.hrId}
+              >
+                {visibleEmployees.map((employee) => (
+                  <option key={employee.hrId} value={employee.hrId}>
+                    {employeeOptionLabel(employee)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+              <select
+                className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+                onChange={(event) => setEmployeeFilter(event.target.value)}
+                value={employeeFilter}
+              >
+                <option value={allValue}>All visible</option>
+                {visibleEmployees.map((employee) => (
+                  <option key={employee.hrId} value={employee.hrId}>
+                    {employee.fullName} ({employee.hrId})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
+            <select
+              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              onChange={(event) => setLineFilter(event.target.value)}
+              value={lineFilter}
+            >
+              <option value={allValue}>All lines</option>
+              {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+            <select
+              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              value={departmentFilter}
+            >
+              <option value={allValue}>All departments</option>
+              {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
+          </label>
+
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
             <select
@@ -307,6 +500,26 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               ))}
             </select>
           </label>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={[
+                "inline-flex h-10 items-center gap-2 border px-3 text-sm font-black",
+                exceptionOnly ? "border-red-300 bg-red-50 text-red-800" : "border-slate-200 bg-white text-slate-700",
+              ].join(" ")}
+              onClick={() => setExceptionOnly((value) => !value)}
+              type="button"
+            >
+              <ListFilter className="h-4 w-4" />
+              Exceptions
+            </button>
+            <Button disabled={isPending} onClick={resetFilters} variant="secondary">
+              Reset
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-t border-slate-100 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
             <select
@@ -320,13 +533,12 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               ))}
             </select>
           </label>
-          <Button disabled={isPending} onClick={resetFilters} variant="secondary">
-            Reset
-          </Button>
         </div>
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
             {weekdays.map((weekday) => (
@@ -339,6 +551,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
             {weeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
+              const dayExceptions = date ? exceptionsByDay.get(date) ?? [] : [];
               const selected = date === selectedDate;
               const isToday = date === today;
               return (
@@ -357,23 +570,37 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                     <span className={["text-sm font-black", isToday ? "text-orange-600" : ""].join(" ")}>
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
-                    {dayItems.length > 0 ? (
-                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-600">{dayItems.length}</span>
-                    ) : null}
+                    <span className="flex items-center gap-1">
+                      {dayExceptions.length > 0 ? (
+                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">{dayExceptions.length}</span>
+                      ) : null}
+                      {dayItems.length > 0 ? (
+                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-600">{dayItems.length}</span>
+                      ) : null}
+                    </span>
                   </span>
                   <span className="mt-2 block space-y-1">
-                    {dayItems.slice(0, 4).map((item) => (
+                    {dayExceptions.slice(0, 2).map((exception) => (
+                      <span
+                        className={["block truncate border px-1.5 py-1 text-[11px] font-bold", exceptionTone(exception.severity)].join(" ")}
+                        key={exception.id}
+                        title={exception.description}
+                      >
+                        {exception.title}
+                      </span>
+                    ))}
+                    {dayItems.slice(0, dayExceptions.length > 0 ? 3 : 4).map((item) => (
                       <span
                         className={["block truncate border px-1.5 py-1 text-[11px] font-bold", sourceTone(item.source, item.severity)].join(" ")}
                         key={item.id}
-                        title={item.title}
+                        title={chipTitle(item, viewMode)}
                       >
-                        {item.title}
+                        {chipTitle(item, viewMode)}
                       </span>
                     ))}
-                    {dayItems.length > 4 ? (
+                    {dayItems.length + dayExceptions.length > 5 ? (
                       <span className="block border border-slate-200 bg-slate-50 px-1.5 py-1 text-[11px] font-bold text-slate-500">
-                        + {dayItems.length - 4} more
+                        + {dayItems.length + dayExceptions.length - 5} more
                       </span>
                     ) : null}
                   </span>
@@ -387,30 +614,34 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           <div className="border-b border-slate-200 p-4">
             <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
               <CalendarDays className="h-4 w-4" />
-              Selected Day
+              Daily Timeline
             </div>
             <h3 className="mt-2 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{selectedItems.length} item{selectedItems.length === 1 ? "" : "s"}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} / {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
+            </p>
           </div>
-          <div className="max-h-[620px] overflow-y-auto p-4">
-            {selectedGroups.length === 0 ? (
+          <div className="max-h-[720px] overflow-y-auto p-4">
+            {selectedExceptions.length > 0 ? (
+              <section className="mb-5">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  Exception Warnings
+                </div>
+                <div className="space-y-2">
+                  {selectedExceptions.map((exception) => <ExceptionItem exception={exception} key={exception.id} />)}
+                </div>
+              </section>
+            ) : null}
+
+            {timelineItems.length === 0 ? (
               <div className="border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">
                 No private calendar items for this day.
               </div>
             ) : (
-              <div className="space-y-5">
-                {selectedGroups.map((group) => (
-                  <section key={group.source}>
-                    <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                      {sourceIcon(group.source)}
-                      {privateCalendarSourceLabels[group.source]}
-                    </div>
-                    <div className="space-y-2">
-                      {group.items.map((item) => (
-                        <DetailItem item={item} key={item.id} />
-                      ))}
-                    </div>
-                  </section>
+              <div className="relative space-y-3 border-l-2 border-slate-200 pl-4">
+                {timelineItems.map((item) => (
+                  <TimelineItem item={item} key={item.id} viewMode={viewMode} />
                 ))}
               </div>
             )}
@@ -421,11 +652,11 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   );
 }
 
-function Metric({ icon, label, ready, value }: { icon: ReactNode; label: string; ready: boolean; value: number }) {
+function Metric({ icon, label, ready, tone = "neutral", value }: { icon: ReactNode; label: string; ready: boolean; tone?: "neutral" | "warning"; value: number }) {
   return (
-    <div className="border border-slate-200 bg-slate-50 p-3">
+    <div className={["border p-3", tone === "warning" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"].join(" ")}>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-slate-500">{icon}</span>
+        <span className={tone === "warning" ? "text-amber-600" : "text-slate-500"}>{icon}</span>
         <span className={["text-[10px] font-black uppercase tracking-[0.14em]", ready ? "text-emerald-600" : "text-amber-600"].join(" ")}>
           {ready ? "Ready" : "Unavailable"}
         </span>
@@ -436,13 +667,89 @@ function Metric({ icon, label, ready, value }: { icon: ReactNode; label: string;
   );
 }
 
-function DetailItem({ item }: { item: PrivateCalendarItem }) {
+function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummary"] }) {
+  const sortedRows = [...rows].sort((left, right) => right.exceptionCount - left.exceptionCount || left.fullName.localeCompare(right.fullName));
   return (
-    <article className={["border p-3", sourceTone(item.source, item.severity)].join(" ")}>
+    <section className="border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <UsersRound className="h-4 w-4" />
+            Manager Team Calendar
+          </div>
+          <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
+        </div>
+        <span className="border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-600">
+          {rows.length} employee{rows.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="grid max-h-72 gap-2 overflow-y-auto p-4 md:grid-cols-2 xl:grid-cols-3">
+        {sortedRows.slice(0, 18).map((row) => (
+          <article key={row.hrId} className="border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="truncate text-sm font-black text-slate-900">{row.fullName}</h4>
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
+                  {row.hrId} {row.lineName ? `- ${row.lineName}` : ""}
+                </p>
+              </div>
+              <span className={["shrink-0 border px-2 py-0.5 text-[10px] font-black", row.exceptionCount ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"].join(" ")}>
+                {row.exceptionCount} warning{row.exceptionCount === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">
+              <span className="border border-slate-200 bg-white px-1 py-1">A {row.sourceCounts.attendance}</span>
+              <span className="border border-slate-200 bg-white px-1 py-1">V {row.sourceCounts.vacation}</span>
+              <span className="border border-slate-200 bg-white px-1 py-1">E {row.sourceCounts.excuse}</span>
+              <span className="border border-slate-200 bg-white px-1 py-1">P {row.sourceCounts.plan}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
+  return (
+    <article className={["border p-3", exceptionTone(exception.severity)].join(" ")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="text-sm font-black">{item.title}</h4>
-          {item.time ? <p className="mt-1 text-xs font-bold opacity-80">{item.time}</p> : null}
+          <h4 className="text-sm font-black">{exception.title}</h4>
+          {exception.employeeName ? (
+            <p className="mt-1 text-xs font-bold opacity-80">
+              {exception.employeeName} {exception.employeeHrId ? `(${exception.employeeHrId})` : ""}
+            </p>
+          ) : null}
+        </div>
+        <span className="shrink-0 border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">
+          {exception.severity}
+        </span>
+      </div>
+      <p className="mt-2 text-xs font-semibold opacity-90">{exception.description}</p>
+    </article>
+  );
+}
+
+function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
+  return (
+    <article className={["relative border p-3", sourceTone(item.source, item.severity)].join(" ")}>
+      <span className="absolute -left-[23px] top-4 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-current" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] opacity-80">
+              {sourceIcon(item.source)}
+              {privateCalendarSourceLabels[item.source]}
+            </span>
+            {item.time ? <span className="text-xs font-black opacity-80">{item.time}</span> : null}
+          </div>
+          <h4 className="mt-1 text-sm font-black">{item.title}</h4>
+          {viewMode === "team" && item.employeeName ? (
+            <p className="mt-1 text-xs font-bold opacity-80">
+              {item.employeeName} {item.employeeHrId ? `(${item.employeeHrId})` : ""}
+            </p>
+          ) : null}
         </div>
         {item.status ? (
           <span className="shrink-0 border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">
@@ -450,12 +757,35 @@ function DetailItem({ item }: { item: PrivateCalendarItem }) {
           </span>
         ) : null}
       </div>
+
+      {item.exceptionFlags.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {item.exceptionFlags.map((flag) => (
+            <span key={flag} className="border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] opacity-90">
+              {flag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {item.detailLines.length > 0 ? (
         <ul className="mt-3 space-y-1 text-xs font-semibold opacity-90">
           {item.detailLines.map((line) => <li key={line}>{line}</li>)}
         </ul>
       ) : null}
       {item.description ? <p className="mt-3 text-xs font-semibold opacity-80">{item.description}</p> : null}
+      {item.approvalImpact ? (
+        <p className="mt-3 border border-current bg-white/60 px-2 py-1.5 text-xs font-bold opacity-90">{item.approvalImpact}</p>
+      ) : null}
+      <div className="mt-3 border-t border-current/20 pt-2 text-[11px] font-semibold opacity-80">
+        <div className="flex items-center gap-1 font-black uppercase tracking-[0.12em]">
+          <FileSearch className="h-3.5 w-3.5" />
+          Source trace
+        </div>
+        <p className="mt-1">{item.sourceLabel}</p>
+        <p>{item.sourceSystem}{item.sourceTable ? ` - ${item.sourceTable}` : ""}</p>
+        {item.sourceRecordId ? <p className="font-mono">Record: {item.sourceRecordId}</p> : null}
+      </div>
     </article>
   );
 }
