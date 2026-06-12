@@ -113,6 +113,13 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(workspaceSource, /\/admin\/weekly-plans\/calendar/, "admin planning must link to the shared planning calendar");
   assert.match(workspaceSource, /sameLineBookingWarning/, "editor must show non-blocking same-line Medical Rep warnings");
   assert.match(workspaceSource, /<CalendarDays className=/, "calendar navigation must use the calendar icon action");
+  assert.match(workspaceSource, /nextWeeklyPlanStart/, "new weekly plans must default to the next selectable planning week");
+  assert.match(workspaceSource, /Plan week/, "weekly editor must expose a clear Plan week selector");
+  assert.match(workspaceSource, /weeklyPlanWeekOptions/, "weekly editor must provide explicit week choices instead of only an anchor date");
+  assert.match(workspaceSource, /periodLocked/, "saved plans must keep their stored period while editing rows");
+  assert.match(workspaceSource, /New plan/, "saved-plan editing must expose a separate new-plan action for another week");
+  assert.match(workspaceSource, /draftRowsFromPlan/, "deep-linked saved plans must initialize from their saved rows");
+  assert.match(workspaceSource, /This account is not eligible to submit weekly\/monthly plans/, "submit errors must expose the actual eligibility reason");
   assert.doesNotMatch(workspaceSource, /Retry Calendar/, "Google Calendar sync retry UI must be removed");
   assert.match(workspaceSource, /workspace\.summary/);
   assert.match(workspaceSource, /Export XLSX/);
@@ -126,6 +133,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(calendarServiceSource, /source:\s*"plan"/, "calendar plan source must emit plan calendar items");
 
   const sharedCalendarServiceSource = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
+  const planningCalendarUiSource = readFileSync("src/components/employee-portal/planning-calendar.tsx", "utf8");
   const planningCalendarPageSource = readFileSync("app/employee-portals/plans/calendar/page.tsx", "utf8");
   const adminPlanningCalendarPageSource = readFileSync("app/(admin)/admin/weekly-plans/calendar/page.tsx", "utf8");
   const planningCalendarRouteSource = readFileSync("app/api/weekly-plans/calendar/route.ts", "utf8");
@@ -137,6 +145,8 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(adminPlanningCalendarPageSource, /getSharedPlanningCalendarWorkspace/);
   assert.match(planningCalendarRouteSource, /getSharedPlanningCalendarWorkspace/);
   assert.match(conflictRouteSource, /getSameLinePlanBookings/);
+  assert.doesNotMatch(planningCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_360px\]/, "planning calendar must not narrow the month grid with a right-side detail rail");
+  assert.match(planningCalendarUiSource, /contentClassName="grid gap-2 md:grid-cols-2 2xl:grid-cols-3"/, "selected planning day details must sit below the calendar as a responsive card grid");
 
   const baseItem = {
     activityTitle: "Double Visit",
