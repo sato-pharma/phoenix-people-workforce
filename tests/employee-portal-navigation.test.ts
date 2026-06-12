@@ -127,16 +127,17 @@ export function runEmployeePortalNavigationTests() {
     "SFE Manager should land in the admin marketing request shell",
   );
 
-  // --- Marketing Requests graduated to full module; Contact HR Support still Beta ----
+  // --- Marketing Requests and Contact HR Support both graduated to full modules ------
   const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
 
-  // Default launch posture (flag unset): Marketing Requests is a full module and
-  // stays visible for authorized roles; Contact HR Support remains Beta-hidden.
+  // Default launch posture (flag unset): Marketing Requests is a full module and stays
+  // visible for authorized roles; Contact HR Support is now a full module visible to
+  // every employee-portal user (everyone must be able to reach their HR team).
   delete process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
 
   const nsmDefault = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nsmDefault.showMarketingRequestsTab, true, "NSM should see Marketing Requests in nav (full module, flag-independent)");
-  assert.equal(nsmDefault.showSupportTab, false, "NSM should not see Contact HR Support in nav by default");
+  assert.equal(nsmDefault.showSupportTab, true, "NSM should see Contact HR Support in nav (full module, flag-independent)");
 
   // Product Manager and Group Product Manager are authorized for Marketing and must
   // see the module in nav without the launch flag (regression coverage).
@@ -158,7 +159,12 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(superAdminDefault.showMarketingRequestsTab, true, "Super Admin should see Marketing Requests in nav (full module)");
   assert.equal(superAdminDefault.showMarketingControlTab, true, "Super Admin should see Marketing Control in nav (full module)");
   assert.equal(superAdminDefault.showMarketingCustomerDatabaseTab, true, "Super Admin should see Customer Database in nav (full module)");
-  assert.equal(superAdminDefault.showSupportTab, false, "Super Admin should not see Contact HR Support in nav by default");
+  assert.equal(superAdminDefault.showSupportTab, true, "Super Admin should see Contact HR Support in nav (full module)");
+
+  // Contact HR Support is available to every portal role, including those with a trimmed
+  // nav like Training Manager — everyone must be able to reach their HR team.
+  const trainingManagerSupport = resolveEmployeePortalNavVisibility("Training Manager");
+  assert.equal(trainingManagerSupport.showSupportTab, true, "Contact HR Support must show for every portal role");
 
   // Marketing Requests visibility never extends to an unauthorized role.
   const trainingManagerDefault = resolveEmployeePortalNavVisibility("Training Manager");
@@ -177,18 +183,18 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(nsmCore.showDsmsPerformanceTab, true, "Core: NSM keeps DSMs Performance with beta nav off");
   assert.equal(nsmCore.showTeamExpensesTab, true, "Core: NSM keeps Team Expenses with beta nav off");
 
-  // Beta flag enabled: Contact HR Support (still Beta) appears; Marketing stays visible.
+  // Beta flag enabled: full modules stay visible; the flag never downgrades them.
   process.env.PHOENIX_PORTAL_SHOW_BETA_NAV = "true";
 
   const nsmBeta = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nsmBeta.showMarketingRequestsTab, true, "NSM keeps Marketing Requests when beta nav is enabled");
-  assert.equal(nsmBeta.showSupportTab, true, "Contact HR Support should appear when beta nav is enabled");
+  assert.equal(nsmBeta.showSupportTab, true, "Contact HR Support stays visible when beta nav is enabled");
 
   // Enabling the flag must never grant Marketing to a role that was not authorized.
   const trainingManagerBeta = resolveEmployeePortalNavVisibility("Training Manager");
   assert.equal(trainingManagerBeta.showMarketingRequestsTab, false, "Beta flag must not grant Marketing Requests to an unauthorized role");
   assert.equal(trainingManagerBeta.showMarketingControlTab, false, "Beta flag must not grant Marketing Control to an unauthorized role");
-  assert.equal(trainingManagerBeta.showSupportTab, true, "Contact HR Support returns for any portal role when beta nav is enabled");
+  assert.equal(trainingManagerBeta.showSupportTab, true, "Contact HR Support stays visible for any portal role");
 
   // Restore the launch posture so the flag never leaks into other suites.
   if (previousBetaFlag === undefined) {

@@ -39,6 +39,7 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: false, module: "excuses", notes: "Allowed for governed excuse/leave workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "outstation", notes: "Allowed for governed outstation expense workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "weekly_plans", notes: "Allowed for governed weekly plan notifications.", optional: false },
+  { enabled: true, genericOnly: false, module: "support_requests", notes: "Allowed so the HR team is alerted when an employee opens a support ticket.", optional: false },
   { enabled: true, genericOnly: false, module: "birthdays", notes: "Non-sensitive celebratory reminders.", optional: true },
   { enabled: true, genericOnly: false, module: "anniversary", notes: "Non-sensitive celebratory reminders.", optional: true },
 ];

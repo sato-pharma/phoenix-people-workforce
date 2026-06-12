@@ -127,6 +127,35 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(exportRouteSource, /format=xlsx\|pdf|format/);
   assert.match(exportSource, /buildEmployeePlansWorkbook/);
   assert.match(exportSource, /buildEmployeePlansPdf/);
+
+  // HR must be alerted on EVERY submission (in-app + email + Telegram), alongside the
+  // direct manager — and a fresh submit must fan out to both via notifyPlanSubmitted.
+  assert.match(serviceSource, /async function notifyHrOnSubmit/, "HR submit alert helper must exist");
+  assert.match(serviceSource, /async function notifyPlanSubmitted/, "combined submit fan-out must exist");
+  assert.match(
+    serviceSource,
+    /notifyHrOnSubmit[\s\S]*?hrAcknowledgementRecipients\(\)/,
+    "HR submit alert must resolve the HR recipient audience",
+  );
+  assert.match(
+    serviceSource,
+    /notifyHrOnSubmit[\s\S]*?!hrIdsMatch\(recipient\.hrId, plan\.manager_hr_id\)/,
+    "HR submit alert must exclude the direct manager to avoid double-notifying",
+  );
+  assert.match(
+    serviceSource,
+    /notifyPlanSubmitted[\s\S]*?Promise\.allSettled\(\[notifyManager\(plan\), notifyHrOnSubmit\(plan\)\]\)/,
+    "submit fan-out must reach manager + HR and isolate failures",
+  );
+  // Every submit site must use the combined fan-out, never the bare manager-only alert.
+  assert.doesNotMatch(
+    serviceSource,
+    /input\.submit[\s\S]{0,80}?await notifyManager\(/,
+    "submit paths must call notifyPlanSubmitted, not notifyManager directly",
+  );
+  const submitFanoutCount = (serviceSource.match(/await notifyPlanSubmitted\(/g) ?? []).length;
+  assert.ok(submitFanoutCount >= 3, "all three submit paths must fan out to manager + HR");
+
   assert.match(calendarServiceSource, /loadPlanItems/, "company calendar must automatically project saved plan rows");
   assert.match(calendarServiceSource, /employee_plan_headers/, "calendar plan source must read employee plan headers");
   assert.match(calendarServiceSource, /employee_plan_items/, "calendar plan source must read employee plan items");

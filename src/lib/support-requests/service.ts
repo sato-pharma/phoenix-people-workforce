@@ -9,8 +9,108 @@
  * empty list rather than crashing the page.
  */
 
-import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+export const SUPPORT_REQUEST_STATUSES = ["Pending", "In Progress", "Resolved", "Closed"] as const;
+export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
+
+const SUPPORT_ADMIN_REVIEW_URL = "/admin/notifications";
+
+type HrRecipient = { hrId: string | null; userId: string | null };
+
+function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeHrId(left);
+  const b = normalizeHrId(right);
+  return Boolean(a) && a === b;
+}
+
+/**
+ * Resolve the HR team that should be alerted when an employee opens a support
+ * ticket: every Super Admin / HR Specialist account, plus any employee whose title
+ * marks them as an HR Manager / Admin HR. Best-effort — a failed lookup returns an
+ * empty list so a ticket is never blocked from being saved.
+ */
+async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
+  const supabase = getSupabaseAdmin();
+  try {
+    const { data: authRows } = await supabase
+      .from("app_auth_users")
+      .select("login_id,hr_id,role")
+      .in("role", ["HR Specialist", "Super Admin"]);
+    const { data: employees } = await supabase
+      .from("employees")
+      .select("hr_id,job_title,position_title")
+      .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%");
+
+    const hrTitledIds = new Set(
+      ((employees ?? []) as Array<{ hr_id?: string | null }>)
+        .map((row) => normalizeHrId(row.hr_id))
+        .filter(Boolean),
+    );
+
+    const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ login_id?: string | null; hr_id?: string | null; role?: string | null }>)
+      .map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
+    for (const hrId of hrTitledIds) {
+      if (!recipients.some((recipient) => sameHrId(recipient.hrId, hrId))) {
+        recipients.push({ hrId, userId: null });
+      }
+    }
+    return recipients;
+  } catch (error) {
+    console.error("Failed to resolve HR support recipients", error);
+    return [];
+  }
+}
+
+/**
+ * Alert the HR team (in-app + email + Telegram) that a new support ticket was opened.
+ * Best-effort and fully isolated: any failure here must never prevent the ticket from
+ * being persisted or surface as an error to the submitting employee.
+ */
+async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<void> {
+  try {
+    const recipients = (await resolveHrSupportRecipients())
+      .filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
+    if (recipients.length === 0) return;
+
+    const subcategory = request.subcategory ? ` / ${request.subcategory}` : "";
+    const title = `New HR support request: ${request.subject}`;
+    const message = `${request.employeeName} (${request.hrId}) opened a support request — ${request.category}${subcategory}.`;
+
+    await Promise.allSettled(
+      recipients.map((recipient) =>
+        createSystemNotification({
+          actionUrl: SUPPORT_ADMIN_REVIEW_URL,
+          category: "general",
+          channels: ["in_app", "email", "telegram"],
+          email: {
+            metrics: [
+              { label: "Employee", value: `${request.employeeName} (${request.hrId})` },
+              { label: "Category", value: `${request.category}${subcategory}` },
+            ],
+          },
+          eventType: "support_request_created",
+          message: `${message}\n\n${request.description}`,
+          metadata: {
+            idempotencyKey: `support_request:${request.id}:created:${normalizeHrId(recipient.hrId) || recipient.userId || "unknown"}`,
+            supportRequestId: request.id,
+          },
+          module: "support_requests",
+          priority: "high",
+          recipientHrId: recipient.hrId,
+          recipientUserId: recipient.userId,
+          recordId: request.id,
+          subjectHrId: request.hrId,
+          title,
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("Failed to notify HR of support request", error);
+  }
+}
 
 export type SupportRequestAttachment = {
   name: string;
@@ -108,6 +208,77 @@ export async function listSupportRequestsForViewer(
   return (data ?? []).map((row) => rowToView(row as Record<string, unknown>));
 }
 
+export type SupportRequestListFilter = {
+  limit?: number;
+  status?: SupportRequestStatus | "all";
+};
+
+/**
+ * HR/admin view: list every employee's support tickets (most-recent first),
+ * optionally filtered by status. Enforces support_requests:read on the server —
+ * sidebar visibility is never the security boundary. Returns [] if the table
+ * isn't provisioned yet.
+ */
+export async function listAllSupportRequests(
+  access: AccessContext,
+  filter: SupportRequestListFilter = {},
+): Promise<SupportRequestRow[]> {
+  await assertPermission(access, "support_requests", "read");
+
+  const limit = Math.max(1, Math.min(200, filter.limit ?? 100));
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from(tableName)
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (filter.status && filter.status !== "all") {
+    query = query.eq("status", filter.status);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingTable(error)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []).map((row) => rowToView(row as Record<string, unknown>));
+}
+
+/**
+ * HR/admin action: move a support ticket to a new status. Enforces
+ * support_requests:update on the server. Returns the updated ticket.
+ */
+export async function updateSupportRequestStatus(
+  access: AccessContext,
+  id: string,
+  status: SupportRequestStatus,
+): Promise<SupportRequestRow> {
+  await assertPermission(access, "support_requests", "update");
+
+  const ticketId = cleanText(id);
+  if (!ticketId) throw new Error("A support request id is required.");
+  if (!SUPPORT_REQUEST_STATUSES.includes(status)) {
+    throw new Error("Invalid support request status.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(tableName)
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", ticketId)
+    .select("*")
+    .single();
+
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("Support request table is not provisioned yet. Run the SQL migration first.");
+    }
+    throw new Error(error.message);
+  }
+  if (!data) throw new Error("Support request not found.");
+  return rowToView(data as Record<string, unknown>);
+}
+
 /**
  * Create a new support request. The hr_id is taken from the access context
  * (NOT the request body) so users cannot impersonate other employees.
@@ -155,5 +326,9 @@ export async function createSupportRequest(
     }
     throw new Error(error.message);
   }
-  return rowToView(data as Record<string, unknown>);
+
+  const created = rowToView(data as Record<string, unknown>);
+  // Best-effort: alert the HR team. Never let a notification failure break ticket creation.
+  await notifyHrOfSupportRequest(created);
+  return created;
 }
