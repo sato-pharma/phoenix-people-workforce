@@ -29,12 +29,12 @@ export type WeeklyTemplate = {
   required: WeeklyTemplateField[];
 };
 
-// Ibn Sina (code IS) — "SalesAndStockReport2_DataHub" coded weekly feed. Product ID maps directly to
-// our product_code; Item Code/name are the distributor SKU (fallback for unmapped/#N/A Product IDs).
+// Ibn Sina Sato / IS-S (and legacy IS fallback) — "SalesAndStockReport2_DataHub" coded weekly feed.
+// Product ID maps directly to our product_code; Item Code/name are the distributor SKU (fallback for unmapped/#N/A Product IDs).
 const IBN_SINA_WEEKLY: WeeklyTemplate = {
   key: "ibn_sina_weekly_datahub",
-  name: "Ibn Sina weekly Sales & Stock (DataHub)",
-  distributorCodes: ["IS"],
+  name: "Ibn Sina Sato weekly Sales & Stock (DataHub)",
+  distributorCodes: ["IS-S", "IS"],
   sheetNameIncludes: "DataHub",
   fields: {
     weekStart: ["Date"],
