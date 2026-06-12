@@ -46,32 +46,209 @@ const expenseHeaderAliases = {
     "employee_code",
     "Code",
   ],
-  columnDate: ["Date", "Trip start", "Trip Start Date", "Start Date"],
+  columnDate: [
+    "Date",
+    "Trip start",
+    "Trip Start Date",
+    "Start Date",
+    "Startdate",
+  ],
   columnFrom: ["From", "From Address", "Start Location"],
   columnTo: ["To", "Destination", "Destination Name"],
   columnToDate: ["To Date", "Trip end", "Trip End Date", "End Date"],
   columnKm: ["KM", "Distance", "Distance (km)", "Distance (KM)"],
-  columnTravelCost: ["Travel Cost", "Travel", "Travel cost"],
+  columnTravelCost: [
+    "Travel Cost",
+    "Travel Cost (auto)",
+    "Travel",
+    "Travel cost",
+  ],
   columnMeeting: ["Meeting Amount", "Meeting", "Meeting Amount (EGP)"],
   columnAllowance: ["Allowance"],
   columnExpected: ["Expected", "Expected Amount"],
   columnTotal: ["Total", "Claimed", "Claim"],
   columnStatus: ["Status", "Eligibility", "Recommendation", "Recommendation Status"],
-  columnTransportation: ["Transportation Type", "Transport", "Transport Mode"],
-  columnDescription: ["Description", "Remarks", "Notes"],
-  columnRequestType: ["Request Type", "Trip Type", "Role", "Workload Type"],
+  columnTransportation: [
+    "Transportation Type",
+    "Transport",
+    "Transport Mode",
+    "Transported By",
+  ],
+  columnDescription: ["Description", "Remarks", "Notes", "Comments"],
+  columnRequestType: [
+    "Request Type",
+    "Trip Type",
+    "Role",
+    "Workload Type",
+    "Expense Type",
+  ],
   columnHr: ["HR", "HR Notes", "HR Status"],
   columnRecommendation: ["Recommendation", "Manager Recommendation", "HR Recommendation"],
   columnOpen: ["Open", "Open Status"],
   columnAmWorkload: ["AM Workload", "AM Workload (hrs)"],
   columnPmWorkload: ["PM Workload", "PM Workload (hrs)"],
-  columnTripType: ["Trip Type", "Request Type", "Type"],
+  columnTripType: [
+    "Trip Type",
+    "Request Type",
+    "Type",
+    "Travel Stay Type",
+    "Expense Type",
+  ],
   columnLocation: ["Location", "Destination", "Destination Name"],
 };
 
 const expenseHeaderAliasSet = new Set(
   Object.values(expenseHeaderAliases).flat().map((alias) => normalizeHeaderKey(alias)),
 );
+
+type ExpenseTemplateDefinition = {
+  key: string;
+  name: string;
+  requiredColumns: string[];
+  sheetNames: string[];
+};
+
+const expenseTemplateDefinitions: ExpenseTemplateDefinition[] = [
+  {
+    key: "phoenix-outstation-expenses-v1",
+    name: "Phoenix Outstation Expenses",
+    requiredColumns: [
+      "tripid",
+      "employee",
+      "hrid",
+      "startdate",
+      "enddate",
+      "to",
+      "km",
+      "travelcost",
+      "meetingamount",
+      "allowance",
+      "total",
+      "amworkload",
+      "pmworkload",
+      "status",
+    ],
+    sheetNames: ["outstationexpenses", "outstation expenses"],
+  },
+];
+
+function detectExpenseTemplate(
+  fileName: string,
+  sheetName: string,
+  columns: string[],
+): { key: string; name: string; recognized: boolean } {
+  const normalizedSet = new Set(columns.map(normalizeHeaderName));
+  const templateFileHint = normalizeHeaderName(fileName);
+  const sheetHint = normalizeHeaderName(sheetName);
+  const outstationHint = templateFileHint.includes("outstation");
+
+  let bestMatch = {
+    recognized: false,
+    key: "generic-expenses-v1",
+    name: "Generic Outstation Expense Sheet",
+    score: -1,
+  };
+
+  for (const template of expenseTemplateDefinitions) {
+    const sheetMatch = template.sheetNames.some((name) => normalizeHeaderName(name) === sheetHint);
+    const requiredMatchCount = template.requiredColumns.filter((column) =>
+      normalizedSet.has(normalizeHeaderName(column)),
+    ).length;
+    const score = requiredMatchCount + (sheetMatch ? 2 : 0);
+
+    if (score > bestMatch.score) {
+      bestMatch = {
+        recognized: score >= 10 || (sheetMatch && score >= 8) || (outstationHint && score >= 8),
+        key: template.key,
+        name: template.name,
+        score,
+      };
+    }
+  }
+
+  if (!bestMatch.recognized) {
+    return {
+      key: "generic-expenses-v1",
+      name: "Generic Outstation Expense Sheet",
+      recognized: false,
+    };
+  }
+
+  return {
+    key: bestMatch.key,
+    name: bestMatch.name,
+    recognized: true,
+  };
+}
+
+function resolveResidenceFromEmployee(employee: {
+  residenceAddress: string | null;
+  residenceArea: string | null;
+  residenceCity: string | null;
+}) {
+  return [
+    text(employee.residenceAddress),
+    text(employee.residenceArea),
+    text(employee.residenceCity),
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+type EmployeeLookupMaps = {
+  codeByName: Map<string, string>;
+  codeByHrId: Map<string, string>;
+  residenceByHrId: Map<string, string>;
+  residenceByName: Map<string, string>;
+};
+
+async function buildEmployeeLookupMaps(): Promise<EmployeeLookupMaps> {
+  try {
+    const directory = await getEmployeeDirectory();
+    const codeByName = new Map<string, string>();
+    const codeByHrId = new Map<string, string>();
+    const residenceByHrId = new Map<string, string>();
+    const residenceByName = new Map<string, string>();
+
+    directory.employees.forEach((employee) => {
+      const hrId = text(employee.hrId).toUpperCase();
+      const normalizedHrId = hrId.toLowerCase();
+      const residence = resolveResidenceFromEmployee(employee);
+
+      if (hrId) {
+        codeByHrId.set(normalizedHrId, hrId);
+      }
+
+      if (residence) {
+        if (normalizedHrId) {
+          residenceByHrId.set(normalizedHrId, residence);
+        }
+        employeeNameKeys(employee.fullName, employee.nameAr, employee.crmUsername)
+          .forEach((key) => {
+            residenceByName.set(key, residence);
+          });
+      }
+
+      employeeNameKeys(employee.fullName, employee.nameAr, employee.crmUsername).forEach((key) => {
+        codeByName.set(key, employee.hrId);
+      });
+    });
+
+    return {
+      codeByName,
+      codeByHrId,
+      residenceByHrId,
+      residenceByName,
+    };
+  } catch {
+    return {
+      codeByName: new Map<string, string>(),
+      codeByHrId: new Map<string, string>(),
+      residenceByHrId: new Map<string, string>(),
+      residenceByName: new Map<string, string>(),
+    };
+  }
+}
 
 function buildHeaderLookup(columns: string[]) {
   const lookup = new Map<string, string>();
@@ -208,21 +385,34 @@ function employeeNameKeys(...values: Array<string | null | undefined>) {
   return Array.from(keys);
 }
 
-async function buildEmployeeCodeMap() {
-  try {
-    const directory = await getEmployeeDirectory();
-    const map = new Map<string, string>();
+function resolveHrIdFromEmployeeMaps(
+  employeeMaps: EmployeeLookupMaps,
+  specialist: string,
+  fileHrId: string,
+) {
+  const normalizedFileHrId = fileHrId.toLowerCase();
+  const byFileId = normalizedFileHrId ? employeeMaps.codeByHrId.get(normalizedFileHrId) : null;
+  if (byFileId) return byFileId;
 
-    directory.employees.forEach((employee) => {
-      employeeNameKeys(employee.fullName, employee.nameAr, employee.crmUsername).forEach((key) => {
-        map.set(key, employee.hrId);
-      });
-    });
+  return employeeNameKeys(specialist)
+    .map((key) => employeeMaps.codeByName.get(key))
+    .find(Boolean) ??
+    (fileHrId || null);
+}
 
-    return map;
-  } catch {
-    return new Map<string, string>();
+function resolveFromFromEmployeeMaps(
+  employeeMaps: EmployeeLookupMaps,
+  hrId: string | null,
+  specialist: string,
+) {
+  if (hrId) {
+    const fromByHr = employeeMaps.residenceByHrId.get(hrId.toLowerCase());
+    if (fromByHr) return fromByHr;
   }
+
+  return employeeNameKeys(specialist)
+    .map((key) => employeeMaps.residenceByName.get(key))
+    .find(Boolean) ?? "";
 }
 
 function specialistSummary(records: ExpenseTripRecord[]) {
@@ -260,7 +450,7 @@ function specialistSummary(records: ExpenseTripRecord[]) {
 }
 
 export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
-  const employeeCodeByName = await buildEmployeeCodeMap();
+  const employeeMaps = await buildEmployeeLookupMaps();
   const workbook = await loadExcelWorkbook(await file.arrayBuffer());
   const sheet = firstExcelWorksheet(workbook);
 
@@ -272,6 +462,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
   const rows = excelWorksheetToJsonRows(sheet, headerRowNumber);
   const columns = Object.keys(rows[0] ?? {});
   const columnLookup = buildHeaderLookup(columns);
+  const template = detectExpenseTemplate(file.name, sheet.name, columns);
   const records: ExpenseTripRecord[] = [];
   const warnings: string[] = [];
   let currentSpecialist = "";
@@ -299,14 +490,22 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       ? numberValue(totalCell)
       : expectedTotal;
     const fileHrId = text(rowValueByAlias(...expenseHeaderAliases.columnHrId));
-    const hrId =
-      fileHrId ||
-      employeeNameKeys(specialist)
-        .map((key) => employeeCodeByName.get(key))
-        .find(Boolean) ||
-      null;
-    const hasExpected = Boolean(text(rowValueByAlias(...expenseHeaderAliases.columnExpected)));
     const tripId = text(rowValueByAlias(...expenseHeaderAliases.columnTripId)) || `ROW-${rowNumber}`;
+    const hrId = resolveHrIdFromEmployeeMaps(employeeMaps, specialist, fileHrId);
+    const expectedFrom = text(rowValueByAlias(...expenseHeaderAliases.columnFrom));
+    const residenceFrom = resolveFromFromEmployeeMaps(employeeMaps, hrId, specialist);
+    const resolvedFrom = expectedFrom || residenceFrom;
+
+    if (template.recognized && !expectedFrom && !residenceFrom && specialist !== "Unassigned") {
+      warnings.push(`Row ${rowNumber} / ${tripId}: '${specialist}' has no From column and no residence match in employee records.`);
+    }
+    if (template.recognized && !expectedFrom && residenceFrom) {
+      warnings.push(
+        `Row ${rowNumber} / ${tripId}: From was calculated from employee residence (${residenceFrom}).`,
+      );
+    }
+
+    const hasExpected = Boolean(text(rowValueByAlias(...expenseHeaderAliases.columnExpected)));
 
     if (!hasExpected && Math.abs(total - expectedTotal) > 1) {
       warnings.push(
@@ -320,7 +519,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       date: parseDate(rowValueByAlias(...expenseHeaderAliases.columnDate)),
       description: text(rowValueByAlias(...expenseHeaderAliases.columnDescription)),
       hrId,
-      from: text(rowValueByAlias(...expenseHeaderAliases.columnFrom)),
+      from: resolvedFrom,
       hr: text(rowValueByAlias(...expenseHeaderAliases.columnHr)),
       hrNotes: text(rowValueByAlias(...expenseHeaderAliases.columnHr, ...expenseHeaderAliases.columnRecommendation)),
       km: numberValue(rowValueByAlias(...expenseHeaderAliases.columnKm)),
@@ -347,6 +546,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
   const specialists = specialistSummary(records);
 
   return {
+    template,
     columns,
     fileName: file.name,
     records,

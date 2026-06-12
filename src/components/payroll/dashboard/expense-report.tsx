@@ -339,6 +339,13 @@ export function ExpenseReport({
                 ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
                 : "Upload a historical outstation expenses sheet, approve rows from HR, then import approved expenses into payroll."}
             </p>
+            {analysis?.template ? (
+              <p className="mt-2 text-xs leading-6 text-[#FDE68A]">
+                {analysis.template.recognized
+                  ? `Template recognized: ${analysis.template.name}`
+                  : `Template detected: ${analysis.template.name}`}
+              </p>
+            ) : null}
           </div>
           <div className="relative z-10 flex flex-wrap items-center gap-2">
           <input
