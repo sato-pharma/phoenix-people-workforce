@@ -14,19 +14,26 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
-    week: initial?.appliedFilters.weekStart ?? "",
+    weeks: initial?.appliedFilters.weekStarts?.length ? [...initial.appliedFilters.weekStarts] : initial?.appliedFilters.weekStart ? [initial.appliedFilters.weekStart] : [],
+    allWeeks: initial?.appliedFilters.allWeeks ?? false,
     distributor: "",
     region: "",
     product: "",
+    line: "",
   });
 
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams();
-    if (filters.week) params.set("week", filters.week);
+    if (filters.allWeeks) {
+      params.set("allWeeks", "1");
+    } else {
+      for (const week of filters.weeks) params.append("week", week);
+    }
     if (filters.distributor) params.set("distributor", filters.distributor);
     if (filters.region) params.set("region", filters.region);
     if (filters.product) params.set("product", filters.product);
+    if (filters.line) params.set("line", filters.line);
     (async () => {
       // Defer the loading flag off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
@@ -51,10 +58,26 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     return () => {
       cancelled = true;
     };
-  }, [filters.week, filters.distributor, filters.region, filters.product]);
+  }, [filters.weeks.join("|"), filters.allWeeks, filters.distributor, filters.region, filters.product, filters.line]);
 
   const regionOptions = useMemo(() => data?.regions ?? [], [data]);
   const productOptions = useMemo(() => data?.products ?? [], [data]);
+  const lineOptions = useMemo(() => data?.availableLines ?? [], [data]);
+  const selectedWeekSummary = useMemo(() => {
+    if (data?.appliedFilters.allWeeks) {
+      return "All time";
+    }
+    if ((data?.appliedFilters.weekStarts?.length ?? 0) > 1) {
+      return `${data?.appliedFilters.weekStarts?.length ?? 0} selected weeks`;
+    }
+    return data?.appliedFilters.weekStart ? `Week of ${data.appliedFilters.weekStart}` : data?.weekStart;
+  }, [data]);
+
+  const selectedWeekTitle = useMemo(() => {
+    if (!data?.appliedFilters?.weekStarts?.length) return "";
+    if (data.appliedFilters.allWeeks) return "All time";
+    return data.appliedFilters.weekStarts.join(", ");
+  }, [data]);
 
   if (!data) {
     return (
@@ -79,22 +102,64 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           </p>
         </div>
         {data.weekStart && (
-          <span className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm font-black text-[#0F172A]">
-            Week of {data.weekStart}
+          <span className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm font-black text-[#0F172A]" title={selectedWeekTitle}>
+            {selectedWeekSummary}
             {data.priorWeekStart && <span className="ml-1 font-medium text-[#94A3B8]">vs {data.priorWeekStart}</span>}
           </span>
         )}
       </header>
 
       {/* Filters */}
-      <div className="grid grid-cols-2 gap-3 border border-[#E2E8F0] bg-white p-3 sm:grid-cols-4">
-        <Select label="Week" value={filters.week} onChange={(value) => setFilters((f) => ({ ...f, week: value }))}>
-          {data.availableWeeks.map((week) => (
-            <option key={week} value={week}>
-              {week}
-            </option>
-          ))}
-        </Select>
+      <div className="grid grid-cols-1 gap-3 border border-[#E2E8F0] bg-white p-3 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="border border-[#E2E8F0] p-2">
+          <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Weeks</label>
+          <label className="mb-2 flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+            <input
+              type="checkbox"
+              checked={filters.allWeeks}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setFilters((prev) => {
+                  const fallbackWeeks =
+                    prev.weeks.length > 0 ? prev.weeks : data.availableWeeks.slice(0, 1);
+                  return {
+                    ...prev,
+                    allWeeks: checked,
+                    weeks: checked ? [] : fallbackWeeks,
+                  };
+                });
+              }}
+            />
+            All time
+          </label>
+          <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+            {data.availableWeeks.map((week) => (
+              <label key={week} className="flex items-center gap-2 text-sm text-[#0F172A]">
+                <input
+                  type="checkbox"
+                  disabled={filters.allWeeks}
+                  checked={!filters.allWeeks && filters.weeks.includes(week)}
+                  onChange={(event) => {
+                    setFilters((prev) => {
+                      if (prev.allWeeks) return prev;
+                      const next = new Set(prev.weeks);
+                      if (event.target.checked) {
+                        next.add(week);
+                      } else {
+                        next.delete(week);
+                        if (next.size === 0 && data.availableWeeks.length > 0) {
+                          return { ...prev, weeks: [data.availableWeeks[0]] };
+                        }
+                      }
+                      return { ...prev, weeks: [...next].sort((left, right) => right.localeCompare(left)) };
+                    });
+                  }}
+                />
+                Week of {week}
+              </label>
+            ))}
+          </div>
+        </section>
         <Select label="Distributor" value={filters.distributor} onChange={(value) => setFilters((f) => ({ ...f, distributor: value }))}>
           <option value="">All distributors</option>
           {data.distributors.map((distributor) => (
@@ -116,6 +181,14 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           {productOptions.map((product) => (
             <option key={product.code} value={product.code}>
               {product.name}
+            </option>
+          ))}
+        </Select>
+        <Select label="Line" value={filters.line} onChange={(value) => setFilters((f) => ({ ...f, line: value }))}>
+          <option value="">All lines</option>
+          {lineOptions.map((line) => (
+            <option key={line} value={line}>
+              {line}
             </option>
           ))}
         </Select>
@@ -152,7 +225,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           )}
 
           {/* Trend */}
-          <TrendStrip trend={data.trend} selected={data.weekStart} />
+          <TrendStrip trend={data.trend} selected={data.appliedFilters.weekStarts} />
 
           {/* Zero-sales branches */}
           {data.zeroSalesBranches.length > 0 && (
@@ -300,9 +373,10 @@ function RankTable({ title, rows }: { title: string; rows: WeeklyRanked[] }) {
   );
 }
 
-function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; selected: string | null }) {
+function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; selected: string[] }) {
   if (trend.length < 2) return null;
   const max = Math.max(1, ...trend.map((point) => point.salesValue));
+  const selectedSet = new Set(selected);
   return (
     <section className="border border-[#E2E8F0] bg-white p-3">
       <div className="mb-2 text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</div>
@@ -310,7 +384,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         {trend.map((point) => (
           <div className="flex min-w-[44px] flex-1 flex-col items-center gap-1" key={point.weekStart} title={`${point.weekStart}: ${money(point.salesValue)}`}>
             <div
-              className={`w-full ${point.weekStart === selected ? "bg-[#F97316]" : "bg-[#CBD5E1]"}`}
+              className={`w-full ${selectedSet.has(point.weekStart) ? "bg-[#F97316]" : "bg-[#CBD5E1]"}`}
               style={{ height: `${Math.max(4, (point.salesValue / max) * 120)}px` }}
             />
             <span className="text-[9px] font-bold text-[#94A3B8]">{point.weekStart.slice(5)}</span>

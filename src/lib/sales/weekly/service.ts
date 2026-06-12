@@ -242,6 +242,26 @@ const delta = (current: number, prior: number | null): WeeklyDelta => ({
   pct: prior == null || prior === 0 ? null : Number(((current - prior) / prior).toFixed(4)),
 });
 
+const normalizeCode = (value: string | null | undefined) => (value ?? "").trim().toUpperCase();
+const normalizeText = (value: string | null | undefined) => (value ?? "").trim();
+const normalizeComparableLine = (value: string | null | undefined) => normalizeText(value).toUpperCase();
+
+const normalizeWeekList = (values?: string[] | null): string[] => {
+  if (!values || values.length === 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const split = normalizeText(raw).split(",");
+    for (const week of split) {
+      const value = normalizeText(week);
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      out.push(value);
+    }
+  }
+  return out;
+};
+
 function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: FactRow) => string): WeeklyRanked[] {
   const groups = new Map<string, { name: string; salesValue: number; salesUnits: number; stockUnits: number }>();
   let totalValue = 0;
@@ -268,9 +288,12 @@ function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: Fa
 
 export async function loadWeeklyDashboard(filters?: {
   weekStart?: string | null;
+  weekStarts?: string[] | null;
+  allWeeks?: boolean;
   distributorCode?: string | null;
   regionCode?: string | null;
   productCode?: string | null;
+  line?: string | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
 }): Promise<WeeklyDashboard> {
@@ -287,28 +310,49 @@ export async function loadWeeklyDashboard(filters?: {
   const availableWeeks = [...new Set(batches.map((batch) => String(batch.week_start)).filter(Boolean))].sort(
     (left, right) => right.localeCompare(left),
   );
+  const availableWeekSet = new Set(availableWeeks);
   const distributors: WeeklyDistributorOption[] = [
     ...new Map(batches.map((batch) => [String(batch.distributor_code), String(batch.distributor_name)])).entries(),
   ]
     .map(([code, name]) => ({ code, name }))
     .sort((left, right) => left.name.localeCompare(right.name));
 
-  const distributorFilter = filters?.distributorCode?.trim() || null;
-  const regionFilter = filters?.regionCode?.trim().toUpperCase() || null;
-  const productFilter = filters?.productCode?.trim().toUpperCase() || null;
-  const selectedWeek = filters?.weekStart?.trim() || availableWeeks[0] || null;
-  const priorWeek = selectedWeek ? availableWeeks.find((week) => week < selectedWeek) ?? null : null;
+  const distributorFilter = normalizeCode(filters?.distributorCode);
+  const regionFilter = normalizeCode(filters?.regionCode);
+  const productFilter = normalizeCode(filters?.productCode);
+  const lineFilter = normalizeComparableLine(filters?.line);
+  const requestedLine = normalizeText(filters?.line) || null;
+  const requestedWeekSet = new Set(normalizeWeekList(filters?.weekStarts).filter((week) => availableWeekSet.has(week)));
+  const requestedWeeks = availableWeeks.filter((week) => requestedWeekSet.has(week));
+  const allWeeksRequested = filters?.allWeeks === true;
+  const requestedSingleWeek = normalizeText(filters?.weekStart);
+  const selectedWeeks = allWeeksRequested
+    ? [...availableWeeks]
+    : requestedWeeks.length > 0
+      ? requestedWeeks
+      : requestedSingleWeek && availableWeekSet.has(requestedSingleWeek)
+        ? [requestedSingleWeek]
+        : availableWeeks.length > 0
+          ? [availableWeeks[0]]
+          : [];
+  const priorWeek = selectedWeeks.length > 0 ? availableWeeks.find((week) => week < selectedWeeks[0]) ?? null : null;
+  const selectedWeekAnchor = selectedWeeks.length > 0 ? selectedWeeks[0] : null;
+  const selectedWeekSet = new Set(selectedWeeks);
 
   const empty = (): WeeklyDashboard => ({
-    weekStart: selectedWeek,
+    weekStart: selectedWeekAnchor,
     priorWeekStart: priorWeek,
     availableWeeks,
+    availableLines: [],
     distributors,
     appliedFilters: {
-      weekStart: selectedWeek,
-      distributorCode: distributorFilter,
-      regionCode: regionFilter,
-      productCode: productFilter,
+      weekStart: selectedWeekAnchor,
+      weekStarts: selectedWeeks,
+      allWeeks: allWeeksRequested,
+      distributorCode: distributorFilter || null,
+      regionCode: regionFilter || null,
+      productCode: productFilter || null,
+      lineCode: requestedLine,
     },
     kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
     compare: { salesValue: delta(0, null), salesUnits: delta(0, null), stockUnits: delta(0, null) },
@@ -366,9 +410,19 @@ export async function loadWeeklyDashboard(filters?: {
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true };
   const visibleRows = applyWeeklyAccessScope(allRows, accessScope);
+  const scopedRows = visibleRows.filter((row) => {
+    if (distributorFilter && row.distributorCode !== distributorFilter) return false;
+    if (regionFilter && row.regionCode !== regionFilter) return false;
+    if (productFilter && normalizeCode(row.productCode) !== productFilter) return false;
+    if (lineFilter && normalizeComparableLine(row.officialLine) !== lineFilter) return false;
+    return true;
+  });
+  const availableLines = [...new Set(scopedRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right),
+  );
 
-  const weekRows = visibleRows.filter((row) => row.weekStart === selectedWeek);
-  const priorRows = priorWeek ? visibleRows.filter((row) => row.weekStart === priorWeek) : [];
+  const weekRows = scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
+  const priorRows = priorWeek ? scopedRows.filter((row) => row.weekStart === priorWeek) : [];
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
@@ -396,7 +450,7 @@ export async function loadWeeklyDashboard(filters?: {
 
   const trendWeeks = [...availableWeeks].sort(); // ascending for charting
   const trend = trendWeeks.map((week) => {
-    const rows = visibleRows.filter((row) => row.weekStart === week);
+    const rows = scopedRows.filter((row) => row.weekStart === week);
     return {
       weekStart: week,
       salesValue: Number(sum(rows, (row) => row.salesValue).toFixed(2)),
@@ -406,15 +460,19 @@ export async function loadWeeklyDashboard(filters?: {
   });
 
   return {
-    weekStart: selectedWeek,
+    weekStart: selectedWeekAnchor,
     priorWeekStart: priorWeek,
     availableWeeks,
+    availableLines,
     distributors,
     appliedFilters: {
-      weekStart: selectedWeek,
-      distributorCode: distributorFilter,
-      regionCode: regionFilter,
-      productCode: productFilter,
+      weekStart: selectedWeekAnchor,
+      weekStarts: selectedWeeks,
+      allWeeks: allWeeksRequested,
+      distributorCode: distributorFilter || null,
+      regionCode: regionFilter || null,
+      productCode: productFilter || null,
+      lineCode: requestedLine,
     },
     kpis: {
       salesValue: Number(sum(weekRows, (row) => row.salesValue).toFixed(2)),
