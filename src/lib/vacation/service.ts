@@ -1661,9 +1661,34 @@ async function notifyVacationSubmittedByGovernance(input: {
       status: "Review / reject only until management approves",
     };
   };
+  const primaryRecipient = input.approvalRecipients.find((recipient) => recipient.stepKey === "direct_manager")
+    ?? input.approvalRecipients[0]
+    ?? null;
+  const primaryRecipientKey = primaryRecipient
+    ? `${canonicalHrId(primaryRecipient.hrId) ?? primaryRecipient.hrId}:${primaryRecipient.userId ?? ""}`
+    : "";
+  const samePrimaryRecipient = (recipient: VacationApprovalRecipient) =>
+    `${canonicalHrId(recipient.hrId) ?? recipient.hrId}:${recipient.userId ?? ""}` === primaryRecipientKey;
+  const primaryDeliverableEmail = primaryRecipient ? pickDeliverableEmail(primaryRecipient.email) : null;
+  const ccEmails = Array.from(new Set(
+    input.approvalRecipients
+      .filter((recipient) => !samePrimaryRecipient(recipient))
+      .map((recipient) => pickDeliverableEmail(recipient.email))
+      .filter((email): email is string => Boolean(email)),
+  ));
+  const submitEmail = sequential && primaryRecipient && primaryDeliverableEmail
+    ? sendVacationManagerDecisionEmail({
+        cc: ccEmails,
+        managerEmail: primaryDeliverableEmail,
+        managerName: primaryRecipient.name,
+        policyWarnings: input.policyWarnings,
+        request: input.request,
+        reviewUrl: absoluteReviewUrl,
+      }).catch(() => undefined)
+    : Promise.resolve(undefined);
 
-  await Promise.allSettled(
-    input.approvalRecipients.map((recipient) => {
+  await Promise.allSettled([
+    ...input.approvalRecipients.map((recipient) => {
       const copy = recipientCopy(recipient.stepKey);
       const telegramButtons = sequential
         ? [{ label: "Review Request", url: actionCenterUrl }]
@@ -1672,28 +1697,16 @@ async function notifyVacationSubmittedByGovernance(input: {
             { label: "Approve in Phoenix", url: approveUrl },
             { label: "Reject in Phoenix", url: rejectUrl },
           ];
-      // Sequential types (Annual/Other/Compensatory/Emergency) send the styled "leave_request"
-      // WYSIWYG template directly per approver — it carries the full vacation record (balance,
-      // duration, hire date) the generic notification email can't — so the createSystemNotification
-      // "email" channel is dropped here to avoid a duplicate generic email. The legacy Sick flow
-      // keeps the generic email + direct approve/reject links unchanged.
-      const deliverableEmail = sequential ? pickDeliverableEmail(recipient.email) : null;
-      const templatedEmail = deliverableEmail
-        ? sendVacationManagerDecisionEmail({
-            managerEmail: deliverableEmail,
-            managerName: recipient.name,
-            policyWarnings: input.policyWarnings,
-            request: input.request,
-            reviewUrl: absoluteReviewUrl,
-          }).catch(() => undefined)
-        : Promise.resolve(undefined);
-      const notification = createSystemNotification({
+      // Sequential submit email is sent once above: primary manager TO, visibility approvers CC.
+      // Per-recipient notification records remain in-app/Telegram only.
+      const isPrimaryEmailRecipient = !sequential && samePrimaryRecipient(recipient);
+      return createSystemNotification({
         actionUrl: sequential ? actionCenterUrl : input.href,
         category: "vacation_request",
-        channels: sequential ? ["in_app", "telegram"] : ["in_app", "email", "telegram"],
-        ...(sequential
+        channels: sequential || !isPrimaryEmailRecipient ? ["in_app", "telegram"] : ["in_app", "email", "telegram"],
+        ...(!isPrimaryEmailRecipient
           ? {}
-          : { email: { recipients: recipient.email ? [recipient.email] : undefined } }),
+          : { email: { cc: ccEmails, recipients: primaryDeliverableEmail ? [primaryDeliverableEmail] : undefined } }),
         eventType: "request_submitted",
         message: copy.message,
         metadata: {
@@ -1731,9 +1744,9 @@ async function notifyVacationSubmittedByGovernance(input: {
         },
         title: input.title,
       });
-      return Promise.all([notification, templatedEmail]);
     }),
-  );
+    submitEmail,
+  ]);
 }
 
 async function dispatchVacationSubmitted(input: {

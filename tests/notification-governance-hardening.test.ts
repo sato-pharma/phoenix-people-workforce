@@ -64,8 +64,13 @@ export function runNotificationGovernanceHardeningTests() {
   );
   assertContains(
     systemSource,
-    /deferredMetadata\.emailIdentity = identity\.metadata[\s\S]*status:\s*"skipped"/,
+    /Object\.assign\(deferredMetadata,\s*emailDeliveryMetadata\(identity,\s*emailInput\)\)[\s\S]*status:\s*"skipped"/,
     "quiet-hours deferral must skip unsafe email identity instead of persisting a bad emailInput",
+  );
+  assertContains(
+    systemSource,
+    /emailEnvelope:\s*envelope[\s\S]*emailIdentity:\s*identity\.metadata/,
+    "email delivery metadata must retain both identity proof and the TO/CC envelope",
   );
   assertContains(
     emailSource,

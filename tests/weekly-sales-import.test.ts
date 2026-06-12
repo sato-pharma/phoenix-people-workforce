@@ -7,18 +7,18 @@ import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
 
 // Synthetic master with KNOWN factory prices so we can prove the value is RECOMPUTED (Qty × price)
 // and the sheet's own Sales Value column is ignored. Region pairs resolve the weekly Region IDs.
-const PRICES: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 8 };
+const PRICES: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 8, LA004: 100 };
 
 function references(): SalesReferenceData {
   return {
-    distributors: [{ code: "IS", name: "Ibn sina" }],
+    distributors: [{ code: "IS", name: "Ibn sina" }, { code: "PS", name: "overseas" }],
     products: Object.entries(PRICES).map(([productCode, factoryPrice]) => ({
       productCode,
-      productName: productCode === "RO001" ? "ROYAFLOXACIN 500 TAB" : productCode,
+      productName: productCode === "RO001" ? "ROYAFLOXACIN 500 TAB" : productCode === "LA004" ? "LACTO BASIC 30 CAP" : productCode,
       factoryPrice,
       family: "",
       familyCode: "",
-      line: productCode === "SA001" ? "CNS" : "Anti infective",
+      line: productCode === "SA001" ? "CNS" : productCode === "LA004" ? "Lacto" : "Anti infective",
       source: "Sato",
     })),
     regions: [
@@ -100,6 +100,39 @@ async function workbookPasRawWithTitleAndMinimalHeader(rows: unknown[][]): Promi
 
 async function workbookPasRawNoDate(rows: unknown[][]): Promise<ExcelJS.Buffer> {
   return buildWeeklyWorkbook(PAS_RAW_NO_DATE_HEADER, rows);
+}
+
+async function workbookOverseasPosMatrix(): Promise<ExcelJS.Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet("Data");
+  sheet.addRow(["Phoenix overseas POS"]);
+  sheet.addRow([
+    "Mat. Group",
+    "Date",
+    "Mat. Group Desc.",
+    "Mat. Code",
+    "Mat. Desc.",
+    "Product ID",
+    "Retail Cairo_\u0643",
+    "Super KA Delta_\u0643",
+    "Total Qty.",
+    "Bonus Qty.",
+    "Total Val.",
+  ]);
+  sheet.addRow([
+    "Lacto",
+    new Date(Date.UTC(2026, 5, 6)),
+    "Lacto Egypt",
+    "1001",
+    "LACTO BASIC 30 CAP",
+    "LA004",
+    5,
+    -2,
+    6,
+    3,
+    99999,
+  ]);
+  return wb.xlsx.writeBuffer();
 }
 
 const round2 = (value: number) => Number(value.toFixed(2));
@@ -232,7 +265,33 @@ export async function runWeeklySalesImportTests() {
     assert.equal(pasRawNoDate.rows[0].weekStart, "2025-07-12", "row weekStart restored from filename");
   }
 
-  // Unknown distributor → recognised as having no weekly template (not a silent empty result).
+  // Overseas POS matrix layout (header row + outlet quantity columns) should be recognised for PS.
+  const overseasPos = await parseWeeklyWorkbookBuffer({
+    buffer: await workbookOverseasPosMatrix(),
+    distributorCode: "PS",
+    distributorName: "overseas",
+    fileName: "POS 6 June.xlsx",
+    posRegionMappings: [
+      { distributorCode: "PS", rawColumnName: "Retail Cairo", normalizedColumnName: "retail cairo", regionCode: "CA" },
+      { distributorCode: "PS", rawColumnName: "Super KA Delta", normalizedColumnName: "super ka delta", regionCode: "D1" },
+    ],
+    references: references(),
+  });
+  assert.equal(overseasPos.ok, true, "overseas POS matrix layout is recognised for PS");
+  if (overseasPos.ok) {
+    assert.equal(overseasPos.result.templateKey, "overseas_pos_weekly_matrix", "overseas POS matrix template is selected");
+    assert.equal(overseasPos.result.weekStart, "2026-06-06", "overseas POS week comes from Date column");
+    assert.equal(overseasPos.result.totals.salesQty, 6, "overseas POS trusts Total Qty after adding unallocated difference");
+    assert.equal(overseasPos.result.totals.bonusQty, 0, "overseas POS product-level bonus is not imported into sales facts");
+    assert.equal(overseasPos.result.totals.salesValue, 600, "overseas POS value = Total Qty x factory price");
+    assert.notEqual(overseasPos.result.totals.salesValue, 99999, "overseas POS uploaded Total Val is ignored");
+    assert.ok(overseasPos.result.byBranch.some((branch) => branch.branchName === "Retail Cairo"), "outlet columns become branches");
+    assert.ok(overseasPos.result.byRegion.some((region) => region.regionName === "Cairo"), "Cairo outlet columns map to Cairo region");
+    assert.ok(overseasPos.result.byRegion.some((region) => region.regionName.includes("Delta")), "Delta outlet columns map to Delta region");
+    assert.ok(overseasPos.rows.some((row) => row.rawRow.quantitySource === "unallocatedDifference"), "quantity mismatch is retained as an unallocated row");
+    assert.ok(overseasPos.result.issues.some((issue) => issue.message.includes("Total Qty.")), "quantity mismatch is flagged");
+  }
+  // Unknown distributor has no weekly template (not a silent empty result).
   const unsupported = await parseWeeklyWorkbookBuffer({
     buffer,
     distributorCode: "ZZ",

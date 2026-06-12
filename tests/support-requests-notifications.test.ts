@@ -28,10 +28,14 @@ export function runSupportRequestsNotificationsTests() {
   assert.match(service, /createSystemNotification/, "support service must use the unified notification engine");
   assert.match(service, /async function resolveHrSupportRecipients/, "HR recipient resolver must exist");
   assert.match(service, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/, "HR audience must include HR Specialist + Super Admin accounts");
-  assert.match(service, /HR Manager%|Admin HR%/, "HR audience must include HR Manager / Admin HR titled employees");
+  assert.match(service, /HR Manager|Admin HR/i, "HR audience must include HR Manager / Admin HR titled employees");
   assert.match(service, /async function notifyHrOfSupportRequest/, "support service must alert HR on creation");
   assert.match(service, /module: "support_requests"/, "support notification must use the support_requests module");
-  assert.match(service, /channels: \["in_app", "email", "telegram"\]/, "support notification must deliver on all three channels");
+  assert.match(
+    service,
+    /channels: \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
+    "support notification should route email to only the primary HR recipient",
+  );
   assert.match(service, /priority: "high"/, "a new support ticket is action-required (high priority)");
   assert.match(service, /eventType: "support_request_created"/, "support notification eventType");
   assert.match(service, /support_request:\$\{request\.id\}:created:/, "support notification must carry a per-recipient idempotency key");

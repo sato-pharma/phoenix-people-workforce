@@ -9,6 +9,7 @@ import {
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { listWeeklyPosRegionMappingReferences } from "@/lib/sales/weekly/pos-region-mappings";
 import {
   weeklyTemplateDistributorCodes,
   weeklyTemplateDistributorFallbackName,
@@ -61,11 +62,13 @@ export async function importWeeklySalesFile(input: {
     distributorCode;
 
   const buffer = await input.file.arrayBuffer();
+  const posRegionMappings = await listWeeklyPosRegionMappingReferences(distributorCode);
   const parsed = await parseWeeklyWorkbookBuffer({
     buffer,
     distributorCode,
     distributorName,
     fileName: input.file.name,
+    posRegionMappings,
     references,
   });
 

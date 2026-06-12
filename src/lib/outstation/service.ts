@@ -18,6 +18,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
@@ -1154,7 +1155,7 @@ function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 
-type OutstationNotifyRecipient = { hrId: string; name: string; role: "direct_manager" | "hr" };
+type OutstationNotifyRecipient = { email: string | null; hrId: string; name: string; role: "direct_manager" | "hr" };
 
 // Resolve who must act when an expense/outstation request is submitted: the
 // submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
@@ -1174,16 +1175,16 @@ async function resolveOutstationApprovalRecipients(
       : null;
 
   const recipients = new Map<string, OutstationNotifyRecipient>();
-  const add = (hrId: string | null | undefined, name: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
+  const add = (hrId: string | null | undefined, name: string | null | undefined, email: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
     const key = normalizeHrIdForAccess(hrId);
     if (!key || recipients.has(key)) return;
-    recipients.set(key, { hrId: String(hrId), name: name?.trim() || String(hrId), role });
+    recipients.set(key, { email: pickDeliverableEmail(email), hrId: String(hrId), name: name?.trim() || String(hrId), role });
   };
 
   // 1. Direct manager of the submitter.
   if (employee.managerHrId) {
     const manager = byHrId(employee.managerHrId);
-    if (manager?.hrId) add(manager.hrId, manager.fullName, "direct_manager");
+    if (manager?.hrId) add(manager.hrId, manager.fullName, manager.workEmail, "direct_manager");
     else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
   }
 
@@ -1203,7 +1204,7 @@ async function resolveOutstationApprovalRecipients(
       const hrId = text(row.hr_id);
       if (!hrId || text(row.role) !== "Super Admin") continue;
       const directoryRow = byHrId(hrId);
-      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, "hr");
+      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, directoryRow?.workEmail, "hr");
     }
   } catch (error) {
     console.error("[outstation] approver lookup failed; approval alert may be incomplete", error);
@@ -1225,21 +1226,36 @@ async function notifyOutstationSubmitted(input: {
     const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
     const kind = r.expenseType === "traveling" ? "outstation travel expense" : "expense";
     const destination = text(r.toLabel) || "destination";
+    const primaryRecipient = recipients.find((recipient) => recipient.role === "direct_manager") ?? recipients[0];
+    const primaryKey = normalizeHrIdForAccess(primaryRecipient.hrId);
+    const primaryEmail = pickDeliverableEmail(primaryRecipient.email);
+    const ccEmails = Array.from(new Set(
+      recipients
+        .filter((recipient) => normalizeHrIdForAccess(recipient.hrId) !== primaryKey)
+        .map((recipient) => pickDeliverableEmail(recipient.email))
+        .filter((email): email is string => Boolean(email)),
+    ));
     await Promise.allSettled(
       recipients.map((recipient) =>
         createSystemNotification({
           actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
           category: "general",
-          channels: ["in_app", "email", "telegram"],
-          email: {
-            metrics: [
-              { label: "Employee", value: r.employeeName },
-              { label: "Amount", value: amount },
-              { label: "Destination", value: destination },
-              { label: "Trip start", value: r.tripStartDate },
-              { label: "Trip end", value: r.tripEndDate },
-            ],
-          },
+          channels: normalizeHrIdForAccess(recipient.hrId) === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
+          ...(normalizeHrIdForAccess(recipient.hrId) === primaryKey
+            ? {
+                email: {
+                  cc: ccEmails,
+                  metrics: [
+                    { label: "Employee", value: r.employeeName },
+                    { label: "Amount", value: amount },
+                    { label: "Destination", value: destination },
+                    { label: "Trip start", value: r.tripStartDate },
+                    { label: "Trip end", value: r.tripEndDate },
+                  ],
+                  recipients: primaryEmail ? [primaryEmail] : undefined,
+                },
+              }
+            : {}),
           eventType: "request_submitted",
           message: `${r.employeeName} submitted an ${kind} for ${amount} (${r.tripStartDate} to ${r.tripEndDate}, ${destination}). Review is pending your decision.`,
           metadata: {

@@ -10,6 +10,7 @@
  */
 
 import { assertPermission, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -18,7 +19,7 @@ export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
 
 const SUPPORT_ADMIN_REVIEW_URL = "/admin/notifications";
 
-type HrRecipient = { hrId: string | null; userId: string | null };
+type HrRecipient = { email: string | null; hrId: string | null; userId: string | null };
 
 function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
   const a = normalizeHrId(left);
@@ -37,24 +38,37 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
   try {
     const { data: authRows } = await supabase
       .from("app_auth_users")
-      .select("login_id,hr_id,role")
+      .select("login_id,hr_id,role,auth_email")
       .in("role", ["HR Specialist", "Super Admin"]);
     const { data: employees } = await supabase
       .from("employees")
-      .select("hr_id,job_title,position_title")
-      .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%");
+      .select("hr_id,job_title,position_title,work_email");
 
-    const hrTitledIds = new Set(
-      ((employees ?? []) as Array<{ hr_id?: string | null }>)
-        .map((row) => normalizeHrId(row.hr_id))
-        .filter(Boolean),
+    const employeeByHrId = new Map(
+      ((employees ?? []) as Array<{ hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }>)
+        .map((row) => [normalizeHrId(row.hr_id), row] as const)
+        .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
     );
 
-    const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ login_id?: string | null; hr_id?: string | null; role?: string | null }>)
-      .map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
+    const hrTitledIds = new Set(
+      Array.from(employeeByHrId.values())
+        .filter((row) => /HR Manager|Admin HR/i.test(`${row.job_title ?? ""} ${row.position_title ?? ""}`))
+        .map((row) => normalizeHrId(row.hr_id))
+        .filter((hrId): hrId is string => Boolean(hrId)),
+    );
+
+    const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null; role?: string | null }>)
+      .map((row) => {
+        const employee = employeeByHrId.get(normalizeHrId(row.hr_id) ?? "");
+        return {
+          email: pickDeliverableEmail(employee?.work_email, row.auth_email),
+          hrId: row.hr_id ?? null,
+          userId: row.login_id ?? null,
+        };
+      });
     for (const hrId of hrTitledIds) {
       if (!recipients.some((recipient) => sameHrId(recipient.hrId, hrId))) {
-        recipients.push({ hrId, userId: null });
+        recipients.push({ email: pickDeliverableEmail(employeeByHrId.get(hrId)?.work_email), hrId, userId: null });
       }
     }
     return recipients;
@@ -78,19 +92,34 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<voi
     const subcategory = request.subcategory ? ` / ${request.subcategory}` : "";
     const title = `New HR support request: ${request.subject}`;
     const message = `${request.employeeName} (${request.hrId}) opened a support request — ${request.category}${subcategory}.`;
+    const primaryRecipient = recipients[0];
+    const primaryKey = normalizeHrId(primaryRecipient.hrId) || primaryRecipient.userId || "";
+    const primaryEmail = pickDeliverableEmail(primaryRecipient.email);
+    const ccEmails = Array.from(new Set(
+      recipients
+        .filter((recipient) => (normalizeHrId(recipient.hrId) || recipient.userId || "") !== primaryKey)
+        .map((recipient) => pickDeliverableEmail(recipient.email))
+        .filter((email): email is string => Boolean(email)),
+    ));
 
     await Promise.allSettled(
       recipients.map((recipient) =>
         createSystemNotification({
           actionUrl: SUPPORT_ADMIN_REVIEW_URL,
           category: "general",
-          channels: ["in_app", "email", "telegram"],
-          email: {
-            metrics: [
-              { label: "Employee", value: `${request.employeeName} (${request.hrId})` },
-              { label: "Category", value: `${request.category}${subcategory}` },
-            ],
-          },
+          channels: (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
+          ...((normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
+            ? {
+                email: {
+                  cc: ccEmails,
+                  metrics: [
+                    { label: "Employee", value: `${request.employeeName} (${request.hrId})` },
+                    { label: "Category", value: `${request.category}${subcategory}` },
+                  ],
+                  recipients: primaryEmail ? [primaryEmail] : undefined,
+                },
+              }
+            : {}),
           eventType: "support_request_created",
           message: `${message}\n\n${request.description}`,
           metadata: {

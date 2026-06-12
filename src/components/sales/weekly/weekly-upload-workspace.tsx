@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 
 import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult } from "@/lib/sales/weekly/types";
@@ -23,6 +23,9 @@ export function WeeklyUploadWorkspace({
   const [error, setError] = useState<string | null>(initialError);
   const [result, setResult] = useState<WeeklySalesValidationResult | null>(null);
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
+  const [mappingFile, setMappingFile] = useState<File | null>(null);
+  const [mappingBusy, setMappingBusy] = useState(false);
+  const [mappingMessage, setMappingMessage] = useState<string | null>(null);
 
   async function refreshBatches() {
     try {
@@ -67,6 +70,28 @@ export function WeeklyUploadWorkspace({
       else await refreshBatches();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Delete failed.");
+    }
+  }
+
+  async function handleMappingUpload() {
+    if (!mappingFile) {
+      setError("Pick the completed POS region mapping XLSX first.");
+      return;
+    }
+    setMappingBusy(true);
+    setError(null);
+    setMappingMessage(null);
+    try {
+      const form = new FormData();
+      form.set("file", mappingFile);
+      const response = await fetch("/api/sales/weekly/pos-region-mappings", { method: "POST", body: form });
+      const payload = (await response.json()) as { success?: boolean; message?: string; error?: string };
+      if (!payload?.success) setError(payload?.error ?? "POS region mapping upload failed.");
+      else setMappingMessage(payload?.message ?? "POS region mappings updated.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "POS region mapping upload failed.");
+    } finally {
+      setMappingBusy(false);
     }
   }
 
@@ -122,6 +147,44 @@ export function WeeklyUploadWorkspace({
           </button>
           {file && <span className="truncate text-xs font-medium text-[#64748B]">{file.name}</span>}
         </div>
+      </div>
+
+      <div className="border border-[#E2E8F0] bg-[#FFF7ED] p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#9A3412]">Overseas POS region mapping</h2>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-[#7C2D12]">
+              The overseas POS weekly template has unstable outlet columns. Download the mapping XLSX, map each POS
+              column to an official Region ID, upload it here, then upload the weekly POS file.
+            </p>
+          </div>
+          <a
+            className="inline-flex h-10 items-center justify-center gap-2 border border-[#FDBA74] bg-white px-4 text-sm font-black text-[#9A3412] transition hover:bg-[#FFEDD5]"
+            href="/api/sales/weekly/pos-region-mappings/template"
+          >
+            <Download className="h-4 w-4" />
+            Download mapping XLSX
+          </a>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+          <input
+            accept=".xlsx"
+            className="h-10 w-full border border-[#FDBA74] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:border-0 file:bg-[#FFEDD5] file:px-3 file:py-1.5 file:text-sm file:font-bold"
+            disabled={mappingBusy}
+            onChange={(event) => setMappingFile(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:opacity-60"
+            disabled={mappingBusy || !mappingFile}
+            onClick={handleMappingUpload}
+            type="button"
+          >
+            {mappingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {mappingBusy ? "Uploading..." : "Upload mapping"}
+          </button>
+        </div>
+        {mappingMessage && <p className="mt-2 text-xs font-bold text-emerald-700">{mappingMessage}</p>}
       </div>
 
       {error && (

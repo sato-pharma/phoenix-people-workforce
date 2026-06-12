@@ -61,7 +61,9 @@ type NotificationMetric = {
 };
 
 export type NotificationEmailInput = {
+  bcc?: string[];
   candidateEmail?: string | null;
+  cc?: string[];
   ctaHref?: string;
   ctaLabel?: string;
   employeeHrId?: string | null;
@@ -1054,7 +1056,9 @@ export function validateNotificationEmailIdentity(input: NotificationEmailInput)
 
 function normalizeNotificationPayload(input: NotificationEmailInput) {
   return {
+    bcc: input.bcc?.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean).sort() ?? null,
     candidateEmail: input.candidateEmail?.trim().toLowerCase() ?? null,
+    cc: input.cc?.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean).sort() ?? null,
     ctaHref: input.ctaHref ?? null,
     ctaLabel: input.ctaLabel ?? null,
     employeeHrId: input.employeeHrId?.trim().toUpperCase() ?? null,
@@ -1210,6 +1214,8 @@ async function migratedTemplateRecipientOverrides(
 ) {
   if (templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY) {
     return {
+      bcc: input.bcc,
+      cc: input.cc,
       replaceRecipients: true,
       to: deliveryRecipients,
     };
@@ -1220,13 +1226,15 @@ async function migratedTemplateRecipientOverrides(
     loadManagerChain(input.employeeHrId),
   ]);
   const to = cleanEmailList([employee?.work_email, ...deliveryRecipients]);
-  const cc = cleanEmailList(
-    managers
+  const cc = cleanEmailList([
+    ...managers
       .filter(isDistrictManagerContact)
       .map((manager) => manager.work_email),
-  );
+    ...(input.cc ?? []),
+  ]);
 
   return {
+    bcc: input.bcc,
     cc,
     replaceRecipients: true,
     to,
@@ -1408,6 +1416,8 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
 
   const fanout = delivery.recipients.length > 1;
   return sendPhoenixEmail({
+    bcc: input.bcc,
+    cc: input.cc,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal

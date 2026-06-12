@@ -2,6 +2,10 @@ import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
+  normalizeWeeklyPosColumnName,
+  type WeeklyPosRegionMappingReference,
+} from "@/lib/sales/weekly/pos-region-mappings";
+import {
   weeklyTemplatesForDistributor,
   type WeeklyTemplate,
   type WeeklyTemplateField,
@@ -111,6 +115,13 @@ type HeaderMap = {
   columns: Partial<Record<WeeklyTemplateField, number>>;
 };
 
+type WeeklyReferenceIndexes = {
+  productByCode: Map<string, SalesReferenceData["products"][number]>;
+  productByName: Map<string, SalesReferenceData["products"][number]>;
+  regionName: Map<string, string>;
+  posRegionByColumn: Map<string, { regionCode: string; regionName: string }>;
+};
+
 function resolveHeaderMap(sheet: ExcelJS.Worksheet, template: WeeklyTemplate): HeaderMap | null {
   const maxScan = Math.min(sheet.rowCount || 30, 30);
   for (let rowNumber = 1; rowNumber <= maxScan; rowNumber += 1) {
@@ -167,6 +178,351 @@ function findWeeklySheet(
   return null;
 }
 
+function buildWeeklyReferenceIndexes(
+  references: SalesReferenceData,
+  posRegionMappings: WeeklyPosRegionMappingReference[] = [],
+): WeeklyReferenceIndexes {
+  const productByCode = new Map<string, SalesReferenceData["products"][number]>();
+  const productByName = new Map<string, SalesReferenceData["products"][number]>();
+  for (const product of references.products) {
+    if (product.productCode) productByCode.set(normCode(product.productCode), product);
+    const nameKey = normName(product.productName);
+    if (nameKey && !productByName.has(nameKey)) productByName.set(nameKey, product);
+  }
+
+  const regionName = new Map<string, string>();
+  for (const pair of references.regions ?? []) {
+    const regionCode = normCode(pair.regionCode);
+    const displayName = String(pair.regionName ?? "").trim();
+    if (regionCode && displayName && !regionName.has(regionCode)) regionName.set(regionCode, displayName);
+  }
+
+  const posRegionByColumn = new Map<string, { regionCode: string; regionName: string }>();
+  for (const mapping of posRegionMappings) {
+    const normalizedColumnName = normalizeWeeklyPosColumnName(mapping.normalizedColumnName || mapping.rawColumnName);
+    const regionCode = normCode(mapping.regionCode);
+    const officialRegionName = regionName.get(regionCode);
+    if (!normalizedColumnName || !regionCode || !officialRegionName) continue;
+    posRegionByColumn.set(normalizedColumnName, { regionCode, regionName: officialRegionName });
+  }
+
+  return { productByCode, productByName, regionName, posRegionByColumn };
+}
+function cleanPosBranchName(value: string, colNumber: number): string {
+  const cleaned = value
+    .normalize("NFKC")
+    .replace(/[_\s]*\u0643$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || `POS column ${colNumber}`;
+}
+
+function resolveOverseasPosQuantityColumns(
+  sheet: ExcelJS.Worksheet,
+  headerMap: HeaderMap,
+  indexes: WeeklyReferenceIndexes,
+): { colNumber: number; branchName: string; regionCode: string; regionName: string; regionSource: string }[] {
+  const productCol = headerMap.columns.productCode ?? 0;
+  const totalQtyCol = headerMap.columns.salesQty ?? sheet.columnCount + 1;
+  const excluded = new Set<number>();
+  for (const colNumber of Object.values(headerMap.columns)) {
+    if (typeof colNumber === "number") excluded.add(colNumber);
+  }
+
+  const headerRow = sheet.getRow(headerMap.rowNumber);
+  const columns: { colNumber: number; branchName: string; regionCode: string; regionName: string; regionSource: string }[] = [];
+  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    if (colNumber <= productCol || colNumber >= totalQtyCol || excluded.has(colNumber)) return;
+    const header = cellText(cell);
+    if (!header) return;
+    const branchName = cleanPosBranchName(header, colNumber);
+    const region = indexes.posRegionByColumn.get(normalizeWeeklyPosColumnName(branchName)) ?? {
+      regionCode: "",
+      regionName: "",
+    };
+    columns.push({
+      colNumber,
+      branchName,
+      regionCode: region.regionCode,
+      regionName: region.regionName,
+      regionSource: region.regionCode ? "mapping" : "unmapped",
+    });
+  });
+  return columns;
+}
+
+function parseOverseasPosMatrixWeekly(input: {
+  sheet: ExcelJS.Worksheet;
+  headerMap: HeaderMap;
+  distributorCode: string;
+  distributorName: string;
+  fileName: string;
+  filenameWeek: string | null;
+  indexes: WeeklyReferenceIndexes;
+}): WeeklyParseOutput {
+  const { sheet, headerMap, distributorCode, distributorName, fileName, filenameWeek, indexes } = input;
+  const col = headerMap.columns;
+  const at = (row: ExcelJS.Row, field: WeeklyTemplateField): ExcelJS.Cell | undefined =>
+    col[field] ? row.getCell(col[field] as number) : undefined;
+  const quantityColumns = resolveOverseasPosQuantityColumns(sheet, headerMap, indexes);
+
+  if (quantityColumns.length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: "unsupported_template",
+        message: "Overseas POS matrix was recognised, but no outlet quantity columns were found before Total Qty.",
+      },
+    };
+  }
+
+  const rows: WeeklyParsedRow[] = [];
+  const weekStarts = new Set<string>();
+  const unmappedPosColumns = new Set<string>();
+  const totalValueCol = (headerMap.columns.bonusQty ?? headerMap.columns.salesQty ?? 0) + 1;
+  let generatedRowNumber = 0;
+
+  const pushFactRow = (fact: {
+    rowNumber: number;
+    weekStart: string | null;
+    regionCode: string;
+    regionName: string;
+    regionSource: string;
+    branchCode: string;
+    branchName: string;
+    itemCode: string;
+    itemName: string;
+    productIdRaw: string;
+    productCode: string;
+    productName: string;
+    officialLine: string;
+    factoryPrice: number;
+    salesQty: number;
+    issues: WeeklyValidationIssue[];
+    quantitySource: string;
+    productTotalQty: number;
+    productBonusQty: number;
+    sheetTotalValue: string;
+  }) => {
+    const salesValue = Number((fact.salesQty * fact.factoryPrice).toFixed(6));
+    const validationState: WeeklyParsedRow["validationState"] = fact.issues.some((issue) => issue.severity === "failure")
+      ? "failed"
+      : fact.issues.length > 0
+        ? "warning"
+        : "valid";
+
+    const importRowNumber = ++generatedRowNumber;
+    rows.push({
+      rowNumber: importRowNumber,
+      weekStart: fact.weekStart,
+      distributorCode,
+      distributorName,
+      regionCode: fact.regionCode,
+      regionName: fact.regionName,
+      branchCode: fact.branchCode,
+      branchName: fact.branchName,
+      itemCode: fact.itemCode,
+      productCode: fact.productCode,
+      productName: fact.productName,
+      officialLine: fact.officialLine,
+      salesQty: fact.salesQty,
+      bonusQty: 0,
+      discount: 0,
+      salesValue,
+      stockQty: 0,
+      validationState,
+      validationIssues: fact.issues,
+      rawRow: {
+        itemCode: fact.itemCode,
+        itemName: fact.itemName,
+        productId: fact.productIdRaw,
+        regionCode: fact.regionCode,
+        regionName: fact.regionName,
+        regionSource: fact.regionSource,
+        branchCode: fact.branchCode,
+        branchName: fact.branchName,
+        salesQty: String(fact.salesQty),
+        stockQty: "0",
+        quantitySource: fact.quantitySource,
+        sourceRowNumber: String(fact.rowNumber),
+        productTotalQty: String(fact.productTotalQty),
+        productBonusQty: String(fact.productBonusQty),
+        sheetTotalValue: fact.sheetTotalValue,
+      },
+    });
+  };
+
+  for (let rowNumber = headerMap.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const itemCode = cellText(at(row, "itemCode"));
+    const itemName = cellText(at(row, "itemName"));
+    const productIdRaw = cellText(at(row, "productCode"));
+    const hasAny =
+      itemCode || itemName || productIdRaw || quantityColumns.some((quantityCol) => cellText(row.getCell(quantityCol.colNumber)));
+    if (!hasAny) continue;
+
+    const issues: WeeklyValidationIssue[] = [];
+    const sheetWeek = cellDateIso(at(row, "weekStart"));
+    const weekStart = sheetWeek ?? filenameWeek;
+    if (weekStart) weekStarts.add(weekStart);
+    else {
+      issues.push({
+        field: "weekStart",
+        message: "Missing or unreadable week date.",
+        rowNumber,
+        severity: "warning",
+        value: cellText(at(row, "weekStart")) || null,
+      });
+    }
+
+    const productIdKey = normCode(productIdRaw);
+    let product = productIdKey && productIdKey !== "#N/A" ? indexes.productByCode.get(productIdKey) : undefined;
+    if (!product && itemName) product = indexes.productByName.get(normName(itemName));
+    const productCode = product?.productCode ?? (productIdKey && productIdKey !== "#N/A" ? productIdRaw.trim() : "");
+    const productName = product?.productName ?? (itemName || productIdRaw || "");
+    const officialLine = product?.line ?? "";
+    const factoryPrice = product?.factoryPrice ?? 0;
+    if (!product) {
+      issues.push({
+        field: "productCode",
+        message: `Product not found in master (Product ID "${productIdRaw || "?"}", item "${itemName || itemCode || "?"}"); value set to 0.`,
+        rowNumber,
+        severity: "warning",
+        value: productIdRaw || itemName || null,
+      });
+    }
+
+    const productTotalQty = cellNumber(at(row, "salesQty"));
+    const productBonusQty = cellNumber(at(row, "bonusQty"));
+    const sheetTotalValue = totalValueCol > 0 ? cellText(row.getCell(totalValueCol)) : "";
+    let outletQty = 0;
+
+    for (const quantityCol of quantityColumns) {
+      const qty = cellNumber(row.getCell(quantityCol.colNumber));
+      if (qty === 0) continue;
+      outletQty += qty;
+      const rowIssues = [...issues];
+      if (!quantityCol.regionCode) {
+        unmappedPosColumns.add(quantityCol.branchName);
+        rowIssues.push({
+          field: "regionCode",
+          message: `POS outlet column "${quantityCol.branchName}" could not be mapped to the Source of Sales region reference table.`,
+          rowNumber,
+          severity: "warning",
+          value: quantityCol.branchName,
+        });
+      }
+      pushFactRow({
+        rowNumber,
+        weekStart,
+        branchCode: quantityCol.branchName,
+        branchName: quantityCol.branchName,
+        regionCode: quantityCol.regionCode,
+        regionName: quantityCol.regionName,
+        regionSource: quantityCol.regionSource,
+        itemCode,
+        itemName,
+        productIdRaw,
+        productCode,
+        productName,
+        officialLine,
+        factoryPrice,
+        salesQty: qty,
+        issues: rowIssues,
+        quantitySource: "outletColumn",
+        productTotalQty,
+        productBonusQty,
+        sheetTotalValue,
+      });
+    }
+
+    const diff = Number((productTotalQty - outletQty).toFixed(6));
+    if (diff !== 0) {
+      pushFactRow({
+        rowNumber,
+        weekStart,
+        branchCode: "UNALLOCATED_POS_DIFFERENCE",
+        branchName: "Unallocated POS difference",
+        regionCode: "",
+        regionName: "",
+        regionSource: "unallocatedDifference",
+        itemCode,
+        itemName,
+        productIdRaw,
+        productCode,
+        productName,
+        officialLine,
+        factoryPrice,
+        salesQty: diff,
+        issues: [
+          ...issues,
+          {
+            field: "salesQty",
+            message: `Total Qty. (${productTotalQty}) does not match outlet-column sum (${Number(outletQty.toFixed(6))}); imported the difference as an unallocated POS row so product totals stay trusted.`,
+            rowNumber,
+            severity: "warning",
+            value: String(productTotalQty),
+          },
+        ],
+        quantitySource: "unallocatedDifference",
+        productTotalQty,
+        productBonusQty,
+        sheetTotalValue,
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    return { ok: false, error: { code: "empty_file", message: "No data rows found in the weekly file." } };
+  }
+
+  if (weekStarts.size === 1) {
+    const detectedWeek = [...weekStarts][0];
+    for (const row of rows) {
+      if (row.weekStart === null) row.weekStart = filenameWeek ?? detectedWeek;
+    }
+  }
+
+  const distinctWeeks = [...weekStarts].sort();
+  const blockingReasons: string[] = [];
+  if (unmappedPosColumns.size > 0) {
+    blockingReasons.push(
+      `Unmapped POS region columns with nonzero sales: ${[...unmappedPosColumns].sort().slice(0, 30).join(", ")}. Download the POS region mapping XLSX, map each column to an official Region ID, upload the mapping, then re-upload sales.`,
+    );
+  }
+  if (distinctWeeks.length > 1) {
+    blockingReasons.push(
+      `File contains ${distinctWeeks.length} different week dates (${distinctWeeks.join(", ")}). Upload one week per file.`,
+    );
+  }
+  const weekStart = distinctWeeks[0] ?? null;
+  if (!weekStart) blockingReasons.push("Could not determine the week date from the sheet's Date column.");
+
+  const result = summarizeWeekly({
+    rows,
+    distributor: { code: distributorCode, name: distributorName },
+    fileName,
+    sheetName: sheet.name,
+    templateKey: headerMap.template.key,
+    templateName: headerMap.template.name,
+    weekStart,
+    blockingReasons,
+  });
+
+  return {
+    ok: true,
+    rows,
+    result: {
+      ...result,
+      advisories: [
+        "Overseas POS matrix detected: sales value was recalculated from Product ID factory price and quantity.",
+        "Total Val. from the uploaded sheet was ignored.",
+        "Bonus Qty. is product-level in this template and was not counted in weekly sales value.",
+      ],
+    },
+  };
+}
+
 export type WeeklyParseError = { code: "unsupported_template" | "empty_file"; message: string };
 
 export type WeeklyParseOutput =
@@ -179,6 +535,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
   distributorName: string;
   fileName: string;
   references: SalesReferenceData;
+  posRegionMappings?: WeeklyPosRegionMappingReference[];
 }): Promise<WeeklyParseOutput> {
   const { distributorCode, distributorName, fileName, references } = input;
   const filenameWeek = parseWeekFromFileName(fileName);
@@ -197,20 +554,18 @@ export async function parseWeeklyWorkbookBuffer(input: {
     };
   }
 
-  // Product master indexes: by code (Product ID) and by normalised name (Item name fallback).
-  const productByCode = new Map<string, (typeof references.products)[number]>();
-  const productByName = new Map<string, (typeof references.products)[number]>();
-  for (const product of references.products) {
-    if (product.productCode) productByCode.set(normCode(product.productCode), product);
-    const nameKey = normName(product.productName);
-    if (nameKey && !productByName.has(nameKey)) productByName.set(nameKey, product);
-  }
-  // Region code → name (from the area/region master pairs).
-  const regionName = new Map<string, string>();
-  for (const pair of references.regions ?? []) {
-    if (pair.regionCode && pair.regionName && !regionName.has(normCode(pair.regionCode))) {
-      regionName.set(normCode(pair.regionCode), pair.regionName);
-    }
+  const indexes = buildWeeklyReferenceIndexes(references, input.posRegionMappings ?? []);
+  const { productByCode, productByName, regionName } = indexes;
+  if (match.headerMap.template.layout === "overseasPosMatrix") {
+    return parseOverseasPosMatrixWeekly({
+      sheet: match.sheet,
+      headerMap: match.headerMap,
+      distributorCode,
+      distributorName,
+      fileName,
+      filenameWeek,
+      indexes,
+    });
   }
 
   const { sheet, headerMap } = match;
