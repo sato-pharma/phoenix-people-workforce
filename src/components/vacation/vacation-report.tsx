@@ -1012,26 +1012,29 @@ function RequestCard({
 
       {/* Decision info or action buttons */}
       {row.canDecide ? (
-        <div className="mt-2.5 flex gap-2">
-          <Button
-            className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-[11px] font-bold hover:bg-emerald-700"
-            disabled={actingId === row.id}
-            onClick={() => onDecide(row, "approve")}
-            type="button"
-          >
-            <CheckCircle2 className="h-3 w-3" />
-            {row.status === "pending_hr" ? "Final Approve" : "Approve"}
-          </Button>
-          <Button
-            className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700"
-            disabled={actingId === row.id}
-            onClick={() => onDecide(row, "reject")}
-            type="button"
-          >
-            <XCircle className="h-3 w-3" />
-            {row.status === "pending_hr" ? "Final Reject" : "Reject"}
-          </Button>
-        </div>
+        <>
+          <VacationApprovalImpactPreview row={row} />
+          <div className="mt-2.5 flex gap-2">
+            <Button
+              className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-[11px] font-bold hover:bg-emerald-700"
+              disabled={actingId === row.id}
+              onClick={() => onDecide(row, "approve")}
+              type="button"
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              {row.status === "pending_hr" ? "Final Approve" : "Approve"}
+            </Button>
+            <Button
+              className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700"
+              disabled={actingId === row.id}
+              onClick={() => onDecide(row, "reject")}
+              type="button"
+            >
+              <XCircle className="h-3 w-3" />
+              {row.status === "pending_hr" ? "Final Reject" : "Reject"}
+            </Button>
+          </div>
+        </>
       ) : (
         <div className="mt-2 text-[11px] text-slate-500">
           {row.hrDecisionAt ? <p>HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
@@ -1075,6 +1078,22 @@ function RequestCard({
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Exported Component (Error Boundary Wrapper) ──────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
+
+function VacationApprovalImpactPreview({ compact = false, row }: { compact?: boolean; row: VacationRequestRecord }) {
+  const range = row.startDate === row.endDate ? formatDate(row.startDate) : `${formatDate(row.startDate)} to ${formatDate(row.endDate)}`;
+  return (
+    <div
+      className={compact
+        ? "mb-2 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold leading-4 text-emerald-800"
+        : "mt-2 border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-emerald-800"}
+    >
+      <p className="font-black uppercase tracking-[0.1em]">Approval impact preview</p>
+      <p>
+        Approval will show this {vacationTypeLabel(row.vacationType).toLowerCase()} vacation on the private calendar for {row.employeeName} covering {range}.
+      </p>
+    </div>
+  );
+}
 
 export function VacationReport(props: VacationReportProps) {
   return (
@@ -2148,26 +2167,29 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             </div>
                           ) : null}
                           {row.canDecide ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              <button
-                                className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-700"
-                                disabled={actingId === row.id}
-                                onClick={() => decide(row, "approve")}
-                                type="button"
-                              >
-                                <CheckCircle2 className="h-3 w-3" />
-                                {row.status === "pending_hr" ? "Final Approve" : "Approve"}
-                              </button>
-                              <button
-                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
-                                disabled={actingId === row.id}
-                                onClick={() => decide(row, "reject")}
-                                type="button"
-                              >
-                                <XCircle className="h-3 w-3" />
-                                {row.status === "pending_hr" ? "Final Reject" : "Reject"}
-                              </button>
-                            </div>
+                            <>
+                              <VacationApprovalImpactPreview compact row={row} />
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-700"
+                                  disabled={actingId === row.id}
+                                  onClick={() => decide(row, "approve")}
+                                  type="button"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  {row.status === "pending_hr" ? "Final Approve" : "Approve"}
+                                </button>
+                                <button
+                                  className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
+                                  disabled={actingId === row.id}
+                                  onClick={() => decide(row, "reject")}
+                                  type="button"
+                                >
+                                  <XCircle className="h-3 w-3" />
+                                  {row.status === "pending_hr" ? "Final Reject" : "Reject"}
+                                </button>
+                              </div>
+                            </>
                           ) : (
                             <div className="text-[11px]">
                               <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>

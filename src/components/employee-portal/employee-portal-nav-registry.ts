@@ -9,6 +9,7 @@ import {
   Database,
   FilePlus2,
   FileText,
+  Fingerprint,
   Gift,
   Headphones,
   Home,
@@ -50,7 +51,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"] },
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"] },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
-  { label: "Calendar", fullLabel: "Company Calendar", href: "/employee-portals/calendar", icon: CalendarClock },
+  { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlansTab"] },
+  { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
   { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
   // Training Manager
@@ -103,7 +105,8 @@ export const MAX_BOTTOM_NAV_CUSTOM = 4;
 /** Default priority of middle bottom-nav items when the user hasn't customized. */
 export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/plans",
-  "/employee-portals/calendar",
+  "/employee-portals/plans/calendar",
+  "/employee-portals/private-calendar",
   "/employee-portals/report-it",
   "/employee-portals/sales",
   "/admin/report-it",
