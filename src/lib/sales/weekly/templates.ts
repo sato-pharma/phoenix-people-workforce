@@ -68,14 +68,36 @@ const IBN_SINA_WEEKLY_PAS_VARIANT: WeeklyTemplate = {
     salesQty: ["Sales Quantity", "Sales Qty"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
-    regionCode: ["Region ID", "Region", "Supplier Code"],
+    regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
     productCode: ["Product ID", "Product Code", "Item Code"],
-    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code"],
+    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code", "Supplier ID"],
   },
   required: ["weekStart", "salesQty", "stockQty"],
 };
 
-export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [IBN_SINA_WEEKLY, IBN_SINA_WEEKLY_PAS_VARIANT];
+const IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE: WeeklyTemplate = {
+  key: "ibn_sina_weekly_pas_raw_no_date",
+  name: "Ibn Sina Sato weekly Sales & Stock (PAS raw, no date column)",
+  distributorCodes: ["IS-S"],
+  sheetNameIncludes: "DataHub",
+  fields: {
+    weekStart: ["Date"],
+    itemCode: ["Item Code"],
+    itemName: ["Item name", "Item Name"],
+    branchCode: ["Branch Code"],
+    branchName: ["Branch Name"],
+    stockQty: ["Stock"],
+    salesQty: ["Sales Quantity", "Sales Qty"],
+    bonusQty: ["Bonus", "Bonus Qty"],
+    discount: ["Discount", "Disc"],
+    regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
+    productCode: ["Product ID", "Product Code", "Item Code"],
+    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code", "Supplier ID"],
+  },
+  required: ["salesQty", "stockQty", "itemCode"],
+};
+
+export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [IBN_SINA_WEEKLY, IBN_SINA_WEEKLY_PAS_VARIANT, IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE];
 
 export function weeklyTemplatesForDistributor(distributorCode: string): WeeklyTemplate[] {
   const code = (distributorCode ?? "").trim().toUpperCase();

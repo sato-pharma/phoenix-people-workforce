@@ -15,8 +15,40 @@ import type {
 
 // ── small parsing helpers (self-contained; no coupling to the monthly importer) ────────────────
 
-const normHeader = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+const normHeader = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFKC")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 const normCode = (value: unknown) => String(value ?? "").trim().toUpperCase();
+function parseWeekFromFileName(fileName: string): string | null {
+  const baseName = String(fileName || "");
+  const candidate = /(\d{4})(\d{2})(\d{2})/g;
+  let match: RegExpExecArray | null;
+  while ((match = candidate.exec(baseName)) !== null) {
+    const [, y, m, d] = match;
+    const iso = `${y}-${m}-${d}`;
+    const year = Number(y);
+    const month = Number(m);
+    const day = Number(d);
+    const date = new Date(`${iso}T00:00:00.000Z`);
+    if (
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      Number.isFinite(day) &&
+      !Number.isNaN(date.getTime()) &&
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() + 1 === month &&
+      date.getUTCDate() === day
+    ) {
+      return iso;
+    }
+  }
+  return null;
+}
+
 const normName = (value: unknown) =>
   String(value ?? "")
     .replace(/\([^)]*\)/g, " ") // drop "(OLD PRICE)" etc.
@@ -33,10 +65,15 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
   if (typeof value === "number") return String(value);
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === "object") {
-    const obj = value as { result?: unknown; text?: unknown; richText?: { text: string }[] };
+    const obj = value as {
+      result?: unknown;
+      text?: unknown;
+      richText?: { text?: string }[];
+    };
     if (obj.richText) return obj.richText.map((part) => part.text).join("").trim();
     if (obj.result != null) return String(obj.result).trim();
     if (obj.text != null) return String(obj.text).trim();
+    if (Array.isArray(obj)) return obj.map((part) => cellText({ value: part } as ExcelJS.Cell)).join(" ").trim();
   }
   return String(value).trim();
 }
@@ -75,7 +112,7 @@ type HeaderMap = {
 };
 
 function resolveHeaderMap(sheet: ExcelJS.Worksheet, template: WeeklyTemplate): HeaderMap | null {
-  const maxScan = Math.min(sheet.rowCount || 10, 10);
+  const maxScan = Math.min(sheet.rowCount || 30, 30);
   for (let rowNumber = 1; rowNumber <= maxScan; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     const headerByText = new Map<string, number>();
@@ -144,6 +181,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
   references: SalesReferenceData;
 }): Promise<WeeklyParseOutput> {
   const { distributorCode, distributorName, fileName, references } = input;
+  const filenameWeek = parseWeekFromFileName(fileName);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(input.buffer as Parameters<typeof workbook.xlsx.load>[0]);
@@ -195,9 +233,17 @@ export async function parseWeeklyWorkbookBuffer(input: {
     if (!hasAny) continue; // skip blank rows
 
     const issues: WeeklyValidationIssue[] = [];
-    const weekStart = cellDateIso(at(row, "weekStart"));
+    const sheetWeek = cellDateIso(at(row, "weekStart"));
+    const weekStart = sheetWeek ?? filenameWeek;
     if (weekStart) weekStarts.add(weekStart);
-    else issues.push({ field: "weekStart", message: "Missing or unreadable week date.", rowNumber, severity: "warning", value: cellText(at(row, "weekStart")) || null });
+    else
+      issues.push({
+        field: "weekStart",
+        message: "Missing or unreadable week date.",
+        rowNumber,
+        severity: "warning",
+        value: cellText(at(row, "weekStart")) || null,
+      });
 
     // Resolve product: Product ID → master code; else Item name → master name; else unmapped.
     const productIdKey = normCode(productIdRaw);
@@ -277,7 +323,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
   if (weekStarts.size === 1) {
     const detectedWeek = [...weekStarts][0];
     for (const row of rows) {
-      if (row.weekStart === null) row.weekStart = detectedWeek;
+      if (row.weekStart === null) row.weekStart = filenameWeek ?? detectedWeek;
     }
   }
 
