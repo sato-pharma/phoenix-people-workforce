@@ -188,6 +188,9 @@ export function runVacationModuleTests() {
   assert.match(vacationEmailSource, /managerName: input\.managerName \|\| "Manager"/, "leave_request greeting placeholder {{managerName}} must be populated");
   assert.match(vacationEmailSource, /date: hireDate/, "leave_request {{date}} (hiring date) placeholder must be populated");
   assert.match(vacationEmailSource, /isTemplateUnavailableSkip/, "vacation emails must fall back to a plain send when the template is missing/inactive");
+  assert.match(vacationEmailSource, /renderPhoenixEmailHtml/, "vacation fallback emails must use the shared Phoenix layout");
+  assert.match(vacationEmailSource, /renderPhoenixEmailText/, "vacation fallback text must use the shared Phoenix text renderer");
+  assert.doesNotMatch(vacationEmailSource, /const html = `<div/, "vacation fallback must not use a one-off raw HTML layout");
   assert.match(
     vacationEmailSource,
     /overrides: \{ replaceRecipients: true, to: \[input\.managerEmail\] \}/,

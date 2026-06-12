@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { systemIdentity } from "@/config/system-settings";
+import {
+  renderEmailParagraphs,
+  renderPhoenixEmailHtml,
+  renderPhoenixEmailText,
+} from "@/emails/phoenix-email-layout";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
@@ -37,13 +42,26 @@ export async function POST(request: Request) {
 
     const subject = `${systemIdentity.brandName} email notifications test`;
     const text = `This is a live test email from ${systemIdentity.appName}. If you received this, email delivery is working.`;
-    const html = `<div style="font-family:sans-serif;padding:24px;max-width:480px"><h2 style="color:#f97316">Email Notifications Are Online</h2><p>${text}</p><p style="color:#888;font-size:12px">Environment: ${process.env.NODE_ENV ?? "unknown"}</p></div>`;
+    const metadataRows = [{ label: "Environment", value: process.env.NODE_ENV ?? "unknown" }];
+    const html = renderPhoenixEmailHtml({
+      bodyHtml: renderEmailParagraphs(text),
+      metadataRows,
+      previewText: text,
+      subject,
+      subtitle: "Phoenix Workforce email delivery test.",
+      title: "Email Notifications Are Online",
+    });
+    const plainText = renderPhoenixEmailText({
+      bodyText: text,
+      metadataRows,
+      title: "Email Notifications Are Online",
+    });
 
     const result = await sendPhoenixEmail({
       html,
       idempotencyKey: `test-${randomUUID()}`,
       subject,
-      text,
+      text: plainText,
       to: recipients,
     });
 
