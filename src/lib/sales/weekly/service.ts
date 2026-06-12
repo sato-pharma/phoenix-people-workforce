@@ -9,7 +9,10 @@ import {
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
-import { weeklyTemplateDistributorCodes } from "@/lib/sales/weekly/templates";
+import {
+  weeklyTemplateDistributorCodes,
+  weeklyTemplateDistributorFallbackName,
+} from "@/lib/sales/weekly/templates";
 import type {
   WeeklyBatch,
   WeeklyDashboard,
@@ -34,7 +37,9 @@ export async function listWeeklyDistributors(): Promise<WeeklyDistributorOption[
     }
   }
   // Ensure every supported code shows even if the master lacks a name row.
-  for (const code of weeklyTemplateDistributorCodes()) if (!byCode.has(code)) byCode.set(code, code);
+  for (const code of weeklyTemplateDistributorCodes()) {
+    if (!byCode.has(code)) byCode.set(code, weeklyTemplateDistributorFallbackName(code) ?? code);
+  }
   return [...byCode.entries()]
     .map(([code, name]) => ({ code, name }))
     .sort((left, right) => left.name.localeCompare(right.name));

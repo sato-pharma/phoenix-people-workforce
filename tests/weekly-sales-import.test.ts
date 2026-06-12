@@ -11,7 +11,7 @@ const PRICES: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 
 
 function references(): SalesReferenceData {
   return {
-    distributors: [{ code: "IS", name: "Ibn sina" }],
+    distributors: [{ code: "IS-S", name: "Ibn Sina-Sato" }],
     products: Object.entries(PRICES).map(([productCode, factoryPrice]) => ({
       productCode,
       productName: productCode === "RO001" ? "ROYAFLOXACIN 500 TAB" : productCode,
@@ -31,7 +31,7 @@ function references(): SalesReferenceData {
   };
 }
 
-// Header mirrors the real Ibn Sina "SalesAndStockReport2_DataHub" export.
+// Header mirrors the real Ibn Sina Sato "SalesAndStockReport2_DataHub" export.
 const HEADER = [
   "Date", "Supplier Code", "Supplier Name", "Item Code", "Item name", "Branch Code", "Branch Name",
   "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales", "Region ID", "Product ID", "Distrub ID",
@@ -50,7 +50,7 @@ function row(opts: {
 }): unknown[] {
   return [
     opts.date, "110476", "SATO", opts.itemCode, opts.itemName, "61", opts.branch,
-    opts.stock, 9999, opts.qty, 123456 /* bogus sheet value */, opts.qty, opts.region, opts.productId, "IS",
+    opts.stock, 9999, opts.qty, 123456 /* bogus sheet value */, opts.qty, opts.region, opts.productId, "IS-S",
   ];
 }
 
@@ -80,9 +80,9 @@ export async function runWeeklySalesImportTests() {
 
   const parsed = await parseWeeklyWorkbookBuffer({
     buffer,
-    distributorCode: "IS",
-    distributorName: "Ibn sina",
-    fileName: "IS_week.xlsx",
+    distributorCode: "IS-S",
+    distributorName: "Ibn Sina-Sato",
+    fileName: "IS-S_week.xlsx",
     references: references(),
   });
   assert.equal(parsed.ok, true, "weekly file parses");
@@ -126,8 +126,8 @@ export async function runWeeklySalesImportTests() {
       row({ date: new Date(Date.UTC(2025, 6, 5)), itemCode: "667913", itemName: "SAGINKGO 30 CAP", branch: "Cairo A", stock: 30, qty: 7, region: "CA", productId: "SA001" }),
       row({ date: new Date(Date.UTC(2025, 6, 12)), itemCode: "667913", itemName: "SAGINKGO 30 CAP", branch: "Cairo A", stock: 28, qty: 9, region: "CA", productId: "SA001" }),
     ]),
-    distributorCode: "IS",
-    distributorName: "Ibn sina",
+    distributorCode: "IS-S",
+    distributorName: "Ibn Sina-Sato",
     fileName: "two-weeks.xlsx",
     references: references(),
   });

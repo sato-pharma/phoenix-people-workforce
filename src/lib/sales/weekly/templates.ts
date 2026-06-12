@@ -19,6 +19,8 @@ export type WeeklyTemplateField =
 export type WeeklyTemplate = {
   key: string;
   name: string;
+  /** fallback display name when the distributor master has not been synced yet */
+  defaultDistributorName?: string;
   /** distributor codes that use this template */
   distributorCodes: string[];
   /** restrict matching to a sheet whose name contains this token (case-insensitive); optional */
@@ -29,12 +31,13 @@ export type WeeklyTemplate = {
   required: WeeklyTemplateField[];
 };
 
-// Ibn Sina (code IS) — "SalesAndStockReport2_DataHub" coded weekly feed. Product ID maps directly to
-// our product_code; Item Code/name are the distributor SKU (fallback for unmapped/#N/A Product IDs).
-const IBN_SINA_WEEKLY: WeeklyTemplate = {
-  key: "ibn_sina_weekly_datahub",
-  name: "Ibn Sina weekly Sales & Stock (DataHub)",
-  distributorCodes: ["IS"],
+// Ibn Sina Sato/PAS (code IS-S) — "SalesAndStockReport2_DataHub" coded weekly feed. Product ID
+// maps directly to our product_code; Item Code/name are the distributor SKU fallback.
+const IBN_SINA_SATO_WEEKLY: WeeklyTemplate = {
+  key: "ibn_sina_sato_weekly_datahub",
+  name: "Ibn Sina Sato weekly Sales & Stock (DataHub)",
+  defaultDistributorName: "Ibn Sina-Sato",
+  distributorCodes: ["IS-S"],
   sheetNameIncludes: "DataHub",
   fields: {
     weekStart: ["Date"],
@@ -53,7 +56,7 @@ const IBN_SINA_WEEKLY: WeeklyTemplate = {
   required: ["weekStart", "salesQty", "regionCode", "stockQty"],
 };
 
-export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [IBN_SINA_WEEKLY];
+export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [IBN_SINA_SATO_WEEKLY];
 
 export function weeklyTemplatesForDistributor(distributorCode: string): WeeklyTemplate[] {
   const code = (distributorCode ?? "").trim().toUpperCase();
@@ -67,4 +70,12 @@ export function weeklyTemplateDistributorCodes(): string[] {
   const set = new Set<string>();
   for (const template of WEEKLY_TEMPLATES) for (const code of template.distributorCodes) set.add(code);
   return [...set];
+}
+
+export function weeklyTemplateDistributorFallbackName(distributorCode: string): string | null {
+  const code = (distributorCode ?? "").trim().toUpperCase();
+  const template = WEEKLY_TEMPLATES.find((candidate) =>
+    candidate.distributorCodes.some((candidateCode) => candidateCode.toUpperCase() === code),
+  );
+  return template?.defaultDistributorName ?? null;
 }
