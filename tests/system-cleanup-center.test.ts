@@ -21,6 +21,7 @@ export function runSystemCleanupCenterTests() {
   const actionsRoute = source("../app/api/admin/system-cleanup/actions/route.ts");
   const recordsRoute = source("../app/api/admin/system-cleanup/records/route.ts");
   const page = source("../app/admin/system-cleanup/page.tsx");
+  const center = source("../src/components/admin/system-cleanup-center.tsx");
   const migrationPath = new URL(
     "../supabase/migrations/20260612093625_admin_system_cleanup_center.sql",
     import.meta.url,
@@ -45,6 +46,10 @@ export function runSystemCleanupCenterTests() {
   assert.match(actionsRoute, /previewCleanupAction\(access/, "cleanup POST must call the guarded preview path");
   assert.match(service, /SYSTEM_CLEANUP_MAX_BULK\s*=\s*25/, "bulk cleanup must be capped at 25 records");
   assert.match(service, /Cleanup reason must be at least 10 characters/, "missing or short reasons must be rejected");
+  assert.match(center, /function handleExecuteClick\(\)/, "cleanup UI must validate delete prerequisites on click");
+  assert.match(center, /Enter a cleanup reason with at least 10 characters/, "cleanup UI must explain missing reason instead of silently disabling delete");
+  assert.match(center, /Check the confirmation box before deleting/, "cleanup UI must explain missing confirmation instead of silently disabling delete");
+  assert.doesNotMatch(center, /disabled=\{executeDisabled\}/, "delete button must not be hard-disabled by hidden reason/confirmation state");
 
   assert.match(service, /cleanupModuleRegistry/, "cleanup modules must be routed through an internal registry");
   assert.match(service, /deleteVacationRequestAsAdmin/, "vacation cleanup must reuse existing vacation delete service");
