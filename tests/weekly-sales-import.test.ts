@@ -42,6 +42,16 @@ const PAS_RAW_HEADER = [
   "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales",
 ];
 
+const PAS_RAW_MIN_HEADER = [
+  "Date", "Item Code", "Item Name", "Branch Code", "Branch Name",
+  "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales",
+];
+
+const PAS_RAW_NO_DATE_HEADER = [
+  "Supplier Code", "Supplier Name", "Item Code", "Item Name", "Branch Code", "Branch Name",
+  "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales",
+];
+
 // One sheet row. The "Sales Value" (col 11) is deliberately a WRONG number to prove it is ignored.
 function row(opts: {
   date: Date;
@@ -75,6 +85,23 @@ async function workbookPasRaw(rows: unknown[][]): Promise<ExcelJS.Buffer> {
   return buildWeeklyWorkbook(PAS_RAW_HEADER, rows);
 }
 
+async function workbookPasRawWithTitleAndMinimalHeader(rows: unknown[][]): Promise<ExcelJS.Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet("SalesAndStockReport2_DataHub");
+  const title = "Weekly Sales and stock For SATO PHARMA (PAS)  Sales and Stock";
+  const titleCells = sheet.getRow(1);
+  for (let col = 1; col <= PAS_RAW_MIN_HEADER.length; col += 1) {
+    titleCells.getCell(col).value = { richText: [{ text: title }] };
+  }
+  sheet.addRow(PAS_RAW_MIN_HEADER);
+  rows.forEach((row) => sheet.addRow(row));
+  return wb.xlsx.writeBuffer();
+}
+
+async function workbookPasRawNoDate(rows: unknown[][]): Promise<ExcelJS.Buffer> {
+  return buildWeeklyWorkbook(PAS_RAW_NO_DATE_HEADER, rows);
+}
+
 const round2 = (value: number) => Number(value.toFixed(2));
 
 export async function runWeeklySalesImportTests() {
@@ -85,7 +112,7 @@ export async function runWeeklySalesImportTests() {
     row({ date: week, itemCode: "631910", itemName: "SAGINKGO 30 CAP(OLD PRICE)", branch: "Giza B", stock: 20, qty: 5, region: "GZ", productId: "SA001" }),
     row({ date: week, itemCode: "607294", itemName: "ROYAFLOXACIN 500 TAB", branch: "Upper C", stock: 50, qty: 4, region: "UE", productId: "RO001" }),
     row({ date: week, itemCode: "635171", itemName: "IVYRONC 100ML SYRUP", branch: "Alex D", stock: 12, qty: 3, region: "AB", productId: "IV001" }),
-    // #N/A Product ID whose item name ALSO has no master match → unmapped, value 0, warning.
+    // #N/A Product ID whose item name ALSO has no master match — unmapped, value 0, warning.
     row({ date: week, itemCode: "638105", itemName: "ROYANOXICAM 8MG 20 TAB", branch: "Delta E", stock: 23, qty: 2, region: "D1", productId: "#N/A" }),
     // Stock on hand, zero sales (drives the zero-sales-branch view).
     row({ date: week, itemCode: "639912", itemName: "SATOSLIM 30 CAP", branch: "Cairo A", stock: 16, qty: 0, region: "CA", productId: "SS001" }),
@@ -167,6 +194,42 @@ export async function runWeeklySalesImportTests() {
     assert.equal(pasRaw.rows[0].regionCode, "CA", "raw Supplier Code resolves as region code");
     assert.equal(pasRaw.rows[0].validationState, "valid", "raw mapped row is valid");
     assert.equal(pasRaw.result.totals.stockQty, 21, "raw total stock qty is correct");
+  }
+
+  const pasRawWithTitle = await parseWeeklyWorkbookBuffer({
+    buffer: await workbookPasRawWithTitleAndMinimalHeader([
+      [new Date(Date.UTC(2025, 7, 1)), "SA001", "SAGINKGO 30 CAP", "61", "Cairo A", 14, 2000, 4, 0, 0],
+      [new Date(Date.UTC(2025, 7, 1)), "RO001", "ROYAFLOXACIN 500 TAB", "62", "Giza B", 7, 1200, 2, 0, 0],
+    ]),
+    distributorCode: "IS-S",
+    distributorName: "Ibn Sina Sato",
+    fileName: "IS-S_pas_raw_minimal.xlsx",
+    references: references(),
+  });
+  assert.equal(pasRawWithTitle.ok, true, "title-row + PAS minimal raw layout is recognised for IS-S");
+  if (pasRawWithTitle.ok) {
+    assert.equal(pasRawWithTitle.result.templateKey, "ibn_sina_weekly_pas_raw", "PAS minimal raw variant is selected");
+    assert.equal(pasRawWithTitle.result.rowCount, 2, "PAS minimal raw parse keeps both rows");
+    assert.equal(pasRawWithTitle.rows[1].productCode, "RO001", "minimal layout maps product from Item Code");
+    assert.equal(pasRawWithTitle.rows[0].regionCode, "", "missing region is accepted as a blank region code");
+  }
+
+  const pasRawNoDate = await parseWeeklyWorkbookBuffer({
+    buffer: await workbookPasRawNoDate([
+      ["110476", "SATO", "SA001", "SAGINKGO 30 CAP", "61", "Cairo A", 14, 2000, 4, 0, 0],
+      ["GZ", "SATO", "RO001", "ROYAFLOXACIN 500 TAB", "62", "Giza B", 7, 1200, 2, 0, 0],
+    ]),
+    distributorCode: "IS-S",
+    distributorName: "Ibn Sina Sato",
+    fileName: "Weekly_Sales_and_Stock_For_SATO_PHARMA_(PAS)20250712120407.xlsx",
+    references: references(),
+  });
+  assert.equal(pasRawNoDate.ok, true, "PAS raw without Date column is recognised for IS-S");
+  if (pasRawNoDate.ok) {
+    assert.equal(pasRawNoDate.result.templateKey, "ibn_sina_weekly_pas_raw_no_date", "no-Date PAS layout selects the fallback template");
+    assert.equal(pasRawNoDate.result.rowCount, 2, "no-Date PAS raw layout keeps both rows");
+    assert.equal(pasRawNoDate.result.weekStart, "2025-07-12", "missing Date column is restored from filename date");
+    assert.equal(pasRawNoDate.rows[0].weekStart, "2025-07-12", "row weekStart restored from filename");
   }
 
   // Unknown distributor → recognised as having no weekly template (not a silent empty result).
