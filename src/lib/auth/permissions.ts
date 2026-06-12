@@ -62,6 +62,7 @@ export type PermissionResource =
   | "team"
   | "overview"
   | "admin_access"
+  | "system_cleanup"
   | "imports"
   | "sales"
   | "weekly_sales"
@@ -95,6 +96,7 @@ export const permissionResources: PermissionResource[] = [
   "admin",
   "overview",
   "admin_access",
+  "system_cleanup",
   "imports",
   "sales",
   "weekly_sales",
@@ -184,6 +186,7 @@ const defaultPermissionMatrix: PermissionMap = {
     communication: allActions,
     overview: ["read"],
     admin_access: ["read"],
+    system_cleanup: allActions,
     imports: allActions,
     contracts: allActions,
     coaching: allActions,
