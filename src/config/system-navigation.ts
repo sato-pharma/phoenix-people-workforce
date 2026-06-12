@@ -98,7 +98,7 @@ export const adminNavigationSections = [
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
-      { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", permissions: [{ resource: "system_cleanup", action: "read" }], roles: ["Super Admin"] },
+      { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
     ],

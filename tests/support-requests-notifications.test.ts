@@ -41,7 +41,7 @@ export function runSupportRequestsNotificationsTests() {
   assert.match(service, /Promise\.allSettled/, "HR fan-out must use allSettled");
   assert.match(
     service,
-    /await notifyHrOfSupportRequest\(created\);\n {2}return created;/,
+    /await notifyHrOfSupportRequest\(created\);\r?\n {2}return created;/,
     "creation must persist the ticket first, then alert HR best-effort",
   );
 

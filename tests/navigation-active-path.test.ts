@@ -8,7 +8,11 @@ import {
   roleAllowed,
   roleNotExcluded,
 } from "../src/lib/navigation/active-path.ts";
-import type { NavigationSection, NavigationSectionItem } from "../src/config/system-navigation.ts";
+import {
+  adminNavigationSections,
+  type NavigationSection,
+  type NavigationSectionItem,
+} from "../src/config/system-navigation.ts";
 
 // Minimal typed fixture builders — the matcher functions only read href/exact/
 // activeTab/permissions/roles/excludedRoles, so we synthesise items without real
@@ -113,5 +117,33 @@ export function runNavigationActivePathTests() {
     tmAdmin.find((s) => s.id === "b")?.items.length,
     1,
     "admin mode: excludedRoles ignored, item retained",
+  );
+
+  const superAdminCleanupNav = getSections(
+    adminNavigationSections,
+    "admin",
+    { "system_cleanup:read": false },
+    "Super Admin",
+  );
+  assert.equal(
+    superAdminCleanupNav.some((navSection) =>
+      navSection.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+    ),
+    true,
+    "Super Admin must see the System Cleanup sidebar tab even if the dynamic permission cache is stale",
+  );
+
+  const ceoCleanupNav = getSections(
+    adminNavigationSections,
+    "admin",
+    { "system_cleanup:read": true },
+    "CEO",
+  );
+  assert.equal(
+    ceoCleanupNav.some((navSection) =>
+      navSection.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+    ),
+    false,
+    "CEO must not see the System Cleanup sidebar tab even if a permission lookup grants system_cleanup",
   );
 }
