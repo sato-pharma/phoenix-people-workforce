@@ -1263,6 +1263,7 @@ async function notifyOutstationSubmitted(input: {
           priority: "high",
           recipientHrId: recipient.hrId,
           recordId: String(r.id),
+          subjectHrId: r.employeeHrId,
           telegram: { buttons: [{ label: "Review in Phoenix", url: OUTSTATION_ADMIN_REVIEW_URL }] },
           title: `${r.employeeName} submitted an ${kind}`,
         }),

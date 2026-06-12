@@ -1725,6 +1725,7 @@ async function notifyVacationSubmittedByGovernance(input: {
         recipientHrId: recipient.hrId,
         recipientUserId: recipient.userId,
         recordId: input.request.id,
+        subjectHrId: input.request.employeeHrId,
         telegram: {
           buttons: telegramButtons,
         },
