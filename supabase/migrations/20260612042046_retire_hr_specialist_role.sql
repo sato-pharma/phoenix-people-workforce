@@ -609,7 +609,7 @@ begin
             order by uap.updated_at desc nulls last
             limit 1
           ),
-          case public.current_phoenix_role()
+          case private.phx_current_role()
             when 'Super Admin' then 'super_admin'
             when 'CEO' then 'company_reader'
             when 'SFE Manager' then 'company_reader'
@@ -647,7 +647,7 @@ begin
             order by uap.updated_at desc nulls last
             limit 1
           ),
-          case public.current_phoenix_role()
+          case private.phx_current_role()
             when 'Super Admin' then 'SUPER_ADMIN'
             when 'CEO' then 'COMPANY_READ'
             when 'SFE Manager' then 'COMPANY_READ'
@@ -690,7 +690,7 @@ begin
       security definer
       set search_path = public
       as $body$
-        select public.current_phoenix_role() = 'Super Admin';
+        select private.phx_current_role() = 'Super Admin';
       $body$;
     $fn$;
   end if;
@@ -704,7 +704,7 @@ begin
       security definer
       set search_path = public
       as $body$
-        select public.current_phoenix_role() in ('Finance Manager', 'Super Admin');
+        select private.phx_current_role() in ('Finance Manager', 'Super Admin');
       $body$;
     $fn$;
   end if;
