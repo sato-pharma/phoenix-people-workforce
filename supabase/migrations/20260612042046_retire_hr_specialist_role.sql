@@ -114,16 +114,75 @@ set
 where regexp_replace(lower(coalesce(nullif(trim(e.hr_id), ''), '')), '[^a-z0-9]', '', 'g') = 'a16'
   and e.job_title is distinct from 'Talent Acquisition';
 
-update public.users u
-set
-  role = case
-    when regexp_replace(lower(coalesce(nullif(trim(u.hr_id), ''), nullif(trim(u.employee_hr_id), ''), '')), '[^a-z0-9]', '', 'g') = 'a16'
-      then 'Talent Acquisition'
-    else 'Employee'
-  end,
-  updated_at = now()
-where u.role = 'HR Specialist'
-   or regexp_replace(lower(coalesce(nullif(trim(u.hr_id), ''), nullif(trim(u.employee_hr_id), ''), '')), '[^a-z0-9]', '', 'g') = 'a16';
+do $retire_public_users_role$
+declare
+  has_role boolean;
+  has_hr_id boolean;
+  has_employee_hr_id boolean;
+  has_updated_at boolean;
+  identity_expr text;
+  set_clause text;
+  where_clause text;
+begin
+  if to_regclass('public.users') is null then
+    return;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'users' and column_name = 'role'
+  ) into has_role;
+
+  if not has_role then
+    return;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'users' and column_name = 'hr_id'
+  ) into has_hr_id;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'users' and column_name = 'employee_hr_id'
+  ) into has_employee_hr_id;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'users' and column_name = 'updated_at'
+  ) into has_updated_at;
+
+  identity_expr := case
+    when has_hr_id and has_employee_hr_id then
+      'regexp_replace(lower(coalesce(nullif(trim(hr_id::text), ''''), nullif(trim(employee_hr_id::text), ''''), '''')), ''[^a-z0-9]'', '''', ''g'')'
+    when has_hr_id then
+      'regexp_replace(lower(coalesce(nullif(trim(hr_id::text), ''''), '''')), ''[^a-z0-9]'', '''', ''g'')'
+    when has_employee_hr_id then
+      'regexp_replace(lower(coalesce(nullif(trim(employee_hr_id::text), ''''), '''')), ''[^a-z0-9]'', '''', ''g'')'
+    else
+      null
+  end;
+
+  set_clause := case
+    when identity_expr is null then
+      'role = ''Employee'''
+    else
+      format('role = case when %s = ''a16'' then ''Talent Acquisition'' else ''Employee'' end', identity_expr)
+  end;
+
+  if has_updated_at then
+    set_clause := set_clause || ', updated_at = now()';
+  end if;
+
+  where_clause := 'lower(coalesce(role::text, '''')) = ''hr specialist''';
+
+  if identity_expr is not null then
+    where_clause := where_clause || format(' or %s = ''a16''', identity_expr);
+  end if;
+
+  execute format('update public.users set %s where %s', set_clause, where_clause);
+end
+$retire_public_users_role$;
 
 with auth_updates as (
   select distinct on (auth_user_id)
