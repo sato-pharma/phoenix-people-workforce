@@ -223,7 +223,8 @@ function resolveOverseasPosQuantityColumns(
   indexes: WeeklyReferenceIndexes,
 ): { colNumber: number; branchName: string; regionCode: string; regionName: string; regionSource: string }[] {
   const productCol = headerMap.columns.productCode ?? 0;
-  const totalQtyCol = headerMap.columns.salesQty ?? sheet.columnCount + 1;
+  const hasSalesQtyColumn = typeof headerMap.columns.salesQty === "number";
+  const totalQtyCol = hasSalesQtyColumn ? (headerMap.columns.salesQty as number) : sheet.columnCount + 1;
   const excluded = new Set<number>();
   for (const colNumber of Object.values(headerMap.columns)) {
     if (typeof colNumber === "number") excluded.add(colNumber);
@@ -265,13 +266,17 @@ function parseOverseasPosMatrixWeekly(input: {
   const at = (row: ExcelJS.Row, field: WeeklyTemplateField): ExcelJS.Cell | undefined =>
     col[field] ? row.getCell(col[field] as number) : undefined;
   const quantityColumns = resolveOverseasPosQuantityColumns(sheet, headerMap, indexes);
+  const hasSalesQtyColumn = typeof col.salesQty === "number";
+  const totalValueCol = hasSalesQtyColumn ? (col.salesQty as number) + 1 : null;
 
   if (quantityColumns.length === 0) {
     return {
       ok: false,
       error: {
         code: "unsupported_template",
-        message: "Overseas POS matrix was recognised, but no outlet quantity columns were found before Total Qty.",
+        message: hasSalesQtyColumn
+          ? "Overseas POS matrix was recognised, but no outlet quantity columns were found before Total Qty."
+          : "Overseas POS matrix was recognised, but no outlet quantity columns were found.",
       },
     };
   }
@@ -279,7 +284,6 @@ function parseOverseasPosMatrixWeekly(input: {
   const rows: WeeklyParsedRow[] = [];
   const weekStarts = new Set<string>();
   const unmappedPosColumns = new Set<string>();
-  const totalValueCol = (headerMap.columns.bonusQty ?? headerMap.columns.salesQty ?? 0) + 1;
   let generatedRowNumber = 0;
 
   const pushFactRow = (fact: {
@@ -392,15 +396,17 @@ function parseOverseasPosMatrixWeekly(input: {
       });
     }
 
-    const productTotalQty = cellNumber(at(row, "salesQty"));
+    const outletQty = quantityColumns.reduce((acc, quantityCol) => acc + cellNumber(row.getCell(quantityCol.colNumber)), 0);
+    const productTotalQty = hasSalesQtyColumn ? cellNumber(at(row, "salesQty")) : Number(outletQty.toFixed(6));
     const productBonusQty = cellNumber(at(row, "bonusQty"));
-    const sheetTotalValue = totalValueCol > 0 ? cellText(row.getCell(totalValueCol)) : "";
-    let outletQty = 0;
+    let sheetTotalValue = "";
+    if (totalValueCol && totalValueCol > 0) {
+      sheetTotalValue = cellText(row.getCell(totalValueCol));
+    }
 
     for (const quantityCol of quantityColumns) {
       const qty = cellNumber(row.getCell(quantityCol.colNumber));
       if (qty === 0) continue;
-      outletQty += qty;
       const rowIssues = [...issues];
       if (!quantityCol.regionCode) {
         unmappedPosColumns.add(quantityCol.branchName);
@@ -436,39 +442,41 @@ function parseOverseasPosMatrixWeekly(input: {
       });
     }
 
-    const diff = Number((productTotalQty - outletQty).toFixed(6));
-    if (diff !== 0) {
-      pushFactRow({
-        rowNumber,
-        weekStart,
-        branchCode: "UNALLOCATED_POS_DIFFERENCE",
-        branchName: "Unallocated POS difference",
-        regionCode: "",
-        regionName: "",
-        regionSource: "unallocatedDifference",
-        itemCode,
-        itemName,
-        productIdRaw,
-        productCode,
-        productName,
-        officialLine,
-        factoryPrice,
-        salesQty: diff,
-        issues: [
-          ...issues,
-          {
-            field: "salesQty",
-            message: `Total Qty. (${productTotalQty}) does not match outlet-column sum (${Number(outletQty.toFixed(6))}); imported the difference as an unallocated POS row so product totals stay trusted.`,
-            rowNumber,
-            severity: "warning",
-            value: String(productTotalQty),
-          },
-        ],
-        quantitySource: "unallocatedDifference",
-        productTotalQty,
-        productBonusQty,
-        sheetTotalValue,
-      });
+    if (hasSalesQtyColumn) {
+      const diff = Number((productTotalQty - Number(outletQty.toFixed(6))).toFixed(6));
+      if (diff !== 0) {
+        pushFactRow({
+          rowNumber,
+          weekStart,
+          branchCode: "UNALLOCATED_POS_DIFFERENCE",
+          branchName: "Unallocated POS difference",
+          regionCode: "",
+          regionName: "",
+          regionSource: "unallocatedDifference",
+          itemCode,
+          itemName,
+          productIdRaw,
+          productCode,
+          productName,
+          officialLine,
+          factoryPrice,
+          salesQty: diff,
+          issues: [
+            ...issues,
+            {
+              field: "salesQty",
+              message: `Total Qty. (${productTotalQty}) does not match outlet-column sum (${Number(outletQty.toFixed(6))}); imported the difference as an unallocated POS row so product totals stay trusted.`,
+              rowNumber,
+              severity: "warning",
+              value: String(productTotalQty),
+            },
+          ],
+          quantitySource: "unallocatedDifference",
+          productTotalQty,
+          productBonusQty,
+          sheetTotalValue,
+        });
+      }
     }
   }
 
