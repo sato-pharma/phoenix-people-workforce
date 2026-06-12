@@ -46,9 +46,9 @@ const IBN_SINA_WEEKLY: WeeklyTemplate = {
     salesQty: ["Sales Quantity", "Sales Qty"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
-    regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
-    productCode: ["Product ID", "Product Code", "Item Code"],
-    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code", "Supplier ID"],
+    regionCode: ["Region ID", "Region"],
+    productCode: ["Product ID", "Product Code"],
+    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID"],
   },
   required: ["weekStart", "salesQty", "regionCode", "stockQty"],
 };
