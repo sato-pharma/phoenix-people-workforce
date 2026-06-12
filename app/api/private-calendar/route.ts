@@ -33,7 +33,8 @@ export async function GET(request: Request) {
     const year = clampYear(url.searchParams.get("year"), now.getUTCFullYear());
     const month = clampMonth(url.searchParams.get("month"), now.getUTCMonth() + 1);
     const employeeHrId = url.searchParams.get("employeeHrId");
-    const workspace = await getPrivateCalendarWorkspace({ access, employeeHrId, month, year });
+    const viewMode = url.searchParams.get("view");
+    const workspace = await getPrivateCalendarWorkspace({ access, employeeHrId, month, viewMode, year });
     return NextResponse.json({ data: workspace, success: true });
   } catch (error) {
     return jsonError(error, "Unable to load the private calendar.");
