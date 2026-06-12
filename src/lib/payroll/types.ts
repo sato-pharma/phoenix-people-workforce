@@ -147,9 +147,16 @@ export type ExpenseSpecialistSummary = {
   trips: number;
 };
 
+export type ExpenseTemplateIdentity = {
+  key: string;
+  name: string;
+  recognized: boolean;
+};
+
 export type ExpenseAnalysisResult = {
   columns: string[];
   fileName: string;
+  template?: ExpenseTemplateIdentity;
   records: ExpenseTripRecord[];
   specialists: ExpenseSpecialistSummary[];
   summary: {
