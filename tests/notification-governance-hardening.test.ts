@@ -38,6 +38,16 @@ export function runNotificationGovernanceHardeningTests() {
     /status:\s*"skipped"/,
     "governance skips must create skipped delivery records",
   );
+  assertContains(
+    systemSource,
+    /employeeHrId:\s*input\.email\?\.employeeHrId\s*\?\?\s*input\.subjectHrId\s*\?\?\s*recipient\.hrId/,
+    "email payloads must use the subject employee HR ID before falling back to the notification recipient HR ID",
+  );
+  assertNotContains(
+    systemSource,
+    /employeeHrId:\s*recipient\.hrId\s*\?\?\s*input\.email\?\.employeeHrId/,
+    "governed manager/HR emails must not label the recipient HR ID as the employee HR ID",
+  );
   assertNotContains(
     policySource,
     /authUsersByRole\(\["manager",\s*"hr"\]\)/,

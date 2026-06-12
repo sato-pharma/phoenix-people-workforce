@@ -1063,7 +1063,7 @@ async function buildChannelEmailInput(
   return {
     ctaHref: input.actionUrl ?? input.email?.ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
-    employeeHrId: recipient.hrId ?? input.email?.employeeHrId ?? undefined,
+    employeeHrId: input.email?.employeeHrId ?? input.subjectHrId ?? recipient.hrId ?? undefined,
     includeHrInbox: input.email?.includeHrInbox,
     metrics: input.email?.metrics,
     module: input.module,
