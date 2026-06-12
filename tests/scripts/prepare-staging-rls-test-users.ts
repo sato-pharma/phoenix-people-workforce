@@ -283,7 +283,7 @@ function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole) {
     case "Finance Manager":
       return "finance";
     case "Talent Acquisition":
-      return "hr";
+      return "employee";
     case "District Manager":
     case "Regional Manager":
     case "National Sales Manager":
@@ -304,8 +304,6 @@ function mapPhoenixRoleToLegacyBootstrapRole(role: PhoenixRole) {
     case "CEO":
     case "Finance Manager":
       return "admin";
-    case "Talent Acquisition":
-      return "hr";
     case "District Manager":
     case "Regional Manager":
     case "National Sales Manager":
@@ -331,7 +329,7 @@ function mapPhoenixRoleToScopeType(role: PhoenixRole) {
     case "Finance Manager":
       return "FINANCE";
     case "Talent Acquisition":
-      return "HR";
+      return "SELF";
     case "District Manager":
     case "Manager":
       return "TEAM";
