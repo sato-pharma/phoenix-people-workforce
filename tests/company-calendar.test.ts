@@ -14,7 +14,7 @@ import {
 export function runCompanyCalendarTests() {
   // Manage permission: admins + managers yes, plain staff no.
   assert.equal(canManageCompanyCalendar("Super Admin"), true);
-  assert.equal(canManageCompanyCalendar("HR Specialist"), true);
+  assert.equal(canManageCompanyCalendar("Talent Acquisition"), false);
   assert.equal(canManageCompanyCalendar("CEO"), true);
   assert.equal(canManageCompanyCalendar("National Sales Manager"), true);
   assert.equal(canManageCompanyCalendar("District Manager"), true);

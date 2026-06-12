@@ -349,7 +349,7 @@ export function filterHiringDocumentsForAccess(
   dashboard: HiringDocumentsDashboardData,
   access: AccessContext,
 ): HiringDocumentsDashboardData {
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Specialist") {
+  if (access.scope === "system" || access.role === "Super Admin") {
     return dashboard;
   }
 

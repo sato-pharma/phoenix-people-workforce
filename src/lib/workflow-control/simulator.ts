@@ -31,8 +31,8 @@ export type WorkflowSimulationInput = {
   managerHrId?: string;
   managerOfManagerName?: string;
   managerOfManagerHrId?: string;
-  /** Whether a designated HR Specialist (A-16) recipient exists. Defaults true. */
-  hrSpecialistAvailable?: boolean;
+  /** Whether an HR Manager recipient exists. Defaults true. */
+  hrManagerAvailable?: boolean;
   /**
    * Phase 2A: simulate a DRAFT step list (display/config overrides applied)
    * instead of the canonical subflow steps. Read-only — never persisted.
@@ -109,9 +109,9 @@ function resolveRecipient(raw: string, input: WorkflowSimulationInput, warnings:
     return employee ? `${text} [${employee}]` : text;
   }
 
-  if (lower.includes("hr specialist") || lower === "hr" || lower.startsWith("hr ")) {
-    if (input.hrSpecialistAvailable === false) {
-      warnings.push("Missing HR Specialist (A-16) recipient — the HR step cannot notify HR.");
+  if (lower.includes("hr manager") || lower === "hr" || lower.startsWith("hr ")) {
+    if (input.hrManagerAvailable === false) {
+      warnings.push("Missing HR Manager recipient - the HR step cannot notify HR.");
     }
     return text;
   }
@@ -149,7 +149,7 @@ function routeFor(step: WorkflowControlStep, input: WorkflowSimulationInput): st
     const manager = resolvedManager(input);
     return manager ? `Direct manager (${manager})` : "Direct manager";
   }
-  if (lower.startsWith("hr")) return "HR Specialist";
+  if (lower.startsWith("hr")) return "HR Manager";
   if (lower.startsWith("employee") || lower.startsWith("candidate") || lower.startsWith("medical rep")) {
     const employee = trimmed(input.employeeHrId);
     return employee ? `${actor} (${employee})` : actor;

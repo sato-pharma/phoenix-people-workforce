@@ -149,7 +149,6 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   Employee: "employee",
   "Finance Manager": "finance",
   "Group Product Manager": "manager",
-  "HR Specialist": "hr",
   Manager: "manager",
   "Marketing Manager": "manager",
   "Medical Rep": "employee",
@@ -158,6 +157,7 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   "Regional Manager": "manager",
   "SFE Manager": "manager",
   "Super Admin": "executive",
+  "Talent Acquisition": "hr",
   "Training Manager": "manager",
 };
 
@@ -424,7 +424,7 @@ export function AccessControlManager({
     }
     const existing = data?.users.find((user) => user.loginId === (form.hrId.trim() || form.loginId.trim()));
     const roleChanged = Boolean(existing && existing.role !== form.role);
-    const privilegedRole = form.role === "Super Admin" || form.role === "CEO" || form.role === "HR Specialist" || form.role === "Finance Manager";
+    const privilegedRole = form.role === "Super Admin" || form.role === "CEO" || form.role === "Finance Manager";
     const deactivating = Boolean(existing?.isActive && !form.isActive);
 
     if (roleChanged || privilegedRole || deactivating) {
@@ -1458,7 +1458,7 @@ export function AccessControlManager({
                           <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium border ${
                             role === "Super Admin" || role === "CEO"
                               ? "bg-gradient-to-r from-rose-50 to-orange-50 text-rose-700 border-rose-200/60"
-                              : role === "HR Specialist" || role === "Finance Manager"
+                              : role === "Talent Acquisition" || role === "Finance Manager"
                               ? "bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 border-emerald-200/60"
                               : "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border-violet-200/60"
                           }`}>

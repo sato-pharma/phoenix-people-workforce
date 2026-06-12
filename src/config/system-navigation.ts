@@ -128,8 +128,8 @@ export const adminNavigationSections = [
       { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "employees" }] },
       { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
-      { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
-      { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", excludedRoles: ["HR Specialist"], permissions: [{ resource: "employees", action: "update" }] },
+      { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
+      { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr-calendar", icon: CalendarDays, label: "HR Calendar", permissions: [{ resource: "hr_calendar" }] },
     ],
     label: "Attendance Management",
@@ -177,7 +177,6 @@ export const adminNavigationSections = [
     items: [
       { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], exact: true },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin"] },
-      { href: "/payslips", icon: ScrollText, label: "My Payslips", permissions: [{ resource: "payslips" }], roles: ["HR Specialist"], exact: true },
     ],
     label: "Payroll Management",
   },

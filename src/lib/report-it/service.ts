@@ -3,7 +3,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
 // ─── Roles that can see ALL reports ────────────────────────────────────────
-const ADMIN_REPORT_ROLES = new Set(["Super Admin", "HR Specialist", "CEO", "Finance Manager"]);
+const ADMIN_REPORT_ROLES = new Set(["Super Admin", "CEO", "Finance Manager"]);
 
 export function canViewAllReports(access: AccessContext): boolean {
   return ADMIN_REPORT_ROLES.has(access.role);

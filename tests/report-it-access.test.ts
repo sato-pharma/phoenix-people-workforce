@@ -6,7 +6,7 @@ import { permissionMatrix, permissionResources } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 // Roles that see ALL reports and can export.
-const ADMIN_REPORT_ROLES: PhoenixRole[] = ["Super Admin", "HR Specialist", "CEO", "Finance Manager"];
+const ADMIN_REPORT_ROLES: PhoenixRole[] = ["Super Admin", "CEO", "Finance Manager"];
 
 // Roles that may only see their own reports and cannot export.
 const SELF_ONLY_ROLES: PhoenixRole[] = [
@@ -20,6 +20,7 @@ const SELF_ONLY_ROLES: PhoenixRole[] = [
   "SFE Manager",
   "Training Manager",
   "Marketing Manager",
+  "Talent Acquisition",
   "Manager",
 ];
 
@@ -80,10 +81,10 @@ export function runReportItAccessTests() {
   );
 
   const allRoles: PhoenixRole[] = [
-    "Super Admin", "CEO", "HR Specialist", "Finance Manager",
+    "Super Admin", "CEO", "Finance Manager",
     "Employee", "Medical Rep", "District Manager", "Regional Manager",
     "National Sales Manager", "Product Manager", "Group Product Manager",
-    "SFE Manager", "Training Manager", "Marketing Manager", "Manager",
+    "SFE Manager", "Training Manager", "Marketing Manager", "Talent Acquisition", "Manager",
   ];
 
   for (const role of allRoles) {

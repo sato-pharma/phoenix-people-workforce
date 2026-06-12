@@ -7,7 +7,7 @@ type PhoenixRole =
   | "Medical Rep"
   | "District Manager"
   | "Finance Manager"
-  | "HR Specialist"
+  | "Talent Acquisition"
   | "CEO"
   | "Super Admin";
 
@@ -31,7 +31,7 @@ const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 
 const roles: PhoenixRole[] = [
   "Super Admin",
-  "HR Specialist",
+  "Talent Acquisition",
   "Finance Manager",
   "CEO",
   "District Manager",
@@ -59,15 +59,15 @@ const expectedByRole: Record<PhoenixRole, {
     isSuperAdmin: true,
     scope: "SUPER_ADMIN",
   },
-  "HR Specialist": {
-    accessRole: "hr",
-    canManageEmployees: true,
-    canManagePayroll: true,
+  "Talent Acquisition": {
+    accessRole: "employee",
+    canManageEmployees: false,
+    canManagePayroll: false,
     isCompanyReader: false,
     isFinance: false,
-    isHr: true,
+    isHr: false,
     isSuperAdmin: false,
-    scope: "HR",
+    scope: "SELF",
   },
   "Finance Manager": {
     accessRole: "finance",

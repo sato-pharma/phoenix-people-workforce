@@ -68,7 +68,7 @@ export function runNavigationActivePathTests() {
   // ── roleAllowed ────────────────────────────────────────────────────────────
   assert.equal(roleAllowed("Super Admin", undefined), true);
   assert.equal(roleAllowed("Super Admin", ["Super Admin"]), true);
-  assert.equal(roleAllowed("HR Specialist", ["Super Admin"]), false);
+  assert.equal(roleAllowed("Talent Acquisition", ["Super Admin"]), false);
   assert.equal(roleAllowed(undefined, ["Super Admin"]), false);
 
   // ── roleNotExcluded ────────────────────────────────────────────────────────
@@ -94,10 +94,10 @@ export function runNavigationActivePathTests() {
     ["/admin/access"],
   );
 
-  // HR Specialist: access item (Super Admin only) filtered out of section a.
-  const hrSpecialist = getSections(sections, "admin", {}, "HR Specialist");
+  // Talent Acquisition: access item (Super Admin only) filtered out of section a.
+  const talentAcquisition = getSections(sections, "admin", {}, "Talent Acquisition");
   assert.deepEqual(
-    hrSpecialist[0].items.map((i) => i.href),
+    talentAcquisition[0].items.map((i) => i.href),
     ["/sales"],
   );
 
