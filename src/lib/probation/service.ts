@@ -88,7 +88,7 @@ type ProbationWorkflowInput = {
 const probationDays = 90;
 // Governance: probation pass/terminate/evaluation authority is reserved for Super Admin
 // (Admin-HR) and the HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role.
-// HR Specialist (incl. the designated A-16) must NOT administer or approve probation.
+// The retired broad HR access role and Talent Acquisition must NOT administer or approve probation.
 const hrProbationRoles = new Set(["Super Admin"]);
 const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
 
@@ -96,11 +96,10 @@ export function isProbationAdministrator(access: Pick<AccessContext, "role" | "s
   return access.scope === "system" || hrProbationRoles.has(access.role);
 }
 
-// View-only probation access. Super Admins (Admin-HR / B-10) administer probation;
-// HR Specialist (incl. the designated A-16) may VIEW and export probation records but
-// must NOT take any action (pass / terminate / evaluate / manager feedback).
+// View/export probation access follows the same Super Admin governance boundary as
+// administration; Talent Acquisition stays scoped to recruitment workflows.
 export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope">) {
-  return isProbationAdministrator(access) || access.role === "HR Specialist";
+  return isProbationAdministrator(access);
 }
 
 export function assertCanExportProbation(access: AccessContext) {

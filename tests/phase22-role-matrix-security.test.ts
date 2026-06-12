@@ -17,7 +17,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
   assert.match(phase22Smoke, /Super Admin/);
-  assert.match(phase22Smoke, /HR Specialist/);
+  assert.match(phase22Smoke, /Talent Acquisition/);
   assert.match(phase22Smoke, /Finance Manager/);
   assert.match(phase22Smoke, /CEO/);
   assert.match(phase22Smoke, /District Manager/);
@@ -41,19 +41,21 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const employee = createAccessContext({ hrId: "E-1", role: "Employee" });
   const medicalRep = createAccessContext({ hrId: "MR-1", role: "Medical Rep" });
   const districtManager = createAccessContext({ hrId: "DSM-1", role: "District Manager" });
-  const nonDesignatedHrSpecialist = createAccessContext({ hrId: "PHASE23-HR", role: "HR Specialist" });
+  const talentAcquisition = createAccessContext({ hrId: "A-16", role: "Talent Acquisition" });
 
   assert.equal(canSeeEmployee(employee, { hrId: "E-1", managerHrId: "DSM-1" }), true);
   assert.equal(canSeeEmployee(employee, { hrId: "E-2", managerHrId: "E-1" }), false);
   assert.equal(canSeeEmployee(medicalRep, { hrId: "MR-2", managerHrId: "MR-1" }), false);
   assert.equal(canSeeEmployee(districtManager, { hrId: "MR-2", managerHrId: "DSM-1" }), true);
-  assert.equal(nonDesignatedHrSpecialist.scope, "self");
-  assert.equal(resolveNavigationMode(nonDesignatedHrSpecialist), "employee-portal");
-  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employee_profile", "read"), true);
-  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employee_profile", "update"), true);
-  assert.equal(await canAccess(nonDesignatedHrSpecialist, "employees", "read"), false);
-  assert.equal(await canAccess(nonDesignatedHrSpecialist, "admin", "read"), false);
-  assert.equal(await canAccess(nonDesignatedHrSpecialist, "user_admin", "read"), false);
+  assert.equal(talentAcquisition.scope, "self");
+  assert.equal(resolveNavigationMode(talentAcquisition), "admin");
+  assert.equal(await canAccess(talentAcquisition, "employee_profile", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "employee_profile", "update"), true);
+  assert.equal(await canAccess(talentAcquisition, "recruitment", "create"), true);
+  assert.equal(await canAccess(talentAcquisition, "candidates", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "employees", "read"), false);
+  assert.equal(await canAccess(talentAcquisition, "admin", "read"), false);
+  assert.equal(await canAccess(talentAcquisition, "user_admin", "read"), false);
 
   // EVERY role must be able to manage its OWN notification/Telegram settings. Both
   // profile pages (admin shell and employee portal) render the notification panel for

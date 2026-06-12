@@ -45,7 +45,7 @@ export function runOfferApprovalChainTests() {
   // canCastOfferApproval — role step.
   const roleStep = { approverKind: "role" as const, approverRole: "Finance Manager", approverHrId: null };
   assert.equal(canCastOfferApproval({ role: "Finance Manager", scope: "company", hrId: null }, roleStep), true);
-  assert.equal(canCastOfferApproval({ role: "HR Specialist", scope: "company", hrId: null }, roleStep), false);
+  assert.equal(canCastOfferApproval({ role: "Talent Acquisition", scope: "self", hrId: "A-16" }, roleStep), false);
   assert.equal(canCastOfferApproval({ role: "Super Admin", scope: "company", hrId: null }, roleStep), true, "Super Admin always");
 
   // canCastOfferApproval — person step (hiring manager).

@@ -2783,7 +2783,7 @@ function isLineStructureDirectoryEmployee(
 }
 
 function isCompanyWorkforceRole(role: PhoenixRole) {
-  return role === "Super Admin" || role === "CEO" || role === "HR Specialist" || role === "Finance Manager";
+  return role === "Super Admin" || role === "CEO" || role === "Finance Manager";
 }
 
 function isLineWorkforceRole(role: PhoenixRole) {

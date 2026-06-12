@@ -40,13 +40,12 @@ import { simulateWorkflow } from "../src/lib/workflow-control/simulator.ts";
 export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Access control: HR governance only = Super Admin. The HR Manager (B-10)
-  // holds the Super Admin role and is covered. Generic HR Specialists (A-16)
-  // are excluded.
+  // holds the Super Admin role and is covered. A-16 / Talent Acquisition is excluded.
   // ---------------------------------------------------------------------------
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), true, "HR Manager (B-10, Super Admin) can access");
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: null }), true, "Super Admin can access");
-  assert.equal(canAccessWorkflowControlCenter({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 (HR Specialist) is NOT granted access");
-  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "Employee"] as const) {
+  assert.equal(canAccessWorkflowControlCenter({ role: "Talent Acquisition", hrId: "A-16" }), false, "A-16 (Talent Acquisition) is NOT granted access");
+  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "Talent Acquisition", "Employee"] as const) {
     assert.equal(canAccessWorkflowControlCenter({ role, hrId: "X-1" }), false, `${role} must NOT access workflow control`);
   }
 
@@ -149,8 +148,8 @@ export function runWorkflowControlTests() {
   // Warnings: missing manager and missing HR recipient.
   const missingManager = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52" });
   assert.ok(missingManager.warnings.some((w) => /manager/i.test(w)), "simulator warns when the direct manager is missing");
-  const missingHr = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52", managerHrId: "A-99", hrSpecialistAvailable: false });
-  assert.ok(missingHr.warnings.some((w) => /hr/i.test(w)), "simulator warns when no HR Specialist recipient is configured");
+  const missingHr = simulateWorkflow({ domainKey: "leave", subflowKey: "vacation-request", employeeHrId: "B-52", managerHrId: "A-99", hrManagerAvailable: false });
+  assert.ok(missingHr.warnings.some((w) => /hr/i.test(w)), "simulator warns when no HR Manager recipient is configured");
 
   // Default subflow + unknowns degrade safely.
   const defaultSubflow = simulateWorkflow({ domainKey: "payroll" });
@@ -248,7 +247,7 @@ export function runWorkflowControlTests() {
   // ===========================================================================
   assert.equal(WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED, true, "Phase 2A draft editor flag is ON");
   assert.equal(canUseWorkflowDraftEditor({ role: "Super Admin", hrId: "B-10" }), true, "Super Admin can use the draft editor");
-  assert.equal(canUseWorkflowDraftEditor({ role: "HR Specialist", hrId: "A-16" }), false, "A-16 cannot use the draft editor");
+  assert.equal(canUseWorkflowDraftEditor({ role: "Talent Acquisition", hrId: "A-16" }), false, "A-16 cannot use the draft editor");
   for (const role of ["CEO", "Finance Manager", "National Sales Manager", "Medical Rep", "Training Manager", "Employee"] as const) {
     assert.equal(canUseWorkflowDraftEditor({ role, hrId: "X-1" }), false, `${role} cannot use the draft editor`);
   }

@@ -85,8 +85,8 @@ export function runRecruitmentReadinessTests() {
 
   assert.ok(permissionMatrix["Super Admin"].recruitment?.includes("approve"));
   assert.ok(permissionMatrix["Super Admin"].candidates?.includes("import"));
-  assert.ok(permissionMatrix["HR Specialist"].recruitment?.includes("create"));
-  assert.ok(permissionMatrix["HR Specialist"].candidates?.includes("read"));
+  assert.ok(permissionMatrix["Talent Acquisition"].recruitment?.includes("create"));
+  assert.ok(permissionMatrix["Talent Acquisition"].candidates?.includes("read"));
   assert.deepEqual(permissionMatrix.CEO.recruitment, ["read"]);
   assert.deepEqual(permissionMatrix.CEO.candidates, ["read"]);
   assert.deepEqual(permissionMatrix["District Manager"].recruitment, ["read", "update"]);

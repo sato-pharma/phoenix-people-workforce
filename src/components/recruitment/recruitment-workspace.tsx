@@ -162,7 +162,7 @@ function approverLabel(step: OfferApprovalStep): string {
   if (step.approverKind === "person") {
     return `Department Head${step.approverHrId ? ` (${step.approverHrId})` : ""}`;
   }
-  if (step.approverRole === "HR Specialist") return "HR Manager";
+  if (step.approverRole === "Super Admin") return "HR Manager";
   if (step.approverRole === "Finance Manager") return "Finance";
   return step.approverRole ?? "Approver";
 }

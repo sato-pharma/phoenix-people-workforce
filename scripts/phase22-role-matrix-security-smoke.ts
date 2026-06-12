@@ -28,7 +28,7 @@ const warnings: string[] = [];
 
 const phase22Roles: PhoenixRole[] = [
   "Super Admin",
-  "HR Specialist",
+  "Talent Acquisition",
   "Finance Manager",
   "CEO",
   "Manager",
@@ -55,7 +55,7 @@ function loadLocalEnv() {
 }
 
 function contextFor(role: PhoenixRole): AccessContext {
-  const hrId = role === "HR Specialist"
+  const hrId = role === "Talent Acquisition"
     ? "A-16"
     : `PHASE22-${role.replace(/[^A-Z0-9]+/gi, "").toUpperCase()}`;
   return createAccessContext({
@@ -100,25 +100,21 @@ async function verifyRoleMatrix() {
   await expectAccess(superAdmin, "payroll", "import", true);
   await expectAccess(superAdmin, "sales", "approve", true);
 
-  const hr = contextFor("HR Specialist");
-  await expectAccess(hr, "employees", "update", true);
-  await expectAccess(hr, "overview", "read", true);
-  await expectAccess(hr, "communication", "update", true);
-  await expectAccess(hr, "payslips", "read", true);
-  await expectAccess(hr, "user_admin", "update", false);
-  await expectAccess(hr, "payroll", "import", false);
-  await expectAccess(hr, "expenses", "read", false);
-  await expectAccess(hr, "probation", "approve", true);
-  addCheck("HR Specialist cannot access attendance setup", !await canAccessAttendanceSetup(hr, "read"));
-  addCheck("HR Specialist cannot update attendance setup", !await canAccessAttendanceSetup(hr, "update"));
-  const nonDesignatedHr = createAccessContext({
-    hrId: "A-17",
-    loginId: "phase22.hr.specialist.extra",
-    role: "HR Specialist",
-    source: "session",
-  });
-  await expectAccess(nonDesignatedHr, "employees", "read", false);
-  await expectAccess(nonDesignatedHr, "overview", "read", false);
+  const talentAcquisition = contextFor("Talent Acquisition");
+  await expectAccess(talentAcquisition, "recruitment", "create", true);
+  await expectAccess(talentAcquisition, "candidates", "read", true);
+  await expectAccess(talentAcquisition, "offers", "create", true);
+  await expectAccess(talentAcquisition, "employee_profile", "update", true);
+  await expectAccess(talentAcquisition, "employees", "read", false);
+  await expectAccess(talentAcquisition, "overview", "read", false);
+  await expectAccess(talentAcquisition, "communication", "update", false);
+  await expectAccess(talentAcquisition, "payslips", "read", false);
+  await expectAccess(talentAcquisition, "user_admin", "update", false);
+  await expectAccess(talentAcquisition, "payroll", "import", false);
+  await expectAccess(talentAcquisition, "expenses", "read", false);
+  await expectAccess(talentAcquisition, "probation", "approve", false);
+  addCheck("Talent Acquisition cannot access attendance setup", !await canAccessAttendanceSetup(talentAcquisition, "read"));
+  addCheck("Talent Acquisition cannot update attendance setup", !await canAccessAttendanceSetup(talentAcquisition, "update"));
 
   const finance = contextFor("Finance Manager");
   await expectAccess(finance, "payroll", "approve", true);
@@ -166,7 +162,7 @@ async function verifyRoleMatrix() {
 
 function verifyScopeHelpers() {
   expectScope("Super Admin navigation mode is admin", resolveNavigationMode(contextFor("Super Admin")), "admin");
-  expectScope("HR Specialist navigation mode is admin", resolveNavigationMode(contextFor("HR Specialist")), "admin");
+  expectScope("Talent Acquisition navigation mode is admin", resolveNavigationMode(contextFor("Talent Acquisition")), "admin");
   expectScope("Finance Manager navigation mode is employee portal", resolveNavigationMode(contextFor("Finance Manager")), "employee-portal");
   expectScope("CEO navigation mode is admin", resolveNavigationMode(contextFor("CEO")), "admin");
   expectScope("District Manager navigation mode is employee portal", resolveNavigationMode(contextFor("District Manager")), "employee-portal");
@@ -176,7 +172,7 @@ function verifyScopeHelpers() {
   expectScope("Medical Rep payroll scope is SELF", getPayrollScope(contextFor("Medical Rep")), "SELF");
   expectScope("District Manager payroll scope is SELF", getPayrollScope(contextFor("District Manager")), "SELF");
   expectScope("Finance Manager payroll scope is COMPANY", getPayrollScope(contextFor("Finance Manager")), "COMPANY");
-  expectScope("HR Specialist payroll scope is SELF", getPayrollScope(contextFor("HR Specialist")), "SELF");
+  expectScope("Talent Acquisition payroll scope is SELF", getPayrollScope(contextFor("Talent Acquisition")), "SELF");
   expectScope("CEO payroll scope is COMPANY", getPayrollScope(contextFor("CEO")), "COMPANY");
 
   expectScope("Employee sales scope is SELF", getSalesScope(contextFor("Employee")), "SELF");

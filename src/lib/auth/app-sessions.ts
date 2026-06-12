@@ -8,7 +8,6 @@ export const privilegedSupabaseBridgeRoles = new Set<PhoenixRole>([
   "Super Admin",
   "CEO",
   "Finance Manager",
-  "HR Specialist",
   "SFE Manager",
   "National Sales Manager",
 ]);

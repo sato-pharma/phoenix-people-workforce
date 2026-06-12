@@ -60,7 +60,7 @@ export type CompanyCalendarEventInput = {
  * service. Kept as an explicit role helper (not the permission matrix) so the
  * all-staff read surface needs no per-role matrix changes.
  */
-const CALENDAR_ADMIN_ROLES = new Set<PhoenixRole>(["Super Admin", "HR Specialist", "CEO"]);
+const CALENDAR_ADMIN_ROLES = new Set<PhoenixRole>(["Super Admin", "CEO"]);
 
 const CALENDAR_MANAGER_ROLES = new Set<PhoenixRole>([
   "National Sales Manager",

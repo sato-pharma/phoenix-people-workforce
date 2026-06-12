@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminWorkflowControlPage() {
   const access = await resolveAccessContextFromPage();
 
-  // Phase 1 governance gate: Super Admin + HR Specialist (HR governance) only.
+  // Phase 1 governance gate: Super Admin / HR Manager governance only.
   if (!canAccessWorkflowControlCenter(access)) {
     redirect("/employee-portals");
   }

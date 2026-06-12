@@ -47,7 +47,7 @@ const criticalSmokeRoles = [
   "Regional Manager",
   "National Sales Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "CEO",
   "Super Admin",
 ];
@@ -64,7 +64,7 @@ const enterpriseRoles = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "Manager",
   "CEO",
   "Super Admin",
@@ -430,7 +430,7 @@ async function validateRoleMapping(sql: postgres.Sql) {
         when 'CEO' then 'company_reader'
         when 'SFE Manager' then 'company_reader'
         when 'Finance Manager' then 'finance'
-        when 'HR Specialist' then 'hr'
+        when 'Talent Acquisition' then 'hr'
         when 'District Manager' then 'manager'
         when 'Regional Manager' then 'manager'
         when 'National Sales Manager' then 'manager'
@@ -446,7 +446,7 @@ async function validateRoleMapping(sql: postgres.Sql) {
         when 'CEO' then 'COMPANY_READ'
         when 'SFE Manager' then 'COMPANY_READ'
         when 'Finance Manager' then 'FINANCE'
-        when 'HR Specialist' then 'HR'
+        when 'Talent Acquisition' then 'HR'
         when 'District Manager' then 'TEAM'
         when 'Manager' then 'TEAM'
         when 'Regional Manager' then 'HIERARCHY'

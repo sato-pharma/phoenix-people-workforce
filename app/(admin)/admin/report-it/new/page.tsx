@@ -7,7 +7,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 export const dynamic = "force-dynamic";
 
 // Admin-shell submission page. Lets admin-mode users (Super Admin, CEO,
-// HR Specialist, Finance Manager) file an ADR report without being dropped
+// Finance Manager) file an ADR report without being dropped
 // into the employee-portal shell. The employee portal keeps its own
 // /employee-portals/report-it route for portal-mode users.
 export default async function AdminReportItNewPage() {

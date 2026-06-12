@@ -16,7 +16,7 @@
 
 begin;
 
-alter table report_it_reports
+alter table if exists public.report_it_reports
   drop constraint if exists report_it_reports_submitted_by_hr_id_fkey;
 
 notify pgrst, 'reload schema';

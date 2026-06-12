@@ -176,7 +176,6 @@ export function resolveEmployeePortalNavVisibility(
     "Super Admin",
     "Manager",
     "Regional Manager",
-    "HR Specialist",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !isTrainingManager;
   const baseShowIncentiveTab = !isTrainingManager;

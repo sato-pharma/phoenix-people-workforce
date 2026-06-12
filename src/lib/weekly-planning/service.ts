@@ -773,14 +773,14 @@ async function hrAcknowledgementRecipients() {
   const { data: authRows } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,name,auth_email,role")
-    .in("role", ["HR Specialist", "Super Admin"]);
+    .in("role", ["Super Admin"]);
   const { data: employees } = await supabase
     .from("employees")
     .select("hr_id,full_name,job_title,position_title")
     .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%");
   const employeeHrIds = new Set(((employees ?? []) as Array<{ hr_id?: string | null }>).map((row) => normalizeHrId(row.hr_id)).filter(Boolean));
   const recipients = ((authRows ?? []) as AuthUserRow[])
-    .filter((row) => row.role === "Super Admin" || row.role === "HR Specialist" || employeeHrIds.has(normalizeHrId(row.hr_id)))
+    .filter((row) => row.role === "Super Admin" || employeeHrIds.has(normalizeHrId(row.hr_id)))
     .map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
   for (const hrId of employeeHrIds) {
     if (!recipients.some((recipient) => hrIdsMatch(recipient.hrId, hrId))) {

@@ -1,6 +1,6 @@
 // Offer pipeline — per-position CEO-approval threshold + approval-chain roles.
 //
-// The approval chain is threshold based: HR Manager (HR Specialist) + Finance
+// The approval chain is threshold based: HR Manager (Super Admin) + Finance
 // (Finance Manager) + the requisition's hiring manager (person step) always
 // approve; the CEO is added only when the offered NET salary exceeds a
 // per-position cap. The cap is resolved per position — the requisition salary
@@ -19,7 +19,7 @@ export const OFFER_CEO_APPROVAL_CAPS: Record<string, number> = {
 };
 
 // Always-required approver roles (the hiring-manager person step is added separately).
-export const OFFER_APPROVAL_ALWAYS_ROLES: readonly PhoenixRole[] = ["HR Specialist", "Finance Manager"] as const;
+export const OFFER_APPROVAL_ALWAYS_ROLES: readonly PhoenixRole[] = ["Super Admin", "Finance Manager"] as const;
 export const OFFER_APPROVAL_CEO_ROLE: PhoenixRole = "CEO";
 
 function normalizeTitle(value: string | null | undefined): string {
