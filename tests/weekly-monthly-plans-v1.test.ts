@@ -77,7 +77,14 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(serviceSource, /recordReturnNotes/, "manager/CEO return must support row-level feedback");
   assert.doesNotMatch(serviceSource, /syncApprovedPlanToGoogleCalendar|retryEmployeePlanCalendarSync/, "Google Calendar auth/sync must be fully removed from the plans service");
   assert.match(serviceSource, /createSystemNotification/, "workflow must use unified notifications");
-  assert.match(serviceSource, /channels: \["in_app", "email", "telegram"\]/, "workflow notifications must include in-app, email and Telegram");
+  assert.match(
+    serviceSource,
+    /channels: emailMode !== "none" && \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
+    "workflow notifications should route email to only the primary notification recipient",
+  );
+  assert.match(serviceSource, /emailMode: "none"/, "HR submit notifications should avoid duplicate submit emails");
+  assert.match(serviceSource, /emailCcRecipients: ccRecipients/, "manager submit email should include CC recipients");
+  assert.match(serviceSource, /cc: ccEmails/, "weekly planning submission emails must include CC visibility recipients");
   assert.doesNotMatch(telegramSource, /approve|reject/i, "Telegram adapter must not expose approve/reject actions");
 
   assert.match(migrationSource, /create table if not exists public\.employee_plan_headers/i);
@@ -144,7 +151,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
   );
   assert.match(
     serviceSource,
-    /notifyPlanSubmitted[\s\S]*?Promise\.allSettled\(\[notifyManager\(plan\), notifyHrOnSubmit\(plan\)\]\)/,
+    /notifyPlanSubmitted[\s\S]*?Promise\.allSettled\(\[notifyManager\(plan,\s*hrRecipients\), notifyHrOnSubmit\(plan,\s*hrRecipients\)\]\)/,
     "submit fan-out must reach manager + HR and isolate failures",
   );
   // Every submit site must use the combined fan-out, never the bare manager-only alert.

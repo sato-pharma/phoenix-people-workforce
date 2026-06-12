@@ -15,6 +15,7 @@ import {
 import {
   resolveNotificationPolicy,
   resolveNotificationRecipientsWithGovernance,
+  type NotificationRecipient,
   type NotificationRecipientGovernanceWarning,
 } from "@/lib/notifications/policy";
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
@@ -129,6 +130,16 @@ const employeeSubjectWorkflowModules = new Set([
   "support_requests",
   "vacation",
   "weekly_plans",
+]);
+
+const workflowEmailEnvelopeModules = new Set([
+  ...employeeSubjectWorkflowModules,
+  "coaching",
+  "contracts",
+  "expenses",
+  "leave",
+  "marketing_requests",
+  "weekly_planning",
 ]);
 
 function cleanText(value: string | null | undefined) {
@@ -318,6 +329,57 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   }
 
   return dedupeChannels(["in_app", preferred]);
+}
+
+function requestedChannelsForEnvelope(input: CreateSystemNotificationInput) {
+  if (input.channels?.length) return dedupeChannels(input.channels);
+  const policy = resolveNotificationPolicy(input);
+  return dedupeChannels(policy.channels.length > 0 ? policy.channels : ["in_app", "email"]);
+}
+
+function shouldUseWorkflowEmailEnvelope(input: CreateSystemNotificationInput, recipients: NotificationRecipient[]) {
+  if (recipients.length <= 1) return false;
+  if (!requestedChannelsForEnvelope(input).includes("email")) return false;
+  if (isSensitivePayroll(input)) return false;
+  const moduleName = cleanText(input.module).toLowerCase();
+  if (!workflowEmailEnvelopeModules.has(moduleName)) return false;
+  return Boolean(
+    cleanHrId(input.email?.employeeHrId) ||
+    cleanHrId(input.subjectHrId) ||
+    metadataHrId(input.metadata, ["employeeHrId", "subjectHrId", "requestOwnerHrId"]),
+  );
+}
+
+function recipientKey(recipient: Pick<NotificationRecipient, "email" | "hrId" | "userId">) {
+  return cleanText(recipient.userId ?? recipient.hrId ?? recipient.email ?? null).toLowerCase();
+}
+
+function deliverableAddresses(recipients: NotificationRecipient[]) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const recipient of recipients) {
+    const email = pickDeliverableEmail(recipient.email);
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    output.push(email);
+  }
+  return output;
+}
+
+function emailDeliveryMetadata(
+  identity: ReturnType<typeof validateNotificationEmailIdentity>,
+  emailInput: NotificationEmailInput,
+) {
+  const envelope = {
+    bcc: emailInput.bcc ?? [],
+    cc: emailInput.cc ?? [],
+    recipientHrId: emailInput.recipientHrId ?? null,
+    to: emailInput.recipients ?? [],
+  };
+  return {
+    emailEnvelope: envelope,
+    emailIdentity: identity.metadata,
+  };
 }
 
 function eventKeyFor(input: CreateSystemNotificationInput) {
@@ -1184,6 +1246,8 @@ async function buildChannelEmailInput(
   const emailContent = await renderChannelContent(input, "email");
   const identity = resolvedEmailIdentity(input, recipient);
   return {
+    bcc: input.email?.bcc,
+    cc: input.email?.cc,
     ctaHref: input.actionUrl ?? input.email?.ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
     employeeHrId: identity.employeeHrId,
@@ -1285,7 +1349,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
       if (channel === "email" && preferences.email_enabled) {
         const emailInput = await buildChannelEmailInput(input, recipient, input.priority ?? policy.priority);
         const identity = validateNotificationEmailIdentity(emailInput);
-        deferredMetadata.emailIdentity = identity.metadata;
+        Object.assign(deferredMetadata, emailDeliveryMetadata(identity, emailInput));
         if (!identity.ok) {
           await upsertDelivery({
             channel,
@@ -1358,7 +1422,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           eventId,
           idempotencyKey,
           lastError: identity.reason,
-          metadata: { emailIdentity: identity.metadata },
+          metadata: emailDeliveryMetadata(identity, emailInput),
           provider: "email",
           recipient,
           recipientAddress: recipient.email,
@@ -1376,7 +1440,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         eventId,
         idempotencyKey,
         lastError: error ?? null,
-        metadata: { emailIdentity: identity.metadata },
+        metadata: emailDeliveryMetadata(identity, emailInput),
         provider: "email",
         providerMessageId: result.skipped ? null : result.id,
         recipient,
@@ -1521,6 +1585,41 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
   return { deliveries, eventId, eventKey };
 }
 
+async function createWorkflowEmailEnvelopeNotification(
+  input: CreateSystemNotificationInput,
+  recipients: NotificationRecipient[],
+  baseIdempotencyKey: string,
+): Promise<SystemNotificationResult | null> {
+  const primary = recipients[0];
+  if (!primary) return null;
+
+  const ccRecipients = recipients.slice(1);
+  const primaryEmail = pickDeliverableEmail(primary.email);
+  const cc = deliverableAddresses(ccRecipients);
+  const primaryKey = recipientKey(primary);
+
+  return createSystemNotificationForRecipient({
+    ...input,
+    channels: ["email"],
+    email: {
+      ...(input.email ?? {}),
+      cc,
+      recipients: primaryEmail ? [primaryEmail] : input.email?.recipients,
+    },
+    metadata: {
+      ...(input.metadata ?? {}),
+      emailEnvelope: {
+        ccRecipientHrIds: ccRecipients.map((recipient) => recipient.hrId ?? null).filter(Boolean),
+        primaryRecipientHrId: primary.hrId ?? null,
+        routing: "primary_to_cc",
+      },
+      ...(baseIdempotencyKey ? { idempotencyKey: `${baseIdempotencyKey}:email-envelope:${primaryKey || "primary"}` } : {}),
+    },
+    recipientHrId: primary.hrId ?? null,
+    recipientUserId: primary.userId ?? null,
+  });
+}
+
 export async function createSystemNotification(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {
   const explicitRecipient = cleanText(input.recipientUserId) || cleanHrId(input.recipientHrId);
   if (explicitRecipient) {
@@ -1545,19 +1644,29 @@ export async function createSystemNotification(input: CreateSystemNotificationIn
   if (recipients.length === 0) return createGovernanceSkippedNotification(input, resolution.warnings);
 
   const baseIdempotencyKey = typeof input.metadata?.idempotencyKey === "string" ? cleanText(input.metadata.idempotencyKey) : "";
+  const useEmailEnvelope = shouldUseWorkflowEmailEnvelope(input, recipients);
+  const nonEmailChannels = requestedChannelsForEnvelope(input).filter((channel) => channel !== "email");
   const results = await Promise.all(
-    recipients.map((recipient) =>
-      createSystemNotificationForRecipient({
-        ...input,
-        metadata: {
-          ...(input.metadata ?? {}),
-          ...(baseIdempotencyKey ? { idempotencyKey: `${baseIdempotencyKey}:${recipient.userId ?? recipient.hrId ?? recipient.email}` } : {}),
-        },
-        recipientHrId: recipient.hrId ?? null,
-        recipientUserId: recipient.userId ?? null,
-      }),
-    ),
+    recipients.flatMap((recipient) => {
+      if (useEmailEnvelope && nonEmailChannels.length === 0) return [];
+      return [
+        createSystemNotificationForRecipient({
+          ...input,
+          ...(useEmailEnvelope ? { channels: nonEmailChannels } : {}),
+          metadata: {
+            ...(input.metadata ?? {}),
+            ...(baseIdempotencyKey ? { idempotencyKey: `${baseIdempotencyKey}:${recipient.userId ?? recipient.hrId ?? recipient.email}` } : {}),
+          },
+          recipientHrId: recipient.hrId ?? null,
+          recipientUserId: recipient.userId ?? null,
+        }),
+      ];
+    }),
   );
+  if (useEmailEnvelope) {
+    const emailEnvelope = await createWorkflowEmailEnvelopeNotification(input, recipients, baseIdempotencyKey);
+    if (emailEnvelope) results.push(emailEnvelope);
+  }
 
   return {
     deliveries: results.flatMap((result) => result.deliveries),
