@@ -45,10 +45,12 @@ export function runSystemCleanupCenterTests() {
   assert.match(actionsRoute, /executeCleanupAction\(access/, "cleanup POST must call the guarded execute path");
   assert.match(actionsRoute, /previewCleanupAction\(access/, "cleanup POST must call the guarded preview path");
   assert.match(service, /SYSTEM_CLEANUP_MAX_BULK\s*=\s*25/, "bulk cleanup must be capped at 25 records");
-  assert.match(service, /Cleanup reason must be at least 10 characters/, "missing or short reasons must be rejected");
+  assert.match(service, /DEFAULT_CLEANUP_NOTE\s*=\s*"No cleanup note provided\."/, "blank cleanup notes must be accepted with a safe history fallback");
+  assert.match(service, /const reason = optionalCleanupNote\(input\.reason\)/, "cleanup execute must not require a manually entered reason");
   assert.match(center, /function handleExecuteClick\(\)/, "cleanup UI must validate delete prerequisites on click");
-  assert.match(center, /Enter a cleanup reason with at least 10 characters/, "cleanup UI must explain missing reason instead of silently disabling delete");
+  assert.match(center, /Cleanup note \(optional\)/, "cleanup UI must label the note as optional");
   assert.match(center, /Check the confirmation box before deleting/, "cleanup UI must explain missing confirmation instead of silently disabling delete");
+  assert.doesNotMatch(center, /reason of at least 10 characters/, "cleanup UI must not require a reason before deletion");
   assert.doesNotMatch(center, /disabled=\{executeDisabled\}/, "delete button must not be hard-disabled by hidden reason/confirmation state");
 
   assert.match(service, /cleanupModuleRegistry/, "cleanup modules must be routed through an internal registry");
