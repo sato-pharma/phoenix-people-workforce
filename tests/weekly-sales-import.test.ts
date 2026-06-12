@@ -11,7 +11,7 @@ const PRICES: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 
 
 function references(): SalesReferenceData {
   return {
-    distributors: [{ code: "IS-S", name: "Ibn Sina-Sato" }],
+    distributors: [{ code: "IS", name: "Ibn sina" }],
     products: Object.entries(PRICES).map(([productCode, factoryPrice]) => ({
       productCode,
       productName: productCode === "RO001" ? "ROYAFLOXACIN 500 TAB" : productCode,
@@ -31,10 +31,15 @@ function references(): SalesReferenceData {
   };
 }
 
-// Header mirrors the real Ibn Sina Sato "SalesAndStockReport2_DataHub" export.
+// Header mirrors the real Ibn Sina "SalesAndStockReport2_DataHub" export.
 const HEADER = [
   "Date", "Supplier Code", "Supplier Name", "Item Code", "Item name", "Branch Code", "Branch Name",
   "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales", "Region ID", "Product ID", "Distrub ID",
+];
+
+const PAS_RAW_HEADER = [
+  "Date", "Supplier Code", "Supplier Name", "Item Code", "Item Name", "Branch Code", "Branch Name",
+  "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales",
 ];
 
 // One sheet row. The "Sales Value" (col 11) is deliberately a WRONG number to prove it is ignored.
@@ -50,16 +55,24 @@ function row(opts: {
 }): unknown[] {
   return [
     opts.date, "110476", "SATO", opts.itemCode, opts.itemName, "61", opts.branch,
-    opts.stock, 9999, opts.qty, 123456 /* bogus sheet value */, opts.qty, opts.region, opts.productId, "IS-S",
+    opts.stock, 9999, opts.qty, 123456 /* bogus sheet value */, opts.qty, opts.region, opts.productId, "IS",
   ];
 }
 
 async function workbook(rows: unknown[][]): Promise<ExcelJS.Buffer> {
+  return buildWeeklyWorkbook(HEADER, rows);
+}
+
+async function buildWeeklyWorkbook(header: readonly string[], rows: unknown[][]): Promise<ExcelJS.Buffer> {
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("SalesAndStockReport2_DataHub");
-  sheet.addRow(HEADER);
+  sheet.addRow(header);
   rows.forEach((r) => sheet.addRow(r));
   return wb.xlsx.writeBuffer();
+}
+
+async function workbookPasRaw(rows: unknown[][]): Promise<ExcelJS.Buffer> {
+  return buildWeeklyWorkbook(PAS_RAW_HEADER, rows);
 }
 
 const round2 = (value: number) => Number(value.toFixed(2));
@@ -80,9 +93,9 @@ export async function runWeeklySalesImportTests() {
 
   const parsed = await parseWeeklyWorkbookBuffer({
     buffer,
-    distributorCode: "IS-S",
-    distributorName: "Ibn Sina-Sato",
-    fileName: "IS-S_week.xlsx",
+    distributorCode: "IS",
+    distributorName: "Ibn sina",
+    fileName: "IS_week.xlsx",
     references: references(),
   });
   assert.equal(parsed.ok, true, "weekly file parses");
@@ -126,13 +139,35 @@ export async function runWeeklySalesImportTests() {
       row({ date: new Date(Date.UTC(2025, 6, 5)), itemCode: "667913", itemName: "SAGINKGO 30 CAP", branch: "Cairo A", stock: 30, qty: 7, region: "CA", productId: "SA001" }),
       row({ date: new Date(Date.UTC(2025, 6, 12)), itemCode: "667913", itemName: "SAGINKGO 30 CAP", branch: "Cairo A", stock: 28, qty: 9, region: "CA", productId: "SA001" }),
     ]),
-    distributorCode: "IS-S",
-    distributorName: "Ibn Sina-Sato",
+    distributorCode: "IS",
+    distributorName: "Ibn sina",
     fileName: "two-weeks.xlsx",
     references: references(),
   });
   assert.equal(multi.ok, true);
   if (multi.ok) assert.equal(multi.result.status, "blocked", "two weeks in one file is blocked");
+
+  // PAS raw layout (no Region ID / Product ID / Distrub ID columns) should still match the dedicated
+  // IS-S raw template.
+  const pasRaw = await parseWeeklyWorkbookBuffer({
+    buffer: await workbookPasRaw([
+      [new Date(Date.UTC(2025, 7, 1)), "CA", "Ibn Sina Branch", "SA001", "SAGINKGO 30 CAP", "61", "Cairo A", 14, 2000, 4, 0, 0],
+      [new Date(Date.UTC(2025, 7, 1)), "GZ", "Ibn Sina Branch", "RO001", "ROYAFLOXACIN 500 TAB", "62", "Giza B", 7, 1200, 2, 0, 0],
+    ]),
+    distributorCode: "IS-S",
+    distributorName: "Ibn Sina Sato",
+    fileName: "IS-S_pas_raw.xlsx",
+    references: references(),
+  });
+  assert.equal(pasRaw.ok, true, "PAS raw header layout is recognised for IS-S");
+  if (pasRaw.ok) {
+    assert.equal(pasRaw.result.templateKey, "ibn_sina_weekly_pas_raw", "PAS raw variant is selected");
+    assert.equal(pasRaw.result.rowCount, 2, "PAS raw parse keeps both rows");
+    assert.equal(pasRaw.rows[0].productCode, "SA001", "raw Item Code resolves to product from master");
+    assert.equal(pasRaw.rows[0].regionCode, "CA", "raw Supplier Code resolves as region code");
+    assert.equal(pasRaw.rows[0].validationState, "valid", "raw mapped row is valid");
+    assert.equal(pasRaw.result.totals.stockQty, 21, "raw total stock qty is correct");
+  }
 
   // Unknown distributor → recognised as having no weekly template (not a silent empty result).
   const unsupported = await parseWeeklyWorkbookBuffer({
