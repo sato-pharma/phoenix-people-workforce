@@ -50,8 +50,19 @@ export async function POST(request: Request) {
     if (!analysis.template?.recognized) {
       return NextResponse.json(
         {
+          ...analysis,
           error: "unrecognized_expense_template",
           message: "Unrecognized expense template. Please upload the Phoenix Outstation Expenses template.",
+        },
+        { status: 400 },
+      );
+    }
+    if (analysis.validation.errors.length > 0) {
+      return NextResponse.json(
+        {
+          ...analysis,
+          error: "expense_validation_failed",
+          message: analysis.validation.errors.join(" "),
         },
         { status: 400 },
       );

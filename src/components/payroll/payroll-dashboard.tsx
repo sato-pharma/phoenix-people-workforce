@@ -3731,6 +3731,9 @@ export function PayrollDashboard({
       const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
+        if (Array.isArray(payload.records) && payload.validation) {
+          setExpenseAnalysis(payload as ExpenseAnalysisResult);
+        }
         setExpenseAnalysisError(payrollPayloadMessage(payload, "Unable to replace expense report."));
         return;
       }
@@ -3764,6 +3767,9 @@ export function PayrollDashboard({
       const payload = await readPayrollApiPayload(response);
 
       if (!response.ok) {
+        if (Array.isArray(payload.records) && payload.validation) {
+          setExpenseAnalysis(payload as ExpenseAnalysisResult);
+        }
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
             ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."

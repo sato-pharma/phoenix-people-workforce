@@ -153,6 +153,23 @@ export type ExpenseTemplateIdentity = {
   recognized: boolean;
 };
 
+export type ExpenseAnalysisValidation = {
+  errors: string[];
+  invalidRows: number;
+  missingDestinationRows: number;
+  missingHrIdRows: number;
+  missingRequiredColumns: string[];
+  missingTripDateRows: number;
+  payrollReadyRows: number;
+  recognizedColumns: number;
+  requiredColumns: number;
+  status: "failed" | "passed" | "warning";
+  totalMismatchRows: number;
+  totalRows: number;
+  warnings: string[];
+  zeroTotalRows: number;
+};
+
 export type ExpenseAnalysisResult = {
   columns: string[];
   fileName: string;
@@ -171,6 +188,7 @@ export type ExpenseAnalysisResult = {
     totalTravelCost: number;
     trips: number;
   };
+  validation: ExpenseAnalysisValidation;
   warnings: string[];
 };
 

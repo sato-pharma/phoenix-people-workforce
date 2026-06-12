@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type {
   ExpenseAnalysisResult,
+  ExpenseAnalysisValidation,
   ExpenseSpecialistSummary,
   ExpenseTripRecord,
 } from "@/lib/payroll/types";
@@ -109,6 +110,34 @@ type ExpenseTemplateDefinition = {
   sheetNames: string[];
 };
 
+const expenseTemplateColumnLabels: Record<keyof typeof expenseHeaderAliases, string> = {
+  columnAllowance: "Allowance",
+  columnAmWorkload: "AM Workload",
+  columnComments: "Comments",
+  columnDate: "Start Date",
+  columnDescription: "Description",
+  columnExpected: "Expected Amount",
+  columnFrom: "From",
+  columnHr: "HR Status",
+  columnHrId: "HR ID",
+  columnKm: "KM",
+  columnLocation: "Destination",
+  columnMeeting: "Meeting Amount",
+  columnOpen: "Open",
+  columnPmWorkload: "PM Workload",
+  columnRecommendation: "Recommendation",
+  columnRequestType: "Expense Type",
+  columnSpecialist: "Employee",
+  columnStatus: "Status",
+  columnTo: "To",
+  columnToDate: "End Date",
+  columnTotal: "Total",
+  columnTransportation: "Transported By",
+  columnTravelCost: "Travel Cost",
+  columnTripId: "TripID",
+  columnTripType: "Travel Stay Type",
+};
+
 const expenseTemplateDefinitions: ExpenseTemplateDefinition[] = [
   {
     key: "phoenix-outstation-expenses-v1",
@@ -139,7 +168,14 @@ function detectExpenseTemplate(
   fileName: string,
   sheetName: string,
   columns: string[],
-): { key: string; name: string; recognized: boolean } {
+): {
+  key: string;
+  missingRequiredColumns: string[];
+  name: string;
+  recognized: boolean;
+  recognizedColumns: number;
+  requiredColumns: number;
+} {
   const normalizedSet = new Set(columns.map(normalizeHeaderName));
   const templateFileHint = normalizeHeaderName(fileName);
   const sheetHint = normalizeHeaderName(sheetName);
@@ -147,27 +183,37 @@ function detectExpenseTemplate(
   const historicalUploadHint = templateFileHint.includes("historical") && templateFileHint.includes("expense");
 
   let bestMatch = {
-    recognized: false,
     key: "generic-expenses-v1",
+    missingRequiredColumns: [] as string[],
     name: "Generic Outstation Expense Sheet",
+    recognized: false,
+    recognizedColumns: 0,
+    requiredColumns: 0,
     score: -1,
   };
 
   for (const template of expenseTemplateDefinitions) {
     const sheetMatch = template.sheetNames.some((name) => normalizeHeaderName(name) === sheetHint);
-    const requiredMatchCount = template.requiredColumns.filter((column) => {
+    const matchedColumns = template.requiredColumns.filter((column) => {
       const aliases = expenseHeaderAliases[column];
       return aliases.some((alias) => normalizedSet.has(normalizeHeaderName(alias)));
-    }).length;
+    });
+    const requiredMatchCount = matchedColumns.length;
+    const missingRequiredColumns = template.requiredColumns
+      .filter((column) => !matchedColumns.includes(column))
+      .map((column) => expenseTemplateColumnLabels[column]);
     const score = requiredMatchCount + (sheetMatch ? 2 : 0);
 
     if (score > bestMatch.score) {
       bestMatch = {
+        key: template.key,
+        missingRequiredColumns,
+        name: template.name,
         recognized:
           score >= 13 || (sheetMatch && score >= 11) || (outstationHint && score >= 11) ||
           (historicalUploadHint && score >= 12),
-        key: template.key,
-        name: template.name,
+        recognizedColumns: requiredMatchCount,
+        requiredColumns: template.requiredColumns.length,
         score,
       };
     }
@@ -176,15 +222,21 @@ function detectExpenseTemplate(
   if (!bestMatch.recognized) {
     return {
       key: "generic-expenses-v1",
+      missingRequiredColumns: bestMatch.missingRequiredColumns,
       name: "Generic Outstation Expense Sheet",
       recognized: false,
+      recognizedColumns: bestMatch.recognizedColumns,
+      requiredColumns: bestMatch.requiredColumns,
     };
   }
 
   return {
     key: bestMatch.key,
+    missingRequiredColumns: bestMatch.missingRequiredColumns,
     name: bestMatch.name,
     recognized: true,
+    recognizedColumns: bestMatch.recognizedColumns,
+    requiredColumns: bestMatch.requiredColumns,
   };
 }
 
@@ -472,6 +524,12 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
   const template = detectExpenseTemplate(file.name, sheet.name, columns);
   const records: ExpenseTripRecord[] = [];
   const warnings: string[] = [];
+  let missingDestinationRows = 0;
+  let missingHrIdRows = 0;
+  let missingTripDateRows = 0;
+  let payrollReadyRows = 0;
+  let totalMismatchRows = 0;
+  let zeroTotalRows = 0;
   let currentSpecialist = "";
 
   rows.forEach((row, index) => {
@@ -491,11 +549,11 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
     const travelCost = numberValue(rowValueByAlias(...expenseHeaderAliases.columnTravelCost));
     const meetingAmount = numberValue(rowValueByAlias(...expenseHeaderAliases.columnMeeting));
     const allowance = numberValue(rowValueByAlias(...expenseHeaderAliases.columnAllowance));
-    const expectedTotal = numberValue(rowValueByAlias(...expenseHeaderAliases.columnExpected));
+    const calculatedTotal = roundCurrency(travelCost + meetingAmount + allowance);
     const totalCell = rowValueByAlias(...expenseHeaderAliases.columnTotal);
     const total = text(totalCell)
       ? numberValue(totalCell)
-      : expectedTotal;
+      : calculatedTotal;
     const fileHrId = text(rowValueByAlias(...expenseHeaderAliases.columnHrId));
     const tripId = text(rowValueByAlias(...expenseHeaderAliases.columnTripId)) || `ROW-${rowNumber}`;
     const hrId = resolveHrIdFromEmployeeMaps(employeeMaps, specialist, fileHrId);
@@ -503,6 +561,9 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
     const residenceFrom = resolveFromFromEmployeeMaps(employeeMaps, hrId, specialist);
     const resolvedFrom = expectedFrom || residenceFrom;
     const comments = text(rowValueByAlias(...expenseHeaderAliases.columnComments));
+    const date = parseDate(rowValueByAlias(...expenseHeaderAliases.columnDate));
+    const to = text(rowValueByAlias(...expenseHeaderAliases.columnTo));
+    const location = text(rowValueByAlias(...expenseHeaderAliases.columnLocation));
 
     if (template.recognized && !expectedFrom && !residenceFrom && specialist !== "Unassigned") {
       warnings.push(`Row ${rowNumber} / ${tripId}: '${specialist}' has no From column and no residence match in employee records.`);
@@ -513,25 +574,48 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       );
     }
 
-    const hasExpected = Boolean(text(rowValueByAlias(...expenseHeaderAliases.columnExpected)));
+    if (!hrId) {
+      missingHrIdRows += 1;
+      warnings.push(`Row ${rowNumber} / ${tripId}: employee could not be mapped to HR ID.`);
+    }
 
-    if (!hasExpected && Math.abs(total - expectedTotal) > 1) {
+    if (!date) {
+      missingTripDateRows += 1;
+      warnings.push(`Row ${rowNumber} / ${tripId}: trip date is missing.`);
+    }
+
+    if (!to && !location) {
+      missingDestinationRows += 1;
+      warnings.push(`Row ${rowNumber} / ${tripId}: destination is missing.`);
+    }
+
+    if (total <= 0) {
+      zeroTotalRows += 1;
+      warnings.push(`Row ${rowNumber} / ${tripId}: total expense is zero or missing.`);
+    }
+
+    if (text(totalCell) && Math.abs(total - calculatedTotal) > 1) {
+      totalMismatchRows += 1;
       warnings.push(
-        `Row ${rowNumber} / ${tripId} total is ${total}, but travel + meeting + allowance is ${expectedTotal}.`,
+        `Row ${rowNumber} / ${tripId}: total is ${total}, but travel + meeting + allowance is ${calculatedTotal}.`,
       );
+    }
+
+    if (hrId && date && (to || location) && total > 0) {
+      payrollReadyRows += 1;
     }
 
     records.push({
       allowance,
       amWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnAmWorkload)),
-      date: parseDate(rowValueByAlias(...expenseHeaderAliases.columnDate)),
+      date,
       description: text(rowValueByAlias(...expenseHeaderAliases.columnDescription)),
       hrId,
       from: resolvedFrom,
       hr: text(rowValueByAlias(...expenseHeaderAliases.columnHr)),
       hrNotes: comments || text(rowValueByAlias(...expenseHeaderAliases.columnHr, ...expenseHeaderAliases.columnRecommendation)),
       km: numberValue(rowValueByAlias(...expenseHeaderAliases.columnKm)),
-      location: text(rowValueByAlias(...expenseHeaderAliases.columnLocation)),
+      location,
       meetingAmount,
       open: text(rowValueByAlias(...expenseHeaderAliases.columnOpen)),
       pmWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnPmWorkload)),
@@ -539,7 +623,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       row: rowNumber,
       specialist,
       status: text(rowValueByAlias(...expenseHeaderAliases.columnStatus, ...expenseHeaderAliases.columnHr)),
-      to: text(rowValueByAlias(...expenseHeaderAliases.columnTo)),
+      to,
       toDate: parseDate(rowValueByAlias(...expenseHeaderAliases.columnToDate)),
       total,
       transportationType: text(
@@ -552,9 +636,39 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
   });
 
   const specialists = specialistSummary(records);
+  const errors: string[] = [];
+  if (!template.recognized) {
+    errors.push("Expense workbook does not match the Phoenix Outstation Expenses template.");
+  }
+  if (records.length === 0) {
+    errors.push("No expense rows were detected in the uploaded workbook.");
+  }
+
+  const invalidRows = records.length - payrollReadyRows;
+  const validationWarnings = warnings.slice(0, 50);
+  const validation: ExpenseAnalysisValidation = {
+    errors,
+    invalidRows,
+    missingDestinationRows,
+    missingHrIdRows,
+    missingRequiredColumns: template.missingRequiredColumns,
+    missingTripDateRows,
+    payrollReadyRows,
+    recognizedColumns: template.recognizedColumns,
+    requiredColumns: template.requiredColumns,
+    status: errors.length > 0 ? "failed" : warnings.length > 0 ? "warning" : "passed",
+    totalMismatchRows,
+    totalRows: records.length,
+    warnings: validationWarnings,
+    zeroTotalRows,
+  };
 
   return {
-    template,
+    template: {
+      key: template.key,
+      name: template.name,
+      recognized: template.recognized,
+    },
     columns,
     fileName: file.name,
     records,
@@ -575,6 +689,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       totalTravelCost: roundCurrency(records.reduce((sum, record) => sum + record.travelCost, 0)),
       trips: records.length,
     },
+    validation,
     warnings,
   };
 }
