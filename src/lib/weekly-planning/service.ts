@@ -346,21 +346,43 @@ function isMedicalRepEmployee(employee: EmployeeDirectoryRow) {
   return title.includes("medical rep") || title.includes("medical representative");
 }
 
-function normalizeText(value: string | null | undefined) {
-  return String(value ?? "").trim();
+const approvedPlanningRegions = [
+  "ALEX-BHR",
+  "Cairo",
+  "Delta 1",
+  "Delta 2",
+  "Giza",
+  "Upper Egypt",
+] as const;
+
+function canonicalPlanningRegion(value: unknown) {
+  const raw = cleanText(value);
+  if (!raw) return null;
+  const directMatch = approvedPlanningRegions.find((region) => region.toLowerCase() === raw.toLowerCase());
+  if (directMatch) return directMatch;
+  const normalized = raw.toLowerCase().replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+  if (["alex-bhr", "alex bhr", "alex/bhr", "alex", "alexandria", "bhr", "beheira"].includes(normalized)) {
+    return "ALEX-BHR";
+  }
+  if (normalized === "cairo") return "Cairo";
+  if (normalized === "delta 1" || normalized === "delta-1") return "Delta 1";
+  if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
+  if (normalized === "giza") return "Giza";
+  if (normalized === "upper egypt") return "Upper Egypt";
+  return null;
 }
 
 function workplaceRegionsFromDirectory(directory: EmployeeDirectoryRow[]) {
   const regionNameByKey = new Map<string, string>();
   for (const row of directory) {
-    const regionName = normalizeText(row.regionName);
+    const regionName = canonicalPlanningRegion(row.regionName);
     if (!regionName) continue;
     const key = regionName.toLowerCase();
     if (!regionNameByKey.has(key)) {
       regionNameByKey.set(key, regionName);
     }
   }
-  return Array.from(regionNameByKey.values()).sort((a, b) => a.localeCompare(b));
+  return approvedPlanningRegions.filter((region) => regionNameByKey.has(region.toLowerCase()));
 }
 
 function workplaceRegionsForEmployee(employee: EmployeeDirectoryRow | null, directory: EmployeeDirectoryRow[]) {
@@ -440,15 +462,65 @@ function assertCeoReviewer(access: AccessContext) {
   }
 }
 
+type NormalizeItemsOptions = {
+  submit?: boolean;
+};
+
+type PlanningMedicalRepOption = {
+  areaName?: string | null;
+  fullName: string;
+  hrId: string;
+};
+
+function isVacantMedicalRepOption(rep: PlanningMedicalRepOption) {
+  const text = `${rep.fullName ?? ""} ${rep.hrId ?? ""}`.toLowerCase();
+  return /\bvacan(t|cy)\b/.test(text);
+}
+
+function autoMedicalRepForArea(options: PlanningMedicalRepOption[], area: string | null) {
+  if (!area) return null;
+  return options
+    .filter((rep) => normalizedName(rep.areaName) === normalizedName(area))
+    .find((rep) => !isVacantMedicalRepOption(rep)) ?? null;
+}
+
 function validActivityType(value: string): EmployeePlanActivityType {
+  if (value === "Coaching") return "Other";
+  if (value === "Single Visit") return "Field";
   if ((employeePlanActivityTypes as readonly string[]).includes(value)) return value as EmployeePlanActivityType;
   return "Other";
+}
+
+function activityDisplayLabel(value: EmployeePlanActivityType) {
+  return value === "Field" ? "Single Visit" : value;
+}
+
+function isCoachingActivity(activityType: EmployeePlanActivityType, activityTitle: string) {
+  return activityType === "Other" && activityTitle.toLowerCase() === "coaching";
+}
+
+function normalizeTrainingFormat(value: unknown) {
+  const cleaned = cleanText(value);
+  return ["Zoom", "Physical", "Other"].includes(cleaned) ? cleaned : null;
+}
+
+function activityUsesGeography(activityType: EmployeePlanActivityType, isCoaching: boolean) {
+  return isCoaching || !["Office", "Admin", "Remote", "Vacation", "Training"].includes(activityType);
+}
+
+function activityRequiresGeography(activityType: EmployeePlanActivityType, isCoaching: boolean) {
+  return isCoaching || activityType === "Field" || activityType === "Double Visit";
+}
+
+function activityRequiresRep(activityType: EmployeePlanActivityType, isCoaching: boolean) {
+  return isCoaching || activityType === "Double Visit";
 }
 
 function normalizeItems(
   items: EmployeePlanItemInput[],
   periodStartDate: string,
-  medicalRepOptions: Array<{ fullName: string; hrId: string }>,
+  medicalRepOptions: PlanningMedicalRepOption[],
+  options: NormalizeItemsOptions = {},
 ): EmployeePlanItemInput[] {
   const fallback: EmployeePlanItemInput = {
     activityDate: periodStartDate,
@@ -459,7 +531,7 @@ function normalizeItems(
   const repByHrId = new Map(medicalRepOptions.map((option) => [normalizeHrId(option.hrId), option]));
   const normalized = items.length > 0 ? items : [fallback];
   return normalized.map((item, index) => ({
-    ...normalizeItem(item, index, periodStartDate, repByHrId),
+    ...normalizeItem(item, index, periodStartDate, repByHrId, medicalRepOptions, options),
   }));
 }
 
@@ -467,31 +539,76 @@ function normalizeItem(
   item: EmployeePlanItemInput,
   index: number,
   periodStartDate: string,
-  repByHrId: Map<string, { fullName: string; hrId: string }>,
+  repByHrId: Map<string, PlanningMedicalRepOption>,
+  medicalRepOptions: PlanningMedicalRepOption[],
+  options: NormalizeItemsOptions,
 ): EmployeePlanItemInput & { doubleVisitMedicalRepName?: string | null } {
-  const activityType = validActivityType(cleanText(item.activityType));
-  const selectedRepHrId = nullableText(item.doubleVisitMedicalRepHrId);
+  const rawActivityType = cleanText(item.activityType);
+  const activityType = validActivityType(rawActivityType);
+  const activityTitle = rawActivityType === "Coaching" ? "Coaching" : cleanText(item.activityTitle);
+  const isCoaching = rawActivityType === "Coaching" || isCoachingActivity(activityType, activityTitle);
+  const usesGeography = activityUsesGeography(activityType, isCoaching);
+  const requiresGeography = activityRequiresGeography(activityType, isCoaching);
+  const requiresRep = activityRequiresRep(activityType, isCoaching);
+  const locationText = activityType === "Training"
+    ? normalizeTrainingFormat(item.locationText)
+    : usesGeography
+      ? canonicalPlanningRegion(item.locationText)
+      : null;
+  const area = usesGeography ? nullableText(item.area) : null;
+  const rawSelectedRepHrId = requiresRep ? nullableText(item.doubleVisitMedicalRepHrId) : null;
+  let selectedRep: PlanningMedicalRepOption | null = null;
+  let selectedRepHrId: string | null = null;
   let selectedRepName: string | null = null;
-  if (activityType === "Double Visit") {
-    if (!selectedRepHrId) {
-      throw new Error("Double Visit requires selecting a same-line Medical Rep.");
-    }
-    const rep = repByHrId.get(normalizeHrId(selectedRepHrId));
+  if (rawSelectedRepHrId) {
+    const rep = repByHrId.get(normalizeHrId(rawSelectedRepHrId));
     if (!rep) {
-      throw new Error("Selected double-visit Medical Rep is not available for this employee line.");
+      if (options.submit) {
+        throw new Error("Selected double-visit Medical Rep is not available for this employee line.");
+      }
+    } else if (isVacantMedicalRepOption(rep)) {
+      if (options.submit) {
+        throw new Error("Selected Medical Rep is not assigned to the selected area.");
+      }
+    } else {
+      selectedRep = rep;
+      selectedRepHrId = rawSelectedRepHrId;
+      selectedRepName = rep.fullName;
     }
-    selectedRepName = rep.fullName;
+  }
+  if (requiresRep && area && !selectedRep) {
+    selectedRep = autoMedicalRepForArea(medicalRepOptions, area);
+    selectedRepHrId = selectedRep?.hrId ?? null;
+    selectedRepName = selectedRep?.fullName ?? null;
+  }
+  if (options.submit && requiresGeography && !locationText) {
+    throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an approved region.`);
+  }
+  if (options.submit && requiresGeography && !area) {
+    throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an area.`);
+  }
+  if (options.submit && requiresRep && !selectedRepHrId) {
+    throw new Error(`${isCoaching ? "Coaching" : "Double Visit"} requires an assigned same-line Medical Rep for the selected area.`);
+  }
+  if (
+    options.submit &&
+    requiresRep &&
+    area &&
+    selectedRep?.areaName &&
+    normalizedName(selectedRep.areaName) !== normalizedName(area)
+  ) {
+    throw new Error("Selected Medical Rep is not assigned to the selected area.");
   }
   return {
     activityDate: cleanText(item.activityDate) || periodStartDate,
-    activityTitle: cleanText(item.activityTitle) || "Untitled activity",
+    activityTitle: isCoaching ? "Coaching" : activityTitle || activityDisplayLabel(activityType),
     activityType,
-    area: nullableText(item.area),
+    area,
     attendees: nullableText(item.attendees),
-    doubleVisitMedicalRepHrId: activityType === "Double Visit" ? selectedRepHrId : null,
-    doubleVisitMedicalRepName: activityType === "Double Visit" ? selectedRepName : null,
+    doubleVisitMedicalRepHrId: requiresRep ? selectedRepHrId : null,
+    doubleVisitMedicalRepName: requiresRep ? selectedRepName : null,
     endTime: nullableText(item.endTime),
-    locationText: nullableText(item.locationText),
+    locationText,
     notes: cleanText(item.notes),
     objective: nullableText(item.objective),
     sortOrder: Number.isFinite(item.sortOrder) ? Number(item.sortOrder) : index,
@@ -794,7 +911,9 @@ export async function createEmployeePlan(access: AccessContext, input: {
     throw new Error("Direct manager is missing from employee profile.");
   }
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
-  const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee));
+  const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee), {
+    submit: Boolean(input.submit),
+  });
   const status: EmployeePlanStatus = input.submit ? "submitted" : "draft";
   const now = new Date().toISOString();
 
@@ -850,7 +969,9 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   if (isClosedEmployeePlanStatus(existing.status)) {
     const next = getNextEmployeePlanStatus(existing.status, "revise");
     const owner = await currentEmployee(access);
-    const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner));
+    const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
+      submit: Boolean(input.submit),
+    });
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .insert({
@@ -892,7 +1013,12 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   }
   const nextStatus = input.submit ? getNextEmployeePlanStatus(existing.status, "submit") : existing.status;
   const owner = await currentEmployee(access);
-  await replacePlanItems(existing.id, normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner)));
+  await replacePlanItems(
+    existing.id,
+    normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
+      submit: Boolean(input.submit),
+    }),
+  );
   const { error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
     .update({

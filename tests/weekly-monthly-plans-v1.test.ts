@@ -2,6 +2,14 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  attachPlanningConflictWarnings,
+  buildPlanningCalendarConflicts,
+  planningCalendarTitle,
+  planningConflictKey,
+  type PlanningCalendarPlanItem,
+  sameLineBookingWarning,
+} from "../src/lib/weekly-planning/calendar.ts";
+import {
   buildEmployeePlanPeriod,
   canEditEmployeePlanStatus,
   getNextEmployeePlanStatus,
@@ -63,9 +71,9 @@ export function runWeeklyMonthlyPlansV1Tests() {
   const calendarServiceSource = readFileSync("src/lib/calendar/service.ts", "utf8");
 
   assert.match(serviceSource, /medicalRepOptionsForEmployee/, "double-visit Medical Rep options must be resolved from the employee line");
-  assert.match(serviceSource, /Double Visit requires selecting a same-line Medical Rep/, "Double Visit must require a Medical Rep");
+  assert.match(serviceSource, /Double Visit.*requires an assigned same-line Medical Rep/, "Double Visit must require a Medical Rep");
   assert.match(serviceSource, /Selected double-visit Medical Rep is not available for this employee line/, "server must validate selected Medical Rep line access");
-  assert.match(serviceSource, /activityType === "Double Visit" \? selectedRepHrId : null/, "non-Double Visit rows must clear double-visit Medical Rep fields");
+  assert.match(serviceSource, /doubleVisitMedicalRepHrId: requiresRep \? selectedRepHrId : null/, "non-rep rows must clear double-visit Medical Rep fields");
   assert.match(serviceSource, /recordReturnNotes/, "manager/CEO return must support row-level feedback");
   assert.doesNotMatch(serviceSource, /syncApprovedPlanToGoogleCalendar|retryEmployeePlanCalendarSync/, "Google Calendar auth/sync must be fully removed from the plans service");
   assert.match(serviceSource, /createSystemNotification/, "workflow must use unified notifications");
@@ -95,13 +103,15 @@ export function runWeeklyMonthlyPlansV1Tests() {
   // the underlying double-visit medical-rep field binding instead (stable across label changes).
   assert.match(workspaceSource, /doubleVisitMedicalRep(HrId|Name)/, "double-visit medical-rep field must be wired");
   assert.match(workspaceSource, /workspace\.medicalRepOptions/);
-  assert.match(workspaceSource, /row\.activityType === "Double Visit"/);
+  assert.match(workspaceSource, /const isDoubleVisit = value === "Double Visit"/);
+  assert.match(workspaceSource, /requiresRep: isDoubleVisit \|\| isCoaching/);
   // The 5-column cascade rewrite consolidated the standalone "Calendar view" preview into the
   // main vertical day-per-row grid; assert that per-day calendar rendering is still present.
   assert.match(workspaceSource, /formatDayName\(row\.activityDate\)/, "in-app per-day calendar layout (day-per-row grid) must be preserved");
   assert.match(workspaceSource, /calendarHref/, "weekly/monthly plans must expose a calendar navigation target");
-  assert.match(workspaceSource, /\/employee-portals\/calendar/, "employee planning must link to the company calendar");
-  assert.match(workspaceSource, /\/hr-calendar/, "admin planning must link to the HR calendar");
+  assert.match(workspaceSource, /\/employee-portals\/plans\/calendar/, "employee planning must link to the shared planning calendar");
+  assert.match(workspaceSource, /\/admin\/weekly-plans\/calendar/, "admin planning must link to the shared planning calendar");
+  assert.match(workspaceSource, /sameLineBookingWarning/, "editor must show non-blocking same-line Medical Rep warnings");
   assert.match(workspaceSource, /<CalendarDays className=/, "calendar navigation must use the calendar icon action");
   assert.doesNotMatch(workspaceSource, /Retry Calendar/, "Google Calendar sync retry UI must be removed");
   assert.match(workspaceSource, /workspace\.summary/);
@@ -114,4 +124,71 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(calendarServiceSource, /employee_plan_headers/, "calendar plan source must read employee plan headers");
   assert.match(calendarServiceSource, /employee_plan_items/, "calendar plan source must read employee plan items");
   assert.match(calendarServiceSource, /source:\s*"plan"/, "calendar plan source must emit plan calendar items");
+
+  const sharedCalendarServiceSource = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
+  const planningCalendarPageSource = readFileSync("app/employee-portals/plans/calendar/page.tsx", "utf8");
+  const adminPlanningCalendarPageSource = readFileSync("app/(admin)/admin/weekly-plans/calendar/page.tsx", "utf8");
+  const planningCalendarRouteSource = readFileSync("app/api/weekly-plans/calendar/route.ts", "utf8");
+  const conflictRouteSource = readFileSync("app/api/weekly-plans/conflicts/route.ts", "utf8");
+  assert.match(sharedCalendarServiceSource, /sharedPlanningCalendarStatuses/, "shared calendar must restrict visible plan statuses");
+  assert.match(sharedCalendarServiceSource, /loadSubmittedPlanItems/, "shared calendar must load submitted planning rows across employees");
+  assert.match(sharedCalendarServiceSource, /buildPlanningCalendarConflicts/, "shared calendar must compute same-line Medical Rep conflicts");
+  assert.match(planningCalendarPageSource, /getSharedPlanningCalendarWorkspace/);
+  assert.match(adminPlanningCalendarPageSource, /getSharedPlanningCalendarWorkspace/);
+  assert.match(planningCalendarRouteSource, /getSharedPlanningCalendarWorkspace/);
+  assert.match(conflictRouteSource, /getSameLinePlanBookings/);
+
+  const baseItem = {
+    activityTitle: "Double Visit",
+    activityType: "Double Visit",
+    area: "Munufia 2",
+    conflictKey: planningConflictKey("2026-06-21", "Line A", "MR-1"),
+    conflictWarning: null,
+    employeeJobTitle: "Product Manager",
+    endDate: "2026-06-21",
+    lineName: "Line A",
+    medicalRepHrId: "MR-1",
+    medicalRepName: "Ahmed Rep",
+    notes: null,
+    planId: "plan-1",
+    planKind: "weekly",
+    region: "Delta 2",
+    source: "plan",
+    startDate: "2026-06-21",
+    status: "submitted",
+    time: "Full day",
+    title: "placeholder",
+  } satisfies Omit<PlanningCalendarPlanItem, "employeeHrId" | "employeeName" | "id">;
+  const conflictItems: PlanningCalendarPlanItem[] = [
+    { ...baseItem, employeeHrId: "E-1", employeeName: "Russia Sabri", id: "plan-item-1" },
+    { ...baseItem, employeeHrId: "E-2", employeeName: "Nahid Hatab", id: "plan-item-2" },
+    { ...baseItem, conflictKey: planningConflictKey("2026-06-21", "Line B", "MR-1"), employeeHrId: "E-3", employeeName: "Other Line", id: "plan-item-3", lineName: "Line B" },
+  ];
+  const conflicts = buildPlanningCalendarConflicts(conflictItems);
+  assert.equal(conflicts.length, 1, "same date + same line + same Medical Rep must warn once");
+  assert.deepEqual(conflicts[0].employeeNames, ["Nahid Hatab", "Russia Sabri"]);
+  assert.equal(attachPlanningConflictWarnings(conflictItems, conflicts)[0].conflictWarning !== null, true);
+  assert.equal(planningCalendarTitle("Russia Sabri", "Delta 2", "Munufia 2", "Double Visit"), "Russia Sabri - Delta 2 - Munufia 2");
+  assert.match(
+    sameLineBookingWarning({
+      activityDate: "2026-06-21",
+      bookings: [
+        {
+          activityTitle: "Double Visit",
+          area: "Munufia 2",
+          date: "2026-06-21",
+          employeeHrId: "E-2",
+          employeeName: "Nahid Hatab",
+          lineName: "Line A",
+          medicalRepHrId: "MR-1",
+          medicalRepName: "Ahmed Rep",
+          region: "Delta 2",
+        },
+      ],
+      currentEmployeeHrId: "E-1",
+      medicalRepHrId: "MR-1",
+      medicalRepName: "Ahmed Rep",
+    }) ?? "",
+    /warning only/i,
+  );
 }
