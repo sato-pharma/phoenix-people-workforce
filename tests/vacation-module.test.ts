@@ -228,8 +228,8 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /input\.request\.status !== "pending_manager"/);
   assert.match(serviceSource, /Forbidden: only assigned pending vacation approvers can decide this request/);
   assert.match(serviceSource, /accessMatchesHrId\(access, request\.managerHrId\)/);
-  assert.match(serviceSource, /access\.role === "Super Admin" \|\| isDesignatedHrSpecialist\(access\)/);
-  assert.match(serviceSource, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/);
+  assert.match(serviceSource, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
+  assert.match(serviceSource, /\.in\("role", \["Super Admin"\]\)/);
   assert.match(serviceSource, /managerOfManagerHrId/);
   // CEO-direct-reports: the parallel chain requires only a direct manager; the
   // manager-of-manager step is included only when one exists (no manager above the CEO).

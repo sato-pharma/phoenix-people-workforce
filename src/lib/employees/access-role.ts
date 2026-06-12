@@ -12,7 +12,7 @@ export type EmployeeAccessRoleInput = {
  * Titles such as "HR Manager", "Finance Manager", "District Sales Manager" or
  * "R&D Manager" must not grant any elevated access. Auto-provisioned accounts
  * therefore always start at the least-privilege "Employee" role; the real access
- * role (Manager, HR Specialist, CEO, the sales roles, …) is assigned explicitly
+ * role (Manager, CEO, the sales roles, ...) is assigned explicitly
  * on `app_auth_users` by an authorized admin and is what drives the permission
  * matrix and scope.
  *

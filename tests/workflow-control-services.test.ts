@@ -29,7 +29,7 @@ import { getWorkflowSubflow } from "../src/lib/workflow-control/definitions.ts";
 
 export function runWorkflowControlServicesTests() {
   const superAdmin = { hrId: "B-10", role: "Super Admin" } as const;
-  const hrSpecialist = { hrId: "A-16", role: "HR Specialist" } as const;
+  const talentAcquisition = { hrId: "A-16", role: "Talent Acquisition" } as const;
   const employee = { hrId: "C-1", role: "Employee" } as const;
   const subflow = getWorkflowSubflow("leave", "vacation-request");
   assert.ok(subflow);
@@ -90,7 +90,7 @@ export function runWorkflowControlServicesTests() {
     assert.equal(rb.ok, false);
     if (rb.ok === false) assert.equal(rb.code, "rollback_disabled");
 
-    for (const actor of [hrSpecialist, employee]) {
+    for (const actor of [talentAcquisition, employee]) {
       const s = await saveWorkflowDraft(actor, { domainKey: "leave", subflowKey: "vacation-request", payload: cleanPayload, validStepIds });
       assert.equal(s.ok, false);
       if (s.ok === false) assert.equal(s.code, "forbidden", `${actor.role} -> forbidden on save`);

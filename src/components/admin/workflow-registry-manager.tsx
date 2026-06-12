@@ -60,7 +60,7 @@ const phoenixRoleOptions: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "Manager",
   "CEO",
   "Super Admin",

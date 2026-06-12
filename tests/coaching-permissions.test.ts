@@ -39,7 +39,7 @@ export function runCoachingPermissionTests() {
   assertCoachingPermission("Employee", '"read"');
   assertCoachingPermission("Medical Rep", '"read"');
   assertCoachingPermission("CEO", '"read"');
-  assertCoachingPermission("HR Specialist", '"read"');
+  assertNoCoachingManagementPermission("Talent Acquisition");
   for (const role of [
     "District Manager",
     "Regional Manager",

@@ -47,7 +47,7 @@ export function WorkflowSimulatorPanel({
         amount: Number.isFinite(parsedAmount) ? parsedAmount : undefined,
         managerHrId: managerHrId.trim() || undefined,
         department: lineDept.trim() || undefined,
-        hrSpecialistAvailable: hrAvailable,
+        hrManagerAvailable: hrAvailable,
       }),
     );
   }
@@ -97,7 +97,7 @@ export function WorkflowSimulatorPanel({
         </label>
         <label className="flex items-center gap-2 pt-5">
           <input type="checkbox" checked={hrAvailable} onChange={(e) => setHrAvailable(e.target.checked)} />
-          <span className="text-xs font-semibold text-[#334155]">HR Specialist (A-16) recipient exists</span>
+          <span className="text-xs font-semibold text-[#334155]">HR Manager recipient exists</span>
         </label>
       </div>
 

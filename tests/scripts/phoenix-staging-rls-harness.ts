@@ -8,7 +8,7 @@ type PhoenixRole =
   | "Regional Manager"
   | "National Sales Manager"
   | "Finance Manager"
-  | "HR Specialist"
+  | "Talent Acquisition"
   | "CEO"
   | "Super Admin";
 
@@ -40,7 +40,7 @@ const roles: PhoenixRole[] = [
   "Regional Manager",
   "National Sales Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "CEO",
   "Super Admin",
 ];
@@ -115,7 +115,7 @@ const expectedByRole: Record<PhoenixRole, {
     isSuperAdmin: false,
     scope: "FINANCE",
   },
-  "HR Specialist": {
+  "Talent Acquisition": {
     canManageEmployees: true,
     canManagePayroll: true,
     coarseRole: "hr",

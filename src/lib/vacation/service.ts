@@ -5,7 +5,6 @@ import ExcelJS from "exceljs";
 import {
   assertPermission,
   canAccess,
-  isDesignatedHrSpecialist,
   normalizeHrIdForAccess,
   normalizeLineName,
   resolveEmployeeIdentityId,
@@ -339,7 +338,7 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
 }
 
 function isAllVacationVisibility(access: AccessContext) {
-  return access.scope === "system" || access.role === "Super Admin" || isDesignatedHrSpecialist(access);
+  return access.scope === "system" || access.role === "Super Admin";
 }
 
 type VacationVisibilityScope = "SELF" | "TEAM" | "HIERARCHY" | "LINE" | "COMPANY";
@@ -1303,7 +1302,7 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
       .from("app_auth_users")
       .select("login_id,hr_id,role,is_active")
       .eq("is_active", true)
-      .in("role", ["HR Specialist", "Super Admin"]);
+      .in("role", ["Super Admin"]);
 
     if (error) {
       // Fail observable, not silent: returning [] here means HR/Super Admin are
@@ -1319,7 +1318,7 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
         const hrId = text((row as Record<string, unknown>).hr_id);
         const role = text((row as Record<string, unknown>).role);
         if (!hrId) return null;
-        if (role !== "Super Admin" && !isDesignatedHrSpecialist({ hrId, role: "HR Specialist" })) return null;
+        if (role !== "Super Admin") return null;
         const employee = findEmployeeByHrId(directory, hrId);
         return {
           email: employee?.workEmail ?? null,

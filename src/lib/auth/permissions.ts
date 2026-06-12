@@ -15,7 +15,7 @@ export const phoenixRoles = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "HR Specialist",
+  "Talent Acquisition",
   "Manager",
   "CEO",
   "Super Admin",
@@ -159,11 +159,9 @@ type PermissionDbOverrideRow = {
 };
 
 const allActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
-// Governance: HR Specialists (incl. the designated A-16) must NOT approve any workflow.
-// Approval authority is reserved for Super Admin (Admin-HR) and the HR Manager B-10
-// (Omar Anwar Gawish, B-10), who holds the Super Admin role. Use this for every HR
-// Specialist resource so the role keeps full data access but never the `approve` action.
-const allActionsNoApprove: PermissionAction[] = ["read", "create", "update", "delete", "export", "import"];
+// Governance: approval authority is reserved for Super Admin / HR Manager.
+// Talent Acquisition can operate recruitment workflows but must not inherit the
+// retired broad HR/payroll/leave/outstation authority.
 const portalNavigationRoles = new Set<PhoenixRole>([
   "Employee",
   "Medical Rep",
@@ -178,7 +176,6 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "CEO",
   "Manager",
 ]);
-export const designatedHrSpecialistHrId = "a16";
 
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
@@ -248,34 +245,14 @@ const defaultPermissionMatrix: PermissionMap = {
     candidates: ["read"],
     report_it: ["read", "create", "export"],
   },
-  "HR Specialist": {
-    attendance: allActionsNoApprove,
-    communication: ["read", "update"],
-    overview: ["read"],
-    imports: ["read", "import"],
-    contracts: allActionsNoApprove,
-    coaching: ["read"],
-    employee_documents: allActionsNoApprove,
-    employee_profile: allActionsNoApprove,
-    employees: allActionsNoApprove,
-    expenses: ["read", "update", "delete", "export"],
-    hr_calendar: allActionsNoApprove,
-    leave: allActionsNoApprove,
-    organogram: ["read", "export"],
-    outstation: ["read", "update", "delete", "export"],
-    offers: allActionsNoApprove,
-    payslips: ["read", "export"],
-    deductions: ["read", "create", "update", "export", "import"],
-    weekly_plans: ["read", "create", "update", "export", "import"],
-    probation: allActionsNoApprove,
-    resignations: allActionsNoApprove,
-    support_requests: ["read", "create", "update", "export"],
-    team: ["read", "export"],
-    vacancies: allActionsNoApprove,
-    workflow_registry: ["read"],
-    recruitment: allActionsNoApprove,
-    candidates: allActionsNoApprove,
-    report_it: ["read", "create", "export"],
+  "Talent Acquisition": {
+    employee_profile: ["read", "update"],
+    offers: ["read", "create", "update", "export"],
+    vacancies: ["read", "create", "update", "export"],
+    recruitment: ["read", "create", "update", "export", "import"],
+    candidates: ["read", "create", "update", "delete", "export", "import"],
+    support_requests: ["read", "create"],
+    report_it: ["read", "create"],
   },
   "Finance Manager": {
     attendance: ["read", "export"],
@@ -550,7 +527,8 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     "training manager": "Training Manager",
     "marketing manager": "Marketing Manager",
     "finance manager": "Finance Manager",
-    "hr specialist": "HR Specialist",
+    "hr specialist": "Employee",
+    "talent acquisition": "Talent Acquisition",
     manager: "Manager",
     ceo: "CEO",
     "super admin": "Super Admin",
@@ -579,7 +557,8 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     trainingmanager: "Training Manager",
     marketingmanager: "Marketing Manager",
     financemanager: "Finance Manager",
-    hrspecialist: "HR Specialist",
+    hrspecialist: "Employee",
+    talentacquisition: "Talent Acquisition",
     ceo: "CEO",
     superadmin: "Super Admin",
   };
@@ -611,8 +590,8 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
       return 400;
     case "CEO":
       return 300;
-    case "HR Specialist":
-      return 250;
+    case "Talent Acquisition":
+      return 150;
     case "Finance Manager":
       return 200;
     default:
@@ -627,14 +606,6 @@ export function normalizeHrId(value: string | null | undefined) {
 export function normalizeHrIdForAccess(value: string | null | undefined) {
   const normalized = normalizeHrId(value);
   return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;
-}
-
-function isDesignatedHrSpecialistHrId(hrId: string | null | undefined) {
-  return normalizeHrIdForAccess(hrId) === designatedHrSpecialistHrId;
-}
-
-export function isDesignatedHrSpecialist(context: Pick<AccessContext, "hrId" | "role">) {
-  return context.role === "HR Specialist" && isDesignatedHrSpecialistHrId(context.hrId);
 }
 
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
@@ -658,9 +629,6 @@ export function resolveNavigationMode(context: AccessContext): NavigationMode {
   if (context.source === "guest" || context.scope === "none") {
     return "employee-portal";
   }
-  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
-    return "employee-portal";
-  }
   // The CEO is an executive Admin account: it uses the existing admin shell and
   // navigation (landing on /admin/sales-command), never the employee portal.
   if (context.role === "CEO") {
@@ -677,7 +645,6 @@ export function scopeForRole(role: PhoenixRole): AccessScope {
   if (
     role === "Super Admin" ||
     role === "CEO" ||
-    role === "HR Specialist" ||
     role === "Finance Manager"
   ) {
     return "company";
@@ -704,11 +671,7 @@ export function createAccessContext(input: {
     hrId,
     loginId: input.loginId ?? null,
     role,
-    scope: source === "guest"
-      ? "none"
-      : role === "HR Specialist" && !isDesignatedHrSpecialistHrId(hrId)
-        ? "self"
-        : scopeForRole(role),
+    scope: source === "guest" ? "none" : scopeForRole(role),
     source,
   };
 }
@@ -842,9 +805,6 @@ export async function canAccess(
 ) {
   if (context.scope === "system") return true;
   if (context.source === "guest" || context.scope === "none") return false;
-  if (context.role === "HR Specialist" && !isDesignatedHrSpecialist(context)) {
-    return resource === "employee_profile" && (action === "read" || action === "update");
-  }
   const matrix = await resolvePermissionMatrix();
   return matrix[context.role][resource]?.includes(action) ?? false;
 }
@@ -963,7 +923,7 @@ function canSeeDirectReportsByRole(role: PhoenixRole) {
 
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
   if (context.source === "guest" || context.scope === "none") return false;
-  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
+  if (context.scope === "system" || context.role === "Super Admin") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
@@ -986,7 +946,7 @@ export function canSeeHrScopedRecord(
   },
 ) {
   if (context.source === "guest" || context.scope === "none") return false;
-  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return true;
+  if (context.scope === "system" || context.role === "Super Admin") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(record.employeeHrId ?? record.hrId);
@@ -1028,7 +988,7 @@ export function filterEmployeeDirectoryForAccess(
       },
     };
   }
-  if (context.scope === "system" || context.role === "Super Admin" || isDesignatedHrSpecialist(context)) return directory;
+  if (context.scope === "system" || context.role === "Super Admin") return directory;
 
   const employees = filterEmployeesForAccess(directory.employees, context);
   const visibleHrIds = new Set(employees.map((employee) => normalizeHrId(employee.hrId)).filter(Boolean));
@@ -1066,7 +1026,6 @@ export async function canAccessAttendanceSetup(
   context: AccessContext,
   action: Extract<PermissionAction, "read" | "update"> = "read",
 ) {
-  if (context.role === "HR Specialist") return false;
   return canAccess(context, "employees", action);
 }
 
@@ -1083,9 +1042,9 @@ export async function assertAttendanceSetupPermission(
  * Workflow Control Center (Admin / Governance) access design.
  *
  * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
- * governance: Super Admin only. HR Manager is a manager title, not the same as
- * HR Specialist. Generic HR Specialists (e.g. A-16, Talent Acquisition) are
- * intentionally EXCLUDED, as are CEO, Finance Manager, all Sales roles, Training
+ * governance: Super Admin only. HR Manager is a manager title held by a Super
+ * Admin account. Talent Acquisition is intentionally excluded, as are CEO,
+ * Finance Manager, all Sales roles, Training
  * Manager and Employees.
  *
  * If a future non-Super-Admin HR governance user must be granted access, add

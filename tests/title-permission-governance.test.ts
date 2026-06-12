@@ -33,10 +33,9 @@ export function runTitlePermissionGovernanceTests() {
   }
 
   // --- Rule 2: senior-sounding title text must not normalize to a privileged
-  // role. "HR Manager", "Talent Acquisition" and "R&D Manager" are labels. -----
+  // role. "HR Manager" and "R&D Manager" are labels. -------------------------
   for (const title of [
     "HR Manager",
-    "Talent Acquisition",
     "R&D Manager",
     "R and D Manager",
     "Research and Development Manager",
@@ -54,6 +53,8 @@ export function runTitlePermissionGovernanceTests() {
   assert.notEqual(normalizeRole("R&D Manager"), "Super Admin");
   assert.notEqual(normalizeRole("R&D Manager"), "Manager");
   assert.ok((phoenixCompanyJobTitles as readonly string[]).includes("Research and Development Manager"));
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "Talent Acquisition" }), "Employee");
+  assert.equal(normalizeRole("Talent Acquisition"), "Talent Acquisition");
 
   // --- Rule 7 (titles list): low-privilege titles never gain elevated access. -
   for (const title of [
@@ -74,7 +75,7 @@ export function runTitlePermissionGovernanceTests() {
 
   // --- HR Specialist is NOT a manager. ---------------------------------------
   assert.equal(scopeForRole("Manager"), "team");
-  assert.notEqual(scopeForRole("HR Specialist"), "team");
+  assert.equal(normalizeRole("HR Specialist"), "Employee");
   // A generic HR Specialist (not on the designated allowlist) is scoped to self,
   // not company-wide — being "HR" does not confer manager/company reach.
   assert.equal(
@@ -83,7 +84,7 @@ export function runTitlePermissionGovernanceTests() {
   );
   // The "HR Manager" title yields neither Manager nor HR Specialist automatically.
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "HR Manager" }), "Employee");
-  assert.notEqual(normalizeRole("HR Manager"), "HR Specialist");
+  assert.notEqual(normalizeRole("HR Manager"), "Talent Acquisition");
   assert.notEqual(normalizeRole("HR Manager"), "Manager");
 
   // --- Finance Manager: payroll/employee access comes from role+matrix, not the

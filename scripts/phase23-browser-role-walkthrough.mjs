@@ -164,9 +164,9 @@ async function run() {
         { type: "page", label: "admin command center access", path: "/admin", expectedText: ["Command Center"], expectedUrlIncludes: "/admin" },
         { type: "page", label: "users access admin access", path: "/admin/access", expectedText: ["Users", "Access"], expectedUrlIncludes: "/admin/access" },
       ]],
-      ["HR Specialist", "PHASE23-HR", "/admin", [
-        { type: "page", label: "admin command center access", path: "/admin", expectedText: ["Command Center"], expectedUrlIncludes: "/admin" },
-        { type: "page", label: "probation admin access", path: "/probation", expectedText: ["Probation"], expectedUrlIncludes: "/probation" },
+      ["Talent Acquisition", "A-16", "/employee-portals", [
+        { type: "page", label: "recruitment workspace access", path: "/recruitment", expectedText: ["Recruitment"], expectedUrlIncludes: "/recruitment" },
+        { type: "page", label: "admin dashboard denied", path: "/admin", expectedText: ["EMPLOYEE PORTAL"], expectedUrlIncludes: "/employee-portals", forbiddenText: ["COMMAND CENTER"] },
       ]],
       ["Finance Manager", "PHASE23-FIN", "/employee-portals", [
         { type: "page", label: "payroll admin visibility", path: "/payroll", expectedText: ["Payroll"], expectedUrlIncludes: "/payroll" },
