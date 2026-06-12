@@ -329,6 +329,8 @@ function RequestDetailsModal({
             <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
             <Info label="AM visits" value={String(request.amWorkload ?? 0)} />
             <Info label="PM visits" value={String(request.pmWorkload ?? 0)} />
+            <Info label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
+            <Info label="Workload match" value={formatStatus(request.workloadMatchStatus ?? "manual")} />
             {request.expenseType === "meeting" ? (
               <Info label="Meeting amount" value={formatCurrency(request.meetingAmount ?? 0)} />
             ) : null}

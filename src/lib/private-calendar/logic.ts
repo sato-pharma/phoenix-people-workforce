@@ -1,14 +1,15 @@
 import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 
-export type PrivateCalendarSource = "attendance" | "excuse" | "holiday" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "plan", "holiday"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "plan", "holiday", "double_visit"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
+  double_visit: "Double Visit",
   excuse: "Excuse",
   holiday: "National vacation",
   plan: "Plan",
@@ -446,6 +447,7 @@ export function privateCalendarItemOccursOn(item: PrivateCalendarItem, date: str
 export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): PrivateCalendarWorkspace["summary"] {
   const summary = {
     attendance: 0,
+    double_visit: 0,
     excuse: 0,
     holiday: 0,
     plan: 0,
@@ -461,6 +463,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
 function sourceCounts() {
   return {
     attendance: 0,
+    double_visit: 0,
     excuse: 0,
     holiday: 0,
     plan: 0,

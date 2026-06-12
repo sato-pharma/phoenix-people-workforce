@@ -163,6 +163,7 @@ export function runPrivateCalendarTests() {
 
   assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse, plan]), {
     attendance: 1,
+    double_visit: 0,
     excuse: 1,
     holiday: 0,
     plan: 1,

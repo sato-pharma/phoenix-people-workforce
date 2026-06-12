@@ -434,8 +434,8 @@ export function MobileOutstationWizard({
   const [notes, setNotes] = useState("");
   const [meetingAmount, setMeetingAmount] = useState("");
   const [otherAmount, setOtherAmount] = useState("");
-  const [amWorkload, setAmWorkload] = useState("");
-  const [pmWorkload, setPmWorkload] = useState("");
+  const amWorkload = "";
+  const pmWorkload = "";
   const [medicalTripHrId, setMedicalTripHrId] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
   const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
@@ -521,13 +521,11 @@ export function MobileOutstationWizard({
     setCarEvidenceDraftId(buildDraftId());
     setExpenseType("traveling");
     setGoTicketAmount("");
-    setAmWorkload("");
     setKilometerReading("");
     setMedicalTripHrId("");
     setMeetingAmount("");
     setNotes("");
     setOtherAmount("");
-    setPmWorkload("");
     setReturnTicketAmount("");
     setTripStartDate("");
     setTripEndDate("");
@@ -1450,22 +1448,23 @@ export function MobileOutstationWizard({
           <div className="grid grid-cols-2 gap-3">
             <Field label="AM Visits">
               <Input
-                min="0"
-                onChange={(event) => setAmWorkload(event.target.value)}
-                placeholder="0"
-                type="number"
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
                 value={amWorkload}
               />
             </Field>
             <Field label="PM Visits">
               <Input
-                min="0"
-                onChange={(event) => setPmWorkload(event.target.value)}
-                placeholder="0"
-                type="number"
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
                 value={pmWorkload}
               />
             </Field>
+            <p className="col-span-2 text-xs font-semibold text-slate-500">
+              Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission.
+            </p>
           </div>
         </div>
 

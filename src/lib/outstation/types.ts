@@ -1,3 +1,5 @@
+import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
+
 export type OutstationEligibilityStatus =
   | "eligible"
   | "not_eligible"
@@ -262,6 +264,12 @@ export type OutstationExpenseRequest = {
   meetingAmount: number;
   otherAmount: number;
   pmWorkload: number;
+  workloadEvidenceSnapshot: DoubleVisitExpenseWorkloadEvidence | Record<string, unknown>;
+  workloadMatchedAt: string | null;
+  workloadMatchStatus: string;
+  workloadOverrideReason: string | null;
+  workloadSource: string;
+  workloadSourceImportId: string | null;
   varianceAmount: number;
   variancePercent: number;
 };

@@ -145,10 +145,10 @@ export function AdminManagerExpenseModal({
   const [otherAmount, setOtherAmount] = useState(
     request?.otherAmount ? String(request.otherAmount) : "",
   );
-  const [amWorkload, setAmWorkload] = useState(
+  const [amWorkload] = useState(
     request?.amWorkload ? String(request.amWorkload) : "",
   );
-  const [pmWorkload, setPmWorkload] = useState(
+  const [pmWorkload] = useState(
     request?.pmWorkload ? String(request.pmWorkload) : "",
   );
 
@@ -770,23 +770,24 @@ export function AdminManagerExpenseModal({
             <div>
               <FieldLabel>AM visits</FieldLabel>
               <InputField
-                min="0"
-                onChange={(e) => setAmWorkload(e.target.value)}
-                placeholder="0"
-                type="number"
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
                 value={amWorkload}
               />
             </div>
             <div>
               <FieldLabel>PM visits</FieldLabel>
               <InputField
-                min="0"
-                onChange={(e) => setPmWorkload(e.target.value)}
-                placeholder="0"
-                type="number"
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
                 value={pmWorkload}
               />
             </div>
+            <p className="sm:col-span-2 text-xs font-semibold text-[#64748B]">
+              AM/PM workload is resolved automatically from the official published Double Visit Analytics snapshot after saving.
+            </p>
           </div>
 
           {/* Claimed amount */}
