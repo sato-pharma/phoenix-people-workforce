@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import { buildEmployeePlanPeriod, employeePlanActivityTypes } from "@/lib/weekly-planning/plan-v1";
 import type { EmployeePlan, EmployeePlanItemInput, EmployeePlansWorkspace } from "@/lib/weekly-planning/service";
@@ -45,6 +46,44 @@ type DraftItem = EmployeePlanItemInput & {
 };
 
 type MedicalRepOption = EmployeePlansWorkspace["medicalRepOptions"][number];
+type DayMode = "full" | "split";
+type SlotKind = "full" | "am" | "pm" | "other";
+type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
+
+type DayGroup = {
+  activityDate: string;
+  dayNote: string;
+  mode: DayMode;
+  rows: DraftItem[];
+};
+
+const AM_START = "09:00";
+const AM_END = "13:00";
+const PM_START = "13:00";
+const PM_END = "17:00";
+
+const approvedPlanningRegions = [
+  "ALEX-BHR",
+  "Cairo",
+  "Delta 1",
+  "Delta 2",
+  "Giza",
+  "Upper Egypt",
+] as const;
+
+const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
+  "Office",
+  "Admin",
+  "Remote",
+  "Vacation",
+]);
+
+const dayModeOptions = [
+  { label: "Full day", value: "full" },
+  { label: "AM / PM split", value: "split" },
+] as const;
+
+const trainingFormatOptions = ["Zoom", "Physical", "Other"] as const;
 
 const statusLabels: Record<EmployeePlanStatus, string> = {
   cancelled: "Cancelled",
@@ -67,6 +106,110 @@ const tableSelectClass = "h-10 w-full min-w-0 cursor-pointer border border-slate
 const tableInputClass = "h-10 w-full min-w-0 border border-orange-200 bg-orange-50/50 px-3 text-sm font-semibold text-slate-800 placeholder:text-orange-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-60";
 // Taller field controls for the touch-friendly mobile bottom-sheet editor.
 const mobileField = "h-11 w-full border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
+
+function normalizeTime(value: string | null | undefined) {
+  return String(value ?? "").slice(0, 5);
+}
+
+function slotKind(row: Pick<DraftItem, "startTime" | "endTime">): SlotKind {
+  const start = normalizeTime(row.startTime);
+  const end = normalizeTime(row.endTime);
+  if (start === AM_START && end === AM_END) return "am";
+  if (start === PM_START && end === PM_END) return "pm";
+  return start || end ? "other" : "full";
+}
+
+function slotSortValue(row: Pick<DraftItem, "startTime" | "endTime">) {
+  const kind = slotKind(row);
+  if (kind === "am" || kind === "full") return 0;
+  if (kind === "pm") return 1;
+  return 2;
+}
+
+function slotLabel(row: Pick<DraftItem, "startTime" | "endTime">) {
+  const kind = slotKind(row);
+  if (kind === "am") return "AM";
+  if (kind === "pm") return "PM";
+  if (kind === "full") return "Full day";
+  const start = normalizeTime(row.startTime);
+  const end = normalizeTime(row.endTime);
+  return [start, end].filter(Boolean).join(" - ") || "Activity";
+}
+
+function isCoachingActivity(value: string | null | undefined, activityTitle?: string | null) {
+  return value === "Coaching" || (value === "Other" && String(activityTitle ?? "").trim().toLowerCase() === "coaching");
+}
+
+function activityLabel(value: PlanningActivityValue) {
+  if (value === "Coaching") return "Coaching";
+  return value === "Field" ? "Single Visit" : value;
+}
+
+const planningActivityOptions: Array<{ label: string; value: PlanningActivityValue }> = [
+  ...employeePlanActivityTypes.map((type) => ({ label: activityLabel(type), value: type })),
+  { label: "Coaching", value: "Coaching" },
+];
+
+function activitySelectValue(row: Pick<DraftItem, "activityTitle" | "activityType">): PlanningActivityValue {
+  return isCoachingActivity(row.activityType, row.activityTitle) ? "Coaching" : row.activityType;
+}
+
+function activityValue(value: string): { activityTitle: string; activityType: EmployeePlanItemInput["activityType"] } {
+  if (value === "Single Visit") return { activityTitle: "Single Visit", activityType: "Field" };
+  if (value === "Coaching") return { activityTitle: "Coaching", activityType: "Other" };
+  const activityType = (employeePlanActivityTypes as readonly string[]).includes(value)
+    ? (value as EmployeePlanItemInput["activityType"])
+    : "Other";
+  return { activityTitle: activityLabel(activityType), activityType };
+}
+
+function trainingFormatValue(value: string | null | undefined) {
+  const current = String(value ?? "").trim();
+  return (trainingFormatOptions as readonly string[]).includes(current) ? current : "";
+}
+
+function activityRule(value: EmployeePlanItemInput["activityType"], activityTitle?: string | null) {
+  const isSingleVisit = value === "Field";
+  const isDoubleVisit = value === "Double Visit";
+  const isTraining = value === "Training";
+  const isCoaching = isCoachingActivity(value, activityTitle);
+  const showGeography = isSingleVisit || isDoubleVisit || isCoaching || (!isTraining && !noGeographyActivities.has(value));
+  return {
+    autoRep: isDoubleVisit || isCoaching,
+    label: isCoaching ? "Coaching" : activityLabel(value),
+    requiresArea: isSingleVisit || isDoubleVisit || isCoaching,
+    requiresRegion: isSingleVisit || isDoubleVisit || isCoaching,
+    requiresRep: isDoubleVisit || isCoaching,
+    showArea: showGeography,
+    showRegion: showGeography,
+    showRep: isDoubleVisit || isCoaching,
+    showTrainingFormat: isTraining,
+  };
+}
+
+function canonicalRegion(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const normalized = raw.toLowerCase().replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+  if (["alex-bhr", "alex bhr", "alex/bhr", "alex", "alexandria", "bhr", "beheira"].includes(normalized)) {
+    return "ALEX-BHR";
+  }
+  if (normalized === "cairo") return "Cairo";
+  if (normalized === "delta 1" || normalized === "delta-1") return "Delta 1";
+  if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
+  if (normalized === "giza") return "Giza";
+  if (normalized === "upper egypt") return "Upper Egypt";
+  return "";
+}
+
+function regionOptions(currentRegion?: string | null) {
+  const options = [...approvedPlanningRegions];
+  const current = String(currentRegion ?? "").trim();
+  if (current && !canonicalRegion(current) && !options.some((region) => region.toLowerCase() === current.toLowerCase())) {
+    options.push(current as (typeof approvedPlanningRegions)[number]);
+  }
+  return options;
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -145,8 +288,27 @@ function createDraftRow(activityDate: string, index: number, keySeed = "row"): D
 
 function sortDraftRows(rows: DraftItem[]) {
   return [...rows]
-    .sort((left, right) => left.activityDate.localeCompare(right.activityDate))
+    .sort((left, right) => {
+      const dateSort = left.activityDate.localeCompare(right.activityDate);
+      if (dateSort !== 0) return dateSort;
+      const slotSort = slotSortValue(left) - slotSortValue(right);
+      if (slotSort !== 0) return slotSort;
+      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+    })
     .map((row, index) => ({ ...row, sortOrder: index }));
+}
+
+function groupDraftRows(rows: DraftItem[]): DayGroup[] {
+  const groups = new Map<string, DraftItem[]>();
+  for (const row of sortDraftRows(rows)) {
+    groups.set(row.activityDate, [...(groups.get(row.activityDate) ?? []), row]);
+  }
+  return Array.from(groups.entries()).map(([activityDate, groupRows]) => ({
+    activityDate,
+    dayNote: groupRows.find((row) => row.notes?.trim())?.notes ?? "",
+    mode: groupRows.length > 1 ? "split" : "full",
+    rows: groupRows,
+  }));
 }
 
 function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
@@ -156,24 +318,49 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
   return selectedDays.map((date, index) => createDraftRow(date, index));
 }
 
-function rowPayload(rows: DraftItem[]): EmployeePlanItemInput[] {
-  return sortDraftRows(rows).map((row, index) => ({
-    activityDate: row.activityDate,
-    activityTitle: row.activityType,
-    activityType: row.activityType,
-    area: row.area,
-    attendees: row.attendees,
-    doubleVisitMedicalRepHrId:
-      row.activityType === "Double Visit" ? row.doubleVisitMedicalRepHrId : null,
-    doubleVisitMedicalRepName:
-      row.activityType === "Double Visit" ? row.doubleVisitMedicalRepName : null,
-    endTime: row.endTime,
-    locationText: row.locationText,
-    notes: row.notes,
-    objective: row.objective,
-    sortOrder: index,
-    startTime: row.startTime,
-  }));
+function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): EmployeePlanItemInput[] {
+  const result: EmployeePlanItemInput[] = [];
+  for (const group of groupDraftRows(rows)) {
+    group.rows.forEach((row, slotIndex) => {
+      const rule = activityRule(row.activityType, row.activityTitle);
+      const region = canonicalRegion(row.locationText) || row.locationText || "";
+      const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+      const medicalRepHrId = row.doubleVisitMedicalRepHrId || autoRep?.hrId || "";
+      const medicalRepName = row.doubleVisitMedicalRepName || autoRep?.fullName || "";
+      result.push({
+        activityDate: row.activityDate,
+        activityTitle: rule.label,
+        activityType: row.activityType,
+        area: rule.showArea ? row.area : "",
+        attendees: row.attendees,
+        doubleVisitMedicalRepHrId: rule.requiresRep ? medicalRepHrId : null,
+        doubleVisitMedicalRepName: rule.requiresRep ? medicalRepName : null,
+        endTime: row.endTime,
+        locationText: rule.showTrainingFormat ? trainingFormatValue(row.locationText) : rule.showRegion ? region : "",
+        notes: slotIndex === 0 ? group.dayNote : "",
+        objective: row.objective,
+        sortOrder: result.length,
+        startTime: row.startTime,
+      });
+    });
+  }
+  return result;
+}
+
+function validateDraftRow(row: DraftItem, medicalRepOptions: MedicalRepOption[] = []) {
+  const issues: string[] = [];
+  const rule = activityRule(row.activityType, row.activityTitle);
+  const label = `${formatDate(row.activityDate)} ${slotLabel(row)}`;
+  if (rule.requiresRegion && !canonicalRegion(row.locationText)) {
+    issues.push(`${label}: ${rule.label} needs a region.`);
+  }
+  if (rule.requiresArea && !String(row.area ?? "").trim()) {
+    issues.push(`${label}: ${rule.label} needs an area.`);
+  }
+  if (rule.requiresRep && !autoRepForArea(medicalRepOptions, row.area ?? "")) {
+    issues.push(`${label}: ${rule.label} needs an assigned Medical Rep for the selected area.`);
+  }
+  return issues;
 }
 
 function planCanEdit(plan: EmployeePlan | null) {
@@ -195,12 +382,30 @@ function statusTone(status: EmployeePlanStatus) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-function areasForRegion(options: MedicalRepOption[], region: string): string[] {
-  if (!region) return [];
+function isVacantMedicalRep(rep: MedicalRepOption) {
+  const text = `${rep.fullName ?? ""} ${rep.hrId ?? ""}`.toLowerCase();
+  return /\bvacan(t|cy)\b/.test(text);
+}
+
+function eligibleRepsForArea(options: MedicalRepOption[], area: string): MedicalRepOption[] {
+  if (!area) return [];
+  return options
+    .filter((rep) => rep.areaName?.toLowerCase() === area.toLowerCase())
+    .filter((rep) => !isVacantMedicalRep(rep));
+}
+
+function autoRepForArea(options: MedicalRepOption[], area: string): MedicalRepOption | null {
+  return eligibleRepsForArea(options, area)[0] ?? null;
+}
+
+function areasForRegion(options: MedicalRepOption[], region: string, requireAssignedRep = false): string[] {
+  const targetRegion = canonicalRegion(region);
+  if (!targetRegion) return [];
   const seen = new Set<string>();
   const result: string[] = [];
   for (const rep of options) {
-    if (rep.regionName?.toLowerCase() === region.toLowerCase() && rep.areaName) {
+    if (requireAssignedRep && isVacantMedicalRep(rep)) continue;
+    if (canonicalRegion(rep.regionName) === targetRegion && rep.areaName) {
       const k = rep.areaName.toLowerCase();
       if (!seen.has(k)) {
         seen.add(k);
@@ -209,11 +414,6 @@ function areasForRegion(options: MedicalRepOption[], region: string): string[] {
     }
   }
   return result.sort((a, b) => a.localeCompare(b));
-}
-
-function repForArea(options: MedicalRepOption[], area: string): MedicalRepOption | null {
-  if (!area) return null;
-  return options.find((r) => r.areaName?.toLowerCase() === area.toLowerCase()) ?? null;
 }
 
 /** Map raw service/DB/workflow errors to short, friendly, action-oriented messages. UI-only. */
@@ -225,8 +425,8 @@ function friendlyError(message: string): string {
   if (/comment.*requires|requires a comment|COMMENT_REQUIRED/i.test(text)) {
     return "Please add a comment explaining the return or rejection.";
   }
-  if (/Double Visit requires|not available for this employee line/i.test(text)) {
-    return "Each Double Visit day needs a same-line Medical Rep selected.";
+  if (/Double Visit requires|Coaching requires|not available for this employee line|not assigned to the selected area|assigned same-line Medical Rep/i.test(text)) {
+    return "Double Visit and Coaching need an assigned same-line Medical Rep from the selected area.";
   }
   if (/^forbidden/i.test(text)) {
     return "You do not have permission to perform this action.";
@@ -248,6 +448,10 @@ export function PlansWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
+  const [sameLineBookingState, setSameLineBookingState] = useState<{
+    bookings: SameLinePlanBooking[];
+    scopeKey: string;
+  }>({ bookings: [], scopeKey: "" });
   const [sheetKey, setSheetKey] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -259,7 +463,7 @@ export function PlansWorkspace({
   // The global portal bottom nav (≈56px + safe area) only exists on the employee
   // portal surface, not the admin review page. Offset the action bar accordingly.
   const onAdminSurface = basePath === "/admin/weekly-plans";
-  const calendarHref = onAdminSurface ? "/hr-calendar" : "/employee-portals/calendar";
+  const calendarHref = onAdminSurface ? "/admin/weekly-plans/calendar" : "/employee-portals/plans/calendar";
   const actionBarBottom = onAdminSurface
     ? "env(safe-area-inset-bottom)"
     : "calc(56px + env(safe-area-inset-bottom))";
@@ -267,6 +471,11 @@ export function PlansWorkspace({
   const period = useMemo(
     () => buildEmployeePlanPeriod(activeKind, anchorDate),
     [activeKind, anchorDate],
+  );
+  const sameLineBookingScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${period.periodStartDate}|${period.periodEndDate}`;
+  const sameLineBookings = useMemo(
+    () => (sameLineBookingState.scopeKey === sameLineBookingScopeKey ? sameLineBookingState.bookings : []),
+    [sameLineBookingScopeKey, sameLineBookingState],
   );
   const periodDays = useMemo(
     () => dateRange(period.periodStartDate, period.periodEndDate),
@@ -299,18 +508,40 @@ export function PlansWorkspace({
       workspace.canAcknowledgeHr,
   );
   const canEdit = planCanEdit(plan) && workspace.canSubmitPlans;
-  const regions = useMemo(() => workspace.workplaceRegions, [workspace.workplaceRegions]);
-
-  // Double Visit validation mirrors the server rule so we can block submit early.
-  const hasDoubleVisit = rows.some((row) => row.activityType === "Double Visit");
-  const doubleVisitMissingRep = rows.some(
-    (row) => row.activityType === "Double Visit" && !row.doubleVisitMedicalRepHrId,
+  const dayGroups = useMemo(() => groupDraftRows(rows), [rows]);
+  const dayGroupByDate = useMemo(
+    () => new Map(dayGroups.map((group) => [group.activityDate, group])),
+    [dayGroups],
   );
-  const noSameLineReps = hasDoubleVisit && workspace.medicalRepOptions.length === 0;
+  const submitValidationIssues = useMemo(
+    () => rows.flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions)),
+    [rows, workspace.medicalRepOptions],
+  );
+  const needsAssignedRep = rows.some((row) => activityRule(row.activityType, row.activityTitle).requiresRep);
+  const noSameLineReps = needsAssignedRep && workspace.medicalRepOptions.filter((rep) => !isVacantMedicalRep(rep)).length === 0;
   const noPlanRows = rows.length === 0;
-  const submitBlocked = !canEdit || doubleVisitMissingRep || noPlanRows;
+  const submitBlocked = !canEdit || submitValidationIssues.length > 0 || noSameLineReps || noPlanRows;
+  const rowConflictWarning = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      const rule = activityRule(row.activityType, row.activityTitle);
+      if (!rule.requiresRep) continue;
+      const autoRep = autoRepForArea(workspace.medicalRepOptions, row.area ?? "");
+      const warning = sameLineBookingWarning({
+        activityDate: row.activityDate,
+        bookings: sameLineBookings,
+        currentEmployeeHrId: workspace.currentEmployee?.hrId,
+        medicalRepHrId: row.doubleVisitMedicalRepHrId || autoRep?.hrId,
+        medicalRepName: row.doubleVisitMedicalRepName || autoRep?.fullName,
+      });
+      if (warning) map.set(row.key, warning);
+    }
+    return map;
+  }, [rows, sameLineBookings, workspace.currentEmployee?.hrId, workspace.medicalRepOptions]);
+  const firstConflictWarning = Array.from(rowConflictWarning.values())[0] ?? null;
 
   const sheetRow = rows.find((row) => row.key === sheetKey) ?? null;
+  const sheetGroup = sheetRow ? dayGroupByDate.get(sheetRow.activityDate) ?? null : null;
 
   // Lock body scroll while the mobile bottom sheet is open.
   useEffect(() => {
@@ -322,6 +553,32 @@ export function PlansWorkspace({
     };
   }, [sheetRow]);
 
+  useEffect(() => {
+    let active = true;
+    if (!workspace.currentEmployee?.hrId) return () => {
+      active = false;
+    };
+    fetch(`/api/weekly-plans/conflicts?start=${period.periodStartDate}&end=${period.periodEndDate}`, {
+      cache: "no-store",
+    })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!active) return;
+        setSameLineBookingState({
+          bookings: payload.success ? payload.data.bookings ?? [] : [],
+          scopeKey: sameLineBookingScopeKey,
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setSameLineBookingState({ bookings: [], scopeKey: sameLineBookingScopeKey });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [period.periodEndDate, period.periodStartDate, sameLineBookingScopeKey, workspace.currentEmployee?.hrId]);
+
   function resetRows(kind: EmployeePlanKind, date: string) {
     setRows(defaultRows(kind, date));
     setSheetKey(null);
@@ -331,37 +588,100 @@ export function PlansWorkspace({
     setRows((current) =>
       current.map((row) => {
         if (row.key !== key) return row;
-        if (field === "activityType" && value !== "Double Visit") {
+        if (field === "activityType") {
+          const nextActivity = activityValue(value);
+          const rule = activityRule(nextActivity.activityType, nextActivity.activityTitle);
+          const locationText = rule.showTrainingFormat
+            ? trainingFormatValue(row.locationText)
+            : rule.showRegion
+              ? canonicalRegion(row.locationText)
+              : "";
+          const area = rule.showArea && canonicalRegion(locationText) ? row.area : "";
+          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, area ?? "") : null;
           return {
             ...row,
-            activityType: value as EmployeePlanItemInput["activityType"],
-            doubleVisitMedicalRepHrId: "",
-            doubleVisitMedicalRepName: "",
+            activityTitle: nextActivity.activityTitle,
+            activityType: nextActivity.activityType,
+            area,
+            doubleVisitMedicalRepHrId: rule.requiresRep ? autoRep?.hrId ?? "" : "",
+            doubleVisitMedicalRepName: rule.requiresRep ? autoRep?.fullName ?? "" : "",
+            locationText,
           };
         }
-        if (field === "locationText") return { ...row, locationText: value, area: "" };
+        if (field === "locationText") {
+          const rule = activityRule(row.activityType, row.activityTitle);
+          return {
+            ...row,
+            area: "",
+            doubleVisitMedicalRepHrId: "",
+            doubleVisitMedicalRepName: "",
+            locationText: rule.showTrainingFormat ? trainingFormatValue(value) : canonicalRegion(value),
+          };
+        }
+        if (field === "area") {
+          const rule = activityRule(row.activityType, row.activityTitle);
+          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, value) : null;
+          return {
+            ...row,
+            area: value,
+            doubleVisitMedicalRepHrId: rule.requiresRep ? autoRep?.hrId ?? "" : "",
+            doubleVisitMedicalRepName: rule.requiresRep ? autoRep?.fullName ?? "" : "",
+          };
+        }
         return { ...row, [field]: value };
       }),
     );
   }
 
-  function setRowRep(key: string, hrId: string) {
-    const found = workspace.medicalRepOptions.find((r) => r.hrId === hrId);
-    setRows((current) =>
-      current.map((r) =>
-        r.key === key
-          ? {
-              ...r,
-              doubleVisitMedicalRepHrId: hrId,
-              doubleVisitMedicalRepName: found?.fullName ?? "",
-            }
-          : r,
-      ),
-    );
+  function updateDayNotes(activityDate: string, value: string) {
+    setRows((current) => {
+      const sortedDayRows = sortDraftRows(current.filter((row) => row.activityDate === activityDate));
+      const noteKey = sortedDayRows[0]?.key;
+      return current.map((row) =>
+        row.activityDate === activityDate
+          ? { ...row, notes: row.key === noteKey ? value : "" }
+          : row,
+      );
+    });
+  }
+
+  function setDayMode(activityDate: string, mode: DayMode) {
+    setRows((current) => {
+      const sorted = sortDraftRows(current);
+      const dayRows = sorted.filter((row) => row.activityDate === activityDate);
+      if (dayRows.length === 0) return current;
+      const dayNote = dayRows.find((row) => row.notes?.trim())?.notes ?? "";
+      const otherRows = sorted.filter((row) => row.activityDate !== activityDate);
+      const first = { ...dayRows[0], notes: dayNote };
+      if (mode === "full") {
+        return sortDraftRows([...otherRows, { ...first, startTime: "", endTime: "" }]);
+      }
+      const am = dayRows.find((row) => slotKind(row) === "am") ?? first;
+      const pm = dayRows.find((row) => slotKind(row) === "pm") ?? createDraftRow(activityDate, current.length, `row-pm-${Date.now()}`);
+      return sortDraftRows([
+        ...otherRows,
+        { ...am, startTime: AM_START, endTime: AM_END, notes: dayNote },
+        { ...pm, activityDate, startTime: PM_START, endTime: PM_END, notes: "" },
+      ]);
+    });
   }
 
   function deleteRow(key: string) {
-    setRows((current) => sortDraftRows(current.filter((row) => row.key !== key)));
+    setRows((current) => {
+      const target = current.find((row) => row.key === key);
+      const filtered = current.filter((row) => row.key !== key);
+      if (!target?.notes?.trim()) return sortDraftRows(filtered);
+
+      const remainingDayRows = sortDraftRows(filtered.filter((row) => row.activityDate === target.activityDate));
+      const nextNoteKey = remainingDayRows[0]?.key;
+      if (!nextNoteKey) return sortDraftRows(filtered);
+
+      return sortDraftRows(
+        filtered.map((row) =>
+          row.key === nextNoteKey ? { ...row, notes: target.notes } : row,
+        ),
+      );
+    });
     setSheetKey(null);
   }
 
@@ -401,7 +721,7 @@ export function PlansWorkspace({
   }
 
   async function submitPlan(submit: boolean) {
-    const payload = { anchorDate, items: rowPayload(rows), planKind: activeKind, submit };
+    const payload = { anchorDate, items: rowPayload(rows, workspace.medicalRepOptions), planKind: activeKind, submit };
     const endpoint = plan ? `/api/weekly-plans/${plan.id}` : "/api/weekly-plans";
     const response = await fetch(endpoint, {
       body: JSON.stringify(payload),
@@ -482,11 +802,9 @@ export function PlansWorkspace({
     resetRows(activeKind, value);
   }
 
-  const doubleVisitWarning = noSameLineReps
-    ? "No same-line Medical Rep is available. Please contact your manager or change the activity type."
-    : doubleVisitMissingRep
-      ? "Each Double Visit day needs a same-line Medical Rep selected before you can submit."
-      : null;
+  const validationWarning = noSameLineReps
+    ? "No same-line Medical Rep is available for Double Visit or Coaching. Please contact your manager or change the activity type."
+    : submitValidationIssues[0] ?? null;
 
   const schemaBanner = !workspace.schemaReady ? (
     <div className="border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
@@ -589,10 +907,17 @@ export function PlansWorkspace({
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
 
-        {doubleVisitWarning ? (
+        {validationWarning ? (
           <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{doubleVisitWarning}</span>
+            <span>{validationWarning}</span>
+          </div>
+        ) : null}
+
+        {firstConflictWarning ? (
+          <div className="flex items-start gap-2 border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{firstConflictWarning}</span>
           </div>
         ) : null}
 
@@ -607,6 +932,8 @@ export function PlansWorkspace({
         <div className="space-y-2.5">
           {rows.map((row) => (
             <MobileDayCard
+              conflictWarning={rowConflictWarning.get(row.key) ?? null}
+              dayNote={dayGroupByDate.get(row.activityDate)?.dayNote ?? row.notes ?? ""}
               key={row.key}
               medicalRepOptions={workspace.medicalRepOptions}
               onOpen={() => setSheetKey(row.key)}
@@ -673,7 +1000,7 @@ export function PlansWorkspace({
             >
               <Button
                 className="flex-1"
-                disabled={isPending || !canEdit}
+                disabled={isPending || !canEdit || noPlanRows}
                 onClick={() => runAction(() => submitPlan(false))}
                 variant="secondary"
               >
@@ -699,10 +1026,13 @@ export function PlansWorkspace({
               canEdit={canEdit}
               medicalRepOptions={workspace.medicalRepOptions}
               onClose={() => setSheetKey(null)}
+              onDayMode={(mode) => setDayMode(sheetRow.activityDate, mode)}
+              onDayNote={(value) => updateDayNotes(sheetRow.activityDate, value)}
               onDelete={() => deleteRow(sheetRow.key)}
-              onRep={(hrId) => setRowRep(sheetRow.key, hrId)}
               onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
-              regions={regions}
+              dayMode={sheetGroup?.mode ?? "full"}
+              dayNote={sheetGroup?.dayNote ?? sheetRow.notes ?? ""}
+              conflictWarning={rowConflictWarning.get(sheetRow.key) ?? null}
               row={sheetRow}
             />,
             document.body,
@@ -754,7 +1084,7 @@ export function PlansWorkspace({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-orange-700">
-                {rows.length} selected day{rows.length === 1 ? "" : "s"}
+                {dayGroups.length} selected day{dayGroups.length === 1 ? "" : "s"}
               </span>
               {activeKind === "monthly" ? (
                 <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
@@ -810,10 +1140,10 @@ export function PlansWorkspace({
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
 
-        {doubleVisitWarning ? (
+        {validationWarning ? (
           <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{doubleVisitWarning}</span>
+            <span>{validationWarning}</span>
           </div>
         ) : null}
 
@@ -914,170 +1244,220 @@ export function PlansWorkspace({
               </div>
             </div>
 
-            <div className="overflow-x-auto bg-white">
-              <table className="w-full min-w-[1280px] border-collapse">
+            <div className="bg-white">
+              <table className="w-full table-fixed border-collapse">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    <th className="w-[190px] px-4 py-3">Date</th>
-                    <th className="w-[180px] px-3 py-3">Activity</th>
-                    <th className="w-[210px] px-3 py-3">Region</th>
-                    <th className="w-[210px] px-3 py-3">Area</th>
-                    <th className="w-[250px] px-3 py-3">Medical Rep</th>
-                    <th className="px-3 py-3">Notes</th>
-                    <th className="w-[84px] px-4 py-3 text-right">Actions</th>
+                    <th className="w-[18%] px-4 py-3">Date</th>
+                    <th className="w-[15%] px-3 py-3">Activity</th>
+                    <th className="w-[18%] px-3 py-3">Region</th>
+                    <th className="w-[18%] px-3 py-3">Area</th>
+                    <th className="w-[23%] px-3 py-3">Medical Rep</th>
+                    <th className="w-[72px] px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.map((row, rowIndex) => {
-                    const hasReturnNotes = Boolean(row.returnNotes?.length);
-                    const autoRep = repForArea(workspace.medicalRepOptions, row.area ?? "");
-                    const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "");
+                  {dayGroups.map((group, groupIndex) => {
+                    const groupWarnings = group.rows.flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions));
+                    const groupConflictWarnings = Array.from(
+                      new Set(
+                        group.rows
+                          .map((row) => rowConflictWarning.get(row.key))
+                          .filter((warning): warning is string => Boolean(warning)),
+                      ),
+                    );
+                    const hasReturnNotes = group.rows.some((row) => row.returnNotes?.length);
                     const rowTone = hasReturnNotes
                       ? "bg-amber-50/70"
-                      : rowIndex % 2 === 0
+                      : groupIndex % 2 === 0
                         ? "bg-white"
                         : "bg-slate-50/45";
 
                     return (
-                      <Fragment key={row.key}>
-                        <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`}>
-                          <td className="px-4 py-3">
-                            <time
-                              className="flex items-center gap-3"
-                              dateTime={row.activityDate}
-                              title={row.activityDate}
-                            >
-                              <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white shadow-[0_6px_18px_rgba(249,115,22,0.08)]">
-                                <span className="text-[10px] font-black uppercase tracking-wide text-orange-500">
-                                  {formatDayName(row.activityDate)}
-                                </span>
-                                <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
-                                  {formatDayNumber(row.activityDate)}
-                                </span>
-                                <span className="mt-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                                  {formatMonthYear(row.activityDate)}
-                                </span>
-                              </span>
-                              <div className="min-w-0">
-                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
-                                  Plan day
-                                </p>
-                                <p className="mt-1 text-sm font-black text-slate-900">Day {rowIndex + 1}</p>
-                              </div>
-                            </time>
-                          </td>
-                          <td className="px-3 py-3">
-                            <select
-                              className={tableSelectClass}
-                              disabled={!canEdit}
-                              onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
-                              value={row.activityType}
-                            >
-                              {employeePlanActivityTypes.map((type) => (
-                                <option key={type} value={type}>
-                                  {type}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-3 py-3">
-                            <select
-                              className={tableSelectClass}
-                              disabled={!canEdit}
-                              onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
-                              value={row.locationText ?? ""}
-                            >
-                              <option value="">Select region</option>
-                              {row.locationText &&
-                              !regions.some((region) => region.toLowerCase() === (row.locationText ?? "").toLowerCase()) ? (
-                                <option value={row.locationText}>{row.locationText}</option>
+                      <Fragment key={group.activityDate}>
+                        {group.rows.map((row, slotIndex) => {
+                          const rule = activityRule(row.activityType, row.activityTitle);
+                          const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "", rule.requiresRep);
+                          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "") : null;
+                          const currentRegionOptions = regionOptions(row.locationText);
+
+                          return (
+                            <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`} key={row.key}>
+                              {slotIndex === 0 ? (
+                                <td className="px-4 py-3 align-top" rowSpan={group.rows.length}>
+                                  <time
+                                    className="flex items-center gap-3"
+                                    dateTime={group.activityDate}
+                                    title={group.activityDate}
+                                  >
+                                    <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white shadow-[0_6px_18px_rgba(249,115,22,0.08)]">
+                                      <span className="text-[10px] font-black uppercase tracking-wide text-orange-500">
+                                        {formatDayName(group.activityDate)}
+                                      </span>
+                                      <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
+                                        {formatDayNumber(group.activityDate)}
+                                      </span>
+                                      <span className="mt-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                        {formatMonthYear(group.activityDate)}
+                                      </span>
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
+                                        Plan day
+                                      </p>
+                                      <p className="mt-1 text-sm font-black text-slate-900">Day {groupIndex + 1}</p>
+                                    </div>
+                                  </time>
+                                  <div className="mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5">
+                                    {(["full", "split"] as const).map((mode) => (
+                                      <button
+                                        className={`h-8 px-2 text-[11px] font-black ${
+                                          group.mode === mode ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
+                                        }`}
+                                        disabled={!canEdit}
+                                        key={mode}
+                                        onClick={() => setDayMode(group.activityDate, mode)}
+                                        type="button"
+                                      >
+                                        {mode === "full" ? "Full day" : "AM / PM"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </td>
                               ) : null}
-                              {regions.map((region) => (
-                                <option key={region} value={region}>
-                                  {region}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-3 py-3">
-                            <select
-                              className={tableSelectClass}
-                              disabled={!canEdit || !row.locationText}
-                              onChange={(e) => updateRow(row.key, "area", e.target.value)}
-                              value={row.area ?? ""}
-                            >
-                              <option value="">{row.locationText ? "Select area" : "Choose region first"}</option>
-                              {row.area &&
-                              !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
-                                <option value={row.area}>{row.area}</option>
-                              ) : null}
-                              {availableAreas.map((area) => (
-                                <option key={area} value={area}>
-                                  {area}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-3 py-3">
-                            {row.activityType === "Double Visit" ? (
-                              <select
-                                className={tableSelectClass}
-                                disabled={!canEdit || workspace.medicalRepOptions.length === 0}
-                                onChange={(e) => setRowRep(row.key, e.target.value)}
-                                value={row.doubleVisitMedicalRepHrId ?? ""}
-                              >
-                                <option value="">Select Medical Rep</option>
-                                {row.doubleVisitMedicalRepHrId &&
-                                !workspace.medicalRepOptions.some((rep) => rep.hrId === row.doubleVisitMedicalRepHrId) ? (
-                                  <option value={row.doubleVisitMedicalRepHrId}>
-                                    {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
-                                  </option>
-                                ) : null}
-                                {workspace.medicalRepOptions.map((rep) => (
-                                  <option key={rep.hrId} value={rep.hrId}>
-                                    {rep.fullName}
-                                    {rep.areaName ? ` - ${rep.areaName}` : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : autoRep ? (
-                              <div className="flex h-10 min-w-0 items-center border border-violet-200 bg-violet-50/70 px-3">
-                                <span className="truncate text-sm font-black text-violet-700">{autoRep.fullName}</span>
-                              </div>
-                            ) : (
-                              <div className="flex h-10 min-w-0 items-center border border-slate-200 bg-white px-3">
-                                <span className="text-xs font-semibold text-slate-400">
-                                  {row.area ? "No rep for this area" : "Select area first"}
+                              <td className="px-3 py-3">
+                                <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                                  {slotLabel(row)}
+                                </div>
+                                <select
+                                  className={tableSelectClass}
+                                  disabled={!canEdit}
+                                  onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
+                                  value={activitySelectValue(row)}
+                                >
+                                  {planningActivityOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-3">
+                                {rule.showTrainingFormat ? (
+                                  <select
+                                    className={tableSelectClass}
+                                    disabled={!canEdit}
+                                    onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
+                                    value={trainingFormatValue(row.locationText)}
+                                  >
+                                    <option value="">Optional format</option>
+                                    {trainingFormatOptions.map((format) => (
+                                      <option key={format} value={format}>
+                                        {format}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : rule.showRegion ? (
+                                  <select
+                                    className={tableSelectClass}
+                                    disabled={!canEdit}
+                                    onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
+                                    value={canonicalRegion(row.locationText) || row.locationText || ""}
+                                  >
+                                    <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
+                                    {currentRegionOptions.map((region) => (
+                                      <option key={region} value={region}>
+                                        {region}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <DisabledFieldText>Not needed</DisabledFieldText>
+                                )}
+                              </td>
+                              <td className="px-3 py-3">
+                                {rule.showArea ? (
+                                  <select
+                                    className={tableSelectClass}
+                                    disabled={!canEdit || !canonicalRegion(row.locationText)}
+                                    onChange={(e) => updateRow(row.key, "area", e.target.value)}
+                                    value={row.area ?? ""}
+                                  >
+                                    <option value="">
+                                      {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}
+                                    </option>
+                                    {row.area &&
+                                    !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
+                                      <option value={row.area}>{row.area}</option>
+                                    ) : null}
+                                    {availableAreas.map((area) => (
+                                      <option key={area} value={area}>
+                                        {area}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <DisabledFieldText>Not needed</DisabledFieldText>
+                                )}
+                              </td>
+                              <td className="px-3 py-3">
+                                {rule.showRep ? (
+                                  <DisabledFieldText>
+                                    {row.area ? autoRep?.fullName ?? "No assigned rep" : "Select area first"}
+                                  </DisabledFieldText>
+                                ) : (
+                                  <DisabledFieldText>Not required</DisabledFieldText>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
+                                  className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                  disabled={!canEdit || rows.length <= 1}
+                                  onClick={() => deleteRow(row.key)}
+                                  type="button"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        <tr className={`${rowTone} border-t border-orange-100/80`}>
+                          <td className="px-4 pb-4 pt-0" colSpan={6}>
+                            <div className="border border-orange-100 bg-orange-50/45 px-3 py-2">
+                              <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">
+                                  Notes
                                 </span>
+                                <input
+                                  className={tableInputClass}
+                                  disabled={!canEdit}
+                                  onChange={(e) => updateDayNotes(group.activityDate, e.target.value)}
+                                  placeholder="Notes for this day..."
+                                  value={group.dayNote}
+                                />
                               </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <input
-                              className={tableInputClass}
-                              disabled={!canEdit}
-                              onChange={(e) => updateRow(row.key, "notes", e.target.value)}
-                              placeholder="Notes for this day..."
-                              value={row.notes ?? ""}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              aria-label={`Remove ${formatDate(row.activityDate)}`}
-                              className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                              disabled={!canEdit || rows.length <= 1}
-                              onClick={() => deleteRow(row.key)}
-                              type="button"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                              {groupWarnings.length > 0 ? (
+                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-amber-800">
+                                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  <span>{groupWarnings[0]}</span>
+                                </div>
+                              ) : null}
+                              {groupConflictWarnings.map((warning) => (
+                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-red-800" key={warning}>
+                                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  <span>{warning}</span>
+                                </div>
+                              ))}
+                            </div>
                           </td>
                         </tr>
                         {hasReturnNotes ? (
                           <tr className="bg-amber-50/80">
-                            <td className="px-4 py-2" colSpan={7}>
+                            <td className="px-4 py-2" colSpan={6}>
                               <div className="space-y-1 border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
-                                {row.returnNotes?.map((note) => (
+                                {group.rows.flatMap((row) => row.returnNotes ?? []).map((note) => (
                                   <p key={note.id}>
                                     {note.actorRole ?? "Reviewer"}: {note.note}
                                   </p>
@@ -1250,19 +1630,30 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 }
 
 function MobileDayCard({
+  conflictWarning,
+  dayNote,
   medicalRepOptions,
   onOpen,
   row,
 }: {
+  conflictWarning: string | null;
+  dayNote: string;
   medicalRepOptions: MedicalRepOption[];
   onOpen: () => void;
   row: DraftItem;
 }) {
-  const isDoubleVisit = row.activityType === "Double Visit";
-  const autoRep = repForArea(medicalRepOptions, row.area ?? "");
-  const repName = isDoubleVisit ? row.doubleVisitMedicalRepName : autoRep?.fullName ?? "";
-  const needsRep = isDoubleVisit && !row.doubleVisitMedicalRepHrId;
+  const rule = activityRule(row.activityType, row.activityTitle);
+  const selectedRep = medicalRepOptions.find((rep) => rep.hrId === row.doubleVisitMedicalRepHrId);
+  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+  const repName = row.doubleVisitMedicalRepName || selectedRep?.fullName || autoRep?.fullName || "";
+  const needsRep = rule.requiresRep && !autoRep;
   const hasReturnNotes = Boolean(row.returnNotes?.length);
+  const region = canonicalRegion(row.locationText) || row.locationText || "";
+  const geographySummary = rule.showTrainingFormat
+    ? trainingFormatValue(row.locationText) || "Training format optional"
+    : rule.showRegion
+    ? [region, row.area].filter(Boolean).join(" - ") || (rule.requiresRegion ? "Region and area required" : "No region set")
+    : "No geography needed";
 
   return (
     <button
@@ -1283,10 +1674,10 @@ function MobileDayCard({
             </span>
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black text-slate-900">{row.activityType}</p>
-            <p className="truncate text-xs font-semibold text-slate-500">
-              {[row.locationText, row.area].filter(Boolean).join(" · ") || "No region set"}
+            <p className="truncate text-sm font-black text-slate-900">
+              {rule.label} - {slotLabel(row)}
             </p>
+            <p className="truncate text-xs font-semibold text-slate-500">{geographySummary}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -1299,22 +1690,36 @@ function MobileDayCard({
         </div>
       </div>
 
-      {isDoubleVisit || repName || row.notes ? (
+      {rule.requiresRep || dayNote || conflictWarning ? (
         <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-          {isDoubleVisit ? (
+          {rule.requiresRep ? (
+            rule.label === "Coaching" ? (
+              needsRep ? (
+                <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
+                  <TriangleAlert className="h-3.5 w-3.5" />
+                  Coaching needs an assigned Medical Rep
+                </p>
+              ) : (
+                <p className="text-xs font-semibold text-violet-700">Coaching - {repName}</p>
+              )
+            ) :
             needsRep ? (
               <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
                 <TriangleAlert className="h-3.5 w-3.5" />
-                Double Visit — select a Medical Rep
+                Double Visit - select a Medical Rep
               </p>
             ) : (
-              <p className="text-xs font-semibold text-violet-700">Double Visit · {repName}</p>
+              <p className="text-xs font-semibold text-violet-700">Double Visit - {repName}</p>
             )
-          ) : repName ? (
-            <p className="text-xs font-semibold text-violet-700">Rep · {repName}</p>
           ) : null}
-          {row.notes ? (
-            <p className="truncate text-xs text-slate-500">{row.notes}</p>
+          {dayNote ? (
+            <p className="truncate text-xs text-slate-500">{dayNote}</p>
+          ) : null}
+          {conflictWarning ? (
+            <p className="flex items-start gap-1 text-xs font-bold text-red-700">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{conflictWarning}</span>
+            </p>
           ) : null}
         </div>
       ) : null}
@@ -1324,25 +1729,34 @@ function MobileDayCard({
 
 function RowEditSheet({
   canEdit,
+  conflictWarning,
+  dayMode,
+  dayNote,
   medicalRepOptions,
   onClose,
+  onDayMode,
+  onDayNote,
   onDelete,
-  onRep,
   onUpdate,
-  regions,
   row,
 }: {
   canEdit: boolean;
+  conflictWarning: string | null;
+  dayMode: DayMode;
+  dayNote: string;
   medicalRepOptions: MedicalRepOption[];
   onClose: () => void;
+  onDayMode: (mode: DayMode) => void;
+  onDayNote: (value: string) => void;
   onDelete: () => void;
-  onRep: (hrId: string) => void;
   onUpdate: (field: keyof EmployeePlanItemInput, value: string) => void;
-  regions: string[];
   row: DraftItem;
 }) {
-  const isDoubleVisit = row.activityType === "Double Visit";
-  const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "");
+  const rule = activityRule(row.activityType, row.activityTitle);
+  const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "", rule.requiresRep);
+  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+  const currentRegionOptions = regionOptions(row.locationText);
+  const rowWarnings = validateDraftRow(row, medicalRepOptions);
 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
@@ -1374,102 +1788,121 @@ function RowEditSheet({
         </div>
 
         <div className="space-y-3 px-4 py-4">
+          <Field label="Day Mode">
+            <ChoiceGroup
+              aria-label="Day mode"
+              className="grid-cols-2"
+              disabled={!canEdit}
+              onChange={onDayMode}
+              options={dayModeOptions}
+              value={dayMode}
+            />
+          </Field>
+
           <Field label="Activity Type">
             <select
               className={mobileField}
               disabled={!canEdit}
               onChange={(e) => onUpdate("activityType", e.target.value)}
-              value={row.activityType}
+              value={activitySelectValue(row)}
             >
-              {employeePlanActivityTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
+              {planningActivityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Region">
-            <select
-              className={mobileField}
-              disabled={!canEdit}
-              onChange={(e) => onUpdate("locationText", e.target.value)}
-              value={row.locationText ?? ""}
-            >
-              <option value="">Select region</option>
-              {row.locationText &&
-              !regions.some((r) => r.toLowerCase() === (row.locationText ?? "").toLowerCase()) ? (
-                <option value={row.locationText}>{row.locationText}</option>
-              ) : null}
-              {regions.map((region) => (
-                <option key={region} value={region}>
-                  {region}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Area">
-            <select
-              className={mobileField}
-              disabled={!canEdit || !row.locationText}
-              onChange={(e) => onUpdate("area", e.target.value)}
-              value={row.area ?? ""}
-            >
-              <option value="">{row.locationText ? "Select area" : "Choose region first"}</option>
-              {row.area &&
-              !availableAreas.some((a) => a.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
-                <option value={row.area}>{row.area}</option>
-              ) : null}
-              {availableAreas.map((area) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          {isDoubleVisit ? (
-            <Field label="Medical Rep (same line)">
-              {medicalRepOptions.length === 0 ? (
-                <p className="border border-amber-200 bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">
-                  No same-line Medical Rep is available. Please contact your manager or change the
-                  activity type.
-                </p>
-              ) : (
-                <select
-                  className={mobileField}
-                  disabled={!canEdit}
-                  onChange={(e) => onRep(e.target.value)}
-                  value={row.doubleVisitMedicalRepHrId ?? ""}
-                >
-                  <option value="">Select Medical Rep</option>
-                  {row.doubleVisitMedicalRepHrId &&
-                  !medicalRepOptions.some((r) => r.hrId === row.doubleVisitMedicalRepHrId) ? (
-                    <option value={row.doubleVisitMedicalRepHrId}>
-                      {row.doubleVisitMedicalRepName || row.doubleVisitMedicalRepHrId}
-                    </option>
-                  ) : null}
-                  {medicalRepOptions.map((rep) => (
-                    <option key={rep.hrId} value={rep.hrId}>
-                      {rep.fullName}
-                      {rep.areaName ? ` – ${rep.areaName}` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
+          {rule.showTrainingFormat ? (
+            <Field label="Training Format">
+              <select
+                className={mobileField}
+                disabled={!canEdit}
+                onChange={(e) => onUpdate("locationText", e.target.value)}
+                value={trainingFormatValue(row.locationText)}
+              >
+                <option value="">Optional format</option>
+                {trainingFormatOptions.map((format) => (
+                  <option key={format} value={format}>
+                    {format}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : rule.showRegion ? (
+            <Field label="Region">
+              <select
+                className={mobileField}
+                disabled={!canEdit}
+                onChange={(e) => onUpdate("locationText", e.target.value)}
+                value={canonicalRegion(row.locationText) || row.locationText || ""}
+              >
+                <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
+                {currentRegionOptions.map((region) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
             </Field>
           ) : null}
 
-          <Field label="Remarks">
+          {rule.showArea ? (
+            <Field label="Area">
+              <select
+                className={mobileField}
+                disabled={!canEdit || !canonicalRegion(row.locationText)}
+                onChange={(e) => onUpdate("area", e.target.value)}
+                value={row.area ?? ""}
+              >
+                <option value="">
+                  {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}
+                </option>
+                {row.area &&
+                !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
+                  <option value={row.area}>{row.area}</option>
+                ) : null}
+                {availableAreas.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+
+          {rule.showRep ? (
+            <Field label="Medical Rep (same line)">
+              <DisabledFieldText>
+                {row.area ? autoRep?.fullName ?? "No assigned rep" : "Select area first"}
+              </DisabledFieldText>
+            </Field>
+          ) : null}
+
+          <Field label="Notes">
             <textarea
               className="min-h-20 w-full border border-orange-200 bg-orange-50/50 p-2.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20 disabled:opacity-60"
               disabled={!canEdit}
-              onChange={(e) => onUpdate("notes", e.target.value)}
+              onChange={(e) => onDayNote(e.target.value)}
               placeholder="Notes for this day..."
-              value={row.notes ?? ""}
+              value={dayNote}
             />
           </Field>
+
+          {rowWarnings.length > 0 ? (
+            <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-2.5 text-xs font-bold text-amber-800">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{rowWarnings[0]}</span>
+            </div>
+          ) : null}
+
+          {conflictWarning ? (
+            <div className="flex items-start gap-2 border border-red-200 bg-red-50 p-2.5 text-xs font-bold text-red-800">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{conflictWarning}</span>
+            </div>
+          ) : null}
 
           {row.returnNotes?.length ? (
             <div className="space-y-1 border border-amber-200 bg-amber-50 p-3">
@@ -1492,7 +1925,7 @@ function RowEditSheet({
                 variant="destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete day
+                {dayMode === "split" ? "Delete slot" : "Delete day"}
               </Button>
             ) : null}
             <Button className="flex-1" onClick={onClose}>
@@ -1513,6 +1946,14 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
       </span>
       {children}
     </label>
+  );
+}
+
+function DisabledFieldText({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-10 min-w-0 items-center border border-slate-200 bg-slate-50 px-3">
+      <span className="truncate text-xs font-semibold text-slate-400">{children}</span>
+    </div>
   );
 }
 
