@@ -120,6 +120,8 @@ const moduleLabels: Record<SystemCleanupModuleKey, string> = {
   weekly_plans: "Weekly/monthly plans",
 };
 
+const DEFAULT_CLEANUP_NOTE = "No cleanup note provided.";
+
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -161,12 +163,8 @@ function normalizeReason(value: unknown) {
   return text(value).slice(0, 500);
 }
 
-function ensureReason(value: unknown) {
-  const reason = normalizeReason(value);
-  if (reason.length < 10) {
-    throw new Error("Cleanup reason must be at least 10 characters.");
-  }
-  return reason;
+function optionalCleanupNote(value: unknown) {
+  return normalizeReason(value) || DEFAULT_CLEANUP_NOTE;
 }
 
 function ensureRecordId(value: unknown) {
@@ -751,7 +749,7 @@ export async function executeCleanupAction(
   input: { reason: unknown; targets: unknown },
 ): Promise<{ results: SystemCleanupActionResult[] }> {
   await assertSystemCleanupAccess(access, "delete");
-  const reason = ensureReason(input.reason);
+  const reason = optionalCleanupNote(input.reason);
   const targets = normalizeTargets(input.targets);
   const results: SystemCleanupActionResult[] = [];
 
