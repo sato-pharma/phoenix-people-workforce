@@ -1,3 +1,10 @@
+import {
+  renderEmailParagraphs,
+  renderPhoenixEmailHtml,
+  renderPhoenixEmailText,
+  type PhoenixEmailAction,
+  type PhoenixEmailMetadataRow,
+} from "@/emails/phoenix-email-layout";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import {
@@ -70,37 +77,37 @@ function isTemplateUnavailableSkip(result: SendPhoenixEmailResult): boolean {
   );
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /**
  * Minimal neutral email used ONLY when the matching WYSIWYG template has been
  * deactivated/deleted, so a vacation notification is never silently dropped. The
- * styled template is the normal path; this just guarantees delivery of the essentials.
+ * styled template is the normal path; this still uses the shared Phoenix layout so
+ * fallback sends stay aligned with light/dark email rendering.
  */
 function buildFallbackEmail(input: {
   heading: string;
   rows: Array<[string, string]>;
   cta?: { label: string; url: string };
+  subject: string;
+  title: string;
 }): { html: string; text: string } {
-  const rowsHtml = input.rows
-    .map(
-      ([label, value]) =>
-        `<tr><td style="padding:4px 8px;font-weight:600">${escapeHtml(label)}</td><td style="padding:4px 8px">${escapeHtml(value)}</td></tr>`,
-    )
-    .join("");
-  const ctaHtml = input.cta?.url
-    ? `<p style="margin-top:16px"><a href="${escapeHtml(input.cta.url)}">${escapeHtml(input.cta.label)}</a></p>`
-    : "";
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a"><p>${escapeHtml(input.heading)}</p><table style="border-collapse:collapse">${rowsHtml}</table>${ctaHtml}</div>`;
-  const textRows = input.rows.map(([label, value]) => `${label}: ${value}`).join("\n");
-  const textCta = input.cta?.url ? `\n\n${input.cta.label}: ${input.cta.url}` : "";
-  const text = `${input.heading}\n\n${textRows}${textCta}`;
+  const metadataRows: PhoenixEmailMetadataRow[] = input.rows.map(([label, value]) => ({ label, value }));
+  const action: PhoenixEmailAction | undefined = input.cta?.url
+    ? { href: input.cta.url, label: input.cta.label }
+    : undefined;
+  const html = renderPhoenixEmailHtml({
+    action,
+    bodyHtml: renderEmailParagraphs(input.heading),
+    metadataRows,
+    previewText: input.heading,
+    subject: input.subject,
+    title: input.title,
+  });
+  const text = renderPhoenixEmailText({
+    action,
+    bodyText: input.heading,
+    metadataRows,
+    title: input.title,
+  });
   return { html, text };
 }
 
@@ -157,6 +164,8 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
       ["Duration", duration],
     ],
     cta: { label: "Review Leave Request", url: input.reviewUrl },
+    subject: `Vacation request from ${input.request.employeeName}`,
+    title: "Vacation request review",
   });
   return sendPhoenixEmail({
     html: fallback.html,
@@ -199,6 +208,8 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       ["Period", `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`],
       ["Status", approved ? "Approved" : "Rejected"],
     ],
+    subject: `Vacation request ${approved ? "approved" : "rejected"}`,
+    title: `Vacation request ${approved ? "approved" : "rejected"}`,
   });
   return sendPhoenixEmail({
     cc: input.cc,
