@@ -56,15 +56,15 @@ function resolvePortalRole(
 /**
  * Launch posture flag for Beta employee-portal modules.
  *
- * Marketing Requests has graduated from Beta to a full module and is no longer
- * gated by this flag — it is visible to already-authorized roles at all times.
- * Contact HR Support is the remaining Beta module: hidden from the employee-portal
- * navigation by default. Pages stay reachable by direct URL and keep their own
- * page-level permission guards — this flag only controls navigation visibility.
+ * Marketing Requests and Contact HR Support have both graduated from Beta to full
+ * modules and are no longer gated by this flag. Contact HR Support is available to
+ * every employee-portal user (everyone can reach their HR team); Marketing Requests
+ * stays role-gated. No employee-portal module is currently gated behind this flag,
+ * but it is retained for any future Beta launch.
  *
- * Set PHOENIX_PORTAL_SHOW_BETA_NAV=true (server env) to surface the remaining Beta
- * modules in the nav for roles that are already authorized for them. Read at call
- * time so the launch posture can change without a rebuild and so tests can toggle it.
+ * Set PHOENIX_PORTAL_SHOW_BETA_NAV=true (server env) to surface future Beta modules
+ * in the nav for roles that are already authorized for them. Read at call time so the
+ * launch posture can change without a rebuild and so tests can toggle it.
  */
 export function isEmployeePortalBetaNavEnabled(): boolean {
   return String(process.env.PHOENIX_PORTAL_SHOW_BETA_NAV ?? "").trim().toLowerCase() === "true";
@@ -156,11 +156,10 @@ export function resolveEmployeePortalNavVisibility(
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = isDistrictManager || isNationalSalesManager;
-  // Marketing Requests is a full module: its tabs are visible to already-authorized
-  // roles regardless of the launch flag. The role checks still apply, so visibility
-  // never extends to a role that is not authorized for Marketing. Contact HR Support
-  // (showSupportTab) remains the only Beta nav module gated behind betaNavEnabled.
-  const betaNavEnabled = isEmployeePortalBetaNavEnabled();
+  // Marketing Requests and Contact HR Support are full modules: their tabs are visible
+  // without the launch flag. Marketing role checks still apply, so Marketing visibility
+  // never extends to an unauthorized role. Contact HR Support is available to every
+  // employee-portal user — everyone must be able to reach their HR team.
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingInboxTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
@@ -201,7 +200,7 @@ export function resolveEmployeePortalNavVisibility(
     showOrganogramTab: showMedRepsPerformanceTab,
     showPlansTab: isA3Account || showPlansTab,
     showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
-    showSupportTab: betaNavEnabled,
+    showSupportTab: true,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
     showTeamPerformanceTab,

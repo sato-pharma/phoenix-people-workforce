@@ -801,6 +801,29 @@ async function notifyManager(plan: PlanHeaderRow) {
   });
 }
 
+// HR must be alerted (in-app + email + Telegram) for EVERY plan submission, not only at
+// the final acknowledgement stage. The direct manager is excluded here so an HR person who
+// is also the submitter's manager is not double-notified (they already got the review ping).
+async function notifyHrOnSubmit(plan: PlanHeaderRow) {
+  const recipients = (await hrAcknowledgementRecipients())
+    .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
+  if (recipients.length === 0) return;
+  await notifyRecipients({
+    actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
+    eventType: "plan_submitted",
+    message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
+    plan,
+    recipients,
+    title: `${plan.employee_name}'s ${plan.plan_kind} plan was submitted`,
+  });
+}
+
+// Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
+// Best-effort and isolated — a failure to reach HR must never block the manager alert.
+async function notifyPlanSubmitted(plan: PlanHeaderRow) {
+  await Promise.allSettled([notifyManager(plan), notifyHrOnSubmit(plan)]);
+}
+
 async function notifyCeo(plan: PlanHeaderRow) {
   const ceos = await authUsersByRole("CEO");
   await notifyRecipients({
@@ -946,7 +969,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
   await replacePlanItems(plan.id, items);
   if (input.submit) {
     await recordDecision({ access, action: "submit", fromStatus: "draft", planId: plan.id, toStatus: "submitted" });
-    await notifyManager(await loadPlanRow(plan.id));
+    await notifyPlanSubmitted(await loadPlanRow(plan.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
@@ -1004,7 +1027,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       planId: revision.id,
       toStatus: input.submit ? "submitted" : "draft",
     });
-    if (input.submit) await notifyManager(await loadPlanRow(revision.id));
+    if (input.submit) await notifyPlanSubmitted(await loadPlanRow(revision.id));
     return mapPlan(await loadPlanRow(revision.id));
   }
 
@@ -1030,7 +1053,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   if (error) throw error;
   if (input.submit) {
     await recordDecision({ access, action: "submit", fromStatus: existing.status, planId: existing.id, toStatus: nextStatus });
-    await notifyManager(await loadPlanRow(existing.id));
+    await notifyPlanSubmitted(await loadPlanRow(existing.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
