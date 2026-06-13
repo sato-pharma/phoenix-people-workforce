@@ -4,6 +4,7 @@ import { MonthlyClosingWorkspace } from "@/components/sales/monthly-closing-work
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveOrganogramLineForEmployee } from "@/lib/reports/organogram";
 import {
   loadMonthlyClosing,
   type MonthlyClosingMatrix,
@@ -17,9 +18,9 @@ export default async function MonthlyClosingPage() {
     redirect("/employee-portals/sales");
   }
 
-  // Phase 1 is reserved for the admin account (Super Admin / system scope). Server-side
-  // enforcement — sidebar visibility is UX only, never the boundary.
-  if (access.role !== "Super Admin" && access.scope !== "system") {
+  const isPmGpm = access.role === "Product Manager" || access.role === "Group Product Manager";
+
+  if (access.role !== "Super Admin" && access.scope !== "system" && !isPmGpm) {
     redirect(resolveLandingPathForRole(access.role));
   }
 
@@ -27,8 +28,14 @@ export default async function MonthlyClosingPage() {
   let initialError: string | null = null;
 
   try {
-    await assertPermission(access, "sales", "import");
-    initialMatrix = await loadMonthlyClosing();
+    if (isPmGpm) {
+      await assertPermission(access, "sales", "read");
+      const lineName = await resolveOrganogramLineForEmployee(access);
+      initialMatrix = await loadMonthlyClosing({ line: lineName });
+    } else {
+      await assertPermission(access, "sales", "import");
+      initialMatrix = await loadMonthlyClosing();
+    }
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
