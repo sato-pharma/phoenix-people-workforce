@@ -109,6 +109,53 @@ function weeklySalesValue(salesQty: number, xfactor: number, discount = 0): numb
   return Number((safeQty * safeXfactor * (1 - safeDiscount)).toFixed(6));
 }
 
+const WEEKLY_BRANCH_REGION_FALLBACKS: Array<{
+  branchAliases: string[];
+  regionCode: string;
+  regionName: string;
+}> = [
+  {
+    branchAliases: [
+      "Cairo Central Warehouse",
+      "Cairo Central Warehouse Cairo",
+      "Central Warehouse Cairo",
+      "Cairo Main Warehouse",
+      "Cairo Main Warehouse Cairo",
+      "Main Warehouse Cairo",
+    ],
+    regionCode: "CA",
+    regionName: "Cairo",
+  },
+  {
+    branchAliases: ["Cairo Platform", "Platform Cairo"],
+    regionCode: "CA",
+    regionName: "Cairo",
+  },
+  {
+    branchAliases: [
+      "October Regional Warehouse",
+      "October Regional Warehouse Giza",
+      "Regional Warehouse October",
+      "October Warehouse",
+      "6th October Regional Warehouse",
+      "6 October Regional Warehouse",
+    ],
+    regionCode: "GZ",
+    regionName: "Giza",
+  },
+  {
+    branchAliases: ["Sohag Platform", "Platform Sohag", "Sohag Platform Upper Egypt", "Platform Sohag Upper Egypt"],
+    regionCode: "UE",
+    regionName: "Upper Egypt",
+  },
+];
+
+const WEEKLY_BRANCH_REGION_FALLBACK_BY_BRANCH = new Map(
+  WEEKLY_BRANCH_REGION_FALLBACKS.flatMap((fallback) =>
+    fallback.branchAliases.map((alias) => [normName(alias), fallback] as const),
+  ),
+);
+
 function cellDateIso(cell: ExcelJS.Cell | undefined): string | null {
   if (!cell) return null;
   const value = cell.value as unknown;
@@ -243,6 +290,33 @@ function resolveProductByUploadedName(
     .filter(([masterName]) => masterName.length >= 4 && nameKey.startsWith(`${masterName} `))
     .map(([, product]) => product);
   return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function resolveStandardRowRegion(input: {
+  rawRegionCode: string;
+  branchCode: string;
+  branchName: string;
+  regionName: Map<string, string>;
+}): { regionCode: string; regionName: string; regionSource: string } {
+  const regionCode = normCode(input.rawRegionCode);
+  if (regionCode) {
+    return {
+      regionCode,
+      regionName: input.regionName.get(regionCode) ?? regionCode,
+      regionSource: "sheet",
+    };
+  }
+
+  const branchKey = normName(input.branchName || input.branchCode);
+  const fallback = branchKey ? WEEKLY_BRANCH_REGION_FALLBACK_BY_BRANCH.get(branchKey) : undefined;
+  if (!fallback) return { regionCode: "", regionName: "", regionSource: "missing" };
+
+  const fallbackRegionCode = normCode(fallback.regionCode);
+  return {
+    regionCode: fallbackRegionCode,
+    regionName: input.regionName.get(fallbackRegionCode) ?? fallback.regionName,
+    regionSource: "branchFallback",
+  };
 }
 
 function cleanPosBranchName(value: string, colNumber: number): string {
@@ -634,10 +708,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
     const itemCode = cellText(at(row, "itemCode"));
     const itemName = cellText(at(row, "itemName"));
     const productIdRaw = cellText(at(row, "productCode"));
-    const regionCode = normCode(at(row, "regionCode") ? cellText(at(row, "regionCode")) : "");
+    const rawRegionCode = normCode(at(row, "regionCode") ? cellText(at(row, "regionCode")) : "");
     const branchName = cellText(at(row, "branchName"));
     const branchCode = cellText(at(row, "branchCode"));
-    const hasAny = itemCode || itemName || productIdRaw || regionCode || branchName;
+    const hasAny = itemCode || itemName || productIdRaw || rawRegionCode || branchName;
     if (!hasAny) continue; // skip blank rows
 
     const issues: WeeklyValidationIssue[] = [];
@@ -674,6 +748,13 @@ export async function parseWeeklyWorkbookBuffer(input: {
       });
     }
 
+    const resolvedRegion = resolveStandardRowRegion({
+      rawRegionCode,
+      branchCode,
+      branchName,
+      regionName,
+    });
+    const { regionCode, regionSource } = resolvedRegion;
     if (!regionCode) {
       issues.push({ field: "regionCode", message: "Missing Region ID.", rowNumber, severity: "warning", value: null });
     } else if (!regionName.has(regionCode)) {
@@ -698,7 +779,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
       distributorCode,
       distributorName,
       regionCode,
-      regionName: regionName.get(regionCode) ?? regionCode,
+      regionName: resolvedRegion.regionName,
       branchCode,
       branchName,
       itemCode,
@@ -717,6 +798,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
         itemName,
         productId: productIdRaw,
         regionCode,
+        regionName: resolvedRegion.regionName,
+        regionSource,
         branchCode,
         branchName,
         salesQty: String(salesQty),
