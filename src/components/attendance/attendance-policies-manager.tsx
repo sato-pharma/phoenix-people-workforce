@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CalendarClock, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { BadgeCheck, CalendarClock, Clock3, FileWarning, Layers3, Pencil, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   AdminCallout,
@@ -18,6 +18,12 @@ import type {
   AttendancePolicyTargetType,
 } from "@/lib/attendance/policies";
 import { resolvePolicyAttendanceStatus } from "@/lib/attendance/metrics";
+
+const fieldClassName =
+  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-100/60 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+const labelClassName = "text-[11px] font-black uppercase tracking-[0.16em] text-slate-500";
+const mutedPanelClassName = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/70 to-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]";
+const sectionTitleClassName = "text-sm font-black tracking-tight text-slate-950";
 
 type Props = {
   canUpdate: boolean;
@@ -132,6 +138,40 @@ function ruleSummary(rule: AttendancePolicyGroup["rules"][number]) {
     : "any duration";
   const deduction = rule.deductionDays ? ` -> ${rule.deductionDays} day` : "";
   return `${eventLabel(rule.eventType)} ${range}${deduction}: ${rule.recommendedAction}`;
+}
+
+function formatTargetType(value: AttendancePolicyTargetType) {
+  if (value === "employee_hr_id") return "Employee HR_ID";
+  if (value === "job_title") return "Job title";
+  return "Default";
+}
+
+function policyScopeDetail(form: PolicyForm) {
+  if (form.targetType === "default") return "Applies when no title or HR_ID override is active.";
+  if (form.targetType === "job_title") return form.targetValue || "Select or type the job title for this rule set.";
+  return form.targetValue || "Select the employee HR_ID for a direct override.";
+}
+
+function previewToneClasses(status: string) {
+  if (status === "Complete") {
+    return {
+      accent: "bg-emerald-500",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      surface: "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white",
+    };
+  }
+  if (status === "Late" || status === "Short day") {
+    return {
+      accent: "bg-orange-500",
+      badge: "border-orange-200 bg-orange-50 text-orange-700",
+      surface: "border-orange-200/80 bg-gradient-to-br from-orange-50 via-white to-white",
+    };
+  }
+  return {
+    accent: "bg-slate-500",
+    badge: "border-slate-200 bg-slate-50 text-slate-700",
+    surface: "border-slate-200 bg-white",
+  };
 }
 
 function numberOrNull(value: string) {
@@ -417,182 +457,299 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
         Grace minutes are a daily budget shared between late arrival and early leave. Deduction rules store day fractions, and reports estimate the amount from base salary.
       </AdminCallout>
 
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className={mutedPanelClassName}>
+          <div className="flex items-start gap-3 p-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-orange-100 shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
+              <Layers3 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className={labelClassName}>Policy Priority</p>
+              <p className="mt-1 text-sm font-black text-slate-950">HR_ID override, job title, then default</p>
+            </div>
+          </div>
+        </div>
+        <div className={mutedPanelClassName}>
+          <div className="flex items-start gap-3 p-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-600 text-white shadow-[0_12px_24px_rgba(234,88,12,0.22)]">
+              <ShieldCheck className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className={labelClassName}>Active Policies</p>
+              <p className="mt-1 text-sm font-black text-slate-950">{data?.summary.active ?? 0} active of {data?.summary.total ?? 0}</p>
+            </div>
+          </div>
+        </div>
+        <div className={mutedPanelClassName}>
+          <div className="flex items-start gap-3 p-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
+              <Clock3 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className={labelClassName}>Draft Schedule</p>
+              <p className="mt-1 text-sm font-black text-slate-950">{form.scheduledStart} - {form.scheduledEnd} / {form.graceMinutes || 0} min grace</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div ref={formRef}>
         <AdminTableShell
           description="Create a default policy, job-title policy, HR_ID-specific override, or exception review rule."
           title={form.id ? "Edit Policy" : "New Policy"}
         >
           {form.id ? (
-            <div className="border-b border-slate-100 px-4 py-3">
+            <div className="border-b border-slate-100 px-5 py-4">
               <AdminCallout tone="warning">Editing policy #{form.id}. Save to apply changes, or choose New to cancel editing.</AdminCallout>
             </div>
           ) : null}
-        <div className="grid gap-4 p-4 lg:grid-cols-4">
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Policy Name</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" value={form.policyName} onChange={(event) => setForm({ ...form, policyName: event.target.value })} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Target Type</span>
-            <select className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" value={form.targetType} onChange={(event) => setForm({ ...form, targetType: event.target.value as AttendancePolicyTargetType, targetValue: "" })}>
-              <option value="default">Default</option>
-              <option value="job_title">Job Title</option>
-              <option value="employee_hr_id">Employee HR_ID</option>
-            </select>
-          </label>
-          {form.targetType === "job_title" ? (
-            <label className="space-y-1">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Job Title</span>
-              <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" list="attendance-job-title-options" value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })} />
-              <datalist id="attendance-job-title-options">
-                {targetOptions.jobTitles.map((title) => <option key={title} value={title} />)}
-              </datalist>
-            </label>
-          ) : null}
-          {form.targetType === "employee_hr_id" ? (
-            <label className="space-y-1">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Employee HR_ID</span>
-              <select className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })}>
-                <option value="">Select employee</option>
-                {targetOptions.employees.map((employee) => (
-                  <option key={employee.hrId} value={employee.hrId}>{employee.hrId} - {employee.fullName}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Scheduled Start</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" type="time" value={form.scheduledStart} onChange={(event) => setForm({ ...form, scheduledStart: event.target.value })} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Scheduled End</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" type="time" value={form.scheduledEnd} onChange={(event) => setForm({ ...form, scheduledEnd: event.target.value })} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Daily Grace</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" min="0" type="number" value={form.graceMinutes} onChange={(event) => setForm({ ...form, graceMinutes: event.target.value })} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Effective From</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" type="date" value={form.effectiveFrom} onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Effective To</span>
-            <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" type="date" value={form.effectiveTo} onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })} />
-          </label>
-          <label className="flex items-end gap-2 text-sm font-semibold text-slate-700">
-            <input checked={form.isActive} className="mb-3 h-4 w-4" type="checkbox" onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
-            <span className="mb-2">Active</span>
-          </label>
-          <div className="flex items-end gap-2 lg:col-span-2">
-            <Button variant="secondary" type="button" onClick={applyStandardSchedule}>9-5 + 10 min grace</Button>
-            <Button variant="secondary" type="button" onClick={applyShortSchedule}>10-4 special</Button>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-100 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm font-black text-slate-900">Rules</p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" type="button" onClick={() => addRule()}>
-                <Plus className="h-4 w-4" />
-                Add rule
-              </Button>
-              <Button variant="secondary" type="button" onClick={applyStandardLateRules}>
-                Late brackets
-              </Button>
-              <Button variant="secondary" type="button" onClick={addNoDeductionWindow}>
-                11-15 no deduction
-              </Button>
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => addRule({ eventType: "exception", recommendedAction: "Manual exception review" })}
-              >
-                <Plus className="h-4 w-4" />
-                Add exception
-              </Button>
-            </div>
-          </div>
-          {form.rules.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-600">
-              No rules in this policy. Add a rule above, or save the policy with no rule brackets.
-            </div>
-          ) : null}
-          {ruleIssues.length > 0 ? (
-            <div className="mb-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-              {ruleIssues.slice(0, 4).map((issue) => <p key={issue}>{issue}</p>)}
-            </div>
-          ) : null}
-          <div className="space-y-3">
-            {form.rules.map((rule, index) => (
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-8" key={index}>
-                <select className="h-10 rounded-lg border border-slate-200 px-3 text-sm" value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
-                  <option value="late">Late</option>
-                  <option value="early_leave">Early leave</option>
-                  <option value="single_punch">Single punch</option>
-                  <option value="absence">Absence</option>
-                  <option value="exception">Exception</option>
-                </select>
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="From min" type="number" value={rule.fromMinutes} onChange={(event) => updateRule(index, { fromMinutes: event.target.value })} />
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="To min" type="number" value={rule.toMinutes} onChange={(event) => updateRule(index, { toMinutes: event.target.value })} />
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm lg:col-span-2" placeholder="Recommended action" value={rule.recommendedAction} onChange={(event) => updateRule(index, { recommendedAction: event.target.value })} />
-                <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" list="attendance-deduction-day-options" placeholder="Day fraction" step="0.25" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value, deductionValue: "" })} />
-                <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-                  <input checked={rule.isActive} className="h-4 w-4" type="checkbox" onChange={(event) => updateRule(index, { isActive: event.target.checked })} />
-                  Active
+          <div className="grid xl:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="space-y-5 p-5">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="space-y-1.5 md:col-span-2">
+                  <span className={labelClassName}>Policy Name</span>
+                  <input className={fieldClassName} value={form.policyName} onChange={(event) => setForm({ ...form, policyName: event.target.value })} />
                 </label>
-                <Button variant="destructive" type="button" onClick={() => removeRule(index)}>
-                  <Trash2 className="h-4 w-4" />
-                  Delete rule
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Target Type</span>
+                  <select className={fieldClassName} value={form.targetType} onChange={(event) => setForm({ ...form, targetType: event.target.value as AttendancePolicyTargetType, targetValue: "" })}>
+                    <option value="default">Default</option>
+                    <option value="job_title">Job Title</option>
+                    <option value="employee_hr_id">Employee HR_ID</option>
+                  </select>
+                </label>
+                {form.targetType === "job_title" ? (
+                  <label className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                    <span className={labelClassName}>Job Title</span>
+                    <input className={fieldClassName} list="attendance-job-title-options" value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })} />
+                    <datalist id="attendance-job-title-options">
+                      {targetOptions.jobTitles.map((title) => <option key={title} value={title} />)}
+                    </datalist>
+                  </label>
+                ) : null}
+                {form.targetType === "employee_hr_id" ? (
+                  <label className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                    <span className={labelClassName}>Employee HR_ID</span>
+                    <select className={fieldClassName} value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })}>
+                      <option value="">Select employee</option>
+                      {targetOptions.employees.map((employee) => (
+                        <option key={employee.hrId} value={employee.hrId}>{employee.hrId} - {employee.fullName}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Scheduled Start</span>
+                  <input className={fieldClassName} type="time" value={form.scheduledStart} onChange={(event) => setForm({ ...form, scheduledStart: event.target.value })} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Scheduled End</span>
+                  <input className={fieldClassName} type="time" value={form.scheduledEnd} onChange={(event) => setForm({ ...form, scheduledEnd: event.target.value })} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Daily Grace</span>
+                  <input className={fieldClassName} min="0" type="number" value={form.graceMinutes} onChange={(event) => setForm({ ...form, graceMinutes: event.target.value })} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Effective From</span>
+                  <input className={fieldClassName} type="date" value={form.effectiveFrom} onChange={(event) => setForm({ ...form, effectiveFrom: event.target.value })} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className={labelClassName}>Effective To</span>
+                  <input className={fieldClassName} type="date" value={form.effectiveTo} onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })} />
+                </label>
+                <label className="flex h-11 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-inner shadow-slate-100/60">
+                  <span>Active</span>
+                  <input checked={form.isActive} className="h-4 w-4 accent-orange-600" type="checkbox" onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <Button variant="secondary" type="button" onClick={applyStandardSchedule}>
+                  <Clock3 className="h-4 w-4" />
+                  9-5 + 10 min grace
+                </Button>
+                <Button variant="secondary" type="button" onClick={applyShortSchedule}>10-4 special</Button>
+              </div>
+            </div>
+
+            <aside className="border-t border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-black p-5 text-white xl:border-l xl:border-t-0">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-orange-200">
+                <BadgeCheck className="h-4 w-4" />
+                Draft Snapshot
+              </div>
+              <div className="mt-5 space-y-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Scope</p>
+                  <p className="mt-1 text-lg font-black text-white">{formatTargetType(form.targetType)}</p>
+                  <p className="mt-1 text-sm leading-5 text-slate-300">{policyScopeDetail(form)}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Shift</p>
+                    <p className="mt-1 text-sm font-black text-white">{form.scheduledStart} - {form.scheduledEnd}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Grace</p>
+                    <p className="mt-1 text-sm font-black text-white">{form.graceMinutes || 0} minutes</p>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-orange-400/25 bg-orange-500/10 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-200">Rules Drafted</p>
+                  <p className="mt-1 text-2xl font-black text-white">{form.rules.length}</p>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <div className="border-t border-slate-100 bg-white p-5">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className={sectionTitleClassName}>Rules</p>
+                <p className="mt-1 text-sm text-slate-500">Late, early-leave, absence, single-punch, and exception brackets.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" type="button" onClick={() => addRule()}>
+                  <Plus className="h-4 w-4" />
+                  Add rule
+                </Button>
+                <Button variant="secondary" type="button" onClick={applyStandardLateRules}>
+                  Late brackets
+                </Button>
+                <Button variant="secondary" type="button" onClick={addNoDeductionWindow}>
+                  11-15 no deduction
+                </Button>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={() => addRule({ eventType: "exception", recommendedAction: "Manual exception review" })}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add exception
                 </Button>
               </div>
-            ))}
-          </div>
-          <datalist id="attendance-deduction-day-options">
-            <option value="0" />
-            <option value="0.25" />
-            <option value="0.5" />
-            <option value="1" />
-          </datalist>
-        </div>
-
-        <div className="border-t border-slate-100 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm font-black text-slate-900">Rule Preview</p>
-            <p className="text-xs font-semibold text-slate-500">Example base salary: 15,000</p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {previews.map((preview) => (
-              <div className="rounded-lg border border-slate-200 bg-white p-3" key={preview.label}>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{preview.label}</p>
-                <p className="mt-1 text-sm font-black text-slate-900">{preview.time}</p>
-                <p className="mt-1 text-sm font-semibold text-slate-700">{preview.status}: {preview.result}</p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  {preview.deductionDays || "0"} day / {preview.amount || "0"}
-                </p>
+            </div>
+            {form.rules.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-600">
+                No rules in this policy. Add a rule above, or save the policy with no rule brackets.
               </div>
-            ))}
+            ) : null}
+            {ruleIssues.length > 0 ? (
+              <div className="mb-4 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em]">
+                  <FileWarning className="h-4 w-4" />
+                  Validation
+                </div>
+                {ruleIssues.slice(0, 4).map((issue) => <p key={issue}>{issue}</p>)}
+              </div>
+            ) : null}
+            <div className="space-y-3">
+              {form.rules.map((rule, index) => (
+                <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" key={index}>
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-950 text-xs font-black text-white">{index + 1}</span>
+                      <div>
+                        <p className={labelClassName}>Rule Type</p>
+                        <p className="text-sm font-black text-slate-950">{eventLabel(rule.eventType)}</p>
+                      </div>
+                    </div>
+                    <Button variant="destructive" type="button" onClick={() => removeRule(index)}>
+                      <Trash2 className="h-4 w-4" />
+                      Delete rule
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <label className="space-y-1.5">
+                      <span className={labelClassName}>Event</span>
+                      <select className={fieldClassName} value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
+                        <option value="late">Late</option>
+                        <option value="early_leave">Early leave</option>
+                        <option value="single_punch">Single punch</option>
+                        <option value="absence">Absence</option>
+                        <option value="exception">Exception</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClassName}>From min</span>
+                      <input className={fieldClassName} placeholder="From min" type="number" value={rule.fromMinutes} onChange={(event) => updateRule(index, { fromMinutes: event.target.value })} />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClassName}>To min</span>
+                      <input className={fieldClassName} placeholder="To min" type="number" value={rule.toMinutes} onChange={(event) => updateRule(index, { toMinutes: event.target.value })} />
+                    </label>
+                    <label className="space-y-1.5 md:col-span-2 xl:col-span-2">
+                      <span className={labelClassName}>Recommended Action</span>
+                      <input className={fieldClassName} placeholder="Recommended action" value={rule.recommendedAction} onChange={(event) => updateRule(index, { recommendedAction: event.target.value })} />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className={labelClassName}>Day fraction</span>
+                      <input className={fieldClassName} list="attendance-deduction-day-options" placeholder="Day fraction" step="0.25" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value, deductionValue: "" })} />
+                    </label>
+                    <label className="flex h-11 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-inner shadow-slate-100/60 md:col-span-2 xl:col-span-1">
+                      <span>Active</span>
+                      <input checked={rule.isActive} className="h-4 w-4 accent-orange-600" type="checkbox" onChange={(event) => updateRule(index, { isActive: event.target.checked })} />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <datalist id="attendance-deduction-day-options">
+              <option value="0" />
+              <option value="0.25" />
+              <option value="0.5" />
+              <option value="1" />
+            </datalist>
           </div>
-        </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 p-4">
-          <Button variant="secondary" type="button" onClick={() => setForm(blankPolicy())}>New</Button>
-          <Button disabled={!canUpdate || saving} type="button" onClick={savePolicy}>
-            <Save className="h-4 w-4" />
-            {saving ? "Saving" : "Save policy"}
-          </Button>
-        </div>
+          <div className="border-t border-slate-100 bg-slate-50/70 p-5">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className={sectionTitleClassName}>Rule Preview</p>
+                <p className="mt-1 text-sm text-slate-500">Example base salary: 15,000</p>
+              </div>
+              <Badge variant={ruleIssues.length > 0 ? "warning" : "success"}>
+                {ruleIssues.length > 0 ? `${ruleIssues.length} draft issue${ruleIssues.length > 1 ? "s" : ""}` : "Ready to save"}
+              </Badge>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {previews.map((preview) => {
+                const tone = previewToneClasses(preview.status);
+                return (
+                  <div className={`relative overflow-hidden rounded-xl border p-4 shadow-[0_12px_26px_rgba(15,23,42,0.06)] ${tone.surface}`} key={preview.label}>
+                    <span className={`absolute inset-y-0 left-0 w-1 ${tone.accent}`} />
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{preview.label}</p>
+                      <span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${tone.badge}`}>{preview.status}</span>
+                    </div>
+                    <p className="mt-3 text-base font-black text-slate-950">{preview.time}</p>
+                    <p className="mt-2 min-h-10 text-sm font-semibold leading-5 text-slate-700">{preview.result}</p>
+                    <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      {preview.deductionDays || "0"} day / {preview.amount || "0"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 bg-white p-5">
+            <Button variant="secondary" type="button" onClick={() => setForm(blankPolicy())}>New</Button>
+            <Button disabled={!canUpdate || saving} type="button" onClick={savePolicy}>
+              <Save className="h-4 w-4" />
+              {saving ? "Saving" : "Save policy"}
+            </Button>
+          </div>
         </AdminTableShell>
       </div>
 
       <AdminTableShell
         description="Priority is HR_ID policy, then job title policy, then default policy."
-        title="Current Policies"
+        title="Configured Policies"
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-950 text-[11px] font-black uppercase tracking-[0.16em] text-slate-200">
               <tr>
                 <th className="px-4 py-3">Policy</th>
                 <th className="px-4 py-3">Target</th>
@@ -605,9 +762,9 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             </thead>
             <tbody>
               {(data?.policies ?? []).map((policy) => (
-                <tr className="border-b border-slate-100 last:border-0" key={policy.id}>
+                <tr className="border-b border-slate-100 bg-white transition hover:bg-orange-50/40 last:border-0" key={policy.id}>
                   <td className="px-4 py-3">
-                    <p className="font-black text-slate-900">{policy.policyName}</p>
+                    <p className="font-black text-slate-950">{policy.policyName}</p>
                     <p className="text-xs text-slate-500">{policy.effectiveFrom}{policy.effectiveTo ? ` to ${policy.effectiveTo}` : ""}</p>
                   </td>
                   <td className="px-4 py-3">
@@ -616,12 +773,23 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                       <p className="text-sm font-semibold text-slate-700">{targetLabel(policy)}</p>
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{policy.scheduledStart} - {policy.scheduledEnd}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{policy.graceMinutes} min daily</td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black text-slate-800">
+                      {policy.scheduledStart} - {policy.scheduledEnd}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">{policy.graceMinutes} min daily</td>
                   <td className="px-4 py-3 text-sm text-slate-700">
-                    {policy.rules.length === 0 ? "No rules" : policy.rules.slice(0, 3).map((rule) => (
-                      <div key={rule.id}>{ruleSummary(rule)}</div>
-                    ))}
+                    {policy.rules.length === 0 ? (
+                      <span className="font-semibold text-slate-400">No rules</span>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {policy.rules.slice(0, 2).map((rule) => (
+                          <div className="rounded-lg bg-slate-50 px-3 py-2 font-semibold" key={rule.id}>{ruleSummary(rule)}</div>
+                        ))}
+                        {policy.rules.length > 2 ? <p className="text-xs font-black uppercase tracking-[0.12em] text-orange-700">+{policy.rules.length - 2} more</p> : null}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>
                   <td className="px-4 py-3 text-right">
