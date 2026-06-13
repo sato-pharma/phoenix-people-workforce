@@ -20,7 +20,6 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { BottomNavCustomizer } from "@/components/employee-portal/bottom-nav-customizer";
 import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
@@ -165,7 +164,6 @@ export default async function EmployeePortalProfilePage() {
       title="My Profile"
     >
       <div className="space-y-6">
-        <IdentityCard data={data} />
         <EmployeePhotoEditor
           currentPhotoUrl={currentPhotoUrl}
           fullName={employee.fullName}
