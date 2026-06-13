@@ -10,7 +10,12 @@ export async function assertMarketingAdminPageAccess(options?: { customerDatabas
     return access;
   }
 
-  if (access.role !== "SFE Manager" && access.role !== "Super Admin") {
+  if (
+    access.role !== "SFE Manager" &&
+    access.role !== "Super Admin" &&
+    access.role !== "Product Manager" &&
+    access.role !== "Group Product Manager"
+  ) {
     redirect("/employee-portals/marketing-requests");
   }
 

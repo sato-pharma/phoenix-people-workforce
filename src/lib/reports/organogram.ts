@@ -66,6 +66,14 @@ export function isPortalOrganogramRole(access: AccessContext) {
   return access.role === "National Sales Manager";
 }
 
+export function isLineScopedOrganogramRole(access: AccessContext) {
+  return (
+    access.role === "National Sales Manager" ||
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager"
+  );
+}
+
 export function scopeOrganogramReportData(
   report: VacancyReportData,
   options: OrganogramReportOptions,
@@ -101,7 +109,7 @@ export function scopeOrganogramReportData(
 }
 
 export async function resolveOrganogramLineForEmployee(access: AccessContext) {
-  if (!access.hrId || !isPortalOrganogramRole(access)) {
+  if (!access.hrId || !isLineScopedOrganogramRole(access)) {
     return null;
   }
 
@@ -126,7 +134,7 @@ export async function getOrganogramReport(
     return emptyReport();
   }
 
-  if (options.mode === "line" && (!isPortalOrganogramRole(access) || !options.lineName)) {
+  if (options.mode === "line" && (!isLineScopedOrganogramRole(access) || !options.lineName)) {
     return emptyReport();
   }
 

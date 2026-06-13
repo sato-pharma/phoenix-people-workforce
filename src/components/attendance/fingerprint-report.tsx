@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, Search } from "lucide-react";
+import { CheckCircle2, CircleDashed, Download, FileSpreadsheet, Search, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -17,6 +17,34 @@ import type {
   FingerprintReportData,
   FingerprintReportRow,
 } from "@/lib/attendance/fingerprint-report";
+
+type DecisionState = "pending" | "deduct" | "exempt";
+
+const DECISION_CONFIG: Record<DecisionState, { label: string; icon: React.ReactNode; className: string; next: DecisionState }> = {
+  pending: { label: "Pending", icon: <CircleDashed className="h-3 w-3" />, className: "bg-slate-100 text-slate-500 ring-1 ring-slate-200 hover:bg-slate-200", next: "deduct" },
+  deduct:  { label: "Deduct",  icon: <XCircle className="h-3 w-3" />,      className: "bg-rose-50 text-rose-700 ring-1 ring-rose-300 hover:bg-rose-100",   next: "exempt" },
+  exempt:  { label: "Exempt",  icon: <CheckCircle2 className="h-3 w-3" />, className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-100", next: "pending" },
+};
+
+function DecisionToggle({ state, onChange }: { state: DecisionState; onChange: (next: DecisionState) => void }) {
+  const cfg = DECISION_CONFIG[state];
+  return (
+    <button
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide transition-colors ${cfg.className}`}
+      type="button"
+      onClick={() => onChange(cfg.next)}
+    >
+      {cfg.icon}
+      {cfg.label}
+    </button>
+  );
+}
+
+function rowDecisionClass(state: DecisionState): string {
+  if (state === "deduct") return "bg-rose-50/40 hover:bg-rose-50/70";
+  if (state === "exempt") return "bg-emerald-50/40 hover:bg-emerald-50/70";
+  return "hover:bg-slate-50/60";
+}
 
 type Props = {
   initialData: FingerprintReportData | null;
@@ -46,6 +74,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [activeTab, setActiveTab] = useState<"daily" | "policies">("daily");
+  const [decisions, setDecisions] = useState<Map<string, DecisionState>>(new Map());
   const [dateFrom, setDateFrom] = useState(initialData?.filters.dateFrom ?? "");
   const [dateTo, setDateTo] = useState(initialData?.filters.dateTo ?? "");
   const [deduction, setDeduction] = useState(initialData?.filters.deduction ?? "");
@@ -95,6 +124,10 @@ export function FingerprintReport({ initialData, initialError }: Props) {
   const hasDateRange = Boolean(initialData?.hasDateRange);
   const exportHref = `/api/attendance/fingerprint-report/export${filterParams().toString() ? `?${filterParams().toString()}` : ""}`;
 
+  const pendingCount = rows.filter((r) => r.status !== "Complete" && (decisions.get(r.sortKey) ?? "pending") === "pending").length;
+  const deductCount  = rows.filter((r) => decisions.get(r.sortKey) === "deduct").length;
+  const exemptCount  = rows.filter((r) => decisions.get(r.sortKey) === "exempt").length;
+
   return (
     <div className="space-y-5">
       <AdminPageHero
@@ -105,10 +138,10 @@ export function FingerprintReport({ initialData, initialError }: Props) {
             <AdminInsightChip tone="orange">{initialData?.summary.deductions ?? 0} deduction flags</AdminInsightChip>
           </>
         )}
-        description="Daily fingerprint report built from direct raw punches. Empty export columns are omitted; payroll is not changed."
+        description="Live daily attendance built from raw fingerprint punches. Mark rows before sending to payroll — decisions are local until exported."
         eyebrow="Attendance"
         icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
-        title="Fingerprint Attendance Report"
+        title="My Attendance"
         actions={(
           <a
             className={`inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white ${!hasDateRange || rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
@@ -123,12 +156,30 @@ export function FingerprintReport({ initialData, initialError }: Props) {
       {initialError ? <AdminCallout tone="danger">{initialError}</AdminCallout> : null}
       {!hasDateRange ? (
         <AdminCallout tone="warning">
-          Choose a From and To date, then click Apply. The daily fingerprint report will not load all historical logs by default.
+          Choose a From and To date, then click Apply. The daily attendance report will not load all historical logs by default.
         </AdminCallout>
       ) : null}
       <AdminCallout tone="neutral">
         The report evaluates active attendance policies and estimates deductions from day fractions. Payroll is not changed from this screen.
       </AdminCallout>
+
+      {rows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 shadow-sm">
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-400">Before Decision</span>
+          <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+            <CircleDashed className="h-3.5 w-3.5" />
+            {pendingCount} pending
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-rose-300">
+            <XCircle className="h-3.5 w-3.5" />
+            {deductCount} to deduct
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-300">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {exemptCount} exempt
+          </div>
+        </div>
+      ) : null}
 
       <AdminTableShell
         description="Filter by any key field in the report before reviewing or exporting."
@@ -295,43 +346,63 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         </AdminTableShell>
       ) : (
       <AdminTableShell
-        description="Choose a From/To duration first. The first columns are frozen through Name."
-        title="Fingerprint Daily Report"
+        description="Choose a From/To duration first. The first columns are frozen through Name. Click the Before Decision badge on any row to toggle it."
+        title="Daily Report"
       >
         <div
           className="phoenix-horizontal-scroll overflow-x-auto border-b border-slate-100 bg-slate-50/60"
           ref={topScrollRef}
           onScroll={() => syncScroll("top")}
         >
-          <div className="h-3 min-w-[1900px]" />
+          <div className="h-3 min-w-[2060px]" />
         </div>
         <div
           className="phoenix-horizontal-scroll max-h-[70vh] overflow-auto"
           ref={tableScrollRef}
           onScroll={() => syncScroll("table")}
         >
-          <table className="min-w-[1900px] table-fixed border-separate border-spacing-0 text-left">
+          <table className="min-w-[2060px] table-fixed border-separate border-spacing-0 text-left">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 {visibleColumns.map((column) => (
                   <th className={`whitespace-nowrap border-b border-r border-slate-200 px-4 py-3 ${stickyClass(column, "head")}`} key={column.key}>{column.label}</th>
                 ))}
+                <th className="whitespace-nowrap border-b border-r border-slate-200 px-4 py-3">Before Decision</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr className="group text-sm hover:bg-slate-50/60" key={row.sortKey}>
-                  {visibleColumns.map((column) => (
-                    <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700 ${stickyClass(column, "body")}`} key={`${row.sortKey}-${column.key}`}>
-                      {column.key === "status" ? statusBadge(row.status) : row[column.key] || "-"}
+              {rows.map((row) => {
+                const decision = decisions.get(row.sortKey) ?? "pending";
+                return (
+                  <tr className={`group text-sm ${rowDecisionClass(decision)}`} key={row.sortKey}>
+                    {visibleColumns.map((column) => (
+                      <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700 ${stickyClass(column, "body")}`} key={`${row.sortKey}-${column.key}`}>
+                        {column.key === "status" ? statusBadge(row.status) : row[column.key] || "-"}
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3">
+                      {row.status === "Complete" ? (
+                        <span className="text-slate-300">—</span>
+                      ) : (
+                        <DecisionToggle
+                          state={decision}
+                          onChange={(next) =>
+                            setDecisions((prev) => {
+                              const m = new Map(prev);
+                              m.set(row.sortKey, next);
+                              return m;
+                            })
+                          }
+                        />
+                      )}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
               {rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={Math.max(visibleColumns.length, 1)}>
-                    No fingerprint attendance rows found for this filter.
+                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={Math.max(visibleColumns.length + 1, 1)}>
+                    No attendance rows found for this filter.
                   </td>
                 </tr>
               ) : null}

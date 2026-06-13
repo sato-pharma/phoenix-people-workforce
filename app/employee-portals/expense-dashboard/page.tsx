@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalExpenseDashboardPage() {
   const access = await resolveAccessContextFromPage();
-  if (resolveNavigationMode(access) !== "employee-portal") {
+  const isPmGpm = access.role === "Product Manager" || access.role === "Group Product Manager";
+  if (resolveNavigationMode(access) !== "employee-portal" && !isPmGpm) {
     redirect("/payroll");
   }
   if (access.role === "Medical Rep") {

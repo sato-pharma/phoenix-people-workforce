@@ -386,11 +386,14 @@ const defaultPermissionMatrix: PermissionMap = {
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
-    coaching: ["read"],
+    coaching: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
+    organogram: ["read"],
+    vacancies: ["read"],
+    probation: ["read"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     recruitment: ["read", "update"],
@@ -405,11 +408,14 @@ const defaultPermissionMatrix: PermissionMap = {
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
-    coaching: ["read"],
+    coaching: ["read", "create"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
+    organogram: ["read"],
+    vacancies: ["read"],
+    probation: ["read"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
     recruitment: ["read", "update"],
@@ -653,7 +659,13 @@ export function resolveNavigationMode(context: AccessContext): NavigationMode {
 }
 
 export function canManageCoachingReports(context: Pick<AccessContext, "role" | "scope">) {
-  return context.scope === "system" || context.role === "Super Admin" || context.role === "Training Manager";
+  return (
+    context.scope === "system" ||
+    context.role === "Super Admin" ||
+    context.role === "Training Manager" ||
+    context.role === "Product Manager" ||
+    context.role === "Group Product Manager"
+  );
 }
 
 export function scopeForRole(role: PhoenixRole): AccessScope {

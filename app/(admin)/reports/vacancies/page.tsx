@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isLineScopedOrganogramRole, resolveOrganogramLineForEmployee, scopeOrganogramReportData } from "@/lib/reports/organogram";
 import {
   errorMessage,
   getVacancyReport,
@@ -42,7 +43,13 @@ export default async function VacanciesPage() {
   let initialReport = null;
 
   try {
-    initialReport = await getVacancyReport();
+    const full = await getVacancyReport();
+    if (isLineScopedOrganogramRole(access)) {
+      const lineName = await resolveOrganogramLineForEmployee(access);
+      initialReport = scopeOrganogramReportData(full, { mode: "line", lineName });
+    } else {
+      initialReport = full;
+    }
   } catch (error) {
     initialError = vacanciesPageError(error);
   }

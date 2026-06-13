@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canAccessCompanyOrganogram, getOrganogramReport } from "@/lib/reports/organogram";
+import { canAccessCompanyOrganogram, getOrganogramReport, isLineScopedOrganogramRole, resolveOrganogramLineForEmployee } from "@/lib/reports/organogram";
 import {
   errorMessage,
   isDatabaseSchemaMissing,
@@ -38,18 +38,25 @@ export default async function OrganogramPage() {
   }
 
   if (!canAccessCompanyOrganogram(access)) {
-    if (resolveNavigationMode(access) === "employee-portal") {
+    if (isLineScopedOrganogramRole(access) && resolveNavigationMode(access) === "admin") {
+      // fall through — line-scoped fetch below
+    } else if (resolveNavigationMode(access) === "employee-portal") {
       redirect("/employee-portals/organogram");
+    } else {
+      redirect("/employee-portals");
     }
-
-    redirect("/employee-portals");
   }
 
   let initialError: string | null = null;
   let initialReport = null;
 
   try {
-    initialReport = await getOrganogramReport(access, { mode: "company" });
+    if (canAccessCompanyOrganogram(access)) {
+      initialReport = await getOrganogramReport(access, { mode: "company" });
+    } else {
+      const lineName = await resolveOrganogramLineForEmployee(access);
+      initialReport = await getOrganogramReport(access, { mode: "line", lineName });
+    }
   } catch (error) {
     initialError = organogramPageError(error);
   }
