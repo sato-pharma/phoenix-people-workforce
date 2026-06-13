@@ -48,7 +48,7 @@ export type WeeklyParsedRow = {
   salesQty: number;
   bonusQty: number;
   discount: number; // fraction (0.25 = 25%)
-  salesValue: number; // qty × factory_price × (1 - discount)
+  salesValue: number; // qty x xfactor x (1 - discount)
   stockQty: number; // units only
   validationState: "valid" | "warning" | "failed";
   validationIssues: WeeklyValidationIssue[];

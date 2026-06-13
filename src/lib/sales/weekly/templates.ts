@@ -10,6 +10,7 @@ export type WeeklyTemplateField =
   | "branchName"
   | "stockQty"
   | "salesQty"
+  | "xfactor"
   | "bonusQty"
   | "discount"
   | "regionCode"
@@ -46,6 +47,7 @@ const IBN_SINA_WEEKLY: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region"],
@@ -68,6 +70,7 @@ const IBN_SINA_WEEKLY_PAS_VARIANT: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
@@ -90,6 +93,7 @@ const IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
@@ -113,6 +117,7 @@ const OVERSEAS_POS_WEEKLY_MATRIX: WeeklyTemplate = {
     branchName: [],
     stockQty: [],
     salesQty: ["Total Qty."],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus Qty."],
     discount: [],
     regionCode: [],
@@ -136,6 +141,7 @@ const OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL: WeeklyTemplate = {
     branchName: [],
     stockQty: [],
     salesQty: [],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: [],
     discount: [],
     regionCode: [],
