@@ -28,24 +28,35 @@ function assertNoCoachingManagementPermission(role: string) {
 }
 
 export function runCoachingPermissionTests() {
-  assert.match(
-    permissionsSource,
-    /return context\.scope === "system" \|\| context\.role === "Super Admin" \|\| context\.role === "Training Manager";/,
-    "canManageCoachingReports must only allow system, Super Admin, and Training Manager",
-  );
+  // canManageCoachingReports allows system scope, Super Admin, Training Manager, and the
+  // product managers (Product / Group Product Manager submit coaching forms — using the
+  // shared form for now, with a dedicated form planned later).
+  for (const needle of [
+    'context.scope === "system"',
+    'context.role === "Super Admin"',
+    'context.role === "Training Manager"',
+    'context.role === "Product Manager"',
+    'context.role === "Group Product Manager"',
+  ]) {
+    assert.ok(
+      permissionsSource.includes(needle),
+      `canManageCoachingReports must allow ${needle}`,
+    );
+  }
 
   assertCoachingPermission("Super Admin", "allActions");
   assertCoachingPermission("Training Manager", '"read", "create", "update"');
   assertCoachingPermission("Employee", '"read"');
   assertCoachingPermission("Medical Rep", '"read"');
   assertCoachingPermission("CEO", '"read"');
+  // Product managers can now create coaching reports.
+  assertCoachingPermission("Product Manager", '"read", "create"');
+  assertCoachingPermission("Group Product Manager", '"read", "create"');
   assertNoCoachingManagementPermission("Talent Acquisition");
   for (const role of [
     "District Manager",
     "Regional Manager",
     "National Sales Manager",
-    "Product Manager",
-    "Group Product Manager",
     "SFE Manager",
     "Marketing Manager",
     "Manager",
