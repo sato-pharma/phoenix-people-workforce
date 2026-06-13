@@ -27,6 +27,7 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1795,6 +1796,11 @@ export function EmployeeManagement({
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <EmployeePhotoManager
+                fullName={masterDetailsEmployee.fullName}
+                hrId={masterDetailsEmployee.hrId}
+                key={masterDetailsEmployee.hrId}
+              />
               {[
                 {
                   title: "Identity",

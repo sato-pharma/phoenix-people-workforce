@@ -19,6 +19,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { BottomNavCustomizer } from "@/components/employee-portal/bottom-nav-customizer";
+import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
@@ -28,6 +29,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { formatDateOnly } from "@/lib/date-only";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -92,6 +94,14 @@ export default async function EmployeePortalProfilePage() {
 
   const { employee, hrContract } = data;
   const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
+  const uploadedPhoto = employee.photoUrl ?? null;
+  const currentPhotoUrl = uploadedPhoto ?? employeeProfileImageForHrId(employee.hrId);
+  const photoInitials = employee.fullName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase();
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,
@@ -156,6 +166,12 @@ export default async function EmployeePortalProfilePage() {
     >
       <div className="space-y-6">
         <IdentityCard data={data} />
+        <EmployeePhotoEditor
+          currentPhotoUrl={currentPhotoUrl}
+          fullName={employee.fullName}
+          hasUploadedPhoto={Boolean(uploadedPhoto)}
+          initials={photoInitials}
+        />
         <NotificationSettingsPanel />
 
         <div className="flex flex-wrap items-center justify-between gap-3">

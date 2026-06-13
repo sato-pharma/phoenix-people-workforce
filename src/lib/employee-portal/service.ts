@@ -10,6 +10,7 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
@@ -2168,6 +2169,8 @@ export type MedicalRepPortalData = {
     hrId: string;
     line: string | null;
     manager: string | null;
+    /** Same-origin route URL for an uploaded profile photo, or null/undefined to use the bundled static photo / initials. */
+    photoUrl?: string | null;
     roleLabel: string;
     status: string;
     territory: string | null;
@@ -2370,6 +2373,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       hrId: employee.hrId,
       line: employee.lineName,
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
+      photoUrl: await uploadedEmployeePhotoUrl(employee.hrId),
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
@@ -2559,6 +2563,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       hrId: employee.hrId,
       line: employee.lineName,
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
+      photoUrl: await uploadedEmployeePhotoUrl(employee.hrId),
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
