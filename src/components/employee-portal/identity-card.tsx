@@ -33,7 +33,10 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   const employee = data.employee;
   const hiredLabel = prettyDate(data.hrContract.hireDate);
   const statusVariant = asStatus(employee.status);
-  const profileImage = employeeProfileImageForHrId(employee.hrId);
+  const uploadedPhoto = employee.photoUrl ?? null;
+  const staticPhoto = employeeProfileImageForHrId(employee.hrId);
+  const profileImage = staticPhoto ?? uploadedPhoto;
+  const usesUploadedPhoto = Boolean(uploadedPhoto && profileImage === uploadedPhoto);
   const firstName = employee.fullName.split(/\s+/).find(Boolean) ?? "there";
   const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
 
@@ -133,6 +136,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
                 height={316}
                 priority
                 src={profileImage}
+                unoptimized={usesUploadedPhoto}
                 width={292}
               />
             ) : (
