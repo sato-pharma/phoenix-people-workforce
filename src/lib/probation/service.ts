@@ -122,7 +122,13 @@ function canReadProbationEmployee(
   directory: EmployeeScopeRow[] = [],
 ) {
   if (canViewAllProbation(access)) return true;
-  if (access.role === "National Sales Manager") return isSameLine(employee, viewer);
+  if (
+    access.role === "National Sales Manager" ||
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager"
+  ) {
+    return isSameLine(employee, viewer);
+  }
   if (access.role === "Regional Manager") return isInManagerHierarchy(directory, viewer, employee);
   if (access.role === "Training Manager") return false;
   return canSeeEmployee(access, employee);

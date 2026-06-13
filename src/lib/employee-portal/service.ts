@@ -4661,7 +4661,12 @@ export async function getEmployeePortalVacancies(
     const currentRole = normalizeRole(currentUser.role);
     const isDsm = currentRole === "District Manager";
     const isNsm = currentRole === "National Sales Manager";
-    if (!isDsm && !isNsm) return null;
+    // Product / Group Product Managers see vacancies for their own line, like an NSM.
+    const isLineScoped =
+      isNsm ||
+      currentRole === "Product Manager" ||
+      currentRole === "Group Product Manager";
+    if (!isDsm && !isLineScoped) return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -4695,7 +4700,7 @@ export async function getEmployeePortalVacancies(
     });
 
     const scopedRows = vacancyRows.filter((row) => {
-      if (isNsm) {
+      if (isLineScoped) {
         if (typeof currentEmployee.lineId === "number") {
           return row.line_id === currentEmployee.lineId;
         }

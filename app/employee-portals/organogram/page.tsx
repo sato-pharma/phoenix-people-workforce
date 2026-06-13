@@ -10,7 +10,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getOrganogramReport,
-  isPortalOrganogramRole,
+  isLineScopedOrganogramRole,
   resolveOrganogramLineForEmployee,
 } from "@/lib/reports/organogram";
 import {
@@ -46,7 +46,7 @@ export default async function EmployeePortalOrganogramPage() {
     redirect("/overview");
   }
 
-  if (!isPortalOrganogramRole(access)) {
+  if (!isLineScopedOrganogramRole(access)) {
     redirect("/employee-portals");
   }
 
