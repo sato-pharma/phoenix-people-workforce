@@ -198,6 +198,9 @@ export function runPrivateCalendarTests() {
   assert.match(privateCalendarUiSource, /Manager Team Calendar/, "private calendar UI must include manager team calendar snapshot");
   assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
   assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
+  assert.match(privateCalendarUiSource, /Calendar Report/, "private calendar UI must include a calendar report table");
+  assert.match(privateCalendarUiSource, /Calendar Entry/, "private calendar report must show the calendar entry column");
+  assert.match(privateCalendarUiSource, /Report rows mirror the private calendar entries/, "private calendar report must explain that rows mirror calendar entries");
   assert.doesNotMatch(privateCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_420px\]/, "private calendar must not narrow the month grid with a right-side timeline rail");
   assert.match(privateCalendarUiSource, /grid gap-3 lg:grid-cols-2 2xl:grid-cols-3/, "private calendar timeline must render below the calendar as a responsive card grid");
 
