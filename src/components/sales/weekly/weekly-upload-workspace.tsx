@@ -101,7 +101,7 @@ export function WeeklyUploadWorkspace({
         <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales Upload</h1>
         <p className="mt-1 text-sm font-medium text-[#64748B]">
           Upload a distributor&apos;s weekly Sales &amp; Stock file. Sales value is recomputed from the product
-          master (Qty × factory price); stock is tracked as units only. One week per file.
+          master or uploaded XFactor (Qty x xfactor); stock is tracked as units only. One week per file.
         </p>
       </header>
 
@@ -207,6 +207,7 @@ export function WeeklyUploadWorkspace({
                 <th className="px-3 py-2">Distributor</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Rows</th>
+                <th className="px-3 py-2 text-right">Sales units</th>
                 <th className="px-3 py-2 text-right">Sales value</th>
                 <th className="px-3 py-2 text-right">Stock units</th>
                 <th className="px-3 py-2" />
@@ -215,7 +216,7 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {batches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={7}>
+                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={8}>
                     No weekly uploads yet.
                   </td>
                 </tr>
@@ -234,6 +235,7 @@ export function WeeklyUploadWorkspace({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalSalesQty)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalSalesValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
@@ -292,13 +294,13 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
       <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
         <SummaryTable
           title="By region"
-          head={["Region", "Sales value", "Stock units"]}
-          rows={result.byRegion.map((r) => [r.regionName || r.regionCode, money(r.salesValue), num(r.stockQty)])}
+          head={["Region", "Sales units", "Sales value", "Stock units"]}
+          rows={result.byRegion.map((r) => [r.regionName || r.regionCode, num(r.salesQty), money(r.salesValue), num(r.stockQty)])}
         />
         <SummaryTable
           title="By product"
-          head={["Product", "Sales value", "Stock units"]}
-          rows={result.byProduct.map((p) => [p.productName || p.productCode, money(p.salesValue), num(p.stockQty)])}
+          head={["Product", "Sales units", "Sales value", "Stock units"]}
+          rows={result.byProduct.map((p) => [p.productName || p.productCode, num(p.salesQty), money(p.salesValue), num(p.stockQty)])}
         />
       </div>
 

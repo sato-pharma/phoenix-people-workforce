@@ -89,6 +89,26 @@ function cellNumber(cell: ExcelJS.Cell | undefined): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+function cellNumberOrNull(cell: ExcelJS.Cell | undefined): number | null {
+  const raw = cellText(cell).replace(/,/g, "").replace(/[^0-9.\-]/g, "");
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+}
+
+function resolveWeeklyXfactor(cell: ExcelJS.Cell | undefined, productMasterXfactor: number): { source: string; xfactor: number } {
+  const sheetXfactor = cellNumberOrNull(cell);
+  if (sheetXfactor != null) return { source: "sheet", xfactor: sheetXfactor };
+  return { source: "productMaster", xfactor: Number.isFinite(productMasterXfactor) ? productMasterXfactor : 0 };
+}
+
+function weeklySalesValue(salesQty: number, xfactor: number, discount = 0): number {
+  const safeQty = Number.isFinite(salesQty) ? salesQty : 0;
+  const safeXfactor = Number.isFinite(xfactor) ? xfactor : 0;
+  const safeDiscount = Number.isFinite(discount) ? discount : 0;
+  return Number((safeQty * safeXfactor * (1 - safeDiscount)).toFixed(6));
+}
+
 function cellDateIso(cell: ExcelJS.Cell | undefined): string | null {
   if (!cell) return null;
   const value = cell.value as unknown;
@@ -208,6 +228,23 @@ function buildWeeklyReferenceIndexes(
 
   return { productByCode, productByName, regionName, posRegionByColumn };
 }
+
+function resolveProductByUploadedName(
+  productByName: Map<string, SalesReferenceData["products"][number]>,
+  uploadedName: string,
+): SalesReferenceData["products"][number] | undefined {
+  const nameKey = normName(uploadedName);
+  if (!nameKey) return undefined;
+
+  const exact = productByName.get(nameKey);
+  if (exact) return exact;
+
+  const candidates = [...productByName.entries()]
+    .filter(([masterName]) => masterName.length >= 4 && nameKey.startsWith(`${masterName} `))
+    .map(([, product]) => product);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 function cleanPosBranchName(value: string, colNumber: number): string {
   const cleaned = value
     .normalize("NFKC")
@@ -300,7 +337,8 @@ function parseOverseasPosMatrixWeekly(input: {
     productCode: string;
     productName: string;
     officialLine: string;
-    factoryPrice: number;
+    xfactor: number;
+    xfactorSource: string;
     salesQty: number;
     issues: WeeklyValidationIssue[];
     quantitySource: string;
@@ -308,7 +346,7 @@ function parseOverseasPosMatrixWeekly(input: {
     productBonusQty: number;
     sheetTotalValue: string;
   }) => {
-    const salesValue = Number((fact.salesQty * fact.factoryPrice).toFixed(6));
+    const salesValue = weeklySalesValue(fact.salesQty, fact.xfactor);
     const validationState: WeeklyParsedRow["validationState"] = fact.issues.some((issue) => issue.severity === "failure")
       ? "failed"
       : fact.issues.length > 0
@@ -346,6 +384,8 @@ function parseOverseasPosMatrixWeekly(input: {
         branchCode: fact.branchCode,
         branchName: fact.branchName,
         salesQty: String(fact.salesQty),
+        xfactor: String(fact.xfactor),
+        xfactorSource: fact.xfactorSource,
         stockQty: "0",
         quantitySource: fact.quantitySource,
         sourceRowNumber: String(fact.rowNumber),
@@ -381,15 +421,18 @@ function parseOverseasPosMatrixWeekly(input: {
 
     const productIdKey = normCode(productIdRaw);
     let product = productIdKey && productIdKey !== "#N/A" ? indexes.productByCode.get(productIdKey) : undefined;
-    if (!product && itemName) product = indexes.productByName.get(normName(itemName));
+    if (!product && itemName) product = resolveProductByUploadedName(indexes.productByName, itemName);
     const productCode = product?.productCode ?? (productIdKey && productIdKey !== "#N/A" ? productIdRaw.trim() : "");
     const productName = product?.productName ?? (itemName || productIdRaw || "");
     const officialLine = product?.line ?? "";
-    const factoryPrice = product?.factoryPrice ?? 0;
+    const { source: xfactorSource, xfactor } = resolveWeeklyXfactor(at(row, "xfactor"), product?.factoryPrice ?? 0);
     if (!product) {
       issues.push({
         field: "productCode",
-        message: `Product not found in master (Product ID "${productIdRaw || "?"}", item "${itemName || itemCode || "?"}"); value set to 0.`,
+        message:
+          xfactorSource === "sheet"
+            ? `Product not found in master (Product ID "${productIdRaw || "?"}", item "${itemName || itemCode || "?"}"); value calculated from uploaded XFactor.`
+            : `Product not found in master (Product ID "${productIdRaw || "?"}", item "${itemName || itemCode || "?"}"); value set to 0.`,
         rowNumber,
         severity: "warning",
         value: productIdRaw || itemName || null,
@@ -432,7 +475,8 @@ function parseOverseasPosMatrixWeekly(input: {
         productCode,
         productName,
         officialLine,
-        factoryPrice,
+        xfactor,
+        xfactorSource,
         salesQty: qty,
         issues: rowIssues,
         quantitySource: "outletColumn",
@@ -459,7 +503,8 @@ function parseOverseasPosMatrixWeekly(input: {
           productCode,
           productName,
           officialLine,
-          factoryPrice,
+          xfactor,
+          xfactorSource,
           salesQty: diff,
           issues: [
             ...issues,
@@ -523,7 +568,7 @@ function parseOverseasPosMatrixWeekly(input: {
     result: {
       ...result,
       advisories: [
-        "Overseas POS matrix detected: sales value was recalculated from Product ID factory price and quantity.",
+        "Overseas POS matrix detected: sales value was recalculated from quantity and xfactor.",
         "Total Val. from the uploaded sheet was ignored.",
         "Bonus Qty. is product-level in this template and was not counted in weekly sales value.",
       ],
@@ -611,15 +656,18 @@ export async function parseWeeklyWorkbookBuffer(input: {
     // Resolve product: Product ID → master code; else Item name → master name; else unmapped.
     const productIdKey = normCode(productIdRaw);
     let product = productIdKey && productIdKey !== "#N/A" ? productByCode.get(productIdKey) : undefined;
-    if (!product && itemName) product = productByName.get(normName(itemName));
+    if (!product && itemName) product = resolveProductByUploadedName(productByName, itemName);
     const productCode = product?.productCode ?? (productIdKey && productIdKey !== "#N/A" ? productIdRaw.trim() : "");
     const productName = product?.productName ?? (itemName || productIdRaw || "");
     const officialLine = product?.line ?? "";
-    const factoryPrice = product?.factoryPrice ?? 0;
+    const { source: xfactorSource, xfactor } = resolveWeeklyXfactor(at(row, "xfactor"), product?.factoryPrice ?? 0);
     if (!product) {
       issues.push({
         field: "productCode",
-        message: `Product not found in master (Product ID "${productIdRaw || "—"}", item "${itemName || itemCode || "—"}"); value set to 0.`,
+        message:
+          xfactorSource === "sheet"
+            ? `Product not found in master (Product ID "${productIdRaw || "—"}", item "${itemName || itemCode || "—"}"); value calculated from uploaded XFactor.`
+            : `Product not found in master (Product ID "${productIdRaw || "—"}", item "${itemName || itemCode || "—"}"); value set to 0.`,
         rowNumber,
         severity: "warning",
         value: productIdRaw || itemName || null,
@@ -636,7 +684,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
     const bonusQty = cellNumber(at(row, "bonusQty"));
     const discount = discountFraction(at(row, "discount"));
     const stockQty = cellNumber(at(row, "stockQty"));
-    const salesValue = Number((salesQty * factoryPrice * (1 - discount)).toFixed(6));
+    const salesValue = weeklySalesValue(salesQty, xfactor, discount);
 
     const validationState: WeeklyParsedRow["validationState"] = issues.some((issue) => issue.severity === "failure")
       ? "failed"
@@ -672,6 +720,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
         branchCode,
         branchName,
         salesQty: String(salesQty),
+        xfactor: String(xfactor),
+        xfactorSource,
         stockQty: String(stockQty),
       },
     });
