@@ -26,7 +26,6 @@ import {
 
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { extractKnownPlace } from "@/lib/utils/places";
@@ -100,13 +99,13 @@ type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "custom";
 /*  Design tokens                                                     */
 /* ------------------------------------------------------------------ */
 
-const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
+const cardShadow = "shadow-sm";
 
 const inputClass =
-  "h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] disabled:bg-slate-50";
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50";
 
 const labelClass =
-  "text-[10px] font-semibold uppercase tracking-wider text-slate-500";
+  "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
 /* ------------------------------------------------------------------ */
 /*  Color insight palette — degrading scale for chart bars            */
@@ -179,11 +178,24 @@ function mapStatusCategory(value: string) {
   return "Other";
 }
 
-function statusVariant(statusCategory: string) {
-  if (statusCategory === "Confirmed by HR") return "success";
-  if (statusCategory === "System Approval" || statusCategory === "Pending") return "warning";
-  if (statusCategory === "Declined") return "danger";
-  return "neutral";
+/* Flat, square premium status pill (replaces the gradient/ring/shadow Badge). */
+const STATUS_PILL_STYLES: Record<string, string> = {
+  "Confirmed by HR": "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  "System Approval": "bg-orange-50 text-orange-700 ring-orange-200",
+  Pending: "bg-amber-50 text-amber-700 ring-amber-200",
+  Declined: "bg-rose-50 text-rose-700 ring-rose-200",
+  Other: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
+function StatusPill({ category }: { category: string }) {
+  const styles = STATUS_PILL_STYLES[category] ?? STATUS_PILL_STYLES.Other;
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${styles}`}
+    >
+      {category}
+    </span>
+  );
 }
 
 function normalizeCityName(value: string) {
@@ -272,8 +284,8 @@ function compactTripPlace(primary: string, routeFallback: string, endpoint: "fro
 function chartTooltipStyle() {
   return {
     background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 6,
+    border: "1px solid #cbd5e1",
+    borderRadius: 0,
     boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
     fontSize: 12,
   };
@@ -369,7 +381,7 @@ function SmartPeriodFilter({
     return (
       <button
         aria-pressed={active}
-        className={`flex-1 whitespace-nowrap rounded-sm px-2.5 py-1.5 text-[12px] font-semibold transition sm:flex-initial ${
+        className={`flex-1 whitespace-nowrap  px-2.5 py-1.5 text-[12px] font-semibold transition sm:flex-initial ${
           active
             ? "bg-orange-500 text-white shadow-sm"
             : "text-slate-600 hover:bg-slate-100"
@@ -388,7 +400,7 @@ function SmartPeriodFilter({
       <div>
         <p className={labelClass}>Period</p>
         <div
-          className="mt-1.5 inline-flex w-full items-center gap-0.5 rounded-md border border-gray-200 bg-slate-50 p-0.5 sm:w-auto"
+          className="mt-1.5 inline-flex w-full items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:w-auto"
           role="group"
         >
           {segmentBtn("7d", "7 days")}
@@ -400,7 +412,7 @@ function SmartPeriodFilter({
       </div>
       {preset === "custom" && (
         <div
-          className="grid gap-3 rounded-md border border-orange-100 bg-orange-50/30 p-3 sm:grid-cols-2"
+          className="grid gap-3 border border-orange-100 bg-orange-50/30 p-3 sm:grid-cols-2"
           ref={customRef}
         >
           <label className="min-w-0">
@@ -457,7 +469,7 @@ function StatCard({
       )}
       {showDelta && (
         <span
-          className={`mt-1.5 inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-bold ${
+          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-[10px] font-bold ${
             isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
           }`}
         >
@@ -510,7 +522,7 @@ function ChartCard({
 }) {
   return (
     <Card
-      className={`overflow-hidden rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}
+      className={`overflow-hidden border border-slate-200 p-4 sm:p-5 ${cardShadow}`}
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
@@ -938,7 +950,7 @@ export function PersonalExpenseWorkloadDashboard({
 
   const header = (field: SortField, title: string) => (
     <button
-      className="inline-flex items-center gap-1 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500 transition hover:text-orange-600"
+      className="inline-flex items-center gap-1 text-left text-[10px] font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
       onClick={() => onSort(field)}
       type="button"
     >
@@ -949,62 +961,71 @@ export function PersonalExpenseWorkloadDashboard({
     </button>
   );
 
-  /* -------- CSV export -------- */
-  const exportCsv = () => {
+  /* -------- Excel export (premium Phoenix-styled XLSX, honours current filters) -------- */
+  const [isExporting, setIsExporting] = useState(false);
+  const exportExcel = async () => {
     if (typeof window === "undefined" || sortedTrips.length === 0) return;
-    const escape = (raw: string | number) => {
-      const value = String(raw ?? "");
-      if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-      return value;
-    };
-    const headers = [
-      "TripID",
-      "Date",
-      "ToDate",
-      "RequestType",
-      "From",
-      "To",
-      "Total (EGP)",
-      "Travel Cost",
-      "Meeting Amount",
-      "Allowance",
-      "KM",
-      "Status",
-      "Transport",
-      "Description",
-      "HR Notes",
-    ];
-    const lines = [headers.join(",")];
-    for (const trip of sortedTrips) {
-      lines.push(
-        [
-          escape(trip.tripId),
-          escape(trip.date),
-          escape(trip.toDate),
-          escape(trip.requestType),
-          escape(trip.fromCity),
-          escape(trip.toCity),
-          escape(trip.total),
-          escape(trip.travelCost),
-          escape(trip.meetingAmount),
-          escape(trip.allowance),
-          escape(trip.km),
-          escape(mapStatusCategory(trip.status)),
-          escape(trip.transportationType),
-          escape(trip.description),
-          escape(trip.hrNotes),
-        ].join(","),
-      );
+    setIsExporting(true);
+    try {
+      // Lazy-load the styled workbook builder (pulls exceljs) only on demand so it
+      // stays out of this dashboard's initial bundle.
+      const { buildPhoenixTableWorkbook } = await import("@/lib/export/table-workbook");
+      const columns = [
+        { key: "tripId", label: "Trip ID" },
+        { key: "date", label: "Date" },
+        { key: "toDate", label: "To Date" },
+        { key: "requestType", label: "Type" },
+        { key: "from", label: "From" },
+        { key: "to", label: "To" },
+        { key: "total", label: "Total (EGP)", numeric: true },
+        { key: "travelCost", label: "Travel (EGP)", numeric: true },
+        { key: "meetingAmount", label: "Meeting (EGP)", numeric: true },
+        { key: "allowance", label: "Allowance (EGP)", numeric: true },
+        { key: "km", label: "KM", numeric: true },
+        { key: "status", label: "Status" },
+        { key: "transportationType", label: "Transport" },
+        { key: "description", label: "Description" },
+        { key: "hrNotes", label: "HR Notes" },
+      ];
+      const exportRows = sortedTrips.map((trip) => ({
+        tripId: trip.tripId || "",
+        date: trip.date ? formatDate(trip.date) : "",
+        toDate: trip.toDate ? formatDate(trip.toDate) : "",
+        requestType: trip.requestType || "",
+        from: trip.fromCity || "",
+        to: trip.toCity || "",
+        total: trip.total,
+        travelCost: trip.travelCost,
+        meetingAmount: trip.meetingAmount,
+        allowance: trip.allowance,
+        km: trip.km,
+        status: mapStatusCategory(trip.status),
+        transportationType: trip.transportationType || "",
+        description: trip.description || "",
+        hrNotes: trip.hrNotes || "",
+      }));
+      const employeeName = data.employee?.fullName ?? "Employee";
+      const buffer = await buildPhoenixTableWorkbook({
+        title: "My Expense Report",
+        subtitle: `${employeeName} · ${exportRows.length} trips · exported ${new Date().toLocaleString("en-GB")}`,
+        sheetName: "My Expenses",
+        columns,
+        rows: exportRows,
+      });
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `my-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExporting(false);
     }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `expense-trips-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   /* -------- table density classes -------- */
@@ -1012,7 +1033,7 @@ export function PersonalExpenseWorkloadDashboard({
 
   if (!rows.length) {
     return (
-      <Card className={`overflow-hidden rounded-lg border border-gray-100 ${cardShadow}`}>
+      <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
         <EmptyState title="No expense records" message="No visible expense records are available for your expense scope yet." />
       </Card>
     );
@@ -1036,8 +1057,8 @@ export function PersonalExpenseWorkloadDashboard({
       )}
 
       {/* ---- KPI Stat Cards ---- */}
-      <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 print:break-inside-avoid ${cardShadow}`}>
-        <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-3 xl:grid-cols-5">
+      <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-3 xl:grid-cols-5">
           <StatCard
             accent="border-l-emerald-400"
             helper="Sum of Total for this period"
@@ -1074,8 +1095,8 @@ export function PersonalExpenseWorkloadDashboard({
 
       {/* ---- Admin Key Cards (NSM/DSM scope) ---- */}
       {adminKeyCards && (
-        <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 print:break-inside-avoid ${cardShadow}`}>
-          <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 sm:grid-cols-3">
+        <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
+          <div className="grid grid-cols-1 divide-x divide-y divide-slate-200 sm:grid-cols-3">
             <AdminKeyCard
               accent="border-l-orange-400"
               helper={adminKeyCards.payrollBatchLabel || "Latest batch"}
@@ -1100,8 +1121,8 @@ export function PersonalExpenseWorkloadDashboard({
 
       {/* ---- Insights Strip (NEW) ---- */}
       {(insights.top || insights.outlier || insights.costPerKm > 0) && (
-        <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 print:break-inside-avoid ${cardShadow}`}>
-          <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 sm:grid-cols-3">
+        <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
+          <div className="grid grid-cols-1 divide-x divide-y divide-slate-200 sm:grid-cols-3">
             <div className="px-4 py-3">
               <p className={labelClass}>Top destination</p>
               <p className="mt-1 truncate text-sm font-bold text-slate-800">
@@ -1138,14 +1159,15 @@ export function PersonalExpenseWorkloadDashboard({
       )}
 
       {/* Filters Card */}
-      <Card className={`overflow-hidden rounded-lg border border-gray-100 p-4 sm:p-5 print:hidden ${cardShadow}`}>
+      <Card className={`overflow-hidden border border-slate-200 p-4 sm:p-5 print:hidden ${cardShadow}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          <span className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-700">
+            <span className="h-4 w-1 bg-orange-500" />
             Filters
           </span>
           <button
             aria-label="Reset all expense filters"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+            className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
             onClick={resetFilters}
             type="button"
           >
@@ -1264,7 +1286,7 @@ export function PersonalExpenseWorkloadDashboard({
                     labelFormatter={(label) => `${label}`}
                   />
                   <ReferenceLine y={0} stroke="#e2e8f0" yAxisId="expense" />
-                  <Bar dataKey="expense" radius={[2, 2, 0, 0]} yAxisId="expense">
+                  <Bar dataKey="expense" radius={[0, 0, 0, 0]} yAxisId="expense">
                     {monthlyTrend.map((row) => (
                       <Cell key={row.period} fill={spendColorForValue(row.expense, monthlyTrendMax)} />
                     ))}
@@ -1327,7 +1349,7 @@ export function PersonalExpenseWorkloadDashboard({
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px]">
             {categoryBreakdown.data.map((entry) => (
               <span className="inline-flex items-center gap-1.5 text-slate-600" key={entry.name}>
-                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: entry.color }} />
+                <span className="h-2 w-2 " style={{ backgroundColor: entry.color }} />
                 {entry.name}: <strong className="text-slate-800">{formatMoney(entry.value)}</strong>
               </span>
             ))}
@@ -1352,7 +1374,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <div key={status.name}>
                     <div className="flex items-center justify-between text-[12px]">
                       <span className="inline-flex items-center gap-2 font-medium text-slate-700">
-                        <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: status.color }} />
+                        <span className="h-2 w-2 " style={{ backgroundColor: status.color }} />
                         {status.name}
                       </span>
                       <span className="font-bold text-slate-800">
@@ -1364,10 +1386,10 @@ export function PersonalExpenseWorkloadDashboard({
                       aria-valuemax={100}
                       aria-valuemin={0}
                       aria-valuenow={pct}
-                      className="mt-1 h-1.5 overflow-hidden rounded-sm bg-slate-100"
+                      className="mt-1 h-1.5 overflow-hidden  bg-slate-100"
                       role="progressbar"
                     >
-                      <div className="h-full rounded-sm" style={{ width: `${pct}%`, backgroundColor: status.color }} />
+                      <div className="h-full " style={{ width: `${pct}%`, backgroundColor: status.color }} />
                     </div>
                   </div>
                 );
@@ -1379,7 +1401,7 @@ export function PersonalExpenseWorkloadDashboard({
         <ChartCard
           action={
             <button
-              className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
+              className="border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
@@ -1424,7 +1446,7 @@ export function PersonalExpenseWorkloadDashboard({
                   />
                   <Bar
                     dataKey={showCostByTransportation ? "total" : "trips"}
-                    radius={[0, 2, 2, 0]}
+                    radius={[0, 0, 0, 0]}
                   >
                     {transportationSummary.map((row) => {
                       const value = showCostByTransportation ? row.total : row.trips;
@@ -1475,7 +1497,7 @@ export function PersonalExpenseWorkloadDashboard({
                         : [Number(value).toLocaleString(), "Trips"]
                     }
                   />
-                  <Bar dataKey="trips" radius={[0, 2, 2, 0]}>
+                  <Bar dataKey="trips" radius={[0, 0, 0, 0]}>
                     {destinationSummary.map((row) => (
                       <Cell key={row.city} fill={spendColorForValue(row.trips, destinationTripsMax)} />
                     ))}
@@ -1494,7 +1516,7 @@ export function PersonalExpenseWorkloadDashboard({
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 divide-x divide-gray-100 border-y border-gray-100 sm:grid-cols-4">
+              <div className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200 sm:grid-cols-4">
                 <div className="px-3 py-3">
                   <p className={labelClass}>AM visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
@@ -1530,7 +1552,7 @@ export function PersonalExpenseWorkloadDashboard({
                       contentStyle={chartTooltipStyle()}
                       formatter={(value) => Number(value).toLocaleString()}
                     />
-                    <Bar dataKey="value" radius={[2, 2, 0, 0]}>
+                    <Bar dataKey="value" radius={[0, 0, 0, 0]}>
                       {workloadChartData.map((row) => (
                         <Cell fill={row.color} key={row.name} />
                       ))}
@@ -1546,22 +1568,25 @@ export function PersonalExpenseWorkloadDashboard({
       {/* ---- Trip Ledger ---- */}
       <section className="space-y-3 print:break-inside-avoid">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-              Trip ledger
-            </span>
-            <h2 className="mt-1.5 text-sm font-bold text-slate-800">Detailed Trip Table</h2>
+          <div className="flex items-center gap-2">
+            <span className="h-7 w-1 bg-orange-500" />
+            <div>
+              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                Trip ledger
+              </span>
+              <h2 className="text-sm font-bold text-slate-800">Detailed Trip Table</h2>
+            </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             {/* Density toggle */}
             <div
               aria-label="Table density"
-              className="inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-slate-50 p-0.5 print:hidden"
+              className="inline-flex items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 print:hidden"
               role="group"
             >
               <button
                 aria-pressed={density === "comfortable"}
-                className={`rounded-sm px-2 py-1 text-[11px] font-semibold transition ${
+                className={` px-2 py-1 text-[11px] font-semibold transition ${
                   density === "comfortable"
                     ? "bg-white text-slate-800 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
@@ -1573,7 +1598,7 @@ export function PersonalExpenseWorkloadDashboard({
               </button>
               <button
                 aria-pressed={density === "compact"}
-                className={`rounded-sm px-2 py-1 text-[11px] font-semibold transition ${
+                className={` px-2 py-1 text-[11px] font-semibold transition ${
                   density === "compact"
                     ? "bg-white text-slate-800 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
@@ -1584,16 +1609,18 @@ export function PersonalExpenseWorkloadDashboard({
                 Compact
               </button>
             </div>
-            {/* CSV export */}
+            {/* Excel export */}
             <button
-              aria-label="Export trips to CSV"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600 disabled:opacity-40 print:hidden"
-              disabled={sortedTrips.length === 0}
-              onClick={exportCsv}
+              aria-label="Export my expenses to Excel"
+              className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-[12px] font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 print:hidden"
+              disabled={sortedTrips.length === 0 || isExporting}
+              onClick={() => {
+                void exportExcel();
+              }}
               type="button"
             >
               <Download className="h-3.5 w-3.5" />
-              Export CSV
+              {isExporting ? "Preparing…" : "Export Excel"}
             </button>
             <label className="relative w-full sm:w-64">
               <span className="sr-only">Search trips</span>
@@ -1609,11 +1636,11 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
         </div>
 
-        <Card className={`overflow-hidden rounded-lg border border-gray-100 ${cardShadow}`}>
+        <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
           {/* Desktop / wide tablet table */}
           <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[1100px] w-full text-left text-sm">
-              <thead className="border-b border-gray-100 bg-slate-50/60">
+              <thead className="bg-slate-900">
                 <tr>
                   <th className={cellPaddingClass}>{header("tripId", "TripID")}</th>
                   <th className={cellPaddingClass}>{header("date", "Date")}</th>
@@ -1626,7 +1653,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <th className={cellPaddingClass}>{header("transportationType", "Transport")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={9}>
@@ -1663,7 +1690,7 @@ export function PersonalExpenseWorkloadDashboard({
                           {formatKm(trip.km)}
                         </td>
                         <td className={cellPaddingClass}>
-                          <Badge variant={statusVariant(category)}>{category}</Badge>
+                          <StatusPill category={category} />
                         </td>
                         <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
                           {trip.transportationType || "N/A"}
@@ -1687,7 +1714,7 @@ export function PersonalExpenseWorkloadDashboard({
                 const category = mapStatusCategory(trip.status);
                 return (
                   <div
-                    className="relative overflow-hidden rounded-md border border-gray-100 bg-white"
+                    className="relative overflow-hidden border border-slate-200 bg-white"
                     key={`${trip.tripId}-${trip.date}-mobile`}
                   >
                     <div className="absolute inset-y-0 left-0 w-[3px] bg-orange-400" />
@@ -1702,24 +1729,24 @@ export function PersonalExpenseWorkloadDashboard({
                             {trip.toDate ? ` → ${formatDate(trip.toDate)}` : ""}
                           </p>
                         </div>
-                        <Badge variant={statusVariant(category)}>{category}</Badge>
+                        <StatusPill category={category} />
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
-                        <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 font-semibold">
+                        <span className=" bg-slate-100 px-1.5 py-0.5 font-semibold">
                           {trip.fromCity || "?"} → {trip.toCity || "?"}
                         </span>
                         {trip.requestType && (
-                          <span className="rounded-sm bg-slate-100 px-1.5 py-0.5">
+                          <span className=" bg-slate-100 px-1.5 py-0.5">
                             {trip.requestType}
                           </span>
                         )}
                         {trip.transportationType && (
-                          <span className="rounded-sm bg-slate-100 px-1.5 py-0.5">
+                          <span className=" bg-slate-100 px-1.5 py-0.5">
                             {trip.transportationType}
                           </span>
                         )}
                       </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-gray-100 pt-2 text-[11px]">
+                      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-200 pt-2 text-[11px]">
                         <div>
                           <p className="text-slate-500">Total</p>
                           <p className="font-bold text-slate-900">{formatMoney(trip.total)}</p>
@@ -1755,7 +1782,7 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
 
           {/* Pagination footer */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 bg-slate-50/60 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2">
             <p className="text-[11px] font-semibold text-slate-500">
               {sortedTrips.length === 0 ? "No records" : `Showing ${pageSummary}`}
             </p>
@@ -1765,7 +1792,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <span>Rows</span>
                 <select
                   aria-label="Rows per page"
-                  className="h-7 rounded-md border border-gray-200 bg-white px-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-orange-300"
+                  className="h-7 border border-slate-300 bg-white px-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-orange-300"
                   onChange={(event) => {
                     setPageSize(Number(event.target.value) as 10 | 25 | 50 | 100);
                     setPage(1);
@@ -1781,7 +1808,7 @@ export function PersonalExpenseWorkloadDashboard({
               <div className="flex items-center gap-2">
                 <button
                   aria-label="Previous page"
-                  className="rounded-md border border-gray-200 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={safePage <= 1}
                   onClick={() => setPage((value) => Math.max(1, value - 1))}
                   type="button"
@@ -1793,7 +1820,7 @@ export function PersonalExpenseWorkloadDashboard({
                 </span>
                 <button
                   aria-label="Next page"
-                  className="rounded-md border border-gray-200 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                   type="button"
