@@ -116,6 +116,10 @@ export type WeeklyRanked = {
   share: number;
 };
 
+export type WeeklyBranchComparisonRow = WeeklyRanked & {
+  regionName: string;
+};
+
 export type WeeklyDelta = {
   current: number;
   /** null = prior week not uploaded — render an em dash, never a fake 0 baseline */
@@ -161,6 +165,7 @@ export type WeeklyDashboard = {
   regions: WeeklyRanked[];
   products: WeeklyRanked[];
   distributorBreakdown: WeeklyRanked[];
+  branchBreakdown: WeeklyBranchComparisonRow[];
   /** branches with stock on hand but zero sales this week */
   zeroSalesBranches: WeeklyBranchRow[];
   /** simple value trend across the available weeks (in-scope) */
