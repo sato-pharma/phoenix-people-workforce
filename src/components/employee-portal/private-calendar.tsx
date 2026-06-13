@@ -53,6 +53,15 @@ function dayLabel(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function reportDateLabel(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
 function monthDateIso(year: number, month: number, preferredDay = 1) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const day = Math.min(Math.max(preferredDay, 1), lastDay);
@@ -133,6 +142,109 @@ function sortTimelineItems(items: PrivateCalendarItem[]) {
     if (rank !== 0) return rank;
     return `${left.time ?? ""}-${left.employeeName ?? ""}-${left.title}`.localeCompare(`${right.time ?? ""}-${right.employeeName ?? ""}-${right.title}`);
   });
+}
+
+type CalendarReportRow = {
+  date: string;
+  detail: string;
+  employeeDepartmentName: string | null;
+  employeeHrId: string | null;
+  employeeJobTitle: string | null;
+  employeeLineName: string | null;
+  employeeName: string | null;
+  id: string;
+  severity: string;
+  source: PrivateCalendarSource | "exception";
+  sourceLabel: string;
+  status: string | null;
+  time: string | null;
+  title: string;
+};
+
+function sourceReportLabel(source: CalendarReportRow["source"]) {
+  return source === "exception" ? "Exception" : privateCalendarSourceLabels[source];
+}
+
+function sourceReportTone(source: CalendarReportRow["source"], severity?: string) {
+  if (source === "exception") return exceptionTone(severity ?? "warning");
+  return sourceTone(source, severity);
+}
+
+function reportDetail(item: PrivateCalendarItem) {
+  const details = [
+    ...item.detailLines,
+    item.description,
+    item.approvalImpact,
+    item.sourceRecordId ? `Record: ${item.sourceRecordId}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return details.join(" | ") || item.sourceLabel;
+}
+
+function buildCalendarReportRows(input: {
+  employees: PrivateCalendarWorkspace["visibleEmployees"];
+  exceptions: PrivateCalendarException[];
+  items: PrivateCalendarItem[];
+  weeks: PrivateCalendarWorkspace["weeks"];
+}) {
+  const monthDates = input.weeks
+    .flatMap((week) => week)
+    .filter((day) => day.date && day.inMonth)
+    .map((day) => day.date as string);
+  const employeeExceptionByDate = new Map<string, PrivateCalendarException[]>();
+  const employeeByHrId = new Map(input.employees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee]));
+
+  for (const exception of input.exceptions) {
+    employeeExceptionByDate.set(exception.date, [...(employeeExceptionByDate.get(exception.date) ?? []), exception]);
+  }
+
+  const rows: CalendarReportRow[] = [];
+  for (const date of monthDates) {
+    const dayItems = input.items.filter((item) => privateCalendarItemOccursOn(item, date));
+    for (const item of dayItems) {
+      rows.push({
+        date,
+        detail: reportDetail(item),
+        employeeDepartmentName: item.employeeDepartmentName,
+        employeeHrId: item.employeeHrId,
+        employeeJobTitle: item.employeeJobTitle,
+        employeeLineName: item.employeeLineName,
+        employeeName: item.employeeName,
+        id: `${item.id}-${date}`,
+        severity: item.severity,
+        source: item.source,
+        sourceLabel: item.sourceLabel,
+        status: item.status,
+        time: item.time,
+        title: item.title,
+      });
+    }
+
+    for (const exception of employeeExceptionByDate.get(date) ?? []) {
+      const employee = exception.employeeHrId ? employeeByHrId.get(privateCalendarHrIdKey(exception.employeeHrId)) : null;
+      rows.push({
+        date,
+        detail: exception.description,
+        employeeDepartmentName: employee?.departmentName ?? null,
+        employeeHrId: exception.employeeHrId,
+        employeeJobTitle: employee?.jobTitle ?? null,
+        employeeLineName: employee?.lineName ?? null,
+        employeeName: exception.employeeName,
+        id: exception.id,
+        severity: exception.severity,
+        source: "exception",
+        sourceLabel: exception.code,
+        status: exception.severity,
+        time: null,
+        title: exception.title,
+      });
+    }
+  }
+
+  return rows.sort((left, right) =>
+    `${left.date}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(
+      `${right.date}-${right.employeeName ?? ""}-${right.source}-${right.title}`,
+    ),
+  );
 }
 
 function chipTitle(item: PrivateCalendarItem, viewMode: PrivateCalendarViewMode) {
@@ -243,6 +355,14 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   );
   const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
   const timelineItems = useMemo(() => sortTimelineItems(selectedItems), [selectedItems]);
+  const reportRows = useMemo(
+    () => buildCalendarReportRows({ employees: visibleEmployees, exceptions: filteredExceptions, items: filteredItems, weeks }),
+    [filteredExceptions, filteredItems, visibleEmployees, weeks],
+  );
+  const reportWarningCount = useMemo(
+    () => reportRows.filter((row) => row.source === "exception" || row.severity === "danger" || row.severity === "warning").length,
+    [reportRows],
+  );
 
   async function loadWorkspace(
     nextYear: number,
@@ -651,6 +771,8 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
             </section>
           </div>
         </section>
+
+        <CalendarReportTable rows={reportRows} warningCount={reportWarningCount} />
       </div>
     </div>
   );
@@ -732,6 +854,98 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
       </div>
       <p className="mt-2 text-xs font-semibold opacity-90">{exception.description}</p>
     </article>
+  );
+}
+
+function CalendarReportTable({ rows, warningCount }: { rows: CalendarReportRow[]; warningCount: number }) {
+  return (
+    <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <div className="flex items-center gap-2 text-base font-black text-slate-950">
+            <span className="h-2 w-2 bg-orange-500" />
+            Calendar Report ({rows.length})
+          </div>
+          <p className="mt-2 text-sm font-semibold text-slate-500">
+            Report rows mirror the private calendar entries and warnings after the current filters.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={["border px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]", warningCount > 0 ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50 text-slate-700"].join(" ")}>
+            {warningCount} warning{warningCount === 1 ? "" : "s"}
+          </span>
+          <span className="border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-700">
+            {rows.length} visible
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto bg-white">
+        <table className="w-full min-w-[1180px] border-collapse text-left text-xs">
+          <thead>
+            <tr className="bg-black text-white">
+              {["Date", "HR ID", "Full Name", "Job Title", "Line", "Department", "Source", "Calendar Entry", "Time", "Status"].map((column) => (
+                <th
+                  className="border-r border-orange-900/60 px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] last:border-r-0"
+                  key={column}
+                >
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-orange-100">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-7 text-center text-sm font-semibold text-slate-500" colSpan={10}>
+                  No private calendar entries match the current filters.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr className="transition hover:bg-orange-50/35" key={row.id}>
+                  <td className="border-r border-orange-100 px-2 py-2 font-mono text-[11px] font-semibold text-slate-600">
+                    {reportDateLabel(row.date)}
+                  </td>
+                  <td className="border-r border-orange-100 px-2 py-2 font-mono text-[11px] font-semibold text-slate-700">
+                    {row.employeeHrId ?? "Company"}
+                  </td>
+                  <td className="max-w-[230px] truncate border-r border-orange-100 px-2 py-2 font-black text-slate-950">
+                    {row.employeeName ?? "Company calendar"}
+                  </td>
+                  <td className="max-w-[180px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
+                    {row.employeeJobTitle ?? "-"}
+                  </td>
+                  <td className="max-w-[130px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
+                    {row.employeeLineName ?? "-"}
+                  </td>
+                  <td className="max-w-[150px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
+                    {row.employeeDepartmentName ?? "-"}
+                  </td>
+                  <td className="border-r border-orange-100 px-2 py-2">
+                    <span className={["inline-flex max-w-[150px] items-center truncate border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                      {sourceReportLabel(row.source)}
+                    </span>
+                  </td>
+                  <td className="max-w-[280px] border-r border-orange-100 px-2 py-2">
+                    <p className="truncate font-black text-slate-950">{row.title}</p>
+                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{row.detail}</p>
+                  </td>
+                  <td className="max-w-[130px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
+                    {row.time ?? "Full day"}
+                  </td>
+                  <td className="px-2 py-2">
+                    <span className={["inline-flex max-w-[140px] truncate border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                      {row.status ?? row.sourceLabel}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
