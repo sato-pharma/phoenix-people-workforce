@@ -41,7 +41,11 @@ import {
   summarizePayrollExpenses,
 } from "@/lib/payroll/expense-metrics";
 import { roundCurrency } from "@/lib/payroll/money";
-import { listPayrollExpenseReports, listPayrollExpenses } from "@/lib/payroll/expenses";
+import {
+  listOutstationRequestExpenses,
+  listPayrollExpenseReports,
+  listPayrollExpenses,
+} from "@/lib/payroll/expenses";
 import {
   calculatePayrollParts,
   normalizePayrollPaymentMode,
@@ -3514,7 +3518,10 @@ export async function getMedicalRepPortalData(
       }),
       currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
-      includeLiveOutstationExpenses ? listOutstationExpensesForPortal(currentHrId ? [currentHrId] : []) : Promise.resolve([]),
+      // Live outstation (system-entered) expenses must follow the SAME access scope as
+      // the historical rows above — otherwise managers only see their own trips and the
+      // team's system-entered expenses vanish (they used to be masked by Excel uploads).
+      includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }) : Promise.resolve([]),
       listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
     const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
