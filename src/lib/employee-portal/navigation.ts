@@ -6,6 +6,7 @@ export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
   showExcusesTab?: boolean;
   showExpenseActionTab?: boolean;
+  showExpenseDashboardTab?: boolean;
   showIncentiveTab?: boolean;
   showManagementTab?: boolean;
   showMarketingRequestsTab?: boolean;
@@ -155,7 +156,8 @@ export function resolveEmployeePortalNavVisibility(
   ].includes(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
-  const showExpenseActionTab = isDistrictManager || isNationalSalesManager;
+  const showExpenseActionTab = !isMedicalRep;
+  const showExpenseDashboardTab = !isMedicalRep;
   // Marketing Requests and Contact HR Support are full modules: their tabs are visible
   // without the launch flag. Marketing role checks still apply, so Marketing visibility
   // never extends to an unauthorized role. Contact HR Support is available to every
@@ -184,6 +186,7 @@ export function resolveEmployeePortalNavVisibility(
     showDsmsPerformanceTab: isNationalSalesManager,
     showExcusesTab: isHeadOffice || isNationalSalesManager,
     showExpenseActionTab,
+    showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
     showManagementTab,
     showMarketingCustomerDatabaseTab,
