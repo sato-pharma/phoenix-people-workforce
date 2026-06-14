@@ -151,6 +151,10 @@ export function resolveEmployeePortalNavVisibility(
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
+  // Product / Group Product Managers get a line-scoped Vacancies view (see
+  // getEmployeePortalVacancies). The sidebar tab must mirror that data access.
+  const isProductManager = resolvedRole === "Product Manager";
+  const isGroupProductManager = resolvedRole === "Group Product Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
@@ -220,7 +224,8 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
-    showVacanciesTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
+    showVacanciesTab:
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showFingerprintReportTab: hasDeviceMapping === true,
   };
 }
