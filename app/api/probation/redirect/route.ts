@@ -10,7 +10,10 @@ export async function GET(request: Request) {
   const access = await resolveAccessContext(request);
 
   if (!access.loginId && !access.hrId) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const loginUrl = new URL("/login", request.url);
+    const { pathname, search } = new URL(request.url);
+    loginUrl.searchParams.set("returnUrl", pathname + search);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (!(await canAccess(access, "probation", "read"))) {
