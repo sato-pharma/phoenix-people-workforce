@@ -51,7 +51,7 @@ export default async function EmployeePortalProbationPage() {
   const access = await resolveAccessContextFromPage();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/overview");
+    redirect("/probation");
   }
 
   await assertPermission(access, "probation", "read");
