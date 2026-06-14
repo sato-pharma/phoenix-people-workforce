@@ -8,6 +8,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
@@ -716,32 +717,74 @@ async function recordReturnNotes(input: {
   if (error) throw error;
 }
 
+async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>) {
+  const hrIds = Array.from(new Set(recipients.map((recipient) => normalizeHrId(recipient.hrId)).filter(Boolean)));
+  const output = new Map<string, string>();
+  if (hrIds.length === 0) return output;
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,work_email")
+    .in("hr_id", hrIds);
+  if (error) return output;
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null; work_email?: string | null }>) {
+    const hrId = normalizeHrId(row.hr_id);
+    const email = pickDeliverableEmail(row.work_email);
+    if (hrId && email) output.set(hrId, email);
+  }
+  return output;
+}
+
 async function notifyRecipients(input: {
   actionUrl: string;
+  emailCcRecipients?: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
+  emailMode?: "none" | "primary_to_cc";
   eventType: string;
   message: string;
   plan: PlanHeaderRow;
-  recipients: Array<{ hrId: string | null; userId?: string | null }>;
+  recipients: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
   title: string;
 }) {
   // The actual submitted plan rows ride along so the weekly_plans email template can
   // render them as a table via the {{planTable}} variable.
   const planTable = buildPlanEmailTable(input.plan.employee_plan_items);
-  await Promise.all(input.recipients
-    .filter((recipient) => recipient.hrId || recipient.userId)
+  const recipients = input.recipients.filter((recipient) => recipient.hrId || recipient.userId);
+  if (recipients.length === 0) return;
+  const emailMode = input.emailMode ?? "primary_to_cc";
+  const emailRefs = [
+    recipients[0],
+    ...(input.emailCcRecipients ?? recipients.slice(1)),
+  ].filter((recipient): recipient is { email?: string | null; hrId: string | null; userId?: string | null } => Boolean(recipient?.hrId || recipient?.userId));
+  const emailByHrId = await loadRecipientEmailMap(emailRefs);
+  const emailFor = (recipient: { email?: string | null; hrId: string | null }) =>
+    pickDeliverableEmail(recipient.email, emailByHrId.get(normalizeHrId(recipient.hrId)));
+  const primaryKey = normalizeHrId(recipients[0].hrId) || recipients[0].userId || "";
+  const primaryEmail = emailMode === "none" ? null : emailFor(recipients[0]);
+  const ccEmails = emailMode === "none" ? [] : Array.from(new Set(
+    emailRefs
+      .slice(1)
+      .map((recipient) => emailFor(recipient))
+      .filter((email): email is string => Boolean(email)),
+  ));
+  await Promise.all(recipients
     .map((recipient) => createSystemNotification({
       actionUrl: input.actionUrl,
       category: "general",
-      channels: ["in_app", "email", "telegram"],
-      email: {
-        metrics: [
-          { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
-          { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
-          { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
-        ],
-        planTableHtml: planTable.html,
-        planTableText: planTable.text,
-      },
+      channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
+      ...(emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
+        ? {
+            email: {
+              cc: ccEmails,
+              metrics: [
+                { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
+                { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
+                { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
+              ],
+              planTableHtml: planTable.html,
+              planTableText: planTable.text,
+              recipients: primaryEmail ? [primaryEmail] : undefined,
+            },
+          }
+        : {}),
       eventType: input.eventType,
       message: input.message,
       metadata: {
@@ -790,9 +833,10 @@ async function hrAcknowledgementRecipients() {
   return recipients;
 }
 
-async function notifyManager(plan: PlanHeaderRow) {
+async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []) {
   await notifyRecipients({
     actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+    emailCcRecipients: ccRecipients,
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
     plan,
@@ -804,12 +848,13 @@ async function notifyManager(plan: PlanHeaderRow) {
 // HR must be alerted (in-app + email + Telegram) for EVERY plan submission, not only at
 // the final acknowledgement stage. The direct manager is excluded here so an HR person who
 // is also the submitter's manager is not double-notified (they already got the review ping).
-async function notifyHrOnSubmit(plan: PlanHeaderRow) {
-  const recipients = (await hrAcknowledgementRecipients())
+async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<{ hrId: string | null; userId?: string | null }>) {
+  const recipients = (resolvedRecipients ?? await hrAcknowledgementRecipients())
     .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
   if (recipients.length === 0) return;
   await notifyRecipients({
     actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
+    emailMode: "none",
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
     plan,
@@ -821,7 +866,9 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow) {
 // Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
 // Best-effort and isolated — a failure to reach HR must never block the manager alert.
 async function notifyPlanSubmitted(plan: PlanHeaderRow) {
-  await Promise.allSettled([notifyManager(plan), notifyHrOnSubmit(plan)]);
+  const hrRecipients = (await hrAcknowledgementRecipients())
+    .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
+  await Promise.allSettled([notifyManager(plan, hrRecipients), notifyHrOnSubmit(plan, hrRecipients)]);
 }
 
 async function notifyCeo(plan: PlanHeaderRow) {

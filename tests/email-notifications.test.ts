@@ -43,6 +43,10 @@ export function runEmailNotificationTests() {
   assert.match(source, /notification type is not approved for automatic Resend delivery/);
   assert.match(source, /buildEmailNotificationPreview/);
   assert.match(source, /resolveNotificationDelivery/);
+  assert.match(source, /cc\?: string\[\]/, "notification email payload must carry explicit CC recipients");
+  assert.match(source, /bcc\?: string\[\]/, "notification email payload must carry explicit BCC recipients");
+  assert.match(source, /cc: input\.cc/, "notification email sends must pass CC through to templates and direct sends");
+  assert.match(source, /bcc: input\.bcc/, "notification email sends must pass BCC through to templates and direct sends");
   assert.match(sendPhoenixEmailSource, /PHOENIX_EMAIL_DELIVERY_MODE/);
   assert.match(sendPhoenixEmailSource, /PHOENIX_EMAIL_TEST_RECIPIENTS/);
   assert.match(sendPhoenixEmailSource, /testingRecipients \? undefined : input\.cc/);

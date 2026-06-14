@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 
 import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult } from "@/lib/sales/weekly/types";
@@ -23,6 +23,9 @@ export function WeeklyUploadWorkspace({
   const [error, setError] = useState<string | null>(initialError);
   const [result, setResult] = useState<WeeklySalesValidationResult | null>(null);
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
+  const [mappingFile, setMappingFile] = useState<File | null>(null);
+  const [mappingBusy, setMappingBusy] = useState(false);
+  const [mappingMessage, setMappingMessage] = useState<string | null>(null);
 
   async function refreshBatches() {
     try {
@@ -70,13 +73,35 @@ export function WeeklyUploadWorkspace({
     }
   }
 
+  async function handleMappingUpload() {
+    if (!mappingFile) {
+      setError("Pick the completed POS region mapping XLSX first.");
+      return;
+    }
+    setMappingBusy(true);
+    setError(null);
+    setMappingMessage(null);
+    try {
+      const form = new FormData();
+      form.set("file", mappingFile);
+      const response = await fetch("/api/sales/weekly/pos-region-mappings", { method: "POST", body: form });
+      const payload = (await response.json()) as { success?: boolean; message?: string; error?: string };
+      if (!payload?.success) setError(payload?.error ?? "POS region mapping upload failed.");
+      else setMappingMessage(payload?.message ?? "POS region mappings updated.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "POS region mapping upload failed.");
+    } finally {
+      setMappingBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
         <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales Upload</h1>
         <p className="mt-1 text-sm font-medium text-[#64748B]">
           Upload a distributor&apos;s weekly Sales &amp; Stock file. Sales value is recomputed from the product
-          master (Qty × factory price); stock is tracked as units only. One week per file.
+          master or uploaded XFactor (Qty x xfactor); stock is tracked as units only. One week per file.
         </p>
       </header>
 
@@ -124,6 +149,44 @@ export function WeeklyUploadWorkspace({
         </div>
       </div>
 
+      <div className="border border-[#E2E8F0] bg-[#FFF7ED] p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#9A3412]">Overseas POS region mapping</h2>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-[#7C2D12]">
+              The overseas POS weekly template has unstable outlet columns. Download the mapping XLSX, map each POS
+              column to an official Region ID, upload it here, then upload the weekly POS file.
+            </p>
+          </div>
+          <a
+            className="inline-flex h-10 items-center justify-center gap-2 border border-[#FDBA74] bg-white px-4 text-sm font-black text-[#9A3412] transition hover:bg-[#FFEDD5]"
+            href="/api/sales/weekly/pos-region-mappings/template"
+          >
+            <Download className="h-4 w-4" />
+            Download mapping XLSX
+          </a>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+          <input
+            accept=".xlsx"
+            className="h-10 w-full border border-[#FDBA74] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:border-0 file:bg-[#FFEDD5] file:px-3 file:py-1.5 file:text-sm file:font-bold"
+            disabled={mappingBusy}
+            onChange={(event) => setMappingFile(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:opacity-60"
+            disabled={mappingBusy || !mappingFile}
+            onClick={handleMappingUpload}
+            type="button"
+          >
+            {mappingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {mappingBusy ? "Uploading..." : "Upload mapping"}
+          </button>
+        </div>
+        {mappingMessage && <p className="mt-2 text-xs font-bold text-emerald-700">{mappingMessage}</p>}
+      </div>
+
       {error && (
         <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -144,6 +207,7 @@ export function WeeklyUploadWorkspace({
                 <th className="px-3 py-2">Distributor</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Rows</th>
+                <th className="px-3 py-2 text-right">Sales units</th>
                 <th className="px-3 py-2 text-right">Sales value</th>
                 <th className="px-3 py-2 text-right">Stock units</th>
                 <th className="px-3 py-2" />
@@ -152,7 +216,7 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {batches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={7}>
+                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={8}>
                     No weekly uploads yet.
                   </td>
                 </tr>
@@ -171,6 +235,7 @@ export function WeeklyUploadWorkspace({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalSalesQty)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalSalesValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
@@ -229,13 +294,13 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
       <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
         <SummaryTable
           title="By region"
-          head={["Region", "Sales value", "Stock units"]}
-          rows={result.byRegion.map((r) => [r.regionName || r.regionCode, money(r.salesValue), num(r.stockQty)])}
+          head={["Region", "Sales units", "Sales value", "Stock units"]}
+          rows={result.byRegion.map((r) => [r.regionName || r.regionCode, num(r.salesQty), money(r.salesValue), num(r.stockQty)])}
         />
         <SummaryTable
           title="By product"
-          head={["Product", "Sales value", "Stock units"]}
-          rows={result.byProduct.map((p) => [p.productName || p.productCode, money(p.salesValue), num(p.stockQty)])}
+          head={["Product", "Sales units", "Sales value", "Stock units"]}
+          rows={result.byProduct.map((p) => [p.productName || p.productCode, num(p.salesQty), money(p.salesValue), num(p.stockQty)])}
         />
       </div>
 

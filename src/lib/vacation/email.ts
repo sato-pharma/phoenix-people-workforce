@@ -14,6 +14,7 @@ import {
 import type { VacationDecision, VacationRequestRecord } from "@/lib/vacation/types";
 
 type VacationManagerEmailInput = {
+  cc?: string[];
   managerEmail: string;
   managerName: string;
   policyWarnings?: string[];
@@ -146,12 +147,9 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     },
     employeeHrId: input.request.employeeHrId,
     fallbackTo: [input.managerEmail],
-    // replaceRecipients: the approval workflow engine owns routing for vacation emails — each
-    // approver gets exactly their own personally-greeted copy. Without it, the template's
-    // editor-configured recipient rules (TO direct_manager, CC hr) merge into EVERY per-approver
-    // send, so copies greeted to one approver also land in other inboxes (looks like the flow
-    // "skipped the manager" / "went to the manager-of-manager").
-    overrides: { replaceRecipients: true, to: [input.managerEmail] },
+    // replaceRecipients: the approval workflow engine owns routing for vacation emails:
+    // one actionable manager TO, visibility recipients in CC.
+    overrides: { cc: input.cc, replaceRecipients: true, to: [input.managerEmail] },
     templateKey: "leave_request",
   });
   if (!isTemplateUnavailableSkip(templated)) return templated;
@@ -168,6 +166,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     title: "Vacation request review",
   });
   return sendPhoenixEmail({
+    cc: input.cc,
     html: fallback.html,
     idempotencyKey: `vacation:${input.request.id}:leave_request_fallback:${input.managerEmail.toLowerCase()}`,
     subject: `Vacation request from ${input.request.employeeName}`,

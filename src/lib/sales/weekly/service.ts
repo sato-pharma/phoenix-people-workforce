@@ -9,12 +9,14 @@ import {
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { listWeeklyPosRegionMappingReferences } from "@/lib/sales/weekly/pos-region-mappings";
 import {
   weeklyTemplateDistributorCodes,
   weeklyTemplateDistributorFallbackName,
 } from "@/lib/sales/weekly/templates";
 import type {
   WeeklyBatch,
+  WeeklyBranchComparisonRow,
   WeeklyDashboard,
   WeeklyDelta,
   WeeklyDistributorOption,
@@ -61,11 +63,13 @@ export async function importWeeklySalesFile(input: {
     distributorCode;
 
   const buffer = await input.file.arrayBuffer();
+  const posRegionMappings = await listWeeklyPosRegionMappingReferences(distributorCode);
   const parsed = await parseWeeklyWorkbookBuffer({
     buffer,
     distributorCode,
     distributorName,
     fileName: input.file.name,
+    posRegionMappings,
     references,
   });
 
@@ -286,6 +290,46 @@ function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: Fa
     .sort((left, right) => right.salesValue - left.salesValue || left.name.localeCompare(right.name));
 }
 
+function rankBranches(rows: FactRow[]): WeeklyBranchComparisonRow[] {
+  const groups = new Map<
+    string,
+    { name: string; regionName: string; salesValue: number; salesUnits: number; stockUnits: number }
+  >();
+  let totalValue = 0;
+  for (const row of rows) {
+    totalValue += row.salesValue;
+    const key = row.branchCode || row.branchName || "-";
+    const current = groups.get(key) ?? {
+      name: row.branchName || key,
+      regionName: row.regionName || "-",
+      salesValue: 0,
+      salesUnits: 0,
+      stockUnits: 0,
+    };
+    current.salesValue += row.salesValue;
+    current.salesUnits += row.salesQty;
+    current.stockUnits += row.stockQty;
+    if (!current.regionName || current.regionName === "-") current.regionName = row.regionName || "-";
+    groups.set(key, current);
+  }
+  return [...groups.entries()]
+    .map(([code, group]) => ({
+      code,
+      name: group.name,
+      regionName: group.regionName,
+      salesValue: Number(group.salesValue.toFixed(2)),
+      salesUnits: Number(group.salesUnits.toFixed(2)),
+      stockUnits: Number(group.stockUnits.toFixed(2)),
+      share: totalValue > 0 ? Number((group.salesValue / totalValue).toFixed(4)) : 0,
+    }))
+    .sort(
+      (left, right) =>
+        right.salesValue - left.salesValue ||
+        right.stockUnits - left.stockUnits ||
+        left.name.localeCompare(right.name),
+    );
+}
+
 export async function loadWeeklyDashboard(filters?: {
   weekStart?: string | null;
   weekStarts?: string[] | null;
@@ -359,6 +403,7 @@ export async function loadWeeklyDashboard(filters?: {
     regions: [],
     products: [],
     distributorBreakdown: [],
+    branchBreakdown: [],
     zeroSalesBranches: [],
     trend: [],
   });
@@ -491,6 +536,7 @@ export async function loadWeeklyDashboard(filters?: {
     regions: rank(weekRows, (row) => row.regionCode, (row) => row.regionName),
     products: rank(weekRows, (row) => row.productCode, (row) => row.productName),
     distributorBreakdown: rank(weekRows, (row) => row.distributorCode, (row) => row.distributorName),
+    branchBreakdown: rankBranches(weekRows),
     zeroSalesBranches: zeroSalesBranches.slice(0, 100),
     trend,
   };
