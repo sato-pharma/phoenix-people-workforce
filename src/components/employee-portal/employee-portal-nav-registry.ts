@@ -17,6 +17,7 @@ import {
   LineChart,
   type LucideIcon,
   ReceiptText,
+  ScanLine,
   Send,
   Settings2,
   ShieldCheck,
@@ -55,6 +56,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
   { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
+  { label: "Fingerprint Report", fullLabel: "Fingerprint Report", href: "/employee-portals/fingerprint-analytics", icon: ScanLine, flags: ["showFingerprintReportTab"] },
   // Training Manager
   { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"] },
@@ -89,7 +91,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"] },
   // Expenses
   { label: "Expenses", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"] },
-  { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showManagementTab"] },
+  { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"] },
   { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"] },
   // Support
   { label: "Support", fullLabel: "Request Support", href: "/employee-portals/contact-hr-support", icon: Headphones, flags: ["showSupportTab"] },
