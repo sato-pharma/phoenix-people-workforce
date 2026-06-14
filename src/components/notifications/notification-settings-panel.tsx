@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Bell, CheckCircle2, Link2, Mail, Send, Smartphone, Unplug } from "lucide-react";
 
+import { useHydrated } from "@/hooks/use-hydrated";
+
 type NotificationSettings = {
   preferences: {
     emailEnabled: boolean;
@@ -52,6 +54,7 @@ function errorMessageFor(response: Response, payload: { error?: string; message?
 }
 
 export function NotificationSettingsPanel() {
+  const hydrated = useHydrated();
   const [settings, setSettings] = useState<NotificationSettings>(emptySettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -173,6 +176,8 @@ export function NotificationSettingsPanel() {
 
   const preferences = settings.preferences;
   const telegramConnected = settings.telegram?.status === "connected";
+  const settingsLoading = !hydrated || loading;
+  const controlsDisabled = settingsLoading || saving;
 
   return (
     <section className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
@@ -186,7 +191,7 @@ export function NotificationSettingsPanel() {
         </div>
         <span className="inline-flex items-center gap-2 self-start rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
           <Smartphone className="h-3.5 w-3.5" />
-          {loading ? "Loading" : statusLabel(settings)}
+          {settingsLoading ? "Loading" : statusLabel(settings)}
         </span>
       </div>
 
@@ -206,7 +211,7 @@ export function NotificationSettingsPanel() {
               <input
                 checked={item.checked}
                 className="h-4 w-4 accent-orange-600"
-                disabled={loading || saving}
+                disabled={controlsDisabled}
                 onChange={(event) => savePreferences({ ...preferences, [item.key]: event.target.checked })}
                 type="checkbox"
               />
@@ -220,7 +225,7 @@ export function NotificationSettingsPanel() {
           Preferred channel
           <select
             className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-            disabled={loading || saving}
+            disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, preferredChannel: event.target.value as NotificationSettings["preferences"]["preferredChannel"] })}
             value={preferences.preferredChannel}
           >
@@ -233,7 +238,7 @@ export function NotificationSettingsPanel() {
           Quiet hours start
           <input
             className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-            disabled={loading || saving}
+            disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, quietHoursStart: event.target.value || null })}
             type="time"
             value={preferences.quietHoursStart ?? ""}
@@ -243,7 +248,7 @@ export function NotificationSettingsPanel() {
           Quiet hours end
           <input
             className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-            disabled={loading || saving}
+            disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, quietHoursEnd: event.target.value || null })}
             type="time"
             value={preferences.quietHoursEnd ?? ""}
@@ -254,7 +259,7 @@ export function NotificationSettingsPanel() {
       <div className="mt-5 flex flex-wrap gap-2">
         <button
           className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-600 px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          disabled={loading || saving}
+          disabled={controlsDisabled}
           onClick={connectTelegram}
           type="button"
         >
@@ -263,7 +268,7 @@ export function NotificationSettingsPanel() {
         </button>
         <button
           className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
-          disabled={loading || saving || !telegramConnected}
+          disabled={controlsDisabled || !telegramConnected}
           onClick={sendTest}
           type="button"
         >
@@ -272,7 +277,7 @@ export function NotificationSettingsPanel() {
         </button>
         <button
           className="inline-flex items-center gap-2 rounded border border-rose-200 bg-white px-3.5 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"
-          disabled={loading || saving || !settings.telegram?.status}
+          disabled={controlsDisabled || !settings.telegram?.status}
           onClick={disconnectTelegram}
           type="button"
         >
@@ -289,7 +294,7 @@ export function NotificationSettingsPanel() {
           </p>
           <button
             className="mt-2 inline-flex items-center gap-2 rounded border border-orange-300 bg-white px-2.5 py-1 text-xs font-bold text-orange-800 disabled:opacity-60"
-            disabled={loading || saving}
+            disabled={controlsDisabled}
             onClick={connectTelegram}
             type="button"
           >
