@@ -246,11 +246,17 @@ export function DoubleVisitAnalyticsWorkspace({
               </Button>
             </div>
           </div>
-          <p className="mt-4 text-sm font-semibold text-slate-600">
-            {dashboard.publishedImport
-              ? `${dashboard.publishedImport.sourceFilename} published for ${formatDate(dashboard.publishedImport.dateFrom)} - ${formatDate(dashboard.publishedImport.dateTo)}`
-              : "Import and publish a snapshot before KPI and expense evidence can be populated."}
-          </p>
+          {!dashboard.schemaReady ? (
+            <p className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+              Double Visit Analytics tables are not provisioned in this environment. Apply migration 20260612172427_double_visit_analytics.sql and reopen this page.
+            </p>
+          ) : (
+            <p className="mt-4 text-sm font-semibold text-slate-600">
+              {dashboard.publishedImport
+                ? `${dashboard.publishedImport.sourceFilename} published for ${formatDate(dashboard.publishedImport.dateFrom)} - ${formatDate(dashboard.publishedImport.dateTo)}`
+                : "Import and publish a snapshot before KPI and expense evidence can be populated."}
+            </p>
+          )}
         </Card>
 
         <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
@@ -262,11 +268,11 @@ export function DoubleVisitAnalyticsWorkspace({
               {file ? file.name : "Select Excel DV file"}
               <input className="hidden" type="file" accept=".xlsx" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
             </label>
-            <Button className="min-h-11 gap-2 rounded bg-sky-600 px-4 text-white hover:bg-sky-700" disabled={!canImport || busy} onClick={() => void uploadExcel()} type="button">
+            <Button className="min-h-11 gap-2 rounded bg-sky-600 px-4 text-white hover:bg-sky-700" disabled={!canImport || busy || !dashboard.schemaReady} onClick={() => void uploadExcel()} type="button">
               <FileSpreadsheet className="h-4 w-4" />
               Save Excel Preview
             </Button>
-            <Button className="min-h-11 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50" disabled={!canImport || !ireports360Configured || busy} onClick={() => void importLive()} type="button">
+            <Button className="min-h-11 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50" disabled={!canImport || !ireports360Configured || busy || !dashboard.schemaReady} onClick={() => void importLive()} type="button">
               <Activity className="h-4 w-4" />
               Import Live iReports360
             </Button>
@@ -341,7 +347,10 @@ export function DoubleVisitAnalyticsWorkspace({
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Area heatmap</h2>
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Area heatmap</h2>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Coverage is calculated from active MRs in scope and includes scope areas with no visits as 0%.</p>
           <div className="mt-4 grid gap-2">
             {dashboard.heatmap.byArea.slice(0, 16).map((row) => (
               <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_110px_90px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
@@ -354,7 +363,10 @@ export function DoubleVisitAnalyticsWorkspace({
         </Card>
 
         <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Line heatmap</h2>
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Line heatmap</h2>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Coverage is calculated from active MRs in scope and shows every scoped line, even when no DV activity exists.</p>
           <div className="mt-4 grid gap-2">
             {dashboard.heatmap.byLine.slice(0, 16).map((row) => (
               <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_110px_90px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
@@ -377,12 +389,17 @@ export function DoubleVisitAnalyticsWorkspace({
             <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
               <tr><th className="px-3 py-3">File</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Range</th><th className="px-3 py-3">Visits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Action</th></tr>
             </thead>
-            <tbody>
-              {dashboard.imports.map((item) => (
-                <ImportRow key={item.id} item={item} publishingId={publishingId} onPublish={canPublish ? (id) => void publish(id) : () => undefined} />
-              ))}
-            </tbody>
-          </table>
+              <tbody>
+                {dashboard.imports.map((item) => (
+                  <ImportRow
+                    key={item.id}
+                    item={item}
+                    publishingId={publishingId}
+                    onPublish={canPublish && dashboard.schemaReady ? (id) => void publish(id) : () => undefined}
+                  />
+                ))}
+              </tbody>
+            </table>
         </div>
       </Card>
     </div>

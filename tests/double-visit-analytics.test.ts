@@ -150,6 +150,13 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(nav, /Double Visit Analytics/);
   assert.doesNotMatch(nav, /DSM Dashboard/i);
 
+  const service = readFileSync("src/lib/double-visit-analytics/service.ts", "utf8");
+  assert.match(service, /isAllowedDoubleVisitor\(/);
+  assert.match(service, /filterRowsByAllowedDoubleVisitor\(/);
+  assert.match(service, /isDisallowedExecutiveManager\(/);
+  assert.match(service, /buildHeatmapRows\(mrScores, "areaName", areaBuckets\)/);
+  assert.match(service, /buildHeatmapRows\(mrScores, "lineName", lineBuckets\)/);
+
   const accessRegistry = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(accessRegistry, /\/api\/admin\/double-visit-analytics\/export/);
   assert.match(accessRegistry, /double_visit_analytics/);

@@ -9,6 +9,7 @@ import {
 } from "@/lib/field-workforce-compliance/ireports360-client";
 import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports360-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildDoubleVisitPreviewFromWorkbook,
@@ -103,6 +104,57 @@ function round(value: number, digits = 2) {
 function schemaMissing(error: unknown) {
   const message = error instanceof Error ? error.message : JSON.stringify(error);
   return /double_visit_|schema cache|does not exist|PGRST205|42P01/i.test(message);
+}
+
+function throwSchemaMissingError() {
+  throw new Error("Double Visit Analytics tables are not provisioned in the connected database. Please apply migration 20260612172427_double_visit_analytics.sql.");
+}
+
+function ensureNoSchemaError(error: unknown) {
+  if (!error) return;
+  if (schemaMissing(error)) throwSchemaMissingError();
+  throw new Error(error instanceof Error ? error.message : "Unknown error");
+}
+
+function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardData {
+  return {
+    asOfDate: todayIso(),
+    dateFrom,
+    dateTo,
+    executiveReports: [],
+    filters: { areas: [], doubleVisitors: [], lines: [] },
+    heatmap: { byArea: [], byLine: [] },
+    imports: [],
+    kpis: {
+      activeCalendarDays: 0,
+      activeDoubleVisitDays: 0,
+      activeMappedVisitCount: 0,
+      amPmRatio: null,
+      amVisitCount: 0,
+      averageVisitsPerDoubleVisitDay: 0,
+      averageVisitsPerDoubleVisitor: 0,
+      doubleVisitorCount: 0,
+      mrCoverageCount: 0,
+      pmVisitCount: 0,
+      totalVisits: 0,
+      vacantOrUnmappedShare: 0,
+      vacantOrUnmappedVisitCount: 0,
+    },
+    mrScores: [],
+    publishedImport: null,
+    salesComparisonAvailable: false,
+    schemaReady: false,
+  };
+}
+
+async function isDoubleVisitSchemaReady() {
+  const supabase = getSupabaseAdmin();
+  const [importCheck, rowsCheck] = await Promise.all([
+    supabase.from(importsTable).select("id", { count: "exact", head: true }).limit(1),
+    supabase.from(rowsTable).select("id", { count: "exact", head: true }).limit(1),
+  ]);
+  if (schemaMissing(importCheck.error) || schemaMissing(rowsCheck.error)) return false;
+  return true;
 }
 
 function actorFromAccess(access: AccessContext) {
@@ -305,6 +357,10 @@ export async function saveDoubleVisitPreview(input: {
   preview: DoubleVisitPreview;
 }) {
   const supabase = getSupabaseAdmin();
+  if (!(await isDoubleVisitSchemaReady())) {
+    throwSchemaMissingError();
+  }
+
   const importPayload = {
     active_mapped_visit_count: input.preview.summary.activeMappedVisitCount,
     am_visit_count: input.preview.summary.amVisitCount,
@@ -336,14 +392,14 @@ export async function saveDoubleVisitPreview(input: {
     .insert(importPayload)
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) ensureNoSchemaError(error);
 
   const importId = String(data.id);
   const inserts = input.preview.rows.map((row) => rowInsert(importId, row));
   for (let index = 0; index < inserts.length; index += archiveBatchSize) {
     const chunk = inserts.slice(index, index + archiveBatchSize);
     const { error: rowsError } = await supabase.from(rowsTable).insert(chunk);
-    if (rowsError) throw new Error(rowsError.message);
+    if (rowsError) ensureNoSchemaError(rowsError);
   }
 
   await writeRequiredAuditLog({
@@ -417,12 +473,16 @@ export async function publishDoubleVisitImport(input: {
 }) {
   const actor = actorFromAccess(input.access);
   const supabase = getSupabaseAdmin();
+  if (!(await isDoubleVisitSchemaReady())) {
+    throwSchemaMissingError();
+  }
+
   const { data: target, error: loadError } = await supabase
     .from(importsTable)
     .select("*")
     .eq("id", input.importId)
     .maybeSingle();
-  if (loadError) throw new Error(loadError.message);
+  if (loadError) ensureNoSchemaError(loadError);
   if (!target) throw new Error("Double Visit import was not found.");
   const targetRow = target as DoubleVisitImportRow;
 
@@ -431,7 +491,7 @@ export async function publishDoubleVisitImport(input: {
     .update({ status: "superseded", updated_at: new Date().toISOString() })
     .eq("status", "published")
     .neq("id", input.importId);
-  if (supersedeError) throw new Error(supersedeError.message);
+  if (supersedeError) ensureNoSchemaError(supersedeError);
 
   const { data, error } = await supabase
     .from(importsTable)
@@ -444,7 +504,7 @@ export async function publishDoubleVisitImport(input: {
     .eq("id", input.importId)
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) ensureNoSchemaError(error);
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
@@ -503,8 +563,42 @@ function isActiveEmployee(employee: EmployeeDirectoryRow) {
   return status === "active" || status === "on_leave";
 }
 
+const allowedDoubleVisitorRoles = [
+  "Medical Rep",
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "SFE Manager",
+  "Training Manager",
+] as const;
+
 function isMedicalRep(employee: EmployeeDirectoryRow) {
   return /medical\s*rep|medical\s*representative/i.test(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
+}
+
+function isAllowedDoubleVisitor(employee: EmployeeDirectoryRow | null) {
+  if (!employee) return true;
+  const title = text(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
+  if (!title) return true;
+  const role = resolveJobFunctionRole(title);
+  if (role === "CEO") return false;
+  return allowedDoubleVisitorRoles.includes(role as (typeof allowedDoubleVisitorRoles)[number]);
+}
+
+function isDisallowedExecutiveManager(employee: EmployeeDirectoryRow | null) {
+  if (!employee) return false;
+  const title = text(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
+  return resolveJobFunctionRole(title) === "CEO";
+}
+
+function filterRowsByAllowedDoubleVisitor(rows: DoubleVisitDbRow[], employeeByHrId: Map<string, EmployeeDirectoryRow>) {
+  return rows.filter((row) => {
+    const doubleVisitorKey = normalizedHrKey(row.double_visitor_hr_id);
+    if (!doubleVisitorKey) return true;
+    return isAllowedDoubleVisitor(employeeByHrId.get(doubleVisitorKey) ?? null);
+  });
 }
 
 function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow[], asOfDate: string): DoubleVisitMrScore[] {
@@ -565,6 +659,7 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       seen.add(managerKey);
       const manager = employeesByHrId.get(managerKey);
       if (!manager) break;
+      if (isDisallowedExecutiveManager(manager)) break;
       const current = reportsByManager.get(managerKey) ?? { manager, mrs: [] };
       current.mrs.push(score);
       reportsByManager.set(managerKey, current);
@@ -598,11 +693,20 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     .sort((left, right) => right.neglectedMrCount - left.neglectedMrCount || left.managerName.localeCompare(right.managerName));
 }
 
-function buildHeatmapRows(scores: DoubleVisitMrScore[], field: "areaName" | "lineName"): DoubleVisitBreakdownRow[] {
+function buildHeatmapRows(
+  scores: DoubleVisitMrScore[],
+  field: "areaName" | "lineName",
+  allBuckets: string[] = [],
+): DoubleVisitBreakdownRow[] {
   const groups = new Map<string, DoubleVisitMrScore[]>();
   for (const score of scores) {
     const key = nullableText(score[field]) ?? "Unmapped";
     groups.set(key, [...(groups.get(key) ?? []), score]);
+  }
+  for (const bucket of allBuckets) {
+    const normalized = text(bucket);
+    if (!normalized) continue;
+    if (!groups.has(normalized)) groups.set(normalized, []);
   }
   return Array.from(groups.entries()).map(([label, group]) => {
     const mrCount = group.length;
@@ -652,16 +756,30 @@ export async function getDoubleVisitDashboardData(input: {
   const month = currentMonthBounds();
   const dateFrom = input.dateFrom || month.start;
   const dateTo = input.dateTo || month.end;
+  const schemaReady = await isDoubleVisitSchemaReady();
+  if (!schemaReady) {
+    return emptyDashboard(dateFrom, dateTo);
+  }
+
   const imports = await listDoubleVisitImports();
   const { importRow, rows } = await getPublishedRows(dateFrom, dateTo);
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
   const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access);
   const scopedRows = filterRowsForAccess(rows, input.access, employees);
-  const mrScores = buildMrScores(scopedRows, scopedEmployees, dateTo);
+  const scopedEmployeesByHrId = new Map(
+    scopedEmployees
+      .map((employee) => [normalizedHrKey(employee.hrId), employee])
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+  const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId);
+  const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
   const executiveReports = buildExecutiveReports(mrScores, scopedEmployees);
-  const areas = Array.from(new Set(scopedRows.map((row) => nullableText(row.area_name)).filter((value): value is string => Boolean(value)))).sort();
-  const lines = Array.from(new Set(scopedRows.map((row) => nullableText(row.line_name)).filter((value): value is string => Boolean(value)))).sort();
-  const doubleVisitors = Array.from(new Set(scopedRows.map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id)).filter((value): value is string => Boolean(value)))).sort();
+  const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
+  const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();
+  const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
+  const areas = Array.from(new Set(filteredRows.map((row) => nullableText(row.area_name)).filter((value): value is string => Boolean(value)))).sort();
+  const lines = Array.from(new Set(filteredRows.map((row) => nullableText(row.line_name)).filter((value): value is string => Boolean(value)))).sort();
+  const doubleVisitors = Array.from(new Set(filteredRows.map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id)).filter((value): value is string => Boolean(value)))).sort();
 
   return {
     asOfDate: todayIso(),
@@ -670,11 +788,11 @@ export async function getDoubleVisitDashboardData(input: {
     executiveReports,
     filters: { areas, doubleVisitors, lines },
     heatmap: {
-      byArea: buildHeatmapRows(mrScores, "areaName"),
-      byLine: buildHeatmapRows(mrScores, "lineName"),
+      byArea: buildHeatmapRows(mrScores, "areaName", areaBuckets),
+      byLine: buildHeatmapRows(mrScores, "lineName", lineBuckets),
     },
     imports,
-    kpis: buildKpis(scopedRows),
+    kpis: buildKpis(filteredRows),
     mrScores,
     publishedImport: importRow,
     salesComparisonAvailable: false,
