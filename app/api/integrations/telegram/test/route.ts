@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_profile", "update");
+    await assertPermission(access, "employee_profile", "read");
     const result = await createSystemNotification({
       actionUrl: "/employee-portals/profile",
       actorId: access.loginId ?? access.hrId ?? "system",
