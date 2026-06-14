@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { resolveNavigationMode } from "@/lib/auth/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,10 @@ export async function GET(request: Request) {
 
   if (!access.loginId && !access.hrId) {
     return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  if (!(await canAccess(access, "probation", "read"))) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   const { searchParams } = new URL(request.url);

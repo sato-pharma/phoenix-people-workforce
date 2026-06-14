@@ -75,7 +75,7 @@ export function runEmailTemplatesTriggersTests() {
   // --- From-name consistency -------------------------------------------------------
   const envExample = readFileSync(".env.example", "utf8");
   assert.doesNotMatch(envExample, /noreply@yourdomain/, "the misleading noreply placeholder must be gone");
-  assert.match(envExample, /NOTIFICATION_EMAIL_FROM=Phoenix Workforce <phoenix@mail\.satopharma\.com>/, "From must match the in-code identity");
+  assert.match(envExample, /NOTIFICATION_EMAIL_FROM=Phoenix Workforce <phoenix@send\.satopharma\.com>/, "From must match the in-code identity");
 
   // --- External scheduler ----------------------------------------------------------
   const processRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
