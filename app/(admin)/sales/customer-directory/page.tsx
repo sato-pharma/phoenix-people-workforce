@@ -5,8 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
-  listCustomerDirectory,
-  loadCustomerDirectoryFilterOptions,
+  loadCustomerDirectoryInitialData,
   type CustomerDirectoryFilterOptions,
   type CustomerDirectoryListResult,
 } from "@/lib/sales/customer-directory";
@@ -28,10 +27,10 @@ export default async function CustomerDirectoryPage() {
 
   try {
     await assertPermission(access, "sales", "import");
-    [options, initialResult] = await Promise.all([
-      loadCustomerDirectoryFilterOptions(),
-      listCustomerDirectory({}),
-    ]);
+    // Single combined load builds the name maps once for both options and the list.
+    const initial = await loadCustomerDirectoryInitialData({});
+    options = initial.options;
+    initialResult = initial.result;
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Customer Directory.";
   }
