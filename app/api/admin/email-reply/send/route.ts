@@ -108,7 +108,20 @@ export async function POST(request: Request) {
     }
 
     const signatureImageSrc = emailSignatureUrl(request.url);
-    const signatureImageCheck = await assertReachableEmailImage(signatureImageSrc);
+    // The signature image reachability check must NOT block a legitimate send: a cold
+    // serverless start or a momentarily slow/unreachable image host would otherwise throw
+    // and stop the email entirely. Downgrade any failure to a non-blocking warning, the
+    // same way the preview path (email-composer-service) already does.
+    let signatureImageVerified = true;
+    let signatureImageWarning: string | null = null;
+    try {
+      const signatureImageCheck = await assertReachableEmailImage(signatureImageSrc);
+      signatureImageWarning = signatureImageCheck.warning ?? null;
+    } catch (error) {
+      signatureImageVerified = false;
+      signatureImageWarning = error instanceof Error ? error.message : "Signature image check failed.";
+      console.error("[email-reply/send] signature image check failed (sending anyway):", signatureImageWarning);
+    }
 
     const generated = buildPhoenixHrReplyEmail({
       cc: cc.join(", "),
@@ -161,8 +174,8 @@ export async function POST(request: Request) {
       result: {
         ...result,
         externalRecipients: recipientPolicy.externalRecipients,
-        signatureImageVerified: true,
-        signatureImageWarning: signatureImageCheck.warning,
+        signatureImageVerified,
+        signatureImageWarning,
       },
     });
   } catch (error) {
