@@ -72,8 +72,9 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
       <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-500/20 blur-3xl" />
       <div className="absolute -bottom-28 left-8 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
 
-      <div className="relative grid gap-6 md:grid-cols-[minmax(0,1fr)_230px] md:items-center lg:grid-cols-[minmax(0,1fr)_250px] xl:grid-cols-[minmax(0,1fr)_292px]">
-        <div className="min-w-0">
+      <div className="relative grid gap-5 md:grid-cols-[minmax(0,1fr)_230px] md:grid-rows-[auto_1fr] md:gap-x-6 md:gap-y-5 lg:grid-cols-[minmax(0,1fr)_250px] xl:grid-cols-[minmax(0,1fr)_292px]">
+        {/* Greeting + intro — top-left on desktop, first on mobile */}
+        <div className="min-w-0 md:col-start-1 md:row-start-1">
           <div className="mb-4 inline-flex w-fit items-center gap-2 rounded border border-orange-400/25 bg-orange-500/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.20em] text-orange-100">
             <Flame className="h-3 w-3" />
             Your Phoenix day starts here
@@ -92,42 +93,10 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
           <p className="mt-3 max-w-3xl text-[15px] leading-[1.80] text-slate-300 lg:text-[15.5px]">
             Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today&apos;s work into visible progress.
           </p>
-
-          <div className="mt-5 grid w-full max-w-3xl grid-cols-1 gap-2 text-slate-300 sm:grid-cols-2 lg:grid-cols-4">
-            <span className="flex min-h-9 w-full min-w-0 items-center border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-bold leading-snug text-white shadow-sm backdrop-blur lg:text-[13px]">
-              <span className="min-w-0 break-words">{employee.fullName}</span>
-            </span>
-            <span className="flex min-h-9 w-full min-w-0 items-center border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <span className="min-w-0 break-words">{employee.roleLabel}</span>
-            </span>
-            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-orange-200" />
-              <span className="min-w-0 break-words">Hired {hiredLabel}</span>
-            </span>
-            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-orange-300/25 bg-orange-500/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-orange-100 shadow-sm backdrop-blur lg:text-[13px]">
-              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-orange-200" />
-              <span className="min-w-0 break-words">HR ID {displayHrId}</span>
-            </span>
-          </div>
-
-          <div className="mt-2 grid w-full max-w-3xl grid-cols-1 gap-2 text-slate-300 sm:grid-cols-3">
-            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-200" />
-              <span className="min-w-0 break-words">{employee.area ?? "Unassigned"}</span>
-            </span>
-            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <Users className="h-3.5 w-3.5 shrink-0 text-sky-200" />
-              <span className="min-w-0 break-words">{employee.manager ?? "Unassigned"}</span>
-            </span>
-            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
-              <span className="min-w-0 break-words">{employee.line ?? "Phoenix"}</span>
-            </span>
-          </div>
-
         </div>
 
-        <div className="group relative mx-auto flex h-[220px] w-full max-w-[230px] shrink-0 items-center justify-center rounded border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[260px] sm:max-w-[260px] md:mx-0 md:h-[268px] md:max-w-[230px] lg:h-[316px] lg:max-w-[250px] xl:max-w-[292px]">
+        {/* Photo — sits between the intro and the info chips on mobile; right column (centered) on desktop */}
+        <div className="group relative mx-auto mb-1 flex h-[230px] w-full max-w-[260px] shrink-0 items-center justify-center rounded border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[260px] sm:max-w-[300px] md:mx-0 md:mb-0 md:h-[268px] md:max-w-[230px] md:col-start-2 md:row-start-1 md:row-span-2 md:self-center lg:h-[316px] lg:max-w-[250px] xl:max-w-[292px]">
           <div className="absolute -inset-1 rounded bg-gradient-to-br from-orange-300/35 via-white/0 to-sky-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
           <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded bg-white/95 shadow-inner">
             {profileImage ? (
@@ -149,6 +118,41 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
           <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 rounded border border-white/70 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
             <ShieldCheck className="h-3.5 w-3.5" />
             Phoenix Verified
+          </div>
+        </div>
+
+        {/* Info chips — paired two-up on mobile to keep the card compact; bottom-left on desktop */}
+        <div className="min-w-0 md:col-start-1 md:row-start-2">
+          <div className="grid w-full max-w-3xl grid-cols-2 gap-2 text-slate-300 lg:grid-cols-4">
+            <span className="col-span-2 flex min-h-9 w-full min-w-0 items-center border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-bold leading-snug text-white shadow-sm backdrop-blur sm:col-span-1 lg:text-[13px]">
+              <span className="min-w-0 break-words">{employee.fullName}</span>
+            </span>
+            <span className="col-span-2 flex min-h-9 w-full min-w-0 items-center border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur sm:col-span-1 lg:text-[13px]">
+              <span className="min-w-0 break-words">{employee.roleLabel}</span>
+            </span>
+            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
+              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-orange-200" />
+              <span className="min-w-0 break-words">Hired {hiredLabel}</span>
+            </span>
+            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-orange-300/25 bg-orange-500/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-orange-100 shadow-sm backdrop-blur lg:text-[13px]">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-orange-200" />
+              <span className="min-w-0 break-words">HR ID {displayHrId}</span>
+            </span>
+          </div>
+
+          <div className="mt-2 grid w-full max-w-3xl grid-cols-2 gap-2 text-slate-300 sm:grid-cols-3">
+            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-200" />
+              <span className="min-w-0 break-words">{employee.area ?? "Unassigned"}</span>
+            </span>
+            <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
+              <Users className="h-3.5 w-3.5 shrink-0 text-sky-200" />
+              <span className="min-w-0 break-words">{employee.manager ?? "Unassigned"}</span>
+            </span>
+            <span className="col-span-2 flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur sm:col-span-1 lg:text-[13px]">
+              <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
+              <span className="min-w-0 break-words">{employee.line ?? "Phoenix"}</span>
+            </span>
           </div>
         </div>
       </div>
