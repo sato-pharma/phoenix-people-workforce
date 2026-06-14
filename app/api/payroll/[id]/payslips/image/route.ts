@@ -159,26 +159,28 @@ async function renderPayslipPdf(
   }
 
   // ── header band ─────────────────────────────────────────────────────────────
-  const HEADER_H = 84;
-  rect(0, PH, PW, 5, P.orange);
-  rect(0, PH - 5, PW, HEADER_H, P.navy);
+  // Compact header: 72pt band + 4pt stripe + 10pt gap = 86pt total
+  const HEADER_H = 72;
+  rect(0, PH, PW, 4, P.orange);
+  rect(0, PH - 4, PW, HEADER_H, P.navy);
 
-  txt("PAYROLL STATEMENT", M, PH - 18, 7, bold, P.eyebrow);
-  txt("Payslip", M, PH - 40, 21, bold, P.white);
-  txt(PERIOD, M, PH - 59, 10, bold, P.headerText);
+  txt("PAYROLL STATEMENT", M, PH - 16, 7, bold, P.eyebrow);
+  txt("Payslip", M, PH - 36, 19, bold, P.white);
+  txt(PERIOD, M, PH - 54, 9, bold, P.headerText);
 
   const RX = PW - M - 148;
-  txt("PERIOD", RX, PH - 22, 6, bold, P.headerText);
-  txt(PERIOD, RX, PH - 36, 9, bold, P.white, 148);
-  txt("STATUS", RX, PH - 52, 6, bold, P.headerText);
-  txt(STATUS, RX, PH - 66, 9, bold, isPublished ? P.success : P.eyebrow, 148);
+  txt("PERIOD", RX, PH - 20, 6, bold, P.headerText);
+  txt(PERIOD, RX, PH - 33, 9, bold, P.white, 148);
+  txt("STATUS", RX, PH - 49, 6, bold, P.headerText);
+  txt(STATUS, RX, PH - 62, 9, bold, isPublished ? P.success : P.eyebrow, 148);
 
-  y = PH - 5 - HEADER_H - 14;
+  y = PH - 4 - HEADER_H - 10;
 
   // ── employee info + summary ──────────────────────────────────────────────────
-  const HALF       = (CW - 10) / 2;
-  const ROW_H      = 23;
-  const TITLE_H    = 22;
+  // Compact rows: 20pt each, 18pt title bar, 4pt card padding = 142pt card
+  const HALF    = (CW - 10) / 2;
+  const ROW_H   = 20;
+  const TITLE_H = 18;
 
   const empFields: [string, string][] = [
     ["HR ID",     asciiSafe(record.employeeCode || record.hrId)],
@@ -188,19 +190,19 @@ async function renderPayslipPdf(
     ["Line",      asciiSafe(record.line || "-")],
     ["Hire Date", formatDate(record.hireDate)],
   ];
-  const CARD_H = TITLE_H + empFields.length * ROW_H + 6;
+  const CARD_H = TITLE_H + empFields.length * ROW_H + 4;
   const CARD_TOP = y;
 
   // employee card
   rect(M, CARD_TOP, HALF, 2, P.teal);
   rect(M, CARD_TOP - 2, HALF, CARD_H - 2, P.white);
-  txt("EMPLOYEE INFORMATION", M + 8, CARD_TOP - TITLE_H + 7, 7, bold, P.slate700);
+  txt("EMPLOYEE INFORMATION", M + 8, CARD_TOP - TITLE_H + 6, 7, bold, P.slate700);
 
-  let ery = CARD_TOP - TITLE_H - 4;
+  let ery = CARD_TOP - TITLE_H - 3;
   for (const [lbl, val] of empFields) {
     rect(M + 6, ery, HALF - 12, ROW_H - 2, P.slate50);
-    txt(lbl, M + 10, ery - ROW_H + 12, 7, bold, P.slate500);
-    txt(val, M + 10, ery - ROW_H + 4,  8.5, bold, P.navy, HALF - 20);
+    txt(lbl, M + 10, ery - ROW_H + 12, 6.5, bold, P.slate500);
+    txt(val, M + 10, ery - ROW_H + 4,  8, bold, P.navy, HALF - 20);
     ery -= ROW_H;
   }
 
@@ -208,7 +210,7 @@ async function renderPayslipPdf(
   const SX = M + HALF + 10;
   rect(SX, CARD_TOP, HALF, 2, P.orange);
   rect(SX, CARD_TOP - 2, HALF, CARD_H - 2, P.white);
-  txt("PAYROLL SUMMARY", SX + 8, CARD_TOP - TITLE_H + 7, 7, bold, P.slate700);
+  txt("PAYROLL SUMMARY", SX + 8, CARD_TOP - TITLE_H + 6, 7, bold, P.slate700);
 
   const metrics: { lbl: string; val: string; bg: Color; tc: Color }[] = [
     { lbl: "BASE SALARY",  val: formatEGP(record.baseSalary),  bg: P.slate50,  tc: P.navy },
@@ -216,29 +218,30 @@ async function renderPayslipPdf(
     { lbl: "NET SALARY",   val: formatEGP(record.netSalary),   bg: P.redBg,    tc: P.red },
     { lbl: "MONTH SALARY", val: formatEGP(record.monthSalary), bg: P.navy,     tc: P.white },
   ];
-  const MH = (CARD_H - TITLE_H - 16 - 6) / 2;
+  const MH = (CARD_H - TITLE_H - 14 - 6) / 2;
   const MW = (HALF - 20 - 6) / 2;
   for (let i = 0; i < 4; i++) {
     const mc = i % 2;
     const mr = Math.floor(i / 2);
     const mx = SX + 8 + mc * (MW + 6);
-    const mTop = CARD_TOP - TITLE_H - 8 - mr * (MH + 6);
+    const mTop = CARD_TOP - TITLE_H - 6 - mr * (MH + 6);
     rect(mx, mTop, MW, MH, metrics[i].bg);
-    txt(metrics[i].lbl, mx + 6, mTop - 12, 6, bold, metrics[i].tc);
-    txt(asciiSafe(metrics[i].val), mx + 6, mTop - MH + 7, 11, bold, metrics[i].tc, MW - 10);
+    txt(metrics[i].lbl, mx + 6, mTop - 10, 6, bold, metrics[i].tc);
+    txt(asciiSafe(metrics[i].val), mx + 6, mTop - MH + 7, 10, bold, metrics[i].tc, MW - 10);
   }
 
-  y = CARD_TOP - CARD_H - 14;
+  y = CARD_TOP - CARD_H - 10;
 
   // ── components table ─────────────────────────────────────────────────────────
-  const RH = 17;
+  // 15pt rows, 12pt section bands, 16pt column header = fits 24 rows in ~436pt
+  const RH = 15;
   const C1 = CW * 0.60;
 
   need(22);
-  rect(M, y, CW, 20, P.navy);
-  txt("COMPONENT",      M + 8,    y - 13, 7, bold, P.headerText);
-  txt("AMOUNT / VALUE", M + C1 + 8, y - 13, 7, bold, P.headerText);
-  y -= 20;
+  rect(M, y, CW, 16, P.navy);
+  txt("COMPONENT",      M + 8,      y - 11, 6.5, bold, P.headerText);
+  txt("AMOUNT / VALUE", M + C1 + 8, y - 11, 6.5, bold, P.headerText);
+  y -= 16;
 
   let ri = 0;
   for (const section of payrollSheetSections) {
@@ -248,11 +251,11 @@ async function renderPayslipPdf(
 
     if (!rows.length) continue;
 
-    need(16 + rows.length * RH);
+    need(13 + rows.length * RH);
 
-    rect(M, y, CW, 15, sectionFill(section.tone));
-    txt(section.label.toUpperCase(), M + 8, y - 10, 7, bold, P.white);
-    y -= 15;
+    rect(M, y, CW, 12, sectionFill(section.tone));
+    txt(section.label.toUpperCase(), M + 8, y - 8, 6.5, bold, P.white);
+    y -= 12;
 
     for (const header of rows) {
       const raw = payrollSheetValue(record, month, year, 0, header);
@@ -282,10 +285,10 @@ async function renderPayslipPdf(
         color: P.slate200,
       });
 
-      txt(asciiSafe(header), M + 8, y - RH + 5, 8.5, isTotal ? bold : regular, rowColor, C1 - 16);
+      txt(asciiSafe(header), M + 8, y - RH + 4, 8, isTotal ? bold : regular, rowColor, C1 - 16);
 
-      const vw = bold.widthOfTextAtSize(fmtVal, 8.5);
-      txt(fmtVal, M + CW - 8 - vw, y - RH + 5, 8.5, bold, rowColor);
+      const vw = bold.widthOfTextAtSize(fmtVal, 8);
+      txt(fmtVal, M + CW - 8 - vw, y - RH + 4, 8, bold, rowColor);
 
       y -= RH;
       ri++;
@@ -293,31 +296,30 @@ async function renderPayslipPdf(
   }
 
   // ── payment parts ─────────────────────────────────────────────────────────
-  need(62);
-  y -= 12;
+  need(54);
+  y -= 8;
 
   const parts: { lbl: string; val: string; bg: Color; tc: Color }[] = [
     { lbl: "FIRST PART",   val: formatEGP(record.firstPart),   bg: P.slate50, tc: P.navy },
     { lbl: "SECOND PART",  val: formatEGP(record.secondPart),  bg: P.slate50, tc: P.navy },
     { lbl: "MONTH SALARY", val: formatEGP(record.monthSalary), bg: P.navy,    tc: P.white },
   ];
-  const PB = 44;
+  const PB = 40;
   const PW2 = (CW - 14) / 3;
   for (let i = 0; i < parts.length; i++) {
     const px = M + i * (PW2 + 7);
     rect(px, y, PW2, PB, parts[i].bg);
-    txt(parts[i].lbl, px + 8, y - 13, 6, bold, parts[i].tc);
-    txt(asciiSafe(parts[i].val), px + 8, y - 33, 12, bold, parts[i].tc, PW2 - 16);
+    txt(parts[i].lbl, px + 8, y - 11, 6, bold, parts[i].tc);
+    txt(asciiSafe(parts[i].val), px + 8, y - 30, 11, bold, parts[i].tc, PW2 - 16);
   }
   y -= PB;
 
-  // ── comment ───────────────────────────────────────────────────────────────
+  // ── comment (single line, truncated to keep on page) ──────────────────────
   if (record.payrollComment) {
-    need(50);
-    y -= 12;
-    txt("Comment", M, y - 12, 10, bold, P.navy);
-    y -= 20;
-    txt(asciiSafe(record.payrollComment).slice(0, 300), M, y - 12, 8.5, regular, P.slate500, CW);
+    need(30);
+    y -= 8;
+    txt("Comment:", M, y - 8, 7, bold, P.navy);
+    txt(asciiSafe(record.payrollComment).slice(0, 200), M + 58, y - 8, 7, regular, P.slate500, CW - 58);
   }
 
   // ── footer on every page ──────────────────────────────────────────────────
