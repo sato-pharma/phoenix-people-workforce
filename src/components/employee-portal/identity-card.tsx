@@ -146,12 +146,12 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
               <span className="min-w-0 break-words">{employee.area ?? "Unassigned"}</span>
             </span>
             <span className="flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur lg:text-[13px]">
-              <Users className="h-3.5 w-3.5 shrink-0 text-sky-200" />
-              <span className="min-w-0 break-words">{employee.manager ?? "Unassigned"}</span>
-            </span>
-            <span className="col-span-2 flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur sm:col-span-1 lg:text-[13px]">
               <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
               <span className="min-w-0 break-words">{employee.line ?? "Phoenix"}</span>
+            </span>
+            <span className="col-span-2 flex min-h-9 w-full min-w-0 items-center gap-2 border border-white/10 bg-white/10 px-3.5 py-2 text-[12px] font-medium leading-snug text-slate-200 shadow-sm backdrop-blur sm:col-span-1 lg:text-[13px]">
+              <Users className="h-3.5 w-3.5 shrink-0 text-sky-200" />
+              <span className="min-w-0 break-words">{employee.manager ?? "Unassigned"}</span>
             </span>
           </div>
         </div>
