@@ -168,6 +168,7 @@ export const adminNavigationSections = [
       { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
     ],
     label: "Sales Operations",
