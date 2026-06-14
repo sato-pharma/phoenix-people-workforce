@@ -8,6 +8,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { canAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData, loadDirectManagerName } from "@/lib/admin/command-center";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,10 @@ async function AdminCommandContent({ access }: { access: AccessContext }) {
   const loadError = dataResult.error;
 
   const viewerHrId = formatHrIdForDisplay(access.hrId);
-  const managerName = await loadDirectManagerName(viewerHrId ?? access.hrId);
+  const [managerName, profilePhotoUrl] = await Promise.all([
+    loadDirectManagerName(viewerHrId ?? access.hrId),
+    uploadedEmployeePhotoUrl(viewerHrId ?? access.hrId),
+  ]);
   const welcomeProfile = {
     fullName: viewer.displayName,
     hrId: viewerHrId,
@@ -87,7 +91,7 @@ async function AdminCommandContent({ access }: { access: AccessContext }) {
 
   return (
     data ? (
-      <AdminCommandCenter data={data} welcomeProfile={welcomeProfile} />
+      <AdminCommandCenter data={data} profilePhotoUrl={profilePhotoUrl} welcomeProfile={welcomeProfile} />
     ) : (
       <div className="p-8">
         <Card className="mx-auto max-w-2xl rounded-none border-rose-100 bg-rose-50 p-6 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">

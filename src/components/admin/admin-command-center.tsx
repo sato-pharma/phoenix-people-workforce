@@ -546,9 +546,11 @@ function SecondaryLink({
 export function AdminCommandCenter({
   data,
   welcomeProfile = null,
+  profilePhotoUrl = null,
 }: {
   data: AdminCommandCenterData;
   welcomeProfile?: CommandCenterWelcomeProfile | null;
+  profilePhotoUrl?: string | null;
 }) {
   const { overview: o, health, operations, payrollEligibleCount, dataUnavailable, generatedAt } = data;
   const { showAdminModules, showFinancialModules } = data.access;
@@ -609,7 +611,7 @@ export function AdminCommandCenter({
     : showFinancialModules
     ? "Unified workforce, payroll, sales, and operational intelligence in one executive surface."
     : "Unified workforce, people operations, sales, and operational intelligence in one executive surface.";
-  const profileImage = employeeProfileImageForHrId(welcomeProfile?.hrId ?? null);
+  const profileImage = profilePhotoUrl ?? employeeProfileImageForHrId(welcomeProfile?.hrId ?? null);
   const heroTitle = welcomeProfile
     ? <>Hello, {firstNameFrom(welcomeProfile.fullName)} <span aria-hidden="true">👋🏻</span></>
     : "Admin Command Center";
@@ -675,6 +677,7 @@ export function AdminCommandCenter({
                       height={330}
                       priority
                       src={profileImage}
+                      unoptimized={profileImage.startsWith("/api/")}
                       width={300}
                     />
                   ) : (

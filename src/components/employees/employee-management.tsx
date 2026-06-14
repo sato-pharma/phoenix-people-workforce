@@ -28,6 +28,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -622,6 +623,39 @@ function organogramHrefForEmployee(
   if (employee.hrId.trim()) params.set("search", employee.hrId.trim().toUpperCase());
 
   return `/organogram${params.toString() ? `?${params.toString()}` : ""}`;
+}
+
+function DirectoryAvatar({ hrId, fullName }: { hrId: string; fullName: string }) {
+  const staticUrl = employeeProfileImageForHrId(hrId);
+  const initials =
+    fullName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p.charAt(0))
+      .join("")
+      .toUpperCase() || "EM";
+  const [mode, setMode] = React.useState<"uploaded" | "static" | "initials">("uploaded");
+
+  function handleError() {
+    setMode((m) => (m === "uploaded" ? (staticUrl ? "static" : "initials") : "initials"));
+  }
+
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-orange-50">
+      {mode !== "initials" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          aria-hidden="true"
+          className="h-full w-full object-cover"
+          onError={handleError}
+          src={mode === "uploaded" ? `/api/employees/${encodeURIComponent(hrId)}/photo` : (staticUrl ?? "")}
+        />
+      ) : (
+        <span className="text-[10px] font-black text-orange-600">{initials}</span>
+      )}
+    </div>
+  );
 }
 
 export function EmployeeManagement({
@@ -1637,10 +1671,12 @@ export function EmployeeManagement({
                         >
                         <td className="px-6 py-4">
                           <button
-                            className="flex flex-col text-left group/name"
+                            className="flex items-center gap-3 text-left group/name"
                             onClick={() => startEdit(employee)}
                             type="button"
                           >
+                            <DirectoryAvatar fullName={employee.fullName} hrId={employee.hrId} />
+                            <div className="flex flex-col">
                             <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
                               {employee.fullName}
                             </span>
@@ -1663,6 +1699,7 @@ export function EmployeeManagement({
                                 </span>
                               </span>
                             ) : null}
+                            </div>
                           </button>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
