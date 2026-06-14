@@ -451,6 +451,12 @@ export function runVacationModuleTests() {
   assert.match(complianceMigrationSource, /create table if not exists public\.v2_vacation_retention_purge_runs/);
   assert.match(complianceMigrationSource, /enable row level security/);
   assert.doesNotMatch(complianceMigrationSource, /drop table|drop function|drop policy .*leave/i);
+  // Vercel Pro hosts both the daily dispatcher and the sub-daily outbox drain (the drain
+  // moved off GitHub Actions so it stops consuming Actions minutes). Both are CRON_SECRET
+  // protected. Any additional cron must be a deliberate, reviewed change.
   const crons = JSON.parse(vercelConfigSource).crons as Array<{ path: string; schedule: string }>;
-  assert.deepEqual(crons, [{ path: "/api/notifications/daily", schedule: "0 4 * * *" }]);
+  assert.deepEqual(crons, [
+    { path: "/api/notifications/daily", schedule: "0 4 * * *" },
+    { path: "/api/notifications/process?limit=50", schedule: "*/30 * * * *" },
+  ]);
 }

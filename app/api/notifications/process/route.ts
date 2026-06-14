@@ -45,8 +45,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "unauthorized", message: "Notification processing run is not authorized." }, { status: 401 });
     }
 
-    // The external scheduler (GitHub Actions, every ~5 min) passes ?limit= so a backlog
-    // can drain faster than the once-daily Vercel cron. Clamp to [1, 50]; default 50.
+    // The Vercel cron (every ~30 min, see vercel.json) passes ?limit= so a backlog can
+    // drain faster than the once-daily Vercel cron. Vercel auto-attaches the CRON_SECRET
+    // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
     return await runNotificationOutbox(limit);

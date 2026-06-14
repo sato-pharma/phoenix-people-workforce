@@ -53,9 +53,13 @@ export function runContractRenewalHardeningTests() {
   assert.match(dailyRoute, /runBirthdayNotifications/);
   assert.match(dailyRoute, /runVacationSlaDaily/);
 
+  // Vercel Pro hosts two crons: the daily dispatcher and the sub-daily outbox drain
+  // (the drain moved off GitHub Actions so it no longer burns Actions minutes). The daily
+  // dispatcher must stay daily; any cron beyond these two must be a deliberate change.
   const vercelConfig = readFileSync("vercel.json", "utf8");
   const crons = JSON.parse(vercelConfig).crons as Array<{ path: string; schedule: string }>;
-  assert.equal(crons.length, 1);
-  assert.deepEqual(crons.map((cron) => cron.path), ["/api/notifications/daily"]);
-  assert.ok(crons.every((cron) => !cron.schedule.startsWith("*/")));
+  assert.equal(crons.length, 2);
+  assert.deepEqual(crons.map((cron) => cron.path), ["/api/notifications/daily", "/api/notifications/process?limit=50"]);
+  const dailyCron = crons.find((cron) => cron.path === "/api/notifications/daily");
+  assert.ok(dailyCron && !dailyCron.schedule.startsWith("*/"), "the daily dispatcher must stay daily");
 }

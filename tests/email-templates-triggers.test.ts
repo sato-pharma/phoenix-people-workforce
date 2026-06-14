@@ -77,12 +77,15 @@ export function runEmailTemplatesTriggersTests() {
   assert.doesNotMatch(envExample, /noreply@yourdomain/, "the misleading noreply placeholder must be gone");
   assert.match(envExample, /NOTIFICATION_EMAIL_FROM=Phoenix Workforce <phoenix@send\.satopharma\.com>/, "From must match the in-code identity");
 
-  // --- External scheduler ----------------------------------------------------------
+  // --- Sub-daily drain scheduler (Vercel cron, not GitHub Actions) -----------------
+  // The drain runs as a Vercel cron so it does not consume GitHub Actions minutes.
+  // Vercel auto-attaches the CRON_SECRET bearer; the route enforces it.
   const processRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
   assert.match(processRoute, /searchParams\.get\("limit"\)/, "the drain route must accept a limit param");
-  const workflow = readFileSync(".github/workflows/notification-drain.yml", "utf8");
-  assert.match(workflow, /cron:\s*"\*\/30 \* \* \* \*"/, "scheduler must run every ~30 minutes (kept within the Actions minute budget)");
-  assert.match(workflow, /Bearer \$\{CRON_SECRET\}/, "scheduler must authenticate with CRON_SECRET");
-  assert.match(workflow, /\/api\/notifications\/process/, "scheduler must hit the process route");
-  assert.match(workflow, /cancel-in-progress: false/, "in-flight drains must not be cancelled");
+  assert.match(processRoute, /authorization"\) === `Bearer \$\{secret\}`/, "the drain route must authenticate cron via CRON_SECRET");
+  const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8")) as { crons: Array<{ path: string; schedule: string }> };
+  const drainCron = vercelConfig.crons.find((cron) => cron.path.startsWith("/api/notifications/process"));
+  assert.ok(drainCron, "a Vercel cron must drive the notification drain");
+  assert.equal(drainCron?.schedule, "*/30 * * * *", "the drain cron must run every ~30 minutes");
+  assert.match(drainCron?.path ?? "", /limit=\d+/, "the drain cron must pass a limit so a backlog drains faster");
 }
