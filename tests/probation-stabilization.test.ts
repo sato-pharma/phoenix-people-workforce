@@ -42,7 +42,8 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /lifecycleRiskWindows\.probationWarningDays/);
   assert.match(serviceSource, /lifecycleRiskWindows\.probationCriticalDays/);
   assert.match(serviceSource, /lifecycleRiskWindows\.probationRiskDays/);
-  assert.match(serviceSource, /phase6HrApproverHrIds = \["B-10", "admin-HR"\]/);
+  assert.match(serviceSource, /resolveActiveHrApproverHrIds/, "HR approvers must be resolved by role, not hardcoded IDs");
+  assert.doesNotMatch(serviceSource, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from probation service");
   assert.match(serviceSource, /probationWorkflowApproverHrIds/);
   assert.match(serviceSource, /Direct Manager/);
   assert.match(serviceSource, /Manager of Manager/);

@@ -80,12 +80,12 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(calculateDeductionAmountFromBaseSalary({ baseSalary: 0, deductionDays: 1 }), null);
   }
 
-  // Decision actor gate: only admin-HR and B-10 can write governance decisions.
+  // Decision actor gate: only Super Admin (HR governance) can write deduction decisions.
   {
-    assert.equal(isDeductionsGovernanceDecisionActor({ hrId: "admin-HR", loginId: null }), true);
-    assert.equal(isDeductionsGovernanceDecisionActor({ hrId: "B-10", loginId: null }), true);
-    assert.equal(isDeductionsGovernanceDecisionActor({ hrId: "B-11", loginId: "ceo" }), false);
-    assert.equal(isDeductionsGovernanceDecisionActor({ hrId: null, loginId: "super-admin" }), false);
+    assert.equal(isDeductionsGovernanceDecisionActor({ role: "Super Admin" }), true);
+    assert.equal(isDeductionsGovernanceDecisionActor({ role: "CEO" }), false);
+    assert.equal(isDeductionsGovernanceDecisionActor({ role: "Finance Manager" }), false);
+    assert.equal(isDeductionsGovernanceDecisionActor({ role: "District Manager" }), false);
   }
 
   // Payroll mapping by source.

@@ -153,7 +153,8 @@ export function runVacationModuleTests() {
   assert.match(parallelApprovalMigrationSource, /enable row level security/);
   assert.ok(submittedStart >= 0 && submittedEnd > submittedStart, "vacation submitted notifications must use a dedicated governed helper");
   assert.match(serviceSource, /resolveVacationParallelApprovalRecipients/, "vacation submit must resolve the exact parallel approval participants");
-  assert.match(serviceSource, /vacationPilotHrApproverKeys = \["B-10", "admin-HR"\]/, "vacation pilot HR approvers must be explicit identities");
+  assert.match(serviceSource, /\.in\("role", \["HR Manager", "Super Admin"\]\)/, "vacation HR approvers must be resolved by elevated role, not hardcoded IDs");
+  assert.doesNotMatch(serviceSource, /vacationPilotHrApproverKeys/, "hardcoded approver keys must be removed from vacation service");
   assert.match(serviceSource, /createVacationApprovalSteps/, "vacation submit must create approval-step rows");
   assert.match(submittedBlock, /createSystemNotification\(\{/, "vacation submitted pilot must route through createSystemNotification");
   assert.match(submittedBlock, /eventType: "request_submitted"/, "vacation submitted pilot must use the engine policy event key");

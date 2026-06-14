@@ -17,8 +17,7 @@ export async function POST(
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Offer acceptance failed.";
-    return NextResponse.json({ message }, { status: 500 });
+    console.error("[offers/accept]", error);
+    return NextResponse.json({ message: "Offer acceptance failed. Please try again." }, { status: 500 });
   }
 }

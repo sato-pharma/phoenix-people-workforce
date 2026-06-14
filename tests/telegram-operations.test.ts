@@ -33,8 +33,8 @@ export function runTelegramOperationsTests() {
   assert.doesNotMatch(connectBody, /link: await buildTelegramDeepLinkFromToken/, "return must reuse the validated link, not rebuild it");
 
   assert.match(operations, /export async function runTelegramDailyHrDigest/);
-  assert.match(operations, /telegramDigestPilotHrIds = \["B-10", "admin-HR"\]/, "daily digest recipients must be explicit pilot HR identities");
-  assert.doesNotMatch(operations, /\.in\("role"/, "daily digest must not discover recipients by broad role");
+  assert.doesNotMatch(operations, /telegramDigestPilotHrIds/, "hardcoded pilot IDs must be replaced by role-based lookup");
+  assert.match(operations, /\.in\("role", \["HR Manager", "Super Admin"\]\)/, "digest recipients must be resolved by elevated role, not hardcoded IDs");
   assert.doesNotMatch(operations, /salary|amount|compensation|resignation/i, "digest content must not include sensitive payroll/resignation/compensation details");
   assert.match(operations, /safeSummaryOnly: true/, "digest metadata must declare safe count-only summary");
   assert.match(operations, /createSystemNotification\(\{/);
