@@ -17,6 +17,7 @@ import {
   LineChart,
   type LucideIcon,
   ReceiptText,
+  ScanLine,
   Send,
   Settings2,
   ShieldCheck,
@@ -55,6 +56,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
   { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
+  { label: "Fingerprint Report", fullLabel: "Fingerprint Report", href: "/employee-portals/fingerprint-analytics", icon: ScanLine, flags: ["showFingerprintReportTab"] },
   // Training Manager
   { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"] },

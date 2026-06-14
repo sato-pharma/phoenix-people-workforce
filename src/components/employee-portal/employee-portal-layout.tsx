@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox } from "lucide-react";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox, ScanLine } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -99,6 +99,7 @@ function buildEmployeePortalSections({
   showExcusesTab = false,
   showExpenseActionTab = false,
   showExpenseDashboardTab = false,
+  showFingerprintReportTab = false,
   showIncentiveTab = true,
   showMarketingRequestsTab = false,
   showMarketingInboxTab = false,
@@ -145,6 +146,7 @@ function buildEmployeePortalSections({
         { href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint },
         { href: "/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
       ],
     },
     {
