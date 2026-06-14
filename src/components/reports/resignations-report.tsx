@@ -29,6 +29,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type {
   CreateResignationInput,
+  PayrollResignationCandidateRecord,
   ResignationDashboardData,
   ResignationRecord,
   ResignationStatus,
@@ -50,6 +51,18 @@ type SortKey =
   | "status-desc"
   | "employee-asc"
   | "employee-desc";
+
+type WorkflowQueueRow =
+  | {
+      key: string;
+      kind: "resignation";
+      record: ResignationRecord;
+    }
+  | {
+      candidate: PayrollResignationCandidateRecord;
+      key: string;
+      kind: "payrollCandidate";
+    };
 
 const allValue = "__all__";
 const statusOptions: Array<ResignationStatus> = [
@@ -101,6 +114,11 @@ function formatPayoutMonth(month: number | null | undefined, year: number | null
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+function formatPayrollCandidateSystemId(id: string) {
+  const normalized = id.replace(/[^a-z0-9]/gi, "").toUpperCase();
+  return normalized ? `PRC-${normalized.slice(0, 8)}` : "PRC-PENDING";
 }
 
 function daysUntil(value: string | null | undefined) {
@@ -292,6 +310,54 @@ export function ResignationsReport({ initialData, initialError }: Props) {
       );
     });
   }, [lineFilter, payrollCandidates, query]);
+
+  const filteredWorkflowQueueRows = React.useMemo(() => {
+    const rows: WorkflowQueueRow[] = [
+      ...filteredRecords.map((record) => ({
+        key: `resignation:${record.id}`,
+        kind: "resignation" as const,
+        record,
+      })),
+    ];
+
+    if (statusFilter === allValue) {
+      rows.push(
+        ...filteredPayrollCandidates.map((candidate) => ({
+          candidate,
+          key: `payroll-candidate:${candidate.id}`,
+          kind: "payrollCandidate" as const,
+        })),
+      );
+    }
+
+    return rows.sort((left, right) => {
+      const leftEmployee = left.kind === "resignation" ? left.record.employeeName : left.candidate.employeeName;
+      const rightEmployee = right.kind === "resignation" ? right.record.employeeName : right.candidate.employeeName;
+      const leftStatus = left.kind === "resignation" ? left.record.status : "payroll_candidate";
+      const rightStatus = right.kind === "resignation" ? right.record.status : "payroll_candidate";
+      const leftEffective =
+        left.kind === "resignation"
+          ? left.record.effectiveDate
+          : `${left.candidate.lastPayoutYear}-${String(left.candidate.lastPayoutMonth).padStart(2, "0")}-01`;
+      const rightEffective =
+        right.kind === "resignation"
+          ? right.record.effectiveDate
+          : `${right.candidate.lastPayoutYear}-${String(right.candidate.lastPayoutMonth).padStart(2, "0")}-01`;
+      const leftSubmitted =
+        left.kind === "resignation" ? left.record.submittedDate : left.candidate.lastSeenAt.slice(0, 10);
+      const rightSubmitted =
+        right.kind === "resignation" ? right.record.submittedDate : right.candidate.lastSeenAt.slice(0, 10);
+
+      if (sortBy === "employee-asc") return leftEmployee.localeCompare(rightEmployee);
+      if (sortBy === "employee-desc") return rightEmployee.localeCompare(leftEmployee);
+      if (sortBy === "status-asc") return leftStatus.localeCompare(rightStatus);
+      if (sortBy === "status-desc") return rightStatus.localeCompare(leftStatus);
+      if (sortBy === "effective-asc") return leftEffective.localeCompare(rightEffective);
+      if (sortBy === "effective-desc") return rightEffective.localeCompare(leftEffective);
+      if (sortBy === "submitted-asc") return leftSubmitted.localeCompare(rightSubmitted);
+      return rightSubmitted.localeCompare(leftSubmitted);
+    });
+  }, [filteredPayrollCandidates, filteredRecords, sortBy, statusFilter]);
 
   const filteredTerminatedRecords = React.useMemo(
     () => filteredRecords.filter((record) => String(record.employeeStatus ?? "").toLowerCase() === "terminated"),
@@ -635,59 +701,6 @@ export function ResignationsReport({ initialData, initialError }: Props) {
 
       <Card className={`${panelClassName} overflow-hidden p-0`}>
         <AdminSectionHeader
-          description="Payroll upload rows where HR ID is missing from the employee directory. These are kept separate from approved resignation workflows until HR reviews them."
-          title="Payroll Missing Employee Candidates"
-        />
-        <div className="overflow-x-auto bg-white/80">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
-              <tr className="border-b border-[#FED7AA]">
-                <th className={adminTableHeaderClassName}>Employee</th>
-                <th className={adminTableHeaderClassName}>Area</th>
-                <th className={adminTableHeaderClassName}>Line</th>
-                <th className={adminTableHeaderClassName}>Hiring Date</th>
-                <th className={adminTableHeaderClassName}>Last Payout</th>
-                <th className={adminTableHeaderClassName}>Source</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
-              {filteredPayrollCandidates.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-10 text-center text-sm text-[#64748B]" colSpan={6}>
-                    No payroll missing-employee candidates match the current filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredPayrollCandidates.map((candidate) => (
-                  <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={candidate.id}>
-                    <td className="px-3 py-4">
-                      <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(candidate.employeeName)}</p>
-                      <p className="mt-1 font-mono text-xs text-[#64748B]">{candidate.hrId}</p>
-                      <p className="mt-1 text-xs text-[#64748B]">{candidate.jobTitle ?? "-"}</p>
-                    </td>
-                    <td className="px-3 py-4 text-[#64748B]">{candidate.areaName ?? "-"}</td>
-                    <td className="px-3 py-4 text-[#64748B]">{candidate.lineName ?? "-"}</td>
-                    <td className="px-3 py-4 text-[#64748B]">{formatDate(candidate.hireDate)}</td>
-                    <td className="px-3 py-4">
-                      <Badge variant="warning">
-                        {formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear)}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-4 text-xs text-[#64748B]">
-                      <p>{candidate.sourceFileName ?? "-"}</p>
-                      <p className="mt-1">Row {candidate.sourceRow ?? "-"}</p>
-                      <p className="mt-1">Updated {formatDate(candidate.updatedAt.slice(0, 10))}</p>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Card className={`${panelClassName} overflow-hidden p-0`}>
-        <AdminSectionHeader
           action={<Badge variant="danger">{filteredTerminatedRecords.length} terminated</Badge>}
           description="Employees terminated through probation or other lifecycle paths appear here without creating a separate termination system."
           title="Terminated Employees"
@@ -852,14 +865,19 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           action={
             <div className="flex flex-wrap gap-2">
               <Badge className="rounded-full border border-[#D8E0EA] px-3 py-2 text-xs" variant="neutral">
-                {filteredRecords.length} visible
+                {filteredWorkflowQueueRows.length} visible
+              </Badge>
+              <Badge className="rounded-full border border-[#D8E0EA] px-3 py-2 text-xs" variant="neutral">
+                {statusFilter === allValue ? filteredPayrollCandidates.length : 0} payroll candidates
               </Badge>
               <Badge className="rounded-full border border-[#D8E0EA] px-3 py-2 text-xs" variant="warning">
                 {statusFilter !== allValue ? statusFilter : "all"} filter
               </Badge>
             </div>
           }
-          description={`Showing ${filteredRecords.length} of ${records.length} resignation records.`}
+          description={`Showing ${filteredRecords.length} workflow records and ${
+            statusFilter === allValue ? filteredPayrollCandidates.length : 0
+          } payroll upload candidates in one queue.`}
           title="Workflow Queue"
         />
 
@@ -879,20 +897,71 @@ export function ResignationsReport({ initialData, initialError }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
-              {filteredRecords.length === 0 ? (
+              {filteredWorkflowQueueRows.length === 0 ? (
                 <tr>
                   <td className="px-3 py-12 text-center text-sm text-[#64748B]" colSpan={9}>
-                    No resignation records match the current filters.
+                    No resignation or payroll candidate rows match the current filters.
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
+                filteredWorkflowQueueRows.map((row) => {
+                  if (row.kind === "payrollCandidate") {
+                    const { candidate } = row;
+                    const candidateSystemId = formatPayrollCandidateSystemId(candidate.id);
+
+                    return (
+                      <tr className="align-top bg-[#FFF7ED]/30 transition-colors hover:bg-[#FFF7ED]/65" key={row.key}>
+                        <td className="px-3 py-4">
+                          <p className="font-medium text-[#0F172A]">
+                            {formatEmployeeDisplayName(candidate.employeeName)}
+                          </p>
+                          <p className="mt-1 font-mono text-xs text-[#64748B]">{candidate.hrId || "No HR ID"}</p>
+                          <p className="mt-1 text-xs text-[#64748B]">{candidate.jobTitle ?? "-"}</p>
+                        </td>
+                        <td className="px-3 py-4 text-[#64748B]">{candidate.lineName ?? "-"}</td>
+                        <td className="px-3 py-4 text-[#64748B]">
+                          <p>{formatDate(candidate.lastSeenAt.slice(0, 10))}</p>
+                          <p className="mt-1 text-xs">Last seen in payroll</p>
+                        </td>
+                        <td className="px-3 py-4 text-[#64748B]">
+                          <p>{formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear)}</p>
+                          <p className="mt-1 text-xs">Last payout</p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <Badge variant="neutral">System generated</Badge>
+                          <p className="mt-1 text-xs text-[#64748B]">Payroll candidate ID</p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <Badge variant="neutral">Payroll candidate</Badge>
+                        </td>
+                        <td className="px-3 py-4 text-[#64748B]">
+                          <p className="font-medium text-text">Payroll upload generated a resignation candidate.</p>
+                          <p className="mt-1 text-xs">
+                            Area: {candidate.areaName ?? "-"} | Hiring: {formatDate(candidate.hireDate)}
+                          </p>
+                        </td>
+                        <td className="px-3 py-4 text-xs text-[#64748B]">
+                          <p>System ID: {candidateSystemId}</p>
+                          <p>Source: {candidate.sourceFileName ?? "-"}</p>
+                          <p className="mt-1">Row: {candidate.sourceRow ?? "-"}</p>
+                          <p className="mt-1">Updated: {formatDate(candidate.updatedAt.slice(0, 10))}</p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <p className="max-w-[240px] text-xs font-semibold text-[#475569]">
+                            System resignation candidate ID: {candidateSystemId}. No manual HR ID generation is required.
+                          </p>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const { record } = row;
                   const daysLeft = daysUntil(record.effectiveDate);
                   const isBusy = busyAction?.startsWith(`${record.id}:`);
                   const isEditingDates = editingDates?.recordId === record.id;
 
                   return (
-                    <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={record.id}>
+                    <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={row.key}>
                       <td className="px-3 py-4">
                         <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(record.employeeName)}</p>
                         <p className="mt-1 font-mono text-xs text-[#64748B]">{record.employeeHrId}</p>

@@ -8,7 +8,7 @@ export default function Loading() {
       <div className="flex items-center gap-3 text-[#475569]">
         <LoadingSpinner className="h-5 w-5" />
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#0F172A]">Probation Tracker</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#0F172A]">Probation Period</p>
           <p className="text-sm">Loading probation data</p>
         </div>
       </div>

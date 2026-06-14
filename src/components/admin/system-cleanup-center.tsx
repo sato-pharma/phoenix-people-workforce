@@ -92,7 +92,10 @@ function buildQuery(filters: FilterState) {
 }
 
 function compactId(value: string) {
-  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+  const displayValue = value.startsWith("employee_plan_headers:") || value.startsWith("weekly_plans:")
+    ? value.slice(value.indexOf(":") + 1)
+    : value;
+  return displayValue.length > 12 ? `${displayValue.slice(0, 8)}...${displayValue.slice(-4)}` : displayValue;
 }
 
 export function SystemCleanupCenter({

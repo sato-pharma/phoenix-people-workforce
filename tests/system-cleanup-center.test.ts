@@ -45,6 +45,8 @@ export function runSystemCleanupCenterTests() {
   assert.match(actionsRoute, /executeCleanupAction\(access/, "cleanup POST must call the guarded execute path");
   assert.match(actionsRoute, /previewCleanupAction\(access/, "cleanup POST must call the guarded preview path");
   assert.match(service, /SYSTEM_CLEANUP_MAX_BULK\s*=\s*25/, "bulk cleanup must be capped at 25 records");
+  assert.match(service, /SYSTEM_CLEANUP_PAGE_SIZE\s*=\s*1000/, "cleanup record listing must page through supported tables");
+  assert.match(service, /\.range\(from,\s*from \+ SYSTEM_CLEANUP_PAGE_SIZE - 1\)/, "cleanup list queries must not stop at the old first-page cap");
   assert.match(service, /DEFAULT_CLEANUP_NOTE\s*=\s*"No cleanup note provided\."/, "blank cleanup notes must be accepted with a safe history fallback");
   assert.match(service, /const reason = optionalCleanupNote\(input\.reason\)/, "cleanup execute must not require a manually entered reason");
   assert.match(center, /function handleExecuteClick\(\)/, "cleanup UI must validate delete prerequisites on click");
@@ -59,10 +61,17 @@ export function runSystemCleanupCenterTests() {
   assert.match(service, /outstationPayrollTripId/, "outstation cleanup must use canonical payroll trip ids");
   assert.match(service, /imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/, "payroll-linked outstation rows must be blocked");
 
-  assert.match(service, /selectMaybeSingle\("weekly_plans"/, "weekly cleanup must snapshot the plan header");
-  assert.match(service, /selectChildren\("weekly_plan_days"/, "weekly cleanup must snapshot child day rows");
-  assert.match(service, /selectChildren\("weekly_plan_approval_tokens"/, "weekly cleanup must snapshot approval tokens");
-  assert.match(service, /\.from\("weekly_plans"\)[\s\S]*?\.delete\(\)[\s\S]*?\.eq\("id", input\.loaded\.recordId\)/, "weekly cleanup must delete only the selected plan header");
+  assert.match(service, /selectRows\("employee_plan_headers"\)/, "weekly cleanup must list modern weekly/monthly plan headers");
+  assert.match(service, /selectRows\("weekly_plans"\)/, "weekly cleanup must still list legacy weekly plan headers");
+  assert.match(service, /selectMaybeSingle\("employee_plan_headers"/, "weekly cleanup must snapshot modern plan headers");
+  assert.match(service, /selectChildren\("employee_plan_items"/, "weekly cleanup must snapshot modern plan items");
+  assert.match(service, /selectChildren\("employee_plan_decisions"/, "weekly cleanup must snapshot modern plan decisions");
+  assert.match(service, /selectChildren\("employee_plan_hr_acknowledgements"/, "weekly cleanup must snapshot modern HR acknowledgements");
+  assert.match(service, /selectChildren\("employee_plan_item_return_notes"/, "weekly cleanup must snapshot modern return notes");
+  assert.match(service, /selectMaybeSingle\("weekly_plans"/, "weekly cleanup must snapshot legacy plan headers");
+  assert.match(service, /selectChildren\("weekly_plan_days"/, "weekly cleanup must snapshot legacy child day rows");
+  assert.match(service, /selectChildren\("weekly_plan_approval_tokens"/, "weekly cleanup must snapshot legacy approval tokens");
+  assert.match(service, /\.from\(parsed\.sourceTable\)[\s\S]*?\.delete\(\)[\s\S]*?\.eq\("id", parsed\.rawRecordId\)/, "weekly cleanup must delete only the selected source-table plan header");
 
   assert.match(service, /\.from\("admin_cleanup_events"\)[\s\S]*?\.insert\(/, "cleanup must write a cleanup history event before execution");
   assert.match(service, /finishCleanupEvent\(\{ cleanupEventId, status: "succeeded" \}\)/, "successful cleanup must complete the cleanup event");

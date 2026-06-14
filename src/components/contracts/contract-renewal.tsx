@@ -10,6 +10,7 @@ import {
   AdminStatCard,
   AdminTableShell,
   AdminSectionHeader,
+  adminPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/lifecycle-risk/metrics";
 import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
+import { cn } from "@/lib/utils";
 
 type Props = {
   initialData: ContractRenewalDashboardData | null;
@@ -30,21 +32,26 @@ const MONTHS = [
   { label: "July", value: 7 }, { label: "August", value: 8 }, { label: "September", value: 9 },
   { label: "October", value: 10 }, { label: "November", value: 11 }, { label: "December", value: 12 },
 ];
+const DUE_WINDOW_70_DAYS = 70;
 
 const ALL = "__all__";
 const today = new Date();
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#94A3B8] focus:ring-2 focus:ring-[#CBD5E1]/40";
 
 const panelClassName =
-  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+  "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
+
+const tableCellClassName = "px-2 py-1.5 text-xs text-text-secondary";
+const tableHeaderClassName = "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
 
 function ContractsPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_44%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5">
-      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
-      <div className="relative space-y-6">{children}</div>
+    <div className="relative">
+      <div className={adminPanelClassName}>
+        <div className="relative space-y-4">{children}</div>
+      </div>
     </div>
   );
 }
@@ -111,6 +118,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
       total: riskSummary.totalRenewals,
       upcoming7: riskSummary.dueIn7Days,
       upcoming30: riskSummary.dueIn30Days,
+      upcoming70: filtered.filter((row) => {
+        const days = daysUntilLifecycleDate(row.contract_renewal_date);
+        return days !== null && days >= 0 && days <= DUE_WINDOW_70_DAYS;
+      }).length,
     };
   }, [filtered]);
 
@@ -181,21 +192,31 @@ export function ContractRenewal({ initialData, initialError }: Props) {
     <ContractsPageShell>
       <AdminPageHero
         actions={
-          <Button
-            className="h-11 gap-2 rounded-2xl"
-            disabled={!hasActiveFilters}
-            onClick={resetFilters}
-            variant="secondary"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Reset {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button className="h-8 rounded-lg px-3 py-0 text-[11px]" variant="secondary">
+              {summary.upcoming30} due in 30 days
+            </Button>
+            <Button className="h-8 rounded-lg px-3 py-0 text-[11px]" variant="secondary">
+              {summary.upcoming70} due in 70 days
+            </Button>
+            <Button
+              className="h-9 gap-2 rounded-xl"
+              disabled={!hasActiveFilters}
+              onClick={resetFilters}
+              variant="secondary"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Reset {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+            </Button>
+          </div>
         }
+        compact
         badges={
           <div className="flex flex-wrap gap-2">
             <AdminInsightChip>{summary.total} renewals</AdminInsightChip>
-            <AdminInsightChip tone="orange">{summary.upcoming30} due in 30d</AdminInsightChip>
+            <AdminInsightChip tone="slate">{summary.upcoming30} due in 30d</AdminInsightChip>
             <AdminInsightChip tone="slate">{summary.upcoming7} due in 7d</AdminInsightChip>
+            <AdminInsightChip tone="slate">{summary.upcoming70} due in 70d</AdminInsightChip>
           </div>
         }
         description="Track annual contract renewals from active contracts or the next valid hire-date anniversary."
@@ -206,26 +227,36 @@ export function ContractRenewal({ initialData, initialError }: Props) {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <AdminStatCard
+          size="compact"
           description="Renewals in selected month"
           icon={<Calendar className="h-5 w-5" />}
           label="Total Renewals"
           value={summary.total}
         />
         <AdminStatCard
+          size="compact"
           description="Renewal due in 30 days"
           icon={<AlertTriangle className="h-5 w-5" />}
           label="Due in 30 Days"
           value={summary.upcoming30}
         />
         <AdminStatCard
+          size="compact"
           description="Renewal due in 7 days"
           icon={<AlertTriangle className="h-5 w-5" />}
           label="Due in 7 Days"
           value={summary.upcoming7}
         />
+        <AdminStatCard
+          size="compact"
+          description="Renewal due in 70 days"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          label="Due in 70 Days"
+          value={summary.upcoming70}
+        />
       </div>
 
-      <Card className={`${panelClassName} p-5`}>
+      <Card className={`${panelClassName} p-4`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A]">Renewal Calendar</h2>
@@ -245,11 +276,11 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               <div
                 key={day}
                 title={`Day ${day}: ${count} renewal${count !== 1 ? "s" : ""}`}
-                className="flex flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] py-2 shadow-[0_10px_26px_rgba(15,23,42,0.04)]"
-                style={{ backgroundColor: count > 0 ? `rgba(249, 115, 22, ${intensity * 0.35})` : undefined }}
+                className="flex flex-col items-center justify-center rounded-xl border border-[#E2E8F0] bg-slate-50 py-2 shadow-[0_8px_22px_rgba(15,23,42,0.04)]"
+                style={{ backgroundColor: count > 0 ? `rgba(56, 189, 248, ${intensity * 0.26})` : undefined }}
               >
                 <span className="text-xs font-mono text-[#64748B]">{day}</span>
-                {count > 0 && <span className="text-xs font-bold text-[#EA580C]">{count}</span>}
+                {count > 0 && <span className="text-xs font-bold text-[#0284C7]">{count}</span>}
               </div>
             );
           })}
@@ -259,7 +290,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
       <AdminTableShell
         action={
           <Button
-            className="h-11 gap-2 rounded-2xl"
+            className="h-9 gap-2 rounded-xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -270,8 +301,8 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         }
         description="Refine by month, year, line, area, and keyword."
         title="Filters"
-      >
-        <div className="grid gap-3 p-4 xl:grid-cols-6">
+        >
+        <div className="grid gap-2 p-3 xl:grid-cols-6">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
             <select
@@ -304,7 +335,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             <span className="sr-only">Search renewals</span>
             <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
             <Input
-              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
+              className="h-10 rounded-xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
               placeholder="Search name or HR ID"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -354,19 +385,19 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </div>
           }
         />
-        <div className="overflow-x-auto bg-white/80">
-          <table className="w-full min-w-[900px] text-left text-sm">
+            <div className="overflow-x-auto bg-white/80">
+          <table className="w-full min-w-[820px] text-left text-xs">
             <thead>
-              <tr className="border-b border-[#FED7AA] bg-[#FFF7ED]/80 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+              <tr className="border-b border-slate-200 bg-slate-50/90">
                 {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
-                  <th className="px-3 py-3" key={col}>{col}</th>
+                  <th className={tableHeaderClassName} key={col}>{col}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center">
+                  <td colSpan={9} className="px-3 py-7 text-center text-xs text-text-secondary">
                     <div className="mx-auto max-w-md">
                       <p className="text-sm font-semibold text-[#0F172A]">
                         {rows.length === 0
@@ -385,16 +416,16 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   const isUrgent = days >= 0 && days <= 7;
                   const isWarning = days >= 0 && days <= 30;
                   return (
-                    <tr className="transition-colors hover:bg-[#FFF7ED]/55" key={`${row.hr_id}-${index}`}>
-                      <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.hr_id || "-"}</td>
-                      <td className="px-3 py-3 font-mono text-xs text-[#64748B]">{row.crm_id || "-"}</td>
-                      <td className="px-3 py-3 font-semibold text-[#0F172A]">{row.full_name}</td>
-                      <td className="px-3 py-3 text-[#64748B]">{row.job_title}</td>
-                      <td className="px-3 py-3 text-[#64748B]">{row.line}</td>
-                      <td className="px-3 py-3 text-[#64748B]">{row.area}</td>
-                      <td className="px-3 py-3 text-[#64748B]">{formatStoredDate(row.contract_signed_date)}</td>
-                      <td className="px-3 py-3 font-medium text-[#0F172A]">{formatStoredDate(row.contract_renewal_date)}</td>
-                      <td className="px-3 py-3">
+                    <tr className="transition-colors hover:bg-slate-50/65" key={`${row.hr_id}-${index}`}>
+                      <td className={cn(tableCellClassName, "max-w-[82px] truncate font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
+                      <td className={cn(tableCellClassName, "max-w-[82px] truncate font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
+                      <td className={cn(tableCellClassName, "truncate font-semibold text-text")}>{row.full_name}</td>
+                      <td className={cn("max-w-[190px] truncate", tableCellClassName)}>{row.job_title}</td>
+                      <td className={tableCellClassName}>{row.line}</td>
+                      <td className={tableCellClassName}>{row.area}</td>
+                      <td className={tableCellClassName}>{formatStoredDate(row.contract_signed_date)}</td>
+                      <td className={tableCellClassName}>{formatStoredDate(row.contract_renewal_date)}</td>
+                      <td className={tableCellClassName}>
                         {days < 0
                           ? <Badge variant="neutral">Past</Badge>
                           : isUrgent

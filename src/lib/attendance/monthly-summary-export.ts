@@ -1,7 +1,11 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
-import type { MonthlyAttendanceSummaryData, MonthlyAttendanceSummaryRow } from "@/lib/attendance/monthly-summary";
+import {
+  attendanceMonthlyCycleNote,
+  type MonthlyAttendanceSummaryData,
+  type MonthlyAttendanceSummaryRow,
+} from "@/lib/attendance/monthly-summary";
 
 const phoenixOrange = "FFC2410C";
 const phoenixSlate = "FF0F172A";
@@ -83,7 +87,11 @@ export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAtte
   sheet.getCell(2, 1).font = { color: { argb: "FF475569" }, italic: true };
   sheet.getCell(2, 1).alignment = { horizontal: "center" };
 
-  sheet.addRow([]);
+  sheet.mergeCells(3, 1, 3, columnCount);
+  sheet.getCell(3, 1).value = attendanceMonthlyCycleNote;
+  sheet.getCell(3, 1).font = { bold: true, color: { argb: phoenixOrange }, italic: true };
+  sheet.getCell(3, 1).alignment = { horizontal: "center" };
+
   sheet.addRow(summaryColumns.map((column) => column.label));
   styleHeader(sheet.getRow(4));
 

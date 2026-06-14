@@ -62,7 +62,6 @@ export default async function ProbationPage() {
       capabilities={{ canCreate: true, canExport: true, canManageWorkflow: true, canSubmitManagerFeedback: true, viewerMode: "hr" }}
       initialData={initialData}
       initialError={initialError}
-      presentation="premium"
     />
   );
 }

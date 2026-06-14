@@ -45,6 +45,9 @@ export type MonthlyAttendanceSummaryData = {
   };
 };
 
+export const attendanceMonthlyCycleNote =
+  "Attendance reporting cycle note: payroll attendance months run from day 25 to day 25.";
+
 function lastDayOfMonthIso(year: number, month: number): string {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
