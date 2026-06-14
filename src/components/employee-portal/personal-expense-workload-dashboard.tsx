@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -17,9 +17,11 @@ import {
 } from "recharts";
 
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  Printer,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -93,7 +95,7 @@ type SortField =
 
 type SortDirection = "asc" | "desc";
 
-type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "custom";
+type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "thismonth" | "lastmonth" | "custom";
 
 /* ------------------------------------------------------------------ */
 /*  Design tokens                                                     */
@@ -371,6 +373,14 @@ function SmartPeriodFilter({
     } else if (next === "ytd") {
       const from = new Date(today.getFullYear(), 0, 1);
       onChange(toIso(from), toIso(today));
+    } else if (next === "thismonth") {
+      const from = new Date(Date.UTC(today.getFullYear(), today.getMonth(), 1));
+      const to = new Date(Date.UTC(today.getFullYear(), today.getMonth() + 1, 0));
+      onChange(toIso(from), toIso(to));
+    } else if (next === "lastmonth") {
+      const from = new Date(Date.UTC(today.getFullYear(), today.getMonth() - 1, 1));
+      const to = new Date(Date.UTC(today.getFullYear(), today.getMonth(), 0));
+      onChange(toIso(from), toIso(to));
     } else if (next === "custom") {
       // leave existing values
     }
@@ -407,6 +417,8 @@ function SmartPeriodFilter({
           {segmentBtn("30d", "30 days")}
           {segmentBtn("90d", "90 days")}
           {segmentBtn("ytd", "YTD")}
+          {segmentBtn("thismonth", "This Mo")}
+          {segmentBtn("lastmonth", "Last Mo")}
           {segmentBtn("custom", "Custom")}
         </div>
       </div>
@@ -620,6 +632,7 @@ export function PersonalExpenseWorkloadDashboard({
   const [searchSortField, setSearchSortField] = useState<SortField>("date");
   const [searchSortDirection, setSearchSortDirection] = useState<SortDirection>("desc");
   const [density, setDensity] = useState<"compact" | "comfortable">("comfortable");
+  const [expandedTripKey, setExpandedTripKey] = useState<string | null>(null);
   // Page size — bumps to 25 automatically once dataset crosses 200 rows
   // so big histories paginate less without exploding DOM size on mobile.
   const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(() =>
@@ -780,6 +793,10 @@ export function PersonalExpenseWorkloadDashboard({
   const tripsThisMonth = filteredTrips.filter((trip) => trip.date.startsWith(currentMonth)).length;
   const tripsLastMonth = filteredTrips.filter((trip) => trip.date.startsWith(previousMonth)).length;
   const tripsDeltaPercent = tripsLastMonth > 0 ? ((tripsThisMonth - tripsLastMonth) / tripsLastMonth) * 100 : null;
+  const pendingCount = filteredTrips.filter((t) => mapStatusCategory(t.status) === "Pending").length;
+  const approvedSpend = filteredTrips
+    .filter((t) => mapStatusCategory(t.status) === "Confirmed by HR")
+    .reduce((s, t) => s + t.total, 0);
 
   /* -------- chart data (UNCHANGED LOGIC) -------- */
   const monthlyTrend = useMemo(() => {
@@ -910,6 +927,16 @@ export function PersonalExpenseWorkloadDashboard({
     const costPerKm = totalKm > 0 ? totalExpenses / totalKm : 0;
     return { top, outlier, costPerKm };
   }, [destinationSummary, filteredTrips, totalKm, totalExpenses]);
+
+  /* -------- active filter count -------- */
+  const activeFilterCount = [
+    statusFilter !== "All",
+    requestTypeFilter !== "All",
+    transportationFilter !== "All",
+    destinationFilter !== "All",
+    !!(dateFrom || dateTo),
+    !!searchTerm,
+  ].filter(Boolean).length;
 
   /* -------- pagination -------- */
   const totalPages = Math.max(1, Math.ceil(sortedTrips.length / pageSize));
@@ -1061,13 +1088,13 @@ export function PersonalExpenseWorkloadDashboard({
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-3 xl:grid-cols-5">
           <StatCard
             accent="border-l-emerald-400"
-            helper="Sum of Total for this period"
+            helper={approvedSpend > 0 ? `${formatMoney(approvedSpend)} confirmed by HR` : "Sum of Total for this period"}
             label="Total Expenses"
             value={formatMoney(totalExpenses)}
           />
           <StatCard
             accent="border-l-sky-400"
-            helper={`${filteredTrips.length} filtered records`}
+            helper={pendingCount > 0 ? `${pendingCount} pending · ${filteredTrips.length} total` : `${filteredTrips.length} filtered records`}
             label="Total Trips"
             value={totalTrips.toLocaleString()}
           />
@@ -1172,7 +1199,7 @@ export function PersonalExpenseWorkloadDashboard({
             type="button"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Reset
+            Reset{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
           </button>
         </div>
 
@@ -1565,6 +1592,20 @@ export function PersonalExpenseWorkloadDashboard({
         </ChartCard>
       </section>
 
+      {pendingCount > 0 && (
+        <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
+          <div className="mt-0.5 h-2 w-2 flex-none bg-amber-400" />
+          <div>
+            <p className="text-[12px] font-bold text-amber-800">
+              {pendingCount} trip{pendingCount > 1 ? "s" : ""} awaiting approval
+            </p>
+            <p className="mt-0.5 text-[11px] text-amber-700">
+              These trips are in the approval queue and have not yet been confirmed for payroll inclusion.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ---- Trip Ledger ---- */}
       <section className="space-y-3 print:break-inside-avoid">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -1622,6 +1663,15 @@ export function PersonalExpenseWorkloadDashboard({
               <Download className="h-3.5 w-3.5" />
               {isExporting ? "Preparing…" : "Export Excel"}
             </button>
+            <button
+              aria-label="Print expense report"
+              className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600 print:hidden"
+              onClick={() => window.print()}
+              type="button"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Print
+            </button>
             <label className="relative w-full sm:w-64">
               <span className="sr-only">Search trips</span>
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -1651,55 +1701,157 @@ export function PersonalExpenseWorkloadDashboard({
                   <th className={`${cellPaddingClass} text-right`}>{header("km", "KM")}</th>
                   <th className={cellPaddingClass}>{header("status", "Status")}</th>
                   <th className={cellPaddingClass}>{header("transportationType", "Transport")}</th>
+                  <th className={`${cellPaddingClass} w-8`}><span className="sr-only">Details</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={9}>
+                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={10}>
                       No trips match your filters.
                     </td>
                   </tr>
                 ) : (
                   pagedTrips.map((trip) => {
                     const category = mapStatusCategory(trip.status);
+                    const tripKey = `${trip.tripId}-${trip.date}-${trip.requestType}`;
+                    const isExpanded = expandedTripKey === tripKey;
                     return (
-                      <tr
-                        className="transition hover:bg-orange-50/40"
-                        key={`${trip.tripId}-${trip.date}-${trip.requestType}`}
-                      >
-                        <td className={`whitespace-nowrap font-mono text-[11px] font-semibold text-slate-600 ${cellPaddingClass}`}>
-                          {trip.tripId || "N/A"}
-                        </td>
-                        <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
-                          {formatDate(trip.date)}
-                        </td>
-                        <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
-                          {trip.requestType || "N/A"}
-                        </td>
-                        <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
-                          {trip.fromCity || "Unknown"}
-                        </td>
-                        <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
-                          {trip.toCity || "Unknown"}
-                        </td>
-                        <td className={`whitespace-nowrap text-right text-[12px] font-bold text-slate-900 ${cellPaddingClass}`}>
-                          {formatMoney(trip.total)}
-                        </td>
-                        <td className={`whitespace-nowrap text-right text-[12px] text-slate-700 ${cellPaddingClass}`}>
-                          {formatKm(trip.km)}
-                        </td>
-                        <td className={cellPaddingClass}>
-                          <StatusPill category={category} />
-                        </td>
-                        <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
-                          {trip.transportationType || "N/A"}
-                        </td>
-                      </tr>
+                      <Fragment key={tripKey}>
+                        <tr
+                          className="cursor-pointer transition hover:bg-orange-50/40"
+                          onClick={() => setExpandedTripKey((prev) => prev === tripKey ? null : tripKey)}
+                        >
+                          <td className={`whitespace-nowrap font-mono text-[11px] font-semibold text-slate-600 ${cellPaddingClass}`}>
+                            {trip.tripId || "N/A"}
+                          </td>
+                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                            {formatDate(trip.date)}
+                          </td>
+                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                            {trip.requestType || "N/A"}
+                          </td>
+                          <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                            {trip.fromCity || "Unknown"}
+                          </td>
+                          <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                            {trip.toCity || "Unknown"}
+                          </td>
+                          <td className={`whitespace-nowrap text-right text-[12px] font-bold text-slate-900 ${cellPaddingClass}`}>
+                            {formatMoney(trip.total)}
+                          </td>
+                          <td className={`whitespace-nowrap text-right text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                            {formatKm(trip.km)}
+                          </td>
+                          <td className={cellPaddingClass}>
+                            <StatusPill category={category} />
+                          </td>
+                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                            {trip.transportationType || "N/A"}
+                          </td>
+                          <td className={`w-8 ${cellPaddingClass}`}>
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
+                            />
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td className="border-b border-slate-200 p-0" colSpan={10}>
+                              <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
+                                <div className="grid gap-4 text-[12px] sm:grid-cols-2 lg:grid-cols-4">
+                                  <div>
+                                    <p className={labelClass}>Full Route</p>
+                                    <p className="mt-1 font-semibold leading-snug text-slate-800">{trip.from || "N/A"}</p>
+                                    <p className="leading-snug text-slate-500">→ {trip.to || "N/A"}</p>
+                                    {trip.toDate && trip.date !== trip.toDate && (
+                                      <p className="mt-1 text-slate-400">
+                                        {formatDate(trip.date)} — {formatDate(trip.toDate)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className={labelClass}>Expense Breakdown</p>
+                                    <div className="mt-1 space-y-0.5">
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">Travel</span>
+                                        <span className="font-semibold text-slate-800">{formatMoney(trip.travelCost)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">Meeting</span>
+                                        <span className="font-semibold text-slate-800">{formatMoney(trip.meetingAmount)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">Allowance</span>
+                                        <span className="font-semibold text-slate-800">{formatMoney(trip.allowance)}</span>
+                                      </div>
+                                    </div>
+                                    {trip.total > 0 && (
+                                      <div className="mt-2 flex h-1.5 overflow-hidden">
+                                        {trip.travelCost > 0 && (
+                                          <div className="bg-orange-400" style={{ width: `${(trip.travelCost / trip.total) * 100}%` }} />
+                                        )}
+                                        {trip.meetingAmount > 0 && (
+                                          <div className="bg-amber-400" style={{ width: `${(trip.meetingAmount / trip.total) * 100}%` }} />
+                                        )}
+                                        {trip.allowance > 0 && (
+                                          <div className="bg-slate-400" style={{ width: `${(trip.allowance / trip.total) * 100}%` }} />
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className={labelClass}>Description</p>
+                                    <p className="mt-1 leading-relaxed text-slate-700">{trip.description || "—"}</p>
+                                    {trip.hrNotes && trip.hrNotes !== trip.description && (
+                                      <>
+                                        <p className={`${labelClass} mt-3`}>HR Notes</p>
+                                        <p className="mt-1 leading-relaxed text-slate-700">{trip.hrNotes}</p>
+                                      </>
+                                    )}
+                                  </div>
+                                  {hasWorkloadData && (trip.amWorkload > 0 || trip.pmWorkload > 0) && (
+                                    <div>
+                                      <p className={labelClass}>Workload</p>
+                                      <div className="mt-1 flex gap-5">
+                                        <div>
+                                          <p className="text-slate-500">AM visits</p>
+                                          <p className="text-base font-bold text-emerald-700">{trip.amWorkload}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500">PM visits</p>
+                                          <p className="text-base font-bold text-orange-600">{trip.pmWorkload}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })
                 )}
               </tbody>
+              <tfoot className="border-t-2 border-slate-900">
+                <tr className="bg-slate-50">
+                  <td
+                    className={`${cellPaddingClass} text-[10px] font-bold uppercase tracking-wider text-slate-500`}
+                    colSpan={5}
+                  >
+                    {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}
+                  </td>
+                  <td className={`${cellPaddingClass} text-right text-[12px] font-bold text-orange-600`}>
+                    {formatMoney(pagedTrips.reduce((s, t) => s + t.total, 0))}
+                  </td>
+                  <td className={`${cellPaddingClass} text-right text-[12px] font-semibold text-slate-700`}>
+                    {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
+                  </td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
             </table>
           </div>
 

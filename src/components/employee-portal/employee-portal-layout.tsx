@@ -98,8 +98,8 @@ function buildEmployeePortalSections({
   showDashboardTab = true,
   showExcusesTab = false,
   showExpenseActionTab = false,
+  showExpenseDashboardTab = false,
   showIncentiveTab = true,
-  showManagementTab = false,
   showMarketingRequestsTab = false,
   showMarketingInboxTab = false,
   showMarketingCustomerDatabaseTab = false,
@@ -197,7 +197,7 @@ function buildEmployeePortalSections({
       title: "Expenses",
       items: [
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
-        ...(showManagementTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
+        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
         ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: Send }] : []),
       ],
     },
