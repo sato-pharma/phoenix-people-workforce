@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileImage, FileText } from "lucide-react";
+import { FileDown, FileText } from "lucide-react";
 
 import {
   AdminInsightChip,
@@ -162,8 +162,8 @@ export default async function AdminPayslipsCenterPage(
                               className="inline-flex h-9 items-center justify-center rounded-xl border border-[#FDBA74] bg-[#FFF7ED] px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
                               href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
                             >
-                              <FileImage className="mr-2 h-4 w-4" />
-                              Export Image
+                              <FileDown className="mr-2 h-4 w-4" />
+                              Export PDF
                             </Link>
                           ) : null}
                         </div>
