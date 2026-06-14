@@ -484,8 +484,23 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     resignationsReportSource,
+    /Payroll candidate/,
+    "Resignation report UI must render payroll missing employee candidates inside the workflow queue.",
+  );
+  assert.match(
+    resignationsReportSource,
+    /System resignation candidate ID/,
+    "Payroll missing employee candidates must show the auto-generated system resignation candidate ID.",
+  );
+  assert.doesNotMatch(
+    resignationsReportSource,
     /Payroll Missing Employee Candidates/,
-    "Resignation report UI must render payroll missing employee candidates.",
+    "Resignation report UI must not split payroll missing employee candidates into a separate table.",
+  );
+  assert.doesNotMatch(
+    resignationsReportSource,
+    /Match or create the employee HR ID/,
+    "Payroll missing employee candidates must not ask HR to manually generate or match an HR ID before tracking.",
   );
   assert.match(
     payrollDashboardSource,

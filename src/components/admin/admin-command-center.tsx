@@ -1150,7 +1150,7 @@ export function AdminCommandCenter({
             <SecondaryLink
               href="/probation"
               icon={Activity}
-              label="Probation Tracker"
+              label="Probation Period"
               sub={o.risk.probationEndings > 0 ? `${o.risk.probationEndings} ending soon` : "All on track"}
               tone="amber"
             />

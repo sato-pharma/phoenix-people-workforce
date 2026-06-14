@@ -12,7 +12,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import type { MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
+import { attendanceMonthlyCycleNote, type MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
 
 type Props = {
   canGenerateCandidates: boolean;
@@ -101,6 +101,9 @@ export function MonthlyAttendanceSummary({ canGenerateCandidates, initialData, i
       />
 
       {initialError ? <AdminCallout tone="danger">{initialError}</AdminCallout> : null}
+      <AdminCallout tone="neutral">
+        {attendanceMonthlyCycleNote}
+      </AdminCallout>
       {initialData && !initialData.holidaySourceConnected ? (
         <AdminCallout tone="warning">
           The public-holiday calendar could not be reached. Company holidays are still applied, but public holidays in this month may be counted as working days, slightly overcounting absences.

@@ -249,10 +249,9 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
 
           {data.distributors.length > 1 && <RankTable maxHeight="max-h-64" title="By distributor" rows={data.distributorBreakdown} />}
 
-          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.72fr)]">
-            <TrendStrip trend={data.trend} selected={data.appliedFilters.weekStarts} />
-            <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
-          </div>
+          <TrendStrip trend={data.trend} selected={data.appliedFilters.weekStarts} />
+
+          <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
         </>
       )}
     </div>
@@ -553,23 +552,52 @@ function PanelTitle({ count, title }: { count: number; title: string }) {
 function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; selected: string[] }) {
   if (trend.length < 2) return null;
   const max = Math.max(1, ...trend.map((point) => point.salesValue));
+  const average = trend.reduce((total, point) => total + point.salesValue, 0) / trend.length;
   const selectedSet = new Set(selected);
+  const highlighted = trend.find((point) => selectedSet.has(point.weekStart)) ?? trend[trend.length - 1];
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</div>
-        <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{trend.length} weeks</div>
-      </div>
-      <div className="flex h-36 items-end gap-1.5 overflow-x-auto border-t border-[#F1F5F9] pt-3">
-        {trend.map((point) => (
-          <div className="flex min-w-[44px] flex-1 flex-col items-center gap-1" key={point.weekStart} title={`${point.weekStart}: ${money(point.salesValue)}`}>
-            <div
-              className={cn("w-full rounded-t-[3px]", selectedSet.has(point.weekStart) ? "bg-[#F97316]" : "bg-[#CBD5E1]")}
-              style={{ height: `${Math.max(4, (point.salesValue / max) * 118)}px` }}
-            />
-            <span className="text-[9px] font-bold text-[#94A3B8]">{point.weekStart.slice(5)}</span>
+    <section className="w-full overflow-hidden border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</div>
+          <div className="mt-0.5 text-[11px] font-bold text-[#94A3B8]">{trend.length} weeks</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-right">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wide text-[#64748B]">Average</div>
+            <div className="text-sm font-black tabular-nums text-[#334155]">{money(average)}</div>
           </div>
-        ))}
+          <div className="border-l border-[#E2E8F0] pl-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-[#EA580C]">Highlighted week</div>
+            <div className="text-lg font-black tabular-nums text-[#0F172A]">{money(highlighted.salesValue)}</div>
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto px-4 pb-4 pt-3">
+        <div className="flex h-48 min-w-[860px] items-end gap-1.5 border-t border-[#F1F5F9] bg-[#F8FAFC] px-2 pt-4">
+          {trend.map((point) => {
+            const isSelected = selectedSet.has(point.weekStart);
+            const height = Math.max(6, (point.salesValue / max) * 154);
+            return (
+              <div
+                className={cn(
+                  "flex min-w-[44px] flex-1 flex-col items-center gap-1 px-1 pt-2",
+                  isSelected && "bg-[linear-gradient(180deg,rgba(249,115,22,0.10)_0%,rgba(249,115,22,0)_100%)]",
+                )}
+                key={point.weekStart}
+                title={`${point.weekStart}: ${money(point.salesValue)}`}
+              >
+                <div
+                  className={cn("w-full border-t", isSelected ? "border-[#EA580C] bg-[#F97316]" : "border-[#E2E8F0] bg-[#CBD5E1]")}
+                  style={{ height: `${height}px` }}
+                />
+                <span className={cn("text-[9px] font-black", isSelected ? "text-[#EA580C]" : "text-[#94A3B8]")}>
+                  {point.weekStart.slice(5)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

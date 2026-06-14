@@ -76,19 +76,26 @@ type SortKey =
 const allValue = "__all__";
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#94A3B8] focus:ring-2 focus:ring-[#CBD5E1]/40";
 
 const adminTableHeaderClassName =
-  "px-3 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]";
+  "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+
+const probationTableCellClassName =
+  "px-2 py-1.5 text-xs text-text-secondary";
+const probationTableValueClassName =
+  "px-2 py-1.5 text-xs";
+const probationActionButtonClassName =
+  "h-7 rounded-md px-2 text-[10px]";
 
 const premiumPageClassName =
-  "relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_46%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5";
+  "relative rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)] p-4";
 
 const premiumPanelClassName =
-  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
+  "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
 
 const premiumInputClassName =
-  "h-11 rounded-2xl border-[#D8E0EA] bg-white/95 shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-[#F97316]/15";
+  "h-10 rounded-xl border-[#D8E0EA] bg-white/95 shadow-[0_10px_24px_rgba(15,23,42,0.06)] focus:border-[#94A3B8] focus:ring-[#CBD5E1]/40";
 
 function emptyActionForm(): WorkflowActionForm {
   return {
@@ -458,59 +465,56 @@ export function ProbationTracker({
   }
 
   return (
-    <div className={isPremium ? premiumPageClassName : "space-y-6"}>
-      {isPremium ? (
-        <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
-      ) : null}
-      <div className="relative space-y-6">
-      <AdminPageHero
-        actions={
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-            <Button
-              className="h-11 gap-2 rounded-2xl"
-              disabled={!hasActiveFilters}
-              onClick={resetFilters}
-              variant="secondary"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Reset Filters
-            </Button>
-            {canExport ? (
-              <>
-                <a
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-                  href="/api/exports?report=probation&format=pdf"
-                >
-                  <Download className="h-4 w-4 text-[#EA580C]" />
-                  Export PDF
-                </a>
-                <a
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[#D7E0EA] bg-white/95 px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-                  href="/api/exports?report=probation&format=xlsx"
-                >
-                  <Download className="h-4 w-4 text-[#EA580C]" />
-                  Export Excel
-                </a>
-              </>
-            ) : null}
-          </div>
-        }
-        badges={(
-          <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>Employees in probation: {summary.total}</AdminInsightChip>
-            <AdminInsightChip tone="orange">
-              {summary.total > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
-            </AdminInsightChip>
-            <AdminInsightChip tone="slate">
-              {summary.warning} warning, {summary.safe} safe
-            </AdminInsightChip>
-          </div>
-        )}
-        description="Track employees inside the 90-day probation window and prioritize deadlines by risk zone before deadlines become people-risk."
-        eyebrow="People Operations"
-        icon={<Shield className="h-3.5 w-3.5" />}
-        title="Probation Tracker"
-      />
+    <div className={isPremium ? premiumPageClassName : "space-y-4"}>
+      <div className="relative space-y-4">
+        <AdminPageHero
+          actions={
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <Button
+                className="h-8 gap-1.5 rounded-lg"
+                disabled={!hasActiveFilters}
+                onClick={resetFilters}
+                variant="secondary"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Reset Filters
+              </Button>
+              {canExport ? (
+                <>
+                  <a
+                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-[#94A3B8] hover:bg-[#F8FAFC]"
+                    href="/api/exports?report=probation&format=pdf"
+                  >
+                    <Download className="h-4 w-4 text-[#334155]" />
+                    Export PDF
+                  </a>
+                  <a
+                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-[#94A3B8] hover:bg-[#F8FAFC]"
+                    href="/api/exports?report=probation&format=xlsx"
+                  >
+                    <Download className="h-4 w-4 text-[#334155]" />
+                    Export Excel
+                  </a>
+                </>
+              ) : null}
+            </div>
+          }
+          badges={(
+            <div className="flex flex-wrap gap-2">
+              <AdminInsightChip>Employees in probation period: {summary.total}</AdminInsightChip>
+              <AdminInsightChip tone="slate">
+                {summary.total > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
+              </AdminInsightChip>
+              <AdminInsightChip tone="slate">
+                {summary.warning} warning, {summary.safe} safe
+              </AdminInsightChip>
+            </div>
+          )}
+          description="Track employees inside the 90-day probation window and prioritize deadlines by risk zone before deadlines become people-risk."
+          eyebrow="People Operations"
+          icon={<Shield className="h-3.5 w-3.5" />}
+          title="Probation Period"
+        />
 
       {initialError ? (
         <AdminCallout tone="danger">
@@ -524,24 +528,28 @@ export function ProbationTracker({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminStatCard
+          size="compact"
           description="Matching current filters"
           icon={<Shield className="h-5 w-5" />}
           label="Total in Probation"
           value={summary.total}
         />
         <AdminStatCard
+          size="compact"
           description="More than 60 days remaining"
           icon={<ShieldCheck className="h-5 w-5" />}
           label="Safe Zone"
           value={summary.safe}
         />
         <AdminStatCard
+          size="compact"
           description="30 to 60 days remaining"
           icon={<ShieldAlert className="h-5 w-5" />}
           label="Warning Zone"
           value={summary.warning}
         />
         <AdminStatCard
+          size="compact"
           description="Less than 30 days remaining"
           icon={<AlertTriangle className="h-5 w-5" />}
           label="Critical Zone"
@@ -562,7 +570,7 @@ export function ProbationTracker({
       <AdminTableShell
         action={
           <Button
-            className="h-11 gap-2 rounded-2xl"
+            className="h-9 gap-2 rounded-xl"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             variant="secondary"
@@ -574,14 +582,14 @@ export function ProbationTracker({
         description="Use line, area, role, employment status, risk zone, and sort to focus on probation windows."
         title="Probation Filters"
       >
-        <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))_auto]">
+        <div className="grid gap-2 p-3 sm:p-3.5 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))_auto]">
           <label className="relative block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
               Search
             </span>
             <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-text-secondary" />
             <Input
-              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
+              className="h-10 rounded-xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -624,9 +632,9 @@ export function ProbationTracker({
             title="Managers Feedback in Probation Period"
           />
           <div className="overflow-x-auto bg-white/80">
-            <table className="w-full min-w-[1280px] text-left text-sm">
-              <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-text-secondary">
-                <tr className="border-b border-[#FED7AA]">
+            <table className="w-full min-w-[1080px] text-left text-xs">
+              <thead className="bg-slate-50/90 text-xs uppercase tracking-[0.12em] text-text-secondary">
+                <tr className="border-b border-slate-200">
                   {[
                     "Employee HR ID",
                     "Employee Name",
@@ -650,27 +658,27 @@ export function ProbationTracker({
               <tbody className="divide-y divide-[#E2E8F0]">
                 {feedbackReportRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-10 text-center text-sm text-text-secondary" colSpan={12}>
+                    <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={12}>
                       No probation feedback records match the current filters.
                     </td>
                   </tr>
                 ) : (
                   feedbackReportRows.map((row) => (
-                    <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={`feedback:${row.hr_id}`}>
-                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.hr_id}</td>
-                      <td className="px-3 py-4 font-semibold text-text">{row.full_name}</td>
-                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.hire_date)}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.probationDayStatus}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.manager_name ?? row.manager_hr_id ?? "-"}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.managerReviewedBy ?? "-"}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.managerReviewedAt ? formatDate(row.workflow.managerReviewedAt) : "-"}</td>
-                      <td className="max-w-[280px] px-3 py-4 text-text-secondary">{row.workflow?.managerFeedback ?? "-"}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-"}</td>
-                      <td className="px-3 py-4">
+                    <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.hr_id}</td>
+                      <td className={cn(probationTableCellClassName, "font-semibold text-text")}>{row.full_name}</td>
+                      <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.probationDayStatus}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.manager_name ?? row.manager_hr_id ?? "-"}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.workflow?.managerReviewedBy ?? "-"}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.workflow?.managerReviewedAt ? formatDate(row.workflow.managerReviewedAt) : "-"}</td>
+                      <td className={cn("max-w-[260px]", probationTableCellClassName)}>{row.workflow?.managerFeedback ?? "-"}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-"}</td>
+                      <td className={cn(probationTableCellClassName)}>
                         <Badge variant={row.feedbackStatus === "Pending" ? "warning" : "success"}>{row.feedbackStatus}</Badge>
                       </td>
-                      <td className="px-3 py-4 text-text-secondary">
+                      <td className={cn(probationTableCellClassName, "align-top")}>
                         <p>{row.line_name}</p>
                         <p className="mt-1">{row.area_name}</p>
                         <p className="mt-1">{row.team_name ?? "-"}</p>
@@ -696,9 +704,9 @@ export function ProbationTracker({
           title="Current Probation Employees"
         />
         <div className="overflow-x-auto bg-white/80">
-          <table className="w-full min-w-[1120px] text-left text-sm">
-            <thead className="sticky top-0 bg-[#FFF7ED]/80 backdrop-blur">
-              <tr className="border-b border-[#FED7AA] text-xs uppercase tracking-[0.12em] text-text-secondary">
+            <table className="w-full min-w-[940px] text-left text-xs">
+              <thead className="sticky top-0 bg-slate-50/90 backdrop-blur">
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {[
                   "HR ID",
                   "CRM ID",
@@ -723,7 +731,7 @@ export function ProbationTracker({
             <tbody className="divide-y divide-[#E2E8F0]">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-12 text-center text-sm text-text-secondary" colSpan={13}>
+                  <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={13}>
                     No probation records match the current filters.
                   </td>
                 </tr>
@@ -733,17 +741,17 @@ export function ProbationTracker({
                   const progress = getProbationProgress(row.days_remaining);
 
                   return (
-                    <tr className="transition-colors hover:bg-[#FFF7ED]/55" key={row.hr_id}>
-                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.hr_id || "-"}</td>
-                      <td className="px-3 py-4 font-mono text-xs text-text-secondary">{row.crm_id || "-"}</td>
-                      <td className="px-3 py-4 font-semibold text-text">{row.full_name}</td>
-                      <td className="max-w-[220px] truncate px-3 py-4 text-text-secondary">{row.job_title}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.line_name}</td>
-                      <td className="px-3 py-4 text-text-secondary">{row.area_name}</td>
-                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.hire_date)}</td>
-                      <td className="px-3 py-4 text-text-secondary">{formatDate(row.probation_end_date)}</td>
-                      <td className="px-3 py-4 font-semibold text-text">{row.days_remaining}</td>
-                      <td className="min-w-[150px] px-3 py-4">
+                    <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
+                      <td className={cn(probationTableCellClassName, "truncate font-semibold text-text")}>{row.full_name}</td>
+                      <td className={cn("max-w-[190px] truncate", probationTableCellClassName)}>{row.job_title}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.line_name}</td>
+                      <td className={cn(probationTableCellClassName)}>{row.area_name}</td>
+                      <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
+                      <td className={cn(probationTableCellClassName)}>{formatDate(row.probation_end_date)}</td>
+                      <td className={cn(probationTableValueClassName, "font-semibold text-text")}>{row.days_remaining}</td>
+                      <td className={cn("min-w-[125px]", probationTableCellClassName)}>
                         <div className="space-y-1">
                           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                             <div
@@ -761,12 +769,12 @@ export function ProbationTracker({
                           <p className="text-[11px] leading-tight text-text-secondary">{progress}% complete</p>
                         </div>
                       </td>
-                      <td className="px-3 py-4">
+                      <td className={cn(probationTableValueClassName)}>
                         <Badge variant={traffic === "safe" ? "success" : traffic === "warning" ? "warning" : "danger"}>
                           {statusLabel(traffic)}
                         </Badge>
                       </td>
-                      <td className="px-3 py-4">
+                      <td className={cn(probationTableValueClassName, "space-y-1.5")}>
                         <div className="space-y-2">
                           <Badge variant={workflowBadgeVariant(row.workflow?.status)}>{workflowLabel(row.workflow?.status)}</Badge>
                           {row.workflow?.decision ? (
@@ -774,14 +782,14 @@ export function ProbationTracker({
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-3 py-4">
+                      <td className={cn(probationTableValueClassName, "align-top")}>
                         {row.workflow ? (
-                          <div className="flex min-w-[260px] flex-wrap gap-2">
+                          <div className="flex min-w-[200px] flex-wrap gap-1.5">
                             {(row.workflow.allowedActions ?? row.allowedActions ?? [])
                               .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
                               .map((action) => (
                                 <Button
-                                  className="h-9 rounded-xl px-2.5 text-xs"
+                                  className={probationActionButtonClassName}
                                   disabled={Boolean(pendingAction)}
                                   key={action}
                                   onClick={() => openWorkflowAction(row, action)}
@@ -797,7 +805,12 @@ export function ProbationTracker({
                             ) : null}
                           </div>
                         ) : (
-                          <Button className="h-9 rounded-xl px-2.5 text-xs" disabled={!canCreate || Boolean(pendingAction)} onClick={() => createEvaluation(row)} variant="secondary">
+                          <Button
+                            className={probationActionButtonClassName}
+                            disabled={!canCreate || Boolean(pendingAction)}
+                            onClick={() => createEvaluation(row)}
+                            variant="secondary"
+                          >
                             Start review
                           </Button>
                         )}
@@ -817,15 +830,15 @@ export function ProbationTracker({
           description={`${selectedAction.row.hr_id} | ${workflowLabel(selectedAction.row.workflow?.status)} | ends ${formatDate(selectedAction.row.probation_end_date)}`}
           action={
             <div className="flex flex-wrap gap-2">
-              <Button className="h-11 rounded-2xl" onClick={() => setSelectedAction(null)} variant="secondary">
-                Close
-              </Button>
-              <Button
-                className="h-11 rounded-2xl"
-                disabled={Boolean(pendingAction)}
-                onClick={runWorkflow}
-                variant={isDestructiveAction(selectedAction.action) ? "destructive" : "default"}
-              >
+                <Button className="h-9 rounded-xl" onClick={() => setSelectedAction(null)} variant="secondary">
+                  Close
+                </Button>
+                <Button
+                  className="h-9 rounded-xl"
+                  disabled={Boolean(pendingAction)}
+                  onClick={runWorkflow}
+                  variant={isDestructiveAction(selectedAction.action) ? "destructive" : "default"}
+                >
                 {pendingAction ? "Submitting..." : actionLabel(selectedAction.action)}
               </Button>
             </div>

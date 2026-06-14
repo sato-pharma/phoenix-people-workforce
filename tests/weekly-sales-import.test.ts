@@ -21,7 +21,9 @@ function references(): SalesReferenceData {
             ? "LACTO BASIC 30 CAP"
             : productCode === "SS001"
               ? "SATOSLIM"
-              : productCode,
+              : productCode === "IV001"
+                ? "IVYRONC"
+                : productCode,
       factoryPrice,
       family: "",
       familyCode: "",
@@ -216,6 +218,41 @@ export async function runWeeklySalesImportTests() {
     assert.equal(sheetXfactor.result.totals.salesQty, 7, "XFactor row units are kept");
     assert.equal(sheetXfactor.result.totals.salesValue, round2(7 * 2.5), "value uses uploaded XFactor instead of product fallback");
     assert.equal(sheetXfactor.rows[0].rawRow.xfactorSource, "sheet", "raw row records uploaded XFactor source");
+  }
+
+  const elSawahFallback = await parseWeeklyWorkbookBuffer({
+    buffer: await workbook([
+      row({ date: week, itemCode: "639911", itemName: "SATOSLIM 30 CAP(OLD PRICE)", branch: "Cairo Central Warehouse", stock: 100, qty: 0, region: "", productId: "" }),
+      row({ date: week, itemCode: "639911", itemName: "SATOSLIM 30 CAP(OLD PRICE)", branch: "Cairo Main Warehouse", stock: 90, qty: 0, region: "", productId: "" }),
+      row({ date: week, itemCode: "639912", itemName: "SATOSLIM 30 CAP", branch: "Cairo Platform", stock: 70, qty: 1, region: "", productId: "SS001" }),
+      row({ date: week, itemCode: "635171", itemName: "IVYRONC 100ML SYRUP(O.P)", branch: "Sohag Platform", stock: 40, qty: 2, region: "", productId: "" }),
+    ]),
+    distributorCode: "IS",
+    distributorName: "El Sawah",
+    fileName: "el-sawah-week.xlsx",
+    references: references(),
+  });
+  assert.equal(elSawahFallback.ok, true, "El Sawah blank-region stock rows parse");
+  if (elSawahFallback.ok) {
+    const cairoWarehouse = elSawahFallback.rows.find((r) => r.branchName === "Cairo Central Warehouse");
+    assert.equal(cairoWarehouse?.regionCode, "CA", "Cairo Central Warehouse fallback maps to CA");
+    assert.equal(cairoWarehouse?.regionName, "Cairo", "Cairo Central Warehouse fallback maps to Cairo");
+    assert.equal(cairoWarehouse?.rawRow.regionSource, "branchFallback", "warehouse region source is recorded");
+
+    const cairoMainWarehouse = elSawahFallback.rows.find((r) => r.branchName === "Cairo Main Warehouse");
+    assert.equal(cairoMainWarehouse?.regionCode, "CA", "Cairo Main Warehouse fallback maps to CA");
+    assert.equal(cairoMainWarehouse?.regionName, "Cairo", "Cairo Main Warehouse fallback maps to Cairo");
+
+    const cairoPlatform = elSawahFallback.rows.find((r) => r.branchName === "Cairo Platform");
+    assert.equal(cairoPlatform?.regionCode, "CA", "Cairo Platform fallback maps to CA");
+    assert.equal(cairoPlatform?.validationIssues.some((issue) => issue.field === "regionCode"), false, "Cairo Platform does not stay blank-region warning");
+
+    const sohagPlatform = elSawahFallback.rows.find((r) => r.branchName === "Sohag Platform");
+    assert.equal(sohagPlatform?.regionCode, "UE", "Sohag Platform fallback maps to UE");
+    assert.equal(sohagPlatform?.regionName, "Upper Egypt", "Sohag Platform fallback maps to Upper Egypt");
+    assert.equal(sohagPlatform?.productCode, "IV001", "Ivyronc O.P item name resolves to IV001");
+    assert.equal(sohagPlatform?.salesValue, round2(2 * XFACTORS.IV001), "Ivyronc O.P value uses IV001 xfactor");
+    assert.equal(sohagPlatform?.validationState, "valid", "Ivyronc O.P row is valid after fallback mapping");
   }
 
   // Region consolidation reconciles to the total.

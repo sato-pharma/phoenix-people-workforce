@@ -72,11 +72,15 @@ export function AdminPageHero({
   eyebrow,
   icon,
   title,
+  compact = false,
+  className,
 }: {
   actions?: ReactNode;
+  className?: string;
   /** Optional right-side slot for KPI tiles / profile (command centers). */
   aside?: ReactNode;
   badges?: ReactNode;
+  compact?: boolean;
   description: string;
   eyebrow: string;
   icon?: ReactNode;
@@ -84,7 +88,11 @@ export function AdminPageHero({
 }) {
   return (
     <AdminHeroFrame>
-      <div className="relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div className={cn(
+        "relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]",
+        compact && "gap-3 p-3 sm:p-4 lg:p-5",
+        className,
+      )}>
         <div className="min-w-0 space-y-3">
           <div className={adminHeroKickerClassName}>
             {icon}
@@ -148,6 +156,7 @@ export function AdminStatCard({
   value,
   tone = "orange",
   variant = "default",
+  size = "default",
 }: {
   description: string;
   icon: ReactNode;
@@ -155,6 +164,7 @@ export function AdminStatCard({
   value: ReactNode;
   tone?: "orange" | "blue" | "emerald" | "violet" | "rose";
   variant?: "default" | "full";
+  size?: "default" | "compact";
 }) {
   const toneClasses = {
     orange: {
@@ -209,6 +219,24 @@ export function AdminStatCard({
     },
   }[tone];
 
+  const statDefaultSize = {
+    containerClass: "space-y-3",
+    iconContainerClass: "flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br p-3 ring-1 transition-all duration-300 hover:scale-110",
+    labelClass: "text-[10px] font-bold uppercase tracking-[0.15em]",
+    valueClass: "text-3xl font-black tracking-tight",
+    descriptionClass: "mt-4 text-sm leading-6",
+  };
+
+  const compactSize = {
+    containerClass: "space-y-2",
+    iconContainerClass: "flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br p-2 ring-1 transition-all duration-300 hover:scale-110",
+    labelClass: "text-[8px] font-black uppercase tracking-[0.12em]",
+    valueClass: "text-xl font-black tracking-tight",
+    descriptionClass: "mt-2 text-xs leading-4",
+  };
+
+  const sizeClasses = size === "compact" ? compactSize : statDefaultSize;
+
   if (variant === "full") {
     return (
       <Card className={cn("rounded-[24px] border p-6 transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.01]", toneClasses.card)}>
@@ -224,17 +252,24 @@ export function AdminStatCard({
     );
   }
 
+  const iconClassName = cn("shrink-0", sizeClasses.iconContainerClass, toneClasses.icon);
+
   return (
-    <Card className={cn("relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]", toneClasses.border)}>
+    <Card
+      className={cn(
+        "relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]",
+        toneClasses.border,
+      )}
+    >
       <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full blur-3xl", toneClasses.bg)} />
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
-          <div className="text-3xl font-black tracking-tight text-slate-900">{value}</div>
+        <div className={cn("min-w-0", sizeClasses.containerClass)}>
+          <p className={cn(sizeClasses.labelClass, "text-slate-400")}>{label}</p>
+          <div className={cn(sizeClasses.valueClass, "text-slate-900")}>{value}</div>
         </div>
-        <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br p-3 ring-1 transition-all duration-300 hover:scale-110", toneClasses.icon)}>{icon}</div>
+        <div className={iconClassName}>{icon}</div>
       </div>
-      <p className="mt-4 text-sm leading-6 text-slate-500">{description}</p>
+      <p className={cn(sizeClasses.descriptionClass, "text-slate-500")}>{description}</p>
     </Card>
   );
 }

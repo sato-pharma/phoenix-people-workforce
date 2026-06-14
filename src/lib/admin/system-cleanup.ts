@@ -15,6 +15,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteVacationRequestAsAdmin } from "@/lib/vacation/service";
 
 export const SYSTEM_CLEANUP_MAX_BULK = 25;
+const SYSTEM_CLEANUP_PAGE_SIZE = 1000;
 
 export const systemCleanupModuleKeys = [
   "vacation_requests",
@@ -121,6 +122,7 @@ const moduleLabels: Record<SystemCleanupModuleKey, string> = {
 };
 
 const DEFAULT_CLEANUP_NOTE = "No cleanup note provided.";
+type WeeklyPlanSourceTable = "employee_plan_headers" | "weekly_plans";
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -192,6 +194,37 @@ function targetKey(target: SystemCleanupTarget) {
   return `${target.moduleKey}:${target.recordId}`;
 }
 
+function sortCleanupRecordsNewestFirst(records: SystemCleanupRecord[]) {
+  return [...records].sort((left, right) => {
+    const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+    const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+    return rightTime - leftTime;
+  });
+}
+
+function weeklyPlanRecordId(sourceTable: WeeklyPlanSourceTable, rawRecordId: string) {
+  return `${sourceTable}:${rawRecordId}`;
+}
+
+function parseWeeklyPlanRecordId(recordId: string): { rawRecordId: string; sourceTable: WeeklyPlanSourceTable } {
+  if (recordId.startsWith("employee_plan_headers:")) {
+    return {
+      rawRecordId: recordId.slice("employee_plan_headers:".length),
+      sourceTable: "employee_plan_headers",
+    };
+  }
+  if (recordId.startsWith("weekly_plans:")) {
+    return {
+      rawRecordId: recordId.slice("weekly_plans:".length),
+      sourceTable: "weekly_plans",
+    };
+  }
+  return {
+    rawRecordId: recordId,
+    sourceTable: "weekly_plans",
+  };
+}
+
 function normalizeTargets(input: unknown): SystemCleanupTarget[] {
   if (!Array.isArray(input)) throw new Error("Cleanup targets must be an array.");
 
@@ -260,14 +293,22 @@ export async function assertSystemCleanupAccess(
 }
 
 async function selectRows(table: string, select = "*") {
-  const { data, error } = await getSupabaseAdmin()
-    .from(table)
-    .select(select)
-    .order("created_at", { ascending: false })
-    .limit(250);
+  const rows: JsonRecord[] = [];
 
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as JsonRecord[];
+  for (let from = 0; ; from += SYSTEM_CLEANUP_PAGE_SIZE) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(table)
+      .select(select)
+      .order("created_at", { ascending: false })
+      .range(from, from + SYSTEM_CLEANUP_PAGE_SIZE - 1);
+
+    if (error) throw new Error(error.message);
+    const page = (data ?? []) as unknown as JsonRecord[];
+    rows.push(...page);
+    if (page.length < SYSTEM_CLEANUP_PAGE_SIZE) break;
+  }
+
+  return rows;
 }
 
 async function selectMaybeSingle(table: string, recordId: string, idColumn = "id") {
@@ -281,12 +322,12 @@ async function selectMaybeSingle(table: string, recordId: string, idColumn = "id
   return data ? data as unknown as JsonRecord : null;
 }
 
-async function selectChildren(table: string, column: string, value: string | number) {
+async function selectChildren(table: string, column: string, value: string | number, orderColumn = "created_at") {
   const { data, error } = await getSupabaseAdmin()
     .from(table)
     .select("*")
     .eq(column, value)
-    .order("created_at", { ascending: false });
+    .order(orderColumn, { ascending: false });
 
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as JsonRecord[];
@@ -477,41 +518,91 @@ function weeklyPlanRecord(row: JsonRecord): SystemCleanupRecord {
   const weekStart = dateOnly(row.week_start_date);
   const weekEnd = dateOnly(row.week_end_date);
   const monthKey = text(row.month_key);
+  const rawRecordId = text(row.id);
 
   return {
     blockReason: null,
     canDelete: true,
-    createdAt: isoOrNull(row.created_at),
+    createdAt: isoOrNull(row.submitted_at ?? row.created_at),
     dateLabel: weekStart && weekEnd ? `${weekStart} to ${weekEnd}` : monthKey || "No plan date",
     employeeHrId: nullableText(row.employee_hr_id),
     employeeName: nullableText(row.employee_name),
     impact: [
-      "Delete weekly/monthly plan header",
+      "Delete legacy weekly plan header",
       "Delete child day rows and approval tokens through existing cascade",
       "Preserve the full plan snapshot in cleanup history",
     ],
     moduleKey: "weekly_plans",
     moduleLabel: moduleLabels.weekly_plans,
-    recordId: text(row.id),
+    recordId: weeklyPlanRecordId("weekly_plans", rawRecordId),
     safetyState: "safe",
     status: normalizeStatus(row.status),
-    title: `${text(row.week_key) || "Plan"}${monthKey ? ` - ${monthKey}` : ""}`,
+    title: `Legacy weekly plan ${text(row.week_key) || rawRecordId}${monthKey ? ` - ${monthKey}` : ""}`,
   };
 }
 
+function employeePlanRecord(row: JsonRecord): SystemCleanupRecord {
+  const periodStart = dateOnly(row.period_start_date);
+  const periodEnd = dateOnly(row.period_end_date);
+  const periodKey = text(row.period_key);
+  const planKind = text(row.plan_kind) || "plan";
+  const revision = numberValue(row.revision);
+  const rawRecordId = text(row.id);
+
+  return {
+    blockReason: null,
+    canDelete: true,
+    createdAt: isoOrNull(row.submitted_at ?? row.created_at),
+    dateLabel: periodStart && periodEnd ? `${periodStart} to ${periodEnd}` : periodKey || "No plan date",
+    employeeHrId: nullableText(row.employee_hr_id),
+    employeeName: nullableText(row.employee_name),
+    impact: [
+      "Delete weekly/monthly plan header",
+      "Delete plan items, decisions, acknowledgements, and return notes through existing cascade",
+      "Preserve the full plan snapshot in cleanup history",
+    ],
+    moduleKey: "weekly_plans",
+    moduleLabel: moduleLabels.weekly_plans,
+    recordId: weeklyPlanRecordId("employee_plan_headers", rawRecordId),
+    safetyState: "safe",
+    status: normalizeStatus(row.status),
+    title: `${statusLabel(planKind)} plan ${periodKey || rawRecordId}${revision ? ` - rev ${revision}` : ""}`,
+  };
+}
+
+function statusLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 async function listWeeklyPlanCleanupRecords() {
-  return (await selectRows("weekly_plans")).map(weeklyPlanRecord);
+  const [employeePlans, legacyPlans] = await Promise.all([
+    selectRows("employee_plan_headers"),
+    selectRows("weekly_plans"),
+  ]);
+
+  return sortCleanupRecordsNewestFirst([
+    ...employeePlans.map(employeePlanRecord),
+    ...legacyPlans.map(weeklyPlanRecord),
+  ]);
 }
 
 async function loadWeeklyPlanCleanupRecord(recordId: string): Promise<LoadedCleanupRecord> {
-  const header = await selectMaybeSingle("weekly_plans", recordId);
+  const parsed = parseWeeklyPlanRecordId(recordId);
+  if (parsed.sourceTable === "employee_plan_headers") {
+    return loadEmployeePlanCleanupRecord(parsed.rawRecordId);
+  }
+  return loadLegacyWeeklyPlanCleanupRecord(parsed.rawRecordId);
+}
+
+async function loadLegacyWeeklyPlanCleanupRecord(rawRecordId: string): Promise<LoadedCleanupRecord> {
+  const header = await selectMaybeSingle("weekly_plans", rawRecordId);
   if (!header) {
-    return missingRecord("weekly_plans", recordId);
+    return missingRecord("weekly_plans", weeklyPlanRecordId("weekly_plans", rawRecordId));
   }
 
   const [days, approvalTokens] = await Promise.all([
-    selectChildren("weekly_plan_days", "plan_id", recordId),
-    selectChildren("weekly_plan_approval_tokens", "plan_id", recordId),
+    selectChildren("weekly_plan_days", "plan_id", rawRecordId),
+    selectChildren("weekly_plan_approval_tokens", "plan_id", rawRecordId),
   ]);
   const record = weeklyPlanRecord(header);
   const decisions = {
@@ -536,6 +627,41 @@ async function loadWeeklyPlanCleanupRecord(recordId: string): Promise<LoadedClea
     approvalTokens: approvalTokens.length,
     days: days.length,
     planTable: "weekly_plans",
+  };
+
+  return {
+    ...record,
+    impactSummary,
+    snapshot,
+  };
+}
+
+async function loadEmployeePlanCleanupRecord(rawRecordId: string): Promise<LoadedCleanupRecord> {
+  const header = await selectMaybeSingle("employee_plan_headers", rawRecordId);
+  if (!header) {
+    return missingRecord("weekly_plans", weeklyPlanRecordId("employee_plan_headers", rawRecordId));
+  }
+
+  const [items, decisions, acknowledgements, returnNotes] = await Promise.all([
+    selectChildren("employee_plan_items", "plan_id", rawRecordId),
+    selectChildren("employee_plan_decisions", "plan_id", rawRecordId),
+    selectChildren("employee_plan_hr_acknowledgements", "plan_id", rawRecordId, "acknowledged_at"),
+    selectChildren("employee_plan_item_return_notes", "plan_id", rawRecordId),
+  ]);
+  const record = employeePlanRecord(header);
+  const snapshot = {
+    acknowledgements,
+    decisions,
+    header,
+    items,
+    returnNotes,
+  };
+  const impactSummary = {
+    acknowledgements: acknowledgements.length,
+    decisions: decisions.length,
+    items: items.length,
+    planTable: "employee_plan_headers",
+    returnNotes: returnNotes.length,
   };
 
   return {
@@ -570,10 +696,11 @@ async function deleteWeeklyPlanAsAdmin(input: {
   loaded: LoadedCleanupRecord;
   reason: string;
 }) {
+  const parsed = parseWeeklyPlanRecordId(input.loaded.recordId);
   const { error } = await getSupabaseAdmin()
-    .from("weekly_plans")
+    .from(parsed.sourceTable)
     .delete()
-    .eq("id", input.loaded.recordId);
+    .eq("id", parsed.rawRecordId);
 
   if (error) throw new Error(error.message);
 

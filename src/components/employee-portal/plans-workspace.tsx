@@ -595,6 +595,14 @@ export function PlansWorkspace({
   const actionBarBottom = onAdminSurface
     ? "env(safe-area-inset-bottom)"
     : "calc(56px + env(safe-area-inset-bottom))";
+  const headerLabel = onAdminSurface ? "Review Workspace" : "My Plan";
+  const compactHeaderTitle = onAdminSurface
+    ? activeKind === "weekly"
+      ? "Weekly plans review"
+      : "Monthly plans review"
+    : activeKind === "weekly"
+      ? "Weekly Plan"
+      : "Monthly Plan";
 
   const period = useMemo(
     () => buildEmployeePlanPeriod(activeKind, anchorDate),
@@ -952,9 +960,7 @@ export function PlansWorkspace({
         <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-black text-slate-900">
-                {activeKind === "weekly" ? "Weekly Plan" : "Monthly Plan"}
-              </h2>
+              <h2 className="truncate text-lg font-black text-slate-900">{compactHeaderTitle}</h2>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">
                 {formatDate(period.periodStartDate)} – {formatDate(period.periodEndDate)} · {period.periodKey}
               </p>
@@ -1214,9 +1220,15 @@ export function PlansWorkspace({
         <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.07)]">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-4 py-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">My Plan</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
               <h2 className="mt-1 text-xl font-black text-slate-950">
-                {activeKind === "weekly" ? "Weekly plan table" : "Monthly plan table"}
+                {onAdminSurface
+                  ? activeKind === "weekly"
+                    ? "Weekly review queue"
+                    : "Monthly review queue"
+                  : activeKind === "weekly"
+                    ? "Weekly plan table"
+                    : "Monthly plan table"}
               </h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
                 {formatDate(period.periodStartDate)} to {formatDate(period.periodEndDate)} - {period.periodKey}
