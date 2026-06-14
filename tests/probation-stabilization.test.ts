@@ -55,7 +55,7 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /eventType:\s*"reminder_due"/);
   assert.match(serviceSource, /workflowApproverHrIds:\s*probationWorkflowApproverHrIds/);
   assert.match(serviceSource, /ctaLabel:\s*"Open Probation Review"/);
-  assert.match(serviceSource, /\/employee-portals\/probation\?employeeHrId=/);
+  assert.match(serviceSource, /\/api\/probation\/redirect/);
   assert.doesNotMatch(serviceSource, /recipientHrId,/);
   assert.doesNotMatch(serviceSource, /recipientHrId:/);
   assert.doesNotMatch(serviceSource, /Approve in Telegram|Reject in Telegram|callback_query/);
