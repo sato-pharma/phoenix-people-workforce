@@ -31,14 +31,14 @@ export function runAdminPayslipImageExportTests() {
 
   assert.match(
     imageRouteSource,
-    /import\("playwright"\)/,
-    "Payslip image export must render the existing payslip HTML through Playwright.",
+    /pdf-lib/,
+    "Payslip export must use pdf-lib to render the PDF (Playwright replaced).",
   );
 
   assert.match(
     imageRouteSource,
-    /Content-Type": "image\/png"/,
-    "Payslip image export must return a PNG image.",
+    /Content-Type.*application\/pdf/,
+    "Payslip export must return a PDF (not a PNG image).",
   );
 
   assert.match(
