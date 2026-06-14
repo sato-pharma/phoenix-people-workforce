@@ -446,6 +446,10 @@ function normalizeCrmIdKey(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeCrmUsernameKey(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function normalizeSeatPart(value: string | null | undefined) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -615,6 +619,7 @@ export function validateEmployeeImportRows(
   const validationErrors: EmployeeImportIssue[] = [];
   const validationWarnings: EmployeeImportIssue[] = [];
   const crmIdCounts = new Map<string, number>();
+  const crmUsernameCounts = new Map<string, number>();
   const hrIdCounts = new Map<string, number>();
 
   for (const field of missingRequiredColumns) {
@@ -640,6 +645,11 @@ export function validateEmployeeImportRows(
     const crmIdKey = normalizeCrmIdKey(record.crmId);
     if (record.rowType === "employee" && crmIdKey) {
       crmIdCounts.set(crmIdKey, (crmIdCounts.get(crmIdKey) ?? 0) + 1);
+    }
+
+    const crmUsernameKey = normalizeCrmUsernameKey(record.crmUsername);
+    if (record.rowType === "employee" && crmUsernameKey) {
+      crmUsernameCounts.set(crmUsernameKey, (crmUsernameCounts.get(crmUsernameKey) ?? 0) + 1);
     }
 
     if (record.rowType === "employee" && record.hrId && !isValidHrId(record.hrId)) {
@@ -902,9 +912,15 @@ export function validateEmployeeImportRows(
       .filter(([, count]) => count > 1)
       .map(([crmId]) => crmId),
   );
+  const duplicateCrmUsernames = new Set(
+    Array.from(crmUsernameCounts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([crmUsername]) => crmUsername),
+  );
 
   const duplicateHrIdSet = new Set(duplicateHrIds);
   const existingCrmIdToHrId = options.existingState?.crmIdToHrId ?? new Map<string, string>();
+  const existingCrmUsernameToHrId = options.existingState?.crmUsernameToHrId ?? new Map<string, string>();
   const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
   const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds ?? terminalEmployeeHrIds;
   const uploadedSeatOwners = new Map<string, EmployeeImportRecord>();
@@ -974,6 +990,26 @@ export function validateEmployeeImportRows(
         field: "crmId",
         code: "crm_id_already_assigned",
         message: `CRM ID ${record.crmId} is already assigned to HR_ID ${existingCrmOwner}.`,
+      });
+    }
+
+    const crmUsernameKey = normalizeCrmUsernameKey(record.crmUsername);
+    if (crmUsernameKey && duplicateCrmUsernames.has(crmUsernameKey)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "crmUsername",
+        code: "duplicate_crm_username",
+        message: `Duplicate CRM username detected in uploaded file: ${record.crmUsername}.`,
+      });
+    }
+
+    const existingCrmUsernameOwner = crmUsernameKey ? existingCrmUsernameToHrId.get(crmUsernameKey) : null;
+    if (record.hrId && existingCrmUsernameOwner && existingCrmUsernameOwner !== record.hrId) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "crmUsername",
+        code: "crm_username_already_assigned",
+        message: `CRM username ${record.crmUsername} is already assigned to HR_ID ${existingCrmUsernameOwner}.`,
       });
     }
 

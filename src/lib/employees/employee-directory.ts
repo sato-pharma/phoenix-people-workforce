@@ -1482,6 +1482,26 @@ async function ensureCrmIdIsUnique(crmId: string | null, employeeHrId: string) {
   }
 }
 
+async function ensureCrmUsernameIsUnique(crmUsername: string | null, employeeHrId: string) {
+  if (!crmUsername) {
+    return;
+  }
+
+  const matches = await supabaseRest<Array<{ crm_username: string | null; hr_id: string }>>(
+    `employees?crm_username=ilike.${encodeURIComponent(crmUsername)}&select=hr_id,crm_username`,
+  );
+  const normalizedUsername = crmUsername.trim().toLowerCase();
+  const conflict = matches.find(
+    (row) =>
+      row.crm_username?.trim().toLowerCase() === normalizedUsername &&
+      normalizeHrId(row.hr_id) !== employeeHrId,
+  );
+
+  if (conflict) {
+    throw new Error(`CRM username ${crmUsername} is already assigned to HR_ID ${conflict.hr_id}.`);
+  }
+}
+
 function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   const baseSalary = numberOrNull(input.baseSalary);
   const basicSalary = numberOrNull(input.basicSalary);
@@ -1585,7 +1605,9 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   const managerHrId = normalizeHrId(input.managerHrId);
   await ensureManagerIsValid(managerHrId, hrId);
   const crmId = compact(input.crmId);
+  const crmUsername = compact(input.crmUsername);
   await ensureCrmIdIsUnique(crmId, hrId);
+  await ensureCrmUsernameIsUnique(crmUsername, hrId);
 
   const lifecycleActive = isActiveLifecycleStatus(employmentStatus);
   const payrollEligible = lifecycleActive ? input.payrollEligible !== false : false;
@@ -1600,7 +1622,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     birth_date: compact(input.birthDate),
     contract_type: compact(input.contractType),
     crm_id: crmId,
-    crm_username: compact(input.crmUsername),
+    crm_username: crmUsername,
     department_id: numberOrNull(input.departmentId),
     education: compact(input.education),
     employment_status: employmentStatus,

@@ -143,13 +143,17 @@ async function loadEmployeeState(
 ) {
   let result = await supabase
     .from("employees")
-    .select("hr_id,crm_id,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
+    .select("hr_id,crm_id,crm_username,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
 
   if (
     result.error &&
     (result.error.message.toLowerCase().includes("organogram_visible") ||
       result.error.message.toLowerCase().includes("payroll_eligible"))
   ) {
+    result = await supabase.from("employees").select("hr_id,crm_id,crm_username,employment_status,job_title,region_name,line_id,area_id,position_id");
+  }
+
+  if (result.error && result.error.message.toLowerCase().includes("crm_username")) {
     result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
@@ -163,6 +167,7 @@ async function loadEmployeeState(
 
   const rows = (result.data ?? []) as Array<{
     crm_id?: string | null;
+    crm_username?: string | null;
     area_id?: number | null;
     employment_status?: string | null;
     hr_id: string | null;
@@ -174,14 +179,20 @@ async function loadEmployeeState(
     region_name?: string | null;
   }>;
   const crmIdToHrId = new Map<string, string>();
+  const crmUsernameToHrId = new Map<string, string>();
   const employeeOrgSeats: ExistingEmployeeOrgSeat[] = [];
 
   for (const row of rows) {
     const crmId = String(row.crm_id ?? "").trim().toLowerCase();
+    const crmUsername = String(row.crm_username ?? "").trim().toLowerCase();
     const hrId = row.hr_id ? String(row.hr_id).trim().toUpperCase() : null;
 
     if (crmId && hrId) {
       crmIdToHrId.set(crmId, hrId);
+    }
+
+    if (crmUsername && hrId) {
+      crmUsernameToHrId.set(crmUsername, hrId);
     }
 
     if (hrId && isActiveImportEmployee(row)) {
@@ -198,6 +209,7 @@ async function loadEmployeeState(
 
   return {
     crmIdToHrId,
+    crmUsernameToHrId,
     employeeOrgSeats,
     employeeHrIds: new Set(
       rows.flatMap((row) => (row.hr_id ? [String(row.hr_id).trim().toUpperCase()] : [])),
