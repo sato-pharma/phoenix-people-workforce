@@ -52,6 +52,13 @@ function employeeApiError(error: unknown) {
     };
   }
 
+  if (message.toLowerCase().includes("employees_crm_username_unique_idx")) {
+    return {
+      message: "CRM username is already assigned to another employee.",
+      status: 400,
+    };
+  }
+
   if (
     message.includes("required") ||
     message.includes("not allowed") ||
@@ -60,6 +67,7 @@ function employeeApiError(error: unknown) {
     message.includes("cannot be the same employee") ||
     message.includes("Use the resignation workflow") ||
     message.includes("already exists") ||
+    message.includes("already assigned") ||
     message.includes("immutable")
   ) {
     return {

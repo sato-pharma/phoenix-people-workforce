@@ -94,4 +94,42 @@ export function runEmployeeImportSeatValidationTests() {
     salaryFormula.validationWarnings.some((issue) => issue.code === "net_salary_formula_mismatch"),
     true,
   );
+
+  const duplicateCrmUsernameUpload = validateEmployeeImportRows([
+    employeeRow({ "CRM Username": "Rep.One", HR_ID: "T-007", Region: "Cairo" }),
+    employeeRow({
+      Area: "Giza",
+      "CRM Username": "rep.one",
+      "Full Name": "CRM Duplicate Rep",
+      HR_ID: "T-008",
+      Line: "Derma",
+      Position: "Senior Product Specialist",
+      Region: "Giza",
+    }),
+  ]);
+
+  assert.equal(duplicateCrmUsernameUpload.failedRows, 2);
+  assert.equal(
+    duplicateCrmUsernameUpload.validationErrors.some((issue) => issue.code === "duplicate_crm_username"),
+    true,
+  );
+  assert.match(
+    duplicateCrmUsernameUpload.validationErrors.find((issue) => issue.code === "duplicate_crm_username")?.message ?? "",
+    /duplicate CRM username/i,
+  );
+
+  const existingCrmUsernameOwner = validateEmployeeImportRows(
+    [employeeRow({ "CRM Username": "Rep.Ten", HR_ID: "T-010" })],
+    {
+      existingState: {
+        crmUsernameToHrId: new Map([["rep.ten", "T-000"]]),
+      },
+    },
+  );
+
+  assert.equal(existingCrmUsernameOwner.failedRows, 1);
+  assert.equal(
+    existingCrmUsernameOwner.validationErrors.some((issue) => issue.code === "crm_username_already_assigned"),
+    true,
+  );
 }

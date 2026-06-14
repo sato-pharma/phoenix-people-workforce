@@ -200,6 +200,7 @@ export type VacantPositionImportRecord = EmployeeImportRecord & {
 export type ExistingImportState = {
   areaCodeToId?: Map<string, number>;
   crmIdToHrId?: Map<string, string>;
+  crmUsernameToHrId?: Map<string, string>;
   employeeOrgSeats?: ExistingEmployeeOrgSeat[];
   employeeHrIds?: Set<string>;
   managerHrIds?: Set<string>;

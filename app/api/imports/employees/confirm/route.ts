@@ -133,6 +133,15 @@ function isDatabaseSchemaMissing(error: unknown) {
   );
 }
 
+function isCrmUsernameUniqueViolation(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+
+  return (
+    message.includes("employees_crm_username_unique_idx") ||
+    (message.includes("duplicate key") && message.includes("crm_username"))
+  );
+}
+
 function confirmFailureResponse(error: unknown) {
   if (isSupabaseEnvMissing(error)) {
     return NextResponse.json(
@@ -142,6 +151,17 @@ function confirmFailureResponse(error: unknown) {
           "Supabase environment variables are missing. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to .env.local.",
       },
       { status: 409 },
+    );
+  }
+
+  if (isCrmUsernameUniqueViolation(error)) {
+    return NextResponse.json(
+      {
+        error: "duplicate_crm_username",
+        message:
+          "CRM username must be unique. Fix or clear duplicate CRM Username values in the employee import file, then run the import preview again.",
+      },
+      { status: 400 },
     );
   }
 
