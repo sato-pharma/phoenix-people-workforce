@@ -1499,7 +1499,7 @@ async function claimNotificationOutboxRow(id: string) {
 async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
-  await supabase
+  const { error } = await supabase
     .from(notificationOutboxTable)
     .update({
       attempts: row.attempts + 1,
@@ -1512,6 +1512,12 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
       updated_at: now,
     })
     .eq("id", row.id);
+  // The email already went out at the provider. If we fail to flip the row to "sent",
+  // the next drain cycle will re-send it (duplicate). Surface the failure so the
+  // misconfiguration/transient DB error is visible instead of silently duplicating mail.
+  if (error) {
+    console.error("[notifications/outbox] failed to mark row sent (risk of duplicate send):", row.id, error);
+  }
 }
 
 async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string, retryAfterMs?: number) {
@@ -1614,7 +1620,10 @@ export async function reapStaleProcessingOutboxRows(): Promise<number> {
       throw error;
     }
     return data?.length ?? 0;
-  } catch {
+  } catch (error) {
+    if (!notificationSchemaMissing(error)) {
+      console.error("[notifications/reap] failed to reap stale processing rows:", error);
+    }
     return 0;
   }
 }
@@ -1645,7 +1654,11 @@ export async function cleanupOldNotificationData(): Promise<{
       console.error("Outbox retention cleanup failed", outboxError);
     }
     outboxDeleted = outboxData?.length ?? 0;
-  } catch { /* schema missing */ }
+  } catch (error) {
+    if (!notificationSchemaMissing(error)) {
+      console.error("[notifications/cleanup] unexpected error during outbox retention:", error);
+    }
+  }
 
   try {
     const supabase = getSupabaseAdmin();
@@ -1664,7 +1677,11 @@ export async function cleanupOldNotificationData(): Promise<{
       console.error("Outbox terminal-row retention cleanup failed", terminalError);
     }
     outboxTerminalDeleted = terminalData?.length ?? 0;
-  } catch { /* schema missing */ }
+  } catch (error) {
+    if (!notificationSchemaMissing(error)) {
+      console.error("[notifications/cleanup] unexpected error during terminal-row retention:", error);
+    }
+  }
 
   try {
     const supabase = getSupabaseAdmin();
@@ -1682,7 +1699,11 @@ export async function cleanupOldNotificationData(): Promise<{
       console.error("Delivery events retention cleanup failed", eventsError);
     }
     eventsRedacted = eventsData?.length ?? 0;
-  } catch { /* table missing */ }
+  } catch (error) {
+    if (!notificationSchemaMissing(error)) {
+      console.error("[notifications/cleanup] unexpected error during delivery-events redaction:", error);
+    }
+  }
 
   return { eventsRedacted, outboxDeleted, outboxTerminalDeleted };
 }

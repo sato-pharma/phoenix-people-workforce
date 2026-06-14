@@ -31,8 +31,8 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "${DRAIN_URL}" ] || [ -z "${CRON_SECRET}" ]; then
-            echo "NOTIFICATION_DRAIN_URL or CRON_SECRET secret is not set; skipping."
-            exit 0
+            echo "::error::NOTIFICATION_DRAIN_URL or CRON_SECRET secret is not set. The sub-daily notification drain is NOT running — fast retry (e.g. 2-minute password-reset links) is disabled until both repo secrets are configured. The daily Vercel cron is the only backstop."
+            exit 1
           fi
           code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" --max-time 120 --retry 2 --retry-delay 10 \
             -H "Authorization: Bearer ${CRON_SECRET}" "${DRAIN_URL}")
