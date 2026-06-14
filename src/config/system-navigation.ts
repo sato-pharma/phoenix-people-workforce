@@ -2,7 +2,6 @@ import {
   Activity,
   BellRing,
   BriefcaseBusiness,
-  Building2,
   CalendarCheck,
   CalendarClock,
   CalendarDays,
@@ -161,16 +160,6 @@ export const adminNavigationSections = [
     label: "Outstation Expenses",
   },
   {
-    id: "sales-intelligence",
-    items: [
-      { href: "/admin/sales-command", icon: ChartNoAxesColumnIncreasing, label: "Sales Command", roles: ["CEO", "Super Admin"] },
-      { href: "/sales-intelligence", icon: ChartColumnBig, label: "Executive Dashboard", permissions: [{ resource: "sales" }], exact: true },
-      { href: "/sales-intelligence/details", icon: FileSpreadsheet, label: "Sales Details", permissions: [{ resource: "sales" }] },
-      { href: "/sales-intelligence/data-quality", icon: ShieldCheck, label: "Data Quality Center", permissions: [{ action: "import", resource: "sales" }] },
-    ],
-    label: "Sales Intelligence",
-  },
-  {
     id: "sales-operations",
     items: [
       { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
@@ -179,7 +168,6 @@ export const adminNavigationSections = [
       { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/executive-report", icon: Building2, label: "Executive Report", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },

@@ -20,7 +20,6 @@ export function invalidateExecutiveDashboardCache(
 ) {
   const uniqueModules = Array.from(new Set(modules));
   try {
-    revalidatePath("/admin/sales-command");
     revalidatePath("/admin");
     revalidatePath("/overview");
   } catch (error) {
