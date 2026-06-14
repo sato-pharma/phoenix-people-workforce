@@ -10,6 +10,7 @@ export type WeeklyTemplateField =
   | "branchName"
   | "stockQty"
   | "salesQty"
+  | "xfactor"
   | "bonusQty"
   | "discount"
   | "regionCode"
@@ -19,6 +20,8 @@ export type WeeklyTemplateField =
 export type WeeklyTemplate = {
   key: string;
   name: string;
+  /** standardRows = one sheet row is one fact row; overseasPosMatrix = product rows x outlet quantity columns */
+  layout?: "standardRows" | "overseasPosMatrix";
   /** distributor codes that use this template */
   distributorCodes: string[];
   /** restrict matching to a sheet whose name contains this token (case-insensitive); optional */
@@ -44,6 +47,7 @@ const IBN_SINA_WEEKLY: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region"],
@@ -66,6 +70,7 @@ const IBN_SINA_WEEKLY_PAS_VARIANT: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
@@ -88,6 +93,7 @@ const IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE: WeeklyTemplate = {
     branchName: ["Branch Name"],
     stockQty: ["Stock"],
     salesQty: ["Sales Quantity", "Sales Qty"],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
     bonusQty: ["Bonus", "Bonus Qty"],
     discount: ["Discount", "Disc"],
     regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
@@ -97,15 +103,66 @@ const IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE: WeeklyTemplate = {
   required: ["salesQty", "stockQty", "itemCode"],
 };
 
+const OVERSEAS_POS_WEEKLY_MATRIX: WeeklyTemplate = {
+  key: "overseas_pos_weekly_matrix",
+  name: "Overseas weekly POS matrix",
+  layout: "overseasPosMatrix",
+  distributorCodes: ["PS"],
+  sheetNameIncludes: "Data",
+  fields: {
+    weekStart: ["Date"],
+    itemCode: ["Mat. Code"],
+    itemName: ["Mat. Desc."],
+    branchCode: [],
+    branchName: [],
+    stockQty: [],
+    salesQty: ["Total Qty."],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
+    bonusQty: ["Bonus Qty."],
+    discount: [],
+    regionCode: [],
+    productCode: ["Product ID"],
+    distributorId: [],
+  },
+  required: ["weekStart", "salesQty", "productCode"],
+};
+
+const OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL: WeeklyTemplate = {
+  key: "overseas_pos_weekly_matrix_no_total",
+  name: "Overseas weekly POS matrix (legacy no Total Qty)",
+  layout: "overseasPosMatrix",
+  distributorCodes: ["PS"],
+  sheetNameIncludes: "Data",
+  fields: {
+    weekStart: ["Date"],
+    itemCode: ["Mat. Code"],
+    itemName: ["Mat. Desc."],
+    branchCode: [],
+    branchName: [],
+    stockQty: [],
+    salesQty: [],
+    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
+    bonusQty: [],
+    discount: [],
+    regionCode: [],
+    productCode: ["Product ID", "Item Code"],
+    distributorId: [],
+  },
+  required: ["itemCode", "productCode"],
+};
+
 const WEEKLY_DISTRIBUTOR_FALLBACK_NAMES: Record<string, string> = {
   IS: "Ibn Sina",
   "IS-S": "Ibn Sina Sato",
+  PS: "Overseas",
 };
 
 export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [
   IBN_SINA_WEEKLY,
   IBN_SINA_WEEKLY_PAS_VARIANT,
   IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE,
+  OVERSEAS_POS_WEEKLY_MATRIX,
+  OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL,
 ];
 
 export function weeklyTemplatesForDistributor(distributorCode: string): WeeklyTemplate[] {

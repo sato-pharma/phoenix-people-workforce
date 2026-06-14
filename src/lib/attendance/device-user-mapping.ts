@@ -6,6 +6,25 @@ import {
   summarizeDeviceUserMappings,
 } from "@/lib/attendance/metrics";
 
+/**
+ * Returns true if the employee has at least one active fingerprint device
+ * mapping. Used to gate the "Fingerprint Report" tab in the employee portal nav.
+ * Single-row HEAD query — does not load the full mapping list.
+ */
+export async function employeeHasActiveDeviceMapping(hrId: string): Promise<boolean> {
+  if (!hrId) return false;
+  const normalized = normalizeAttendanceHrId(hrId);
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("attendance_device_user_map")
+    .select("id", { count: "exact", head: true })
+    .eq("employee_hr_id", normalized)
+    .eq("is_active", true)
+    .limit(1);
+  if (error) return false;
+  return (count ?? 0) > 0;
+}
+
 export type AttendanceEmployeeOption = {
   fullName: string;
   hrId: string;

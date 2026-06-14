@@ -44,6 +44,16 @@ export const emailRecipientModes = [
 
 export type EmailNotificationType = (typeof emailNotificationTypes)[number];
 export type EmailRecipientMode = (typeof emailRecipientModes)[number];
+export type NotificationEmailIdentityGuard = "none" | "self" | "subject_required";
+export type NotificationEmailIdentitySource =
+  | "email.employeeHrId"
+  | "metadata.employeeHrId"
+  | "metadata.requestOwnerHrId"
+  | "metadata.subjectHrId"
+  | "metrics.Employee"
+  | "recipient.self"
+  | "subjectHrId";
+export type NotificationEmailIdentityStatus = "failed" | "not_required" | "verified";
 
 type NotificationMetric = {
   label: string;
@@ -51,10 +61,15 @@ type NotificationMetric = {
 };
 
 export type NotificationEmailInput = {
+  bcc?: string[];
   candidateEmail?: string | null;
+  cc?: string[];
   ctaHref?: string;
   ctaLabel?: string;
   employeeHrId?: string | null;
+  identityError?: string | null;
+  identityGuard?: NotificationEmailIdentityGuard;
+  identityStatus?: NotificationEmailIdentityStatus;
   metrics?: NotificationMetric[];
   /** Originating module (e.g. "weekly_plans") so module-scoped templates can be selected. */
   module?: string | null;
@@ -75,8 +90,10 @@ export type NotificationEmailInput = {
    * routed to a manager/CEO/HR about someone else's record.
    */
   recipientName?: string;
+  recipientHrId?: string | null;
   recipients?: string[];
   recipientMode?: EmailRecipientMode;
+  subjectHrIdSource?: NotificationEmailIdentitySource | null;
   includeHrInbox?: boolean;
   subject: string;
   summary: string;
@@ -947,20 +964,116 @@ function notificationSchemaMissing(error: unknown) {
   );
 }
 
+const identityGuardFailurePrefix = "Email identity guard failed";
+
+function normalizeIdentityHrId(value: unknown) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function employeeMetricHrId(input: NotificationEmailInput) {
+  const employee = metricValue(input, "Employee");
+  const match = employee.match(/\(([^)]+)\)\s*$/);
+  return normalizeIdentityHrId(match?.[1]);
+}
+
+export type NotificationEmailIdentityValidation =
+  | {
+      ok: true;
+      metadata: {
+        employeeHrId: string | null;
+        guard: NotificationEmailIdentityGuard;
+        recipientHrId: string | null;
+        source: NotificationEmailIdentitySource | null;
+        status: Exclude<NotificationEmailIdentityStatus, "failed">;
+      };
+    }
+  | {
+      ok: false;
+      metadata: {
+        employeeHrId: string | null;
+        guard: NotificationEmailIdentityGuard;
+        recipientHrId: string | null;
+        source: NotificationEmailIdentitySource | null;
+        status: "failed";
+      };
+      reason: string;
+    };
+
+export function validateNotificationEmailIdentity(input: NotificationEmailInput): NotificationEmailIdentityValidation {
+  const guard = input.identityGuard ?? "none";
+  const employeeHrId = normalizeIdentityHrId(input.employeeHrId) || null;
+  const recipientHrId = normalizeIdentityHrId(input.recipientHrId) || null;
+  const source = input.subjectHrIdSource ?? null;
+  const baseMetadata = {
+    employeeHrId,
+    guard,
+    recipientHrId,
+    source,
+  };
+
+  if (input.identityError) {
+    return {
+      metadata: { ...baseMetadata, status: "failed" },
+      ok: false,
+      reason: `${identityGuardFailurePrefix}: ${input.identityError}`,
+    };
+  }
+
+  const metricHrId = employeeMetricHrId(input);
+  if (employeeHrId && metricHrId && employeeHrId !== metricHrId) {
+    return {
+      metadata: { ...baseMetadata, status: "failed" },
+      ok: false,
+      reason: `${identityGuardFailurePrefix}: employee HR ID ${employeeHrId} conflicts with Employee metric HR ID ${metricHrId}.`,
+    };
+  }
+
+  if (guard === "subject_required") {
+    if (!employeeHrId) {
+      return {
+        metadata: { ...baseMetadata, status: "failed" },
+        ok: false,
+        reason: `${identityGuardFailurePrefix}: subject employee HR ID is required for this official workflow email.`,
+      };
+    }
+    if (source === "recipient.self") {
+      return {
+        metadata: { ...baseMetadata, status: "failed" },
+        ok: false,
+        reason: `${identityGuardFailurePrefix}: official workflow email cannot use the recipient HR ID as the subject employee HR ID.`,
+      };
+    }
+  }
+
+  return {
+    metadata: {
+      ...baseMetadata,
+      status: employeeHrId ? "verified" : "not_required",
+    },
+    ok: true,
+  };
+}
+
 function normalizeNotificationPayload(input: NotificationEmailInput) {
   return {
+    bcc: input.bcc?.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean).sort() ?? null,
     candidateEmail: input.candidateEmail?.trim().toLowerCase() ?? null,
+    cc: input.cc?.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean).sort() ?? null,
     ctaHref: input.ctaHref ?? null,
     ctaLabel: input.ctaLabel ?? null,
     employeeHrId: input.employeeHrId?.trim().toUpperCase() ?? null,
     includeHrInbox: input.includeHrInbox ?? null,
+    identityGuard: input.identityGuard ?? null,
+    identityStatus: input.identityStatus ?? null,
     metrics: (input.metrics ?? []).map((metric) => ({
       label: metric.label,
       value: String(metric.value),
     })),
     notificationType: input.notificationType ?? null,
+    recipientHrId: input.recipientHrId?.trim().toUpperCase() ?? null,
     recipients: input.recipients?.map((recipient) => recipient.trim().toLowerCase()).sort() ?? null,
     recipientMode: input.recipientMode ?? null,
+    subjectHrIdSource: input.subjectHrIdSource ?? null,
     subject: input.subject,
     summary: input.summary,
     title: input.title,
@@ -1101,6 +1214,8 @@ async function migratedTemplateRecipientOverrides(
 ) {
   if (templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY) {
     return {
+      bcc: input.bcc,
+      cc: input.cc,
       replaceRecipients: true,
       to: deliveryRecipients,
     };
@@ -1111,13 +1226,15 @@ async function migratedTemplateRecipientOverrides(
     loadManagerChain(input.employeeHrId),
   ]);
   const to = cleanEmailList([employee?.work_email, ...deliveryRecipients]);
-  const cc = cleanEmailList(
-    managers
+  const cc = cleanEmailList([
+    ...managers
       .filter(isDistrictManagerContact)
       .map((manager) => manager.work_email),
-  );
+    ...(input.cc ?? []),
+  ]);
 
   return {
+    bcc: input.bcc,
     cc,
     replaceRecipients: true,
     to,
@@ -1151,6 +1268,7 @@ const highPriorityNotificationTypes = new Set<EmailNotificationType>([
 export type OutboxSkipCode =
   | "email_disabled_globally"
   | "from_missing"
+  | "unsafe_identity"
   | "type_not_approved"
   | "type_unsupported"
   | "policy_disabled"
@@ -1182,6 +1300,9 @@ export function classifyOutboxSkip(
   }
   if (r.includes("notification_email_from")) {
     return { terminal: true, sentryEscalate: false, code: "from_missing" };
+  }
+  if (r.includes(identityGuardFailurePrefix.toLowerCase())) {
+    return { terminal: true, sentryEscalate: true, code: "unsafe_identity" };
   }
   if (r.includes("not approved for automatic")) {
     return { terminal: true, sentryEscalate: false, code: "type_not_approved" };
@@ -1237,6 +1358,15 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
   }
+  const identity = validateNotificationEmailIdentity(input);
+  if (!identity.ok) {
+    Sentry.captureMessage("Email identity guard blocked notification", {
+      level: "error",
+      tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
+      extra: identity.metadata,
+    });
+    return { reason: identity.reason, skipped: true };
+  }
 
   const from = process.env.NOTIFICATION_EMAIL_FROM;
   const delivery = await resolveNotificationDelivery(input);
@@ -1286,6 +1416,8 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
 
   const fanout = delivery.recipients.length > 1;
   return sendPhoenixEmail({
+    bcc: input.bcc,
+    cc: input.cc,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal
@@ -1562,6 +1694,22 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
   }
 
   try {
+    const identity = validateNotificationEmailIdentity(claimed.payload);
+    if (!identity.ok) {
+      await markNotificationOutboxSkipped(claimed, identity.reason, "unsafe_identity");
+      Sentry.captureMessage("Email outbox row blocked by identity guard", {
+        level: "error",
+        tags: {
+          component: "email",
+          cron: "outbox-processing",
+          notificationType: claimed.payload.notificationType ?? "unknown",
+          outboxSkipCode: "unsafe_identity",
+        },
+        extra: { id: claimed.id, ...identity.metadata },
+      });
+      return { reason: identity.reason, skipped: true };
+    }
+
     const result = await sendNotificationEmailDirect(claimed.payload);
     if (result.skipped) {
       const classification = classifyOutboxSkip(result.reason, claimed.payload.notificationType);
@@ -1637,6 +1785,16 @@ export async function processNotificationOutbox(limit = notificationOutboxBatchS
 
 export async function safeSendNotificationEmail(input: NotificationEmailInput) {
   try {
+    const identity = validateNotificationEmailIdentity(input);
+    if (!identity.ok) {
+      Sentry.captureMessage("Email identity guard blocked enqueue", {
+        level: "error",
+        tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
+        extra: identity.metadata,
+      });
+      return { reason: identity.reason, skipped: true } satisfies SendEmailResult;
+    }
+
     const delivery = await resolveNotificationDelivery(input);
     if (delivery.skipped) {
       return delivery;

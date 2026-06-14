@@ -40,7 +40,11 @@ export function runOutstationNotificationsTests() {
   const submit = functionSlice(service, "async function notifyOutstationSubmitted");
   assert.match(submit, /eventType: "request_submitted"/, "submit eventType");
   assert.match(submit, /module: "outstation"/, "submit must use the outstation module (Telegram-enabled, no governance change)");
-  assert.match(submit, /channels: \["in_app", "email", "telegram"\]/, "submit must deliver on all three channels");
+  assert.match(
+    submit,
+    /channels: normalizeHrIdForAccess\(recipient\.hrId\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
+    "submit should send email to only the primary approval recipient",
+  );
   assert.match(submit, /priority: "high"/, "submit is action-required (high priority)");
   assert.match(submit, /outstation:\$\{r\.id\}:request_submitted:\$\{recipient\.hrId\}/, "submit idempotency key per (request, recipient)");
   assert.match(submit, /actionUrl: OUTSTATION_ADMIN_REVIEW_URL/, "submit must deep-link approvers to the review queue");

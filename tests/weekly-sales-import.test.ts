@@ -5,20 +5,27 @@ import ExcelJS from "exceljs";
 import type { SalesReferenceData } from "../src/lib/sales/monthly-distributor-import.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
 
-// Synthetic master with KNOWN factory prices so we can prove the value is RECOMPUTED (Qty × price)
+// Synthetic master with KNOWN xfactor fallback values so we can prove the value is RECOMPUTED (Qty x xfactor)
 // and the sheet's own Sales Value column is ignored. Region pairs resolve the weekly Region IDs.
-const PRICES: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 8 };
+const XFACTORS: Record<string, number> = { SA001: 10, RO001: 20, IV001: 5, SS001: 8, LA004: 100 };
 
 function references(): SalesReferenceData {
   return {
-    distributors: [{ code: "IS", name: "Ibn sina" }],
-    products: Object.entries(PRICES).map(([productCode, factoryPrice]) => ({
+    distributors: [{ code: "IS", name: "Ibn sina" }, { code: "PS", name: "overseas" }],
+    products: Object.entries(XFACTORS).map(([productCode, factoryPrice]) => ({
       productCode,
-      productName: productCode === "RO001" ? "ROYAFLOXACIN 500 TAB" : productCode,
+      productName:
+        productCode === "RO001"
+          ? "ROYAFLOXACIN 500 TAB"
+          : productCode === "LA004"
+            ? "LACTO BASIC 30 CAP"
+            : productCode === "SS001"
+              ? "SATOSLIM"
+              : productCode,
       factoryPrice,
       family: "",
       familyCode: "",
-      line: productCode === "SA001" ? "CNS" : "Anti infective",
+      line: productCode === "SA001" ? "CNS" : productCode === "LA004" ? "Lacto" : "Anti infective",
       source: "Sato",
     })),
     regions: [
@@ -36,6 +43,8 @@ const HEADER = [
   "Date", "Supplier Code", "Supplier Name", "Item Code", "Item name", "Branch Code", "Branch Name",
   "Stock", "Stock Value", "Sales Quantity", "Sales Value", "Total Sales", "Region ID", "Product ID", "Distrub ID",
 ];
+
+const XFACTOR_HEADER = [...HEADER, "XFactor"];
 
 const PAS_RAW_HEADER = [
   "Date", "Supplier Code", "Supplier Name", "Item Code", "Item Name", "Branch Code", "Branch Name",
@@ -62,11 +71,14 @@ function row(opts: {
   qty: number;
   region: string;
   productId: string;
+  xfactor?: number;
 }): unknown[] {
-  return [
+  const cells = [
     opts.date, "110476", "SATO", opts.itemCode, opts.itemName, "61", opts.branch,
     opts.stock, 9999, opts.qty, 123456 /* bogus sheet value */, opts.qty, opts.region, opts.productId, "IS",
   ];
+  if (opts.xfactor !== undefined) cells.push(opts.xfactor);
+  return cells;
 }
 
 async function workbook(rows: unknown[][]): Promise<ExcelJS.Buffer> {
@@ -102,6 +114,39 @@ async function workbookPasRawNoDate(rows: unknown[][]): Promise<ExcelJS.Buffer> 
   return buildWeeklyWorkbook(PAS_RAW_NO_DATE_HEADER, rows);
 }
 
+async function workbookOverseasPosMatrix(): Promise<ExcelJS.Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet("Data");
+  sheet.addRow(["Phoenix overseas POS"]);
+  sheet.addRow([
+    "Mat. Group",
+    "Date",
+    "Mat. Group Desc.",
+    "Mat. Code",
+    "Mat. Desc.",
+    "Product ID",
+    "Retail Cairo_\u0643",
+    "Super KA Delta_\u0643",
+    "Total Qty.",
+    "Bonus Qty.",
+    "Total Val.",
+  ]);
+  sheet.addRow([
+    "Lacto",
+    new Date(Date.UTC(2026, 5, 6)),
+    "Lacto Egypt",
+    "1001",
+    "LACTO BASIC 30 CAP",
+    "LA004",
+    5,
+    -2,
+    6,
+    3,
+    99999,
+  ]);
+  return wb.xlsx.writeBuffer();
+}
+
 const round2 = (value: number) => Number(value.toFixed(2));
 
 export async function runWeeklySalesImportTests() {
@@ -114,6 +159,8 @@ export async function runWeeklySalesImportTests() {
     row({ date: week, itemCode: "635171", itemName: "IVYRONC 100ML SYRUP", branch: "Alex D", stock: 12, qty: 3, region: "AB", productId: "IV001" }),
     // #N/A Product ID whose item name ALSO has no master match — unmapped, value 0, warning.
     row({ date: week, itemCode: "638105", itemName: "ROYANOXICAM 8MG 20 TAB", branch: "Delta E", stock: 23, qty: 2, region: "D1", productId: "#N/A" }),
+    // Blank Product ID can still resolve by item-name prefix after dropping "(OLD PRICE)".
+    row({ date: week, itemCode: "639911", itemName: "SATOSLIM 30 CAP(OLD PRICE)", branch: "Cairo A", stock: 10, qty: 6, region: "CA", productId: "" }),
     // Stock on hand, zero sales (drives the zero-sales-branch view).
     row({ date: week, itemCode: "639912", itemName: "SATOSLIM 30 CAP", branch: "Cairo A", stock: 16, qty: 0, region: "CA", productId: "SS001" }),
   ]);
@@ -132,21 +179,43 @@ export async function runWeeklySalesImportTests() {
   // Week key comes from the Date column inside the sheet (not the file name).
   assert.equal(result.weekStart, "2025-08-01", "week_start from sheet Date column");
   assert.equal(result.status, "validated", "single week, no blocking");
-  assert.equal(result.rowCount, 6);
+  assert.equal(result.rowCount, 7);
 
   // Stock is captured as UNITS (sum of all stock cells).
-  assert.equal(result.totals.stockQty, 30 + 20 + 50 + 12 + 23 + 16);
+  assert.equal(result.totals.stockQty, 30 + 20 + 50 + 12 + 23 + 10 + 16);
 
-  // Value RECOMPUTED from factory price, NOT the bogus sheet "Sales Value" (123456).
+  // Value RECOMPUTED from xfactor, NOT the bogus sheet "Sales Value" (123456).
   const sa = result.byProduct.find((product) => product.productCode === "SA001");
   assert.ok(sa, "SA001 present");
   assert.equal(sa?.salesQty, 12, "SA001 units = 7 + 5 (both Product IDs map to SA001)");
-  assert.equal(sa?.salesValue, round2(12 * PRICES.SA001), "SA001 value = units × factory price");
+  assert.equal(sa?.salesValue, round2(12 * XFACTORS.SA001), "SA001 value = units x xfactor");
 
-  // Per-row: value = qty × price × (1 - discount); the sheet value never leaks in.
+  // Per-row: value = qty x xfactor x (1 - discount); the sheet value never leaks in.
   for (const r of rows) {
-    assert.equal(round2(r.salesValue), round2(r.salesQty * (PRICES[r.productCode] ?? 0) * (1 - r.discount)));
+    assert.equal(round2(r.salesValue), round2(r.salesQty * (XFACTORS[r.productCode] ?? 0) * (1 - r.discount)));
     assert.notEqual(r.salesValue, 123456, "sheet Sales Value ignored");
+  }
+
+  const satoslimOldPrice = rows.find((r) => r.rawRow.itemName === "SATOSLIM 30 CAP(OLD PRICE)");
+  assert.ok(satoslimOldPrice, "Satoslim old-price row present");
+  assert.equal(satoslimOldPrice?.productCode, "SS001", "blank Product ID resolves SATOSLIM old-price item name to SS001");
+  assert.equal(satoslimOldPrice?.salesValue, round2(6 * XFACTORS.SS001), "Satoslim old-price value uses resolved product xfactor");
+  assert.equal(satoslimOldPrice?.validationState, "valid", "Satoslim old-price row is no longer a product warning");
+
+  const sheetXfactor = await parseWeeklyWorkbookBuffer({
+    buffer: await buildWeeklyWorkbook(XFACTOR_HEADER, [
+      row({ date: week, itemCode: "667913", itemName: "SAGINKGO 30 CAP", branch: "Cairo A", stock: 30, qty: 7, region: "CA", productId: "SA001", xfactor: 2.5 }),
+    ]),
+    distributorCode: "IS",
+    distributorName: "Ibn sina",
+    fileName: "IS_week_xfactor.xlsx",
+    references: references(),
+  });
+  assert.equal(sheetXfactor.ok, true, "weekly file with XFactor parses");
+  if (sheetXfactor.ok) {
+    assert.equal(sheetXfactor.result.totals.salesQty, 7, "XFactor row units are kept");
+    assert.equal(sheetXfactor.result.totals.salesValue, round2(7 * 2.5), "value uses uploaded XFactor instead of product fallback");
+    assert.equal(sheetXfactor.rows[0].rawRow.xfactorSource, "sheet", "raw row records uploaded XFactor source");
   }
 
   // Region consolidation reconciles to the total.
@@ -232,7 +301,33 @@ export async function runWeeklySalesImportTests() {
     assert.equal(pasRawNoDate.rows[0].weekStart, "2025-07-12", "row weekStart restored from filename");
   }
 
-  // Unknown distributor → recognised as having no weekly template (not a silent empty result).
+  // Overseas POS matrix layout (header row + outlet quantity columns) should be recognised for PS.
+  const overseasPos = await parseWeeklyWorkbookBuffer({
+    buffer: await workbookOverseasPosMatrix(),
+    distributorCode: "PS",
+    distributorName: "overseas",
+    fileName: "POS 6 June.xlsx",
+    posRegionMappings: [
+      { distributorCode: "PS", rawColumnName: "Retail Cairo", normalizedColumnName: "retail cairo", regionCode: "CA" },
+      { distributorCode: "PS", rawColumnName: "Super KA Delta", normalizedColumnName: "super ka delta", regionCode: "D1" },
+    ],
+    references: references(),
+  });
+  assert.equal(overseasPos.ok, true, "overseas POS matrix layout is recognised for PS");
+  if (overseasPos.ok) {
+    assert.equal(overseasPos.result.templateKey, "overseas_pos_weekly_matrix", "overseas POS matrix template is selected");
+    assert.equal(overseasPos.result.weekStart, "2026-06-06", "overseas POS week comes from Date column");
+    assert.equal(overseasPos.result.totals.salesQty, 6, "overseas POS trusts Total Qty after adding unallocated difference");
+    assert.equal(overseasPos.result.totals.bonusQty, 0, "overseas POS product-level bonus is not imported into sales facts");
+    assert.equal(overseasPos.result.totals.salesValue, 600, "overseas POS value = Total Qty x fallback xfactor");
+    assert.notEqual(overseasPos.result.totals.salesValue, 99999, "overseas POS uploaded Total Val is ignored");
+    assert.ok(overseasPos.result.byBranch.some((branch) => branch.branchName === "Retail Cairo"), "outlet columns become branches");
+    assert.ok(overseasPos.result.byRegion.some((region) => region.regionName === "Cairo"), "Cairo outlet columns map to Cairo region");
+    assert.ok(overseasPos.result.byRegion.some((region) => region.regionName.includes("Delta")), "Delta outlet columns map to Delta region");
+    assert.ok(overseasPos.rows.some((row) => row.rawRow.quantitySource === "unallocatedDifference"), "quantity mismatch is retained as an unallocated row");
+    assert.ok(overseasPos.result.issues.some((issue) => issue.message.includes("Total Qty.")), "quantity mismatch is flagged");
+  }
+  // Unknown distributor has no weekly template (not a silent empty result).
   const unsupported = await parseWeeklyWorkbookBuffer({
     buffer,
     distributorCode: "ZZ",

@@ -171,14 +171,17 @@ export function runVacationModuleTests() {
   // Email-template wiring: sequential submit emails render from the user-edited "leave_request"
   // WYSIWYG template (sendVacationManagerDecisionEmail) and the generic notification's email
   // channel is dropped so there is no duplicate generic email. Legacy Sick keeps the generic email.
-  assert.match(submittedBlock, /sendVacationManagerDecisionEmail\(/, "sequential submit must send the templated leave_request email per approver");
+  assert.match(submittedBlock, /const submitEmail = sequential && primaryRecipient && primaryDeliverableEmail/, "sequential submit must send one templated leave_request email to the primary approver");
+  assert.match(submittedBlock, /sendVacationManagerDecisionEmail\(\{/, "sequential submit must send the templated leave_request email");
+  assert.match(submittedBlock, /cc: ccEmails/, "sequential submit email must CC visibility approvers instead of sending separate emails");
   assert.match(
     submittedBlock,
-    /channels: sequential \? \["in_app", "telegram"\] : \["in_app", "email", "telegram"\]/,
+    /channels: sequential \|\| !isPrimaryEmailRecipient \? \["in_app", "telegram"\] : \["in_app", "email", "telegram"\]/,
     "sequential submit must drop the duplicate generic email channel (templated leave_request is the only submit email)",
   );
-  assert.match(submittedBlock, /pickDeliverableEmail\(recipient\.email\)/, "templated submit email must guard against non-deliverable (synthetic) addresses");
+  assert.match(submittedBlock, /pickDeliverableEmail\(primaryRecipient\.email\)/, "templated submit email must guard the primary approver address against non-deliverable synthetic addresses");
   assert.match(submittedBlock, /reviewUrl: absoluteReviewUrl/, "templated submit email CTA must be the absolute Action Center review link");
+  assert.doesNotMatch(submittedBlock, /Promise\.all\(\[notification, templatedEmail\]\)/, "vacation submit must not send a separate templated email per approver");
 
   // The dedicated vacation email senders must map to the edited templates and fully populate the
   // leave_request greeting ({{managerName}}) and hiring-date ({{date}}) placeholders, with a safe
@@ -193,8 +196,8 @@ export function runVacationModuleTests() {
   assert.doesNotMatch(vacationEmailSource, /const html = `<div/, "vacation fallback must not use a one-off raw HTML layout");
   assert.match(
     vacationEmailSource,
-    /overrides: \{ replaceRecipients: true, to: \[input\.managerEmail\] \}/,
-    "each approver must receive ONLY their own leave_request copy — template recipient rules must not fan personally-greeted copies to other inboxes",
+    /overrides: \{ cc: input\.cc, replaceRecipients: true, to: \[input\.managerEmail\] \}/,
+    "leave_request routing must be one manager TO with visibility approvers in CC",
   );
   assert.match(
     vacationEmailSource,

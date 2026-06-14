@@ -1,5 +1,6 @@
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -23,8 +24,12 @@ export async function EmployeePortalServerShell({
   await assertPermission(access, "employee_profile", "read");
 
   let data = null;
+  let hasDeviceMapping = false;
   try {
-    data = await getEmployeePortalShellData(access);
+    [data, hasDeviceMapping] = await Promise.all([
+      getEmployeePortalShellData(access),
+      access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
+    ]);
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals", module: "employee-portal-shell", role: access.role, hrId: access.hrId },
@@ -48,6 +53,7 @@ export async function EmployeePortalServerShell({
     data.employee.line,
     data.employee.department,
     data.employee.hrId,
+    hasDeviceMapping,
   );
 
   return (
