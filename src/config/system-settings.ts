@@ -42,7 +42,7 @@ export const systemEditingPolicy = {
 } as const;
 
 export const systemEmail = {
-  defaultFromEmail: "phoenix@mail.satopharma.com",
+  defaultFromEmail: "phoenix@send.satopharma.com",
   defaultReplyTo: "phoenix@satopharma.com",
   // Controlled internal inboxes only. NEVER add personal/external addresses here:
   // when testing-delivery is on, ALL mail is redirected to this list, so a personal
