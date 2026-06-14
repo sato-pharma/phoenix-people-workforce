@@ -33,6 +33,7 @@ Phoenix Workforce/
 
 # Generated output
 output/
+outputs/
 supabase-export/
 
 # Local tool screenshots
