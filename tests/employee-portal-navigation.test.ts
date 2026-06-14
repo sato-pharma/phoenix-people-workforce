@@ -147,16 +147,21 @@ export function runEmployeePortalNavigationTests() {
   // Product Manager and Group Product Manager are authorized for Marketing and must
   // see the module in nav without the launch flag (regression coverage).
   const productManagerDefault = resolveEmployeePortalNavVisibility("Product Manager");
+  assert.equal(productManagerDefault.showMyPerformanceTab, false, "Product Manager should not see My Performance");
   assert.equal(productManagerDefault.showExpenseActionTab, true, "Product Manager should see Submit Expense in nav");
   assert.equal(productManagerDefault.showMarketingRequestsTab, true, "Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(productManagerDefault.showMarketingInboxTab, true, "Product Manager should see the Marketing Approval Inbox in nav");
   assert.equal(productManagerDefault.showMarketingRoiTrackingTab, true, "Product Manager should see Marketing ROI Tracking in nav");
 
   const groupProductManagerDefault = resolveEmployeePortalNavVisibility("Group Product Manager");
+  assert.equal(groupProductManagerDefault.showMyPerformanceTab, false, "Group Product Manager should not see My Performance");
   assert.equal(groupProductManagerDefault.showExpenseActionTab, true, "Group Product Manager should see Submit Expense in nav");
   assert.equal(groupProductManagerDefault.showMarketingRequestsTab, true, "Group Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(groupProductManagerDefault.showMarketingInboxTab, true, "Group Product Manager should see the Marketing Approval Inbox in nav");
   assert.equal(groupProductManagerDefault.showMarketingRoiTrackingTab, true, "Group Product Manager should see Marketing ROI Tracking in nav");
+
+  const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
+  assert.equal(marketingManagerDefault.showMyPerformanceTab, false, "Marketing Manager should not see My Performance");
 
   const sfeDefault = resolveEmployeePortalNavVisibility("SFE Manager");
   assert.equal(sfeDefault.showMarketingControlTab, true, "SFE Manager should see Marketing Control in nav (full module)");

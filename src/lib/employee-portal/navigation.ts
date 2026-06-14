@@ -32,6 +32,7 @@ export type EmployeePortalNavVisibility = {
   showTrainingManagerFieldCoachingTab?: boolean;
   showReportItTab?: boolean;
   showReportItDashboardTab?: boolean;
+  showFingerprintReportTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -82,6 +83,13 @@ const marketingRequestRoles = new Set<PhoenixRole>([
   "SFE Manager",
   "CEO",
   "Super Admin",
+]);
+
+const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
+  "Product Manager",
+  "Group Product Manager",
+  "Training Manager",
+  "Marketing Manager",
 ]);
 
 export function canUseEmployeePortalMarketingRequests(
@@ -135,6 +143,7 @@ export function resolveEmployeePortalNavVisibility(
   employeeLineName?: string | null | undefined,
   employeeDepartmentName?: string | null | undefined,
   viewerHrId?: string | null | undefined,
+  hasDeviceMapping?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -147,6 +156,7 @@ export function resolveEmployeePortalNavVisibility(
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
   const isTrainingManager = resolvedRole === "Training Manager";
+  const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showManagementTab = [
     "District Manager",
     "National Sales Manager",
@@ -178,7 +188,7 @@ export function resolveEmployeePortalNavVisibility(
     "Manager",
     "Regional Manager",
   ].includes(resolvedRole);
-  const baseShowMyPerformanceTab = !isTrainingManager;
+  const baseShowMyPerformanceTab = !hideMyPerformanceTab;
   const baseShowIncentiveTab = !isTrainingManager;
 
   return {
@@ -211,5 +221,6 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
+    showFingerprintReportTab: hasDeviceMapping === true,
   };
 }

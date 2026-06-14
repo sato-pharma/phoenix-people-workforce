@@ -1,0 +1,392 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { Clock, Download, LogIn, LogOut, RefreshCw, ScanLine } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+type Props = {
+  hrId: string;
+  initialData: EmployeeAttendanceData;
+};
+
+type QuickFilter = "this-month" | "last-month" | "last-30" | "custom";
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function firstDayOfMonth(year: number, month: number) {
+  return `${year}-${pad(month)}-01`;
+}
+
+function lastDayOfMonth(year: number, month: number) {
+  const d = new Date(year, month, 0); // day 0 of next month = last day of this month
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function rangeForFilter(filter: QuickFilter, customMonth: string): { from: string; to: string } {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth() + 1; // 1-based
+
+  if (filter === "this-month") {
+    return { from: firstDayOfMonth(y, m), to: todayKey() };
+  }
+
+  if (filter === "last-month") {
+    const lm = m === 1 ? 12 : m - 1;
+    const ly = m === 1 ? y - 1 : y;
+    return { from: firstDayOfMonth(ly, lm), to: lastDayOfMonth(ly, lm) };
+  }
+
+  if (filter === "last-30") {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return { from: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, to: todayKey() };
+  }
+
+  // custom month — "YYYY-MM"
+  if (customMonth) {
+    const [cy, cm] = customMonth.split("-").map(Number);
+    const currentMonthKey = `${y}-${pad(m)}`;
+    const isCurrentMonth = customMonth === currentMonthKey;
+    return {
+      from: firstDayOfMonth(cy, cm),
+      to: isCurrentMonth ? todayKey() : lastDayOfMonth(cy, cm),
+    };
+  }
+
+  return { from: todayKey(), to: todayKey() };
+}
+
+function generateMonthOptions(): Array<{ label: string; value: string }> {
+  const options: Array<{ label: string; value: string }> = [];
+  const today = new Date();
+  for (let i = 0; i < 13; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    options.push({
+      label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+      value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
+    });
+  }
+  return options;
+}
+
+// ─── KPI card (OverviewStatCard pattern) ──────────────────────────────────────
+
+type Accent = "amber" | "green" | "orange" | "red" | "slate";
+
+const TONE: Record<Accent, { bar: string; dot: string }> = {
+  amber:  { bar: "bg-amber-500",   dot: "bg-amber-500"   },
+  green:  { bar: "bg-emerald-500", dot: "bg-emerald-500" },
+  orange: { bar: "bg-orange-500",  dot: "bg-orange-500"  },
+  red:    { bar: "bg-rose-500",    dot: "bg-rose-500"    },
+  slate:  { bar: "bg-slate-400",   dot: "bg-slate-400"   },
+};
+
+function KpiCard({ accent, label, note, value }: { accent: Accent; label: string; note: string; value: number }) {
+  const { bar, dot } = TONE[accent];
+  return (
+    <div className="group relative min-h-[140px] overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)] hover:ring-slate-300">
+      <div className={`absolute inset-x-0 top-0 h-1 ${bar} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
+      <div className="flex h-full flex-col justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${dot} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          </div>
+          <p className="mt-2.5 text-2xl font-black leading-none tracking-tight text-slate-950 tabular-nums">{value}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold text-slate-400">{note}</p>
+          <div className={`mt-3 h-1.5 w-16 rounded-sm ${bar} opacity-70`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "Complete")    return <Badge variant="success">Complete</Badge>;
+  if (status === "Exception")   return <Badge variant="neutral">Exception</Badge>;
+  if (status === "Late")        return <Badge variant="warning">Late</Badge>;
+  if (status === "Early leave") return <Badge variant="warning">Early leave</Badge>;
+  if (status === "Short day")   return <Badge variant="warning">Short day</Badge>;
+  return <Badge variant="danger">{status}</Badge>;
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+const QUICK_BUTTONS: Array<{ id: QuickFilter; label: string }> = [
+  { id: "this-month",  label: "This Month"  },
+  { id: "last-month",  label: "Last Month"  },
+  { id: "last-30",     label: "Last 30 Days" },
+  { id: "custom",      label: "Custom"      },
+];
+
+const MONTH_OPTIONS = generateMonthOptions();
+
+export function FingerprintAnalytics({ hrId, initialData }: Props) {
+  const today = new Date();
+  const currentMonthValue = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+
+  const [data,         setData]         = useState<EmployeeAttendanceData>(initialData);
+  const [activeFilter, setActiveFilter] = useState<QuickFilter>("this-month");
+  const [customMonth,  setCustomMonth]  = useState<string>(currentMonthValue);
+  const [fetchError,   setFetchError]   = useState<string | null>(null);
+  const [isPending,    startTransition] = useTransition();
+
+  function fetchRange(from: string, to: string) {
+    setFetchError(null);
+    const url =
+      `/api/attendance/employee-attendance` +
+      `?hrId=${encodeURIComponent(hrId)}&dateFrom=${from}&dateTo=${to}`;
+    startTransition(async () => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setFetchError((body as { message?: string }).message ?? "Failed to load records.");
+          return;
+        }
+        setData(await res.json());
+      } catch {
+        setFetchError("Network error — please try again.");
+      }
+    });
+  }
+
+  function handleQuickFilter(filter: QuickFilter) {
+    setActiveFilter(filter);
+    if (filter === "custom") return; // wait for month select
+    const { from, to } = rangeForFilter(filter, "");
+    fetchRange(from, to);
+  }
+
+  function handleCustomMonth(month: string) {
+    setCustomMonth(month);
+    const { from, to } = rangeForFilter("custom", month);
+    fetchRange(from, to);
+  }
+
+  const exportHref =
+    `/api/attendance/employee-fingerprint-export` +
+    `?dateFrom=${data.dateFrom}&dateTo=${data.dateTo}`;
+
+  const { summary, rows } = data;
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Filter strip ─────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+          {/* Quick-filter buttons */}
+          <div className="flex flex-wrap gap-2">
+            {QUICK_BUTTONS.map(({ id, label }) => {
+              const active = activeFilter === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => handleQuickFilter(id)}
+                  type="button"
+                  disabled={isPending}
+                  className={[
+                    "inline-flex h-9 items-center gap-1.5 rounded px-4 text-[12px] font-bold transition-all duration-150",
+                    active
+                      ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+                      : "border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50/70 hover:text-orange-700",
+                    isPending && !active ? "opacity-50 cursor-not-allowed" : "",
+                  ].join(" ")}
+                >
+                  {isPending && active ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Export button */}
+          <a
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-300 hover:bg-orange-50/70 hover:text-orange-700 hover:shadow-[0_4px_12px_rgba(249,115,22,0.12)]"
+            href={exportHref}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export XLSX
+          </a>
+        </div>
+
+        {/* Custom month picker — only visible when "Custom" is active */}
+        {activeFilter === "custom" && (
+          <div className="mt-4 flex items-end gap-3 border-t border-slate-100 pt-4">
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
+              <select
+                className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)] outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                onChange={(e) => handleCustomMonth(e.target.value)}
+                value={customMonth}
+              >
+                {MONTH_OPTIONS.map(({ label, value }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <p className="pb-2.5 text-xs font-semibold text-slate-400">
+              Showing {data.dateFrom} → {data.dateTo}
+            </p>
+          </div>
+        )}
+
+        {fetchError && (
+          <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+            {fetchError}
+          </p>
+        )}
+      </div>
+
+      {/* ── KPI cards ────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
+        <KpiCard accent="slate"  label="Total Recorded" value={summary.totalRows}                      note="Days in range"     />
+        <KpiCard accent="green"  label="Complete"        value={summary.completeDays}                   note="Full working days" />
+        <KpiCard accent="amber"  label="Late / Early"    value={summary.lateDays}                       note="Attendance flags"  />
+        <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
+        <KpiCard accent="red"    label="Deductions"      value={summary.deductionDays}                  note="Days flagged"      />
+      </div>
+
+      {/* ── Punch log table ───────────────────────────────────────────────── */}
+      {rows.length === 0 ? (
+        <div className="overflow-hidden rounded border border-dashed border-slate-200 bg-slate-50/60 py-20 text-center">
+          <ScanLine className="mx-auto mb-4 h-12 w-12 text-slate-200" />
+          <p className="text-sm font-bold text-slate-400">No records for this period</p>
+          <p className="mt-1 text-xs text-slate-400">Try a different time range above.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+
+          {/* section header */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-7 w-[3px] rounded-sm bg-gradient-to-b from-orange-400 to-orange-600" />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
+                <p className="mt-0.5 text-[13px] font-semibold text-slate-700">
+                  {data.dateFrom} → {data.dateTo}
+                </p>
+              </div>
+            </div>
+            <span className="rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">
+              {rows.length} {rows.length === 1 ? "record" : "records"}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-900">
+                  {(["Date", "Clock In", "Clock Out", "Duration", "Late", "Status", "Deduction"] as const).map((col) => (
+                    <th
+                      key={col}
+                      className={`px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300 ${col === "Deduction" ? "text-right" : "text-left"}`}
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {rows.map((row, i) => {
+                  const hasDeduction = parseFloat(row.deductionDays) > 0;
+                  const lateMin      = parseInt(row.lateMinutes ?? "0", 10);
+
+                  return (
+                    <tr
+                      key={row.rawDate}
+                      className={`border-b border-slate-50 transition-colors duration-150 hover:bg-orange-50/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                    >
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono text-xs font-bold text-slate-700">{row.date}</span>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {row.firstPunch ? (
+                          <span className="flex items-center gap-1.5">
+                            <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
+                            <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {row.lastPunch ? (
+                          <span className="flex items-center gap-1.5">
+                            <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
+                            <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {row.timeLong ? (
+                          <span className="inline-flex items-center gap-1.5 rounded bg-slate-100/80 px-2 py-0.5">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {lateMin > 0 ? (
+                          <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200 shadow-[0_2px_8px_rgba(245,158,11,0.12)]">
+                            +{lateMin} min
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <StatusBadge status={row.status} />
+                      </td>
+
+                      <td className="px-4 py-3.5 text-right">
+                        {hasDeduction ? (
+                          <span className="inline-flex rounded-sm bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.12)]">
+                            −{row.deductionDays}d
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
