@@ -152,6 +152,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(productManagerDefault.showMarketingRequestsTab, true, "Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(productManagerDefault.showMarketingInboxTab, true, "Product Manager should see the Marketing Approval Inbox in nav");
   assert.equal(productManagerDefault.showMarketingRoiTrackingTab, true, "Product Manager should see Marketing ROI Tracking in nav");
+  assert.equal(productManagerDefault.showVacanciesTab, true, "Product Manager should see the line-scoped Vacancies tab in nav");
 
   const groupProductManagerDefault = resolveEmployeePortalNavVisibility("Group Product Manager");
   assert.equal(groupProductManagerDefault.showMyPerformanceTab, false, "Group Product Manager should not see My Performance");
@@ -159,6 +160,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showMarketingRequestsTab, true, "Group Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(groupProductManagerDefault.showMarketingInboxTab, true, "Group Product Manager should see the Marketing Approval Inbox in nav");
   assert.equal(groupProductManagerDefault.showMarketingRoiTrackingTab, true, "Group Product Manager should see Marketing ROI Tracking in nav");
+  assert.equal(groupProductManagerDefault.showVacanciesTab, true, "Group Product Manager should see the line-scoped Vacancies tab in nav");
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
   assert.equal(marketingManagerDefault.showMyPerformanceTab, false, "Marketing Manager should not see My Performance");
