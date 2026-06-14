@@ -81,7 +81,7 @@ export function runEmailTemplatesTriggersTests() {
   const processRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
   assert.match(processRoute, /searchParams\.get\("limit"\)/, "the drain route must accept a limit param");
   const workflow = readFileSync(".github/workflows/notification-drain.yml", "utf8");
-  assert.match(workflow, /cron:\s*"\*\/5 \* \* \* \*"/, "scheduler must run every ~5 minutes");
+  assert.match(workflow, /cron:\s*"\*\/30 \* \* \* \*"/, "scheduler must run every ~30 minutes (kept within the Actions minute budget)");
   assert.match(workflow, /Bearer \$\{CRON_SECRET\}/, "scheduler must authenticate with CRON_SECRET");
   assert.match(workflow, /\/api\/notifications\/process/, "scheduler must hit the process route");
   assert.match(workflow, /cancel-in-progress: false/, "in-flight drains must not be cancelled");

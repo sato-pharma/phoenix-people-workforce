@@ -168,11 +168,17 @@ export const adminNavigationSections = [
       { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
     ],
     label: "Sales Operations",
+  },
+  {
+    id: "old-sales-queue",
+    items: [
+      { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
+    ],
+    label: "Old Sales Queue",
   },
   {
     id: "weekly-sales",
