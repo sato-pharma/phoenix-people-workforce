@@ -101,7 +101,6 @@ function buildEmployeePortalSections({
   showExpenseDashboardTab = false,
   showFingerprintReportTab = false,
   showIncentiveTab = true,
-  showManagementTab = false,
   showMarketingRequestsTab = false,
   showMarketingInboxTab = false,
   showMarketingCustomerDatabaseTab = false,
