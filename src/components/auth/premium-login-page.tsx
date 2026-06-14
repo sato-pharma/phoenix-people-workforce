@@ -43,7 +43,13 @@ const embers = Array.from({ length: 42 }, (_, index) => ({
 
 const loginFeatureIcons = [BarChart3, ShieldCheck, Zap] as const;
 
-export function PremiumLoginPage() {
+function safeReturnUrl(value: string | null | undefined): string | null {
+  const v = value?.trim();
+  if (!v || !v.startsWith("/") || v.startsWith("//")) return null;
+  return v;
+}
+
+export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<LoginErrorField | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -170,7 +176,9 @@ export function PremiumLoginPage() {
       }
 
       markSessionActivity();
-      window.location.assign(resolveLandingPathForRole(payload.user?.role));
+      const urlReturnUrl = new URLSearchParams(window.location.search).get("returnUrl");
+      const destination = returnUrl ?? safeReturnUrl(urlReturnUrl) ?? resolveLandingPathForRole(payload.user?.role);
+      window.location.assign(destination);
     } catch {
       showLoginError("Unable to sign in. Check your connection and try again.");
     } finally {
