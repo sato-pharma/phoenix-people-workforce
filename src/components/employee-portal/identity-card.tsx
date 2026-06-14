@@ -90,7 +90,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
             </span>
           </div>
 
-          <p className="mt-3 max-w-3xl text-[15px] leading-[1.80] text-slate-300 lg:text-[15.5px]">
+          <p className="mt-3 max-w-3xl text-[13px] leading-[1.65] tracking-[-0.01em] text-slate-300 sm:text-[15px] sm:leading-[1.8] sm:tracking-normal lg:text-[15.5px]">
             Your Phoenix workspace is ready for a focused, confident day. Keep your priorities clear, follow up with energy, and turn today&apos;s work into visible progress.
           </p>
         </div>
