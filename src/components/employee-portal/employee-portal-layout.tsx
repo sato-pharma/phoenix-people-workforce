@@ -530,7 +530,7 @@ export function EmployeePortalTopNav({
               onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
-              <Image alt="Phoenix" className="h-7 w-7 shrink-0 rounded object-cover" height={28} src={systemAssets.adminRailMark} width={28} />
+              <Image alt="Phoenix" className="h-7 w-7 shrink-0 rounded object-contain" height={28} src={systemAssets.iconLogo} width={28} />
               <div className="hidden pr-0.5 text-left sm:block">
                 <p className="text-xs font-semibold text-slate-800 whitespace-nowrap">{firstName}</p>
               </div>
