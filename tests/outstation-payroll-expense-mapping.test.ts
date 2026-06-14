@@ -36,4 +36,48 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.travelCost, 1200);
   assert.equal(mapped.payoutMonth, 6);
   assert.equal(mapped.payoutYear, 2026);
+
+  // A traveling request with none of the new fields set must default them to 0
+  // (meeting_amount only falls back to `total` for meeting-type requests).
+  assert.equal(mapped.meetingAmount, 0, "traveling request with no meeting_amount maps to 0");
+  assert.equal(mapped.otherAmount, 0);
+  assert.equal(mapped.amWorkload, 0);
+  assert.equal(mapped.pmWorkload, 0);
+
+  // New expense fields (meeting_amount, other_amount, am_workload, pm_workload) must flow
+  // through to the payroll approval output unchanged.
+  const mappedWithExtras = mapOutstationRequestRowToPayrollApproval({
+    am_workload: 3,
+    claimed_total_amount: 1500,
+    created_at: "2026-05-20T10:00:00.000Z",
+    employee_hr_id: "A16",
+    employee_name: "Account Admin",
+    expected_total_amount: 1400,
+    expense_type: "traveling",
+    id: 43,
+    meeting_amount: 250,
+    other_amount: 120,
+    pm_workload: 4,
+    status: "approved",
+    trip_start_date: "2026-05-20T00:00:00.000Z",
+  });
+  assert.equal(mappedWithExtras.meetingAmount, 250, "explicit meeting_amount must map through");
+  assert.equal(mappedWithExtras.otherAmount, 120, "other_amount must map through");
+  assert.equal(mappedWithExtras.amWorkload, 3, "am_workload must map through");
+  assert.equal(mappedWithExtras.pmWorkload, 4, "pm_workload must map through");
+
+  // A meeting-type request with no explicit meeting_amount falls back to the trip total.
+  const mappedMeeting = mapOutstationRequestRowToPayrollApproval({
+    claimed_total_amount: 900,
+    created_at: "2026-05-20T10:00:00.000Z",
+    employee_hr_id: "A16",
+    employee_name: "Account Admin",
+    expected_total_amount: 800,
+    expense_type: "meeting",
+    id: 44,
+    status: "approved",
+    trip_start_date: "2026-05-20T00:00:00.000Z",
+  });
+  assert.equal(mappedMeeting.meetingAmount, 900, "meeting-type request defaults meeting_amount to the trip total");
+  assert.equal(mappedMeeting.otherAmount, 0);
 }
