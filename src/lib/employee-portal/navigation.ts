@@ -151,8 +151,9 @@ export function resolveEmployeePortalNavVisibility(
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
-  // Product / Group Product Managers get a line-scoped Vacancies view (see
-  // getEmployeePortalVacancies). The sidebar tab must mirror that data access.
+  // Product / Group Product Managers get line-scoped Vacancies, Probation, and
+  // Organogram views (see getEmployeePortalVacancies, probation service, and
+  // isLineScopedOrganogramRole). The sidebar tabs must mirror that data access.
   const isProductManager = resolvedRole === "Product Manager";
   const isGroupProductManager = resolvedRole === "Group Product Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
@@ -214,9 +215,11 @@ export function resolveEmployeePortalNavVisibility(
     showMyCoachingTab: isMedicalRep,
     showReportItTab: isA3Account,
     showReportItDashboardTab: isA3Account,
-    showOrganogramTab: showMedRepsPerformanceTab,
+    showOrganogramTab:
+      showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showPlansTab: isA3Account || showPlansTab,
-    showProbationTab: showTeamPerformanceTab || showMedRepsPerformanceTab,
+    showProbationTab:
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showSupportTab: true,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
