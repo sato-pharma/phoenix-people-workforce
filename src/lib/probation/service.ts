@@ -439,10 +439,10 @@ async function insertHistory(
 
 async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: string, tone: "success" | "warning" | "danger") {
   await createSystemNotification({
-    actionUrl: "/probation",
+    actionUrl: "/api/probation/redirect",
     actorId: "system",
     email: {
-      ctaHref: "/probation",
+      ctaHref: "/api/probation/redirect",
       ctaLabel: "Open probation tracker",
       employeeHrId: record.employeeHrId,
       metrics: [
@@ -681,7 +681,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
 
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
-    const actionUrl = `/employee-portals/probation?employeeHrId=${encodeURIComponent(employee.hrId)}`;
+    const actionUrl = `/api/probation/redirect?employeeHrId=${encodeURIComponent(employee.hrId)}`;
     const notificationResult = await createSystemNotification({
       actionUrl,
       actorId: "system",
