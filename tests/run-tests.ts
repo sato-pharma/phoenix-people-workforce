@@ -171,6 +171,8 @@ import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSalesIntelligenceAnalyticsTests } from "./sales-intelligence-analytics.test.ts";
 import { runSalesIntelligenceFiltersTests } from "./sales-intelligence-filters.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
+import { runExcusesTests } from "./excuses.test.ts";
+import { runInternalMessagesTests } from "./internal-messages.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -355,3 +357,5 @@ await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("sales intelligence analytics", runSalesIntelligenceAnalyticsTests);
 await runTest("sales intelligence filters", runSalesIntelligenceFiltersTests);
 await runTest("system cleanup center", runSystemCleanupCenterTests);
+await runTest("excuses", runExcusesTests);
+await runTest("internal messages", runInternalMessagesTests);
