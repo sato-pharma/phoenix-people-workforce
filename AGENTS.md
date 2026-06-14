@@ -50,6 +50,10 @@ The user is not comfortable with:
 - GitHub CLI
 - advanced DevOps workflows
 
+The user depends **entirely** on AI tools to manage Git, branches, PRs, and deployment.
+They cannot catch broken tests, stale branches, or orphaned worktrees on their own.
+The AI is the only safety net. Act accordingly — be the guardian, not just the executor.
+
 Therefore:
 - always guide step by step
 - prevent dangerous actions
@@ -192,6 +196,126 @@ orphaned every worktree, and destroyed uncommitted work.
   intended tree.
 - Remove a finished worktree with `git worktree remove <path>` — never by deleting a live
   worktree folder.
+
+## Guardian Rule — Never Blindly Execute Risky Orders
+
+The user depends entirely on AI tools and is not a Git/coding expert. This means the
+AI must act as a senior technical advisor, not just an executor. When the user gives
+an order that could be harmful, destructive, cause data loss, break a feature, require
+follow-up fixes, or risk losing unreleased work — the AI must STOP before executing
+and do ALL of the following:
+
+**Step 1 — State the risk clearly:**
+Explain in plain English what could go wrong if the order is executed as given.
+No jargon. Be specific about what would break or be lost.
+
+**Step 2 — Give a recommendation:**
+Tell the user what the AI recommends instead. This is not optional. The AI must always
+have a safer alternative ready before asking the user to decide.
+
+**Step 3 — Show the consequence of each path:**
+Lay out both options side by side:
+- "If you proceed with your order: [specific consequence]"
+- "If we follow my recommendation: [how it achieves the same goal, more safely]"
+
+**Step 4 — Wait for explicit approval before acting:**
+Do not execute the risky order until the user says to proceed. Do not assume silence
+means approval. Do not partially execute and then warn — warn first, act after.
+
+**Examples of when this rule activates:**
+- User says "delete that branch" → but the branch has unpushed commits
+- User says "push directly to main" → but tests are failing or code is unvalidated
+- User says "just overwrite it" → but doing so would lose an existing feature
+- User says "skip the tests this time" → risk of breaking production silently
+- User says "merge it now" → but PR has a merge conflict (DIRTY state)
+- User says "reset the data" → but no backup exists or there are active records
+- User says "just commit everything" → but unrelated or sensitive files are staged
+- User says "rebase this branch" → but there are merge conflicts that need resolution
+
+**Key principle:**
+The goal is never to block the user — it is to make sure they decide with full
+information. After hearing the recommendation and consequences, if the user still
+says "do it my way," execute it and note the risk in your response.
+
+## Project Health — Mandatory Rules (AI Must Enforce)
+
+These rules exist because the user depends entirely on AI tools for Git, testing, and
+deployment. They cannot catch these failures themselves. The AI is the only safety net.
+These rules are non-negotiable and apply to every session, every task, every commit.
+
+**ROOT CAUSES from 2026-06-14 session (cleaned up 15 orphaned worktrees, 3 broken tests,
+1 DIRTY PR, 2 missing feature commits):**
+
+1. Too many parallel sessions with no cleanup = worktree accumulation
+2. Direct-to-main commits bypassing the test gate = stale/broken assertions
+3. Code changed without updating the test asserting it = silent CI breakage
+4. Long-lived branches never rebased = DIRTY merge conflicts
+5. Worktree work never PR'd = missing features sat unreleased for weeks
+
+**MANDATORY RULES — enforce without being asked:**
+
+### Rule 1: No direct-to-main code commits
+ALL code changes must go through a branch + PR, even single-line fixes.
+Direct pushes to `main` are ONLY allowed for:
+- Hotfixes where time is critical AND the user explicitly says "push direct to main"
+- Pure documentation/AGENTS.md/CLAUDE.md changes that contain no runtime code
+Before any commit, check: `git branch --show-current`. If it shows `main`, STOP and
+create a branch first.
+
+### Rule 2: Full gate before every commit
+Run `npm run check:harden` (lint + typecheck + test + build) before EVERY commit to
+any branch. Do NOT use only `npm run check:edit`. The full gate catches stale test
+assertions; `check:edit` does not run tests and WILL miss them.
+
+### Rule 3: Update tests in the same PR that changes code they assert
+If a commit changes:
+- A URL or route pattern → search for it in `tests/` and update any assertion
+- A function or method name → search for it in `tests/` and update any assertion
+- An env var or config string → search for it in `tests/` and update
+Run `grep -r "old_string" tests/` before every commit that renames or moves something.
+
+### Rule 4: New API routes must call canAccess or assertPermission
+The `access-registry-coverage` test scans ALL `app/api/**/route.ts` files.
+Every route handler using `resolveAccessContext` MUST also call `canAccess(access, ...)`,
+`assertPermission(...)`, or an approved domain guard. Missing this = test failure.
+Check the new route by running: `npm run test` before committing it.
+
+### Rule 5: Rebase branches older than 3 days
+Any branch that is more than 3 days old without a merge must be rebased onto main.
+At the start of any session working on an existing branch, run:
+```bash
+git fetch origin
+git log --oneline origin/main..HEAD  # see how many commits ahead
+git log --oneline HEAD..origin/main  # see how far behind main
+```
+If the branch is >3 commits behind main, rebase it before adding more work.
+
+### Rule 6: Session-end cleanup is mandatory
+After EVERY PR is merged:
+1. `git worktree remove <path>` (if a worktree was used)
+2. `git branch -d <branch-name>` (delete local branch — it's in main now)
+3. Confirm with `git worktree list` and `git branch` that both are gone
+Do not leave worktrees or branches after a PR is merged. They accumulate silently and
+become impossible to track after 2+ weeks.
+
+### Rule 7: Max 3 active worktrees; session-start health check
+At the start of EVERY session, run:
+```bash
+git worktree list
+git branch | find /c /v ""   # count branches (PowerShell: (git branch).Count)
+```
+If there are more than 3 worktrees, or more than 20 local branches, STOP and ask the
+user to approve cleanup before doing any new work.
+If any worktree is pointing to a branch whose PR is already merged, remove it.
+
+### Rule 8: Never abandon work in a worktree silently
+Every worktree must resolve to one of:
+- PR merged → worktree + branch deleted (Rule 6)
+- PR open → worktree kept, branch kept
+- Work paused → work committed and pushed to origin before the session ends
+Work that exists ONLY in a local worktree and never gets pushed is lost if the machine
+has an issue. Push every branch to origin at the end of each session, even if the PR
+is not ready.
 
 ## Standard Flow For Any Function, Feature, Or Edit
 
