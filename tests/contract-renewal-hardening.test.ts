@@ -42,8 +42,9 @@ export function runContractRenewalHardeningTests() {
   assert.match(reminderRoute, /getEmployeeDirectoryRows/);
   assert.match(reminderRoute, /createSystemNotification/);
   assert.match(reminderRoute, /workflowApproverHrIdsForEmployee/);
-  assert.match(reminderRoute, /phase6HrApproverHrIds = \["B-10", "admin-HR"\]/);
-  assert.match(reminderRoute, /managerOfManagerHrId/);
+  assert.match(reminderRoute, /resolveActiveHrApproverHrIds/, "HR approvers must be resolved by role, not hardcoded IDs");
+  assert.doesNotMatch(reminderRoute, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from contract renewals");
+  assert.match(reminderRoute, /managerOfManager/);
   assert.match(reminderRoute, /actionUrl = "\/contracts\/renewals"/);
   assert.doesNotMatch(reminderRoute, /recipientHrId:/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);

@@ -1,36 +1,21 @@
 import type { AccessContext } from "@/lib/auth/permissions";
-import { normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import type {
   DeductionPayrollColumn,
   DeductionSourceModule,
   DeductionType,
 } from "./types.ts";
 
-const allowedDecisionActorIds = new Set(["adminhr", "b10"]);
-
-function normalizeDecisionActor(value: string | null | undefined) {
-  const compact = normalizeHrIdForAccess(value);
-  if (compact) return compact;
-  const raw = String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  return raw || null;
-}
-
 export function isDeductionsGovernanceDecisionActor(
-  access: Pick<AccessContext, "hrId" | "loginId">,
+  access: Pick<AccessContext, "role">,
 ) {
-  const hrId = normalizeDecisionActor(access.hrId);
-  const loginId = normalizeDecisionActor(access.loginId);
-  return Boolean(
-    (hrId && allowedDecisionActorIds.has(hrId)) ||
-      (loginId && allowedDecisionActorIds.has(loginId)),
-  );
+  return access.role === "Super Admin";
 }
 
 export function assertDeductionsGovernanceDecisionActor(
-  access: Pick<AccessContext, "hrId" | "loginId">,
+  access: Pick<AccessContext, "role">,
 ) {
   if (!isDeductionsGovernanceDecisionActor(access)) {
-    throw new Error("Forbidden: only Admin HR or HR Manager B-10 can approve, finalize, or import deductions.");
+    throw new Error("Forbidden: only Super Admin (HR governance) can approve, finalize, or import deductions.");
   }
 }
 

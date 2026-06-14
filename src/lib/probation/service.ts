@@ -90,7 +90,17 @@ const probationDays = 90;
 // (Admin-HR) and the HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role.
 // The retired broad HR access role and Talent Acquisition must NOT administer or approve probation.
 const hrProbationRoles = new Set(["Super Admin"]);
-const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
+async function resolveActiveHrApproverHrIds(): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", ["HR Manager", "Super Admin"])
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null }>)
+    .map((row) => normalizeHrId(row.hr_id))
+    .filter(Boolean) as string[];
+}
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
@@ -498,30 +508,30 @@ export function getProbationReminderSchedule(hireDate: string | null | undefined
     .filter((reminder) => Boolean(reminder.scheduledFor));
 }
 
-function probationWorkflowApproverHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+function probationWorkflowApproverHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[], hrApproverHrIds: string[]) {
   const manager = managerOf(employee, directory);
   const managerManager = manager ? managerOf(manager, directory) : null;
   return Array.from(new Set([
     normalizeHrId(managerManager?.hrId),
-    ...phase6HrApproverHrIds.map(normalizeHrId),
+    ...hrApproverHrIds,
   ].filter(Boolean)));
 }
 
-function resolveProbationReminderRecipientHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+function resolveProbationReminderRecipientHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[], hrApproverHrIds: string[]) {
   const manager = managerOf(employee, directory);
   return Array.from(new Set([
     normalizeHrId(manager?.hrId),
-    ...probationWorkflowApproverHrIds(employee, directory),
+    ...probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds),
   ].filter(Boolean)));
 }
 
-function probationRecipientRoles(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+function probationRecipientRoles(employee: EmployeeScopeRow, directory: EmployeeScopeRow[], hrApproverHrIds: string[]) {
   const manager = managerOf(employee, directory);
   const managerManager = manager ? managerOf(manager, directory) : null;
   return [
     manager ? { hr_id: normalizeHrId(manager.hrId), role: "Direct Manager" } : null,
     managerManager ? { hr_id: normalizeHrId(managerManager.hrId), role: "Manager of Manager" } : null,
-    ...phase6HrApproverHrIds.map((hrId) => ({ hr_id: normalizeHrId(hrId), role: "HR Pilot Approver" })),
+    ...hrApproverHrIds.map((hrId) => ({ hr_id: hrId, role: "HR Pilot Approver" })),
   ].filter((recipient): recipient is { hr_id: string; role: string } => Boolean(recipient?.hr_id));
 }
 
@@ -530,9 +540,10 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
   if (schedule.length === 0) return;
 
   const now = new Date().toISOString();
-  const recipientHrIds = resolveProbationReminderRecipientHrIds(employee, directory);
-  const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory);
-  const recipientRoles = probationRecipientRoles(employee, directory);
+  const hrApproverHrIds = await resolveActiveHrApproverHrIds();
+  const recipientHrIds = resolveProbationReminderRecipientHrIds(employee, directory, hrApproverHrIds);
+  const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds);
+  const recipientRoles = probationRecipientRoles(employee, directory, hrApproverHrIds);
   const rows = schedule.map((reminder) => ({
     category: "probation",
     employee_hr_id: employee.hrId,
@@ -626,7 +637,10 @@ async function markProbationReminderEvent(id: string, status: "sent" | "failed",
 
 export async function processDueProbationReminderEvents(limit = 25) {
   const supabase = getSupabaseAdmin();
-  const employees = await getEmployeeDirectoryRows();
+  const [employees, hrApproverHrIds] = await Promise.all([
+    getEmployeeDirectoryRows(),
+    resolveActiveHrApproverHrIds(),
+  ]);
   const rows = await getProbationRows(systemAccessContext);
   const activeRows = new Map(rows.map((row) => [normalizeHrId(row.hr_id), row]));
   const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
@@ -717,7 +731,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
         requestUrl: actionUrl,
         status: "Feedback required",
         team: employee.teamName ?? null,
-        workflowApproverHrIds: probationWorkflowApproverHrIds(employee, employees),
+        workflowApproverHrIds: probationWorkflowApproverHrIds(employee, employees, hrApproverHrIds),
       },
       module: "probation",
       priority: row.days_remaining <= 15 ? "critical" : "high",

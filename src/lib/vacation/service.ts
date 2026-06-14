@@ -1333,7 +1333,6 @@ async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrReci
   }
 }
 
-const vacationPilotHrApproverKeys = ["B-10", "admin-HR"] as const;
 
 function approvalStatus(value: unknown): VacationApprovalStepStatus {
   return value === "approved" || value === "rejected" ? value : "pending";
@@ -1360,11 +1359,10 @@ function mapVacationApprovalStep(row: VacationApprovalStepRow) {
 }
 
 async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData): Promise<VacationApprovalRecipient[]> {
-  const requiredKeys = new Set(vacationPilotHrApproverKeys.map((key) => key.toLowerCase()));
-  const matchedKeys = new Set<string>();
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("login_id,hr_id,name,auth_email,is_active")
+    .in("role", ["HR Manager", "Super Admin"])
     .eq("is_active", true);
 
   if (error) throwVacationDatabaseError(error);
@@ -1373,10 +1371,7 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
     .flatMap((row) => {
       const hrId = text(row.hr_id);
       const loginId = text(row.login_id);
-      const rowKeys = [hrId.toLowerCase(), loginId.toLowerCase()].filter(Boolean);
-      const matches = rowKeys.filter((key) => requiredKeys.has(key));
-      if (matches.length === 0 || !hrId) return [];
-      matches.forEach((key) => matchedKeys.add(key));
+      if (!hrId) return [];
       const employee = findEmployeeByHrId(directory, hrId);
       return [{
         // Prefer the HR approver's real work mailbox over the synthetic auth_email login key
@@ -1389,9 +1384,8 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
       }];
     });
 
-  const missingKeys = Array.from(requiredKeys).filter((key) => !matchedKeys.has(key));
-  if (missingKeys.length > 0) {
-    throw new Error(`Vacation HR approval pilot is not configured. Missing active approver identity: ${missingKeys.join(", ")}.`);
+  if (rows.length === 0) {
+    throw new Error("Vacation HR approval step is not configured. No active HR Manager or Super Admin account was found.");
   }
 
   const unique = new Map<string, VacationApprovalRecipient>();

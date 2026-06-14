@@ -6,13 +6,24 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type EmployeeDirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
 
-const phase6HrApproverHrIds = ["B-10", "admin-HR"] as const;
+async function resolveActiveHrApproverHrIds(): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", ["HR Manager", "Super Admin"])
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null }>)
+    .map((row) => cleanHrId(row.hr_id ?? ""))
+    .filter(Boolean);
+}
 
 function cairoDate() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -47,12 +58,12 @@ function managerOf(employee: EmployeeDirectoryRow | null | undefined, employeesB
   return managerHrId ? employeesByHrId.get(managerHrId) ?? null : null;
 }
 
-function workflowApproverHrIdsForEmployee(employee: EmployeeDirectoryRow, employeesByHrId: Map<string, EmployeeDirectoryRow>) {
+function workflowApproverHrIdsForEmployee(employee: EmployeeDirectoryRow, employeesByHrId: Map<string, EmployeeDirectoryRow>, hrApproverHrIds: string[]) {
   const directManager = managerOf(employee, employeesByHrId);
   const managerOfManager = managerOf(directManager, employeesByHrId);
   return Array.from(new Set([
     cleanHrId(managerOfManager?.hrId),
-    ...phase6HrApproverHrIds.map(cleanHrId),
+    ...hrApproverHrIds,
   ].filter(Boolean)));
 }
 
@@ -69,7 +80,10 @@ export async function runContractRenewalNotifications(request: Request) {
     0,
   ]);
   const results = [];
-  const directory = await getEmployeeDirectoryRows();
+  const [directory, hrApproverHrIds] = await Promise.all([
+    getEmployeeDirectoryRows(),
+    resolveActiveHrApproverHrIds(),
+  ]);
   const employeesByHrId = employeeDirectoryByHrId(directory);
 
   for (const row of candidates) {
@@ -88,7 +102,7 @@ export async function runContractRenewalNotifications(request: Request) {
 
     const directManager = managerOf(employee, employeesByHrId);
     const managerOfManager = managerOf(directManager, employeesByHrId);
-    const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId);
+    const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId, hrApproverHrIds);
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
     const actionUrl = "/contracts/renewals";
     const result = await createSystemNotification({

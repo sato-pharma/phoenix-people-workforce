@@ -2,7 +2,6 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification, type SystemNotificationResult } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const telegramDigestPilotHrIds = ["B-10", "admin-HR"] as const;
 
 type DigestRecipient = {
   hrId: string;
@@ -72,29 +71,22 @@ async function resolveDigestRecipients() {
   const recipients: DigestRecipient[] = [];
   const supabase = getSupabaseAdmin();
 
-  for (const identity of telegramDigestPilotHrIds) {
-    const normalized = cleanHrId(identity);
-    try {
-      const { data, error } = await supabase
-        .from("app_auth_users")
-        .select("login_id,hr_id,is_active")
-        .or(`hr_id.ilike.${normalized},login_id.ilike.${identity}`)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      const row = data as { hr_id?: string | null; login_id?: string | null } | null;
-      const hrId = cleanHrId(row?.hr_id ?? identity);
-      if (!row || !hrId) {
-        warnings.push(`Digest pilot recipient ${identity} was not resolved.`);
-        continue;
-      }
+  try {
+    const { data, error } = await supabase
+      .from("app_auth_users")
+      .select("login_id,hr_id,is_active")
+      .in("role", ["HR Manager", "Super Admin"])
+      .eq("is_active", true);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {
+      const hrId = cleanHrId(row.hr_id ?? "");
+      if (!hrId) continue;
       recipients.push({ hrId, userId: cleanText(row.login_id) || null });
-    } catch (error) {
-      if (schemaMissing(error, "app_auth_users")) {
-        warnings.push(`Digest pilot recipient ${identity} could not be checked because auth users are unavailable.`);
-        continue;
-      }
+    }
+  } catch (error) {
+    if (schemaMissing(error, "app_auth_users")) {
+      warnings.push("Digest recipients could not be resolved because auth users are unavailable.");
+    } else {
       throw error;
     }
   }
@@ -242,7 +234,7 @@ export async function runTelegramDailyHrDigest() {
           sourceWarnings,
           vacationOverdueCount: vacationOverdue.value,
           vacationPendingCount: vacationPending.value,
-          workflowApproverHrIds: telegramDigestPilotHrIds,
+          workflowApproverHrIds: recipients.map((r) => r.hrId),
         },
         module: "telegram",
         priority: telegramDeliveries.counts.failed > 0 ? "high" : "normal",

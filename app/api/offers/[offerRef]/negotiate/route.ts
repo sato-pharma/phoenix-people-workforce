@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ off
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Offer negotiation request failed.";
-    return NextResponse.json({ message }, { status: 500 });
+    console.error("[offers/negotiate]", error);
+    return NextResponse.json({ message: "Offer negotiation request failed. Please try again." }, { status: 500 });
   }
 }
