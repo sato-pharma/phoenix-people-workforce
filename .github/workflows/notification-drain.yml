@@ -2,14 +2,14 @@ name: Notification Drain
 
 # Sub-daily drain of the notification outbox + deferred deliveries. Vercel Hobby allows
 # only the single daily cron (/api/notifications/daily), so a failed/queued email — incl.
-# a 2-minute password-reset link — would otherwise wait up to ~24h for retry. This hits
-# the CRON_SECRET-protected /api/notifications/process every ~5 minutes so the real-world
-# retry latency is minutes, not a day. GitHub-hosted cron is best-effort (it can be
+# a 2-minute password-reset link — would otherwise wait up to ~30 minutes for retry. This
+# hits the CRON_SECRET-protected /api/notifications/process every 30 minutes so the
+# real-world retry latency is under an hour. GitHub-hosted cron is best-effort (it can be
 # delayed or skipped under load); the daily Vercel cron remains the guaranteed backstop,
 # so correctness never depends on this running.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 concurrency:
