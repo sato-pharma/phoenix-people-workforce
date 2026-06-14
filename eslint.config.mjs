@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     // linted by this project's CI (it produces thousands of unrelated findings).
     ".codex-worktrees/**",
     ".vercel/**",
+    // Generated output files — not part of the app source.
+    "outputs/**",
+    "templates/**",
   ]),
 ]);
 
