@@ -640,6 +640,40 @@ function normalizeCode(value: unknown) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+/** Region-code → region-name lookup built from `source_of_sales_regions` master rows. */
+export function buildRegionNameByCode(
+  regionRows: Array<Record<string, unknown>>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of regionRows) {
+    const code = normalizeCode(row.region_code);
+    if (code) map.set(code, String(row.region_name ?? ""));
+  }
+  return map;
+}
+
+/**
+ * Maps `source_of_sales_areas` rows to area references, joining the Region NAME from the
+ * regions master by region_code. The areas table does NOT carry `region_name` in every
+ * Supabase project (schema diverges across staging/production), so the name is always
+ * derived here from the master — never selected off the area row. Shared by both
+ * `loadSalesReferenceData` and `listActiveSalesAreas` so the two paths cannot drift.
+ */
+export function buildAreaReferencesFromRows(
+  areaRows: Array<Record<string, unknown>>,
+  regionNameByCode: Map<string, string>,
+): SalesAreaReference[] {
+  return areaRows.map((row) => {
+    const regionCode = String(row.region_code ?? "");
+    return {
+      areaCode: String(row.area_code ?? ""),
+      areaName: String(row.area_name ?? ""),
+      regionCode,
+      regionName: regionNameByCode.get(normalizeCode(regionCode)) ?? "",
+    };
+  });
+}
+
 function normalizeDisplay(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -1677,7 +1711,7 @@ export async function loadSalesReferenceData(
       .order("region_code", { ascending: true }),
     supabase
       .from("source_of_sales_areas")
-      .select("area_code,area_name,region_code,region_name")
+      .select("area_code,area_name,region_code")
       .eq("active", true)
       .order("area_code", { ascending: true }),
     supabase
@@ -1705,15 +1739,16 @@ export async function loadSalesReferenceData(
   if (productsResult.error) throw productsResult.error;
   if (distributorsResult.error) throw distributorsResult.error;
 
+  // Region names are joined from the regions master by code; the areas table does not carry
+  // region_name in every Supabase project (schema drift across staging/prod).
+  const masterRegionNameByCode = buildRegionNameByCode(
+    newRegionsResult.error ? [] : (newRegionsResult.data ?? []),
+  );
+
   let areas: SalesAreaReference[] = [];
   let regions: SalesAreaRegionReference[] = [];
   if (!areasResult.error) {
-    areas = (areasResult.data ?? []).map((row) => ({
-      areaCode: String(row.area_code ?? ""),
-      areaName: String(row.area_name ?? ""),
-      regionCode: String(row.region_code ?? ""),
-      regionName: String(row.region_name ?? ""),
-    }));
+    areas = buildAreaReferencesFromRows(areasResult.data ?? [], masterRegionNameByCode);
   } else {
     const legacyRegionsResult = await supabase
       .from("source_of_sales_area_regions")
@@ -3026,23 +3061,13 @@ async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
   if (areasResult.error) throw areasResult.error;
   if (regionsResult.error) throw regionsResult.error;
 
-  const regionNames = new Map<string, string>();
-  (regionsResult.data ?? []).forEach((row) => {
-    const record = row as Record<string, unknown>;
-    const code = normalizeCode(record.region_code);
-    if (code) regionNames.set(code, String(record.region_name ?? ""));
-  });
-
-  return (areasResult.data ?? []).map((row) => {
-    const record = row as Record<string, unknown>;
-    const regionCode = String(record.region_code ?? "");
-    return {
-      areaCode: String(record.area_code ?? ""),
-      areaName: String(record.area_name ?? ""),
-      regionCode,
-      regionName: regionNames.get(normalizeCode(regionCode)) ?? "",
-    };
-  });
+  const regionNameByCode = buildRegionNameByCode(
+    (regionsResult.data ?? []) as Array<Record<string, unknown>>,
+  );
+  return buildAreaReferencesFromRows(
+    (areasResult.data ?? []) as Array<Record<string, unknown>>,
+    regionNameByCode,
+  );
 }
 
 async function listLineProductsForClosing(line: string): Promise<SalesProductReference[]> {

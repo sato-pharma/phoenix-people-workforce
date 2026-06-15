@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import {
+  buildAreaReferencesFromRows,
   buildMonthlyClosingMatrix,
+  buildRegionNameByCode,
   buildSourceOfSalesDashboard,
   filterMonthlyClosingMatrix,
   normalizeSourceOfSalesProductInput,
@@ -520,4 +522,32 @@ export async function runSalesDistributorImportTests() {
     assert.equal(combo.grandTotal.cells[columnIndex].salesUnits, Number(areaSum.toFixed(6)));
     assert.equal(combo.grandTotal.cells[columnIndex].salesUnits, Number(subtotalSum.toFixed(6)));
   });
+
+  // Regression: source_of_sales_areas has no `region_name` column in every Supabase
+  // project (production doesn't), so the area-row mapper must join the Region NAME from the
+  // regions master by code — never read it off the area row. Guards the schema-drift fix.
+  const regionNameByCode = buildRegionNameByCode([
+    { region_code: "CA", region_name: "Cairo" },
+    { region_code: "AB", region_name: "Alex" },
+    { region_code: "", region_name: "Should Be Ignored" },
+  ]);
+  assert.equal(regionNameByCode.get("CA"), "Cairo");
+  assert.equal(regionNameByCode.get(""), undefined); // blank code is never stored
+
+  const areaRefs = buildAreaReferencesFromRows(
+    [
+      // No `region_name` field at all — exactly the production areas-table shape.
+      { area_code: "A1", area_name: "Area One", region_code: "CA" },
+      // Lowercase / padded code still resolves via normalizeCode.
+      { area_code: "A2", area_name: "Area Two", region_code: " ab " },
+      // Region code with no master match → empty string, never undefined or a throw.
+      { area_code: "A3", area_name: "Area Three", region_code: "ZZ" },
+    ],
+    regionNameByCode,
+  );
+  assert.equal(areaRefs[0]?.regionName, "Cairo");
+  assert.equal(areaRefs[1]?.regionName, "Alex"); // " ab " normalized to "AB" before lookup
+  assert.equal(areaRefs[1]?.regionCode, " ab "); // raw code is preserved as-is
+  assert.equal(areaRefs[2]?.regionName, ""); // unmatched code → "" (no throw)
+  assert.equal(areaRefs[2]?.areaName, "Area Three");
 }
