@@ -13,6 +13,7 @@ import {
   type SourceOfSalesUploadBatch,
   type SalesDistributorOption,
 } from "@/lib/sales/monthly-distributor-import";
+import { listNormalizerDistributors } from "@/lib/sales/normalizer/service";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default async function SalesImportPage() {
       initialDashboard={initialDashboard}
       initialError={initialError}
       initialProducts={initialProducts}
+      profiledDistributorCodes={listNormalizerDistributors().map((distributor) => distributor.code)}
     />
   );
 }

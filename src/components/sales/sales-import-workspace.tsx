@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
-  Copy,
   Database,
   FileSpreadsheet,
   Filter,
@@ -27,6 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
@@ -54,6 +54,8 @@ type Props = {
   initialDashboard: SourceOfSalesDashboard | null;
   initialError: string | null;
   initialProducts: SourceOfSalesProduct[];
+  /** Distributor codes that have a normalizer layout profile (gates the Mapping tab's Learn/Analyze). */
+  profiledDistributorCodes: string[];
 };
 
 type ValidationResponse = {
@@ -655,64 +657,9 @@ function SourceOfSalesDashboardPanel({
   );
 }
 
-type SourceOfSalesTab = "dashboard" | "products" | "sheets";
+type SourceOfSalesTab = "dashboard" | "mapping" | "products" | "sheets";
 
-// Coded headers to paste into Excel. TAB-separated so each header lands in its OWN cell on paste.
-const CODED_PASTE_HEADER_VALUES = ["Discount%", "Product ID", "Brick ID", "Area ID", "Region ID", "Distrub ID"] as const;
-const CODED_PASTE_HEADERS = `${CODED_PASTE_HEADER_VALUES.join("\t")}\r\n`;
-
-function escapeClipboardHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function codedHeadersClipboardHtml() {
-  const cells = CODED_PASTE_HEADER_VALUES.map((header) => `<td>${escapeClipboardHtml(header)}</td>`).join("");
-  return `<table><tbody><tr>${cells}</tr></tbody></table>`;
-}
-
-async function copyCodedHeadersToClipboard() {
-  if (typeof navigator !== "undefined" && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-    try {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          "text/html": new Blob([codedHeadersClipboardHtml()], { type: "text/html" }),
-          "text/plain": new Blob([CODED_PASTE_HEADERS], { type: "text/plain" }),
-        }),
-      ]);
-      return;
-    } catch {
-      // Fall through to the wider-supported plain text path below.
-    }
-  }
-
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(CODED_PASTE_HEADERS);
-    return;
-  }
-
-  const textArea = document.createElement("textarea");
-  textArea.value = CODED_PASTE_HEADERS;
-  textArea.setAttribute("readonly", "");
-  textArea.style.left = "-9999px";
-  textArea.style.position = "fixed";
-  textArea.style.top = "0";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-
-  try {
-    document.execCommand("copy");
-  } finally {
-    document.body.removeChild(textArea);
-  }
-}
-
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -723,7 +670,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batches, setBatches] = useState(initialBatches);
   const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
-  const [headersCopied, setHeadersCopied] = useState(false);
   const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
   const [productsCount, setProductsCount] = useState(initialProducts.length);
   const [result, setResult] = useState<DistributorSalesValidationResult | null>(null);
@@ -948,21 +894,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               </div>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <Button
-                className="gap-2"
-                onClick={async () => {
-                  try {
-                    await copyCodedHeadersToClipboard();
-                    setHeadersCopied(true);
-                    setTimeout(() => setHeadersCopied(false), 1800);
-                  } catch { /* clipboard blocked — nothing to surface */ }
-                }}
-                title="Copy the 6 coded headers (Discount%, Product ID, Brick ID, Area ID, Region ID, Distrub ID) — paste into Excel and each lands in its own cell."
-                variant="secondary"
-              >
-                {headersCopied ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                {headersCopied ? "Copied!" : "Copy headers"}
-              </Button>
               <Link href="/sales">
                 <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]">
                   <Table2 className="h-4 w-4" />
@@ -1013,6 +944,17 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
+              activeTab === "mapping" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("mapping")}
+            variant="secondary"
+          >
+            <Database className="h-4 w-4" />
+            Mapping
+          </Button>
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
               activeTab === "products" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
             )}
             onClick={() => setActiveTab("products")}
@@ -1051,8 +993,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             <AdminCallout tone="neutral">
               <FileSpreadsheet className="mt-0.5 h-4 w-4" />
               <div>
-                <p className="font-semibold">Upload any distributor sheet — raw or coded.</p>
-                <p className="text-sm">Pick the <b>correct distributor</b>, then attach either its <b>raw export</b> or a <b>raw + coded</b> sheet. Missing Brick/Area/Region auto-fill from the customer map; any unmapped rows still show up in “Rows to Fix.”</p>
+                <p className="font-semibold">Upload the distributor&apos;s raw export — as-is.</p>
+                <p className="text-sm">Pick the <b>correct distributor</b> and attach its <b>raw export</b> (no need to add coded columns by hand). Set up the product and customer mappings once on the <b>Mapping</b> tab; products, bricks, area, and region resolve automatically, and any unmapped rows show up in “Rows to Fix.” Coded sheets are still accepted.</p>
               </div>
             </AdminCallout>
           </div>
@@ -1228,6 +1170,13 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </>
         ) : null}
           </>
+        ) : activeTab === "mapping" ? (
+          <SourceOfSalesMappingTab
+            distributorCode={selectedDistributorCode}
+            distributors={distributors}
+            onDistributorChange={setSelectedDistributorCode}
+            profiledDistributorCodes={profiledDistributorCodes}
+          />
         ) : (
           <SourceOfSalesProductsTab
             initialProducts={initialProducts}
