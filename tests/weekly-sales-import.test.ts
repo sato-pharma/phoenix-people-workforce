@@ -425,6 +425,25 @@ export async function runWeeklySalesImportTests() {
       const stockRow = rm.rows.find((row) => row.productCode === "SA001" && row.stockQty === 40 && !row.branchCode);
       assert.ok(stockRow, "RM stock-only row present under empty branch");
       assert.equal(rm.result.totals.stockQty, 40, "RM stock total from الإجمالى");
+
+      // The branchless stock grand-total must NOT create a phantom "—" region/branch on the dashboard.
+      assert.equal(
+        rm.result.byRegion.some((r) => !r.regionCode || r.regionCode === "—"),
+        false,
+        "RM byRegion has no empty/— bucket from the stock grand-total",
+      );
+      assert.equal(
+        rm.result.byBranch.some((b) => !b.branchCode || b.branchCode === "—"),
+        false,
+        "RM byBranch has no empty/— bucket from the stock grand-total",
+      );
+      // Stock stays visible where it belongs: under the product and in the grand totals.
+      const sagProduct = rm.result.byProduct.find((p) => p.productCode === "SA001");
+      assert.ok(sagProduct, "RM byProduct has SA001");
+      assert.equal(sagProduct?.stockQty, 40, "RM stock shown under the product (not a phantom region)");
+      // Real sales geography is untouched: Cairo + Giza regions still present.
+      assert.ok(rm.result.byRegion.some((r) => r.regionCode === "CA"), "RM byRegion keeps Cairo");
+      assert.ok(rm.result.byRegion.some((r) => r.regionCode === "GZ"), "RM byRegion keeps Giza");
     }
 
     // صافى كمية (col15) is AUTHORITATIVE: when it diverges from بيع − مرتجع, the parser must use
