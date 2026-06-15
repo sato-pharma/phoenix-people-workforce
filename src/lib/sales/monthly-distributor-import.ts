@@ -1336,9 +1336,9 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       }
     }
 
-    const areaCode = normalizeCode(rawAreaCode);
+    let areaCode = normalizeCode(rawAreaCode);
     const brickId = normalizeCode(rawBrickId);
-    const regionCode = normalizeCode(rawRegionCode);
+    let regionCode = normalizeCode(rawRegionCode);
     const productCode = normalizeCode(rawProductCode);
     const rowDistributorCode = normalizeCode(rawDistributorCode);
     const parsedQty = parseNumber(rawQty);
@@ -1366,9 +1366,21 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const rawSheetValue = valueAtHeader(row, headerMap, headerMap.template.valueField);
 
     const productReference = !isNotAvailable(rawProductCode) ? maps.productByCode.get(productCode) : undefined;
-    const regionReference = !isNotAvailable(rawRegionCode) ? maps.regionByCode.get(regionCode) : undefined;
-    const areaReference = !isNotAvailable(rawAreaCode) ? maps.areaByCode.get(areaCode) : undefined;
     const brickReference = !isNotAvailable(rawBrickId) ? maps.brickById.get(brickId) : undefined;
+
+    // The brick is the single source of truth for geography. When a row carries a brick that
+    // exists in the master, its Region and Area ALWAYS come from the brick's master record;
+    // the distributor sheet's own Region/Area columns are deliberately ignored (they often hold
+    // the distributor's private territory labels — e.g. "BEHIRA 2" — which are not our regions).
+    // Region-only channels (Direct) have no brick and keep their own sheet region.
+    const geographyFromBrick = !headerMap.template.regionOnly && Boolean(brickReference);
+    if (brickReference && geographyFromBrick) {
+      areaCode = normalizeCode(brickReference.areaCode);
+      regionCode = normalizeCode(brickReference.regionCode);
+    }
+
+    const regionReference = regionCode ? maps.regionByCode.get(regionCode) : undefined;
+    const areaReference = areaCode ? maps.areaByCode.get(areaCode) : undefined;
     const blockReference = brickReference ? maps.blockByCode.get(normalizeCode(brickReference.blockCode)) : undefined;
 
     // Value is computed from Qty only (bonus/free units neglected) times the
@@ -1381,13 +1393,15 @@ async function parseDistributorSalesWorkbookBuffer(input: {
         ? qty * (productReference?.factoryPrice ?? 0) * (1 - discountRate)
         : Number.NaN;
 
-    const regionName = normalizeDisplay(rawRegionName)
+    // When geography is taken from the brick, the master Region/Area NAMES win too, so a stored
+    // display name can never disagree with the master code that was just assigned.
+    const regionName = (geographyFromBrick ? "" : normalizeDisplay(rawRegionName))
       || regionReference?.regionName
       || areaReference?.regionName
       || brickReference?.regionName
       || regionCode
       || "";
-    const areaName = normalizeDisplay(rawAreaName)
+    const areaName = (geographyFromBrick ? "" : normalizeDisplay(rawAreaName))
       || areaReference?.areaName
       || brickReference?.areaName
       || areaCode
@@ -1409,13 +1423,18 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     // Region-only channels (Direct) carry no Area/Brick, so those are neither checked for
     // #N/A nor required. Region, product, distributor, date and qty are always required.
     const naFields: Array<[string, unknown]> = [
-      [headerMap.template.fields.regionCode, rawRegionCode],
       [headerMap.template.fields.productCode, rawProductCode],
       [headerMap.template.fields.distributorCode, rawDistributorCode],
       [headerMap.template.fields.invoiceDate, rawInvoiceDate],
       [headerMap.template.fields.qty, rawQty],
     ];
-    if (headerMap.template.fields.areaCode) naFields.push([headerMap.template.fields.areaCode, rawAreaCode]);
+    // When geography comes from the brick, the sheet's Region/Area columns are ignored entirely,
+    // so a blank/#N/A in them is not a problem. Otherwise Region (and Area, when the template has
+    // one) are still required and must not be #N/A.
+    if (!geographyFromBrick) {
+      naFields.push([headerMap.template.fields.regionCode, rawRegionCode]);
+      if (headerMap.template.fields.areaCode) naFields.push([headerMap.template.fields.areaCode, rawAreaCode]);
+    }
     if (headerMap.template.fields.brickId) naFields.push([headerMap.template.fields.brickId, rawBrickId]);
 
     naFields.forEach(([field, raw]) => {
