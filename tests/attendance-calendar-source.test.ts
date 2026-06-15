@@ -17,6 +17,11 @@ import {
   countHrWorkingDays,
   isHrWorkingDay,
 } from "../src/lib/hr-calendar/calendar-logic.ts";
+import {
+  formatAttendanceWorkingWeekdays,
+  isAttendanceScheduledWorkingDay,
+  normalizeAttendanceWorkingWeekdays,
+} from "../src/lib/attendance/work-schedule.ts";
 import type { HrCalendarEmployee } from "../src/lib/hr-calendar/types.ts";
 
 export function runAttendanceCalendarSourceTests() {
@@ -165,6 +170,10 @@ export function runAttendanceCalendarSourceTests() {
     "2026-05-31",
   );
   assert.equal(selectedPolicy?.target_type, "employee_hr_id");
+  assert.deepEqual(normalizeAttendanceWorkingWeekdays("{1,3}"), [1, 3]);
+  assert.equal(formatAttendanceWorkingWeekdays([1, 3]), "Mon, Wed");
+  assert.equal(isAttendanceScheduledWorkingDay({ dateIso: "2026-06-08", workingWeekdays: [1, 3] }), true);
+  assert.equal(isAttendanceScheduledWorkingDay({ dateIso: "2026-06-09", workingWeekdays: [1, 3] }), false);
   assert.deepEqual(summarizeAttendancePolicies([
     { isActive: true, targetType: "default" },
     { isActive: true, targetType: "job_title" },
@@ -235,6 +244,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(fingerprintSource, /resolvePolicyAttendanceStatus/);
   assert.match(fingerprintSource, /resolveActiveAttendancePolicy/);
   assert.match(fingerprintSource, /summarizeFingerprintRows/);
+  assert.match(fingerprintSource, /workingDays/);
 
   const mappingSource = readFileSync("src/lib/attendance/device-user-mapping.ts", "utf8");
   assert.match(mappingSource, /resolveDeviceMappingStatus/);
@@ -245,6 +255,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(policySource, /deleteAttendancePolicy/);
   assert.match(policySource, /"exception"/);
   assert.match(policySource, /validatePolicyRules/);
+  assert.match(policySource, /workingWeekdays/);
   const policyManagerSource = readFileSync("src/components/attendance/attendance-policies-manager.tsx", "utf8");
   assert.match(policyManagerSource, /Add exception/);
   assert.match(policyManagerSource, /Delete rule/);
@@ -254,6 +265,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(policyManagerSource, /Day fraction/);
   assert.match(policyManagerSource, /9-5 \+ 10 min grace/);
   assert.match(policyManagerSource, /scrollIntoView/);
+  assert.match(policyManagerSource, /Custom Workdays/);
   assert.match(policyManagerSource, /Policy Priority/);
   assert.match(policyManagerSource, /Draft Snapshot/);
   assert.match(policyManagerSource, /Configured Policies/);

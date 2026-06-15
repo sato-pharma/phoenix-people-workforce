@@ -18,6 +18,11 @@ import type {
   AttendancePolicyTargetType,
 } from "@/lib/attendance/policies";
 import { resolvePolicyAttendanceStatus } from "@/lib/attendance/metrics";
+import {
+  attendanceWeekdayOptions,
+  formatAttendanceWorkingWeekdays,
+  type AttendanceWorkingWeekday,
+} from "@/lib/attendance/work-schedule";
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-100/60 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
@@ -53,6 +58,7 @@ type PolicyForm = {
   scheduledStart: string;
   targetType: AttendancePolicyTargetType;
   targetValue: string;
+  workingWeekdays: string[];
 };
 
 const blankRule: RuleForm = {
@@ -88,6 +94,7 @@ function blankPolicy(): PolicyForm {
     scheduledStart: "09:00",
     targetType: "default",
     targetValue: "",
+    workingWeekdays: [],
   };
 }
 
@@ -112,6 +119,7 @@ function formFromPolicy(policy: AttendancePolicyGroup): PolicyForm {
     scheduledStart: policy.scheduledStart,
     targetType: policy.targetType,
     targetValue: policy.targetType === "default" ? "" : policy.targetValue,
+    workingWeekdays: policy.workingWeekdays.map(String),
   };
 }
 
@@ -235,6 +243,7 @@ function previewRows(form: PolicyForm) {
     scheduled_start: form.scheduledStart,
     target_type: form.targetType,
     target_value: form.targetValue || null,
+    working_weekdays: form.workingWeekdays.map(Number),
   };
   const rules = form.rules.map((rule, index) => ({
     deduction_days: numberOrNull(rule.deductionDays) == null ? null : rule.deductionDays,
@@ -413,6 +422,19 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     }));
   }
 
+  function toggleWorkingWeekday(day: AttendanceWorkingWeekday) {
+    setForm((current) => {
+      const value = String(day);
+      const workingWeekdays = current.workingWeekdays.includes(value)
+        ? current.workingWeekdays.filter((entry) => entry !== value)
+        : [...current.workingWeekdays, value];
+      return {
+        ...current,
+        workingWeekdays: workingWeekdays.sort((left, right) => Number(left) - Number(right)),
+      };
+    });
+  }
+
   function updateRule(index: number, patch: Partial<RuleForm>) {
     setForm((current) => ({
       ...current,
@@ -562,6 +584,38 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   <span>Active</span>
                   <input checked={form.isActive} className="h-4 w-4 accent-orange-600" type="checkbox" onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
                 </label>
+                <div className="space-y-2 md:col-span-2 xl:col-span-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={labelClassName}>Custom Workdays</span>
+                    {form.workingWeekdays.length > 0 ? (
+                      <Button variant="secondary" type="button" onClick={() => setForm({ ...form, workingWeekdays: [] })}>
+                        Use standard weekend policy
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {attendanceWeekdayOptions.map((day) => {
+                      const selected = form.workingWeekdays.includes(String(day.value));
+                      return (
+                        <button
+                          className={`h-9 rounded-lg border px-3 text-xs font-black transition ${
+                            selected
+                              ? "border-orange-400 bg-orange-50 text-orange-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                          }`}
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleWorkingWeekday(day.value)}
+                        >
+                          {day.shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500">
+                    Empty uses the standard company weekend rules. Selected days become the only expected attendance days.
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
@@ -593,6 +647,10 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Grace</p>
                     <p className="mt-1 text-sm font-black text-white">{form.graceMinutes || 0} minutes</p>
                   </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Workdays</p>
+                  <p className="mt-1 text-sm font-black text-white">{formatAttendanceWorkingWeekdays(form.workingWeekdays)}</p>
                 </div>
                 <div className="rounded-lg border border-orange-400/25 bg-orange-500/10 p-3">
                   <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-200">Rules Drafted</p>
@@ -774,9 +832,10 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black text-slate-800">
-                      {policy.scheduledStart} - {policy.scheduledEnd}
-                    </span>
+                    <div className="inline-flex flex-col rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="text-sm font-black text-slate-800">{policy.scheduledStart} - {policy.scheduledEnd}</span>
+                      <span className="text-xs font-semibold text-slate-500">{formatAttendanceWorkingWeekdays(policy.workingWeekdays)}</span>
+                    </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">{policy.graceMinutes} min daily</td>
                   <td className="px-4 py-3 text-sm text-slate-700">

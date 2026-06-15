@@ -22,6 +22,7 @@ export type AttendancePolicySelectionInput = {
   scheduled_start?: string | null;
   target_type: string | null;
   target_value: string | null;
+  working_weekdays?: number[] | null;
 };
 
 export type AttendancePolicyRuleSelectionInput = {

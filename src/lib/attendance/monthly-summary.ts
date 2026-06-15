@@ -1,5 +1,6 @@
 import { getFingerprintAttendanceReport, type FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
-import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { getAttendanceRoster, isWithinEmploymentSpan } from "@/lib/attendance/roster";
 import {
   buildAttendanceCalendarContext,
@@ -101,10 +102,11 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
 
   const roster = await getAttendanceRoster({ dateFromIso: dateFrom, dateToIso: dateTo });
 
-  const [report, context, leaveMap] = await Promise.all([
+  const [report, context, leaveMap, policyRows] = await Promise.all([
     getFingerprintAttendanceReport({ dateFrom, dateTo }),
     buildAttendanceCalendarContext({ dateFromIso: dateFrom, dateToIso: dateTo }),
     getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: roster.map((entry) => entry.hrId) }),
+    loadAttendancePolicyGroups({ activeOnly: true }),
   ]);
 
   // hrId -> dateIso -> engine row (engine rows only exist for days with punches).
@@ -139,7 +141,8 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
     for (const dateIso of monthDays) {
       // Days outside the employment span (before hire / after exit) are not expected.
       if (!isWithinEmploymentSpan(employee, dateIso)) continue;
-      const day = classifyAttendanceDay({ context, dateIso, jobTitle });
+      const policy = resolveActiveAttendancePolicy({ hr_id: hrId, job_title: jobTitle }, policyRows, dateIso, dateIso);
+      const day = classifyAttendanceDay({ context, dateIso, jobTitle, workingWeekdays: policy?.working_weekdays });
       if (day.isFuture) continue;
       if (day.isHoliday && !day.isWeeklyOff) holidayDays += 1;
       if (!day.isExpectedWorkingDay) continue;

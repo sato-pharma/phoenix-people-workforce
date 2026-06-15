@@ -303,7 +303,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           title="Employee Policy Details"
         >
           <div className="phoenix-horizontal-scroll overflow-x-auto">
-            <table className="min-w-[1100px] border-separate border-spacing-0 text-left">
+            <table className="min-w-[1180px] border-separate border-spacing-0 text-left">
               <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                 <tr>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
@@ -313,6 +313,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                   <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled Start</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Scheduled End</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Daily Grace</th>
+                  <th className="border-b border-r border-slate-200 px-4 py-3">Workdays</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Policy</th>
                   <th className="border-b border-slate-200 px-4 py-3">Effective</th>
                 </tr>
@@ -327,6 +328,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                     <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledStart || "-"}</td>
                     <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.scheduledEnd || "-"}</td>
                     <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.graceMinutes || "-"}</td>
+                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.workingDays || "-"}</td>
                     <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.policyName}</td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
                       {row.effectiveFrom || "-"}{row.effectiveTo ? ` to ${row.effectiveTo}` : ""}
@@ -335,7 +337,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
                 ))}
                 {policyDetails.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={9}>
+                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
                       No employee policy details match this filter.
                     </td>
                   </tr>

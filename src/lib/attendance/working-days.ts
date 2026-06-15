@@ -1,7 +1,7 @@
-import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 
 const workingDaysTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -136,19 +136,24 @@ export type AttendanceDayClassification = {
 };
 
 /**
- * Classifies one calendar day for one employee. Weekly off follows the company
- * weekend policy: Friday always off; Saturday off unless the title is a
- * Friday-only field title (medical rep / district manager).
+ * Classifies one calendar day for one employee. When a policy defines custom
+ * weekdays, only those weekdays are expected; otherwise the company weekend
+ * policy is used.
  */
 export function classifyAttendanceDay(input: {
   context: AttendanceCalendarContext;
   dateIso: string;
   jobTitle?: string | null;
+  workingWeekdays?: unknown;
 }): AttendanceDayClassification {
   const holidayName = input.context.holidaysByDate.get(input.dateIso) ?? null;
   const isFuture = input.dateIso > input.context.todayIso;
   const isHoliday = holidayName != null;
-  const isWeeklyOff = isFieldWorkforceWeeklyOff({ dateIso: input.dateIso, title: input.jobTitle ?? null });
+  const isWeeklyOff = !isAttendanceScheduledWorkingDay({
+    dateIso: input.dateIso,
+    jobTitle: input.jobTitle ?? null,
+    workingWeekdays: input.workingWeekdays,
+  });
   return {
     dateIso: input.dateIso,
     holidayName,

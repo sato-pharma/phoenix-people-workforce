@@ -1,6 +1,9 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
+import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -190,6 +193,15 @@ async function loadAttendanceItems(employeeHrIds: string[], start: string, end: 
   }
 }
 
+async function loadAttendancePolicyScheduleRows() {
+  try {
+    return await loadAttendancePolicyGroups({ activeOnly: true });
+  } catch (error) {
+    if (schemaMissing(error, "attendance_policy_groups")) return [];
+    throw error;
+  }
+}
+
 async function loadVacationItems(employeeHrIds: string[], start: string, end: string) {
   try {
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
@@ -328,13 +340,14 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, plans, holidays, doubleVisits] = await Promise.all([
+  const [attendance, vacations, excuses, plans, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
     loadAttendanceItems(scopeHrIds, start, end),
     loadVacationItems(scopeHrIds, start, end),
     loadExcuseItems(scopeHrIds, start, end),
     loadPlanItems(scopeHrIds, start, end),
     loadHolidayItems(input.year, input.month, start, end),
     loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
+    loadAttendancePolicyScheduleRows(),
   ]);
 
   const items = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
@@ -350,6 +363,19 @@ export async function getPrivateCalendarWorkspace(input: {
   const exceptions = derivePrivateCalendarExceptions({
     employees: mappedScopeEmployees,
     end,
+    isExpectedWorkday: (employee, date) => {
+      const policy = resolveActiveAttendancePolicy(
+        { hr_id: employee.hrId, job_title: employee.jobTitle },
+        attendancePolicyRows,
+        date,
+        date,
+      );
+      return isAttendanceScheduledWorkingDay({
+        dateIso: date,
+        jobTitle: employee.jobTitle,
+        workingWeekdays: policy?.working_weekdays,
+      });
+    },
     items,
     start,
   });

@@ -104,6 +104,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     "Scheduled Start",
     "Scheduled End",
     "Daily Grace",
+    "Workdays",
     "Policy",
     "Effective From",
     "Effective To",
@@ -118,6 +119,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
       row.scheduledStart,
       row.scheduledEnd,
       row.graceMinutes,
+      row.workingDays,
       row.policyName,
       row.effectiveFrom,
       row.effectiveTo,
@@ -135,6 +137,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     ["Source", "Rows are calculated from attendance_raw_punches after active device user mappings resolve to employee HR_ID."],
     ["Deduction Days / Amount", "Deduction amount is estimated from employee base salary / 30 * deduction day fraction. Current report does not mutate payroll."],
     ["Scheduled Times", "Daily rows use the active policy resolved by HR_ID, then job title, then default policy. Grace minutes are a daily budget shared between late arrival and early leave."],
+    ["Workdays", "When an attendance policy has custom workdays, only those weekdays are expected attendance days. Empty workdays use the standard company weekend policy."],
   ]);
   styleHeader(notesSheet.getRow(1));
   for (let row = 2; row <= notesSheet.rowCount; row += 1) {
