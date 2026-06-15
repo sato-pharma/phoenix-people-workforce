@@ -8,6 +8,9 @@ import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
+
 export function WeeklyUploadWorkspace({
   distributors,
   initialBatches,
@@ -19,13 +22,21 @@ export function WeeklyUploadWorkspace({
 }) {
   const [distributorCode, setDistributorCode] = useState(distributors[0]?.code ?? "");
   const [file, setFile] = useState<File | null>(null);
+  const [salesFile, setSalesFile] = useState<File | null>(null);
+  const [stockFile, setStockFile] = useState<File | null>(null);
+  const [periodDate, setPeriodDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [result, setResult] = useState<WeeklySalesValidationResult | null>(null);
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
-  const [mappingFile, setMappingFile] = useState<File | null>(null);
-  const [mappingBusy, setMappingBusy] = useState(false);
-  const [mappingMessage, setMappingMessage] = useState<string | null>(null);
+
+  // Overseas (PS) ships two matrix files (sales + stock); everyone else ships one combined workbook.
+  const isPS = distributorCode === "PS";
+  // Ibn Sina Sato carries a single clean date in the sheet → auto-detected. Every other distributor
+  // either has no date (PS, Ibn Sina) or many invoice dates (EGD, RAMCO) → the period must be picked.
+  const needsPeriodDate = distributorCode !== "IS-S";
+  const filesReady = isPS ? Boolean(salesFile && stockFile) : Boolean(file);
+  const canSubmit = Boolean(distributorCode) && filesReady && (!needsPeriodDate || Boolean(periodDate));
 
   async function refreshBatches() {
     try {
@@ -37,9 +48,19 @@ export function WeeklyUploadWorkspace({
     }
   }
 
+  function resetFiles() {
+    setFile(null);
+    setSalesFile(null);
+    setStockFile(null);
+  }
+
   async function handleUpload() {
-    if (!distributorCode || !file) {
-      setError("Pick a distributor and a file first.");
+    if (!canSubmit) {
+      setError(
+        isPS
+          ? "Pick Overseas, both matrix files (sales + stock), and a period date."
+          : "Pick a distributor, a file, and (if asked) a period date.",
+      );
       return;
     }
     setBusy(true);
@@ -48,7 +69,13 @@ export function WeeklyUploadWorkspace({
     try {
       const form = new FormData();
       form.set("distributorCode", distributorCode);
-      form.set("file", file);
+      if (periodDate) form.set("periodDate", periodDate);
+      if (isPS) {
+        form.set("salesFile", salesFile as File);
+        form.set("stockFile", stockFile as File);
+      } else {
+        form.set("file", file as File);
+      }
       const response = await fetch("/api/sales/weekly/validate", { method: "POST", body: form });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
       if (payload?.data) setResult(payload.data);
@@ -73,50 +100,39 @@ export function WeeklyUploadWorkspace({
     }
   }
 
-  async function handleMappingUpload() {
-    if (!mappingFile) {
-      setError("Pick the completed POS region mapping XLSX first.");
-      return;
-    }
-    setMappingBusy(true);
-    setError(null);
-    setMappingMessage(null);
-    try {
-      const form = new FormData();
-      form.set("file", mappingFile);
-      const response = await fetch("/api/sales/weekly/pos-region-mappings", { method: "POST", body: form });
-      const payload = (await response.json()) as { success?: boolean; message?: string; error?: string };
-      if (!payload?.success) setError(payload?.error ?? "POS region mapping upload failed.");
-      else setMappingMessage(payload?.message ?? "POS region mappings updated.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "POS region mapping upload failed.");
-    } finally {
-      setMappingBusy(false);
-    }
-  }
+  const fileInputClass =
+    "h-10 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:rounded file:border-0 file:bg-[#F1F5F9] file:px-3 file:py-1.5 file:text-sm file:font-bold";
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
-        <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales Upload</h1>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Weekly Sales</span>
+        </div>
+        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Upload &amp; Validate</h1>
         <p className="mt-1 text-sm font-medium text-[#64748B]">
-          Upload a distributor&apos;s weekly Sales &amp; Stock file. Sales value is recomputed from the product
-          master or uploaded XFactor (Qty x xfactor); stock is tracked as units only. One week per file.
+          Upload a distributor&apos;s raw weekly Sales &amp; Stock file. The system maps it to your products and regions,
+          nets returns out of sales, and recomputes value as net × factory price. Nothing is stored until every row resolves.
         </p>
       </header>
 
       {/* Upload card */}
-      <div className="border border-[#E2E8F0] bg-white p-4 sm:p-5">
+      <div className={`${card} p-4 sm:p-5`}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
             <select
-              className="h-10 w-full border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-10 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
               disabled={busy}
-              onChange={(event) => setDistributorCode(event.target.value)}
+              onChange={(event) => {
+                setDistributorCode(event.target.value);
+                resetFiles();
+                setResult(null);
+              }}
               value={distributorCode}
             >
-              {distributors.length === 0 && <option value="">No weekly templates registered</option>}
+              {distributors.length === 0 && <option value="">No distributors registered</option>}
               {distributors.map((distributor) => (
                 <option key={distributor.code} value={distributor.code}>
                   {distributor.name} ({distributor.code})
@@ -124,71 +140,67 @@ export function WeeklyUploadWorkspace({
               ))}
             </select>
           </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Weekly file (.xlsx)</span>
-            <input
-              accept=".xlsx"
-              className="h-10 w-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:border-0 file:bg-[#F1F5F9] file:px-3 file:py-1.5 file:text-sm file:font-bold"
-              disabled={busy}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </label>
+
+          {isPS ? (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS sales matrix (.xlsx)</span>
+                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setSalesFile(event.target.files?.[0] ?? null)} type="file" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS stock matrix (.xlsx)</span>
+                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setStockFile(event.target.files?.[0] ?? null)} type="file" />
+              </label>
+            </>
+          ) : (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Weekly file (.xlsx)</span>
+              <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" />
+            </label>
+          )}
         </div>
+
+        {needsPeriodDate && (
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Period date</span>
+              <input
+                className="h-10 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                disabled={busy}
+                onChange={(event) => setPeriodDate(event.target.value)}
+                type="date"
+                value={periodDate}
+              />
+            </label>
+            <span className="pb-2 text-xs font-medium text-[#94A3B8]">
+              {isPS || distributorCode === "IS"
+                ? "This file has no date column — pick the week it covers."
+                : "This file spans many invoice dates — pick the period it represents."}
+            </span>
+          </div>
+        )}
+
         <div className="mt-4 flex items-center gap-3">
           <button
-            className="inline-flex h-10 items-center gap-2 bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
-            disabled={busy || !file || !distributorCode}
+            className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+            disabled={busy || !canSubmit}
             onClick={handleUpload}
             type="button"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             {busy ? "Validating…" : "Validate & Upload"}
           </button>
-          {file && <span className="truncate text-xs font-medium text-[#64748B]">{file.name}</span>}
+          {isPS && (salesFile || stockFile) && (
+            <span className="truncate text-xs font-medium text-[#64748B]">
+              {[salesFile?.name, stockFile?.name].filter(Boolean).join(" + ")}
+            </span>
+          )}
+          {!isPS && file && <span className="truncate text-xs font-medium text-[#64748B]">{file.name}</span>}
         </div>
-      </div>
-
-      <div className="border border-[#E2E8F0] bg-[#FFF7ED] p-4 sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#9A3412]">Overseas POS region mapping</h2>
-            <p className="mt-1 max-w-3xl text-sm font-medium text-[#7C2D12]">
-              The overseas POS weekly template has unstable outlet columns. Download the mapping XLSX, map each POS
-              column to an official Region ID, upload it here, then upload the weekly POS file.
-            </p>
-          </div>
-          <a
-            className="inline-flex h-10 items-center justify-center gap-2 border border-[#FDBA74] bg-white px-4 text-sm font-black text-[#9A3412] transition hover:bg-[#FFEDD5]"
-            href="/api/sales/weekly/pos-region-mappings/template"
-          >
-            <Download className="h-4 w-4" />
-            Download mapping XLSX
-          </a>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
-          <input
-            accept=".xlsx"
-            className="h-10 w-full border border-[#FDBA74] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:border-0 file:bg-[#FFEDD5] file:px-3 file:py-1.5 file:text-sm file:font-bold"
-            disabled={mappingBusy}
-            onChange={(event) => setMappingFile(event.target.files?.[0] ?? null)}
-            type="file"
-          />
-          <button
-            className="inline-flex h-10 items-center justify-center gap-2 bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:opacity-60"
-            disabled={mappingBusy || !mappingFile}
-            onClick={handleMappingUpload}
-            type="button"
-          >
-            {mappingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {mappingBusy ? "Uploading..." : "Upload mapping"}
-          </button>
-        </div>
-        {mappingMessage && <p className="mt-2 text-xs font-bold text-emerald-700">{mappingMessage}</p>}
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+        <div className="flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -199,15 +211,15 @@ export function WeeklyUploadWorkspace({
       {/* Recent uploads */}
       <section>
         <h2 className="mb-2 text-sm font-black uppercase tracking-[0.12em] text-[#64748B]">Recent weekly uploads</h2>
-        <div className="overflow-x-auto border border-[#E2E8F0] bg-white">
+        <div className={`overflow-x-auto ${card}`}>
           <table className="w-full text-sm">
-            <thead className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-wide text-[#64748B]">
+            <thead className={darkHead}>
               <tr>
-                <th className="px-3 py-2">Week</th>
+                <th className="px-3 py-2">Period</th>
                 <th className="px-3 py-2">Distributor</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Rows</th>
-                <th className="px-3 py-2 text-right">Sales units</th>
+                <th className="px-3 py-2 text-right">Net units</th>
                 <th className="px-3 py-2 text-right">Sales value</th>
                 <th className="px-3 py-2 text-right">Stock units</th>
                 <th className="px-3 py-2" />
@@ -222,12 +234,12 @@ export function WeeklyUploadWorkspace({
                 </tr>
               )}
               {batches.map((batch) => (
-                <tr className="border-t border-[#F1F5F9]" key={batch.id}>
+                <tr className="border-t border-[#FFE8D6]" key={batch.id}>
                   <td className="px-3 py-2 font-bold text-[#0F172A]">{batch.weekStart ?? "—"}</td>
                   <td className="px-3 py-2">{batch.distributorName}</td>
                   <td className="px-3 py-2">
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 text-[11px] font-black ${
+                      className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${
                         batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                       }`}
                     >
@@ -235,7 +247,7 @@ export function WeeklyUploadWorkspace({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalSalesQty)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalNetQty)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalSalesValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
@@ -258,20 +270,53 @@ export function WeeklyUploadWorkspace({
   );
 }
 
+function downloadUnmapped(result: WeeklySalesValidationResult) {
+  // Build a quick reference list of the distinct unmapped values from the failure issues, so the
+  // admin knows exactly what to add on the mapping pages.
+  const seen = new Set<string>();
+  const lines = ["field,value,reason"];
+  for (const issue of result.issues) {
+    if (issue.severity !== "failure") continue;
+    const value = (issue.value ?? "").replace(/"/g, "'");
+    const dedupeKey = `${issue.field}|${value}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    lines.push(`${issue.field},"${value}","${issue.message.replace(/"/g, "'")}"`);
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `weekly-unmapped-${result.distributor.code}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
   const validated = result.status === "validated";
+  const isPS = result.distributor.code === "PS";
+  const hasFailures = result.failedRows > 0;
+  const t = result.totals;
+
   return (
-    <div className="border border-[#E2E8F0] bg-white">
+    <div className={card}>
       <div
-        className={`flex items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black ${
+        className={`flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black ${
           validated ? "text-emerald-700" : "text-amber-700"
         }`}
       >
         {validated ? <CheckCircle2 className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
-        {validated ? `Stored — week of ${result.weekStart ?? "—"}` : "Validation blocked"}
-        <span className="ml-auto text-xs font-bold text-[#64748B]">
-          {result.distributor.name} · {result.templateName}
-        </span>
+        {validated ? `Stored — period of ${result.weekStart ?? "—"}` : "Validation blocked — nothing stored"}
+        <span className="ml-auto text-xs font-bold text-[#64748B]">{result.distributor.name}</span>
+        {hasFailures && (
+          <button
+            className="inline-flex h-8 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+            onClick={() => downloadUnmapped(result)}
+            type="button"
+          >
+            <Download className="h-3.5 w-3.5" /> Unmapped items (.csv)
+          </button>
+        )}
       </div>
 
       {result.blockingReasons.length > 0 && (
@@ -282,25 +327,59 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
         </ul>
       )}
 
-      <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-4 lg:grid-cols-6">
+      {isPS && (
+        <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">
+          Overseas POS files carry a single net quantity per outlet, so Sales and Return are shown as the net figure
+          (Return = 0); Net is the true value.
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-4 lg:grid-cols-7">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
-        <Metric label="Warnings" value={num(result.warningRows)} />
-        <Metric label="Sales units" value={num(result.totals.salesQty)} />
-        <Metric label="Sales value" value={money(result.totals.salesValue)} />
-        <Metric label="Stock units" value={num(result.totals.stockQty)} />
+        <Metric label="Sales units" value={num(t.salesQty)} />
+        <Metric label="Return units" value={num(t.returnQty)} />
+        <Metric label="Net units" value={num(t.netQty)} accent />
+        <Metric label="Sales value" value={money(t.salesValue)} accent />
+        <Metric label="Stock units" value={num(t.stockQty)} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
         <SummaryTable
-          title="By region"
-          head={["Region", "Sales units", "Sales value", "Stock units"]}
-          rows={result.byRegion.map((r) => [r.regionName || r.regionCode, num(r.salesQty), money(r.salesValue), num(r.stockQty)])}
+          title="By product (Sales / Return / Net)"
+          head={["Product", "Sales", "Return", "Net", "Value", "Stock"]}
+          rows={result.byProduct.map((p) => [
+            p.productName || p.productCode,
+            num(p.salesQty),
+            num(p.returnQty),
+            num(p.netQty),
+            money(p.salesValue),
+            num(p.stockQty),
+          ])}
         />
         <SummaryTable
-          title="By product"
-          head={["Product", "Sales units", "Sales value", "Stock units"]}
-          rows={result.byProduct.map((p) => [p.productName || p.productCode, num(p.salesQty), money(p.salesValue), num(p.stockQty)])}
+          title="By branch (Sales / Return / Net)"
+          head={["Branch", "Sales", "Return", "Net", "Value", "Stock"]}
+          rows={result.byBranch.map((b) => [
+            b.branchName || b.branchCode,
+            num(b.salesQty),
+            num(b.returnQty),
+            num(b.netQty),
+            money(b.salesValue),
+            num(b.stockQty),
+          ])}
+        />
+        <SummaryTable
+          title="By region (Sales / Return / Net)"
+          head={["Region", "Sales", "Return", "Net", "Value", "Stock"]}
+          rows={result.byRegion.map((r) => [
+            r.regionName || r.regionCode,
+            num(r.salesQty),
+            num(r.returnQty),
+            num(r.netQty),
+            money(r.salesValue),
+            num(r.stockQty),
+          ])}
         />
       </div>
 
@@ -309,16 +388,14 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
           <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-[#64748B]">
             Row issues ({result.issues.length})
           </h3>
-          <div className="max-h-56 overflow-auto border border-[#F1F5F9]">
+          <div className="max-h-56 overflow-auto rounded-[6px] border border-[#FFE8D6]">
             <table className="w-full text-xs">
               <tbody>
                 {result.issues.slice(0, 100).map((issue, index) => (
-                  <tr className="border-t border-[#F1F5F9]" key={`${issue.rowNumber}-${index}`}>
+                  <tr className="border-t border-[#FFE8D6]" key={`${issue.rowNumber}-${index}`}>
                     <td className="px-2 py-1 font-bold text-[#64748B]">Row {issue.rowNumber}</td>
                     <td className="px-2 py-1">
-                      <span className={issue.severity === "failure" ? "text-rose-600" : "text-amber-600"}>
-                        {issue.severity}
-                      </span>
+                      <span className={issue.severity === "failure" ? "text-rose-600" : "text-amber-600"}>{issue.severity}</span>
                     </td>
                     <td className="px-2 py-1 text-[#334155]">{issue.message}</td>
                   </tr>
@@ -332,21 +409,19 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
       <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{label}</div>
-      <div className="mt-0.5 text-sm font-black tabular-nums text-[#0F172A]">{value}</div>
+      <div className={`mt-0.5 text-sm font-black tabular-nums ${accent ? "text-[#F97316]" : "text-[#0F172A]"}`}>{value}</div>
     </div>
   );
 }
 
 function SummaryTable({ title, head, rows }: { title: string; head: string[]; rows: string[][] }) {
   return (
-    <div className="border border-[#E2E8F0]">
-      <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-black uppercase tracking-wide text-[#64748B]">
-        {title}
-      </div>
+    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
+      <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">{title}</div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
@@ -359,8 +434,15 @@ function SummaryTable({ title, head, rows }: { title: string; head: string[]; ro
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td className="px-3 py-3 text-center text-[#94A3B8]" colSpan={head.length}>
+                  —
+                </td>
+              </tr>
+            )}
             {rows.map((row, rowIndex) => (
-              <tr className="border-t border-[#F1F5F9]" key={rowIndex}>
+              <tr className="border-t border-[#FFE8D6]" key={rowIndex}>
                 {row.map((cell, cellIndex) => (
                   <td
                     className={`px-3 py-1.5 ${cellIndex === 0 ? "font-semibold text-[#0F172A]" : "text-right tabular-nums text-[#334155]"}`}
