@@ -32,6 +32,7 @@ export default async function EmployeePortalDevPreviewPage() {
     data.employee.line,
     data.employee.department,
     data.employee.hrId,
+    true, // dev preview fixture: surface device-gated tabs (e.g. Fingerprint Report)
   );
 
   return (
