@@ -1,16 +1,19 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { canAccess } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
-// ─── Roles that can see ALL reports ────────────────────────────────────────
-const ADMIN_REPORT_ROLES = new Set(["Super Admin", "CEO", "Finance Manager"]);
-
-export function canViewAllReports(access: AccessContext): boolean {
-  return ADMIN_REPORT_ROLES.has(access.role);
-}
-
-export function canExportReports(access: AccessContext): boolean {
-  return canViewAllReports(access);
+// Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
+export async function canViewAllReports(access: AccessContext): Promise<boolean> {
+  if (await canAccess(access, "report_it", "export")) return true;
+  if (!access.hrId) return false;
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("report_it_dashboard_access")
+    .select("hr_id")
+    .eq("hr_id", access.hrId)
+    .maybeSingle();
+  return data !== null;
 }
 
 // ─── Submit a new report ────────────────────────────────────────────────────
@@ -96,8 +99,8 @@ export async function listReports(
     .from("report_it_reports")
     .select("*", { count: "exact" });
 
-  // Employees see only their own reports
-  if (!canViewAllReports(access)) {
+  // Employees without report_it:export see only their own reports
+  if (!(await canViewAllReports(access))) {
     if (!access.hrId) return { rows: [], total: 0 };
     query = query.eq("submitted_by_hr_id", access.hrId);
   }
@@ -153,7 +156,7 @@ export async function getReport(
 
   let query = supabase.from("report_it_reports").select("*").eq("id", id);
 
-  if (!canViewAllReports(access)) {
+  if (!(await canViewAllReports(access))) {
     if (!access.hrId) return null;
     query = query.eq("submitted_by_hr_id", access.hrId);
   }
