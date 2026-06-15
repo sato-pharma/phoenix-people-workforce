@@ -808,7 +808,6 @@ export function MobileOutstationWizard({
       kilometerReading,
       meetingAmount,
       medicalTripHrId,
-      meetingAmount,
       notes,
       otherAmount,
       pmWorkload,
