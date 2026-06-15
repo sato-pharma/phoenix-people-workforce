@@ -151,6 +151,16 @@ function moneyFormat(cell: ExcelJS.Cell) {
   cell.numFmt = '#,##0.00';
 }
 
+// Distance / count columns are whole numbers, not currency.
+function countFormat(cell: ExcelJS.Cell) {
+  cell.numFmt = '#,##0';
+}
+
+function applyNumericFormat(cell: ExcelJS.Cell, key: string) {
+  if (key === "km") countFormat(cell);
+  else moneyFormat(cell);
+}
+
 function styleBand(cell: ExcelJS.Cell, fill: string, fontColor = WHITE) {
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
   cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: fontColor } };
@@ -228,7 +238,7 @@ async function buildOutstationExpenseWorkbook(
   dashboard.mergeCells("A14:J14");
   const dashboardNote = dashboard.getCell("A14");
   dashboardNote.value =
-    "Policy signal: totals are based on Travel Cost + Meeting Amount + Allowance + Other. The detailed sheet preserves the source report headers exactly.";
+    "Total is the authoritative per-row amount. Component columns (Travel Cost, Meeting Amount, Allowance, Other) are provided for breakdown and may not re-sum to Total for historically imported rows. The detailed sheet preserves the source report headers exactly.";
   dashboardNote.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEDD5" } };
   dashboardNote.font = { name: "Calibri", size: 11, bold: true, color: { argb: SLATE } };
   dashboardNote.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
@@ -251,7 +261,7 @@ async function buildOutstationExpenseWorkbook(
     ["Identity", "Phoenix Workforce branded export for outstation expense governance."],
     ["Confidentiality", "This workbook may contain employee route, workload, and payroll-sensitive information."],
     ["Required headers", input.columns.map((column) => column.label).join(", ")],
-    ["Total rule", "Total = Travel Cost + Meeting Amount + Allowance + Other."],
+    ["Total rule", "Total is the authoritative per-row amount; component columns are for breakdown and may not re-sum to Total for historically imported rows."],
     ["Review rule", "HR and HR Notes are preserved for payroll review and audit context."],
     ["Generated", generatedAt],
   ];
@@ -319,7 +329,7 @@ async function buildOutstationExpenseWorkbook(
       if (r % 2 === 1) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } };
       }
-      if (col.numeric) moneyFormat(cell);
+      if (col.numeric) applyNumericFormat(cell, col.key);
     });
   });
 
@@ -337,7 +347,7 @@ async function buildOutstationExpenseWorkbook(
         const letter = sheet.getColumn(i + 1).letter;
         cell.value = { formula: `SUM(${letter}${firstDataRow}:${letter}${firstDataRow + input.rows.length - 1})` };
         cell.alignment = { vertical: "middle", horizontal: "right" };
-        moneyFormat(cell);
+        applyNumericFormat(cell, col.key);
       }
     });
   }

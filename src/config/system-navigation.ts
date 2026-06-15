@@ -158,7 +158,7 @@ export const adminNavigationSections = [
       { href: "/admin/outstation/requests", icon: MapPinned, label: "Expense Requests", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
       { href: "/admin/outstation/requests?action=create-manager-expense", icon: PlusCircle, label: "Add Manual Expense", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"], activeTab: "create-manager-expense" },
       { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
-      { href: "/admin/outstation/heatmaps", icon: MapPinned, label: "Outstation Heatmaps", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
+      { href: "/admin/outstation/expense-command", icon: Radar, label: "Expense Command Center", permissions: [{ resource: "outstation", action: "read" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
     ],
     label: "Outstation Expenses",
   },
