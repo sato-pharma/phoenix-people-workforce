@@ -1068,20 +1068,26 @@ export function summarizeWeekly(input: {
     }
     for (const issue of row.validationIssues) issues.push(issue);
 
-    const regionKey = row.regionCode || "—";
-    const region = regions.get(regionKey) ?? { regionName: row.regionName || regionKey, totals: emptyTotals() };
-    addTotals(region.totals, row);
-    regions.set(regionKey, region);
+    // Region/branch breakdowns are geographic — only rows with a resolved region/branch belong.
+    // RAMCO stock is a product-level grand total with no branch/region; it stays in totals + by-product
+    // (below) but must not form a phantom "—" region/branch row.
+    if (row.regionCode) {
+      const region = regions.get(row.regionCode) ?? { regionName: row.regionName || row.regionCode, totals: emptyTotals() };
+      addTotals(region.totals, row);
+      regions.set(row.regionCode, region);
+    }
 
     const productKey = row.productCode || row.productName || "—";
     const product = products.get(productKey) ?? { productName: row.productName || productKey, officialLine: row.officialLine, totals: emptyTotals() };
     addTotals(product.totals, row);
     products.set(productKey, product);
 
-    const branchKey = row.branchCode || row.branchName || "—";
-    const branch = branches.get(branchKey) ?? { branchName: row.branchName || branchKey, regionCode: row.regionCode, regionName: row.regionName, totals: emptyTotals() };
-    addTotals(branch.totals, row);
-    branches.set(branchKey, branch);
+    const branchKey = row.branchCode || row.branchName;
+    if (branchKey) {
+      const branch = branches.get(branchKey) ?? { branchName: row.branchName || branchKey, regionCode: row.regionCode, regionName: row.regionName, totals: emptyTotals() };
+      addTotals(branch.totals, row);
+      branches.set(branchKey, branch);
+    }
   }
 
   // STRICT: any failure issue blocks the batch (and nothing persists).
