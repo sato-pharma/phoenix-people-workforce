@@ -149,7 +149,10 @@ const HEADER_ALIASES: Record<string, string> = {
   "brick id": "brick_id", "brick_id": "brick_id", brick: "brick_id",
 };
 
-function locateCustomerMapSheet(workbook: ExcelJS.Workbook): { columnMap: Map<string, number>; headerRow: number; sheet: ExcelJS.Worksheet } | null {
+function locateCustomerMapSheet(
+  workbook: ExcelJS.Workbook,
+  distributorOptional = false,
+): { columnMap: Map<string, number>; headerRow: number; sheet: ExcelJS.Worksheet } | null {
   for (const sheet of workbook.worksheets) {
     const maxRow = Math.min(sheet.rowCount, 12);
     for (let rowNumber = 1; rowNumber <= maxRow; rowNumber += 1) {
@@ -160,7 +163,10 @@ function locateCustomerMapSheet(workbook: ExcelJS.Workbook): { columnMap: Map<st
         const key = HEADER_ALIASES[header];
         if (key && !columnMap.has(key)) columnMap.set(key, column);
       }
-      if (columnMap.has("distributor_code") && columnMap.has("customer_code") && columnMap.has("brick_id")) {
+      // When a default distributor is supplied, the Distrub ID column is optional (each row inherits the
+      // default), so a sheet with just Customer code + Brick ID is still recognized.
+      const hasDistributor = columnMap.has("distributor_code") || distributorOptional;
+      if (hasDistributor && columnMap.has("customer_code") && columnMap.has("brick_id")) {
         return { columnMap, headerRow: rowNumber, sheet };
       }
     }
@@ -186,7 +192,7 @@ async function loadExistingCustomerKeys(supabase: ReturnType<typeof getSupabaseA
   return keys;
 }
 
-export async function importCustomerMap(input: { actorLoginId: string; file: File }): Promise<CustomerMapImportResult> {
+export async function importCustomerMap(input: { actorLoginId: string; file: File; defaultDistributorCode?: string }): Promise<CustomerMapImportResult> {
   const validation = validateSpreadsheetFile(input.file, {
     ...xlsxSpreadsheetValidation,
     emptyError: "invalid_customer_map_file",
@@ -198,12 +204,16 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   });
   if (!validation.ok) throw new SalesWorkflowError(validation.error, validation.message, validation.status);
 
+  // When the caller selected a distributor (the per-distributor Customer/Brick template), every row that
+  // leaves Distrub ID blank inherits it — so a sheet downloaded for "PS" doesn't need PS typed 15k times.
+  const defaultDistributor = String(input.defaultDistributorCode ?? "").trim();
+
   const workbook = await loadExcelWorkbook(await input.file.arrayBuffer());
-  const located = locateCustomerMapSheet(workbook);
+  const located = locateCustomerMapSheet(workbook, Boolean(defaultDistributor));
   if (!located) {
     throw new SalesWorkflowError(
       "unmatched_customer_map_sheet",
-      "No sheet matching the customer map template was found. Expected headers include: Distrub ID, Customer code, Brick ID.",
+      "No sheet matching the customer map template was found. Required headers: Customer code and Brick ID (plus Distrub ID unless a distributor is selected).",
       400,
     );
   }
@@ -237,7 +247,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
         brickId: cell(row, "brick_id"),
         customerCode: cell(row, "customer_code"),
         customerName: cell(row, "customer_name"),
-        distributorCode: cell(row, "distributor_code"),
+        distributorCode: cell(row, "distributor_code") || defaultDistributor,
       },
       ctx,
     );
