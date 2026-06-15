@@ -1,0 +1,370 @@
+import ExcelJS from "exceljs";
+
+import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { canonicalWeeklyDistributorCode, weeklyDistributorOptions } from "@/lib/sales/weekly/distributors";
+import { normalizeAlias, normalizeCode } from "@/lib/sales/weekly/mapping-normalize";
+import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly Sales — product alias crosswalk service.
+//
+// Maps a distributor's own item code OR item name to a Source-of-Sales master product_code.
+// The product master (code/name/line/factory_price) is owned by Source of Sales; this module only
+// attaches aliases onto it. Distributor-tagged + alias_kind-tagged so codes/names never collide.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type WeeklyAliasKind = "code" | "name";
+
+export type WeeklyMasterProduct = {
+  code: string;
+  name: string;
+  line: string;
+  factoryPrice: number;
+  /** master price present and > 0 */
+  priced: boolean;
+  /** master line non-empty */
+  lined: boolean;
+};
+
+export type WeeklyProductAliasRow = {
+  id: string;
+  distributorCode: string;
+  alias: string;
+  aliasKind: WeeklyAliasKind;
+  productCode: string;
+  productName: string;
+  line: string;
+  /** master is priced + lined (so this alias would not block an upload) */
+  resolvable: boolean;
+  updatedAt: string;
+};
+
+export type WeeklyProductAliasAdmin = {
+  distributors: { code: string; name: string }[];
+  products: WeeklyMasterProduct[];
+  aliases: WeeklyProductAliasRow[];
+};
+
+export type WeeklyMappingImportResult = {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  blockedRows: { rowNumber: number; reason: string; values: string }[];
+};
+
+/** Product alias resolution maps used by the upload parser. */
+export type WeeklyProductAliasIndex = Map<string, { byCode: Map<string, string>; byName: Map<string, string> }>;
+
+async function loadMasterProducts(): Promise<Map<string, WeeklyMasterProduct>> {
+  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const map = new Map<string, WeeklyMasterProduct>();
+  for (const product of references.products) {
+    const code = normalizeCode(product.productCode);
+    if (!code || map.has(code)) continue;
+    const factoryPrice = Number(product.factoryPrice);
+    const safePrice = Number.isFinite(factoryPrice) ? factoryPrice : 0;
+    const line = (product.line ?? "").trim();
+    map.set(code, {
+      code: product.productCode.trim(),
+      name: (product.productName || product.productCode).trim(),
+      line,
+      factoryPrice: safePrice,
+      priced: safePrice > 0,
+      lined: line.length > 0,
+    });
+  }
+  return map;
+}
+
+function aliasKindOf(value: unknown): WeeklyAliasKind {
+  return String(value ?? "").trim().toLowerCase() === "name" ? "name" : "code";
+}
+
+export async function loadWeeklyProductAliasAdmin(distributorCode?: string): Promise<WeeklyProductAliasAdmin> {
+  const supabase = getSupabaseAdmin();
+  const products = await loadMasterProducts();
+
+  let query = supabase
+    .from("weekly_sales_product_aliases")
+    .select("id, distributor_code, alias, alias_kind, product_code, updated_at")
+    .order("distributor_code", { ascending: true })
+    .order("alias", { ascending: true });
+  if (distributorCode) query = query.eq("distributor_code", canonicalWeeklyDistributorCode(distributorCode));
+
+  const { data, error } = await query;
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const aliases: WeeklyProductAliasRow[] = (data ?? []).map((row) => {
+    const product = products.get(normalizeCode(row.product_code));
+    return {
+      id: String(row.id),
+      distributorCode: String(row.distributor_code ?? ""),
+      alias: String(row.alias ?? ""),
+      aliasKind: aliasKindOf(row.alias_kind),
+      productCode: String(row.product_code ?? ""),
+      productName: product?.name ?? String(row.product_code ?? ""),
+      line: product?.line ?? "",
+      resolvable: Boolean(product?.priced && product?.lined),
+      updatedAt: String(row.updated_at ?? ""),
+    };
+  });
+
+  return {
+    distributors: weeklyDistributorOptions(),
+    products: [...products.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    aliases,
+  };
+}
+
+/** Insert/update one alias. Rejects re-mapping the same (distributor, kind, alias) to a different product. */
+export async function upsertProductAlias(input: {
+  distributorCode: string;
+  alias: string;
+  aliasKind: WeeklyAliasKind;
+  productCode: string;
+  actorId: string | null;
+}): Promise<void> {
+  const distributorCode = canonicalWeeklyDistributorCode(input.distributorCode);
+  const alias = String(input.alias ?? "").trim();
+  if (!alias) throw new SalesWorkflowError("invalid_request", "An alias value is required.", 400);
+  const aliasKind: WeeklyAliasKind = input.aliasKind === "name" ? "name" : "code";
+  const productKey = normalizeCode(input.productCode);
+
+  const products = await loadMasterProducts();
+  const master = products.get(productKey);
+  if (!master) {
+    throw new SalesWorkflowError(
+      "unknown_product",
+      `Product code "${String(input.productCode ?? "").trim()}" is not in the Source of Sales master.`,
+      400,
+    );
+  }
+
+  const normalizedAlias = normalizeAlias(alias, aliasKind);
+  if (!normalizedAlias) throw new SalesWorkflowError("invalid_request", "Alias could not be normalized.", 400);
+
+  const supabase = getSupabaseAdmin();
+  const existing = await supabase
+    .from("weekly_sales_product_aliases")
+    .select("id, product_code")
+    .eq("distributor_code", distributorCode)
+    .eq("alias_kind", aliasKind)
+    .eq("normalized_alias", normalizedAlias)
+    .maybeSingle();
+  if (existing.error && existing.error.code !== "PGRST116") {
+    throw new SalesWorkflowError("load_failed", existing.error.message, 500);
+  }
+
+  if (existing.data) {
+    if (normalizeCode(existing.data.product_code) !== productKey) {
+      // Ambiguity guard: don't silently let one mapping win.
+      throw new SalesWorkflowError(
+        "alias_conflict",
+        `This ${aliasKind} alias already maps to ${existing.data.product_code}. Delete or change that mapping first.`,
+        409,
+      );
+    }
+    const update = await supabase
+      .from("weekly_sales_product_aliases")
+      .update({ alias, product_code: master.code, updated_by: input.actorId, updated_at: new Date().toISOString() })
+      .eq("id", existing.data.id);
+    if (update.error) throw new SalesWorkflowError("persist_failed", update.error.message, 500);
+    return;
+  }
+
+  const insert = await supabase.from("weekly_sales_product_aliases").insert({
+    distributor_code: distributorCode,
+    alias,
+    alias_kind: aliasKind,
+    normalized_alias: normalizedAlias,
+    product_code: master.code,
+    created_by: input.actorId,
+    updated_by: input.actorId,
+  });
+  if (insert.error) throw new SalesWorkflowError("persist_failed", insert.error.message, 500);
+}
+
+export async function deleteProductAlias(id: string): Promise<void> {
+  const aliasId = String(id ?? "").trim();
+  if (!aliasId) throw new SalesWorkflowError("invalid_request", "An alias id is required.", 400);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("weekly_sales_product_aliases").delete().eq("id", aliasId);
+  if (error) throw new SalesWorkflowError("delete_failed", error.message, 500);
+}
+
+export async function buildProductAliasTemplate(distributorCode: string): Promise<ArrayBuffer> {
+  const code = canonicalWeeklyDistributorCode(distributorCode);
+  const [{ aliases }, products] = await Promise.all([
+    loadWeeklyProductAliasAdmin(code),
+    loadMasterProducts(),
+  ]);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Product Mapping");
+  sheet.columns = [
+    { header: "DISTRIBUTOR", key: "distributor", width: 14 },
+    { header: "ALIAS", key: "alias", width: 40 },
+    { header: "ALIAS_KIND", key: "aliasKind", width: 12 },
+    { header: "PRODUCT_CODE", key: "productCode", width: 16 },
+    { header: "PRODUCT_NAME", key: "productName", width: 40 },
+  ];
+  for (const row of aliases) {
+    sheet.addRow({
+      distributor: row.distributorCode,
+      alias: row.alias,
+      aliasKind: row.aliasKind,
+      productCode: row.productCode,
+      productName: row.productName,
+    });
+  }
+  if (aliases.length === 0) {
+    sheet.addRow({ distributor: code, alias: "paste distributor code or name", aliasKind: "code", productCode: "MASTER_CODE", productName: "(filled automatically)" });
+  }
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF97316" } };
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  const reference = workbook.addWorksheet("Master Products");
+  reference.columns = [
+    { header: "PRODUCT_CODE", key: "code", width: 16 },
+    { header: "PRODUCT_NAME", key: "name", width: 44 },
+    { header: "LINE", key: "line", width: 22 },
+    { header: "FACTORY_PRICE", key: "price", width: 16 },
+  ];
+  for (const product of [...products.values()].sort((left, right) => left.name.localeCompare(right.name))) {
+    reference.addRow({ code: product.code, name: product.name, line: product.line, price: product.factoryPrice });
+  }
+  reference.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  reference.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+  reference.views = [{ state: "frozen", ySplit: 1 }];
+
+  return workbook.xlsx.writeBuffer() as unknown as ArrayBuffer;
+}
+
+function cellString(row: ExcelJS.Row, index: number): string {
+  const value = row.getCell(index).value as unknown;
+  if (value == null) return "";
+  if (typeof value === "object") {
+    const obj = value as { text?: unknown; result?: unknown; richText?: { text?: string }[] };
+    if (obj.richText) return obj.richText.map((part) => part.text).join("").trim();
+    if (obj.result != null) return String(obj.result).trim();
+    if (obj.text != null) return String(obj.text).trim();
+  }
+  return String(value).trim();
+}
+
+export async function importProductAliasWorkbook(input: {
+  distributorCode: string;
+  file: File;
+  actorId: string | null;
+}): Promise<WeeklyMappingImportResult> {
+  const distributorCode = canonicalWeeklyDistributorCode(input.distributorCode);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load((await input.file.arrayBuffer()) as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.getWorksheet("Product Mapping") ?? workbook.worksheets[0];
+  if (!sheet) throw new SalesWorkflowError("invalid_mapping_template", "The mapping workbook has no sheets.", 400);
+
+  const products = await loadMasterProducts();
+  const blockedRows: WeeklyMappingImportResult["blockedRows"] = [];
+  type Pending = { alias: string; aliasKind: WeeklyAliasKind; normalizedAlias: string; productCode: string };
+  const pending: Pending[] = [];
+  const seen = new Map<string, string>(); // kind+normalized -> productCode (within-file dup guard)
+  let skipped = 0;
+
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const alias = cellString(row, 2);
+    const aliasKind = aliasKindOf(cellString(row, 3));
+    const productCodeRaw = cellString(row, 4);
+    if (!alias && !productCodeRaw) {
+      skipped += 1;
+      continue;
+    }
+    if (!alias) {
+      blockedRows.push({ rowNumber, reason: "Alias is required.", values: `${productCodeRaw}` });
+      continue;
+    }
+    const productKey = normalizeCode(productCodeRaw);
+    if (!productKey || !products.has(productKey)) {
+      blockedRows.push({ rowNumber, reason: `Product code "${productCodeRaw || "(blank)"}" is not in the Source of Sales master.`, values: alias });
+      continue;
+    }
+    const normalizedAlias = normalizeAlias(alias, aliasKind);
+    if (!normalizedAlias) {
+      blockedRows.push({ rowNumber, reason: "Alias could not be normalized.", values: alias });
+      continue;
+    }
+    const dupKey = `${aliasKind} ${normalizedAlias}`;
+    const priorProduct = seen.get(dupKey);
+    if (priorProduct && priorProduct !== productKey) {
+      blockedRows.push({ rowNumber, reason: `Alias "${alias}" maps to two different products in this file.`, values: alias });
+      continue;
+    }
+    seen.set(dupKey, productKey);
+    pending.push({ alias, aliasKind, normalizedAlias, productCode: products.get(productKey)!.code });
+  }
+
+  if (blockedRows.length > 0) return { inserted: 0, updated: 0, skipped, blockedRows };
+
+  let inserted = 0;
+  let updated = 0;
+  const supabase = getSupabaseAdmin();
+  for (const item of pending) {
+    const existing = await supabase
+      .from("weekly_sales_product_aliases")
+      .select("id, product_code")
+      .eq("distributor_code", distributorCode)
+      .eq("alias_kind", item.aliasKind)
+      .eq("normalized_alias", item.normalizedAlias)
+      .maybeSingle();
+    if (existing.error && existing.error.code !== "PGRST116") throw new SalesWorkflowError("load_failed", existing.error.message, 500);
+
+    if (existing.data) {
+      const update = await supabase
+        .from("weekly_sales_product_aliases")
+        .update({ alias: item.alias, product_code: item.productCode, updated_by: input.actorId, updated_at: new Date().toISOString() })
+        .eq("id", existing.data.id);
+      if (update.error) throw new SalesWorkflowError("persist_failed", update.error.message, 500);
+      updated += 1;
+    } else {
+      const insert = await supabase.from("weekly_sales_product_aliases").insert({
+        distributor_code: distributorCode,
+        alias: item.alias,
+        alias_kind: item.aliasKind,
+        normalized_alias: item.normalizedAlias,
+        product_code: item.productCode,
+        created_by: input.actorId,
+        updated_by: input.actorId,
+      });
+      if (insert.error) throw new SalesWorkflowError("persist_failed", insert.error.message, 500);
+      inserted += 1;
+    }
+  }
+  return { inserted, updated, skipped, blockedRows };
+}
+
+/** Build the per-distributor alias resolution index for the upload parser. */
+export async function loadProductAliasIndex(): Promise<WeeklyProductAliasIndex> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("weekly_sales_product_aliases")
+    .select("distributor_code, alias_kind, normalized_alias, product_code");
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const index: WeeklyProductAliasIndex = new Map();
+  for (const row of data ?? []) {
+    const distributor = String(row.distributor_code ?? "").trim().toUpperCase();
+    const productCode = String(row.product_code ?? "").trim();
+    const normalized = String(row.normalized_alias ?? "");
+    if (!distributor || !productCode || !normalized) continue;
+    const bucket = index.get(distributor) ?? { byCode: new Map<string, string>(), byName: new Map<string, string>() };
+    if (aliasKindOf(row.alias_kind) === "name") bucket.byName.set(normalized, productCode);
+    else bucket.byCode.set(normalized, productCode);
+    index.set(distributor, bucket);
+  }
+  return index;
+}
