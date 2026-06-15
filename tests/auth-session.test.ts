@@ -312,7 +312,7 @@ export async function runAuthSessionTests() {
   assert.match(rateLimitSource, /\.rpc\("api_rate_limit_consume"/, "API rate limiting must prefer atomic DB consumption");
 
   assert.match(originsSource, /PHOENIX_ALLOWED_ORIGINS/, "trusted origin helper must support PHOENIX_ALLOWED_ORIGINS");
-  assert.match(originsSource, /https:\/\/phoenix-workforce\.vercel\.app/, "production origin must be trusted by default");
+  assert.match(originsSource, /systemDeployment\.productionUrl/, "production origin must be trusted by default (single-sourced from systemDeployment)");
   assert.match(
     originsSource,
     /https:\/\/phoenix-workforce-team\.vercel\.app/,
@@ -320,8 +320,8 @@ export async function runAuthSessionTests() {
   );
   assert.match(
     originsSource,
-    /phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects\.vercel\.app/,
-    "working preview origin must be trusted by default",
+    /systemDeployment\.workingPreviewUrl/,
+    "working preview origin must be trusted by default (single-sourced from systemDeployment)",
   );
   assert.match(originsSource, /rejectUntrustedForwardedOrigin/, "unknown origins and forwarded hosts must be rejected");
   assert.match(csrfSource, /isAllowedPhoenixOrigin/, "CSRF expected origins must be allowlist-filtered");
