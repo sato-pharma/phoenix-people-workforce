@@ -86,6 +86,26 @@ function sourceTone(source: PrivateCalendarSource, severity?: string) {
   return "border-teal-200 bg-teal-50 text-teal-800";
 }
 
+function sourceAccentColor(source: PrivateCalendarSource, severity?: string) {
+  if (severity === "danger") return "border-l-red-500";
+  if (severity === "warning") return "border-l-amber-400";
+  if (source === "attendance") return "border-l-emerald-500";
+  if (source === "vacation") return "border-l-blue-500";
+  if (source === "excuse") return "border-l-amber-500";
+  if (source === "plan") return "border-l-violet-500";
+  return "border-l-teal-500";
+}
+
+function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
+  if (severity === "danger") return "bg-red-100 text-red-700";
+  if (severity === "warning") return "bg-amber-100 text-amber-700";
+  if (source === "attendance") return "bg-emerald-100 text-emerald-700";
+  if (source === "vacation") return "bg-blue-100 text-blue-700";
+  if (source === "excuse") return "bg-amber-100 text-amber-700";
+  if (source === "plan") return "bg-violet-100 text-violet-700";
+  return "bg-teal-100 text-teal-700";
+}
+
 function exceptionTone(severity: string) {
   if (severity === "danger") return "border-red-200 bg-red-50 text-red-800";
   return "border-amber-200 bg-amber-50 text-amber-800";
@@ -449,97 +469,115 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {!workspace.schemaReady ? (
-        <div className="border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
           Some private calendar sources are temporarily unavailable.
         </div>
       ) : null}
 
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-4 border-b border-slate-200 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-700">
-                <UserRound className="h-3.5 w-3.5" />
-                Private Calendar
-              </span>
-              {workspace.access.isGlobalViewer ? (
-                <span className="inline-flex items-center gap-1 border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-700">
-                  Global view
+      {/* ── Header + Metrics ── */}
+      <section className="overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60">
+        <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                  <UserRound className="h-3 w-3" />
+                  Private Calendar
                 </span>
-              ) : null}
-              {isTeamView ? (
-                <span className="inline-flex items-center gap-1 border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-700">
-                  <UsersRound className="h-3.5 w-3.5" />
-                  Team mode
-                </span>
-              ) : null}
+                {workspace.access.isGlobalViewer ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
+                    Global view
+                  </span>
+                ) : null}
+                {isTeamView ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
+                    <UsersRound className="h-3 w-3" />
+                    Team mode
+                  </span>
+                ) : null}
+              </div>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-300">
+                {isTeamView
+                  ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
+                  : selectedEmployee.fullName}{" "}
+                {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
+              </p>
             </div>
-            <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-600">
-              {isTeamView ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}` : selectedEmployee.fullName}{" "}
-              {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              aria-label="Previous month"
-              className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => shiftMonth(-1)}
-              type="button"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <Button disabled={isPending} onClick={goToday} variant="secondary">
-              Today
-            </Button>
-            <button
-              aria-label="Next month"
-              className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => shiftMonth(1)}
-              type="button"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                aria-label="Previous month"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
+                disabled={isPending}
+                onClick={() => shiftMonth(-1)}
+                type="button"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                className="h-9 rounded-xl bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50"
+                disabled={isPending}
+                onClick={goToday}
+                type="button"
+              >
+                Today
+              </button>
+              <button
+                aria-label="Next month"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
+                disabled={isPending}
+                onClick={() => shiftMonth(1)}
+                type="button"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} />
-          <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} />
-          <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} />
-          <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} />
-          <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} />
-          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} tone="warning" />
+          <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" />
+          <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} color="blue" />
+          <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} color="amber" />
+          <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" />
+          <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} color="teal" />
+          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} color="red" tone="warning" />
         </div>
       </section>
 
       {message ? (
-        <div className="border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{message}</div>
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {message}
+        </div>
       ) : null}
 
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end">
+      {/* ── Filters ── */}
+      <section className="overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200/60">
+        <div className="border-b border-slate-100 px-5 py-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
+        </div>
+        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+                className="h-10 w-full rounded-xl border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search calendar"
+                placeholder="Search calendar…"
                 value={query}
               />
             </span>
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
             <select
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300 disabled:bg-slate-50"
+              className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!workspace.access.canSelectEmployee || isPending}
               onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
               value={viewMode}
@@ -551,9 +589,9 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
           {!isTeamView ? (
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
               <select
-                className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300 disabled:bg-slate-50"
+                className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!workspace.access.canSelectEmployee || isPending}
                 onChange={(event) => changeEmployee(event.target.value)}
                 value={selectedEmployee.hrId}
@@ -567,9 +605,9 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
             </label>
           ) : (
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
               <select
-                className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+                className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
                 onChange={(event) => setEmployeeFilter(event.target.value)}
                 value={employeeFilter}
               >
@@ -584,9 +622,9 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           )}
 
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
             <select
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setLineFilter(event.target.value)}
               value={lineFilter}
             >
@@ -596,9 +634,9 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
             <select
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setDepartmentFilter(event.target.value)}
               value={departmentFilter}
             >
@@ -608,9 +646,9 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
             <select
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setSourceFilter(event.target.value)}
               value={sourceFilter}
             >
@@ -624,8 +662,10 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           <div className="flex flex-wrap gap-2">
             <button
               className={[
-                "inline-flex h-10 items-center gap-2 border px-3 text-sm font-black",
-                exceptionOnly ? "border-red-300 bg-red-50 text-red-800" : "border-slate-200 bg-white text-slate-700",
+                "inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-black ring-1 transition",
+                exceptionOnly
+                  ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
+                  : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200",
               ].join(" ")}
               onClick={() => setExceptionOnly((value) => !value)}
               type="button"
@@ -633,17 +673,22 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               <ListFilter className="h-4 w-4" />
               Exceptions
             </button>
-            <Button disabled={isPending} onClick={resetFilters} variant="secondary">
+            <button
+              className="h-10 rounded-xl bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200 disabled:opacity-50"
+              disabled={isPending}
+              onClick={resetFilters}
+              type="button"
+            >
               Reset
-            </Button>
+            </button>
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-slate-100 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
             <select
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-300"
+              className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setStatusFilter(event.target.value)}
               value={statusFilter}
             >
@@ -658,16 +703,17 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
       {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
 
-      <div className="space-y-5">
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+      <div className="space-y-6">
+        {/* ── Calendar Grid ── */}
+        <section className="overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60">
+          <div className="grid grid-cols-7 bg-slate-950">
             {weekdays.map((weekday) => (
-              <div key={weekday} className="px-2 py-2 text-center text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+              <div key={weekday} className="px-2 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
             {weeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
@@ -677,8 +723,8 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               return (
                 <button
                   className={[
-                    "min-h-32 border-b border-r border-slate-100 bg-white p-2 text-left align-top transition hover:bg-orange-50/40 disabled:cursor-default",
-                    day.inMonth ? "text-slate-900" : "bg-slate-50/60 text-slate-400",
+                    "min-h-[120px] bg-white p-2 text-left align-top transition-colors",
+                    day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20",
                     selected ? "ring-2 ring-inset ring-orange-400" : "",
                   ].join(" ")}
                   disabled={!date}
@@ -686,23 +732,32 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                   onClick={() => date && setSelectedDate(date)}
                   type="button"
                 >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className={["text-sm font-black", isToday ? "text-orange-600" : ""].join(" ")}>
+                  <span className="flex items-center justify-between gap-1">
+                    <span
+                      className={[
+                        "flex h-6 w-6 items-center justify-center text-xs font-black",
+                        isToday ? "rounded-full bg-orange-500 text-white" : "",
+                      ].join(" ")}
+                    >
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     <span className="flex items-center gap-1">
                       {dayExceptions.length > 0 ? (
-                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-700">{dayExceptions.length}</span>
+                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600">
+                          {dayExceptions.length}
+                        </span>
                       ) : null}
                       {dayItems.length > 0 ? (
-                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-600">{dayItems.length}</span>
+                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
+                          {dayItems.length}
+                        </span>
                       ) : null}
                     </span>
                   </span>
-                  <span className="mt-2 block space-y-1">
+                  <span className="mt-1.5 block space-y-1">
                     {dayExceptions.slice(0, 2).map((exception) => (
                       <span
-                        className={["block truncate border px-1.5 py-1 text-[11px] font-bold", exceptionTone(exception.severity)].join(" ")}
+                        className="block truncate rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
                         key={exception.id}
                         title={exception.description}
                       >
@@ -711,7 +766,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                     ))}
                     {dayItems.slice(0, dayExceptions.length > 0 ? 3 : 4).map((item) => (
                       <span
-                        className={["block truncate border px-1.5 py-1 text-[11px] font-bold", sourceTone(item.source, item.severity)].join(" ")}
+                        className={["block truncate rounded-md px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
                         key={item.id}
                         title={chipTitle(item, viewMode)}
                       >
@@ -719,7 +774,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                       </span>
                     ))}
                     {dayItems.length + dayExceptions.length > 5 ? (
-                      <span className="block border border-slate-200 bg-slate-50 px-1.5 py-1 text-[11px] font-bold text-slate-500">
+                      <span className="block rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
                         + {dayItems.length + dayExceptions.length - 5} more
                       </span>
                     ) : null}
@@ -730,27 +785,28 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
           </div>
         </section>
 
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        {/* ── Daily Timeline ── */}
+        <section className="overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
-              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
                 <CalendarDays className="h-4 w-4" />
                 Daily Timeline
               </div>
-              <h3 className="mt-2 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+              <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
-            <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
-              {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} / {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
+            <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+              {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
             </span>
           </div>
-          <div className="grid gap-5 p-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
+          <div className="grid gap-6 p-6 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             {selectedExceptions.length > 0 ? (
               <section>
-                <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-700">
+                <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-600">
                   <AlertTriangle className="h-4 w-4" />
                   Exception Warnings
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                   {selectedExceptions.map((exception) => <ExceptionItem exception={exception} key={exception.id} />)}
                 </div>
               </section>
@@ -758,11 +814,12 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
             <section className={selectedExceptions.length > 0 ? "min-w-0" : "min-w-0 xl:col-span-2"}>
               {timelineItems.length === 0 ? (
-                <div className="border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">
-                  No private calendar items for this day.
+                <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+                  <CalendarDays className="h-8 w-8 text-slate-300" />
+                  <p className="text-sm font-semibold text-slate-400">No calendar items for this day.</p>
                 </div>
               ) : (
-                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                   {timelineItems.map((item) => (
                     <TimelineItem item={item} key={item.id} viewMode={viewMode} />
                   ))}
@@ -778,17 +835,43 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
   );
 }
 
-function Metric({ icon, label, ready, tone = "neutral", value }: { icon: ReactNode; label: string; ready: boolean; tone?: "neutral" | "warning"; value: number }) {
+function Metric({
+  color = "slate",
+  icon,
+  label,
+  ready,
+  tone = "neutral",
+  value,
+}: {
+  color?: "emerald" | "blue" | "amber" | "violet" | "teal" | "red" | "slate";
+  icon: ReactNode;
+  label: string;
+  ready: boolean;
+  tone?: "neutral" | "warning";
+  value: number;
+}) {
+  const iconBg: Record<string, string> = {
+    amber: "bg-amber-100 text-amber-600",
+    blue: "bg-blue-100 text-blue-600",
+    emerald: "bg-emerald-100 text-emerald-600",
+    red: "bg-red-100 text-red-600",
+    slate: "bg-slate-100 text-slate-600",
+    teal: "bg-teal-100 text-teal-600",
+    violet: "bg-violet-100 text-violet-600",
+  };
+
   return (
-    <div className={["border p-3", tone === "warning" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"].join(" ")}>
-      <div className="flex items-center justify-between gap-3">
-        <span className={tone === "warning" ? "text-amber-600" : "text-slate-500"}>{icon}</span>
-        <span className={["text-[10px] font-black uppercase tracking-[0.14em]", ready ? "text-emerald-600" : "text-amber-600"].join(" ")}>
-          {ready ? "Ready" : "Unavailable"}
+    <div className={["rounded-xl p-4 ring-1", tone === "warning" ? "bg-red-50/60 ring-red-100" : "bg-slate-50/60 ring-slate-200/60"].join(" ")}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={["inline-flex h-8 w-8 items-center justify-center rounded-lg", iconBg[color] ?? iconBg.slate].join(" ")}>
+          {icon}
+        </span>
+        <span className={["rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
+          {ready ? "Ready" : "N/A"}
         </span>
       </div>
-      <p className="mt-3 text-2xl font-black text-slate-950">{value}</p>
-      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-3 text-3xl font-black text-slate-950">{value}</p>
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
   );
 }
@@ -796,38 +879,38 @@ function Metric({ icon, label, ready, tone = "neutral", value }: { icon: ReactNo
 function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummary"] }) {
   const sortedRows = [...rows].sort((left, right) => right.exceptionCount - left.exceptionCount || left.fullName.localeCompare(right.fullName));
   return (
-    <section className="border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+    <section className="overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200/60">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
-          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
             <UsersRound className="h-4 w-4" />
             Manager Team Calendar
           </div>
           <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
         </div>
-        <span className="border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-600">
+        <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
           {rows.length} employee{rows.length === 1 ? "" : "s"}
         </span>
       </div>
-      <div className="grid max-h-72 gap-2 overflow-y-auto p-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid max-h-72 gap-3 overflow-y-auto p-5 md:grid-cols-2 xl:grid-cols-3">
         {sortedRows.slice(0, 18).map((row) => (
-          <article key={row.hrId} className="border border-slate-200 bg-slate-50 p-3">
+          <article key={row.hrId} className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/60">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="truncate text-sm font-black text-slate-900">{row.fullName}</h4>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
-                  {row.hrId} {row.lineName ? `- ${row.lineName}` : ""}
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">
+                  {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
-              <span className={["shrink-0 border px-2 py-0.5 text-[10px] font-black", row.exceptionCount ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"].join(" ")}>
-                {row.exceptionCount} warning{row.exceptionCount === 1 ? "" : "s"}
+              <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black", row.exceptionCount ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"].join(" ")}>
+                {row.exceptionCount} warn{row.exceptionCount === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">
-              <span className="border border-slate-200 bg-white px-1 py-1">A {row.sourceCounts.attendance}</span>
-              <span className="border border-slate-200 bg-white px-1 py-1">V {row.sourceCounts.vacation}</span>
-              <span className="border border-slate-200 bg-white px-1 py-1">E {row.sourceCounts.excuse}</span>
-              <span className="border border-slate-200 bg-white px-1 py-1">P {row.sourceCounts.plan}</span>
+            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-black text-slate-500">
+              <span className="rounded-lg bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
+              <span className="rounded-lg bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
+              <span className="rounded-lg bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
+              <span className="rounded-lg bg-violet-100 px-1 py-1.5 text-violet-700">P {row.sourceCounts.plan}</span>
             </div>
           </article>
         ))}
@@ -837,56 +920,70 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
 }
 
 function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
+  const isDanger = exception.severity === "danger";
   return (
-    <article className={["border p-3", exceptionTone(exception.severity)].join(" ")}>
+    <article className={[
+      "rounded-xl border-l-4 p-4 shadow-sm ring-1",
+      isDanger
+        ? "border-l-red-500 bg-red-50/80 ring-red-100"
+        : "border-l-amber-400 bg-amber-50/80 ring-amber-100",
+    ].join(" ")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="text-sm font-black">{exception.title}</h4>
+          <h4 className={["text-sm font-black", isDanger ? "text-red-900" : "text-amber-900"].join(" ")}>
+            {exception.title}
+          </h4>
           {exception.employeeName ? (
-            <p className="mt-1 text-xs font-bold opacity-80">
-              {exception.employeeName} {exception.employeeHrId ? `(${exception.employeeHrId})` : ""}
+            <p className={["mt-1 text-xs font-semibold", isDanger ? "text-red-700" : "text-amber-700"].join(" ")}>
+              {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
             </p>
           ) : null}
         </div>
-        <span className="shrink-0 border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">
+        <span className={[
+          "shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]",
+          isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800",
+        ].join(" ")}>
           {exception.severity}
         </span>
       </div>
-      <p className="mt-2 text-xs font-semibold opacity-90">{exception.description}</p>
+      <p className={["mt-2.5 text-xs font-semibold leading-relaxed", isDanger ? "text-red-800" : "text-amber-800"].join(" ")}>
+        {exception.description}
+      </p>
     </article>
   );
 }
 
 function CalendarReportTable({ rows, warningCount }: { rows: CalendarReportRow[]; warningCount: number }) {
   return (
-    <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+    <section className="overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
-          <div className="flex items-center gap-2 text-base font-black text-slate-950">
-            <span className="h-2 w-2 bg-orange-500" />
-            Calendar Report ({rows.length})
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-orange-500" />
+            <span className="text-base font-black text-slate-950">Calendar Report</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-600">{rows.length}</span>
           </div>
-          <p className="mt-2 text-sm font-semibold text-slate-500">
-            Report rows mirror the private calendar entries and warnings after the current filters.
+          <p className="mt-1.5 text-sm font-semibold text-slate-400">
+            Report rows mirror all calendar entries after the current filters.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className={["border px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]", warningCount > 0 ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50 text-slate-700"].join(" ")}>
+          <span className={["rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em]", warningCount > 0 ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"].join(" ")}>
             {warningCount} warning{warningCount === 1 ? "" : "s"}
           </span>
-          <span className="border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-700">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
             {rows.length} visible
           </span>
         </div>
       </div>
 
-      <div className="overflow-x-auto bg-white">
+      <div className="overflow-x-auto">
         <table className="w-full min-w-[1180px] border-collapse text-left text-xs">
           <thead>
-            <tr className="bg-black text-white">
+            <tr className="bg-slate-950">
               {["Date", "HR ID", "Full Name", "Job Title", "Line", "Department", "Source", "Calendar Entry", "Time", "Status"].map((column) => (
                 <th
-                  className="border-r border-orange-900/60 px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] last:border-r-0"
+                  className="border-r border-slate-800 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
                 >
                   {column}
@@ -894,48 +991,48 @@ function CalendarReportTable({ rows, warningCount }: { rows: CalendarReportRow[]
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-orange-100">
+          <tbody className="divide-y divide-slate-100">
             {rows.length === 0 ? (
               <tr>
-                <td className="px-3 py-7 text-center text-sm font-semibold text-slate-500" colSpan={10}>
+                <td className="px-3 py-10 text-center text-sm font-semibold text-slate-400" colSpan={10}>
                   No private calendar entries match the current filters.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr className="transition hover:bg-orange-50/35" key={row.id}>
-                  <td className="border-r border-orange-100 px-2 py-2 font-mono text-[11px] font-semibold text-slate-600">
+                <tr className="transition-colors hover:bg-orange-50/40" key={row.id}>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">
                     {reportDateLabel(row.date)}
                   </td>
-                  <td className="border-r border-orange-100 px-2 py-2 font-mono text-[11px] font-semibold text-slate-700">
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
                     {row.employeeHrId ?? "Company"}
                   </td>
-                  <td className="max-w-[230px] truncate border-r border-orange-100 px-2 py-2 font-black text-slate-950">
+                  <td className="max-w-[230px] truncate border-r border-slate-100 px-3 py-2.5 text-sm font-black text-slate-900">
                     {row.employeeName ?? "Company calendar"}
                   </td>
-                  <td className="max-w-[180px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
-                    {row.employeeJobTitle ?? "-"}
+                  <td className="max-w-[180px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
+                    {row.employeeJobTitle ?? "–"}
                   </td>
-                  <td className="max-w-[130px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
-                    {row.employeeLineName ?? "-"}
+                  <td className="max-w-[130px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
+                    {row.employeeLineName ?? "–"}
                   </td>
-                  <td className="max-w-[150px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
-                    {row.employeeDepartmentName ?? "-"}
+                  <td className="max-w-[150px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
+                    {row.employeeDepartmentName ?? "–"}
                   </td>
-                  <td className="border-r border-orange-100 px-2 py-2">
-                    <span className={["inline-flex max-w-[150px] items-center truncate border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                  <td className="border-r border-slate-100 px-3 py-2.5">
+                    <span className={["inline-flex max-w-[150px] items-center truncate rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {sourceReportLabel(row.source)}
                     </span>
                   </td>
-                  <td className="max-w-[280px] border-r border-orange-100 px-2 py-2">
-                    <p className="truncate font-black text-slate-950">{row.title}</p>
-                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{row.detail}</p>
+                  <td className="max-w-[280px] border-r border-slate-100 px-3 py-2.5">
+                    <p className="truncate font-black text-slate-900">{row.title}</p>
+                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">{row.detail}</p>
                   </td>
-                  <td className="max-w-[130px] truncate border-r border-orange-100 px-2 py-2 font-semibold text-slate-600">
+                  <td className="max-w-[130px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
                     {row.time ?? "Full day"}
                   </td>
-                  <td className="px-2 py-2">
-                    <span className={["inline-flex max-w-[140px] truncate border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                  <td className="px-3 py-2.5">
+                    <span className={["inline-flex max-w-[140px] truncate rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {row.status ?? row.sourceLabel}
                     </span>
                   </td>
@@ -951,57 +1048,70 @@ function CalendarReportTable({ rows, warningCount }: { rows: CalendarReportRow[]
 
 function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
   return (
-    <article className={["border p-3", sourceTone(item.source, item.severity)].join(" ")}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] opacity-80">
-              {sourceIcon(item.source)}
-              {privateCalendarSourceLabels[item.source]}
-            </span>
-            {item.time ? <span className="text-xs font-black opacity-80">{item.time}</span> : null}
+    <article className={["overflow-hidden rounded-xl border-l-4 bg-white shadow-sm ring-1 ring-slate-200/60", sourceAccentColor(item.source, item.severity)].join(" ")}>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={["inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+                {sourceIcon(item.source)}
+                {privateCalendarSourceLabels[item.source]}
+              </span>
+              {item.time ? (
+                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">
+                  {item.time}
+                </span>
+              ) : null}
+            </div>
+            <h4 className="mt-2 text-sm font-black text-slate-950">{item.title}</h4>
+            {viewMode === "team" && item.employeeName ? (
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {item.employeeName}{item.employeeHrId ? ` (${item.employeeHrId})` : ""}
+              </p>
+            ) : null}
           </div>
-          <h4 className="mt-1 text-sm font-black">{item.title}</h4>
-          {viewMode === "team" && item.employeeName ? (
-            <p className="mt-1 text-xs font-bold opacity-80">
-              {item.employeeName} {item.employeeHrId ? `(${item.employeeHrId})` : ""}
-            </p>
+          {item.status ? (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+              {item.status}
+            </span>
           ) : null}
         </div>
-        {item.status ? (
-          <span className="shrink-0 border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">
-            {item.status}
-          </span>
+
+        {item.exceptionFlags.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {item.exceptionFlags.map((flag) => (
+              <span key={flag} className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-red-700">
+                {flag}
+              </span>
+            ))}
+          </div>
         ) : null}
-      </div>
 
-      {item.exceptionFlags.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1">
-          {item.exceptionFlags.map((flag) => (
-            <span key={flag} className="border border-current px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] opacity-90">
-              {flag}
-            </span>
-          ))}
-        </div>
-      ) : null}
+        {item.detailLines.length > 0 ? (
+          <ul className="mt-3 space-y-1 text-xs font-semibold text-slate-600">
+            {item.detailLines.map((line) => <li key={line} className="flex items-start gap-1.5"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" />{line}</li>)}
+          </ul>
+        ) : null}
 
-      {item.detailLines.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-xs font-semibold opacity-90">
-          {item.detailLines.map((line) => <li key={line}>{line}</li>)}
-        </ul>
-      ) : null}
-      {item.description ? <p className="mt-3 text-xs font-semibold opacity-80">{item.description}</p> : null}
-      {item.approvalImpact ? (
-        <p className="mt-3 border border-current bg-white/60 px-2 py-1.5 text-xs font-bold opacity-90">{item.approvalImpact}</p>
-      ) : null}
-      <div className="mt-3 border-t border-current/20 pt-2 text-[11px] font-semibold opacity-80">
-        <div className="flex items-center gap-1 font-black uppercase tracking-[0.12em]">
-          <FileSearch className="h-3.5 w-3.5" />
-          Source trace
+        {item.description ? (
+          <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-500">{item.description}</p>
+        ) : null}
+
+        {item.approvalImpact ? (
+          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
+            {item.approvalImpact}
+          </div>
+        ) : null}
+
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+            <FileSearch className="h-3 w-3" />
+            Source trace
+          </div>
+          <p className="mt-1 text-[11px] font-semibold text-slate-500">{item.sourceLabel}</p>
+          <p className="text-[11px] font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
+          {item.sourceRecordId ? <p className="font-mono text-[11px] text-slate-400">ID: {item.sourceRecordId}</p> : null}
         </div>
-        <p className="mt-1">{item.sourceLabel}</p>
-        <p>{item.sourceSystem}{item.sourceTable ? ` - ${item.sourceTable}` : ""}</p>
-        {item.sourceRecordId ? <p className="font-mono">Record: {item.sourceRecordId}</p> : null}
       </div>
     </article>
   );
