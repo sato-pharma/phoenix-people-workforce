@@ -580,17 +580,21 @@ function isMedicalRep(employee: EmployeeDirectoryRow) {
 
 function isAllowedDoubleVisitor(employee: EmployeeDirectoryRow | null) {
   if (!employee) return true;
-  const title = text(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
-  if (!title) return true;
-  const role = resolveJobFunctionRole(title);
-  if (role === "CEO") return false;
-  return allowedDoubleVisitorRoles.includes(role as (typeof allowedDoubleVisitorRoles)[number]);
+  const posRole = resolveJobFunctionRole(employee.positionTitle);
+  const jobRole = resolveJobFunctionRole(employee.jobTitle);
+  if (posRole === "CEO" || jobRole === "CEO") return false;
+  return (
+    allowedDoubleVisitorRoles.includes(posRole as (typeof allowedDoubleVisitorRoles)[number]) ||
+    allowedDoubleVisitorRoles.includes(jobRole as (typeof allowedDoubleVisitorRoles)[number])
+  );
 }
 
 function isDisallowedExecutiveManager(employee: EmployeeDirectoryRow | null) {
   if (!employee) return false;
-  const title = text(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
-  return resolveJobFunctionRole(title) === "CEO";
+  return (
+    resolveJobFunctionRole(employee.positionTitle) === "CEO" ||
+    resolveJobFunctionRole(employee.jobTitle) === "CEO"
+  );
 }
 
 function filterRowsByAllowedDoubleVisitor(rows: DoubleVisitDbRow[], employeeByHrId: Map<string, EmployeeDirectoryRow>) {
