@@ -41,6 +41,13 @@ const SYSTEM_DISTRIBUTORS = [
   { distributor_code: "Direct", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
   { distributor_code: "EP-R", distributor_name: "EPDA Bulk", normalized_distributor_name: "epda bulk" },
   { distributor_code: "EGD-PH", distributor_name: "EGD-PH", normalized_distributor_name: "egd-ph" },
+  // Tender channels — separate distributors so tender/hospital sales stay distinct from the
+  // distributor's regular pharmacy file. Each has a code-defined raw profile in normalizer/profiles.ts.
+  { distributor_code: "IS-T", distributor_name: "Ibn Sina Tender", normalized_distributor_name: "ibn sina tender" },
+  { distributor_code: "PS-T", distributor_name: "Overseas Tender", normalized_distributor_name: "overseas tender" },
+  { distributor_code: "RM-T", distributor_name: "Ramco Tender", normalized_distributor_name: "ramco tender" },
+  { distributor_code: "SF-T", distributor_name: "Sofico Tender", normalized_distributor_name: "sofico tender" },
+  { distributor_code: "HSC", distributor_name: "Hospital Supply Center", normalized_distributor_name: "hospital supply center" },
 ] as const;
 
 // Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never
