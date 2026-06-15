@@ -364,7 +364,8 @@ export const employeePortalNavigationSections = [
   {
     id: "pharmacovigilance",
     items: [
-      { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It" },
+      { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Reports Dashboard", roles: ["Manager"] },
+      { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It", excludedRoles: ["Manager"] },
     ],
     label: "Pharmacovigilance",
   },
