@@ -19,6 +19,7 @@ export type AuditEntityType =
   | "field_workforce_compliance_import"
   | "marketing_request"
   | "notification"
+  | "outstation_expense_access"
   | "outstation_request"
   | "payroll_batch"
   | "permission_override"

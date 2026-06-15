@@ -25,6 +25,12 @@ export type GooglePolylineHandle = {
   setMap(map: GoogleMapHandle | null): void;
 };
 
+export type GoogleHeatmapLayerHandle = {
+  setMap(map: GoogleMapHandle | null): void;
+  setData(data: unknown): void;
+  set(key: string, value: unknown): void;
+};
+
 export type GoogleGeocoderResult = {
   results: Array<{ geometry: { location: unknown } }>;
 };
@@ -37,9 +43,15 @@ export type GoogleMapsApi = {
   Marker?: new (options: Record<string, unknown>) => GoogleMarkerHandle;
   Polyline?: new (options: Record<string, unknown>) => GooglePolylineHandle;
   SymbolPath?: { CIRCLE: unknown };
+  /** Core LatLng constructor (used as HeatmapLayer point locations). */
+  LatLng?: new (lat: number, lng: number) => unknown;
   importLibrary?: (library: string) => Promise<Record<string, unknown>>;
   marker?: {
     AdvancedMarkerElement?: new (options: Record<string, unknown>) => GoogleMarkerHandle;
+  };
+  /** Visualization library — part of core Maps JS (NOT Places). May be absent if blocked. */
+  visualization?: {
+    HeatmapLayer?: new (options: Record<string, unknown>) => GoogleHeatmapLayerHandle;
   };
 };
 
