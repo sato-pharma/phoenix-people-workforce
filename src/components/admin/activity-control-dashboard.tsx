@@ -99,6 +99,17 @@ function EngagementBadge({ band, score }: { band: EngagementBand; score: number 
   );
 }
 
+function NoDataChip() {
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400"
+      title="No page-view activity recorded for this person yet. Tracking only captures navigation going forward."
+    >
+      No data yet
+    </span>
+  );
+}
+
 function SectionCard({
   icon,
   title,
@@ -315,6 +326,18 @@ export function ActivityControlDashboard({
             />
           </div>
 
+          {overview.kpis.totalPageViews < 25 ? (
+            <AdminCallout tone="warning">
+              <Activity className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-xs leading-5">
+                <strong>Engagement &amp; module data is still warming up.</strong> Page-by-page tracking
+                only just started, so active-time, module popularity, and engagement scores will be sparse
+                until people navigate the system over the coming hours and days. <strong>Sessions, online,
+                and adoption figures are accurate right now.</strong>
+              </p>
+            </AdminCallout>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             {/* Who's online now */}
             <SectionCard
@@ -423,11 +446,15 @@ export function ActivityControlDashboard({
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{user.sessions}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{formatMinutes(user.sessionMinutes)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">{formatMinutes(user.activeMinutes)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">{user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{user.distinctModules}</td>
                         <td className="px-4 py-2 text-[#334155]">{user.topModule ?? "—"}</td>
                         <td className="px-4 py-2 text-center">
-                          <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
+                          {user.pageViews > 0 ? (
+                            <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
+                          ) : (
+                            <NoDataChip />
+                          )}
                         </td>
                         <td className="px-4 py-2 text-right text-[#64748B]">{formatRelative(user.lastSeenAt)}</td>
                         <td className="px-4 py-2 text-right">
@@ -581,11 +608,16 @@ export function ActivityControlDashboard({
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Engagement signal</p>
                       <p className="text-xs text-[#64748B]">
-                        Active {Math.round(timeline.summary.engagement.activeRatio * 100)}% of logged-in time ·
-                        top module {timeline.summary.topModule ?? "—"}
+                        {timeline.summary.pageViews > 0
+                          ? `Active ${Math.round(timeline.summary.engagement.activeRatio * 100)}% of logged-in time · top module ${timeline.summary.topModule ?? "—"}`
+                          : "No page-view activity recorded yet — it appears here as they navigate the system."}
                       </p>
                     </div>
-                    <EngagementBadge band={timeline.summary.engagement.band} score={timeline.summary.engagement.score} />
+                    {timeline.summary.pageViews > 0 ? (
+                      <EngagementBadge band={timeline.summary.engagement.band} score={timeline.summary.engagement.score} />
+                    ) : (
+                      <NoDataChip />
+                    )}
                   </div>
 
                   {timeline.sessions.length ? (

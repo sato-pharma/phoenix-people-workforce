@@ -17,6 +17,11 @@ import {
   permissionMatrix,
   phoenixRoles,
 } from "../src/lib/auth/permissions.ts";
+import {
+  SESSION_MERGE_GAP_SECONDS,
+  collapseSessions,
+  type SessionRow,
+} from "../src/lib/activity/service.ts";
 
 function testModuleResolver() {
   // Longest-prefix wins: specific routes beat their parents.
@@ -100,8 +105,68 @@ function testPermissionGate() {
   assert.equal(ACTIVITY_TRACKING_SHOW_EMPLOYEE_NOTICE, false);
 }
 
+function sessionRow(hrId: string, createdAt: string, lastSeenAt: string, extra: Partial<SessionRow> = {}): SessionRow {
+  return {
+    id: null,
+    loginId: null,
+    hrId,
+    role: null,
+    createdAt,
+    lastSeenAt,
+    revokedAt: null,
+    revokedReason: null,
+    idleExpiresAt: null,
+    absoluteExpiresAt: null,
+    ip: null,
+    userAgent: null,
+    ...extra,
+  };
+}
+
+function testSessionCollapsing() {
+  assert.equal(SESSION_MERGE_GAP_SECONDS, 1800);
+
+  const rows: SessionRow[] = [
+    // A-1: two rows 10 min apart -> merge into one 30-min logical session.
+    sessionRow("A-1", "2026-06-15T09:00:00Z", "2026-06-15T09:10:00Z"),
+    sessionRow("A-1", "2026-06-15T09:20:00Z", "2026-06-15T09:30:00Z"),
+    // A-1: 90 min after the previous end -> separate logical session.
+    sessionRow("A-1", "2026-06-15T11:00:00Z", "2026-06-15T11:05:00Z"),
+    // B-2: different person, never merges with A-1.
+    sessionRow("B-2", "2026-06-15T09:05:00Z", "2026-06-15T09:06:00Z"),
+  ];
+
+  // Order of input must not matter.
+  const collapsed = collapseSessions([rows[2], rows[0], rows[3], rows[1]]);
+  assert.equal(collapsed.length, 3, "4 rows for 2 people collapse to 3 logical sessions");
+
+  const a1 = collapsed.filter((s) => s.hrId === "A-1").sort((x, y) => (x.startedAt < y.startedAt ? -1 : 1));
+  assert.equal(a1.length, 2);
+  // First A-1 session spans 09:00 -> 09:30 (1800s), built from 2 rows.
+  assert.equal(a1[0].durationSeconds, 1800);
+  assert.equal(a1[0].mergedRows, 2);
+  assert.equal(a1[0].startedAt, "2026-06-15T09:00:00Z");
+  // Second A-1 session is the standalone 5-min one.
+  assert.equal(a1[1].durationSeconds, 300);
+  assert.equal(a1[1].mergedRows, 1);
+
+  const b2 = collapsed.filter((s) => s.hrId === "B-2");
+  assert.equal(b2.length, 1);
+  assert.equal(b2[0].durationSeconds, 60);
+
+  // A burst of many rapid rows for one person collapses to a single session.
+  const burst: SessionRow[] = Array.from({ length: 20 }, (_, i) => {
+    const minute = String(i).padStart(2, "0");
+    return sessionRow("A-12", `2026-06-15T08:${minute}:00Z`, `2026-06-15T08:${minute}:30Z`);
+  });
+  const burstCollapsed = collapseSessions(burst);
+  assert.equal(burstCollapsed.length, 1, "20 rapid rows collapse to one logical session");
+  assert.equal(burstCollapsed[0].mergedRows, 20);
+}
+
 export function runActivityTrackingTests() {
   testModuleResolver();
   testEngagementEngine();
   testPermissionGate();
+  testSessionCollapsing();
 }
