@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Copy, Download, Loader2, Search, Sparkles, UploadCloud } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
@@ -11,7 +12,10 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   distributors: SalesDistributorOption[];
-  defaultDistributorCode: string;
+  distributorCode: string;
+  onDistributorChange: (code: string) => void;
+  /** Distributor codes that have a normalizer layout profile (Learn/Analyze need one). */
+  profiledDistributorCodes: string[];
 };
 
 type BlockedRow = { reason: string; row?: number; rowNumber?: number; values?: string; key?: string };
@@ -59,42 +63,43 @@ async function copyCodedHeaders() {
 
 function ResultBanner({ result, message, error }: { result: ImportResult | null; message: string | null; error: string | null }) {
   const blocked = result?.blockedRows ?? [];
-  if (blocked.length > 0) {
-    return (
-      <AdminCallout tone="danger">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <div>
-          <p className="font-semibold">{blocked.length} row{blocked.length === 1 ? "" : "s"} could not be imported — fix these and re-upload:</p>
-          <ul className="mt-2 max-h-44 space-y-1 overflow-auto text-sm">
-            {blocked.slice(0, 50).map((row, index) => (
-              <li key={`${row.rowNumber ?? row.row ?? index}:${index}`}>
-                <b>Row {row.rowNumber ?? row.row ?? "?"}</b>: {row.reason}
-                {row.values || row.key ? <span className="text-[#64748B]"> ({row.values ?? row.key})</span> : null}
-              </li>
-            ))}
-          </ul>
-          {blocked.length > 50 ? <p className="mt-1 text-xs text-[#64748B]">…and {blocked.length - 50} more.</p> : null}
-        </div>
-      </AdminCallout>
-    );
-  }
-  if (error) {
-    return (
-      <AdminCallout tone="danger">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>{error}</p>
-      </AdminCallout>
-    );
-  }
-  if (message) {
-    return (
-      <AdminCallout tone="success">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>{message}</p>
-      </AdminCallout>
-    );
-  }
-  return null;
+  if (blocked.length === 0 && !error && !message) return null;
+  return (
+    <div className="space-y-2">
+      {message ? (
+        <AdminCallout tone="success">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{message}</p>
+        </AdminCallout>
+      ) : null}
+      {error ? (
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{error}</p>
+        </AdminCallout>
+      ) : null}
+      {blocked.length > 0 ? (
+        <AdminCallout tone="neutral">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">{blocked.length} row{blocked.length === 1 ? "" : "s"} could not be imported — fix these and re-upload:</p>
+            <ul className="mt-2 max-h-44 space-y-1 overflow-auto text-sm">
+              {blocked.slice(0, 50).map((row, index) => {
+                const detail = row.values || row.key;
+                return (
+                  <li key={`${row.rowNumber ?? row.row ?? index}:${index}`}>
+                    <b>Row {row.rowNumber ?? row.row ?? "?"}</b>: {row.reason}
+                    {detail ? <span className="text-[#64748B]"> ({detail})</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
+            {blocked.length > 50 ? <p className="mt-1 text-xs text-[#64748B]">…and {blocked.length - 50} more.</p> : null}
+          </div>
+        </AdminCallout>
+      ) : null}
+    </div>
+  );
 }
 
 /** Download + upload one mapping template. uploadUrl receives a multipart "file". */
@@ -171,8 +176,21 @@ function TemplateCard({
   );
 }
 
+function NoProfileNote({ distributorCode }: { distributorCode: string }) {
+  return (
+    <AdminCallout tone="neutral">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <p>
+        <b>{distributorCode || "This distributor"}</b> has no automatic layout profile yet, so &ldquo;Learn&rdquo; and
+        &ldquo;Analyze&rdquo; can&apos;t read its raw file. You can still use the Product and Customer / Brick templates
+        above, or add coded columns manually.
+      </p>
+    </AdminCallout>
+  );
+}
+
 /** "Learn from my coded file" — bootstrap the dictionary in bulk from a sheet that already has the codes. */
-function BootstrapCard({ distributorCode }: { distributorCode: string }) {
+function BootstrapCard({ distributorCode, hasProfile }: { distributorCode: string; hasProfile: boolean }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -206,9 +224,10 @@ function BootstrapCard({ distributorCode }: { distributorCode: string }) {
           customer→brick pair at once — so most of your mapping is done in one click.
         </p>
       </div>
+      {hasProfile ? null : <NoProfileNote distributorCode={distributorCode} />}
       <Button
         className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
-        disabled={busy || !distributorCode}
+        disabled={busy || !distributorCode || !hasProfile}
         onClick={() => inputRef.current?.click()}
         type="button"
       >
@@ -228,7 +247,7 @@ function BootstrapCard({ distributorCode }: { distributorCode: string }) {
 }
 
 /** Upload a raw sheet → coverage + DISTINCT unknowns with editable codes + AI suggest + save. */
-function MissingPanel({ distributorCode }: { distributorCode: string }) {
+function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string; hasProfile: boolean }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [aiKind, setAiKind] = useState<"product" | "territory" | null>(null);
@@ -324,9 +343,10 @@ function MissingPanel({ distributorCode }: { distributorCode: string }) {
           if needed, then save. They&apos;re remembered for every future upload.
         </p>
       </div>
+      {hasProfile ? null : <NoProfileNote distributorCode={distributorCode} />}
       <Button
         className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
-        disabled={busy || !distributorCode}
+        disabled={busy || !distributorCode || !hasProfile}
         onClick={() => inputRef.current?.click()}
         type="button"
       >
@@ -334,7 +354,7 @@ function MissingPanel({ distributorCode }: { distributorCode: string }) {
         Analyze raw sheet
       </Button>
       <input
-        accept=".xlsx,.xls"
+        accept=".xlsx"
         className="hidden"
         onChange={(event) => { const file = event.target.files?.[0]; if (file) void analyze(file); }}
         ref={inputRef}
@@ -460,9 +480,10 @@ function UnknownTable({
   );
 }
 
-export function SourceOfSalesMappingTab({ distributors, defaultDistributorCode }: Props) {
-  const [distributorCode, setDistributorCode] = useState(defaultDistributorCode || distributors[0]?.code || "");
+export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistributorChange, profiledDistributorCodes }: Props) {
   const [headersCopied, setHeadersCopied] = useState(false);
+  const profiled = new Set(profiledDistributorCodes.map((code) => code.trim().toUpperCase()));
+  const hasProfile = profiled.has((distributorCode ?? "").trim().toUpperCase());
 
   return (
     <div className="space-y-5">
@@ -474,7 +495,7 @@ export function SourceOfSalesMappingTab({ distributors, defaultDistributorCode }
             Set up the product and customer mappings below (the AI assist and &ldquo;learn from a coded file&rdquo; do most of
             the work). Then upload each distributor&apos;s <b>raw export</b> on the <b>Uploaded Sheets</b> tab — no coded
             columns to add by hand. Anything still unmapped appears in{" "}
-            <a className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</a>.
+            <Link className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</Link>.
           </p>
         </div>
       </AdminCallout>
@@ -483,7 +504,7 @@ export function SourceOfSalesMappingTab({ distributors, defaultDistributorCode }
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
         <select
           className="h-10 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
-          onChange={(event) => setDistributorCode(event.target.value)}
+          onChange={(event) => onDistributorChange(event.target.value)}
           value={distributorCode}
         >
           {distributors.map((distributor) => (
@@ -492,7 +513,7 @@ export function SourceOfSalesMappingTab({ distributors, defaultDistributorCode }
             </option>
           ))}
         </select>
-        <span className="text-xs text-[#64748B]">Used by the customer, learn, and analyze tools below.</span>
+        <span className="text-xs text-[#64748B]">Shared with the Uploaded Sheets tab and the tools below.</span>
       </Card>
 
       <TemplateCard
@@ -511,9 +532,9 @@ export function SourceOfSalesMappingTab({ distributors, defaultDistributorCode }
         uploadUrl="/api/sales/monthly-import/customer-mapping"
       />
 
-      <BootstrapCard distributorCode={distributorCode} />
+      <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
 
-      <MissingPanel distributorCode={distributorCode} />
+      <MissingPanel distributorCode={distributorCode} hasProfile={hasProfile} />
 
       <Card className={cn(panelClassName, "space-y-3 p-5")}>
         <div>

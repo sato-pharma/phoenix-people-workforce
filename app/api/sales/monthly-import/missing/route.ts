@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { normalizeUploadedFile, summarizePreview } from "@/lib/sales/normalizer/service";
+import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,19 @@ export async function POST(request: Request) {
     }
     if (!distributorCode) {
       return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
+    }
+
+    const validation = validateSpreadsheetFile(file, {
+      ...xlsxSpreadsheetValidation,
+      emptyError: "invalid_sales_file",
+      emptyMessage: "The sheet is empty.",
+      tooLargeError: "sales_file_too_large",
+      tooLargeMessage: "The sheet exceeds the 10MB upload limit.",
+      unsupportedError: "unsupported_sales_file_type",
+      unsupportedMessage: "Upload the raw sheet in .xlsx format.",
+    });
+    if (!validation.ok) {
+      return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
     }
 
     const { result, distributorName, products } = await normalizeUploadedFile(distributorCode, file);

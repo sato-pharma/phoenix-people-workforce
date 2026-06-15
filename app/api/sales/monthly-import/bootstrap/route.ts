@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { learnFromCleanedFile } from "@/lib/sales/normalizer/service";
+import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +27,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
     }
 
+    const validation = validateSpreadsheetFile(file, {
+      ...xlsxSpreadsheetValidation,
+      emptyError: "invalid_mapping_file",
+      emptyMessage: "The file is empty.",
+      tooLargeError: "mapping_file_too_large",
+      tooLargeMessage: "The file exceeds the 10MB upload limit.",
+      unsupportedError: "unsupported_mapping_file_type",
+      unsupportedMessage: "Upload the file in .xlsx format.",
+    });
+    if (!validation.ok) {
+      return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
+    }
+
     const result = await learnFromCleanedFile(distributorCode, file);
+    await writeAuditLog({
+      actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
+      entityId: "source_of_sales_product_aliases",
+      entityType: "sales_import_batch",
+      newValues: { distributorCode, ...result, source: "mapping_bootstrap" },
+      summary: `Mapping bootstrap (${distributorCode}) — ${result.saved} learned from ${result.scannedRows} rows.`,
+    });
     return NextResponse.json({
       success: true,
       result,

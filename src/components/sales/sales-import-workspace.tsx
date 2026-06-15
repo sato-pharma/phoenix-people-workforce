@@ -54,6 +54,8 @@ type Props = {
   initialDashboard: SourceOfSalesDashboard | null;
   initialError: string | null;
   initialProducts: SourceOfSalesProduct[];
+  /** Distributor codes that have a normalizer layout profile (gates the Mapping tab's Learn/Analyze). */
+  profiledDistributorCodes: string[];
 };
 
 type ValidationResponse = {
@@ -657,7 +659,7 @@ function SourceOfSalesDashboardPanel({
 
 type SourceOfSalesTab = "dashboard" | "mapping" | "products" | "sheets";
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -1170,8 +1172,10 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </>
         ) : activeTab === "mapping" ? (
           <SourceOfSalesMappingTab
-            defaultDistributorCode={selectedDistributorCode}
+            distributorCode={selectedDistributorCode}
             distributors={distributors}
+            onDistributorChange={setSelectedDistributorCode}
+            profiledDistributorCodes={profiledDistributorCodes}
           />
         ) : (
           <SourceOfSalesProductsTab
