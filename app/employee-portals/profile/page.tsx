@@ -23,6 +23,7 @@ import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
+import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { formatDateOnly } from "@/lib/date-only";
@@ -101,11 +102,16 @@ export default async function EmployeePortalProfilePage() {
     .map((part) => part.charAt(0))
     .join("")
     .toUpperCase();
+  const hasDeviceMapping = access.hrId
+    ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
+    : false;
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,
     employee.line,
     employee.department,
+    employee.hrId,
+    hasDeviceMapping,
   );
 
   const employmentRows: Array<{

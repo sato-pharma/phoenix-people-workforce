@@ -9,6 +9,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageTransition } from "@/components/ui/page-transition";
+import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -53,12 +54,17 @@ export default async function PayslipsPage() {
     );
   }
 
+  const hasDeviceMapping = access.hrId
+    ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
+    : false;
+
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,
     access.role,
     data.employee.line,
     data.employee.department,
     data.employee.hrId,
+    hasDeviceMapping,
   );
 
   if (navigationMode === "admin") {
