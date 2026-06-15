@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission, isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   buildPhoenixTableWorkbook,
   type ExportColumn,
@@ -35,7 +35,9 @@ function fileName(title: string) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    assertPermission(access, "overview", "read");
+    if (!access.loginId && !access.hrId) {
+      return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+    }
     const payload = (await request.json()) as ExportPayload;
     if (!Array.isArray(payload.columns) || payload.columns.length === 0) {
       return NextResponse.json({ error: "No columns to export." }, { status: 400 });
