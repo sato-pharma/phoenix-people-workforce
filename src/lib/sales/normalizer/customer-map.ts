@@ -149,7 +149,10 @@ const HEADER_ALIASES: Record<string, string> = {
   "brick id": "brick_id", "brick_id": "brick_id", brick: "brick_id",
 };
 
-function locateCustomerMapSheet(workbook: ExcelJS.Workbook): { columnMap: Map<string, number>; headerRow: number; sheet: ExcelJS.Worksheet } | null {
+function locateCustomerMapSheet(
+  workbook: ExcelJS.Workbook,
+  distributorOptional = false,
+): { columnMap: Map<string, number>; headerRow: number; sheet: ExcelJS.Worksheet } | null {
   for (const sheet of workbook.worksheets) {
     const maxRow = Math.min(sheet.rowCount, 12);
     for (let rowNumber = 1; rowNumber <= maxRow; rowNumber += 1) {
@@ -160,7 +163,10 @@ function locateCustomerMapSheet(workbook: ExcelJS.Workbook): { columnMap: Map<st
         const key = HEADER_ALIASES[header];
         if (key && !columnMap.has(key)) columnMap.set(key, column);
       }
-      if (columnMap.has("distributor_code") && columnMap.has("customer_code") && columnMap.has("brick_id")) {
+      // When a default distributor is supplied, the Distrub ID column is optional (each row inherits the
+      // default), so a sheet with just Customer code + Brick ID is still recognized.
+      const hasDistributor = columnMap.has("distributor_code") || distributorOptional;
+      if (hasDistributor && columnMap.has("customer_code") && columnMap.has("brick_id")) {
         return { columnMap, headerRow: rowNumber, sheet };
       }
     }
@@ -186,7 +192,7 @@ async function loadExistingCustomerKeys(supabase: ReturnType<typeof getSupabaseA
   return keys;
 }
 
-export async function importCustomerMap(input: { actorLoginId: string; file: File }): Promise<CustomerMapImportResult> {
+export async function importCustomerMap(input: { actorLoginId: string; file: File; defaultDistributorCode?: string }): Promise<CustomerMapImportResult> {
   const validation = validateSpreadsheetFile(input.file, {
     ...xlsxSpreadsheetValidation,
     emptyError: "invalid_customer_map_file",
@@ -198,12 +204,16 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   });
   if (!validation.ok) throw new SalesWorkflowError(validation.error, validation.message, validation.status);
 
+  // When the caller selected a distributor (the per-distributor Customer/Brick template), every row that
+  // leaves Distrub ID blank inherits it — so a sheet downloaded for "PS" doesn't need PS typed 15k times.
+  const defaultDistributor = String(input.defaultDistributorCode ?? "").trim();
+
   const workbook = await loadExcelWorkbook(await input.file.arrayBuffer());
-  const located = locateCustomerMapSheet(workbook);
+  const located = locateCustomerMapSheet(workbook, Boolean(defaultDistributor));
   if (!located) {
     throw new SalesWorkflowError(
       "unmatched_customer_map_sheet",
-      "No sheet matching the customer map template was found. Expected headers include: Distrub ID, Customer code, Brick ID.",
+      "No sheet matching the customer map template was found. Required headers: Customer code and Brick ID (plus Distrub ID unless a distributor is selected).",
       400,
     );
   }
@@ -237,7 +247,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
         brickId: cell(row, "brick_id"),
         customerCode: cell(row, "customer_code"),
         customerName: cell(row, "customer_name"),
-        distributorCode: cell(row, "distributor_code"),
+        distributorCode: cell(row, "distributor_code") || defaultDistributor,
       },
       ctx,
     );
@@ -276,4 +286,50 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   });
 
   return { blockedRows, inserted, skipped, totalRead, updated };
+}
+
+// Add/update ONE customer->brick mapping from the inline "add by field" form (vs the bulk upload).
+// Validates the brick + distributor via the shared classifier, then upserts (with name/address) and audits.
+export async function addCustomerMapRow(input: {
+  actorLoginId: string;
+  distributorCode: string;
+  customerCode: string;
+  customerName?: string;
+  address?: string;
+  brickId: string;
+}): Promise<void> {
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const brickById = new Map<string, BrickRef>(
+    (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
+  );
+  const distributorCodes = new Set(refs.distributors.map((d) => normalizeCodeKey(d.code)));
+  const ctx: CustomerMapClassifyContext = { brickById, distributorCodes, seen: new Set() };
+  const result = classifyCustomerMapRow(
+    {
+      address: input.address,
+      brickId: input.brickId,
+      customerCode: input.customerCode,
+      customerName: input.customerName,
+      distributorCode: input.distributorCode,
+    },
+    ctx,
+  );
+  if (result.kind === "skip-blank" || result.kind === "skipped") {
+    throw new SalesWorkflowError("invalid_customer_map_row", "Customer code and a valid Brick ID are required.", 400);
+  }
+  if (result.kind === "blocked") throw new SalesWorkflowError("invalid_customer_map_row", result.reason, 400);
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("source_of_sales_customer_map")
+    .upsert({ ...result.payload, updated_at: new Date().toISOString() }, { onConflict: "distributor_code,customer_code" });
+  if (error) throw new SalesWorkflowError("persist_failed", error.message, 500);
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_customer_map",
+    entityType: "sales_import_batch",
+    newValues: { ...result.payload, source: "customer_map_add" },
+    summary: `Customer map add — ${String(result.payload.distributor_code)} / ${String(result.payload.customer_code)} -> ${String(result.payload.brick_id)}.`,
+  });
 }

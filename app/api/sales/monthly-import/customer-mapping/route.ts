@@ -19,9 +19,11 @@ export async function POST(request: Request) {
     if (!file) {
       return NextResponse.json({ success: false, error: "A customer mapping file is required." }, { status: 400 });
     }
+    // The selected distributor fills in any row that left Distrub ID blank (the template is per-distributor).
+    const defaultDistributorCode = String(formData.get("distributorCode") ?? "").trim();
 
     const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await importCustomerMap({ actorLoginId, file });
+    const result = await importCustomerMap({ actorLoginId, file, defaultDistributorCode });
     const blocked = result.blockedRows.length > 0;
     // Per-row tolerant: valid rows are upserted even when some are blocked. Only fail hard when nothing
     // was saved; a partial save succeeds and surfaces the blocked rows for the user to fix and re-upload.
