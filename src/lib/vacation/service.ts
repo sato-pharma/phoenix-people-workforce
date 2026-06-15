@@ -44,6 +44,7 @@ import {
 import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import {
   assertLeaveWorkflowTransition,
+  vacationDecisionAction,
 } from "@/lib/vacation/workflow";
 import {
   evaluateStepAction,
@@ -2653,6 +2654,24 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   });
   if (!step) {
     throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
+  }
+
+  // Enforce the runtime-overridable workflow-registry role authority on the decide path,
+  // consistent with submit/admin transitions. Skip the role-less magic-link token path
+  // (already authenticated by the signed token + the step resolver above) and the
+  // Phoenix-specific "needs_assignment" state, which the leave_requests registry does not
+  // model. expectedNextStatus is intentionally omitted: the sequential resolver computes
+  // the real next status, so we gate only on the actor's role for this action.
+  if (input.access && (input.request.status === "pending_manager" || input.request.status === "pending_hr")) {
+    const { actionKey } = vacationDecisionAction({
+      decision: input.decision,
+      status: input.request.status,
+    });
+    await assertLeaveWorkflowTransition({
+      access: input.access,
+      actionKey,
+      status: input.request.status,
+    });
   }
 
   const stepStates: VacationApprovalStepState[] = steps.map((candidate) => ({

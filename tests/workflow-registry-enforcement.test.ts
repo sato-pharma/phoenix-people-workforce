@@ -87,6 +87,9 @@ export function runWorkflowRegistryEnforcementTests() {
   const vacationService = source("src/lib/vacation/service.ts");
   assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(vacationService, /assertLeaveWorkflowTransition\(\{[\s\S]*actionKey: "admin_create"/);
+  // The decide path must enforce the registry's runtime-overridable role authority,
+  // deriving the action key from vacationDecisionAction (manager_*/hr_* per step).
+  assert.match(vacationService, /const \{ actionKey \} = vacationDecisionAction\(\{/);
   assert.match(vacationService, /getPendingVacationApprovalStepForActor/);
   assert.match(vacationService, /recordVacationApprovalStepDecision/);
 

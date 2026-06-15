@@ -1492,10 +1492,12 @@ export async function runResignationWorkflow(
     .from("employee_resignations")
     .update(updates)
     .eq("id", id)
+    .eq("updated_at", row.updated_at)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!updated) throw new Error("Resignation workflow was updated by another user. Refresh and try again.");
   const record = mapResignation(updated as ResignationRow);
   await notifyResignationWorkflow(
     record,
