@@ -245,6 +245,9 @@ export async function runSalesDistributorImportTests() {
   assert.equal(ibnResult.totals.totalValue, 340);
   assert.equal(ibnResult.byLine.find((row) => row.line === "CNS")?.totalQty, 24);
 
+  // The brick is the source of truth for geography: the sheet's Region "AB" disagrees with
+  // brick B-1 (master Region CA / Area A1), so it is IGNORED and the row is re-tagged to the
+  // brick's master region — silently, with no warning (the uploaded hierarchy is not "kept").
   const mismatchBuffer = await buildPsWorkbookBuffer([
     ["B1", "Branch", new Date("2026-04-04T00:00:00Z"), 1, 0, 10, "P-A", "B-1", "A1", "AB", "PS"],
   ]);
@@ -258,8 +261,30 @@ export async function runSalesDistributorImportTests() {
 
   assert.equal(mismatchResult.status, "validated");
   assert.equal(mismatchResult.failedRows, 0);
-  assert.equal(mismatchResult.warningRows, 1);
-  assert.ok(mismatchResult.issues.some((issue) => issue.severity === "warning" && issue.field === "Area ID"));
+  assert.equal(mismatchResult.warningRows, 0); // sheet region ignored → no "uploaded hierarchy" warning
+  const mismatchBrick = mismatchResult.byBrick.find((row) => row.brickId === "B-1");
+  assert.equal(mismatchBrick?.regionCode, "CA"); // forced from the brick master, NOT the sheet's "AB"
+  assert.equal(mismatchBrick?.areaCode, "A1");
+
+  // Production shape: a PS sheet carries its OWN territory labels ("BEHIRA 2" / "ALEX WEST") in
+  // the Region/Area columns — values that are not in our master at all. The brick still wins:
+  // region/area are forced to the brick master (CA / A1), the row validates clean, and no phantom
+  // region leaks through (no warning, no block).
+  const foreignGeoBuffer = await buildPsWorkbookBuffer([
+    ["B1", "Branch", new Date("2026-04-05T00:00:00Z"), 2, 0, 20, "P-A", "B-1", "ALEX WEST", "BEHIRA 2", "PS"],
+  ]);
+  const foreignGeo = await validateDistributorSalesWorkbookBuffer({
+    buffer: foreignGeoBuffer as unknown as ArrayBuffer,
+    distributorCode: "PS",
+    fileName: "ps foreign geo.xlsx",
+    references,
+  });
+  assert.equal(foreignGeo.status, "validated");
+  assert.equal(foreignGeo.failedRows, 0);
+  assert.equal(foreignGeo.warningRows, 0);
+  const foreignBrick = foreignGeo.byBrick.find((row) => row.brickId === "B-1");
+  assert.equal(foreignBrick?.regionCode, "CA"); // "BEHIRA 2" discarded; brick master CA used
+  assert.equal(foreignBrick?.areaCode, "A1"); // "ALEX WEST" discarded; brick master A1 used
 
   // Value must be computed as Qty x factory_price x (1 - discount), ignoring the
   // sheet Value column and the bonus units entirely.
