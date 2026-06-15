@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Copy, Download, Loader2, Search, Sparkles, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, Loader2, Plus, Search, Sparkles, UploadCloud } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,9 @@ type Props = {
   onDistributorChange: (code: string) => void;
   /** Distributor codes that have a normalizer layout profile (Learn/Analyze need one). */
   profiledDistributorCodes: string[];
+  /** Master products + bricks for the inline "add by field" dropdowns. */
+  products: { code: string; name: string }[];
+  bricks: { id: string; name: string }[];
 };
 
 type BlockedRow = { reason: string; row?: number; rowNumber?: number; values?: string; key?: string };
@@ -110,6 +113,7 @@ function TemplateCard({
   templateLabel,
   uploadUrl,
   uploadFields,
+  children,
 }: {
   title: string;
   description: string;
@@ -117,6 +121,7 @@ function TemplateCard({
   templateLabel: string;
   uploadUrl: string;
   uploadFields?: Record<string, string>;
+  children?: ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -174,6 +179,7 @@ function TemplateCard({
           type="file"
         />
       </div>
+      {children ? <div className="border-t border-dashed border-[#E2E8F0] pt-4">{children}</div> : null}
       <ResultBanner error={error} message={message} result={result} />
     </Card>
   );
@@ -483,7 +489,130 @@ function UnknownTable({
   );
 }
 
-export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistributorChange, profiledDistributorCodes }: Props) {
+const fieldInputClass = "h-9 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** Inline "add one" — distributor item code/name -> Phoenix product (no upload needed). */
+function ProductAddForm({ products }: { products: { code: string; name: string }[] }) {
+  const [alias, setAlias] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function add() {
+    if (!alias.trim() || !code) { setError("Enter the alias and pick a product."); return; }
+    setBusy(true); setMessage(null); setError(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/save-mappings", {
+        body: JSON.stringify({ mappings: [{ type: "product", raw: alias.trim(), code }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<ImportResponse>(response, { success: false });
+      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setAlias(""); setCode(""); }
+      else setError(payload.error ?? "Add failed.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Add failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Alias (item code or name)">
+          <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => setAlias(event.target.value)} placeholder="distributor's item code or name" value={alias} />
+        </Field>
+        <Field label="Phoenix product">
+          <select className={cn(fieldInputClass, "w-64 bg-white font-semibold")} disabled={busy} onChange={(event) => setCode(event.target.value)} value={code}>
+            <option value="">Select…</option>
+            {products.map((product) => (
+              <option key={product.code} value={product.code}>{product.name} ({product.code})</option>
+            ))}
+          </select>
+        </Field>
+        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy} onClick={() => void add()} type="button">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+        </Button>
+      </div>
+      {message ? <p className="text-xs font-bold text-emerald-600">{message}</p> : null}
+      {error ? <p className="text-xs font-bold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+/** Inline "add one" — customer code -> brick (Area/Region derive from the brick). */
+function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: string; bricks: { id: string; name: string }[] }) {
+  const [customerCode, setCustomerCode] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [address, setAddress] = useState("");
+  const [brickId, setBrickId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function add() {
+    if (!customerCode.trim() || !brickId) { setError("Enter the customer code and pick a brick."); return; }
+    setBusy(true); setMessage(null); setError(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/customer-mapping/add", {
+        body: JSON.stringify({ distributorCode, customerCode: customerCode.trim(), customerName: customerName.trim(), address: address.trim(), brickId }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<ImportResponse>(response, { success: false });
+      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setCustomerCode(""); setCustomerName(""); setAddress(""); setBrickId(""); }
+      else setError(payload.error ?? "Add failed.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Add failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Customer code">
+          <input className={cn(fieldInputClass, "w-40")} disabled={busy} onChange={(event) => setCustomerCode(event.target.value)} value={customerCode} />
+        </Field>
+        <Field label="Customer name (optional)">
+          <input className={cn(fieldInputClass, "w-48")} disabled={busy} onChange={(event) => setCustomerName(event.target.value)} value={customerName} />
+        </Field>
+        <Field label="Address (optional)">
+          <input className={cn(fieldInputClass, "w-48")} disabled={busy} onChange={(event) => setAddress(event.target.value)} value={address} />
+        </Field>
+        <Field label="Brick">
+          <select className={cn(fieldInputClass, "w-64 bg-white font-semibold")} disabled={busy} onChange={(event) => setBrickId(event.target.value)} value={brickId}>
+            <option value="">Select…</option>
+            {bricks.map((brick) => (
+              <option key={brick.id} value={brick.id}>{brick.name} ({brick.id})</option>
+            ))}
+          </select>
+        </Field>
+        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+        </Button>
+      </div>
+      {message ? <p className="text-xs font-bold text-emerald-600">{message}</p> : null}
+      {error ? <p className="text-xs font-bold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistributorChange, profiledDistributorCodes, products, bricks }: Props) {
   const [headersCopied, setHeadersCopied] = useState(false);
   const profiled = new Set(profiledDistributorCodes.map((code) => code.trim().toUpperCase()));
   const hasProfile = profiled.has((distributorCode ?? "").trim().toUpperCase());
@@ -525,7 +654,9 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
         templateLabel="Download Product Mapping template"
         title="Product Mapping"
         uploadUrl="/api/sales/monthly-import/product-mapping"
-      />
+      >
+        <ProductAddForm products={products} />
+      </TemplateCard>
 
       <TemplateCard
         description="Map this distributor's customer codes to Phoenix Brick IDs (Area and Region fill automatically from the brick). You only need Customer code + Brick ID — leave Distrub ID blank and it's filled in from the selected distributor. Pre-filled with what's already saved, plus a read-only Master Bricks reference sheet."
@@ -534,7 +665,9 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
         title={`Customer / Brick Mapping — ${distributorCode || "(pick a distributor)"}`}
         uploadFields={{ distributorCode }}
         uploadUrl="/api/sales/monthly-import/customer-mapping"
-      />
+      >
+        <CustomerBrickAddForm bricks={bricks} distributorCode={distributorCode} />
+      </TemplateCard>
 
       <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
 

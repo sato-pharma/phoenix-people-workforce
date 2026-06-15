@@ -287,3 +287,49 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
 
   return { blockedRows, inserted, skipped, totalRead, updated };
 }
+
+// Add/update ONE customer->brick mapping from the inline "add by field" form (vs the bulk upload).
+// Validates the brick + distributor via the shared classifier, then upserts (with name/address) and audits.
+export async function addCustomerMapRow(input: {
+  actorLoginId: string;
+  distributorCode: string;
+  customerCode: string;
+  customerName?: string;
+  address?: string;
+  brickId: string;
+}): Promise<void> {
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const brickById = new Map<string, BrickRef>(
+    (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
+  );
+  const distributorCodes = new Set(refs.distributors.map((d) => normalizeCodeKey(d.code)));
+  const ctx: CustomerMapClassifyContext = { brickById, distributorCodes, seen: new Set() };
+  const result = classifyCustomerMapRow(
+    {
+      address: input.address,
+      brickId: input.brickId,
+      customerCode: input.customerCode,
+      customerName: input.customerName,
+      distributorCode: input.distributorCode,
+    },
+    ctx,
+  );
+  if (result.kind === "skip-blank" || result.kind === "skipped") {
+    throw new SalesWorkflowError("invalid_customer_map_row", "Customer code and a valid Brick ID are required.", 400);
+  }
+  if (result.kind === "blocked") throw new SalesWorkflowError("invalid_customer_map_row", result.reason, 400);
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("source_of_sales_customer_map")
+    .upsert({ ...result.payload, updated_at: new Date().toISOString() }, { onConflict: "distributor_code,customer_code" });
+  if (error) throw new SalesWorkflowError("persist_failed", error.message, 500);
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_customer_map",
+    entityType: "sales_import_batch",
+    newValues: { ...result.payload, source: "customer_map_add" },
+    summary: `Customer map add — ${String(result.payload.distributor_code)} / ${String(result.payload.customer_code)} -> ${String(result.payload.brick_id)}.`,
+  });
+}
