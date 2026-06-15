@@ -155,16 +155,16 @@ export function runPrivateCalendarTests() {
       managerHrId: "M-1",
       managerName: "Manager One",
     }],
-    end: "2026-06-17",
-    isExpectedWorkday: (_employee, date) => ["2026-06-15", "2026-06-17"].includes(date),
+    end: "2026-05-06",
+    isExpectedWorkday: (_employee, date) => ["2026-05-04", "2026-05-06"].includes(date),
     items: [],
-    start: "2026-06-15",
-    today: "2026-06-17",
+    start: "2026-05-04",
+    today: "2026-05-06",
   });
   assert.deepEqual(
     customWorkdayExceptions.filter((item) => item.title === "Missing attendance cover").map((item) => item.date),
-    ["2026-06-15", "2026-06-17"],
-    "private calendar missing-attendance warnings must follow custom employee workdays",
+    ["2026-05-04", "2026-05-06"],
+    "private calendar missing-attendance warnings must follow custom employee workdays before June",
   );
 
   const teamSummary = buildPrivateCalendarTeamSummary({

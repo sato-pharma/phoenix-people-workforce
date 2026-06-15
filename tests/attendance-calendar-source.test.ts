@@ -170,6 +170,23 @@ export function runAttendanceCalendarSourceTests() {
     "2026-05-31",
   );
   assert.equal(selectedPolicy?.target_type, "employee_hr_id");
+  const allTimeA3Policy = resolveActiveAttendancePolicy(
+    { hr_id: "A-3", job_title: "Office Admin" },
+    [
+      { effective_from: "2026-01-01", effective_to: null, is_active: true, target_type: "default", target_value: null },
+      {
+        effective_from: "1900-01-01",
+        effective_to: null,
+        is_active: true,
+        target_type: "employee_hr_id",
+        target_value: "A-3",
+        working_weekdays: [1, 3],
+      },
+    ],
+    "2026-05-01",
+    "2026-05-31",
+  );
+  assert.deepEqual(allTimeA3Policy?.working_weekdays, [1, 3], "A-3 custom workdays must apply before June");
   assert.deepEqual(normalizeAttendanceWorkingWeekdays("{1,3}"), [1, 3]);
   assert.equal(formatAttendanceWorkingWeekdays([1, 3]), "Mon, Wed");
   assert.equal(isAttendanceScheduledWorkingDay({ dateIso: "2026-06-08", workingWeekdays: [1, 3] }), true);
@@ -273,6 +290,9 @@ export function runAttendanceCalendarSourceTests() {
   const monthlySummaryExportSource = readFileSync("src/lib/attendance/monthly-summary-export.ts", "utf8");
   assert.match(monthlySummarySource, /attendanceMonthlyCycleNote/);
   assert.match(monthlySummaryExportSource, /attendanceMonthlyCycleNote/);
+
+  const a3AllTimeMigrationSource = readFileSync("supabase/migrations/20260615082501_a3_office_calendar_all_time.sql", "utf8");
+  assert.match(a3AllTimeMigrationSource, /date '1900-01-01'/, "A-3 custom office policy must be all-time, not June-only");
 
   const calendarPageSource = readFileSync("app/(admin)/hr-calendar/page.tsx", "utf8");
   assert.match(calendarPageSource, /getHrCalendarData/);
