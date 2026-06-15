@@ -222,7 +222,9 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   CEO: {
     admin: ["read"],
-    attendance: ["read", "create", "update", "delete", "export"],
+    // Segregation of duties: the CEO account is observational on irreversible HR/finance
+    // workflows. It may read/export attendance but not create/update/delete records.
+    attendance: ["read", "export"],
     overview: ["read"],
     admin_access: ["read"],
     imports: ["read"],
@@ -230,18 +232,26 @@ const defaultPermissionMatrix: PermissionMap = {
     coaching: ["read"],
     employee_profile: ["read", "update", "export"],
     employees: ["read", "export"],
-    expenses: ["read", "approve", "export"],
-    outstation: ["read", "approve", "export", "update"],
+    // SoD: read/export only — expense approval belongs to managers + Finance/Super Admin.
+    expenses: ["read", "export"],
+    // SoD: read/export only — outstation approval belongs to managers + Super Admin.
+    outstation: ["read", "export"],
+    // Retained by owner decision: CEO approves leave (and excuses, modeled under leave)
+    // for their own direct reports. The decide path binds the actor to the active approval
+    // step, so this stays scoped to the CEO's chain and does not over-grant.
     leave: ["read", "approve", "export"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
     workflow_registry: ["read"],
     payslips: ["read", "export"],
-    deductions: ["read", "approve", "export"],
+    // SoD: read/export only — deduction decisions belong to the governance actors.
+    deductions: ["read", "export"],
     double_visit_analytics: ["read", "export"],
+    // Retained by owner decision: CEO approves weekly plans.
     weekly_plans: ["read", "approve", "export"],
-    resignations: ["read", "approve", "export"],
+    // SoD: read/export only — resignation finalization belongs to Super Admin/HR.
+    resignations: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     support_requests: ["read", "export"],
