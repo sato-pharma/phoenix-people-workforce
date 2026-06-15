@@ -76,6 +76,20 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const ceo = createAccessContext({ hrId: "CEO-1", role: "CEO" });
   assert.equal(await canAccess(ceo, "employees", "update"), false, "CEO still cannot edit other employees");
 
+  // Segregation of duties: the CEO account is observational on irreversible HR/finance
+  // workflows. It must NOT approve resignations/expenses/outstation/deductions or mutate
+  // attendance, but RETAINS leave + weekly-plan approval (owner decision) and read/export.
+  for (const resource of ["resignations", "expenses", "outstation", "deductions"] as const) {
+    assert.equal(await canAccess(ceo, resource, "approve"), false, `CEO must not approve ${resource}`);
+    assert.equal(await canAccess(ceo, resource, "read"), true, `CEO can still read ${resource}`);
+  }
+  for (const action of ["create", "update", "delete"] as const) {
+    assert.equal(await canAccess(ceo, "attendance", action), false, `CEO must not ${action} attendance`);
+  }
+  assert.equal(await canAccess(ceo, "attendance", "read"), true, "CEO can still read attendance");
+  assert.equal(await canAccess(ceo, "leave", "approve"), true, "CEO retains leave approval for direct reports");
+  assert.equal(await canAccess(ceo, "weekly_plans", "approve"), true, "CEO retains weekly-plan approval");
+
   assert.equal(getPayrollScope(employee), "SELF");
   assert.equal(getPayrollScope(districtManager), "SELF");
   assert.equal(getPayrollScope(createAccessContext({ role: "Finance Manager" })), "COMPANY");
