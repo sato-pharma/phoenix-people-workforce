@@ -6,6 +6,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
@@ -14,6 +15,9 @@ export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalExpenseDashboardPage() {
   const access = await resolveAccessContextFromPage();
+  if (canonicalHrIdKey(access.hrId) === "a-3") {
+    redirect("/employee-portals");
+  }
   const isPmGpm = access.role === "Product Manager" || access.role === "Group Product Manager";
   if (resolveNavigationMode(access) !== "employee-portal" && !isPmGpm) {
     redirect("/payroll");
