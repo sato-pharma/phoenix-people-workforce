@@ -8,12 +8,15 @@ import {
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
-import { listWeeklyPosRegionMappingReferences } from "@/lib/sales/weekly/pos-region-mappings";
+import { loadBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import {
-  weeklyTemplateDistributorCodes,
-  weeklyTemplateDistributorFallbackName,
-} from "@/lib/sales/weekly/templates";
+  WEEKLY_DISTRIBUTORS,
+  canonicalWeeklyDistributorCode,
+  weeklyDistributorByCode,
+} from "@/lib/sales/weekly/distributors";
+import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
+import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
 import type {
   WeeklyBatch,
   WeeklyBranchComparisonRow,
@@ -30,47 +33,81 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
 
 export async function listWeeklyDistributors(): Promise<WeeklyDistributorOption[]> {
-  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const supported = new Set(weeklyTemplateDistributorCodes().map((code) => code.toUpperCase()));
-  const byCode = new Map<string, string>();
-  for (const distributor of references.distributors) {
-    if (supported.has(distributor.code.toUpperCase())) {
-      byCode.set(distributor.code, distributor.name);
-    }
+  // The canonical distributor registry (distributors.ts) is the single source of truth for which
+  // distributors the weekly module ingests — not the old header-template helpers. We still prefer
+  // the master reference's display name when one exists, falling back to the registry name.
+  const references = await loadSalesReferenceData({ includeCustomerBricks: false }).catch(() => null);
+  const masterNameByCode = new Map<string, string>();
+  for (const distributor of references?.distributors ?? []) {
+    masterNameByCode.set(distributor.code.toUpperCase(), distributor.name);
   }
-  // Ensure every supported code shows even if the master lacks a name row.
-  for (const code of weeklyTemplateDistributorCodes()) {
-    if (!byCode.has(code)) byCode.set(code, weeklyTemplateDistributorFallbackName(code) ?? code);
-  }
-  return [...byCode.entries()]
-    .map(([code, name]) => ({ code, name }))
-    .sort((left, right) => left.name.localeCompare(right.name));
+  return WEEKLY_DISTRIBUTORS.map((distributor) => ({
+    code: distributor.code,
+    name:
+      masterNameByCode.get(distributor.code.toUpperCase()) ??
+      distributor.name ??
+      weeklyTemplateDistributorFallbackName(distributor.code) ??
+      distributor.code,
+  })).sort((left, right) => left.name.localeCompare(right.name));
 }
 
 // ── upload → validate → store ──────────────────────────────────────────────────────────────────
 
 export async function importWeeklySalesFile(input: {
   distributorCode: string;
-  file: File;
+  /** combined / single workbook (everyone except PS). Kept for the existing single-file API. */
+  file?: File;
+  /** PS two-file form: sales matrix file */
+  salesFile?: File;
+  /** PS two-file form: stock matrix file */
+  stockFile?: File;
   uploadedBy: string;
+  /** explicit period (YYYY-MM-DD) for undated / multi-dated files */
+  periodDate?: string | null;
 }): Promise<WeeklySalesValidationResult> {
-  const distributorCode = input.distributorCode.trim();
-  if (!distributorCode) throw new SalesWorkflowError("invalid_request", "Pick a distributor before uploading.", 400);
+  const rawCode = (input.distributorCode ?? "").trim();
+  if (!rawCode) throw new SalesWorkflowError("invalid_request", "Pick a distributor before uploading.", 400);
+
+  let distributorCode: string;
+  try {
+    distributorCode = canonicalWeeklyDistributorCode(rawCode);
+  } catch {
+    throw new SalesWorkflowError("unsupported_template", `Unknown weekly distributor "${rawCode}".`, 422);
+  }
 
   const references = await loadSalesReferenceData({ includeCustomerBricks: false });
   const distributorName =
     references.distributors.find((row) => row.code.toUpperCase() === distributorCode.toUpperCase())?.name ??
+    weeklyDistributorByCode(distributorCode)?.name ??
     distributorCode;
 
-  const buffer = await input.file.arrayBuffer();
-  const posRegionMappings = await listWeeklyPosRegionMappingReferences(distributorCode);
+  const [aliasIndex, branchMapIndex] = await Promise.all([
+    loadProductAliasIndex(),
+    loadBranchRegionIndex(distributorCode),
+  ]);
+
+  // PS ships a separate sales + stock matrix; everyone else ships one combined workbook.
+  const isPS = distributorCode === "PS";
+  const fileNameParts: string[] = [];
+  const buffer = input.file ? await input.file.arrayBuffer() : undefined;
+  const salesBuffer = input.salesFile ? await input.salesFile.arrayBuffer() : isPS ? buffer : undefined;
+  const stockBuffer = input.stockFile ? await input.stockFile.arrayBuffer() : undefined;
+  if (input.file) fileNameParts.push(input.file.name);
+  if (input.salesFile) fileNameParts.push(input.salesFile.name);
+  if (input.stockFile) fileNameParts.push(input.stockFile.name);
+  const fileName = fileNameParts.join(" + ") || `${distributorCode}.xlsx`;
+
   const parsed = await parseWeeklyWorkbookBuffer({
-    buffer,
+    buffer: isPS ? undefined : buffer,
+    salesBuffer: isPS ? salesBuffer : undefined,
+    stockBuffer: isPS ? stockBuffer : undefined,
     distributorCode,
     distributorName,
-    fileName: input.file.name,
-    posRegionMappings,
+    fileName,
     references,
+    aliasIndex,
+    branchMapIndex,
+    periodDate: input.periodDate ?? null,
   });
 
   if (!parsed.ok) {
@@ -127,7 +164,9 @@ async function persistWeeklyUpload(
       failed_rows: result.failedRows,
       warning_rows: result.warningRows,
       total_sales_qty: result.totals.salesQty,
-      total_bonus_qty: result.totals.bonusQty,
+      total_return_qty: result.totals.returnQty,
+      total_net_qty: result.totals.netQty,
+      total_bonus_qty: 0,
       total_sales_value: result.totals.salesValue,
       total_stock_qty: result.totals.stockQty,
       blocking_reasons: result.blockingReasons,
@@ -155,8 +194,9 @@ async function persistWeeklyUpload(
     product_name: row.productName,
     official_line: row.officialLine,
     sales_qty: row.salesQty,
-    bonus_qty: row.bonusQty,
-    discount: row.discount,
+    return_qty: row.returnQty,
+    net_qty: row.netQty,
+    bonus_qty: 0,
     sales_value: row.salesValue,
     stock_qty: row.stockQty,
     validation_state: row.validationState,
@@ -213,6 +253,8 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
     failedRows: Number(row.failed_rows ?? 0),
     warningRows: Number(row.warning_rows ?? 0),
     totalSalesQty: Number(row.total_sales_qty ?? 0),
+    totalReturnQty: Number(row.total_return_qty ?? 0),
+    totalNetQty: Number(row.total_net_qty ?? row.total_sales_qty ?? 0),
     totalBonusQty: Number(row.total_bonus_qty ?? 0),
     totalSalesValue: Number(row.total_sales_value ?? 0),
     totalStockQty: Number(row.total_stock_qty ?? 0),
@@ -236,7 +278,10 @@ type FactRow = {
   productName: string;
   officialLine: string;
   salesValue: number;
+  /** gross sales units (audit) */
   salesQty: number;
+  /** net units = gross - returns; this is what the dashboard reports as "units" */
+  netQty: number;
   stockQty: number;
 };
 
@@ -274,7 +319,7 @@ function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: Fa
     const key = keyOf(row) || "—";
     const current = groups.get(key) ?? { name: nameOf(row) || key, salesValue: 0, salesUnits: 0, stockUnits: 0 };
     current.salesValue += row.salesValue;
-    current.salesUnits += row.salesQty;
+    current.salesUnits += row.netQty;
     current.stockUnits += row.stockQty;
     groups.set(key, current);
   }
@@ -307,7 +352,7 @@ function rankBranches(rows: FactRow[]): WeeklyBranchComparisonRow[] {
       stockUnits: 0,
     };
     current.salesValue += row.salesValue;
-    current.salesUnits += row.salesQty;
+    current.salesUnits += row.netQty;
     current.stockUnits += row.stockQty;
     if (!current.regionName || current.regionName === "-") current.regionName = row.regionName || "-";
     groups.set(key, current);
@@ -419,7 +464,7 @@ export async function loadWeeklyDashboard(filters?: {
     let query = supabase
       .from("weekly_sales_rows")
       .select(
-        "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, stock_qty",
+        "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
       )
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -444,6 +489,7 @@ export async function loadWeeklyDashboard(filters?: {
         officialLine: String(row.official_line ?? ""),
         salesValue: Number(row.sales_value ?? 0),
         salesQty: Number(row.sales_qty ?? 0),
+        netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
         stockQty: Number(row.stock_qty ?? 0),
       });
     }
@@ -477,7 +523,7 @@ export async function loadWeeklyDashboard(filters?: {
     const key = row.branchCode || row.branchName || "—";
     const current = branchAgg.get(key) ?? { branchName: row.branchName || key, regionName: row.regionName, salesValue: 0, salesUnits: 0, stockUnits: 0 };
     current.salesValue += row.salesValue;
-    current.salesUnits += row.salesQty;
+    current.salesUnits += row.netQty;
     current.stockUnits += row.stockQty;
     branchAgg.set(key, current);
   }
@@ -499,7 +545,7 @@ export async function loadWeeklyDashboard(filters?: {
     return {
       weekStart: week,
       salesValue: Number(sum(rows, (row) => row.salesValue).toFixed(2)),
-      salesUnits: Number(sum(rows, (row) => row.salesQty).toFixed(2)),
+      salesUnits: Number(sum(rows, (row) => row.netQty).toFixed(2)),
       stockUnits: Number(sum(rows, (row) => row.stockQty).toFixed(2)),
     };
   });
@@ -521,7 +567,7 @@ export async function loadWeeklyDashboard(filters?: {
     },
     kpis: {
       salesValue: Number(sum(weekRows, (row) => row.salesValue).toFixed(2)),
-      salesUnits: Number(sum(weekRows, (row) => row.salesQty).toFixed(2)),
+      salesUnits: Number(sum(weekRows, (row) => row.netQty).toFixed(2)),
       stockUnits: Number(sum(weekRows, (row) => row.stockQty).toFixed(2)),
       branchCount: new Set(weekRows.map((row) => row.branchCode || row.branchName)).size,
       regionCount: new Set(weekRows.map((row) => row.regionCode)).size,
@@ -530,7 +576,7 @@ export async function loadWeeklyDashboard(filters?: {
     },
     compare: {
       salesValue: delta(sum(weekRows, (row) => row.salesValue), priorWeek ? sum(priorRows, (row) => row.salesValue) : null),
-      salesUnits: delta(sum(weekRows, (row) => row.salesQty), priorWeek ? sum(priorRows, (row) => row.salesQty) : null),
+      salesUnits: delta(sum(weekRows, (row) => row.netQty), priorWeek ? sum(priorRows, (row) => row.netQty) : null),
       stockUnits: delta(sum(weekRows, (row) => row.stockQty), priorWeek ? sum(priorRows, (row) => row.stockQty) : null),
     },
     regions: rank(weekRows, (row) => row.regionCode, (row) => row.regionName),
