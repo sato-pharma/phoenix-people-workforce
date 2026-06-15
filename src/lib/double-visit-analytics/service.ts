@@ -652,10 +652,20 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
   });
 }
 
-function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: EmployeeDirectoryRow[]): DoubleVisitExecutiveManagerReport[] {
+const functionalDoubleVisitorRoles = ["Product Manager", "Group Product Manager", "Training Manager"] as const;
+
+function isFunctionalDoubleVisitorRole(employee: EmployeeDirectoryRow): boolean {
+  const posRole = resolveJobFunctionRole(employee.positionTitle);
+  const jobRole = resolveJobFunctionRole(employee.jobTitle);
+  return (functionalDoubleVisitorRoles as readonly string[]).includes(posRole) ||
+    (functionalDoubleVisitorRoles as readonly string[]).includes(jobRole);
+}
+
+function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: EmployeeDirectoryRow[], rows: DoubleVisitDbRow[]): DoubleVisitExecutiveManagerReport[] {
   const employeesByHrId = new Map(employees.map((employee) => [canonicalHrIdKey(employee.hrId), employee]));
   const reportsByManager = new Map<string, { manager: EmployeeDirectoryRow; mrs: DoubleVisitMrScore[] }>();
 
+  // Pass 1: org-chart hierarchy walk (DSM → RM → NSM)
   for (const score of scores) {
     let managerKey = canonicalHrIdKey(score.managerHrId);
     const seen = new Set<string>();
@@ -668,6 +678,29 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       current.mrs.push(score);
       reportsByManager.set(managerKey, current);
       managerKey = canonicalHrIdKey(manager.managerHrId);
+    }
+  }
+
+  // Pass 2: functional double-visitors (PM / GPM / Training / SFE) who appear in
+  // the rows but are not in the org-chart hierarchy above any MR.
+  const doubleVisitorKeys = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
+  for (const dvKey of doubleVisitorKeys) {
+    if (reportsByManager.has(dvKey ?? "")) continue;
+    const dvEmployee = dvKey ? employeesByHrId.get(dvKey) : undefined;
+    if (!dvEmployee || !isFunctionalDoubleVisitorRole(dvEmployee)) continue;
+
+    const posRole = resolveJobFunctionRole(dvEmployee.positionTitle);
+    const jobRole = resolveJobFunctionRole(dvEmployee.jobTitle);
+    const isLineScopedRole =
+      posRole === "Product Manager" || posRole === "Group Product Manager" ||
+      jobRole === "Product Manager" || jobRole === "Group Product Manager";
+
+    const expectedScores = isLineScopedRole && dvEmployee.lineName
+      ? scores.filter((s) => normalizeLabelKey(s.lineName) === normalizeLabelKey(dvEmployee.lineName))
+      : scores;
+
+    if (expectedScores.length > 0) {
+      reportsByManager.set(dvKey ?? "", { manager: dvEmployee, mrs: expectedScores });
     }
   }
 
@@ -777,7 +810,7 @@ export async function getDoubleVisitDashboardData(input: {
   );
   const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId);
   const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
-  const executiveReports = buildExecutiveReports(mrScores, scopedEmployees);
+  const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
   const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
   const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();
   const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
