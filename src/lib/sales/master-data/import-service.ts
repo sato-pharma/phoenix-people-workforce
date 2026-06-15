@@ -47,7 +47,7 @@ const SYSTEM_DISTRIBUTORS = [
   { distributor_code: "PS-T", distributor_name: "Overseas Tender", normalized_distributor_name: "overseas tender" },
   { distributor_code: "RM-T", distributor_name: "Ramco Tender", normalized_distributor_name: "ramco tender" },
   { distributor_code: "SF-T", distributor_name: "Sofico Tender", normalized_distributor_name: "sofico tender" },
-  { distributor_code: "HSC", distributor_name: "Hospital Supply Center", normalized_distributor_name: "hospital supply center" },
+  { distributor_code: "EG-T", distributor_name: "EGP Tender", normalized_distributor_name: "egp tender" },
 ] as const;
 
 // Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never
