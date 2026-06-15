@@ -91,7 +91,8 @@ export type PermissionResource =
   | "candidates"
   | "workflow_registry"
   | "report_it"
-  | "attendance";
+  | "attendance"
+  | "user_activity";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -130,6 +131,7 @@ export const permissionResources: PermissionResource[] = [
   "candidates",
   "report_it",
   "attendance",
+  "user_activity",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -219,6 +221,10 @@ const defaultPermissionMatrix: PermissionMap = {
     recruitment: allActions,
     candidates: allActions,
     report_it: allActions,
+    // Activity Control Center: Super Admin only (read + export). Deliberately
+    // omitted from every other role so the employee-monitoring surface stays
+    // tightly held. Widen via role_permission_overrides if ever needed.
+    user_activity: ["read", "export"],
   },
   CEO: {
     admin: ["read"],
@@ -1125,4 +1131,31 @@ export const WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED = true;
 export function canUseWorkflowDraftEditor(context: Pick<AccessContext, "role" | "hrId">): boolean {
   if (!WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED) return false;
   return canAccessWorkflowControlCenter(context);
+}
+
+/**
+ * Activity Control Center (Admin oversight) access design.
+ *
+ * The control center reports how every user navigates the system (module-level
+ * usage + dwell time, drawn from app_sessions and activity_events). Because it
+ * is an employee-monitoring surface, access is restricted to Super Admin only.
+ * The page also enforces `assertPermission(ctx, "user_activity", action)`; this
+ * role gate is a fast, explicit redirect guard that mirrors the matrix.
+ *
+ * To onboard a non-Super-Admin governance account later, prefer adding a
+ * `role_permission_overrides` row (resource `user_activity`) over widening this
+ * role list.
+ */
+export const ACTIVITY_CONTROL_ACCESS_ROLES: readonly PhoenixRole[] = ["Super Admin"];
+
+/**
+ * Transparency flag: when true, the employee portal surfaces a short notice that
+ * in-app usage is recorded for security/product purposes. Owner chose silent for
+ * v1; flip to true to enable the notice with zero further code changes.
+ */
+export const ACTIVITY_TRACKING_SHOW_EMPLOYEE_NOTICE = false;
+
+export function canAccessActivityControlCenter(context: Pick<AccessContext, "role" | "scope">): boolean {
+  if (context.scope === "system") return true;
+  return ACTIVITY_CONTROL_ACCESS_ROLES.includes(context.role);
 }

@@ -88,6 +88,7 @@ export const adminNavigationSections = [
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
+      { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
     ],
     label: "Command Center",
   },

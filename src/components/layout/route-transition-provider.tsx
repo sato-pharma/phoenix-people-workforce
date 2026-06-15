@@ -12,6 +12,8 @@ import {
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { ActivityTracker } from "@/components/activity/activity-tracker";
+
 export const ROUTE_TRANSITION_EVENT = "phoenix:route-transition";
 
 type RouteTransitionContextValue = {
@@ -123,6 +125,7 @@ export function RouteTransitionProvider({ children }: { children: ReactNode }) {
 
   return (
     <RouteTransitionContext.Provider value={value}>
+      <ActivityTracker />
       {pending ? (
         <div aria-hidden="true" className="phoenix-route-transition-indicator">
           <div className="phoenix-route-transition-bar" />
