@@ -151,104 +151,113 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">In</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Out</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hours</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deduction</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rows.map((row) => {
-                  const dispute = disputes[row.rawDate];
-                  const hasDeduction = row.deductionConfirmed;
-                  const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
-                  return (
-                    <>
-                      <tr key={row.rawDate} className="hover:bg-muted/30">
-                        <td className="px-4 py-3 font-mono text-xs">{row.date}</td>
-                        <td className="px-4 py-3 text-xs">
-                          {row.firstPunch ? (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-muted-foreground" />
-                              {row.firstPunch}
-                            </span>
-                          ) : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-xs">{row.lastPunch || "—"}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{row.timeLong || "—"}</td>
-                        <td className="px-4 py-3">{statusBadge(row.status)}</td>
-                        <td className="px-4 py-3 text-xs">
-                          {hasDeduction ? (
-                            <span className="font-medium text-red-600">-{row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {hasDeduction && !row.hasException && !dispute && !disputeAlreadyPending && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() => openDispute(row.rawDate, row.date)}
-                            >
-                              <MessageSquare className="mr-1 h-3 w-3" />
-                              Dispute
-                            </Button>
-                          )}
-                          {dispute?.submitted && (
-                            <span className="flex items-center gap-1 text-xs text-orange-600 font-medium">
-                              <ShieldCheck className="h-3 w-3" />
-                              Pending review
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                      {dispute && !dispute.submitted && (
-                        <tr key={`${row.rawDate}-dispute`}>
-                          <td colSpan={7} className="bg-orange-50/50 px-4 py-3">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                              <textarea
-                                className="flex-1 rounded border border-orange-300 bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-orange-400"
-                                placeholder="Describe why this record should be reconsidered (e.g. official visit, technical issue with device)…"
-                                rows={2}
-                                value={dispute.reason}
-                                onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
-                              />
-                              <div className="flex gap-2 sm:flex-col">
-                                <Button
-                                  size="sm"
-                                  className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
-                                  disabled={dispute.submitting}
-                                  onClick={() => submitDispute(row.rawDate, hrId)}
-                                >
-                                  {dispute.submitting ? "Sending…" : "Submit"}
-                                </Button>
+            {(() => {
+              const showDeductionCol = rows.some((r) => r.deductionConfirmed);
+              const colSpanTotal = showDeductionCol ? 7 : 6;
+              return (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">In</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Out</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hours</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
+                      {showDeductionCol && (
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deduction</th>
+                      )}
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {rows.map((row) => {
+                      const dispute = disputes[row.rawDate];
+                      const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
+                      return (
+                        <>
+                          <tr key={row.rawDate} className="hover:bg-muted/30">
+                            <td className="px-4 py-3 font-mono text-xs">{row.date}</td>
+                            <td className="px-4 py-3 text-xs">
+                              {row.firstPunch ? (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  {row.firstPunch}
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-xs">{row.lastPunch || "—"}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{row.timeLong || "—"}</td>
+                            <td className="px-4 py-3">{statusBadge(row.status)}</td>
+                            {showDeductionCol && (
+                              <td className="px-4 py-3 text-xs">
+                                {row.deductionConfirmed ? (
+                                  <span className="font-medium text-red-600">-{row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            )}
+                            <td className="px-4 py-3">
+                              {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="flex-1"
-                                  onClick={() => cancelDispute(row.rawDate)}
+                                  className="h-7 text-xs"
+                                  onClick={() => openDispute(row.rawDate, row.date)}
                                 >
-                                  Cancel
+                                  <MessageSquare className="mr-1 h-3 w-3" />
+                                  Dispute
                                 </Button>
-                              </div>
-                            </div>
-                            {dispute.error && <p className="mt-1 text-xs text-red-600">{dispute.error}</p>}
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  );
-                })}
-              </tbody>
-            </table>
+                              )}
+                              {dispute?.submitted && (
+                                <span className="flex items-center gap-1 text-xs text-orange-600 font-medium">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  Pending review
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                          {dispute && !dispute.submitted && (
+                            <tr key={`${row.rawDate}-dispute`}>
+                              <td colSpan={colSpanTotal} className="bg-orange-50/50 px-4 py-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                                  <textarea
+                                    className="flex-1 rounded border border-orange-300 bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                    placeholder="Describe why this record should be reconsidered (e.g. official visit, technical issue with device)…"
+                                    rows={2}
+                                    value={dispute.reason}
+                                    onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
+                                  />
+                                  <div className="flex gap-2 sm:flex-col">
+                                    <Button
+                                      size="sm"
+                                      className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
+                                      disabled={dispute.submitting}
+                                      onClick={() => submitDispute(row.rawDate, hrId)}
+                                    >
+                                      {dispute.submitting ? "Sending…" : "Submit"}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="flex-1"
+                                      onClick={() => cancelDispute(row.rawDate)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                                {dispute.error && <p className="mt-1 text-xs text-red-600">{dispute.error}</p>}
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </Card>
       )}
