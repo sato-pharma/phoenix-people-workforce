@@ -10,9 +10,11 @@ import {
   Minus,
   Package,
   Store,
+  TrendingDown,
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -549,34 +551,227 @@ function PanelTitle({ count, title }: { count: number; title: string }) {
   );
 }
 
-// Year bar colors — subtle, non-selected only; selected always stays orange
-const TREND_YEAR_BAR: Record<string, { bg: string; border: string }> = {
-  "2025": { bg: "#93C5FD", border: "#BFDBFE" }, // blue-300 / blue-200 — "past"
-  "2026": { bg: "#CBD5E1", border: "#E2E8F0" }, // slate-300 / slate-200 — "current" (original look)
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly sales-value trend — year-aware smooth area chart (white surface, calm).
+// 2025 = muted slate-blue (the "past"); 2026 = brand orange (the "now"); any other
+// year falls back to neutral slate so the chart never breaks on long/odd spans.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-year stroke colors. Distributors are NEVER drawn as extra lines — they live
+// only inside the tooltip, so the chart stays quiet.
+const TREND_YEAR_COLOR: Record<string, string> = {
+  "2025": "#60A5FA", // blue-400 — quiet past year
+  "2026": "#F97316", // brand orange — current year (focal)
 };
-const TREND_YEAR_CHIP: Record<string, string> = { "2025": "#93C5FD", "2026": "#CBD5E1" };
+const TREND_YEAR_FALLBACK = "#94A3B8"; // slate — any other year
+const TREND_SELECTED = "#EA580C"; // deep brand orange — selected emphasis
+const trendYearColor = (year: string) => TREND_YEAR_COLOR[year] ?? TREND_YEAR_FALLBACK;
+
+const TREND_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Full-date x-axis tick: "2026-05-18" -> "18 May".
+const formatWeekTick = (weekStart: string) => {
+  const [, m, d] = String(weekStart).split("-");
+  const month = TREND_MONTHS[Number(m) - 1];
+  const day = Number(d);
+  return month && day ? `${day} ${month}` : weekStart;
+};
+
+// Compact EGP axis formatter — 1_200_000 -> "1.2M", 48_000 -> "48K".
+const compactEgp = (value: number) => {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return `${Math.round(value)}`;
+};
+
+// One row per week. Each year gets its own value channel (null elsewhere) so the
+// year segments render in their own color and visually meet at the boundary.
+type TrendDatum = {
+  weekStart: string;
+  year: string;
+  total: number;
+  selected: boolean;
+  wow: number | null; // week-over-week ratio vs the previous in-scope week
+  byDistributor: { distributorCode: string; distributorName: string; salesValue: number }[];
+  v2025: number | null;
+  v2026: number | null;
+  vOther: number | null;
+};
+
+// Per-point dot — a small clean ring on every week, and a larger ringed marker on
+// selected weeks. Keyed off the datum payload (NOT the x category), so it can never
+// mis-resolve when the same calendar date recurs across years.
+type TrendDotProps = {
+  cx?: number;
+  cy?: number;
+  payload?: TrendDatum;
+  color?: string;
+};
+
+function TrendDot({ cx, cy, payload, color = TREND_YEAR_FALLBACK }: TrendDotProps) {
+  if (cx == null || cy == null) return null;
+  if (payload?.selected) {
+    return (
+      <g>
+        <circle cx={cx} cy={cy} fill="#FFFFFF" r={7} stroke={TREND_SELECTED} strokeOpacity={0.22} strokeWidth={6} />
+        <circle cx={cx} cy={cy} fill={TREND_SELECTED} r={4} stroke="#FFFFFF" strokeWidth={2} />
+      </g>
+    );
+  }
+  return <circle cx={cx} cy={cy} fill="#FFFFFF" r={2.75} stroke={color} strokeWidth={2} />;
+}
+
+// Compact white floating tooltip — week + total + prominent WoW% + distributor share.
+function TrendTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { payload?: TrendDatum }[];
+}) {
+  const datum = active ? payload?.find((entry) => entry.payload)?.payload : undefined;
+  if (!datum) return null;
+
+  const color = trendYearColor(datum.year);
+  const breakdown = [...datum.byDistributor].filter((d) => d.salesValue > 0).sort((a, b) => b.salesValue - a.salesValue);
+  const top = breakdown.slice(0, 4);
+  const rest = breakdown.slice(4);
+  const restValue = rest.reduce((sum, row) => sum + row.salesValue, 0);
+  const up = (datum.wow ?? 0) >= 0;
+
+  return (
+    <div className="pointer-events-none min-w-[200px] max-w-[270px] rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-[11px] font-bold tabular-nums text-[#64748B]">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+          {datum.weekStart}
+        </span>
+        {datum.selected && (
+          <span className="rounded-[4px] bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#EA580C]">
+            Selected
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-3">
+        <span className="text-lg font-black tabular-nums text-[#0F172A]">{money(datum.total)}</span>
+        {datum.wow !== null && (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[13px] font-black tabular-nums",
+              up ? "bg-[#ECFDF5] text-[#047857]" : "bg-[#FEF2F2] text-[#B91C1C]",
+            )}
+          >
+            {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+            {`${up ? "+" : ""}${(datum.wow * 100).toFixed(1)}%`}
+          </span>
+        )}
+      </div>
+      {datum.wow !== null && <div className="mt-0.5 text-[10px] font-bold text-[#94A3B8]">vs previous week</div>}
+      {top.length > 0 && (
+        <div className="mt-2 space-y-1 border-t border-[#F1F5F9] pt-2">
+          {top.map((row) => {
+            const share = datum.total > 0 ? row.salesValue / datum.total : 0;
+            return (
+              <div className="flex items-center justify-between gap-3" key={row.distributorCode}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, opacity: 0.45 }} />
+                  <span className="truncate text-[10px] font-bold text-[#64748B]">{row.distributorName || row.distributorCode}</span>
+                </span>
+                <span className="shrink-0 text-[10px] font-black tabular-nums text-[#334155]">
+                  {(share * 100).toFixed(0)}% · {compactEgp(row.salesValue)}
+                </span>
+              </div>
+            );
+          })}
+          {rest.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] font-bold text-[#94A3B8]">+{rest.length} more</span>
+              <span className="shrink-0 text-[10px] font-black tabular-nums text-[#94A3B8]">{compactEgp(restValue)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; selected: string[] }) {
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  const { chartData, years, multiYear, yearBoundaries } = useMemo(() => {
+    const seen = new Set<string>();
+    const boundaries: string[] = [];
+    const rows: TrendDatum[] = trend.map((point, index) => {
+      const year = point.weekStart.slice(0, 4);
+      if (!seen.has(year)) {
+        seen.add(year);
+        boundaries.push(point.weekStart);
+      }
+      const prev = index > 0 ? trend[index - 1] : null;
+      const wow = prev && prev.salesValue !== 0 ? (point.salesValue - prev.salesValue) / prev.salesValue : null;
+      return {
+        weekStart: point.weekStart,
+        year,
+        total: point.salesValue,
+        selected: selectedSet.has(point.weekStart),
+        wow,
+        byDistributor: point.byDistributor ?? [],
+        v2025: year === "2025" ? point.salesValue : null,
+        v2026: year === "2026" ? point.salesValue : null,
+        vOther: year === "2025" || year === "2026" ? null : point.salesValue,
+      };
+    });
+
+    // Stitch the boundary: write the LAST week of the ending year into the NEXT
+    // year's channel too, so the two colored areas touch instead of leaving a gap.
+    for (let i = 1; i < rows.length; i += 1) {
+      const prevRow = rows[i - 1];
+      const currRow = rows[i];
+      if (prevRow.year === currRow.year) continue;
+      if (currRow.v2026 !== null) prevRow.v2026 = prevRow.total;
+      else if (currRow.v2025 !== null) prevRow.v2025 = prevRow.total;
+      else prevRow.vOther = prevRow.total;
+    }
+
+    const ys = [...seen].sort();
+    return {
+      chartData: rows,
+      years: ys,
+      multiYear: ys.length > 1,
+      yearBoundaries: boundaries.slice(1), // first year needs no divider
+    };
+  }, [trend, selectedSet]);
+
+  const meta = useMemo(() => {
+    const average = trend.length ? trend.reduce((sum, point) => sum + point.salesValue, 0) / trend.length : 0;
+    const selectedPoints = trend.filter((point) => selectedSet.has(point.weekStart));
+    const highlightTotal = selectedPoints.length
+      ? selectedPoints.reduce((sum, point) => sum + point.salesValue, 0)
+      : (trend[trend.length - 1]?.salesValue ?? 0);
+    return { average, selectedCount: selectedPoints.length, highlightTotal };
+  }, [trend, selectedSet]);
+
+  // Short/empty trend has nothing meaningful to plot.
   if (trend.length < 2) return null;
-  const max = Math.max(1, ...trend.map((point) => point.salesValue));
-  const average = trend.reduce((total, point) => total + point.salesValue, 0) / trend.length;
-  const selectedSet = new Set(selected);
-  const highlighted = trend.find((point) => selectedSet.has(point.weekStart)) ?? trend[trend.length - 1];
-  const years = [...new Set(trend.map((p) => p.weekStart.slice(0, 4)))].sort();
-  const multiYear = years.length > 1;
+
+  const hasOther = chartData.some((d) => d.vOther !== null);
+
   return (
-    <section className="w-full overflow-hidden border border-[#E2E8F0] bg-white shadow-sm">
+    <section className="w-full overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
         <div>
-          <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</div>
-          <div className="mt-0.5 flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[#64748B]">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#F97316]" />
+            Weekly sales-value trend
+          </div>
+          <div className="mt-1 flex items-center gap-2.5">
             <span className="text-[11px] font-bold text-[#94A3B8]">{trend.length} weeks</span>
             {multiYear && (
-              <span className="flex items-center gap-1.5">
-                {years.map((y) => (
-                  <span key={y} className="flex items-center gap-1">
-                    <span className="inline-block h-2 w-3 rounded-sm" style={{ background: TREND_YEAR_CHIP[y] ?? "#CBD5E1" }} />
-                    <span className="text-[10px] font-bold text-[#94A3B8]">{y}</span>
+              <span className="flex items-center gap-2 border-l border-[#E2E8F0] pl-2.5">
+                {years.map((year) => (
+                  <span className="flex items-center gap-1" key={year}>
+                    <span className="inline-block h-1.5 w-3 rounded-full" style={{ background: trendYearColor(year) }} />
+                    <span className="text-[10px] font-bold tabular-nums text-[#94A3B8]">{year}</span>
                   </span>
                 ))}
               </span>
@@ -586,45 +781,123 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         <div className="flex flex-wrap items-center gap-3 text-right">
           <div>
             <div className="text-[10px] font-black uppercase tracking-wide text-[#64748B]">Average</div>
-            <div className="text-sm font-black tabular-nums text-[#334155]">{money(average)}</div>
+            <div className="text-sm font-black tabular-nums text-[#334155]">{money(meta.average)}</div>
           </div>
           <div className="border-l border-[#E2E8F0] pl-3">
-            <div className="text-[10px] font-black uppercase tracking-wide text-[#EA580C]">Highlighted week</div>
-            <div className="text-lg font-black tabular-nums text-[#0F172A]">{money(highlighted.salesValue)}</div>
+            <div className="text-[10px] font-black uppercase tracking-wide text-[#EA580C]">
+              {meta.selectedCount > 1 ? `${meta.selectedCount} selected weeks` : "Highlighted week"}
+            </div>
+            <div className="text-lg font-black tabular-nums text-[#0F172A]">{money(meta.highlightTotal)}</div>
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto px-4 pb-4 pt-3">
-        <div className="flex h-48 min-w-[860px] items-end gap-1.5 border-t border-[#F1F5F9] bg-[#F8FAFC] px-2 pt-4">
-          {trend.map((point) => {
-            const isSelected = selectedSet.has(point.weekStart);
-            const height = Math.max(6, (point.salesValue / max) * 154);
-            const year = point.weekStart.slice(0, 4);
-            const yearStyle = TREND_YEAR_BAR[year] ?? { bg: "#CBD5E1", border: "#E2E8F0" };
-            return (
-              <div
-                className={cn(
-                  "flex min-w-[44px] flex-1 flex-col items-center gap-1 px-1 pt-2",
-                  isSelected && "bg-[linear-gradient(180deg,rgba(249,115,22,0.10)_0%,rgba(249,115,22,0)_100%)]",
-                )}
-                key={point.weekStart}
-                title={`${point.weekStart}: ${money(point.salesValue)}`}
-              >
-                <div
-                  className="w-full border-t"
-                  style={{
-                    height: `${height}px`,
-                    background: isSelected ? "#F97316" : yearStyle.bg,
-                    borderColor: isSelected ? "#EA580C" : yearStyle.border,
-                  }}
+
+      <div className="h-[300px] min-w-0 px-1 pb-1 pt-3">
+        <ResponsiveContainer height="100%" width="100%">
+          <AreaChart data={chartData} margin={{ bottom: 4, left: -12, right: 10, top: 14 }}>
+            <defs>
+              <linearGradient id="trendFill2026" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#F97316" stopOpacity={0.2} />
+                <stop offset="100%" stopColor="#F97316" stopOpacity={0.01} />
+              </linearGradient>
+              <linearGradient id="trendFill2025" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#60A5FA" stopOpacity={0.16} />
+                <stop offset="100%" stopColor="#60A5FA" stopOpacity={0.01} />
+              </linearGradient>
+              <linearGradient id="trendFillOther" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#94A3B8" stopOpacity={0.14} />
+                <stop offset="100%" stopColor="#94A3B8" stopOpacity={0.01} />
+              </linearGradient>
+            </defs>
+
+            <CartesianGrid stroke="#E2E8F0" strokeDasharray="4 10" vertical={false} />
+            <XAxis
+              axisLine={false}
+              dataKey="weekStart"
+              interval="preserveStartEnd"
+              minTickGap={24}
+              tick={{ fill: "#64748B", fontSize: 10, fontWeight: 600 }}
+              tickFormatter={formatWeekTick}
+              tickLine={false}
+              tickMargin={8}
+            />
+            <YAxis
+              axisLine={false}
+              tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 600 }}
+              tickFormatter={compactEgp}
+              tickLine={false}
+              width={48}
+            />
+            <Tooltip
+              content={<TrendTooltip />}
+              cursor={{ stroke: "#F97316", strokeDasharray: "4 4", strokeWidth: 1 }}
+              isAnimationActive={false}
+              wrapperStyle={{ outline: "none" }}
+            />
+
+            {/* Quiet average baseline */}
+            <ReferenceLine ifOverflow="extendDomain" stroke="#CBD5E1" strokeDasharray="2 6" y={meta.average} />
+
+            {/* Hairline year-boundary markers, labeled with the actual year. */}
+            {multiYear &&
+              yearBoundaries.map((boundary) => (
+                <ReferenceLine
+                  ifOverflow="extendDomain"
+                  key={boundary}
+                  label={{ fill: "#94A3B8", fontSize: 9, fontWeight: 700, position: "insideTopRight", value: boundary.slice(0, 4) }}
+                  stroke="#CBD5E1"
+                  strokeDasharray="2 4"
+                  x={boundary}
                 />
-                <span className={cn("text-[9px] font-black", isSelected ? "text-[#EA580C]" : "text-[#94A3B8]")}>
-                  {point.weekStart.slice(5)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+
+            {/* Prior year (2025) — calm blue, recedes. */}
+            <Area
+              activeDot={{ fill: "#FFFFFF", r: 4, stroke: "#60A5FA", strokeWidth: 2.5 }}
+              animationDuration={650}
+              animationEasing="ease-out"
+              connectNulls
+              dataKey="v2025"
+              dot={<TrendDot color="#60A5FA" />}
+              fill="url(#trendFill2025)"
+              isAnimationActive
+              stroke="#60A5FA"
+              strokeWidth={2}
+              type="monotone"
+            />
+            {/* Current year (2026) — brand orange, the focal line. */}
+            <Area
+              activeDot={{ fill: "#FFFFFF", r: 5, stroke: "#F97316", strokeWidth: 3 }}
+              animationBegin={140}
+              animationDuration={700}
+              animationEasing="ease-out"
+              connectNulls
+              dataKey="v2026"
+              dot={<TrendDot color="#F97316" />}
+              fill="url(#trendFill2026)"
+              isAnimationActive
+              stroke="#F97316"
+              strokeWidth={2.5}
+              type="monotone"
+            />
+            {/* Fallback for any year that is not 2025/2026 — never breaks. */}
+            {hasOther && (
+              <Area
+                activeDot={{ fill: "#FFFFFF", r: 4, stroke: "#94A3B8", strokeWidth: 2.5 }}
+                animationDuration={650}
+                animationEasing="ease-out"
+                connectNulls
+                dataKey="vOther"
+                dot={<TrendDot color="#94A3B8" />}
+                fill="url(#trendFillOther)"
+                isAnimationActive
+                stroke="#94A3B8"
+                strokeWidth={2}
+                type="monotone"
+              />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
     </section>
   );
