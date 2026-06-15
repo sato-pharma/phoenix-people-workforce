@@ -214,7 +214,7 @@ export function resolveEmployeePortalNavVisibility(
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
     showReportItTab: isA3Account,
-    showReportItDashboardTab: isA3Account,
+    showReportItDashboardTab: false,
     showOrganogramTab:
       showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showPlansTab: isA3Account || showPlansTab,
