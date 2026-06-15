@@ -13,7 +13,7 @@ import {
   type SourceOfSalesUploadBatch,
   type SalesDistributorOption,
 } from "@/lib/sales/monthly-distributor-import";
-import { listNormalizerDistributors } from "@/lib/sales/normalizer/service";
+import { listMappingReferences, listNormalizerDistributors, type MappingReferences } from "@/lib/sales/normalizer/service";
 
 export const dynamic = "force-dynamic";
 
@@ -34,14 +34,16 @@ export default async function SalesImportPage() {
   let initialBatches: SourceOfSalesUploadBatch[] = [];
   let initialDashboard: SourceOfSalesDashboard | null = null;
   let initialProducts: SourceOfSalesProduct[] = [];
+  let mappingReferences: MappingReferences = { bricks: [], products: [] };
   let initialError: string | null = null;
 
   try {
-    [distributors, initialBatches, initialProducts, initialDashboard] = await Promise.all([
+    [distributors, initialBatches, initialProducts, initialDashboard, mappingReferences] = await Promise.all([
       listSalesImportDistributors(),
       listSourceOfSalesUploadBatches(),
       listSourceOfSalesProducts(),
       loadSourceOfSalesDashboard(),
+      listMappingReferences().catch(() => ({ bricks: [], products: [] })),
     ]);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load sales import.";
@@ -54,6 +56,7 @@ export default async function SalesImportPage() {
       initialDashboard={initialDashboard}
       initialError={initialError}
       initialProducts={initialProducts}
+      mappingReferences={mappingReferences}
       profiledDistributorCodes={listNormalizerDistributors().map((distributor) => distributor.code)}
     />
   );

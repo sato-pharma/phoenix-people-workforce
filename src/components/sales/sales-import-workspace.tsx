@@ -46,6 +46,7 @@ import type {
   SourceOfSalesProduct,
   SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
+import type { MappingReferences } from "@/lib/sales/normalizer/service";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -54,6 +55,8 @@ type Props = {
   initialDashboard: SourceOfSalesDashboard | null;
   initialError: string | null;
   initialProducts: SourceOfSalesProduct[];
+  /** Master products + bricks for the Mapping tab's inline "add by field" dropdowns. */
+  mappingReferences: MappingReferences;
   /** Distributor codes that have a normalizer layout profile (gates the Mapping tab's Learn/Analyze). */
   profiledDistributorCodes: string[];
 };
@@ -761,7 +764,7 @@ function SourceOfSalesDashboardPanel({
 
 type SourceOfSalesTab = "dashboard" | "mapping" | "products" | "sheets";
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, profiledDistributorCodes }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -1274,9 +1277,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </>
         ) : activeTab === "mapping" ? (
           <SourceOfSalesMappingTab
+            bricks={mappingReferences.bricks}
             distributorCode={selectedDistributorCode}
             distributors={distributors}
             onDistributorChange={setSelectedDistributorCode}
+            products={mappingReferences.products}
             profiledDistributorCodes={profiledDistributorCodes}
           />
         ) : (
