@@ -36,11 +36,10 @@ export function runEmployeePortalBottomNavTests() {
   const layoutHrefs = new Set(extractHrefs(layoutSource));
 
   // Intentional cross-surface destinations: routes the portal nav surfaces that live on
-  // the ADMIN shell (e.g. the manager Reports Dashboard). These are full-page links, not
-  // portal-owned (so isEmployeePortalOwnedRoute is correctly false — the layout must NOT
-  // client-side nav into the admin shell). They are exempt from the ownership check but
-  // still subject to the dead-link guard below (must exist in the layout nav).
-  const crossSurfaceAdminRoutes = new Set<string>(["/admin/report-it"]);
+  // the ADMIN shell. These are full-page links, not portal-owned (so isEmployeePortalOwnedRoute
+  // is correctly false — the layout must NOT client-side nav into the admin shell). They are
+  // exempt from the ownership check but still subject to the dead-link guard below.
+  const crossSurfaceAdminRoutes = new Set<string>();
 
   for (const href of registryHrefs) {
     assert.ok(

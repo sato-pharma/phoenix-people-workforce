@@ -73,13 +73,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Leave", fullLabel: "Vacation Report", href: "/leave-management/vacation-report", icon: FileText },
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab"] },
-  {
-    label: "Reports",
-    fullLabel: "Reports Dashboard",
-    href: "/admin/report-it",
-    icon: FileText,
-    flags: ["showReportItDashboardTab"],
-  },
   // Team Performance
   { label: "Team", fullLabel: "Team Performance", href: "/employee-portals/team-performance", icon: Trophy, flags: ["showTeamPerformanceTab"] },
   { label: "MRs", fullLabel: "MRs Performance", href: "/employee-portals/med-reps-performance", icon: ChartColumnBig, flags: ["showMedRepsPerformanceTab"] },
@@ -111,7 +104,6 @@ export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/private-calendar",
   "/employee-portals/report-it",
   "/employee-portals/sales",
-  "/admin/report-it",
   "/employee-portals/team-performance",
   "/employee-portals/marketing-requests",
   "/employee-portals/expense-dashboard",
