@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { SystemCleanupCenter } from "@/components/admin/system-cleanup-center";
-import { AppShell } from "@/components/layout/app-shell";
 import {
   assertSystemCleanupAccess,
   listCleanupRecords,
@@ -11,6 +10,8 @@ import { resolveAccessContextFromPage, isForbiddenError } from "@/lib/auth/serve
 
 export const dynamic = "force-dynamic";
 
+// Lives inside the (admin) route group so it inherits the shared AppShell + login
+// guard from app/(admin)/layout.tsx (no per-page shell). URL stays /admin/system-cleanup.
 export default async function SystemCleanupPage() {
   const access = await resolveAccessContextFromPage();
   let initialData: SystemCleanupRecordsResponse | null = null;
@@ -27,11 +28,9 @@ export default async function SystemCleanupPage() {
   }
 
   return (
-    <AppShell accessContext={access} navigationMode="admin">
-      <SystemCleanupCenter
-        initialData={initialData}
-        initialError={initialError}
-      />
-    </AppShell>
+    <SystemCleanupCenter
+      initialData={initialData}
+      initialError={initialError}
+    />
   );
 }

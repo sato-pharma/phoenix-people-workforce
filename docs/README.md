@@ -13,6 +13,7 @@
 | Document | Description |
 |---|---|
 | [Architecture](architecture.md) | System overview, domains, data access model |
+| [Workflow & Route Architecture](workflow-and-route-architecture.md) | Registry- vs code-governed workflows, the `leave_requests` alias, route/app-shell ownership |
 | [Current Operating State](current-operating-state.md) | Branch strategy, deployment URLs, Vercel constraints |
 
 ## Database & Migrations
