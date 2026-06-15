@@ -313,7 +313,8 @@ export function WeeklyBranchMappingManager({
         <table className="w-full text-sm">
           <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
             <tr>
-              <th className="px-3 py-2">Branch / Outlet</th>
+              <th className="px-3 py-2">Branch name</th>
+              <th className="px-3 py-2">Code / key</th>
               {isStock && <th className="px-3 py-2">Col #</th>}
               <th className="px-3 py-2">Region</th>
               <th className="px-3 py-2 text-center">Excluded</th>
@@ -323,14 +324,15 @@ export function WeeklyBranchMappingManager({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={isStock ? 5 : 4}>
+                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={isStock ? 6 : 5}>
                   No branches mapped yet — add one above or upload the template.
                 </td>
               </tr>
             )}
             {rows.map((row) => (
               <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
-                <td className="px-3 py-2 font-semibold text-[#0F172A]">{row.branchHeaderRaw ?? row.rawBranch}</td>
+                <td className="px-3 py-2 font-semibold text-[#0F172A]">{row.branchHeaderRaw || row.rawBranch}</td>
+                <td className="px-3 py-2 text-[#64748B]">{row.rawBranch}</td>
                 {isStock && <td className="px-3 py-2 text-[#64748B]">{row.branchColumnIndex ?? "—"}</td>}
                 <td className="px-3 py-2">
                   <select
