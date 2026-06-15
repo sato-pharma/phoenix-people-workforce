@@ -225,7 +225,7 @@ export const adminNavigationSections = [
   {
     id: "pharmacovigilance",
     items: [
-      { href: "/admin/report-it", icon: ShieldAlert, label: "Reports Dashboard", roles: ["Super Admin", "Manager"] },
+      { href: "/admin/report-it", icon: ShieldAlert, label: "Reports Dashboard", roles: ["Super Admin"] },
       { href: "/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
     ],
     label: "Pharmacovigilance",

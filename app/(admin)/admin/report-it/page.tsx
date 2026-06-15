@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { ReportItAdminDashboard } from "@/components/report-it/report-it-admin-dashboard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { canViewAllReports, getReportKpis, listReports } from "@/lib/report-it/service";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,11 @@ export default async function AdminReportItPage() {
 
   if (!access.hrId) {
     redirect("/login");
+  }
+
+  // Portal-mode users (e.g. Manager) must use the employee portal version.
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/report-it");
   }
 
   const canView = await canViewAllReports(access);
