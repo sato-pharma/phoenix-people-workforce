@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload, X } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult } from "@/lib/sales/weekly/types";
 
@@ -29,6 +29,34 @@ export function WeeklyUploadWorkspace({
   const [error, setError] = useState<string | null>(initialError);
   const [result, setResult] = useState<WeeklySalesValidationResult | null>(null);
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
+  // Recent-uploads table filters (client-side; all batches are already loaded).
+  const [filterDistributor, setFilterDistributor] = useState("");
+  const [filterPeriod, setFilterPeriod] = useState("");
+
+  // Distinct periods present in the uploads, newest first.
+  const uploadPeriods = useMemo(
+    () => [...new Set(batches.map((batch) => batch.weekStart).filter((week): week is string => Boolean(week)))].sort().reverse(),
+    [batches],
+  );
+  // Distinct distributors present in the uploads (code → display name), sorted by name.
+  const uploadDistributors = useMemo(() => {
+    const byCode = new Map<string, string>();
+    for (const batch of batches) {
+      if (batch.distributorCode) byCode.set(batch.distributorCode, batch.distributorName || batch.distributorCode);
+    }
+    return [...byCode.entries()].sort((left, right) => left[1].localeCompare(right[1]));
+  }, [batches]);
+
+  const filteredBatches = useMemo(
+    () =>
+      batches.filter(
+        (batch) =>
+          (!filterDistributor || batch.distributorCode === filterDistributor) &&
+          (!filterPeriod || batch.weekStart === filterPeriod),
+      ),
+    [batches, filterDistributor, filterPeriod],
+  );
+  const filtersActive = Boolean(filterDistributor || filterPeriod);
 
   // Overseas (PS) ships two matrix files (sales + stock); everyone else ships one combined workbook.
   const isPS = distributorCode === "PS";
@@ -210,7 +238,53 @@ export function WeeklyUploadWorkspace({
 
       {/* Recent uploads */}
       <section>
-        <h2 className="mb-2 text-sm font-black uppercase tracking-[0.12em] text-[#64748B]">Recent weekly uploads</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#64748B]">Recent weekly uploads</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Filter by distributor"
+              className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              onChange={(event) => setFilterDistributor(event.target.value)}
+              value={filterDistributor}
+            >
+              <option value="">All distributors</option>
+              {uploadDistributors.map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter by period"
+              className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              onChange={(event) => setFilterPeriod(event.target.value)}
+              value={filterPeriod}
+            >
+              <option value="">All periods</option>
+              {uploadPeriods.map((period) => (
+                <option key={period} value={period}>
+                  {period}
+                </option>
+              ))}
+            </select>
+            {filtersActive && (
+              <button
+                className="inline-flex items-center gap-1 rounded-[6px] border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#64748B] transition hover:bg-[#F8FAFC]"
+                onClick={() => {
+                  setFilterDistributor("");
+                  setFilterPeriod("");
+                }}
+                type="button"
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </button>
+            )}
+            <span className="text-[11px] font-bold tabular-nums text-[#94A3B8]">
+              {filteredBatches.length} of {batches.length}
+            </span>
+          </div>
+        </div>
         <div className={`overflow-x-auto ${card}`}>
           <table className="w-full text-sm">
             <thead className={darkHead}>
@@ -226,14 +300,14 @@ export function WeeklyUploadWorkspace({
               </tr>
             </thead>
             <tbody>
-              {batches.length === 0 && (
+              {filteredBatches.length === 0 && (
                 <tr>
                   <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={8}>
-                    No weekly uploads yet.
+                    {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
                   </td>
                 </tr>
               )}
-              {batches.map((batch) => (
+              {filteredBatches.map((batch) => (
                 <tr className="border-t border-[#FFE8D6]" key={batch.id}>
                   <td className="px-3 py-2 font-bold text-[#0F172A]">{batch.weekStart ?? "—"}</td>
                   <td className="px-3 py-2">{batch.distributorName}</td>
