@@ -695,9 +695,23 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       posRole === "Product Manager" || posRole === "Group Product Manager" ||
       jobRole === "Product Manager" || jobRole === "Group Product Manager";
 
-    const expectedScores = isLineScopedRole && dvEmployee.lineName
-      ? scores.filter((s) => normalizeLabelKey(s.lineName) === normalizeLabelKey(dvEmployee.lineName))
-      : scores;
+    // Product lines aren't in the employee directory (lineName is geographic).
+    // Match PM/GPM to exactly the MRs they visited — this naturally scopes to
+    // their product line(s) without any hardcoded mapping. A PM covering two
+    // lines (e.g. Pedia + Anti Inf) automatically gets both sets of MR scores.
+    const dvVisitedMrKeys = isLineScopedRole
+      ? new Set(
+          rows
+            .filter((r) => canonicalHrIdKey(r.double_visitor_hr_id) === dvKey)
+            .map((r) => canonicalHrIdKey(r.visited_employee_hr_id))
+            .filter(Boolean),
+        )
+      : null;
+    const lineFiltered =
+      dvVisitedMrKeys && dvVisitedMrKeys.size > 0
+        ? scores.filter((s) => dvVisitedMrKeys.has(canonicalHrIdKey(s.hrId)))
+        : null;
+    const expectedScores = lineFiltered && lineFiltered.length > 0 ? lineFiltered : scores;
 
     if (expectedScores.length > 0) {
       reportsByManager.set(dvKey ?? "", { manager: dvEmployee, mrs: expectedScores });
