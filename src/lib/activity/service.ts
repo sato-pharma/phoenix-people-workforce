@@ -219,7 +219,7 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
 
 // ── Overview (dashboard) ─────────────────────────────────────────────────────
 
-type SessionRow = {
+export type SessionRow = {
   id: string | null;
   loginId: string | null;
   hrId: string | null;
@@ -251,13 +251,97 @@ function mapSession(row: Row): SessionRow {
   };
 }
 
-function sessionDurationSeconds(session: SessionRow): number {
-  if (!session.createdAt) return 0;
-  const start = new Date(session.createdAt).getTime();
-  const endIso = session.revokedAt ?? session.lastSeenAt ?? session.createdAt;
-  const end = new Date(endIso).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
-  return Math.round((end - start) / 1000);
+// The auth layer writes a fresh app_sessions row on every re-auth / idle refresh,
+// so one person can accumulate hundreds of rows in a week. Counting raw rows as
+// "logins" massively overcounts. We collapse rows for the same person whose gaps
+// are smaller than this into a single logical "presence" session.
+export const SESSION_MERGE_GAP_SECONDS = 30 * 60;
+
+export type LogicalSession = {
+  hrId: string | null;
+  loginId: string | null;
+  role: string | null;
+  startedAt: string;
+  /** Effective end used for duration (revoked_at or last_seen_at of last merged row). */
+  endIso: string;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  idleExpiresAt: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  durationSeconds: number;
+  mergedRows: number;
+};
+
+function sessionEndIso(session: SessionRow): string {
+  return session.revokedAt ?? session.lastSeenAt ?? session.createdAt ?? new Date().toISOString();
+}
+
+/** Merge a person's overlapping/adjacent app_sessions rows into logical sessions. */
+export function collapseSessions(rows: SessionRow[]): LogicalSession[] {
+  const byKey = new Map<string, SessionRow[]>();
+  for (const row of rows) {
+    if (!row.createdAt) continue;
+    const key = identityKey(row.hrId, row.loginId);
+    const list = byKey.get(key) ?? [];
+    list.push(row);
+    byKey.set(key, list);
+  }
+
+  const result: LogicalSession[] = [];
+  for (const list of byKey.values()) {
+    const sorted = [...list].sort((a, b) => (a.createdAt! < b.createdAt! ? -1 : 1));
+    let current: LogicalSession | null = null;
+
+    for (const row of sorted) {
+      const startMs = new Date(row.createdAt!).getTime();
+      const endIso = sessionEndIso(row);
+      const endMs = new Date(endIso).getTime();
+
+      if (current && startMs <= new Date(current.endIso).getTime() + SESSION_MERGE_GAP_SECONDS * 1000) {
+        // Extend the current logical session.
+        if (endMs > new Date(current.endIso).getTime()) {
+          current.endIso = endIso;
+          current.revokedAt = row.revokedAt;
+          current.revokedReason = row.revokedReason;
+          current.idleExpiresAt = row.idleExpiresAt;
+        }
+        current.ip = row.ip ?? current.ip;
+        current.userAgent = row.userAgent ?? current.userAgent;
+        current.mergedRows += 1;
+        current.durationSeconds = Math.max(
+          0,
+          Math.round((new Date(current.endIso).getTime() - new Date(current.startedAt).getTime()) / 1000),
+        );
+      } else {
+        if (current) result.push(current);
+        current = {
+          hrId: row.hrId,
+          loginId: row.loginId,
+          role: row.role,
+          startedAt: row.createdAt!,
+          endIso,
+          revokedAt: row.revokedAt,
+          revokedReason: row.revokedReason,
+          idleExpiresAt: row.idleExpiresAt,
+          ip: row.ip,
+          userAgent: row.userAgent,
+          durationSeconds: Math.max(0, Math.round((endMs - startMs) / 1000)),
+          mergedRows: 1,
+        };
+      }
+    }
+    if (current) result.push(current);
+  }
+
+  return result;
+}
+
+function logicalSessionEndedReason(session: LogicalSession, nowMs: number): string {
+  if (session.revokedReason) return session.revokedReason;
+  if (session.revokedAt) return "ended";
+  if (session.idleExpiresAt && new Date(session.idleExpiresAt).getTime() < nowMs) return "timeout";
+  return "active";
 }
 
 type EventRow = {
@@ -298,8 +382,8 @@ type Agg = {
 
 type ModuleTotal = { label: string; seconds: number; views: number; users: Set<string> };
 
-/** Fold sessions + events into per-identity aggregates and module totals. */
-function aggregateActivity(maps: IdentityMaps, sessions: SessionRow[], events: EventRow[]) {
+/** Fold logical sessions + events into per-identity aggregates and module totals. */
+function aggregateActivity(maps: IdentityMaps, sessions: LogicalSession[], events: EventRow[]) {
   const aggByKey = new Map<string, Agg>();
 
   function ensureAgg(hrId: string | null, loginId: string | null, role: string | null): Agg {
@@ -323,8 +407,8 @@ function aggregateActivity(maps: IdentityMaps, sessions: SessionRow[], events: E
   for (const session of sessions) {
     const agg = ensureAgg(session.hrId, session.loginId, session.role);
     agg.sessions += 1;
-    agg.sessionSeconds += sessionDurationSeconds(session);
-    const seen = session.lastSeenAt ?? session.createdAt;
+    agg.sessionSeconds += session.durationSeconds;
+    const seen = session.endIso;
     if (seen && (!agg.lastSeen || seen > agg.lastSeen)) agg.lastSeen = seen;
   }
 
@@ -415,6 +499,7 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   ]);
 
   const sessions = sessionRowsRaw.map(mapSession);
+  const logicalSessions = collapseSessions(sessions);
   const events = eventRowsRaw.map(mapEvent);
   const onlineSessions = onlineRowsRaw.map(mapSession);
 
@@ -428,7 +513,7 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   }
 
   // ── Per-identity aggregation ───────────────────────────────────────────────
-  const { aggByKey, moduleTotals, totalActiveSeconds } = aggregateActivity(maps, sessions, events);
+  const { aggByKey, moduleTotals, totalActiveSeconds } = aggregateActivity(maps, logicalSessions, events);
 
   // ── Module popularity ──────────────────────────────────────────────────────
   const modulePopularity: ModulePopularity[] = Array.from(moduleTotals.entries())
@@ -445,11 +530,17 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   // ── Top users + engagement ─────────────────────────────────────────────────
   const allSummaries = Array.from(aggByKey.values()).map(summarize);
   const topUsers = [...allSummaries]
-    .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews)
+    .sort(
+      (a, b) =>
+        b.activeMinutes - a.activeMinutes ||
+        b.pageViews - a.pageViews ||
+        b.sessionMinutes - a.sessionMinutes ||
+        (a.lastSeenAt && b.lastSeenAt ? (a.lastSeenAt < b.lastSeenAt ? 1 : -1) : 0),
+    )
     .slice(0, TOP_USERS_LIMIT);
 
-  // ── Online now ─────────────────────────────────────────────────────────────
-  const online: OnlineUser[] = onlineSessions.map((session) => {
+  // ── Online now (deduplicated to distinct PEOPLE, not raw sessions) ──────────
+  const onlineResolved = onlineSessions.map((session) => {
     const identity = resolveIdentity(maps, session.hrId, session.loginId, session.role);
     const latest = session.id ? latestEventBySession.get(session.id) : undefined;
     const lastSeen = session.lastSeenAt ?? session.createdAt ?? nowIso;
@@ -461,12 +552,23 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
       idleSeconds,
       currentModule: latest?.moduleLabel ?? null,
       ip: session.ip,
-    };
+    } as OnlineUser;
   });
+
+  const onlineByKey = new Map<string, OnlineUser>();
+  for (const user of onlineResolved) {
+    const existing = onlineByKey.get(user.key);
+    // Keep the most-recently-active session per person, but prefer one that has a
+    // known current module.
+    if (!existing || user.lastSeenAt > existing.lastSeenAt || (!existing.currentModule && user.currentModule)) {
+      onlineByKey.set(user.key, { ...(existing ?? user), ...user, currentModule: user.currentModule ?? existing?.currentModule ?? null });
+    }
+  }
+  const online: OnlineUser[] = Array.from(onlineByKey.values()).sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const activeUsers = aggByKey.size;
-  const sessionDurations = sessions.map(sessionDurationSeconds).filter((s) => s > 0);
+  const sessionDurations = logicalSessions.map((s) => s.durationSeconds).filter((s) => s > 0);
   const avgSessionMinutes = sessionDurations.length
     ? minutesFromSeconds(sessionDurations.reduce((sum, s) => sum + s, 0) / sessionDurations.length)
     : 0;
@@ -474,7 +576,7 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   const kpis = {
     activeUsers,
     onlineNow: online.length,
-    sessions: sessions.length,
+    sessions: logicalSessions.length,
     avgSessionMinutes,
     avgActiveMinutesPerUser: activeUsers ? minutesFromSeconds(totalActiveSeconds / activeUsers) : 0,
     totalPageViews: events.length,
@@ -530,9 +632,9 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   // ── Anomalies ──────────────────────────────────────────────────────────────
   const anomalies: ActivityAnomaly[] = [];
 
-  // Concurrent active sessions from distinct IPs.
+  // Concurrent active sessions from distinct IPs (uses raw active sessions).
   const onlineByLogin = new Map<string, OnlineUser[]>();
-  for (const user of online) {
+  for (const user of onlineResolved) {
     const key = user.key;
     const list = onlineByLogin.get(key) ?? [];
     list.push(user);
@@ -553,19 +655,19 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
     });
   }
 
-  // Odd-hour logins (00:00–05:00 Cairo time) within the range.
-  for (const session of sessions) {
-    if (!session.createdAt) continue;
-    const hour = hourInBusinessTimezone(session.createdAt);
+  // Odd-hour logins (00:00–05:00 Cairo time) within the range. Uses collapsed
+  // logical sessions so a single early-morning presence isn't flagged repeatedly.
+  for (const session of logicalSessions) {
+    const hour = hourInBusinessTimezone(session.startedAt);
     if (hour >= 0 && hour < 5) {
       const identity = resolveIdentity(maps, session.hrId, session.loginId, session.role);
       anomalies.push({
-        id: `oddhour:${session.id ?? identity.key}:${session.createdAt}`,
+        id: `oddhour:${identity.key}:${session.startedAt}`,
         type: "odd_hour_login",
         severity: "info",
         identity,
         detail: `Logged in at ${String(hour).padStart(2, "0")}:00 (Cairo) — outside normal hours`,
-        occurredAt: session.createdAt,
+        occurredAt: session.startedAt,
       });
     }
   }
@@ -611,28 +713,29 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
   const sessions = sessionRowsRaw.map(mapSession);
   const events = eventRowsRaw.map(mapEvent);
 
-  const eventsBySession = new Map<string, EventRow[]>();
+  const nowMs = Date.now();
+  const logical = collapseSessions(sessions).sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
+
+  // Assign each event to the logical session whose time window contains it.
+  const eventsForSession: EventRow[][] = logical.map(() => []);
   const looseEvents: EventRow[] = [];
   for (const event of events) {
-    if (event.sessionId) {
-      const list = eventsBySession.get(event.sessionId) ?? [];
-      list.push(event);
-      eventsBySession.set(event.sessionId, list);
-    } else {
-      looseEvents.push(event);
+    const t = new Date(event.createdAt).getTime();
+    let placed = false;
+    for (let i = 0; i < logical.length; i += 1) {
+      const start = new Date(logical[i].startedAt).getTime();
+      const end = new Date(logical[i].endIso).getTime() + SESSION_MERGE_GAP_SECONDS * 1000;
+      if (t >= start && t <= end) {
+        eventsForSession[i].push(event);
+        placed = true;
+        break;
+      }
     }
+    if (!placed) looseEvents.push(event);
   }
 
-  const nowMs = Date.now();
-  function endedReason(session: SessionRow): string {
-    if (session.revokedReason) return session.revokedReason;
-    if (session.revokedAt) return "ended";
-    if (session.idleExpiresAt && new Date(session.idleExpiresAt).getTime() < nowMs) return "timeout";
-    return "active";
-  }
-
-  const timelineSessions: TimelineSession[] = sessions.map((session) => {
-    const sessionEvents = session.id ? eventsBySession.get(session.id) ?? [] : [];
+  const timelineSessions: TimelineSession[] = logical.map((session, i) => {
+    const sessionEvents = eventsForSession[i];
     const moduleAgg = new Map<string, { label: string; seconds: number; views: number }>();
     let activeSeconds = 0;
     for (const event of sessionEvents) {
@@ -645,11 +748,11 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     }
 
     return {
-      sessionId: session.id,
-      startedAt: session.createdAt ?? range.fromIso,
+      sessionId: null,
+      startedAt: session.startedAt,
       endedAt: session.revokedAt ?? null,
-      endedReason: endedReason(session),
-      durationMinutes: minutesFromSeconds(sessionDurationSeconds(session)),
+      endedReason: logicalSessionEndedReason(session, nowMs),
+      durationMinutes: minutesFromSeconds(session.durationSeconds),
       activeMinutes: minutesFromSeconds(activeSeconds),
       ip: session.ip,
       userAgent: session.userAgent,
@@ -677,7 +780,7 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     entry.seconds += dwell;
     moduleSeconds.set(event.moduleKey, entry);
   }
-  const sessionSeconds = sessions.reduce((sum, s) => sum + sessionDurationSeconds(s), 0);
+  const sessionSeconds = logical.reduce((sum, s) => sum + s.durationSeconds, 0);
   let topModule: string | null = null;
   let topModuleSeconds = -1;
   for (const value of moduleSeconds.values()) {
@@ -686,11 +789,13 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
       topModule = value.label;
     }
   }
-  const lastSeen = sessions[0]?.lastSeenAt ?? sessions[0]?.createdAt ?? null;
+  const lastSeen = logical.length
+    ? logical.reduce((latest, s) => (s.endIso > latest ? s.endIso : latest), logical[0].endIso)
+    : null;
 
   const summary: UserActivitySummary = {
     ...identity,
-    sessions: sessions.length,
+    sessions: logical.length,
     sessionMinutes: minutesFromSeconds(sessionSeconds),
     activeMinutes: minutesFromSeconds(activeSeconds),
     pageViews,
@@ -762,10 +867,14 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
     ),
   ]);
 
-  const { aggByKey } = aggregateActivity(maps, sessionRowsRaw.map(mapSession), eventRowsRaw.map(mapEvent));
+  const { aggByKey } = aggregateActivity(
+    maps,
+    collapseSessions(sessionRowsRaw.map(mapSession)),
+    eventRowsRaw.map(mapEvent),
+  );
   return Array.from(aggByKey.values())
     .map(summarize)
-    .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews);
+    .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews || b.sessionMinutes - a.sessionMinutes);
 }
 
 // ── Retention cleanup (called by the daily scheduled job) ────────────────────
