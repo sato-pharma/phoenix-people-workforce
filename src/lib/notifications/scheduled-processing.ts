@@ -1,4 +1,5 @@
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
+import { purgeOldActivityEvents } from "@/lib/activity/service";
 import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
   cleanupOldNotificationData,
@@ -19,5 +20,7 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const deferred = await processDeferredDeliveryRetries(limit);
   const telegram = await processTelegramDeliveryRetries(limit);
   const retention = await cleanupOldNotificationData();
-  return { attendanceAgent, deferred, exitedDeductions, outbox, probationReminders, reaped, retention, telegram };
+  // Activity Control Center retention: drop page-view events older than 90 days.
+  const activityRetention = await purgeOldActivityEvents(90);
+  return { activityRetention, attendanceAgent, deferred, exitedDeductions, outbox, probationReminders, reaped, retention, telegram };
 }

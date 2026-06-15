@@ -32,6 +32,7 @@ export type AuditEntityType =
   | "source_of_sales_region"
   | "system_cleanup"
   | "user"
+  | "user_activity_access"
   | "vacation_request"
   | "vacation_weekly_off_policy"
   | "weekly_plan"

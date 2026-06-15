@@ -174,6 +174,7 @@ import { runInternalMessagesTests } from "./internal-messages.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
+import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -361,3 +362,4 @@ await runTest("internal messages", runInternalMessagesTests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);
 await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests);
+await runTest("activity tracking", runActivityTrackingTests);
