@@ -11,8 +11,14 @@ export type WeeklyValidationIssue = {
 
 export type WeeklyTotals = {
   rowCount: number;
+  /** gross sales units (before returns) */
   salesQty: number;
+  /** returned units (always >= 0) */
+  returnQty: number;
+  /** net units = salesQty - returnQty (the priced quantity) */
+  netQty: number;
   bonusQty: number;
+  /** salesValue = netQty x factory_price (discount + sheet value columns ignored) */
   salesValue: number;
   /** stock is units only — there is deliberately no stock value */
   stockQty: number;
@@ -45,10 +51,14 @@ export type WeeklyParsedRow = {
   productCode: string;
   productName: string;
   officialLine: string;
+  /** gross sales units (before returns) */
   salesQty: number;
-  bonusQty: number;
-  discount: number; // fraction (0.25 = 25%)
-  salesValue: number; // qty x xfactor x (1 - discount)
+  /** returned units, always stored as a positive number */
+  returnQty: number;
+  /** net units = salesQty - returnQty; this is the priced quantity */
+  netQty: number;
+  bonusQty: number; // free units — read for audit, never priced
+  salesValue: number; // netQty x factory_price (no discount, no sheet value)
   stockQty: number; // units only
   validationState: "valid" | "warning" | "failed";
   validationIssues: WeeklyValidationIssue[];
@@ -95,7 +105,12 @@ export type WeeklyBatch = {
   importableRows: number;
   failedRows: number;
   warningRows: number;
+  /** gross sales units (audit) */
   totalSalesQty: number;
+  /** returned units */
+  totalReturnQty: number;
+  /** net units = gross - returns (the priced quantity) */
+  totalNetQty: number;
   totalBonusQty: number;
   totalSalesValue: number;
   totalStockQty: number;
