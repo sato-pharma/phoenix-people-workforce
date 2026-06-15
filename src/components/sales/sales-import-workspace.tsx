@@ -46,6 +46,7 @@ import type {
   SourceOfSalesProduct,
   SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
+import type { MappingReferences } from "@/lib/sales/normalizer/service";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -54,6 +55,8 @@ type Props = {
   initialDashboard: SourceOfSalesDashboard | null;
   initialError: string | null;
   initialProducts: SourceOfSalesProduct[];
+  /** Master products + bricks for the Mapping tab's inline "add by field" dropdowns. */
+  mappingReferences: MappingReferences;
   /** Distributor codes that have a normalizer layout profile (gates the Mapping tab's Learn/Analyze). */
   profiledDistributorCodes: string[];
 };
@@ -494,6 +497,42 @@ function UploadedSheetsTable({
   onRefresh: () => void;
   refreshing: boolean;
 }) {
+  const [distributorFilter, setDistributorFilter] = useState("all");
+  const [periodFilter, setPeriodFilter] = useState<string[]>([]);
+
+  // Distinct distributors + periods present across the uploaded sheets — drives the filter controls.
+  const distributorOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const batch of batches) {
+      if (batch.distributorCode) map.set(batch.distributorCode, batch.distributorName || batch.distributorCode);
+    }
+    return [...map.entries()].map(([code, name]) => ({ code, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [batches]);
+
+  const periodOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const batch of batches) if (batch.period) set.add(batch.period);
+    return [...set].sort((a, b) => b.localeCompare(a)); // newest period first
+  }, [batches]);
+
+  const filtered = useMemo(
+    () =>
+      batches.filter((batch) => {
+        if (distributorFilter !== "all" && batch.distributorCode !== distributorFilter) return false;
+        if (periodFilter.length > 0 && !(batch.period && periodFilter.includes(batch.period))) return false;
+        return true;
+      }),
+    [batches, distributorFilter, periodFilter],
+  );
+
+  const togglePeriod = (period: string) =>
+    setPeriodFilter((current) => (current.includes(period) ? current.filter((value) => value !== period) : [...current, period]));
+  const hasFilters = distributorFilter !== "all" || periodFilter.length > 0;
+  const clearFilters = () => {
+    setDistributorFilter("all");
+    setPeriodFilter([]);
+  };
+
   return (
     <AdminTableShell
       action={(
@@ -505,8 +544,8 @@ function UploadedSheetsTable({
       description="Every uploaded Source of Sales workbook can be removed from the new module without touching old sales tables."
       title="Uploaded Sheets"
     >
-      <div className="overflow-x-auto p-4 md:p-5">
-        {batches.length === 0 ? (
+      {batches.length === 0 ? (
+        <div className="p-4 md:p-5">
           <AdminCallout tone="neutral">
             <FileSpreadsheet className="mt-0.5 h-4 w-4" />
             <div>
@@ -514,63 +553,129 @@ function UploadedSheetsTable({
               <p className="text-sm">Upload a distributor monthly workbook to start the new module history.</p>
             </div>
           </AdminCallout>
-        ) : (
-          <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
-            <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="bg-[#F8FAFC]">
-                <tr>
-                  <th className={tableHeaderClassName}>File</th>
-                  <th className={tableHeaderClassName}>Distributor</th>
-                  <th className={tableHeaderClassName}>Period</th>
-                  <th className={tableHeaderClassName}>Status</th>
-                  <th className={tableHeaderClassName}>Rows</th>
-                  <th className={tableHeaderClassName}>Qty</th>
-                  <th className={tableHeaderClassName}>B. Qty</th>
-                  <th className={tableHeaderClassName}>Value</th>
-                  <th className={tableHeaderClassName}>Uploaded</th>
-                  <th className={tableHeaderClassName}>Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
-                {batches.map((batch) => {
-                  const deleting = deleteLoadingId === batch.batchId;
+        </div>
+      ) : (
+        <div className="space-y-4 p-4 md:p-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[12px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+            <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <Filter className="h-3.5 w-3.5" /> Filter
+            </span>
+            <label className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#64748B]">Distributor</span>
+              <select
+                className="h-9 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                onChange={(event) => setDistributorFilter(event.target.value)}
+                value={distributorFilter}
+              >
+                <option value="all">All distributors</option>
+                {distributorOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.name} / {option.code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {periodOptions.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#64748B]">Period</span>
+                {periodOptions.map((period) => {
+                  const active = periodFilter.includes(period);
                   return (
-                    <tr className="text-[#64748B]" key={batch.batchId}>
-                      <td className="max-w-[260px] px-4 py-3">
-                        <p className="truncate font-semibold text-[#0F172A]">{batch.fileName}</p>
-                        <p className="mt-1 text-xs text-[#64748B]">{batch.uploadedBy}</p>
-                      </td>
-                      <td className="px-4 py-3">{batch.distributorName} / {batch.distributorCode}</td>
-                      <td className="px-4 py-3">{batch.period ?? "-"}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={batch.status === "validated" ? "success" : "danger"}>
-                          {batch.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">{formatNumber(batch.rowCount)}</td>
-                      <td className="px-4 py-3">{numberWithDecimals(batch.totalQty)}</td>
-                      <td className="px-4 py-3">{numberWithDecimals(batch.totalBonusQty)}</td>
-                      <td className="px-4 py-3">{formatCurrency(batch.totalValue)}</td>
-                      <td className="px-4 py-3">{new Date(batch.createdAt).toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <Button
-                          className="gap-1"
-                          disabled={deleting}
-                          onClick={() => onDelete(batch.batchId)}
-                          variant="destructive"
-                        >
-                          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                          Delete
-                        </Button>
-                      </td>
-                    </tr>
+                    <button
+                      className={cn(
+                        "h-7 rounded-full border px-2.5 text-xs font-bold transition",
+                        active
+                          ? "border-[#F97316] bg-[#F97316] text-white"
+                          : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#F97316]",
+                      )}
+                      key={period}
+                      onClick={() => togglePeriod(period)}
+                      type="button"
+                    >
+                      {period}
+                    </button>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            ) : null}
+            {hasFilters ? (
+              <Button className="h-8 gap-1" onClick={clearFilters} type="button" variant="secondary">
+                Clear
+              </Button>
+            ) : null}
+            <span className="ml-auto text-xs font-semibold text-[#64748B]">
+              Showing {formatNumber(filtered.length)} of {formatNumber(batches.length)}
+            </span>
           </div>
-        )}
-      </div>
+
+          {filtered.length === 0 ? (
+            <AdminCallout tone="neutral">
+              <Filter className="mt-0.5 h-4 w-4" />
+              <div>
+                <p className="font-semibold">No uploaded sheets match these filters</p>
+                <p className="text-sm">Adjust the distributor or period filters, or clear them to see all {formatNumber(batches.length)} sheets.</p>
+              </div>
+            </AdminCallout>
+          ) : (
+            <div className="overflow-x-auto">
+              <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="bg-[#F8FAFC]">
+                    <tr>
+                      <th className={tableHeaderClassName}>File</th>
+                      <th className={tableHeaderClassName}>Distributor</th>
+                      <th className={tableHeaderClassName}>Period</th>
+                      <th className={tableHeaderClassName}>Status</th>
+                      <th className={tableHeaderClassName}>Rows</th>
+                      <th className={tableHeaderClassName}>Qty</th>
+                      <th className={tableHeaderClassName}>B. Qty</th>
+                      <th className={tableHeaderClassName}>Value</th>
+                      <th className={tableHeaderClassName}>Uploaded</th>
+                      <th className={tableHeaderClassName}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {filtered.map((batch) => {
+                      const deleting = deleteLoadingId === batch.batchId;
+                      return (
+                        <tr className="text-[#64748B]" key={batch.batchId}>
+                          <td className="max-w-[260px] px-4 py-3">
+                            <p className="truncate font-semibold text-[#0F172A]">{batch.fileName}</p>
+                            <p className="mt-1 text-xs text-[#64748B]">{batch.uploadedBy}</p>
+                          </td>
+                          <td className="px-4 py-3">{batch.distributorName} / {batch.distributorCode}</td>
+                          <td className="px-4 py-3">{batch.period ?? "-"}</td>
+                          <td className="px-4 py-3">
+                            <Badge variant={batch.status === "validated" ? "success" : "danger"}>
+                              {batch.status}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">{formatNumber(batch.rowCount)}</td>
+                          <td className="px-4 py-3">{numberWithDecimals(batch.totalQty)}</td>
+                          <td className="px-4 py-3">{numberWithDecimals(batch.totalBonusQty)}</td>
+                          <td className="px-4 py-3">{formatCurrency(batch.totalValue)}</td>
+                          <td className="px-4 py-3">{new Date(batch.createdAt).toLocaleString()}</td>
+                          <td className="px-4 py-3">
+                            <Button
+                              className="gap-1"
+                              disabled={deleting}
+                              onClick={() => onDelete(batch.batchId)}
+                              variant="destructive"
+                            >
+                              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                              Delete
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </AdminTableShell>
   );
 }
@@ -659,7 +764,7 @@ function SourceOfSalesDashboardPanel({
 
 type SourceOfSalesTab = "dashboard" | "mapping" | "products" | "sheets";
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, profiledDistributorCodes }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -1172,9 +1277,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </>
         ) : activeTab === "mapping" ? (
           <SourceOfSalesMappingTab
+            bricks={mappingReferences.bricks}
             distributorCode={selectedDistributorCode}
             distributors={distributors}
             onDistributorChange={setSelectedDistributorCode}
+            products={mappingReferences.products}
             profiledDistributorCodes={profiledDistributorCodes}
           />
         ) : (

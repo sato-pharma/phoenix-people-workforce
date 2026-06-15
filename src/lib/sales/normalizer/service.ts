@@ -14,9 +14,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
 export async function listMappingReferences(): Promise<MappingReferences> {
-  const refs = await loadSalesReferenceData();
+  // Only the product + brick name lists are needed for the mapping dropdowns — skip the (large)
+  // customer->brick crosswalk that loadSalesReferenceData() pages by default.
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   return {
-    bricks: (refs.bricks ?? []).map((b) => ({ id: b.brickId, name: b.brickName })).sort((a, b) => a.id.localeCompare(b.id)),
+    bricks: (refs.bricks ?? []).map((b) => ({ id: b.brickId, name: b.brickName })).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
     products: refs.products.map((p) => ({ code: p.productCode, name: p.productName })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
