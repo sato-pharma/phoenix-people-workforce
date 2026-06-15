@@ -130,6 +130,7 @@ import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforce
 import { runVacationApprovalFlowTests } from "./vacation-approval-flow.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
+import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
@@ -313,6 +314,7 @@ await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTes
 await runTest("vacation approval flow", runVacationApprovalFlowTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);
+await runTest("vacation paid approval atomic", runVacationPaidApprovalAtomicTests);
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);
