@@ -2723,45 +2723,85 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   }
 
   const now = new Date().toISOString();
-  const updatePayload: Record<string, unknown> = {
-    status: nextStatus,
-    updated_at: now,
-  };
-  if (step.stepKey === "hr") {
-    updatePayload.hr_decision = decisionValue;
-    updatePayload.hr_decision_at = now;
-    updatePayload.hr_decision_by_hr_id = input.actorHrId;
-    updatePayload.hr_decision_comment = nullableText(input.decisionComment);
-  } else {
-    updatePayload.manager_decision = decisionValue;
-    updatePayload.manager_decision_at = now;
-    updatePayload.manager_decision_by_hr_id = input.actorHrId;
-    updatePayload.manager_decision_comment = nullableText(input.decisionComment);
-  }
-  if (allApproved) {
-    Object.assign(updatePayload, {
-      balance_after_days: balance.balanceAfterDays,
-      balance_before_days: balance.balanceBeforeDays,
-      entitlement_days: balance.entitlementDays,
-      payment_status: balance.paymentStatus,
-      paid_duration_days: balance.paidDurationDays,
-      period_end: balance.periodEnd,
-      period_start: balance.periodStart,
-      unpaid_reason: balance.unpaidReason,
-      unpaid_duration_days: balance.unpaidDurationDays,
-      used_paid_days: balance.usedPaidDays,
-    });
-  }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationRequestsTable)
-    .update(updatePayload)
-    .eq("id", input.request.id)
-    .eq("status", input.request.status)
-    .select("*")
-    .single();
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  const updated = mapVacationRow(data as VacationRequestDbRow);
+  // A final approval is "paid-balance contended" only for annual/emergency requests that
+  // reach the paid split (have a period and are not forced-unpaid for first_six_months /
+  // missing_hire_date). For those, the used-paid-days read and the write MUST be atomic to
+  // stop two concurrent approvals in the same period from both consuming the same balance.
+  const isPaidBalanceContended =
+    allApproved &&
+    (input.request.vacationType === "annual" || input.request.vacationType === "emergency") &&
+    balance.unpaidReason !== "first_six_months" &&
+    balance.unpaidReason !== "missing_hire_date" &&
+    balance.periodStart != null &&
+    balance.periodEnd != null;
+
+  let decidedRow: VacationRequestDbRow;
+  if (isPaidBalanceContended) {
+    // Atomic, per-employee-serialized enforcement — see migration
+    // 20260615080500_vacation_paid_approval_atomic.sql. The RPC re-derives used-paid-days
+    // under a per-employee advisory lock + status CAS, applies the split, and writes the
+    // decision in one transaction. The request-local period/entitlement (computed above by
+    // calculatePaymentForRequest) is passed in; the contended values are recomputed inside.
+    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_paid_approval", {
+      p_request_id: input.request.id,
+      p_expected_status: input.request.status,
+      p_next_status: nextStatus,
+      p_step: step.stepKey === "hr" ? "hr" : "manager",
+      p_decision_by_hr_id: input.actorHrId,
+      p_decision_comment: nullableText(input.decisionComment),
+      p_now: now,
+      p_entitlement_days: balance.entitlementDays,
+      p_period_start: balance.periodStart,
+      p_period_end: balance.periodEnd,
+      p_duration_days: input.request.durationDays,
+      p_vacation_type: input.request.vacationType,
+    });
+    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+    if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
+    decidedRow = data as VacationRequestDbRow;
+  } else {
+    const updatePayload: Record<string, unknown> = {
+      status: nextStatus,
+      updated_at: now,
+    };
+    if (step.stepKey === "hr") {
+      updatePayload.hr_decision = decisionValue;
+      updatePayload.hr_decision_at = now;
+      updatePayload.hr_decision_by_hr_id = input.actorHrId;
+      updatePayload.hr_decision_comment = nullableText(input.decisionComment);
+    } else {
+      updatePayload.manager_decision = decisionValue;
+      updatePayload.manager_decision_at = now;
+      updatePayload.manager_decision_by_hr_id = input.actorHrId;
+      updatePayload.manager_decision_comment = nullableText(input.decisionComment);
+    }
+    if (allApproved) {
+      Object.assign(updatePayload, {
+        balance_after_days: balance.balanceAfterDays,
+        balance_before_days: balance.balanceBeforeDays,
+        entitlement_days: balance.entitlementDays,
+        payment_status: balance.paymentStatus,
+        paid_duration_days: balance.paidDurationDays,
+        period_end: balance.periodEnd,
+        period_start: balance.periodStart,
+        unpaid_reason: balance.unpaidReason,
+        unpaid_duration_days: balance.unpaidDurationDays,
+        used_paid_days: balance.usedPaidDays,
+      });
+    }
+
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRequestsTable)
+      .update(updatePayload)
+      .eq("id", input.request.id)
+      .eq("status", input.request.status)
+      .select("*")
+      .single();
+    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+    decidedRow = data as VacationRequestDbRow;
+  }
+  const updated = mapVacationRow(decidedRow);
 
   const genericStep = genericStepName(step.stepKey);
   const eventMessage = isFinal
