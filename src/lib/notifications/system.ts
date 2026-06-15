@@ -627,9 +627,15 @@ function isUniqueViolation(error: unknown) {
 
 // Atomically claim an idempotency key by INSERTing a pending delivery row. The
 // notification_deliveries_idempotency_uniq unique constraint makes this race-free: if
-// two concurrent fan-out sends target the same key, exactly one INSERT succeeds and the
-// other gets a unique violation. This replaces the old read-then-write check (TOCTOU)
-// so a key can never be double-sent. Returns whether THIS call claimed the key.
+// two concurrent fan-out sends target the same key, exactly one INSERT lands a row and
+// the other is ignored. This replaces the old read-then-write check (TOCTOU) so a key
+// can never be double-sent. Returns whether THIS call claimed the key.
+//
+// The insert is conflict-tolerant at the DB level: idempotency_key is a simple
+// (non-partial) unique, so ON CONFLICT DO NOTHING can target it directly via
+// .upsert({ onConflict, ignoreDuplicates }). A duplicate is silently ignored by Postgres
+// with NO 23505 ERROR logged — the previous plain INSERT logged one duplicate-key ERROR
+// per re-fanned delivery, flooding the production logs and burying real errors.
 async function claimDelivery(input: {
   channel: SystemNotificationChannel;
   eventId: string | null;
@@ -640,9 +646,11 @@ async function claimDelivery(input: {
   if (!input.eventId) return { alreadySent: false, claimed: true };
   const now = new Date().toISOString();
   try {
-    const { error } = await getSupabaseAdmin()
+    // ON CONFLICT DO NOTHING returns the row only when THIS call inserted it, so a row
+    // coming back means we won the race and own the claim.
+    const { data, error } = await getSupabaseAdmin()
       .from("notification_deliveries")
-      .insert({
+      .upsert({
         channel: input.channel,
         idempotency_key: input.idempotencyKey,
         notification_event_id: input.eventId,
@@ -651,18 +659,22 @@ async function claimDelivery(input: {
         recipient_user_id: input.recipient.userId,
         status: "pending",
         updated_at: now,
-      });
-    if (!error) return { alreadySent: false, claimed: true };
-    if (isUniqueViolation(error)) {
-      const existing = await getSupabaseAdmin()
-        .from("notification_deliveries")
-        .select("status")
-        .eq("idempotency_key", input.idempotencyKey)
-        .maybeSingle();
-      return { alreadySent: (existing.data as { status?: string } | null)?.status === "sent", claimed: false };
-    }
-    throw error;
+      }, { ignoreDuplicates: true, onConflict: "idempotency_key" })
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return { alreadySent: false, claimed: true };
+    // No row returned → the key already existed and the insert was a no-op. Read the
+    // existing status so the caller can report whether it was already sent or in progress.
+    const existing = await getSupabaseAdmin()
+      .from("notification_deliveries")
+      .select("status")
+      .eq("idempotency_key", input.idempotencyKey)
+      .maybeSingle();
+    return { alreadySent: (existing.data as { status?: string } | null)?.status === "sent", claimed: false };
   } catch (error) {
+    // Defensive: ON CONFLICT DO NOTHING should no longer surface a unique violation, but
+    // if one ever does, treat it as a lost race (not claimed) rather than a hard failure.
     if (isUniqueViolation(error)) return { alreadySent: false, claimed: false };
     if (schemaMissing(error, "notification_deliveries")) return { alreadySent: false, claimed: true };
     // Fail-open on unexpected errors so a legitimate notification isn't silently dropped.
