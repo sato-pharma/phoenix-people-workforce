@@ -311,7 +311,7 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
 
               <tbody>
                 {rows.map((row, i) => {
-                  const hasDeduction = parseFloat(row.deductionDays) > 0;
+                  const hasDeduction = row.deductionConfirmed;
                   const lateMin      = parseInt(row.lateMinutes ?? "0", 10);
 
                   return (

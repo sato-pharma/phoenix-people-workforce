@@ -166,7 +166,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
               <tbody className="divide-y divide-border">
                 {rows.map((row) => {
                   const dispute = disputes[row.rawDate];
-                  const hasDeduction = parseFloat(row.deductionDays) > 0;
+                  const hasDeduction = row.deductionConfirmed;
                   const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
                   return (
                     <>
