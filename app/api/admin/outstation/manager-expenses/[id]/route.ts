@@ -23,6 +23,16 @@ function managerExpenseStatus(error: unknown) {
   return 500;
 }
 
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -44,6 +54,8 @@ export async function PATCH(
     }
 
     const body = (await request.json().catch(() => ({}))) as Partial<ManagerExpenseAdminInput>;
+    const distanceKm = optionalNumber(body.distanceKm);
+    const durationMinutes = optionalNumber(body.durationMinutes);
 
     if (
       body.destination !== undefined &&
@@ -62,7 +74,7 @@ export async function PATCH(
 
     if (
       body.distanceKm !== undefined &&
-      (!Number.isFinite(body.distanceKm) || body.distanceKm <= 0)
+      (distanceKm == null || distanceKm <= 0)
     ) {
       return NextResponse.json(
         { error: "invalid_distance", message: "distanceKm must be a positive number." },
@@ -70,7 +82,27 @@ export async function PATCH(
       );
     }
 
-    const updated = await updateManagerExpenseAsAdmin(id, access, body);
+    const input: Partial<ManagerExpenseAdminInput> = {
+      ...body,
+      ...(body.amWorkload !== undefined ? { amWorkload: optionalNumber(body.amWorkload) } : {}),
+      ...(body.claimedTotalAmount !== undefined
+        ? { claimedTotalAmount: Number(body.claimedTotalAmount ?? 0) }
+        : {}),
+      ...(body.distanceKm !== undefined && distanceKm != null ? { distanceKm } : {}),
+      ...(body.durationMinutes !== undefined ? { durationMinutes } : {}),
+      ...(body.hrNotes !== undefined ? { hrNotes: optionalText(body.hrNotes) } : {}),
+      ...(body.hrStatus !== undefined ? { hrStatus: optionalText(body.hrStatus) } : {}),
+      ...(body.meetingAmount !== undefined ? { meetingAmount: optionalNumber(body.meetingAmount) } : {}),
+      ...(body.notes !== undefined ? { notes: optionalText(body.notes) } : {}),
+      ...(body.otherAmount !== undefined ? { otherAmount: optionalNumber(body.otherAmount) } : {}),
+      ...(body.pmWorkload !== undefined ? { pmWorkload: optionalNumber(body.pmWorkload) } : {}),
+      ...(body.travelCostAmount !== undefined
+        ? { travelCostAmount: optionalNumber(body.travelCostAmount) }
+        : {}),
+      ...(body.tripType !== undefined ? { tripType: optionalText(body.tripType) } : {}),
+    };
+
+    const updated = await updateManagerExpenseAsAdmin(id, access, input);
 
     return NextResponse.json({
       message: "Outstation expense updated successfully.",

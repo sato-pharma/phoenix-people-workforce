@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   isPayrollExpensesSchemaMissing,
+  listUnifiedOutstationExpenses,
   listPayrollExpenseReports,
-  listPayrollExpenses,
   savePayrollExpenseApprovals,
 } from "@/lib/payroll/expenses";
 import { assertPermission } from "@/lib/auth/permissions";
@@ -48,8 +48,8 @@ export async function GET(request: Request) {
     }
 
     const reports = await listPayrollExpenseReports(access);
-    const targetReportId = reportId ?? (!hasPeriodFilter ? reports[0]?.id : undefined);
-    const expenses = await listPayrollExpenses(
+    const targetReportId = reportId;
+    const expenses = await listUnifiedOutstationExpenses(
       hasPeriodFilter ? month : undefined,
       hasPeriodFilter ? year : undefined,
       targetReportId,

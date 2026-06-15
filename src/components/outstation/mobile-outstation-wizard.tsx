@@ -431,11 +431,11 @@ export function MobileOutstationWizard({
   const [goTicketAmount, setGoTicketAmount] = useState("");
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
   const [kilometerReading, setKilometerReading] = useState("");
-  const [notes, setNotes] = useState("");
   const [meetingAmount, setMeetingAmount] = useState("");
   const [otherAmount, setOtherAmount] = useState("");
-  const amWorkload = "";
-  const pmWorkload = "";
+  const [amWorkload, setAmWorkload] = useState("");
+  const [pmWorkload, setPmWorkload] = useState("");
+  const [notes, setNotes] = useState("");
   const [medicalTripHrId, setMedicalTripHrId] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
   const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
@@ -522,6 +522,10 @@ export function MobileOutstationWizard({
     setExpenseType("traveling");
     setGoTicketAmount("");
     setKilometerReading("");
+    setMeetingAmount("");
+    setOtherAmount("");
+    setAmWorkload("");
+    setPmWorkload("");
     setMedicalTripHrId("");
     setMeetingAmount("");
     setNotes("");
@@ -565,6 +569,10 @@ export function MobileOutstationWizard({
     setExpenseType(restore.expenseType);
     setGoTicketAmount(restore.goTicketAmount);
     setKilometerReading(restore.kilometerReading);
+    setMeetingAmount(restore.meetingAmount ?? "");
+    setOtherAmount(restore.otherAmount ?? "");
+    setAmWorkload(restore.amWorkload ?? "");
+    setPmWorkload(restore.pmWorkload ?? "");
     setMedicalTripHrId(restore.medicalTripHrId);
     setNotes(restore.notes);
     setReturnTicketAmount(restore.returnTicketAmount);
@@ -610,11 +618,17 @@ export function MobileOutstationWizard({
       goTicketAmount,
       hasTicketAttachments: ticketFiles.length > 0,
       kilometerReading,
+      meetingAmount,
+      otherAmount,
+      amWorkload,
+      pmWorkload,
       medicalTripHrId,
       notes,
       returnTicketAmount,
       syncPending: true,
       transportationType,
+      travelCostAmount: "",
+      tripType: durationSummary,
       tripEndDate,
       tripStartDate,
     };
@@ -629,6 +643,10 @@ export function MobileOutstationWizard({
     carEvidenceDraftId,
     expenseType,
     goTicketAmount,
+    meetingAmount,
+    otherAmount,
+    amWorkload,
+    pmWorkload,
     isOffline,
     kilometerReading,
     medicalTripHrId,
@@ -636,6 +654,7 @@ export function MobileOutstationWizard({
     returnTicketAmount,
     ticketFiles.length,
     transportationType,
+    durationSummary,
     tripEndDate,
     tripStartDate,
   ]);
@@ -673,6 +692,7 @@ export function MobileOutstationWizard({
               claimedTotalAmount: 0,
               expenseType: draft.expenseType,
               goTicketAmount: Number(draft.goTicketAmount || 0),
+              amWorkload: Number(draft.amWorkload || 0),
               carEvidenceMetadata:
                 draft.transportationType === "car" && draft.carEvidenceRequestId
                   ? {
@@ -690,13 +710,17 @@ export function MobileOutstationWizard({
                 draft.transportationType === "car" ? draft.carEvidenceImageDataUrl : undefined,
               hasTicketAttachments: draft.hasTicketAttachments,
               kilometerReading: Number(draft.kilometerReading || 0),
+              meetingAmount: Number(draft.meetingAmount || 0),
               medicalTripHrId: draft.medicalTripHrId,
               medicalTripName:
                 medicalTripOptions.find((option) => option.hrId === draft.medicalTripHrId)?.name ??
                 "",
               notes: draft.notes,
+              otherAmount: Number(draft.otherAmount || 0),
+              pmWorkload: Number(draft.pmWorkload || 0),
               returnTicketAmount: Number(draft.returnTicketAmount || 0),
               transportationType: draft.transportationType,
+              tripType: draft.tripType,
               tripEndDate: draft.tripEndDate,
               tripStartDate: draft.tripStartDate,
             }),
@@ -760,26 +784,29 @@ export function MobileOutstationWizard({
       goTicketAmount: Number(goTicketAmount || 0),
       hasTicketAttachments,
       kilometerReading: Number(kilometerReading || 0),
+      meetingAmount: Number(meetingAmount || 0),
       medicalTripHrId,
       medicalTripName: selectedMedicalTripName,
-      meetingAmount: Number(meetingAmount || 0),
       notes,
       offlineCaptured: isOffline,
       otherAmount: Number(otherAmount || 0),
       pmWorkload: Number(pmWorkload || 0),
       returnTicketAmount: Number(returnTicketAmount || 0),
       transportationType,
+      tripType: durationSummary,
       tripEndDate,
       tripStartDate,
     }),
     [
       amWorkload,
       captured,
+      durationSummary,
       expenseType,
       goTicketAmount,
       hasTicketAttachments,
       isOffline,
       kilometerReading,
+      meetingAmount,
       medicalTripHrId,
       meetingAmount,
       notes,
@@ -808,6 +835,10 @@ export function MobileOutstationWizard({
       expenseType,
       goTicketAmount: isTicketBased ? Number(goTicketAmount || 0) : 0,
       hasTicketAttachments,
+      amWorkload: Number(amWorkload || 0),
+      meetingAmount: Number(meetingAmount || 0),
+      otherAmount: Number(otherAmount || 0),
+      pmWorkload: Number(pmWorkload || 0),
       returnTicketAmount: isTicketBased ? Number(returnTicketAmount || 0) : 0,
       transportationType,
       tripEndDate,
@@ -815,10 +846,14 @@ export function MobileOutstationWizard({
     });
   }, [
     captured,
+    amWorkload,
     expenseType,
     goTicketAmount,
     hasTicketAttachments,
     isTicketBased,
+    meetingAmount,
+    otherAmount,
+    pmWorkload,
     returnTicketAmount,
     ticketFiles.length,
     transportationType,
@@ -1414,6 +1449,42 @@ export function MobileOutstationWizard({
             </>
           ) : null}
 
+          <Field label="Meeting Amount">
+            <Input
+              onChange={(event) => setMeetingAmount(event.target.value)}
+              placeholder="EGP"
+              type="number"
+              value={meetingAmount}
+            />
+          </Field>
+
+          <Field label="Other">
+            <Input
+              onChange={(event) => setOtherAmount(event.target.value)}
+              placeholder="EGP"
+              type="number"
+              value={otherAmount}
+            />
+          </Field>
+
+          <Field label="AM Workload">
+            <Input
+              onChange={(event) => setAmWorkload(event.target.value)}
+              placeholder="e.g. 1"
+              type="number"
+              value={amWorkload}
+            />
+          </Field>
+
+          <Field label="PM Workload">
+            <Input
+              onChange={(event) => setPmWorkload(event.target.value)}
+              placeholder="e.g. 7"
+              type="number"
+              value={pmWorkload}
+            />
+          </Field>
+
           <Field label="Notes">
             <textarea
               className="min-h-28 w-full rounded-md border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-orange-50"
@@ -1490,6 +1561,14 @@ export function MobileOutstationWizard({
             <SummaryValue
               label="Total Cost"
               value={calculation ? egp(calculation.expectedTotalAmount) : "Will appear automatically"}
+            />
+            <SummaryValue
+              label="Meeting"
+              value={calculation ? egp(calculation.reportMeetingAmount) : "Will appear automatically"}
+            />
+            <SummaryValue
+              label="Other"
+              value={calculation ? egp(calculation.reportOtherAmount) : "Will appear automatically"}
             />
             <SummaryValue
               label="Kilometer"

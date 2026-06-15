@@ -9,6 +9,12 @@ import type { OutstationTransportationType } from "@/lib/outstation/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: Request) {
   try {
     const csrfError = assertSameOriginMutation(request);
@@ -21,7 +27,10 @@ export async function POST(request: Request) {
       claimedTotalAmount?: number;
       distanceKm?: number;
       employeeHrId?: string;
+      meetingAmount?: number;
+      otherAmount?: number;
       transportationType?: OutstationTransportationType;
+      travelCostAmount?: number | null;
       tripEndDate?: string;
       tripStartDate?: string;
     };
@@ -59,7 +68,10 @@ export async function POST(request: Request) {
         body.claimedTotalAmount != null ? Number(body.claimedTotalAmount) : 0,
       distanceKm,
       employeeHrId,
+      meetingAmount: optionalNumber(body.meetingAmount) ?? 0,
+      otherAmount: optionalNumber(body.otherAmount) ?? 0,
       transportationType,
+      travelCostAmount: optionalNumber(body.travelCostAmount),
       tripEndDate,
       tripStartDate,
     });

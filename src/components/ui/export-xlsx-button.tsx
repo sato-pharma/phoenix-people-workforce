@@ -15,6 +15,7 @@ export function ExportXlsxButton({
   rows,
   sheetName,
   subtitle,
+  template,
   title,
 }: {
   className?: string;
@@ -23,6 +24,7 @@ export function ExportXlsxButton({
   rows: ExportRow[];
   sheetName?: string;
   subtitle?: string;
+  template?: "outstation_expenses";
   title: string;
 }) {
   const [busy, setBusy] = useState(false);
@@ -35,7 +37,7 @@ export function ExportXlsxButton({
       const response = await fetch("/api/exports/table", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, subtitle, sheetName, columns, rows }),
+        body: JSON.stringify({ title, subtitle, sheetName, columns, rows, template }),
       });
       if (!response.ok) throw new Error("Export failed");
 

@@ -99,7 +99,7 @@ export type ExpenseTripRecord = {
   location: string;
   meetingAmount: number;
   open: string;
-  otherAmount?: number;
+  other: number;
   pmWorkload: number;
   requestType: string;
   row: number;
@@ -141,6 +141,7 @@ export type PayrollExpenseReport = {
 export type ExpenseSpecialistSummary = {
   allowance: number;
   meetingAmount: number;
+  other: number;
   specialist: string;
   total: number;
   travelCost: number;
@@ -185,6 +186,7 @@ export type ExpenseAnalysisResult = {
     totalExpenses: number;
     totalKm: number;
     totalMeetingAmount: number;
+    totalOther: number;
     totalTravelCost: number;
     trips: number;
   };

@@ -3333,7 +3333,7 @@ export function PayrollDashboard({
     const reports = Array.isArray(payload.reports)
       ? (payload.reports as PayrollExpenseReport[])
       : [];
-    const targetReportId = reportId ?? reports[0]?.id ?? null;
+    const targetReportId = reportId ?? null;
     const savedRecords = Array.isArray(payload.expenses)
       ? (payload.expenses as ExpenseTripRecord[])
       : [];
@@ -3344,7 +3344,7 @@ export function PayrollDashboard({
     if (savedRecords.length > 0) {
       const reportName =
         reports.find((report) => report.id === targetReportId)?.fileName ??
-        "Saved outstation expenses";
+        "Unified outstation expenses";
       setExpenseAnalysis(buildExpenseAnalysis(reportName, savedRecords));
     } else if (targetReportId) {
       setExpenseAnalysis(buildExpenseAnalysis("Saved outstation expenses", []));

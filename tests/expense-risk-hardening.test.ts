@@ -102,8 +102,9 @@ export function runExpenseRiskHardeningTests() {
   assert.match(managerExpenseRoute, /managerExpenseStatus/);
 
   const employeePortalService = source("src/lib/employee-portal/service.ts");
-  assert.match(employeePortalService, /mapOutstationRequestRowToPayrollApproval/);
-  assert.match(employeePortalService, /return mapOutstationRequestRowToPayrollApproval\(row\)/);
+  assert.match(employeePortalService, /listOutstationRequestExpenses/);
+  assert.match(payrollExpenses, /mapOutstationRequestRowToPayrollApproval/);
+  assert.match(payrollExpenses, /\.map\(mapOutstationRequestRowToPayrollApproval\)/);
   assert.doesNotMatch(employeePortalService, /statusLabelFromOutstation/);
   assert.doesNotMatch(employeePortalService, /Confirmed by HR/);
   assert.doesNotMatch(employeePortalService, /function expenseTypeLabel/);

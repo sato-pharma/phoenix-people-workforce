@@ -20,6 +20,14 @@ export function runOutstationPayrollExpenseMappingTests() {
     fuel_amount: 700,
     id: 42,
     notes: "Manual correction",
+    report_am_workload: 1,
+    report_hr_notes: "Reviewed by HR",
+    report_hr_status: "Approved",
+    report_meeting_amount: 150,
+    report_other_amount: 25,
+    report_pm_workload: 7,
+    report_travel_cost: 900,
+    report_trip_type: "Return same day",
     status: "approved",
     ticket_amount: 500,
     to_city: "Alexandria",
@@ -32,17 +40,34 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.requestType, "Outstation");
   assert.equal(mapped.hrApproved, true);
   assert.equal(mapped.sourceFileName, "Outstation Requests");
-  assert.equal(mapped.total, 1500);
-  assert.equal(mapped.travelCost, 1200);
+  assert.equal(mapped.total, 1375);
+  assert.equal(mapped.travelCost, 900);
+  assert.equal(mapped.meetingAmount, 150);
+  assert.equal(mapped.other, 25);
+  assert.equal(mapped.hr, "Approved");
+  assert.equal(mapped.hrNotes, "Reviewed by HR");
+  assert.equal(mapped.amWorkload, 1);
+  assert.equal(mapped.pmWorkload, 7);
+  assert.equal(mapped.tripType, "Return same day");
   assert.equal(mapped.payoutMonth, 6);
   assert.equal(mapped.payoutYear, 2026);
 
   // A traveling request with none of the new fields set must default them to 0
-  // (meeting_amount only falls back to `total` for meeting-type requests).
-  assert.equal(mapped.meetingAmount, 0, "traveling request with no meeting_amount maps to 0");
-  assert.equal(mapped.otherAmount, 0);
-  assert.equal(mapped.amWorkload, 0);
-  assert.equal(mapped.pmWorkload, 0);
+  // (meeting_amount only falls back to claimed/expected for meeting-type requests).
+  const mappedSimple = mapOutstationRequestRowToPayrollApproval({
+    claimed_total_amount: 500,
+    created_at: "2026-05-20T10:00:00.000Z",
+    employee_hr_id: "A16",
+    employee_name: "Account Admin",
+    expense_type: "traveling",
+    id: 99,
+    status: "approved",
+    trip_start_date: "2026-05-20T00:00:00.000Z",
+  });
+  assert.equal(mappedSimple.meetingAmount, 0, "traveling request with no meeting_amount maps to 0");
+  assert.equal(mappedSimple.other, 0);
+  assert.equal(mappedSimple.amWorkload, 0);
+  assert.equal(mappedSimple.pmWorkload, 0);
 
   // New expense fields (meeting_amount, other_amount, am_workload, pm_workload) must flow
   // through to the payroll approval output unchanged.
@@ -62,7 +87,7 @@ export function runOutstationPayrollExpenseMappingTests() {
     trip_start_date: "2026-05-20T00:00:00.000Z",
   });
   assert.equal(mappedWithExtras.meetingAmount, 250, "explicit meeting_amount must map through");
-  assert.equal(mappedWithExtras.otherAmount, 120, "other_amount must map through");
+  assert.equal(mappedWithExtras.other, 120, "other_amount must map through");
   assert.equal(mappedWithExtras.amWorkload, 3, "am_workload must map through");
   assert.equal(mappedWithExtras.pmWorkload, 4, "pm_workload must map through");
 
@@ -79,5 +104,5 @@ export function runOutstationPayrollExpenseMappingTests() {
     trip_start_date: "2026-05-20T00:00:00.000Z",
   });
   assert.equal(mappedMeeting.meetingAmount, 900, "meeting-type request defaults meeting_amount to the trip total");
-  assert.equal(mappedMeeting.otherAmount, 0);
+  assert.equal(mappedMeeting.other, 0);
 }

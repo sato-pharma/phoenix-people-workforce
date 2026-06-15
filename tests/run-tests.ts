@@ -97,6 +97,7 @@ import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
 import { runOutstationCarEvidenceValidationTests } from "./outstation-car-evidence-validation.test.ts";
+import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -281,6 +282,7 @@ await runTest("workflow control migration readiness", runWorkflowControlMigratio
 await runTest("workflow control services", runWorkflowControlServicesTests);
 await runTest("workflow control api routes", runWorkflowControlApiRoutesTests);
 await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
+await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);

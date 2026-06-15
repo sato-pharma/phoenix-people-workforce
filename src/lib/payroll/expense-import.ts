@@ -483,6 +483,7 @@ function specialistSummary(records: ExpenseTripRecord[]) {
       {
         allowance: 0,
         meetingAmount: 0,
+        other: 0,
         specialist: record.specialist || "Unassigned",
         total: 0,
         travelCost: 0,
@@ -618,6 +619,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       location,
       meetingAmount,
       open: text(rowValueByAlias(...expenseHeaderAliases.columnOpen)),
+      other: 0,
       pmWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnPmWorkload)),
       requestType: text(rowValueByAlias(...expenseHeaderAliases.columnRequestType)),
       row: rowNumber,
@@ -686,6 +688,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       totalExpenses: roundCurrency(records.reduce((sum, record) => sum + record.total, 0)),
       totalKm: records.reduce((sum, record) => sum + record.km, 0),
       totalMeetingAmount: roundCurrency(records.reduce((sum, record) => sum + record.meetingAmount, 0)),
+      totalOther: roundCurrency(records.reduce((sum, record) => sum + (record.other ?? 0), 0)),
       totalTravelCost: roundCurrency(records.reduce((sum, record) => sum + record.travelCost, 0)),
       trips: records.length,
     },

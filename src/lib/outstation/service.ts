@@ -307,6 +307,43 @@ function calculateAllowanceBreakdown(
   };
 }
 
+function positiveMoney(value: unknown) {
+  return roundMoney(Math.max(0, numberValue(value)));
+}
+
+function optionalPositiveMoney(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  return positiveMoney(value);
+}
+
+function reportTripTypeLabel(input: {
+  override?: string | null;
+  overnightDays: number;
+  sameDayTrip: boolean;
+}) {
+  const override = cleanText(input.override);
+  if (override) return override;
+  return input.sameDayTrip
+    ? "Return same day"
+    : `Overnight / ${input.overnightDays + 1} days`;
+}
+
+function reportExpectedTotal(input: {
+  allowanceAmount: number;
+  eligibilityStatus: OutstationEligibilityStatus;
+  meetingAmount: number;
+  otherAmount: number;
+  travelCost: number;
+}) {
+  if (input.eligibilityStatus === "not_eligible") return 0;
+  return roundMoney(
+    input.travelCost +
+      input.meetingAmount +
+      input.allowanceAmount +
+      input.otherAmount,
+  );
+}
+
 function recommendationForResult(params: {
   eligibilityStatus: OutstationEligibilityStatus;
   fraudFlags: OutstationFraudFlag[];
@@ -1127,10 +1164,18 @@ export async function calculateOutstationExpense(
     }
   }
 
+  const computedTravelCost = roundMoney(fuelAmount + ticketAmount);
+  const reportTravelCost = optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost;
+  const reportMeetingAmount = positiveMoney(input.meetingAmount);
+  const reportOtherAmount = positiveMoney(input.otherAmount);
   const expectedTotalAmount =
-    result.eligibilityStatus === "not_eligible"
-      ? 0
-      : roundMoney(fuelAmount + allowance.allowanceAmount + ticketAmount);
+    reportExpectedTotal({
+      allowanceAmount: allowance.allowanceAmount,
+      eligibilityStatus: result.eligibilityStatus,
+      meetingAmount: reportMeetingAmount,
+      otherAmount: reportOtherAmount,
+      travelCost: reportTravelCost,
+    });
   const inputClaimedTotalAmount = numberValue(input.claimedTotalAmount);
   const claimedTotalAmount =
     inputClaimedTotalAmount > 0 ? inputClaimedTotalAmount : expectedTotalAmount;
@@ -1171,6 +1216,18 @@ export async function calculateOutstationExpense(
     notes: cleanText(input.notes) ?? null,
     offlineCaptured: Boolean(input.offlineCaptured),
     overnightDays: allowance.overnightDays,
+    reportAmWorkload: positiveMoney(input.amWorkload),
+    reportHrNotes: cleanText(input.hrNotes),
+    reportHrStatus: cleanText(input.hrStatus),
+    reportMeetingAmount,
+    reportOtherAmount,
+    reportPmWorkload: positiveMoney(input.pmWorkload),
+    reportTravelCost,
+    reportTripType: reportTripTypeLabel({
+      override: input.tripType,
+      overnightDays: allowance.overnightDays,
+      sameDayTrip: allowance.sameDayTrip,
+    }),
     sameDayTrip: allowance.sameDayTrip,
     suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     ticketAmount,
@@ -1487,6 +1544,14 @@ export async function submitOutstationRequest(
     notes: appendCarEvidenceNote(calculation.notes, storedCarEvidenceMetadata),
     offline_captured: calculation.offlineCaptured,
     overnight_days: calculation.overnightDays,
+    report_am_workload: calculation.reportAmWorkload,
+    report_hr_notes: calculation.reportHrNotes,
+    report_hr_status: calculation.reportHrStatus,
+    report_meeting_amount: calculation.reportMeetingAmount,
+    report_other_amount: calculation.reportOtherAmount,
+    report_pm_workload: calculation.reportPmWorkload,
+    report_travel_cost: calculation.reportTravelCost,
+    report_trip_type: calculation.reportTripType,
     residence_address: residence?.residenceAddress ?? null,
     residence_area: residence?.residenceArea ?? null,
     residence_city: residence?.residenceCity ?? null,
@@ -1688,6 +1753,15 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     notes: text(row.notes) || null,
     offlineCaptured: Boolean(row.offline_captured),
     overnightDays: numberValue(row.overnight_days),
+    reportAmWorkload: numberValue(row.report_am_workload),
+    reportHrNotes: text(row.report_hr_notes) || null,
+    reportHrStatus: text(row.report_hr_status) || null,
+    reportMeetingAmount: numberValue(row.report_meeting_amount),
+    reportOtherAmount: numberValue(row.report_other_amount),
+    reportPmWorkload: numberValue(row.report_pm_workload),
+    reportTravelCost:
+      row.report_travel_cost == null ? null : numberValue(row.report_travel_cost),
+    reportTripType: text(row.report_trip_type) || null,
     residenceAddress: text(row.residence_address) || null,
     residenceArea: text(row.residence_area) || null,
     residenceCity: text(row.residence_city) || null,
@@ -2193,7 +2267,10 @@ export type ManagerExpenseCalculationPreview = {
   expectedTotalAmount: number;
   fuelAmount: number;
   fuelRatePerKm: number;
+  meetingAmount: number;
+  otherAmount: number;
   overnightDays: number;
+  travelCost: number;
   sameDayTrip: boolean;
   varianceAmount: number;
   variancePercent: number;
@@ -2211,7 +2288,10 @@ export async function previewManagerExpenseCalculation(
     claimedTotalAmount?: number;
     distanceKm: number;
     employeeHrId: string;
+    meetingAmount?: number;
+    otherAmount?: number;
     transportationType: OutstationTransportationType;
+    travelCostAmount?: number | null;
     tripEndDate: string;
     tripStartDate: string;
   },
@@ -2233,6 +2313,9 @@ export async function previewManagerExpenseCalculation(
   if (input.transportationType === "car") {
     fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
   }
+  const travelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+  const meetingAmount = positiveMoney(input.meetingAmount);
+  const otherAmount = positiveMoney(input.otherAmount);
 
   const distanceEligibility = classifyOutstationExpenseEligibility({
     actualDistanceKm: input.distanceKm,
@@ -2245,9 +2328,13 @@ export async function previewManagerExpenseCalculation(
     distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
 
   const expectedTotalAmount =
-    eligibilityStatus === "not_eligible"
-      ? 0
-      : roundMoney(fuelAmount + allowance.allowanceAmount);
+    reportExpectedTotal({
+      allowanceAmount: allowance.allowanceAmount,
+      eligibilityStatus,
+      meetingAmount,
+      otherAmount,
+      travelCost,
+    });
   const claimedInput = Number(input.claimedTotalAmount ?? 0);
   const claimedTotalAmount =
     Number.isFinite(claimedInput) && claimedInput > 0 ? claimedInput : expectedTotalAmount;
@@ -2263,7 +2350,10 @@ export async function previewManagerExpenseCalculation(
     expectedTotalAmount,
     fuelAmount,
     fuelRatePerKm: policy.fuelRatePerKm,
+    meetingAmount,
+    otherAmount,
     overnightDays: allowance.overnightDays,
+    travelCost,
     sameDayTrip: allowance.sameDayTrip,
     varianceAmount,
     variancePercent,
@@ -2298,6 +2388,9 @@ export async function createManagerExpenseAsAdmin(
   if (input.transportationType === "car") {
     fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
   }
+  const reportTravelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+  const reportMeetingAmount = positiveMoney(input.meetingAmount);
+  const reportOtherAmount = positiveMoney(input.otherAmount);
 
   const distanceEligibility = classifyOutstationExpenseEligibility({
     actualDistanceKm: input.distanceKm,
@@ -2313,9 +2406,13 @@ export async function createManagerExpenseAsAdmin(
     `Admin-created manual outstation expense. ${distanceEligibility.reason}`;
 
   const expectedTotalAmount =
-    eligibilityStatus === "not_eligible"
-      ? 0
-      : roundMoney(fuelAmount + allowance.allowanceAmount);
+    reportExpectedTotal({
+      allowanceAmount: allowance.allowanceAmount,
+      eligibilityStatus,
+      meetingAmount: reportMeetingAmount,
+      otherAmount: reportOtherAmount,
+      travelCost: reportTravelCost,
+    });
   const claimedTotalAmount =
     input.claimedTotalAmount > 0 ? input.claimedTotalAmount : expectedTotalAmount;
   const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
@@ -2366,6 +2463,18 @@ export async function createManagerExpenseAsAdmin(
       notes: input.notes ?? null,
       offline_captured: false,
       overnight_days: allowance.overnightDays,
+      report_am_workload: positiveMoney(input.amWorkload),
+      report_hr_notes: cleanText(input.hrNotes),
+      report_hr_status: cleanText(input.hrStatus),
+      report_meeting_amount: reportMeetingAmount,
+      report_other_amount: reportOtherAmount,
+      report_pm_workload: positiveMoney(input.pmWorkload),
+      report_travel_cost: reportTravelCost,
+      report_trip_type: reportTripTypeLabel({
+        override: input.tripType,
+        overnightDays: allowance.overnightDays,
+        sameDayTrip: allowance.sameDayTrip,
+      }),
       residence_address: residence?.residenceAddress ?? null,
       residence_area: residence?.residenceArea ?? null,
       residence_city: residence?.residenceCity ?? null,
@@ -2412,8 +2521,11 @@ export async function createManagerExpenseAsAdmin(
       distanceKm: input.distanceKm,
       employeeHrId: employee.hrId,
       expenseType: input.expenseType,
+      meetingAmount: reportMeetingAmount,
+      otherAmount: reportOtherAmount,
       source: "admin_manual_outstation_expense",
       status: "submitted",
+      travelCost: reportTravelCost,
       tripEndDate: input.tripEndDate,
       tripStartDate: input.tripStartDate,
     },
@@ -2475,6 +2587,40 @@ export async function updateManagerExpenseAsAdmin(
   if (transportationType === "car") {
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
   }
+  const existingTravelCost =
+    existing.reportTravelCost ?? roundMoney(existing.fuelAmount + existing.ticketAmount);
+  const computedTravelCost =
+    transportationType === "car" ? fuelAmount : existingTravelCost;
+  const reportTravelCost =
+    "travelCostAmount" in input
+      ? optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost
+      : existingTravelCost;
+  const reportMeetingAmount =
+    "meetingAmount" in input
+      ? positiveMoney(input.meetingAmount)
+      : existing.reportMeetingAmount;
+  const reportOtherAmount =
+    "otherAmount" in input ? positiveMoney(input.otherAmount) : existing.reportOtherAmount;
+  const reportAmWorkload =
+    "amWorkload" in input ? positiveMoney(input.amWorkload) : existing.reportAmWorkload;
+  const reportPmWorkload =
+    "pmWorkload" in input ? positiveMoney(input.pmWorkload) : existing.reportPmWorkload;
+  const reportHrStatus =
+    "hrStatus" in input ? cleanText(input.hrStatus) : existing.reportHrStatus;
+  const reportHrNotes =
+    "hrNotes" in input ? cleanText(input.hrNotes) : existing.reportHrNotes;
+  const reportTripType =
+    "tripType" in input
+      ? reportTripTypeLabel({
+          override: input.tripType,
+          overnightDays: allowance.overnightDays,
+          sameDayTrip: allowance.sameDayTrip,
+        })
+      : existing.reportTripType ??
+        reportTripTypeLabel({
+          overnightDays: allowance.overnightDays,
+          sameDayTrip: allowance.sameDayTrip,
+        });
 
   const distanceEligibility = classifyOutstationExpenseEligibility({
     actualDistanceKm: distanceKm,
@@ -2487,9 +2633,13 @@ export async function updateManagerExpenseAsAdmin(
   const eligibilityStatus: OutstationEligibilityStatus =
     distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
   const expectedTotalAmount =
-    eligibilityStatus === "not_eligible"
-      ? 0
-      : roundMoney(fuelAmount + allowance.allowanceAmount);
+    reportExpectedTotal({
+      allowanceAmount: allowance.allowanceAmount,
+      eligibilityStatus,
+      meetingAmount: reportMeetingAmount,
+      otherAmount: reportOtherAmount,
+      travelCost: reportTravelCost,
+    });
   const claimedTotal = input.claimedTotalAmount;
   const claimedTotalAmount = claimedTotal != null && claimedTotal > 0
     ? claimedTotal
@@ -2522,6 +2672,14 @@ export async function updateManagerExpenseAsAdmin(
     notes: notes,
     other_amount: input.otherAmount ?? existing.otherAmount ?? 0,
     overnight_days: allowance.overnightDays,
+    report_am_workload: reportAmWorkload,
+    report_hr_notes: reportHrNotes,
+    report_hr_status: reportHrStatus,
+    report_meeting_amount: reportMeetingAmount,
+    report_other_amount: reportOtherAmount,
+    report_pm_workload: reportPmWorkload,
+    report_travel_cost: reportTravelCost,
+    report_trip_type: reportTripType,
     route_polyline: routePolyline,
     same_day_trip: allowance.sameDayTrip,
     transportation_type: transportationType,
@@ -2566,9 +2724,12 @@ export async function updateManagerExpenseAsAdmin(
       destination: destination?.label ?? existing.toLabel,
       distanceKm,
       expenseType,
+      meetingAmount: reportMeetingAmount,
+      otherAmount: reportOtherAmount,
       payrollExpenseRows: syncedPayrollRows,
       source: "admin_manual_outstation_expense_edit",
       status: updated.status,
+      travelCost: reportTravelCost,
       tripEndDate,
       tripStartDate,
     },
