@@ -697,7 +697,7 @@ function Step4Additional({
 
 // ─── Confirmation screen ───────────────────────────────────────────────────────
 
-function ConfirmationScreen({ reportNumber, onReset }: { reportNumber: string; onReset: () => void }) {
+function ConfirmationScreen({ reportNumber, onReset, onViewReports }: { reportNumber: string; onReset: () => void; onViewReports?: () => void }) {
   return (
     <div className="mx-auto max-w-xl border border-slate-200 bg-white shadow-sm">
       <div className="relative overflow-hidden bg-slate-900 px-6 py-9 text-center">
@@ -724,7 +724,12 @@ function ConfirmationScreen({ reportNumber, onReset }: { reportNumber: string; o
         <p className="text-xs font-semibold text-slate-500">
           Please keep this reference number for your records.
         </p>
-        <div className="pt-1">
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+          {onViewReports && (
+            <button type="button" className={btnDark} onClick={onViewReports}>
+              View My Reports
+            </button>
+          )}
           <button type="button" className={btnGhost} onClick={onReset}>
             <Plus className="h-4 w-4" />
             File another report
@@ -851,7 +856,7 @@ function MobileStepper({ step }: { step: number }) {
   );
 }
 
-export function ReportItForm() {
+export function ReportItForm({ onSubmitSuccess }: { onSubmitSuccess?: () => void } = {}) {
   const [step, setStep] = useState(1);
   const [payload, setPayload] = useState<ReportItPayload>(initialPayload);
   const [submitting, setSubmitting] = useState(false);
@@ -911,6 +916,7 @@ export function ReportItForm() {
           setError(null);
           setReportNumber(null);
         }}
+        onViewReports={onSubmitSuccess}
       />
     );
   }

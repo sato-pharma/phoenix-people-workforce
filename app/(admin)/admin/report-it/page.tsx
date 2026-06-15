@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { ReportItAdminDashboard } from "@/components/report-it/report-it-admin-dashboard";
-import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getReportKpis, listReports } from "@/lib/report-it/service";
+import { canViewAllReports, getReportKpis, listReports } from "@/lib/report-it/service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +13,10 @@ export default async function AdminReportItPage() {
     redirect("/login");
   }
 
-  await assertPermission(access, "report_it", "export");
+  const canView = await canViewAllReports(access);
+  if (!canView) {
+    redirect("/admin");
+  }
 
   const [kpis, initial] = await Promise.all([
     getReportKpis(),
