@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canAccess } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
 // Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
@@ -11,7 +12,7 @@ export async function canViewAllReports(access: AccessContext): Promise<boolean>
   const { data } = await supabase
     .from("report_it_dashboard_access")
     .select("hr_id")
-    .eq("hr_id", access.hrId)
+    .eq("hr_id", canonicalHrIdKey(access.hrId) ?? "")
     .maybeSingle();
   return data !== null;
 }
