@@ -1,0 +1,24 @@
+-- ============================================================================
+-- DEFERRED / DESTRUCTIVE — DO NOT APPLY until the precondition below is met.
+-- Drop leftover SoS geo backup table sos_import_rows_geo_backup_20260615
+-- ----------------------------------------------------------------------------
+-- Finding (Critical-housekeeping): public.sos_import_rows_geo_backup_20260615 is
+-- a 33,311-row / ~2.6 MB ad-hoc backup table created by the 2026-06-15 Source-of-
+-- Sales brick-geography backfill. It has no primary key, no RLS policy (only the
+-- rls_enabled_no_policy INFO advisor), and is referenced by no migration or code.
+--
+-- WHY THIS IS DEFERRED (not in the normal migrations/ folder):
+--   This table is the pre-backfill snapshot of brick/region/area geography. It is
+--   the rollback safety net for the SoS "brick = source of truth" backfill. It
+--   MUST NOT be dropped until that backfill is confirmed correct in production.
+--
+-- PRECONDITION before applying:
+--   1) Confirm the SoS brick geography backfill is verified complete & correct
+--      (phantom-region count stable; Customer Directory geography spot-checked).
+--   2) Owner approval to discard the backup.
+-- Then move this file into supabase/migrations/ (re-stamp if needed) and apply.
+--
+-- This drop is IRREVERSIBLE — the 33,311 backup rows cannot be recovered.
+-- ============================================================================
+
+drop table if exists public.sos_import_rows_geo_backup_20260615;
