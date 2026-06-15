@@ -75,19 +75,58 @@ function detectDayFirst(sheet: ExcelJS.Worksheet, header: HeaderMap, dateColumns
 
 type HeaderMap = { col: Map<string, number>; headerRow: number };
 
-function buildHeaderMap(sheet: ExcelJS.Worksheet): HeaderMap {
-  let headerRow = 1;
-  for (let r = 1; r <= Math.min(sheet.rowCount, 10); r += 1) {
-    let filled = 0;
-    sheet.getRow(r).eachCell({ includeEmpty: false }, () => { filled += 1; });
-    if (filled >= 3) { headerRow = r; break; }
+export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorProfile): HeaderMap {
+  // Header names this distributor's profile expects (lowercased) — used to skip banner/title rows.
+  // e.g. the IS-S "Monthly Sales by Client for SATO PHARMA (PAS)" report puts a merged title in row 1
+  // and the real header in row 2; without this the title row (>=3 filled cells) wins and nothing maps.
+  const known = new Set<string>();
+  for (const name of [
+    ...(profile?.productColumns ?? []),
+    ...(profile?.qtyColumns ?? []),
+    ...(profile?.dateColumns ?? []),
+    ...(profile?.valueColumns ?? []),
+    ...(profile?.customerCodeColumns ?? []),
+    ...(profile?.customerNameColumns ?? []),
+    ...(profile?.territoryColumns ?? []),
+    ...(profile?.brickIdColumns ?? []),
+  ]) {
+    const key = name.trim().toLowerCase();
+    if (key) known.add(key);
   }
-  const col = new Map<string, number>();
-  sheet.getRow(headerRow).eachCell({ includeEmpty: false }, (cell, c) => {
-    const key = cellText(cell).trim().toLowerCase();
-    if (key && !col.has(key)) col.set(key, c);
-  });
-  return { col, headerRow };
+
+  const readRow = (r: number): Map<string, number> => {
+    const col = new Map<string, number>();
+    sheet.getRow(r).eachCell({ includeEmpty: false }, (cell, c) => {
+      const key = cellText(cell).trim().toLowerCase();
+      if (key && !col.has(key)) col.set(key, c);
+    });
+    return col;
+  };
+
+  // Score the first 10 rows by how many KNOWN profile headers each carries. The real header row carries
+  // several; a banner/title row carries none (IS-S "Monthly Sales by Client…"). Critically, a sparse
+  // metadata row with a single stray cell that happens to equal a column name (e.g. "Name", "Column1",
+  // "qty") must NOT win, so we require >=2 known hits and pick the row with the MOST (earliest on a tie).
+  let best: { col: Map<string, number>; headerRow: number; hits: number } | null = null;
+  let firstKnown: HeaderMap | null = null;
+  let fallback: HeaderMap | null = null;
+  for (let r = 1; r <= Math.min(sheet.rowCount, 10); r += 1) {
+    const col = readRow(r);
+    if (!fallback && col.size >= 3) fallback = { col, headerRow: r };
+    if (known.size === 0) {
+      if (col.size >= 3) return { col, headerRow: r };
+      continue;
+    }
+    let hits = 0;
+    for (const key of col.keys()) if (known.has(key)) hits += 1;
+    if (hits > 0 && !firstKnown) firstKnown = { col, headerRow: r };
+    if (hits >= 2 && (!best || hits > best.hits)) best = { col, headerRow: r, hits };
+  }
+  // Prefer the richest known-header row; else the first row carrying any known header (covers a profile
+  // whose real header legitimately exposes only one known column); else the legacy ">=3 filled cells" row.
+  if (best) return { col: best.col, headerRow: best.headerRow };
+  if (firstKnown) return firstKnown;
+  return fallback ?? { col: readRow(1), headerRow: 1 };
 }
 
 function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
@@ -108,7 +147,7 @@ export function normalizeRows(
   profile: DistributorProfile,
   maps: Crosswalks,
 ): NormalizeResult {
-  const header = buildHeaderMap(sheet);
+  const header = buildHeaderMap(sheet, profile);
   const dayFirst = detectDayFirst(sheet, header, profile.dateColumns);
   const coded: CodedRow[] = [];
   const exceptions: NormalizeException[] = [];
