@@ -81,7 +81,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount: request.meetingAmount ?? (request.expenseType === "meeting" ? total : 0),
     open: "",
-    otherAmount: request.otherAmount ?? 0,
+    other: request.otherAmount ?? 0,
     pmWorkload: request.pmWorkload ?? 0,
     reportId: options.reportId ?? undefined,
     requestType: "Outstation",
@@ -105,12 +105,6 @@ export function mapOutstationRequestRowToPayrollApproval(
   const requestId = toText(row.id) || "request";
   const tripStartDate = isoDate(row.trip_start_date || row.created_at);
   const tripEndDate = isoDate(row.trip_end_date || row.trip_start_date || row.created_at);
-  const expectedTotal = toNumber(row.expected_total_amount);
-  const claimedTotal = toNumber(row.claimed_total_amount);
-  const total = outstationExpenseTotal({
-    claimedTotalAmount: claimedTotal,
-    expectedTotalAmount: expectedTotal,
-  });
   const destination =
     toText(row.to_label) ||
     [row.to_area, row.to_city].map(toText).filter(Boolean).join(", ");
@@ -118,28 +112,58 @@ export function mapOutstationRequestRowToPayrollApproval(
     toText(row.residence_address) ||
     [row.residence_area, row.residence_city].map(toText).filter(Boolean).join(", ");
   const payout = nextPayrollPeriod(tripStartDate);
+  const allowance = toNumber(row.allowance_amount);
+  const claimedTotal = toNumber(row.claimed_total_amount);
+  const expectedTotal = toNumber(row.expected_total_amount);
+  const fallbackTotal = claimedTotal > 0 ? claimedTotal : expectedTotal;
+
+  // Use report_* override columns when set; fall back to original columns.
+  const travelCost =
+    row.report_travel_cost != null
+      ? toNumber(row.report_travel_cost)
+      : toNumber(row.fuel_amount) + toNumber(row.ticket_amount);
+  const rawMeetingAmount =
+    row.report_meeting_amount != null
+      ? toNumber(row.report_meeting_amount)
+      : toNumber(row.meeting_amount);
+  const other =
+    row.report_other_amount != null
+      ? toNumber(row.report_other_amount)
+      : toNumber(row.other_amount);
+  const amWorkload =
+    row.report_am_workload != null ? toNumber(row.report_am_workload) : toNumber(row.am_workload);
+  const pmWorkload =
+    row.report_pm_workload != null ? toNumber(row.report_pm_workload) : toNumber(row.pm_workload);
+  const hrStatus = toText(row.report_hr_status) || toText(row.employee_name);
+  const hrNotes = toText(row.report_hr_notes) || toText(row.eligibility_reason);
+  const tripType = toText(row.report_trip_type) || toText(row.expense_type) || "traveling";
+
+  // For meeting-type requests with no explicit amount, fall back to the claimed/expected total.
+  const meetingAmount = rawMeetingAmount || (tripType.toLowerCase() === "meeting" ? fallbackTotal : 0);
+  const componentTotal = travelCost + meetingAmount + allowance + other;
+  const total = componentTotal > 0 ? componentTotal : fallbackTotal;
 
   return {
-    allowance: toNumber(row.allowance_amount),
-    amWorkload: toNumber(row.am_workload),
+    allowance,
+    amWorkload,
     approvedAt: null,
     approvedBy: null,
     date: tripStartDate,
     description: toText(row.notes) || "Outstation expense request",
     from: origin || "Residence",
-    hr: toText(row.employee_name),
+    hr: hrStatus,
     hrApproved: status === "Approved",
     hrComment: toText(row.approval_reason),
     hrId: toText(row.employee_hr_id) || null,
-    hrNotes: toText(row.eligibility_reason),
+    hrNotes,
     km: toNumber(row.distance_km ?? row.distance_from_residence_km),
     location: destination,
-    meetingAmount: toNumber(row.meeting_amount) || (toText(row.expense_type).toLowerCase() === "meeting" ? total : 0),
+    meetingAmount,
     open: "",
-    otherAmount: toNumber(row.other_amount),
+    other,
     payoutMonth: payout.month,
     payoutYear: payout.year,
-    pmWorkload: toNumber(row.pm_workload),
+    pmWorkload,
     reportId: null,
     requestType: "Outstation",
     row: Number(row.id ?? 0),
@@ -150,8 +174,8 @@ export function mapOutstationRequestRowToPayrollApproval(
     toDate: tripEndDate,
     total,
     transportationType: toText(row.transportation_type) || "other",
-    travelCost: toNumber(row.fuel_amount) + toNumber(row.ticket_amount),
+    travelCost,
     tripId: outstationPayrollTripId(requestId),
-    tripType: toText(row.expense_type) || "traveling",
+    tripType,
   };
 }

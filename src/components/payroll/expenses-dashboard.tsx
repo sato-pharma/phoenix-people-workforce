@@ -259,7 +259,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Monthly Comparison</h2>
-          <p className="mt-1 text-xs text-[#64748B]">Trip month comparison by travel, meetings, allowance, total, and KM.</p>
+          <p className="mt-1 text-xs text-[#64748B]">Trip month comparison by travel, meetings, allowance, other, total, and KM.</p>
         </div>
       </div>
       <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
@@ -272,6 +272,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                 <th className={adminTableHeaderClassName}>Travel</th>
                 <th className={adminTableHeaderClassName}>Meeting</th>
                 <th className={adminTableHeaderClassName}>Allowance</th>
+                <th className={adminTableHeaderClassName}>Other</th>
                 <th className={adminTableHeaderClassName}>Total</th>
                 <th className={adminTableHeaderClassName}>KM</th>
                 <th className={adminTableHeaderClassName}>Trend</th>
@@ -285,6 +286,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.other)}</td>
                   <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2">
@@ -318,6 +320,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
                 <th className={adminTableHeaderClassName}>Travel</th>
                 <th className={adminTableHeaderClassName}>Meeting</th>
                 <th className={adminTableHeaderClassName}>Allowance</th>
+                <th className={adminTableHeaderClassName}>Other</th>
                 <th className={adminTableHeaderClassName}>KM</th>
                 <th className={adminTableHeaderClassName}>Cost / Trip</th>
                 <th className={adminTableHeaderClassName}>Cost / KM</th>
@@ -332,6 +335,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.other)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.count ? row.total / row.count : 0)}</td>
                   <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.km ? row.total / row.km : 0)}</td>
@@ -467,6 +471,7 @@ export function ExpensesDashboard({
       allowance: metrics.totalAllowance,
       km: metrics.totalDistance,
       meeting: metrics.totalMeetingAmount,
+      other: metrics.totalOther,
       specialists: metrics.specialistCount,
       total: metrics.totalAmount,
       travel: metrics.totalTravelCost,
@@ -651,11 +656,12 @@ export function ExpensesDashboard({
         </div>
       </AdminTableShell>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard icon={ReceiptText} label="Total Expenses" sub={`${formatNumber(summary.trips)} trips`} value={formatEGP(summary.total)} />
         <StatCard icon={Car} label="Travel Cost" sub={`${formatNumber(summary.km)} KM`} tone="blue" value={formatEGP(summary.travel)} />
         <StatCard icon={Users} label="Specialists" sub="Current filter scope" tone="green" value={formatNumber(summary.specialists)} />
         <StatCard icon={CalendarDays} label="Meeting Amount" sub="Meetings and other claims" value={formatEGP(summary.meeting)} />
+        <StatCard icon={ReceiptText} label="Other" sub="Additional claimed amount" tone="blue" value={formatEGP(summary.other)} />
         <StatCard icon={TrendingUp} label="Avg / Trip" sub="Filtered total divided by trips" tone="red" value={formatEGP(summary.trips ? summary.total / summary.trips : 0)} />
       </div>
 

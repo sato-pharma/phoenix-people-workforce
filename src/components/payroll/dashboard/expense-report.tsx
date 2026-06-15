@@ -86,7 +86,7 @@ type ExpenseReviewColumnKey = keyof ExpenseTripRecord | "validation";
 const expenseCurrencyKeys = new Set<ExpenseReviewColumnKey>([
   "allowance",
   "meetingAmount",
-  "otherAmount",
+  "other",
   "total",
   "travelCost",
 ]);
@@ -218,6 +218,7 @@ export function buildExpenseAnalysis(fileName: string, records: ExpenseTripRecor
         {
           allowance: 0,
           meetingAmount: 0,
+          other: 0,
           specialist: record.specialist || "Unassigned",
           total: 0,
           travelCost: 0,
@@ -254,6 +255,7 @@ export function buildExpenseAnalysis(fileName: string, records: ExpenseTripRecor
       totalExpenses: records.reduce((sum, record) => sum + record.total, 0),
       totalKm: records.reduce((sum, record) => sum + record.km, 0),
       totalMeetingAmount: records.reduce((sum, record) => sum + record.meetingAmount, 0),
+      totalOther: records.reduce((sum, record) => sum + (record.other ?? 0), 0),
       totalTravelCost: records.reduce((sum, record) => sum + record.travelCost, 0),
       trips: records.length,
     },

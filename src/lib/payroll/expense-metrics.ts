@@ -13,6 +13,7 @@ export type PayrollExpenseSummary = {
   totalAmount: number;
   totalDistance: number;
   totalMeetingAmount: number;
+  totalOther: number;
   totalRows: number;
   totalTravelCost: number;
 };
@@ -23,6 +24,7 @@ export type PayrollExpenseGroupRow = {
   key: string;
   km: number;
   meeting: number;
+  other: number;
   total: number;
   travel: number;
 };
@@ -97,6 +99,7 @@ export function summarizePayrollExpenses(
     totalAmount,
     totalDistance: expenses.reduce((sum, expense) => sum + (expense.km || 0), 0),
     totalMeetingAmount: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.meetingAmount || 0), 0)),
+    totalOther: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.other || 0), 0)),
     totalRows: expenses.length,
     totalTravelCost: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.travelCost || 0), 0)),
   };
@@ -116,6 +119,7 @@ export function groupPayrollExpenses(
       key,
       km: 0,
       meeting: 0,
+      other: 0,
       total: 0,
       travel: 0,
     };
@@ -124,6 +128,7 @@ export function groupPayrollExpenses(
     current.count += 1;
     current.km += expense.km || 0;
     current.meeting += expense.meetingAmount || 0;
+    current.other += expense.other || 0;
     current.total += expense.total || 0;
     current.travel += expense.travelCost || 0;
     map.set(key, current);
@@ -134,6 +139,7 @@ export function groupPayrollExpenses(
       ...row,
       allowance: roundCurrency(row.allowance),
       meeting: roundCurrency(row.meeting),
+      other: roundCurrency(row.other),
       total: roundCurrency(row.total),
       travel: roundCurrency(row.travel),
     }))

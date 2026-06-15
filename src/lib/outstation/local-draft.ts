@@ -16,11 +16,17 @@ export type OutstationLocalDraft = {
   goTicketAmount: string;
   hasTicketAttachments: boolean;
   kilometerReading: string;
+  meetingAmount?: string;
   medicalTripHrId: string;
   notes: string;
+  otherAmount?: string;
+  pmWorkload?: string;
+  amWorkload?: string;
   returnTicketAmount: string;
   syncPending: boolean;
   transportationType: OutstationTransportationType;
+  travelCostAmount?: string;
+  tripType?: string;
   tripEndDate: string;
   tripStartDate: string;
 };

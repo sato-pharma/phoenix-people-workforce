@@ -21,6 +21,7 @@ type ExportPayload = {
   sheetName?: string;
   columns?: ExportColumn[];
   rows?: ExportRow[];
+  template?: "outstation_expenses";
 };
 
 function fileName(title: string) {
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
       sheetName: payload.sheetName,
       columns: payload.columns,
       rows: Array.isArray(payload.rows) ? payload.rows : [],
+      template: payload.template,
     });
 
     return new Response(buffer, {

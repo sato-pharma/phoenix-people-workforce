@@ -27,6 +27,7 @@ function expense(input: Partial<PayrollExpenseApproval>): PayrollExpenseApproval
     location: "",
     meetingAmount: 0,
     open: "",
+    other: 0,
     payoutMonth: 5,
     payoutYear: 2026,
     pmWorkload: 0,
@@ -55,8 +56,9 @@ export function runExpenseMetricsTests() {
       hrId: "HR-001",
       km: 10,
       meetingAmount: 50,
+      other: 5,
       specialist: "A",
-      total: 175,
+      total: 180,
       travelCost: 100,
       tripId: "T1",
     }),
@@ -87,24 +89,25 @@ export function runExpenseMetricsTests() {
 
   const summary = summarizePayrollExpenses(rows);
   assert.equal(summary.totalRows, 3);
-  assert.equal(summary.totalAmount, 360);
+  assert.equal(summary.totalAmount, 365);
   assert.equal(summary.approvedRows, 2);
-  assert.equal(summary.approvedAmount, 250);
+  assert.equal(summary.approvedAmount, 255);
   assert.equal(summary.pendingRows, 1);
   assert.equal(summary.pendingAmount, 110);
   assert.equal(summary.totalDistance, 45);
   assert.equal(summary.totalTravelCost, 250);
   assert.equal(summary.totalMeetingAmount, 70);
+  assert.equal(summary.totalOther, 5);
   assert.equal(summary.totalAllowance, 40);
   assert.equal(summary.specialistCount, 2);
-  assert.equal(summary.averageCostPerTrip, 120);
+  assert.equal(summary.averageCostPerTrip, 121.67);
 
   const byRequest = groupPayrollExpenses(rows, (row) => row.requestType);
   assert.equal(byRequest[0]?.key, "Travel");
-  assert.equal(byRequest[0]?.total, 285);
+  assert.equal(byRequest[0]?.total, 290);
 
   const approvedByHrId = getApprovedExpenseTotalsByHrId(rows);
-  assert.equal(approvedByHrId.get("HR-001"), 175);
+  assert.equal(approvedByHrId.get("HR-001"), 180);
   assert.equal(approvedByHrId.get("HR-002"), 75);
 
   const dsmSummaries = buildPayrollExpenseDsmSummaries({
@@ -116,7 +119,7 @@ export function runExpenseMetricsTests() {
   });
   assert.equal(dsmSummaries[0]?.hrId, "HR-001");
   assert.equal(dsmSummaries[0]?.totalTrips, 2);
-  assert.equal(dsmSummaries[0]?.approvedAmount, 175);
+  assert.equal(dsmSummaries[0]?.approvedAmount, 180);
   assert.equal(dsmSummaries[0]?.pendingAmount, 110);
 
   const expenseServiceSource = readFileSync("src/lib/payroll/expenses.ts", "utf8");
