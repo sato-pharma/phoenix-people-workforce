@@ -170,6 +170,7 @@ export async function upsertProductAlias(input: {
       .update({ alias, product_code: master.code, updated_by: input.actorId, updated_at: new Date().toISOString() })
       .eq("id", existing.data.id);
     if (update.error) throw new SalesWorkflowError("persist_failed", update.error.message, 500);
+    await healUnresolvedWeeklyRows({ distributorCode, alias, aliasKind, master });
     return;
   }
 
@@ -183,6 +184,7 @@ export async function upsertProductAlias(input: {
     updated_by: input.actorId,
   });
   if (insert.error) throw new SalesWorkflowError("persist_failed", insert.error.message, 500);
+  await healUnresolvedWeeklyRows({ distributorCode, alias, aliasKind, master });
 }
 
 export async function deleteProductAlias(id: string): Promise<void> {
@@ -191,6 +193,54 @@ export async function deleteProductAlias(id: string): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("weekly_sales_product_aliases").delete().eq("id", aliasId);
   if (error) throw new SalesWorkflowError("delete_failed", error.message, 500);
+}
+
+/**
+ * After an alias is saved, find all stored warning rows whose item_code (or product_name for
+ * name-kind aliases) matches and re-resolve them to the correct master product. This auto-heals
+ * any upload that was stored with a "productCode" warning before the alias existed.
+ */
+export async function healUnresolvedWeeklyRows(input: {
+  distributorCode: string;
+  alias: string;
+  aliasKind: WeeklyAliasKind;
+  master: WeeklyMasterProduct;
+}): Promise<number> {
+  const supabase = getSupabaseAdmin();
+
+  // Match column: code alias → item_code (raw distributor code from file);
+  // name alias → product_name (stored as raw item name for unresolved rows).
+  const matchColumn = input.aliasKind === "code" ? "item_code" : "product_name";
+
+  const { data, error } = await supabase
+    .from("weekly_sales_rows")
+    .select("id, net_qty, validation_issues")
+    .eq("distributor_code", input.distributorCode)
+    .eq("validation_state", "warning")
+    .ilike(matchColumn, input.alias);
+  if (error || !data?.length) return 0;
+
+  type RowShape = { id: number; net_qty: number; validation_issues: { field: string; severity: string }[] };
+  let healed = 0;
+  for (const row of data as RowShape[]) {
+    const remaining = (row.validation_issues ?? []).filter((i) => i.field !== "productCode");
+    const newState = remaining.some((i) => i.severity === "failure") ? "failed" : remaining.length > 0 ? "warning" : "valid";
+    const netQty = Number(row.net_qty ?? 0);
+    const salesValue = Number((netQty * input.master.factoryPrice).toFixed(6));
+    const { error: updateError } = await supabase
+      .from("weekly_sales_rows")
+      .update({
+        product_code: input.master.code,
+        product_name: input.master.name,
+        official_line: input.master.line,
+        sales_value: salesValue,
+        validation_state: newState,
+        validation_issues: remaining,
+      })
+      .eq("id", row.id);
+    if (!updateError) healed += 1;
+  }
+  return healed;
 }
 
 export async function buildProductAliasTemplate(distributorCode: string): Promise<ArrayBuffer> {
@@ -323,6 +373,7 @@ export async function importProductAliasWorkbook(input: {
       .maybeSingle();
     if (existing.error && existing.error.code !== "PGRST116") throw new SalesWorkflowError("load_failed", existing.error.message, 500);
 
+    const master = products.get(normalizeCode(item.productCode))!;
     if (existing.data) {
       const update = await supabase
         .from("weekly_sales_product_aliases")
@@ -343,6 +394,8 @@ export async function importProductAliasWorkbook(input: {
       if (insert.error) throw new SalesWorkflowError("persist_failed", insert.error.message, 500);
       inserted += 1;
     }
+    // Auto-heal any warning rows that were stored before this alias existed.
+    await healUnresolvedWeeklyRows({ distributorCode, alias: item.alias, aliasKind: item.aliasKind, master });
   }
   return { inserted, updated, skipped, blockedRows };
 }

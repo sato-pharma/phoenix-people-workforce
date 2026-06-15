@@ -23,6 +23,7 @@ import type {
   WeeklyDashboard,
   WeeklyDelta,
   WeeklyDistributorOption,
+  WeeklyMissingProduct,
   WeeklyParsedRow,
   WeeklyProductScopeAdmin,
   WeeklyRanked,
@@ -216,6 +217,55 @@ async function persistWeeklyUpload(
   }
 
   return { batchId, createdAt: String(batchInsert.data.created_at) };
+}
+
+// ── missing product resolution ────────────────────────────────────────────────────────────────
+
+export async function loadWeeklyMissingProducts(): Promise<WeeklyMissingProduct[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("weekly_sales_rows")
+    .select("distributor_code, distributor_name, item_code, product_name, batch_id, stock_qty, week_start, validation_issues")
+    .eq("validation_state", "warning");
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  // Keep only rows whose warning is specifically an unresolved product code.
+  type RowShape = { distributor_code: string; distributor_name: string; item_code: string; product_name: string; batch_id: string; stock_qty: number; week_start: string | null; validation_issues: { field: string }[] };
+  const productWarnings = (data as RowShape[]).filter((row) =>
+    (row.validation_issues ?? []).some((i) => i.field === "productCode"),
+  );
+
+  // Aggregate in-memory by (distributor_code, item_code).
+  const map = new Map<string, WeeklyMissingProduct>();
+  for (const row of productWarnings) {
+    const key = `${row.distributor_code}||${row.item_code}`;
+    const entry = map.get(key) ?? {
+      distributorCode: row.distributor_code,
+      distributorName: row.distributor_name,
+      itemCode: row.item_code,
+      itemName: row.product_name,
+      rowCount: 0,
+      batchCount: 0,
+      totalStock: 0,
+      earliestWeek: null,
+      latestWeek: null,
+      _batchIds: new Set<string>(),
+    } as WeeklyMissingProduct & { _batchIds: Set<string> };
+
+    entry.rowCount += 1;
+    entry.totalStock += Number(row.stock_qty ?? 0);
+    if (row.batch_id) (entry as unknown as { _batchIds: Set<string> })._batchIds.add(row.batch_id);
+    if (row.week_start) {
+      if (!entry.earliestWeek || row.week_start < entry.earliestWeek) entry.earliestWeek = row.week_start;
+      if (!entry.latestWeek || row.week_start > entry.latestWeek) entry.latestWeek = row.week_start;
+    }
+    map.set(key, entry);
+  }
+
+  return [...map.values()].map((entry) => {
+    const { _batchIds, ...rest } = entry as WeeklyMissingProduct & { _batchIds: Set<string> };
+    return { ...rest, batchCount: _batchIds.size };
+  }).sort((a, b) => a.distributorCode.localeCompare(b.distributorCode) || b.totalStock - a.totalStock);
 }
 
 // ── upload history ───────────────────────────────────────────────────────────────────────────
@@ -542,11 +592,22 @@ export async function loadWeeklyDashboard(filters?: {
   const trendWeeks = [...availableWeeks].sort(); // ascending for charting
   const trend = trendWeeks.map((week) => {
     const rows = scopedRows.filter((row) => row.weekStart === week);
+    const distMap = new Map<string, { name: string; value: number }>();
+    for (const row of rows) {
+      const entry = distMap.get(row.distributorCode);
+      if (entry) entry.value += row.salesValue;
+      else distMap.set(row.distributorCode, { name: row.distributorName, value: row.salesValue });
+    }
     return {
       weekStart: week,
       salesValue: Number(sum(rows, (row) => row.salesValue).toFixed(2)),
       salesUnits: Number(sum(rows, (row) => row.netQty).toFixed(2)),
       stockUnits: Number(sum(rows, (row) => row.stockQty).toFixed(2)),
+      byDistributor: [...distMap.entries()].map(([code, d]) => ({
+        distributorCode: code,
+        distributorName: d.name,
+        salesValue: Number(d.value.toFixed(2)),
+      })),
     };
   });
 

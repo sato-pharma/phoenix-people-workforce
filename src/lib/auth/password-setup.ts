@@ -8,7 +8,7 @@ import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const passwordSetupExpiryMs = 2 * 60 * 1000;
+const passwordSetupExpiryMs = 48 * 60 * 60 * 1000;
 
 type PasswordSetupTokenRow = {
   created_at: string;

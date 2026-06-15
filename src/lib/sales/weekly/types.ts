@@ -184,7 +184,28 @@ export type WeeklyDashboard = {
   /** branches with stock on hand but zero sales this week */
   zeroSalesBranches: WeeklyBranchRow[];
   /** simple value trend across the available weeks (in-scope) */
-  trend: { weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }[];
+  trend: {
+    weekStart: string;
+    salesValue: number;
+    salesUnits: number;
+    stockUnits: number;
+    byDistributor: { distributorCode: string; distributorName: string; salesValue: number }[];
+  }[];
+};
+
+// ── Missing product resolution ───────────────────────────────────────────────────────────────────
+// Rows stored with validation_state='warning' + field='productCode' — no alias yet mapped.
+// Shown on the missing-products page; auto-healed when an alias is added.
+export type WeeklyMissingProduct = {
+  distributorCode: string;
+  distributorName: string;
+  itemCode: string;
+  itemName: string;
+  rowCount: number;
+  batchCount: number;
+  totalStock: number;
+  earliestWeek: string | null;
+  latestWeek: string | null;
 };
 
 // ── product-scope administration (which PM/GPM/Marketing Manager owns which products) ──────────
