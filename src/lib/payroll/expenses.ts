@@ -245,15 +245,6 @@ function collectLineHrIds(
     }
   });
 
-  if (lineHrIds.size > 0 || targetLineId !== null || targetLine || targetAreaId !== null) {
-    return lineHrIds;
-  }
-
-  directory.employees.forEach((employee) => {
-    const employeeId = normalizeHrId(employee.hrId);
-    if (employeeId) lineHrIds.add(employeeId);
-  });
-
   return lineHrIds;
 }
 
@@ -302,6 +293,7 @@ async function resolveExpenseAccessFilter(
       lineId: viewer.lineId,
       lineName: viewer.lineName,
     });
+    if (currentHrId) allowedHrIds.add(currentHrId);
     return { all: false, allowedHrIds };
   }
 
