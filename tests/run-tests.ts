@@ -171,6 +171,7 @@ import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
+import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -355,3 +356,4 @@ await runTest("system cleanup center", runSystemCleanupCenterTests);
 await runTest("excuses", runExcusesTests);
 await runTest("internal messages", runInternalMessagesTests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
+await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);

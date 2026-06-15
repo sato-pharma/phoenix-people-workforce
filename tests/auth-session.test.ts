@@ -29,6 +29,7 @@ import {
   rejectUntrustedForwardedOrigin,
   trustedOriginForRedirect,
 } from "../src/lib/security/origins.ts";
+import { systemDeployment } from "../src/config/system-settings.ts";
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -312,16 +313,23 @@ export async function runAuthSessionTests() {
   assert.match(rateLimitSource, /\.rpc\("api_rate_limit_consume"/, "API rate limiting must prefer atomic DB consumption");
 
   assert.match(originsSource, /PHOENIX_ALLOWED_ORIGINS/, "trusted origin helper must support PHOENIX_ALLOWED_ORIGINS");
-  assert.match(originsSource, /systemDeployment\.productionUrl/, "production origin must be trusted by default (single-sourced from systemDeployment)");
+  // Production + working-preview origins are now single-sourced from systemDeployment
+  // (see origins.ts), so assert the BEHAVIOUR (they are trusted) rather than a source
+  // literal that drifts whenever the deploy config changes.
+  assert.equal(
+    isAllowedPhoenixOrigin(systemDeployment.productionUrl),
+    true,
+    "production origin must be trusted by default (derived from systemDeployment.productionUrl)",
+  );
   assert.match(
     originsSource,
     /https:\/\/phoenix-workforce-team\.vercel\.app/,
     "team preview alias must be trusted by default",
   );
-  assert.match(
-    originsSource,
-    /systemDeployment\.workingPreviewUrl/,
-    "working preview origin must be trusted by default (single-sourced from systemDeployment)",
+  assert.equal(
+    isAllowedPhoenixOrigin(systemDeployment.workingPreviewUrl),
+    true,
+    "working preview origin must be trusted by default (derived from systemDeployment.workingPreviewUrl)",
   );
   assert.match(originsSource, /rejectUntrustedForwardedOrigin/, "unknown origins and forwarded hosts must be rejected");
   assert.match(csrfSource, /isAllowedPhoenixOrigin/, "CSRF expected origins must be allowlist-filtered");
