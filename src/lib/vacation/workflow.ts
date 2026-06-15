@@ -2,6 +2,12 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertWorkflowRegistryRuntimeTransition } from "@/lib/workflow-registry/runtime";
 import type { VacationDecision, VacationRequestStatus } from "@/lib/vacation/types";
 
+// LEGACY ALIAS — do not rename. This workflow-registry module key is the literal
+// string "leave_requests", inherited from the old leave engine. That engine and its
+// `leave_requests` table were dropped in migration 20260610000000; vacations now live
+// in `v2_vacation_requests`. The key is persisted in `workflow_registry_modules.module_key`
+// and referenced by audit-log entity ids, so renaming it would orphan history.
+// Documented as an alias in docs/workflow-and-route-architecture.md § Workflow governance.
 export const leaveWorkflowRegistryModuleKey = "leave_requests";
 
 export type LeaveWorkflowActionKey =

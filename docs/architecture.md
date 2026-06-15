@@ -11,6 +11,14 @@ Phoenix Workforce is a monolithic Next.js application that combines UI, route ha
 - `src/components/` contains UI composition for dashboards, tables, forms, and workflows
 - `supabase/` contains SQL used to evolve schema, enforce RLS, and harden operational behavior
 
+## Workflow Governance and Route Layout
+
+Approval state machines are split between the workflow registry and hardcoded TypeScript
+tables, and admin pages are split across the `(admin)` route group and a few standalone
+routes. Both distinctions — with the per-module governance table, the `leave_requests`
+registry-key alias, and route/app-shell ownership rules — are documented in
+[Workflow & Route Architecture](workflow-and-route-architecture.md).
+
 ## Main Domains
 
 ### Auth and Access

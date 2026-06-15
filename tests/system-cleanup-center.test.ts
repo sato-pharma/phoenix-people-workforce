@@ -20,7 +20,7 @@ export function runSystemCleanupCenterTests() {
   const permissions = source("../src/lib/auth/permissions.ts");
   const actionsRoute = source("../app/api/admin/system-cleanup/actions/route.ts");
   const recordsRoute = source("../app/api/admin/system-cleanup/records/route.ts");
-  const page = source("../app/admin/system-cleanup/page.tsx");
+  const page = source("../app/(admin)/admin/system-cleanup/page.tsx");
   const center = source("../src/components/admin/system-cleanup-center.tsx");
   const migrationPath = new URL(
     "../supabase/migrations/20260612093625_admin_system_cleanup_center.sql",

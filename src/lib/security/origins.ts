@@ -1,8 +1,14 @@
-const productionOrigin = "https://phoenix-workforce.vercel.app";
-// Stable team alias used for shared Phoenix Workforce access.
+import { systemDeployment } from "@/config/system-settings";
+
+// Production + working-preview origins are single-sourced from system-settings so a
+// domain change has exactly one edit point. The two URL-bearing constants previously
+// hardcoded here drifted from systemDeployment; keep them derived.
+// See docs/workflow-and-route-architecture.md § Route categories.
+const productionOrigin = systemDeployment.productionUrl;
+// Stable team alias used for shared Phoenix Workforce access. Security-only alias,
+// intentionally not part of the deploy config.
 const teamPreviewOrigin = "https://phoenix-workforce-team.vercel.app";
-const workingPreviewOrigin =
-  "https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app";
+const workingPreviewOrigin = systemDeployment.workingPreviewUrl;
 // Stable branch alias for codex/ceo-staging-rebuild-hardening (PR #24) preview.
 const stagingRebuildPreviewOrigin =
   "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app";
