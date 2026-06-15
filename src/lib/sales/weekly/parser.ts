@@ -311,11 +311,14 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       const row = sales.getRow(r);
       const itemCode = cellText(at(row, 9));
       const itemName = cellText(at(row, 10));
-      const branch = cellText(at(row, 2));
+      // col1 = numeric branch code (e.g. "11"); col2 = Arabic branch name (e.g. "شرق").
+      // The mapping template uses the numeric code as the join key, so rawBranchCode = col1.
+      const branchCode = cellText(at(row, 1));
+      const branchName = cellText(at(row, 2));
       const gross = cellNumber(at(row, 11));
       const ret = Math.abs(cellNumber(at(row, 13)));
       const net = cellNumber(at(row, 15)); // صافى كمية — authoritative net of record
-      if (!itemCode && !itemName && !branch) continue;
+      if (!itemCode && !itemName && !branchCode && !branchName) continue;
       const date = cellDateIso(at(row, 24));
       if (date) sheetDates.add(date);
       // Carry the authoritative net (col15) on the sales-side observation; keep gross (col11) for the
@@ -325,8 +328,8 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
         sourceRowNumber: r,
         rawItemCode: itemCode,
         rawItemName: itemName,
-        rawBranchCode: branch,
-        rawBranchName: branch,
+        rawBranchCode: branchCode || branchName,
+        rawBranchName: branchName || branchCode,
         branchFileType: "sales",
         qty: gross,
         authoritativeNet: net,
@@ -337,8 +340,8 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
           sourceRowNumber: r,
           rawItemCode: itemCode,
           rawItemName: itemName,
-          rawBranchCode: branch,
-          rawBranchName: branch,
+          rawBranchCode: branchCode || branchName,
+          rawBranchName: branchName || branchCode,
           branchFileType: "sales",
           qty: ret,
         });
