@@ -3,9 +3,8 @@ import { redirect } from "next/navigation";
 import { ReportItEmployeeDashboard } from "@/components/report-it/report-it-employee-dashboard";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { listReports } from "@/lib/report-it/service";
+import { canViewAllReports, listReports } from "@/lib/report-it/service";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +15,8 @@ export default async function ReportItPage() {
     redirect("/login");
   }
 
-  // Only users with report_it:export see the full dashboard; others get the submit form only.
-  const canViewDashboard = await canAccess(access, "report_it", "export");
+  // Users with report_it:export OR listed in report_it_dashboard_access see the full dashboard.
+  const canViewDashboard = await canViewAllReports(access);
 
   if (!canViewDashboard) {
     return (

@@ -13,6 +13,7 @@ ALTER TABLE report_it_dashboard_access ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "deny_all" ON report_it_dashboard_access USING (false);
 
 -- Grant A-3 (Samaa Mosaad Khalil) dashboard access.
+-- hr_id must be canonical lowercase (matches canonicalHrIdKey in src/lib/hr-id.ts).
 INSERT INTO report_it_dashboard_access (hr_id, granted_by)
-VALUES ('A-3', 'system-setup')
+VALUES ('a-3', 'system-setup')
 ON CONFLICT (hr_id) DO NOTHING;
