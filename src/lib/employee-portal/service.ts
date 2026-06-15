@@ -968,7 +968,7 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
     const { data } = await supabase
       .from("notification_events")
       .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
-      .or(`employee_hr_id.eq.${hrId},recipients.cs.["${hrId.toUpperCase()}"]`)
+      .or(`employee_hr_id.eq.${hrId},recipients.cs.{${hrId.toUpperCase()}}`)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
