@@ -154,7 +154,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
         ...(showReportItDashboardTab
-          ? [{ href: "/admin/report-it", label: "Reports Dashboard", icon: ChartColumnBig }]
+          ? [{ href: "/employee-portals/report-it", label: "Reports Dashboard", icon: ChartColumnBig }]
           : []),
       ],
     },
