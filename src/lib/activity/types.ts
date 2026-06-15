@@ -74,6 +74,27 @@ export type ActivityKpis = {
   topModuleLabel: string | null;
 };
 
+export type RoleBenchmark = {
+  role: string;
+  userCount: number;
+  avgSessionMinutes: number;
+  avgActiveMinutes: number;
+  avgEngagementScore: number;
+};
+
+export type LiveEvent = {
+  hrId: string | null;
+  name: string;
+  moduleLabel: string;
+  occurredAtIso: string;
+};
+
+export type LiveActivity = {
+  online: OnlineUser[];
+  recentEvents: LiveEvent[];
+  generatedAtIso: string;
+};
+
 export type ActivityOverview = {
   range: ActivityRange;
   generatedAtIso: string;
@@ -86,6 +107,9 @@ export type ActivityOverview = {
     rows: AdoptionRow[];
   };
   anomalies: ActivityAnomaly[];
+  /** [weekday 0=Sun … 6=Sat][hour 0–23] session-start counts in Cairo time. */
+  hourlyHeatmap: number[][];
+  roleBenchmarks: RoleBenchmark[];
 };
 
 export type TimelineEvent = {

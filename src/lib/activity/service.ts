@@ -13,9 +13,12 @@ import type {
   ActivityRange,
   AdoptionRow,
   AdoptionStatus,
+  LiveActivity,
+  LiveEvent,
   ModulePopularity,
   OnlineUser,
   RecordPageViewInput,
+  RoleBenchmark,
   TimelineSession,
   UserActivitySummary,
   UserTimeline,
@@ -74,6 +77,66 @@ function hourInBusinessTimezone(iso: string): number {
   } catch {
     return 12;
   }
+}
+
+function weekdayAndHourInBusinessTimezone(iso: string): { weekday: number; hour: number } {
+  try {
+    const d = new Date(iso);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      hour: "2-digit",
+      hour12: false,
+      timeZone: BUSINESS_TIMEZONE,
+    }).formatToParts(d);
+    const DAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const day = parts.find((p) => p.type === "weekday")?.value ?? "Mon";
+    const hr = Number(parts.find((p) => p.type === "hour")?.value ?? "12") % 24;
+    return { weekday: DAY_MAP[day] ?? 0, hour: Number.isFinite(hr) ? hr : 12 };
+  } catch {
+    return { weekday: 0, hour: 12 };
+  }
+}
+
+function buildHourlyHeatmap(sessions: LogicalSession[]): number[][] {
+  const heatmap: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+  for (const session of sessions) {
+    if (!session.startedAt) continue;
+    const { weekday, hour } = weekdayAndHourInBusinessTimezone(session.startedAt);
+    heatmap[weekday][hour]++;
+  }
+  return heatmap;
+}
+
+function buildRoleBenchmarks(aggByKey: Map<string, Agg>): RoleBenchmark[] {
+  const groups = new Map<string, { sessionSeconds: number; activeSeconds: number; engTotal: number; engCount: number; users: number }>();
+  for (const agg of aggByKey.values()) {
+    const role = agg.identity.role;
+    const g = groups.get(role) ?? { sessionSeconds: 0, activeSeconds: 0, engTotal: 0, engCount: 0, users: 0 };
+    g.users++;
+    g.sessionSeconds += agg.sessionSeconds;
+    g.activeSeconds += agg.activeSeconds;
+    if (agg.pageViews > 0) {
+      const eng = computeEngagement({
+        activeSeconds: agg.activeSeconds,
+        sessionSeconds: agg.sessionSeconds,
+        distinctModules: agg.moduleSeconds.size,
+        pageViews: agg.pageViews,
+      });
+      g.engTotal += eng.score;
+      g.engCount++;
+    }
+    groups.set(role, g);
+  }
+  return Array.from(groups.entries())
+    .map(([role, g]) => ({
+      role,
+      userCount: g.users,
+      avgSessionMinutes: minutesFromSeconds(g.sessionSeconds / Math.max(1, g.users)),
+      avgActiveMinutes: minutesFromSeconds(g.activeSeconds / Math.max(1, g.users)),
+      avgEngagementScore: g.engCount > 0 ? Math.round(g.engTotal / g.engCount) : 0,
+    }))
+    .filter((b) => b.userCount > 0)
+    .sort((a, b) => b.avgActiveMinutes - a.avgActiveMinutes || b.userCount - a.userCount);
 }
 
 export function buildActivityRange(days: number): ActivityRange {
@@ -683,6 +746,8 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
     topUsers,
     adoption: { counts: adoptionCounts, rows: adoptionRows },
     anomalies: anomalies.slice(0, ANOMALY_LIMIT),
+    hourlyHeatmap: buildHourlyHeatmap(logicalSessions),
+    roleBenchmarks: buildRoleBenchmarks(aggByKey),
   };
 }
 
@@ -875,6 +940,121 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
   return Array.from(aggByKey.values())
     .map(summarize)
     .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews || b.sessionMinutes - a.sessionMinutes);
+}
+
+// ── Admin actions ─────────────────────────────────────────────────────────────
+
+/** Revoke every active session for an HR ID immediately (force-logout). */
+export async function forceLogoutUser(hrId: string, reason: string): Promise<{ revokedCount: number }> {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) throw new Error("Invalid HR ID");
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("app_sessions")
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: `admin_force_logout: ${reason}` })
+    .eq("hr_id", normalized)
+    .is("revoked_at", null)
+    .select("id");
+  if (error) throw new Error(`Force logout failed: ${error.message}`);
+  return { revokedCount: data?.length ?? 0 };
+}
+
+// ── Live feed (lightweight — online users + last 15 min events) ───────────────
+
+export async function getLiveActivity(): Promise<LiveActivity> {
+  const nowIso = new Date().toISOString();
+  const fifteenAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+  const maps = await loadIdentityMaps();
+
+  const [onlineRowsRaw, recentEventsRaw] = await Promise.all([
+    fetchAll(
+      "app_sessions",
+      "id,login_id,hr_id,role,created_at,last_seen_at,revoked_at,revoked_reason,idle_expires_at,absolute_expires_at,ip,user_agent",
+      (q) => q.is("revoked_at", null).gt("idle_expires_at", nowIso).gt("absolute_expires_at", nowIso).order("last_seen_at", { ascending: false }).limit(100),
+      1,
+    ),
+    fetchAll(
+      "activity_events",
+      "hr_id,login_id,module_label,created_at",
+      (q) => q.gte("created_at", fifteenAgo).order("created_at", { ascending: false }).limit(20),
+      1,
+    ),
+  ]);
+
+  const onlineSessions = onlineRowsRaw.map(mapSession);
+  const onlineByKey = new Map<string, OnlineUser>();
+  for (const session of onlineSessions) {
+    const identity = resolveIdentity(maps, session.hrId, session.loginId, session.role);
+    const lastSeen = session.lastSeenAt ?? session.createdAt ?? nowIso;
+    const existing = onlineByKey.get(identity.key);
+    if (!existing || lastSeen > existing.lastSeenAt) {
+      onlineByKey.set(identity.key, {
+        ...identity,
+        startedAt: session.createdAt ?? nowIso,
+        lastSeenAt: lastSeen,
+        idleSeconds: Math.max(0, Math.round((Date.now() - new Date(lastSeen).getTime()) / 1000)),
+        currentModule: existing?.currentModule ?? null,
+        ip: session.ip,
+      });
+    }
+  }
+
+  const recentEvents: LiveEvent[] = recentEventsRaw.map((row) => {
+    const identity = resolveIdentity(maps, str(row.hr_id), str(row.login_id), null);
+    return {
+      hrId: str(row.hr_id),
+      name: identity.name,
+      moduleLabel: str(row.module_label) ?? "Unknown",
+      occurredAtIso: str(row.created_at) ?? nowIso,
+    };
+  });
+
+  const online = Array.from(onlineByKey.values()).sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+  return { online, recentEvents, generatedAtIso: nowIso };
+}
+
+// ── Inactivity check (called by the daily cron) ───────────────────────────────
+
+export async function getInactiveUsers(thresholdDays = 7): Promise<{ hrId: string | null; name: string; role: string; daysSinceSeen: number }[]> {
+  const maps = await loadIdentityMaps();
+  const lookbackIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const sessionRowsRaw = await fetchAll(
+    "app_sessions",
+    "login_id,hr_id,last_seen_at,created_at",
+    (q) => q.gte("created_at", lookbackIso).order("last_seen_at", { ascending: false }),
+    SESSION_FETCH_CAP,
+  );
+
+  const lastSeenByKey = new Map<string, { iso: string; hrId: string | null; loginId: string | null }>();
+  for (const row of sessionRowsRaw) {
+    const when = str(row.last_seen_at) ?? str(row.created_at);
+    if (!when) continue;
+    const identity = resolveIdentity(maps, str(row.hr_id), str(row.login_id), null);
+    const existing = lastSeenByKey.get(identity.key);
+    if (!existing || when > existing.iso) {
+      lastSeenByKey.set(identity.key, { iso: when, hrId: str(row.hr_id), loginId: str(row.login_id) });
+    }
+  }
+
+  const results: { hrId: string | null; name: string; role: string; daysSinceSeen: number }[] = [];
+  const seen = new Set<string>();
+  for (const [loginId, hrId] of maps.hrIdByLoginId.entries()) {
+    const employee = maps.employeeByHrId.get(hrId);
+    const status = (employee?.status ?? "active").toLowerCase();
+    if (!["active", "on_leave", ""].includes(status)) continue;
+    const identity = resolveIdentity(maps, hrId, loginId, null);
+    if (seen.has(identity.key)) continue;
+    seen.add(identity.key);
+    const last = lastSeenByKey.get(identity.key);
+    const days = last
+      ? Math.floor((Date.now() - new Date(last.iso).getTime()) / (24 * 60 * 60 * 1000))
+      : 999;
+    if (days >= thresholdDays) {
+      results.push({ hrId: last?.hrId ?? hrId, name: identity.name, role: identity.role, daysSinceSeen: days });
+    }
+  }
+  return results.sort((a, b) => b.daysSinceSeen - a.daysSinceSeen);
 }
 
 // ── Retention cleanup (called by the daily scheduled job) ────────────────────
