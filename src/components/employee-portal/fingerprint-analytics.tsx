@@ -295,95 +295,103 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-900">
-                  {(["Date", "Clock In", "Clock Out", "Duration", "Late", "Status", "Deduction"] as const).map((col) => (
-                    <th
-                      key={col}
-                      className={`px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300 ${col === "Deduction" ? "text-right" : "text-left"}`}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.map((row, i) => {
-                  const hasDeduction = row.deductionConfirmed;
-                  const lateMin      = parseInt(row.lateMinutes ?? "0", 10);
-
-                  return (
-                    <tr
-                      key={row.rawDate}
-                      className={`border-b border-slate-50 transition-colors duration-150 hover:bg-orange-50/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
-                    >
-                      <td className="px-4 py-3.5">
-                        <span className="font-mono text-xs font-bold text-slate-700">{row.date}</span>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {row.firstPunch ? (
-                          <span className="flex items-center gap-1.5">
-                            <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
-                            <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {row.lastPunch ? (
-                          <span className="flex items-center gap-1.5">
-                            <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
-                            <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {row.timeLong ? (
-                          <span className="inline-flex items-center gap-1.5 rounded bg-slate-100/80 px-2 py-0.5">
-                            <Clock className="h-3 w-3 text-slate-400" />
-                            <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {lateMin > 0 ? (
-                          <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200 shadow-[0_2px_8px_rgba(245,158,11,0.12)]">
-                            +{lateMin} min
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <StatusBadge status={row.status} />
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right">
-                        {hasDeduction ? (
-                          <span className="inline-flex rounded-sm bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.12)]">
-                            −{row.deductionDays}d
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
+            {(() => {
+              const showDeductionCol = rows.some((r) => r.deductionConfirmed);
+              const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;
+              return (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900">
+                      {baseCols.map((col) => (
+                        <th key={col} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
+                          {col}
+                        </th>
+                      ))}
+                      {showDeductionCol && (
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
+                          Deduction
+                        </th>
+                      )}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+
+                  <tbody>
+                    {rows.map((row, i) => {
+                      const lateMin = parseInt(row.lateMinutes ?? "0", 10);
+                      return (
+                        <tr
+                          key={row.rawDate}
+                          className={`border-b border-slate-50 transition-colors duration-150 hover:bg-orange-50/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                        >
+                          <td className="px-4 py-3.5">
+                            <span className="font-mono text-xs font-bold text-slate-700">{row.date}</span>
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.firstPunch ? (
+                              <span className="flex items-center gap-1.5">
+                                <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
+                                <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.lastPunch ? (
+                              <span className="flex items-center gap-1.5">
+                                <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
+                                <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.timeLong ? (
+                              <span className="inline-flex items-center gap-1.5 rounded bg-slate-100/80 px-2 py-0.5">
+                                <Clock className="h-3 w-3 text-slate-400" />
+                                <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {lateMin > 0 ? (
+                              <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200 shadow-[0_2px_8px_rgba(245,158,11,0.12)]">
+                                +{lateMin} min
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            <StatusBadge status={row.status} />
+                          </td>
+
+                          {showDeductionCol && (
+                            <td className="px-4 py-3.5 text-right">
+                              {row.deductionConfirmed ? (
+                                <span className="inline-flex rounded-sm bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.12)]">
+                                  −{row.deductionDays}d
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </div>
       )}
