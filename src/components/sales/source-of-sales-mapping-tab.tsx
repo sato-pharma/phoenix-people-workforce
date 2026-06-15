@@ -109,12 +109,14 @@ function TemplateCard({
   templateHref,
   templateLabel,
   uploadUrl,
+  uploadFields,
 }: {
   title: string;
   description: string;
   templateHref: string;
   templateLabel: string;
   uploadUrl: string;
+  uploadFields?: Record<string, string>;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -127,6 +129,7 @@ function TemplateCard({
     try {
       const formData = new FormData();
       formData.append("file", file);
+      for (const [key, value] of Object.entries(uploadFields ?? {})) formData.append(key, value);
       const response = await fetch(uploadUrl, { body: formData, method: "POST" });
       const payload = await readJson<ImportResponse>(response, { success: false });
       setResult(payload.result ?? null);
@@ -525,10 +528,11 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
       />
 
       <TemplateCard
-        description="Map this distributor's customer codes to Phoenix Brick IDs (Area and Region fill automatically from the brick). Pre-filled with what's already saved, plus a read-only Master Bricks reference sheet."
+        description="Map this distributor's customer codes to Phoenix Brick IDs (Area and Region fill automatically from the brick). You only need Customer code + Brick ID — leave Distrub ID blank and it's filled in from the selected distributor. Pre-filled with what's already saved, plus a read-only Master Bricks reference sheet."
         templateHref={`/api/sales/monthly-import/customer-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
         templateLabel="Download Customer / Brick template"
         title={`Customer / Brick Mapping — ${distributorCode || "(pick a distributor)"}`}
+        uploadFields={{ distributorCode }}
         uploadUrl="/api/sales/monthly-import/customer-mapping"
       />
 
