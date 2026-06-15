@@ -549,18 +549,39 @@ function PanelTitle({ count, title }: { count: number; title: string }) {
   );
 }
 
+// Year bar colors — subtle, non-selected only; selected always stays orange
+const TREND_YEAR_BAR: Record<string, { bg: string; border: string }> = {
+  "2025": { bg: "#93C5FD", border: "#BFDBFE" }, // blue-300 / blue-200 — "past"
+  "2026": { bg: "#CBD5E1", border: "#E2E8F0" }, // slate-300 / slate-200 — "current" (original look)
+};
+const TREND_YEAR_CHIP: Record<string, string> = { "2025": "#93C5FD", "2026": "#CBD5E1" };
+
 function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; selected: string[] }) {
   if (trend.length < 2) return null;
   const max = Math.max(1, ...trend.map((point) => point.salesValue));
   const average = trend.reduce((total, point) => total + point.salesValue, 0) / trend.length;
   const selectedSet = new Set(selected);
   const highlighted = trend.find((point) => selectedSet.has(point.weekStart)) ?? trend[trend.length - 1];
+  const years = [...new Set(trend.map((p) => p.weekStart.slice(0, 4)))].sort();
+  const multiYear = years.length > 1;
   return (
     <section className="w-full overflow-hidden border border-[#E2E8F0] bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
         <div>
           <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</div>
-          <div className="mt-0.5 text-[11px] font-bold text-[#94A3B8]">{trend.length} weeks</div>
+          <div className="mt-0.5 flex items-center gap-2">
+            <span className="text-[11px] font-bold text-[#94A3B8]">{trend.length} weeks</span>
+            {multiYear && (
+              <span className="flex items-center gap-1.5">
+                {years.map((y) => (
+                  <span key={y} className="flex items-center gap-1">
+                    <span className="inline-block h-2 w-3 rounded-sm" style={{ background: TREND_YEAR_CHIP[y] ?? "#CBD5E1" }} />
+                    <span className="text-[10px] font-bold text-[#94A3B8]">{y}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-right">
           <div>
@@ -578,6 +599,8 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
           {trend.map((point) => {
             const isSelected = selectedSet.has(point.weekStart);
             const height = Math.max(6, (point.salesValue / max) * 154);
+            const year = point.weekStart.slice(0, 4);
+            const yearStyle = TREND_YEAR_BAR[year] ?? { bg: "#CBD5E1", border: "#E2E8F0" };
             return (
               <div
                 className={cn(
@@ -588,8 +611,12 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
                 title={`${point.weekStart}: ${money(point.salesValue)}`}
               >
                 <div
-                  className={cn("w-full border-t", isSelected ? "border-[#EA580C] bg-[#F97316]" : "border-[#E2E8F0] bg-[#CBD5E1]")}
-                  style={{ height: `${height}px` }}
+                  className="w-full border-t"
+                  style={{
+                    height: `${height}px`,
+                    background: isSelected ? "#F97316" : yearStyle.bg,
+                    borderColor: isSelected ? "#EA580C" : yearStyle.border,
+                  }}
                 />
                 <span className={cn("text-[9px] font-black", isSelected ? "text-[#EA580C]" : "text-[#94A3B8]")}>
                   {point.weekStart.slice(5)}

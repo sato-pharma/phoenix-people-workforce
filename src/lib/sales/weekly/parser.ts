@@ -581,7 +581,9 @@ type ResolvedProduct = {
   productName: string;
   officialLine: string;
   factoryPrice: number;
-  /** unrecoverable product issue → batch blocks */
+  /** no alias found → stored with warning; auto-heals when alias is added */
+  warning: { field: string; message: string } | null;
+  /** alias found but master data is invalid → hard block */
   failure: { field: string; message: string } | null;
 };
 
@@ -601,10 +603,11 @@ function resolveProduct(
       productName: obs.rawItemName || obs.rawItemCode || "",
       officialLine: "",
       factoryPrice: 0,
-      failure: {
+      warning: {
         field: "productCode",
         message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. Add the alias, then re-upload.`,
       },
+      failure: null,
     };
   }
 
@@ -615,6 +618,7 @@ function resolveProduct(
       productName: masterCode,
       officialLine: "",
       factoryPrice: 0,
+      warning: null,
       failure: {
         field: "productCode",
         message: `Alias resolves to product "${masterCode}", which is not in the Source of Sales master.`,
@@ -643,6 +647,7 @@ function resolveProduct(
     productName: (master.productName || master.productCode).trim(),
     officialLine: line,
     factoryPrice: safePrice,
+    warning: null,
     failure,
   };
 }
@@ -890,19 +895,34 @@ export async function parseWeeklyWorkbookBuffer(input: {
     } else if (obs.side === "return") agg.returnQty += obs.qty;
     else agg.stockQty += obs.qty;
 
-    // Attach strict failures (deduped by field+message per agg).
-    for (const failure of [product.failure, region.failure]) {
-      if (!failure) continue;
-      const exists = agg.issues.some((issue) => issue.field === failure.field && issue.message === failure.message);
-      if (!exists) {
-        agg.issues.push({
-          field: failure.field,
-          message: failure.message,
-          rowNumber: obs.sourceRowNumber,
-          severity: "failure",
-          value: obs.rawItemCode || obs.rawItemName || obs.rawBranchName || null,
-        });
-      }
+    // No-alias is a soft warning — row stored as-is and auto-heals when the alias is added.
+    // Bad master data (no price / no line) and unmapped region are hard failures that block the batch.
+    if (product.warning && !agg.issues.some((i) => i.field === product.warning!.field && i.message === product.warning!.message)) {
+      agg.issues.push({
+        field: product.warning.field,
+        message: product.warning.message,
+        rowNumber: obs.sourceRowNumber,
+        severity: "warning",
+        value: obs.rawItemCode || obs.rawItemName || null,
+      });
+    }
+    if (product.failure && !agg.issues.some((i) => i.field === product.failure!.field && i.message === product.failure!.message)) {
+      agg.issues.push({
+        field: product.failure.field,
+        message: product.failure.message,
+        rowNumber: obs.sourceRowNumber,
+        severity: "failure",
+        value: obs.rawItemCode || obs.rawItemName || null,
+      });
+    }
+    if (region.failure && !agg.issues.some((i) => i.field === region.failure!.field && i.message === region.failure!.message)) {
+      agg.issues.push({
+        field: region.failure.field,
+        message: region.failure.message,
+        rowNumber: obs.sourceRowNumber,
+        severity: "failure",
+        value: obs.rawBranchName || obs.rawBranchCode || null,
+      });
     }
   }
 

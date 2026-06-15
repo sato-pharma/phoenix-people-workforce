@@ -619,7 +619,7 @@ export async function runWeeklySalesImportTests() {
   {
     const branch = branchIndex({ branches: [{ key: "B01", fileType: "sales", region: "CA" }, { key: "B01", fileType: "stock", region: "CA" }] });
 
-    // (1) Unmapped alias → blocked.
+    // (1) Unmapped alias → validated with warning (stored for auto-heal when alias is added).
     const unmappedAlias = await parseWeeklyWorkbookBuffer({
       buffer: await issWorkbook(),
       distributorCode: "IS-S",
@@ -631,9 +631,9 @@ export async function runWeeklySalesImportTests() {
     });
     assert.equal(unmappedAlias.ok, true);
     if (unmappedAlias.ok) {
-      assert.equal(unmappedAlias.result.status, "blocked", "unmapped alias blocks");
-      assert.equal(unmappedAlias.result.importableRows < unmappedAlias.result.rowCount, true, "blocked rows are not importable");
-      assert.ok(unmappedAlias.result.issues.some((i) => i.field === "productCode" && i.severity === "failure"), "alias failure recorded");
+      assert.equal(unmappedAlias.result.status, "validated", "unmapped alias validates with warning (not blocked)");
+      assert.equal(unmappedAlias.result.importableRows, unmappedAlias.result.rowCount, "unresolved-product rows are still importable");
+      assert.ok(unmappedAlias.result.issues.some((i) => i.field === "productCode" && i.severity === "warning"), "no-alias recorded as warning");
     }
 
     // (2) Unpriced master → blocked.
