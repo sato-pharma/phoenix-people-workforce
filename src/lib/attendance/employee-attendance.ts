@@ -1,5 +1,7 @@
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { compactDeductionHrId } from "@/lib/deductions-governance/service";
 
 export type EmployeeAttendanceSummary = {
   absentDays: number;
@@ -17,6 +19,7 @@ export type EmployeeAttendanceData = {
   pendingDisputes: number;
   rows: Array<{
     date: string;
+    deductionConfirmed: boolean;
     deductionDays: string;
     firstPunch: string;
     hasException: boolean;
@@ -30,14 +33,40 @@ export type EmployeeAttendanceData = {
   summary: EmployeeAttendanceSummary;
 };
 
+async function getHrConfirmedDeductionDates(hrId: string): Promise<Set<string>> {
+  const compactHrId = compactDeductionHrId(hrId);
+  if (!compactHrId) return new Set();
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("deduction_candidates")
+    .select("dates, deduction_decisions!inner(decision_status)")
+    .eq("source_module", "ATTENDANCE_DEVICE")
+    .eq("employee_hr_id_compact", compactHrId)
+    .is("superseded_at", null)
+    .eq("deduction_decisions.decision_status", "Approved for Payroll");
+
+  if (error || !data) return new Set();
+
+  const confirmed = new Set<string>();
+  for (const row of data) {
+    const dates = Array.isArray(row.dates) ? row.dates : [];
+    for (const d of dates) {
+      if (typeof d === "string") confirmed.add(d);
+    }
+  }
+  return confirmed;
+}
+
 export async function getEmployeeAttendanceData(
   hrId: string,
   dateFrom: string,
   dateTo: string,
 ): Promise<EmployeeAttendanceData> {
-  const [reportData, disputesData] = await Promise.all([
+  const [reportData, disputesData, confirmedDates] = await Promise.all([
     getFingerprintAttendanceReport({ dateFrom, dateTo, employeeHrId: hrId }),
     getAttendanceExceptions({ dateFrom, dateTo, employeeHrId: hrId, status: "pending" }),
+    getHrConfirmedDeductionDates(hrId),
   ]);
 
   const summary: EmployeeAttendanceSummary = {
@@ -59,16 +88,19 @@ export async function getEmployeeAttendanceData(
     if (s === "Exception") summary.exceptionDays++;
 
     const dd = parseFloat(row.deductionDays);
-    if (dd > 0) summary.deductionDays++;
+    const rawDate = row.sortKey.slice(0, 10);
+    const deductionConfirmed = dd > 0 && confirmedDates.has(rawDate);
+    if (deductionConfirmed) summary.deductionDays++;
 
     return {
       date: row.date,
+      deductionConfirmed,
       deductionDays: row.deductionDays,
       firstPunch: row.actualFirstPunch,
       hasException: row.hasException ?? false,
       lastPunch: row.actualLastPunch,
       lateMinutes: row.lateMinutes,
-      rawDate: row.sortKey.slice(0, 10),
+      rawDate,
       recommendedAction: row.recommendedAction,
       status: row.status,
       timeLong: row.timeLong,
