@@ -166,7 +166,11 @@ export function WeeklyBranchMappingManager({
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
-        <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales — Branch Region Mapping</h1>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Weekly Sales</span>
+        </div>
+        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Branch Region Mapping</h1>
         <p className="mt-1 text-sm font-medium text-[#64748B]">
           Map each distributor branch / outlet to one official region. The weekly upload uses this to roll every
           distributor up into the same regions. Mark warehouses, platforms or tenders as excluded to keep them out of totals.
@@ -182,7 +186,7 @@ export function WeeklyBranchMappingManager({
       {notice && <div className="border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border border-[#E2E8F0] bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
         <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
         <select
           className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
@@ -223,13 +227,13 @@ export function WeeklyBranchMappingManager({
 
         <div className="ml-auto flex items-center gap-2">
           <a
-            className="inline-flex h-9 items-center gap-1 border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
             href={templateHref}
           >
             <Download className="h-4 w-4" /> Template
           </a>
           <button
-            className="inline-flex h-9 items-center gap-1 border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60"
             disabled={busy}
             onClick={() => fileInput.current?.click()}
             type="button"
@@ -241,7 +245,7 @@ export function WeeklyBranchMappingManager({
       </div>
 
       {/* Add row */}
-      <div className="flex flex-wrap items-end gap-2 border border-[#E2E8F0] bg-white p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
         <Field label={isStock ? "Location name" : "Branch name"}>
           <input
             className="h-9 w-56 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
@@ -295,7 +299,7 @@ export function WeeklyBranchMappingManager({
           Exclude
         </label>
         <button
-          className="inline-flex h-9 items-center gap-1 bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+          className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
           disabled={busy}
           onClick={addDraft}
           type="button"
@@ -305,9 +309,9 @@ export function WeeklyBranchMappingManager({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto border border-[#E2E8F0] bg-white">
+      <div className="overflow-x-auto rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-wide text-[#64748B]">
+          <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Branch / Outlet</th>
               {isStock && <th className="px-3 py-2">Col #</th>}
@@ -325,7 +329,7 @@ export function WeeklyBranchMappingManager({
               </tr>
             )}
             {rows.map((row) => (
-              <tr className="border-t border-[#F1F5F9] align-middle" key={row.id}>
+              <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
                 <td className="px-3 py-2 font-semibold text-[#0F172A]">{row.branchHeaderRaw ?? row.rawBranch}</td>
                 {isStock && <td className="px-3 py-2 text-[#64748B]">{row.branchColumnIndex ?? "—"}</td>}
                 <td className="px-3 py-2">
