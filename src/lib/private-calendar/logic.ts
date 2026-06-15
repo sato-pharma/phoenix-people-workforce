@@ -1,5 +1,6 @@
 import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 
 export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
@@ -506,11 +507,6 @@ function eachDate(start: string, end: string) {
   return dates;
 }
 
-function isRegularWorkday(date: string) {
-  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return day !== 5 && day !== 6;
-}
-
 function createException(input: Omit<PrivateCalendarException, "id">) {
   return {
     ...input,
@@ -527,11 +523,16 @@ function createException(input: Omit<PrivateCalendarException, "id">) {
 export function derivePrivateCalendarExceptions(input: {
   employees: PrivateCalendarEmployeeOption[];
   end: string;
+  isExpectedWorkday?: (employee: PrivateCalendarEmployeeOption, date: string) => boolean;
   items: PrivateCalendarItem[];
   start: string;
   today?: string;
 }) {
   const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const isExpectedWorkday = input.isExpectedWorkday ?? ((employee, date) => isAttendanceScheduledWorkingDay({
+    dateIso: date,
+    jobTitle: employee.jobTitle,
+  }));
   const dates = eachDate(input.start, input.end).filter((date) => date <= today);
   const exceptions: PrivateCalendarException[] = [];
   const itemsByEmployeeDate = new Map<string, PrivateCalendarItem[]>();
@@ -603,7 +604,7 @@ export function derivePrivateCalendarExceptions(input: {
       }
 
       if (
-        isRegularWorkday(date) &&
+        isExpectedWorkday(employee, date) &&
         attendance.length === 0 &&
         vacations.length === 0 &&
         excuses.length === 0 &&

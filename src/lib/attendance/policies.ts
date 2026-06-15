@@ -1,5 +1,13 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  isMissingWorkingWeekdaysColumn,
+  loadAttendancePolicyGroups,
+} from "@/lib/attendance/policy-groups";
 import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
+import {
+  normalizeAttendanceWorkingWeekdays,
+  type AttendanceWorkingWeekday,
+} from "@/lib/attendance/work-schedule";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
 export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
@@ -28,6 +36,7 @@ export type AttendancePolicyGroup = {
   scheduledStart: string;
   targetType: AttendancePolicyTargetType;
   targetValue: string;
+  workingWeekdays: AttendanceWorkingWeekday[];
 };
 
 export type AttendancePolicyDashboard = {
@@ -54,6 +63,7 @@ type PolicyDbRow = {
   scheduled_start: string;
   target_type: AttendancePolicyTargetType;
   target_value: string | null;
+  working_weekdays: AttendanceWorkingWeekday[] | null;
 };
 
 type RuleDbRow = {
@@ -128,6 +138,10 @@ function numberText(value: number | string | null) {
   return value == null ? "" : String(value);
 }
 
+function cleanWorkingWeekdays(value: unknown) {
+  return normalizeAttendanceWorkingWeekdays(value);
+}
+
 function validatePolicyRules(rules: Array<{
   deduction_days: number | null;
   event_type: AttendancePolicyEventType;
@@ -162,13 +176,8 @@ function validatePolicyRules(rules: Array<{
 
 export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDashboard> {
   const supabase = getSupabaseAdmin();
-  const [policyResult, ruleResult, employeeResult] = await Promise.all([
-    supabase
-      .from("attendance_policy_groups")
-      .select("id,policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to")
-      .order("target_type")
-      .order("target_value")
-      .order("effective_from", { ascending: false }),
+  const [policyRows, ruleResult, employeeResult] = await Promise.all([
+    loadAttendancePolicyGroups(),
     supabase
       .from("attendance_policy_rules")
       .select("id,policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
@@ -180,7 +189,6 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
       .order("full_name"),
   ]);
 
-  if (policyResult.error) throw policyResult.error;
   if (ruleResult.error) throw ruleResult.error;
   if (employeeResult.error) throw employeeResult.error;
 
@@ -207,7 +215,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     .map((row) => ({ fullName: row.full_name?.trim() || row.hr_id, hrId: row.hr_id }));
   const jobTitles = Array.from(new Set(employeeRows.map((row) => row.job_title?.trim()).filter((value): value is string => Boolean(value)))).sort();
 
-  const policies = ((policyResult.data ?? []) as PolicyDbRow[]).map((policy) => ({
+  const policies = (policyRows as PolicyDbRow[]).map((policy) => ({
     effectiveFrom: policy.effective_from,
     effectiveTo: policy.effective_to ?? "",
     graceMinutes: policy.grace_minutes,
@@ -219,6 +227,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     scheduledStart: formatTime(policy.scheduled_start),
     targetType: policy.target_type,
     targetValue: policy.target_value ?? "",
+    workingWeekdays: policy.working_weekdays ?? [],
   }));
 
   return {
@@ -241,6 +250,7 @@ export async function saveAttendancePolicy(input: {
   scheduledStart: unknown;
   targetType: unknown;
   targetValue: unknown;
+  workingWeekdays?: unknown;
 }) {
   const supabase = getSupabaseAdmin();
   const id = cleanNumber(input.id, "id", { allowNull: true, integer: true });
@@ -248,6 +258,7 @@ export async function saveAttendancePolicy(input: {
   const { targetType, targetValue } = normalizeTarget(input);
   const scheduledStart = cleanTime(input.scheduledStart, "scheduledStart");
   const scheduledEnd = cleanTime(input.scheduledEnd, "scheduledEnd");
+  const workingWeekdays = cleanWorkingWeekdays(input.workingWeekdays);
   const graceMinutes = cleanNumber(input.graceMinutes, "graceMinutes", { integer: true }) as number;
   const effectiveFrom = cleanDate(input.effectiveFrom, "effectiveFrom");
   const effectiveTo = cleanDate(input.effectiveTo, "effectiveTo", { allowNull: true });
@@ -278,6 +289,19 @@ export async function saveAttendancePolicy(input: {
     target_type: targetType,
     target_value: targetValue,
     updated_at: new Date().toISOString(),
+    working_weekdays: workingWeekdays,
+  };
+  const legacyPolicyRow = {
+    effective_from: policyRow.effective_from,
+    effective_to: policyRow.effective_to,
+    grace_minutes: policyRow.grace_minutes,
+    is_active: policyRow.is_active,
+    policy_name: policyRow.policy_name,
+    scheduled_end: policyRow.scheduled_end,
+    scheduled_start: policyRow.scheduled_start,
+    target_type: policyRow.target_type,
+    target_value: policyRow.target_value,
+    updated_at: policyRow.updated_at,
   };
 
   const ruleRows = input.rules.map((rawRule, index) => {
@@ -308,17 +332,33 @@ export async function saveAttendancePolicy(input: {
 
   let policyId = id;
   if (policyId) {
-    const { error } = await supabase
+    let { error } = await supabase
       .from("attendance_policy_groups")
       .update(policyRow)
       .eq("id", policyId);
+    if (error && isMissingWorkingWeekdaysColumn(error)) {
+      const legacyResult = await supabase
+        .from("attendance_policy_groups")
+        .update(legacyPolicyRow)
+        .eq("id", policyId);
+      error = legacyResult.error;
+    }
     if (error) throw error;
   } else {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("attendance_policy_groups")
       .insert({ ...policyRow, created_at: new Date().toISOString() })
       .select("id")
       .single();
+    if (error && isMissingWorkingWeekdaysColumn(error)) {
+      const legacyResult = await supabase
+        .from("attendance_policy_groups")
+        .insert({ ...legacyPolicyRow, created_at: new Date().toISOString() })
+        .select("id")
+        .single();
+      data = legacyResult.data;
+      error = legacyResult.error;
+    }
     if (error) throw error;
     policyId = (data as { id: number }).id;
   }

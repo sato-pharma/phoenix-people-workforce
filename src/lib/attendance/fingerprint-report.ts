@@ -6,6 +6,8 @@ import {
   summarizeFingerprintRows,
 } from "@/lib/attendance/metrics";
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
+import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
+import { formatAttendanceWorkingWeekdays, type AttendanceWorkingWeekday } from "@/lib/attendance/work-schedule";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -54,6 +56,7 @@ export type FingerprintPolicyDetailRow = {
   scheduledEnd: string;
   scheduledStart: string;
   targetType: string;
+  workingDays: string;
 };
 
 export type FingerprintReportData = {
@@ -112,6 +115,7 @@ type PolicyRow = {
   scheduled_start: string | null;
   target_type: string | null;
   target_value: string | null;
+  working_weekdays: AttendanceWorkingWeekday[] | null;
 };
 
 type PolicyRuleRow = {
@@ -309,6 +313,7 @@ function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: Fingerp
     row.scheduledStart,
     row.scheduledEnd,
     row.graceMinutes,
+    row.workingDays,
   ].join(" ").toLowerCase().includes(filters.search.toLowerCase());
 }
 
@@ -343,18 +348,12 @@ export async function getFingerprintAttendanceReport(input: {
   const effectiveDateFrom = hasDateRange ? dateFrom : todayKey();
   const effectiveDateTo = hasDateRange ? dateTo : todayKey();
 
-  const [employeeResult, policyResult, ruleResult] = await Promise.all([
+  const [employeeResult, policyRows, ruleResult] = await Promise.all([
     supabase
       .from("employees")
       .select("hr_id,full_name,job_title,department_id,base_salary")
       .order("full_name"),
-    supabase
-      .from("attendance_policy_groups")
-      .select("id,policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to")
-      .eq("is_active", true)
-      .order("target_type")
-      .order("target_value")
-      .order("effective_from", { ascending: false }),
+    loadAttendancePolicyGroups({ activeOnly: true }),
     supabase
       .from("attendance_policy_rules")
       .select("policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
@@ -363,7 +362,6 @@ export async function getFingerprintAttendanceReport(input: {
   ]);
 
   if (employeeResult.error) throw employeeResult.error;
-  if (policyResult.error) throw policyResult.error;
   if (ruleResult.error) throw ruleResult.error;
 
   const allEmployees = uniqueEmployeesByHrId((employeeResult.data ?? []) as EmployeeRow[]);
@@ -386,7 +384,7 @@ export async function getFingerprintAttendanceReport(input: {
     }
   }
 
-  const policyRows = (policyResult.data ?? []) as PolicyRow[];
+  const activePolicyRows = policyRows as PolicyRow[];
   const rulesByPolicy = new Map<number, PolicyRuleRow[]>();
   for (const rule of (ruleResult.data ?? []) as PolicyRuleRow[]) {
     const list = rulesByPolicy.get(rule.policy_id) ?? [];
@@ -395,7 +393,7 @@ export async function getFingerprintAttendanceReport(input: {
   }
   const policyDetails = allEmployees
     .map((employee) => {
-      const policy = resolveActiveAttendancePolicy(employee, policyRows, effectiveDateFrom, effectiveDateTo);
+      const policy = resolveActiveAttendancePolicy(employee, activePolicyRows, effectiveDateFrom, effectiveDateTo);
       const department = typeof employee.department_id === "number"
         ? departmentMap.get(employee.department_id) ?? ""
         : "";
@@ -412,6 +410,7 @@ export async function getFingerprintAttendanceReport(input: {
         scheduledEnd: displayPolicyTime(policy?.scheduled_end),
         scheduledStart: displayPolicyTime(policy?.scheduled_start),
         targetType: policy?.target_type ?? "",
+        workingDays: formatAttendanceWorkingWeekdays(policy?.working_weekdays),
       };
     })
     .filter((row) => employeePolicyMatches(row, filters))
@@ -489,7 +488,7 @@ export async function getFingerprintAttendanceReport(input: {
       : 0;
     const employee = employeeMap.get(bucket.employeeHrId);
     const policy = employee
-      ? resolveActiveAttendancePolicy(employee, policyRows, bucket.reportDate, bucket.reportDate)
+      ? resolveActiveAttendancePolicy(employee, activePolicyRows, bucket.reportDate, bucket.reportDate)
       : null;
     const policyRules = policy ? rulesByPolicy.get(policy.id) ?? [] : [];
     const status = resolvePolicyAttendanceStatus({

@@ -145,6 +145,28 @@ export function runPrivateCalendarTests() {
   assert.ok(exceptions.some((item) => item.title === "Late arrival"), "exceptions must include attendance warning flags");
   assert.ok(exceptions.some((item) => item.title === "Missing attendance cover"), "exceptions must include uncovered workdays");
 
+  const customWorkdayExceptions = derivePrivateCalendarExceptions({
+    employees: [{
+      departmentName: "Administration",
+      fullName: "A Three",
+      hrId: "A-3",
+      jobTitle: "Office Admin",
+      lineName: "Office",
+      managerHrId: "M-1",
+      managerName: "Manager One",
+    }],
+    end: "2026-06-17",
+    isExpectedWorkday: (_employee, date) => ["2026-06-15", "2026-06-17"].includes(date),
+    items: [],
+    start: "2026-06-15",
+    today: "2026-06-17",
+  });
+  assert.deepEqual(
+    customWorkdayExceptions.filter((item) => item.title === "Missing attendance cover").map((item) => item.date),
+    ["2026-06-15", "2026-06-17"],
+    "private calendar missing-attendance warnings must follow custom employee workdays",
+  );
+
   const teamSummary = buildPrivateCalendarTeamSummary({
     employees: [{
       departmentName: "Marketing",
@@ -177,6 +199,7 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /canReadPrivateCalendarEmployee/, "service must enforce server-side employee scope");
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
+  assert.match(serviceSource, /loadAttendancePolicyGroups/, "service must resolve custom attendance workdays for private calendar exceptions");
 
   const apiSource = readFileSync("app/api/private-calendar/route.ts", "utf8");
   assert.match(apiSource, /getPrivateCalendarWorkspace/, "private calendar API must load through the scoped service");

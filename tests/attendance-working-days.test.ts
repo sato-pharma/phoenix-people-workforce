@@ -78,6 +78,17 @@ export function runAttendanceWorkingDaysTests() {
   assert.equal(sunday.isFuture, false);
   assert.equal(sunday.isExpectedWorkingDay, true);
 
+  // Custom employee policy: only Monday and Wednesday are expected workdays.
+  const customMonday = classifyAttendanceDay({ context: context(), dateIso: "2026-06-08", jobTitle: "Accountant", workingWeekdays: [1, 3] });
+  assert.equal(customMonday.isWeeklyOff, false);
+  assert.equal(customMonday.isExpectedWorkingDay, true);
+  const customTuesday = classifyAttendanceDay({ context: context(), dateIso: "2026-06-09", jobTitle: "Accountant", workingWeekdays: [1, 3] });
+  assert.equal(customTuesday.isWeeklyOff, true);
+  assert.equal(customTuesday.isExpectedWorkingDay, false);
+  const customWednesday = classifyAttendanceDay({ context: context(), dateIso: "2026-06-10", jobTitle: "Accountant", workingWeekdays: "{1,3}" });
+  assert.equal(customWednesday.isWeeklyOff, false);
+  assert.equal(customWednesday.isExpectedWorkingDay, true);
+
   // --- classifyAttendanceDay: holiday ---
   const holidayContext = context({ holidaysByDate: new Map([["2026-06-08", "Test Holiday"]]) });
   const holiday = classifyAttendanceDay({ context: holidayContext, dateIso: "2026-06-08", jobTitle: "Accountant" });
