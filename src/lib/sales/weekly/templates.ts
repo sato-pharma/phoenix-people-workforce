@@ -1,183 +1,43 @@
-// Per-distributor weekly column registry. Each distributor exports its weekly "Sales & Stock" file in
-// its own layout; we recognise it by header aliases. New distributors are added here as their format
-// is shared — the parser is generic, only this map is distributor-specific.
+// Weekly Sales — structural layout descriptors per distributor.
+//
+// The parser is mapping-driven (product aliases + branch->region indexes own the business meaning).
+// This file only describes the PHYSICAL layout of each distributor's raw export: which sheet holds
+// the sales / return / stock data, which row is the header, and which 1-based column index carries
+// each field. There are NO header-alias guesses here anymore — each distributor adapter pins exact
+// columns against the verified real layout.
 
-export type WeeklyTemplateField =
-  | "weekStart"
-  | "itemCode"
-  | "itemName"
-  | "branchCode"
-  | "branchName"
-  | "stockQty"
-  | "salesQty"
-  | "xfactor"
-  | "bonusQty"
-  | "discount"
-  | "regionCode"
-  | "productCode"
-  | "distributorId";
+export type WeeklySheetRole = "sales" | "return" | "stock";
 
-export type WeeklyTemplate = {
-  key: string;
-  name: string;
-  /** standardRows = one sheet row is one fact row; overseasPosMatrix = product rows x outlet quantity columns */
-  layout?: "standardRows" | "overseasPosMatrix";
-  /** distributor codes that use this template */
-  distributorCodes: string[];
-  /** restrict matching to a sheet whose name contains this token (case-insensitive); optional */
+/** A column pinned by 1-based index inside a given sheet. */
+export type WeeklyColumnRef = number;
+
+/** Describes one physical sheet inside a distributor workbook (matched by name token). */
+export type WeeklySheetDescriptor = {
+  role: WeeklySheetRole;
+  /** sheet name must contain this token (case-insensitive); when omitted, the only/first sheet is used */
   sheetNameIncludes?: string;
-  /** header aliases per field — first present header wins. Required fields must resolve to validate. */
-  fields: Record<WeeklyTemplateField, string[]>;
-  /** fields that MUST be found in the header row for the template to be accepted */
-  required: WeeklyTemplateField[];
+  /** exact sheet name (case-insensitive) — preferred over the token when present */
+  sheetName?: string;
+  /** 1-based header row; data starts at headerRow + 1 */
+  headerRow: number;
 };
 
-// Ibn Sina Sato / IS-S (and legacy IS fallback) — "SalesAndStockReport2_DataHub" coded weekly feed.
-// Product ID maps directly to our product_code; Item Code/name are the distributor SKU (fallback for unmapped/#N/A Product IDs).
-const IBN_SINA_WEEKLY: WeeklyTemplate = {
-  key: "ibn_sina_weekly_datahub",
-  name: "Ibn Sina Sato weekly Sales & Stock (DataHub)",
-  distributorCodes: ["IS-S", "IS"],
-  sheetNameIncludes: "DataHub",
-  fields: {
-    weekStart: ["Date"],
-    itemCode: ["Item Code"],
-    itemName: ["Item name", "Item Name"],
-    branchCode: ["Branch Code"],
-    branchName: ["Branch Name"],
-    stockQty: ["Stock"],
-    salesQty: ["Sales Quantity", "Sales Qty"],
-    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
-    bonusQty: ["Bonus", "Bonus Qty"],
-    discount: ["Discount", "Disc"],
-    regionCode: ["Region ID", "Region"],
-    productCode: ["Product ID", "Product Code"],
-    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID"],
-  },
-  required: ["weekStart", "salesQty", "regionCode", "stockQty"],
+export type WeeklyDistributorLayout = {
+  /** canonical distributor code (uppercased) */
+  code: string;
+  display: string;
+  /** PS ships two separate matrix files; everyone else ships one combined workbook */
+  separateSalesStockFiles?: boolean;
 };
 
-const IBN_SINA_WEEKLY_PAS_VARIANT: WeeklyTemplate = {
-  key: "ibn_sina_weekly_pas_raw",
-  name: "Ibn Sina Sato weekly Sales & Stock (PAS raw)",
-  distributorCodes: ["IS-S"],
-  sheetNameIncludes: "DataHub",
-  fields: {
-    weekStart: ["Date"],
-    itemCode: ["Item Code"],
-    itemName: ["Item name", "Item Name"],
-    branchCode: ["Branch Code"],
-    branchName: ["Branch Name"],
-    stockQty: ["Stock"],
-    salesQty: ["Sales Quantity", "Sales Qty"],
-    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
-    bonusQty: ["Bonus", "Bonus Qty"],
-    discount: ["Discount", "Disc"],
-    regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
-    productCode: ["Product ID", "Product Code", "Item Code"],
-    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code", "Supplier ID"],
-  },
-  required: ["weekStart", "salesQty", "stockQty"],
-};
-
-const IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE: WeeklyTemplate = {
-  key: "ibn_sina_weekly_pas_raw_no_date",
-  name: "Ibn Sina Sato weekly Sales & Stock (PAS raw, no date column)",
-  distributorCodes: ["IS-S"],
-  sheetNameIncludes: "DataHub",
-  fields: {
-    weekStart: ["Date"],
-    itemCode: ["Item Code"],
-    itemName: ["Item name", "Item Name"],
-    branchCode: ["Branch Code"],
-    branchName: ["Branch Name"],
-    stockQty: ["Stock"],
-    salesQty: ["Sales Quantity", "Sales Qty"],
-    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
-    bonusQty: ["Bonus", "Bonus Qty"],
-    discount: ["Discount", "Disc"],
-    regionCode: ["Region ID", "Region", "Supplier Code", "Supplier ID"],
-    productCode: ["Product ID", "Product Code", "Item Code"],
-    distributorId: ["Distrub ID", "Distributor ID", "Distrib ID", "Supplier Code", "Supplier ID"],
-  },
-  required: ["salesQty", "stockQty", "itemCode"],
-};
-
-const OVERSEAS_POS_WEEKLY_MATRIX: WeeklyTemplate = {
-  key: "overseas_pos_weekly_matrix",
-  name: "Overseas weekly POS matrix",
-  layout: "overseasPosMatrix",
-  distributorCodes: ["PS"],
-  sheetNameIncludes: "Data",
-  fields: {
-    weekStart: ["Date"],
-    itemCode: ["Mat. Code"],
-    itemName: ["Mat. Desc."],
-    branchCode: [],
-    branchName: [],
-    stockQty: [],
-    salesQty: ["Total Qty."],
-    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
-    bonusQty: ["Bonus Qty."],
-    discount: [],
-    regionCode: [],
-    productCode: ["Product ID"],
-    distributorId: [],
-  },
-  required: ["weekStart", "salesQty", "productCode"],
-};
-
-const OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL: WeeklyTemplate = {
-  key: "overseas_pos_weekly_matrix_no_total",
-  name: "Overseas weekly POS matrix (legacy no Total Qty)",
-  layout: "overseasPosMatrix",
-  distributorCodes: ["PS"],
-  sheetNameIncludes: "Data",
-  fields: {
-    weekStart: ["Date"],
-    itemCode: ["Mat. Code"],
-    itemName: ["Mat. Desc."],
-    branchCode: [],
-    branchName: [],
-    stockQty: [],
-    salesQty: [],
-    xfactor: ["XFactor", "X Factor", "X-Factor", "Factor"],
-    bonusQty: [],
-    discount: [],
-    regionCode: [],
-    productCode: ["Product ID", "Item Code"],
-    distributorId: [],
-  },
-  required: ["itemCode", "productCode"],
-};
-
+// Fallback display names used when the master reference lacks a name row.
 const WEEKLY_DISTRIBUTOR_FALLBACK_NAMES: Record<string, string> = {
   IS: "Ibn Sina",
   "IS-S": "Ibn Sina Sato",
   PS: "Overseas",
+  EG: "EGD",
+  RM: "RAMCO",
 };
-
-export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [
-  IBN_SINA_WEEKLY,
-  IBN_SINA_WEEKLY_PAS_VARIANT,
-  IBN_SINA_WEEKLY_PAS_VARIANT_NO_DATE,
-  OVERSEAS_POS_WEEKLY_MATRIX,
-  OVERSEAS_POS_WEEKLY_MATRIX_NO_TOTAL,
-];
-
-export function weeklyTemplatesForDistributor(distributorCode: string): WeeklyTemplate[] {
-  const code = (distributorCode ?? "").trim().toUpperCase();
-  return WEEKLY_TEMPLATES.filter((template) =>
-    template.distributorCodes.some((candidate) => candidate.toUpperCase() === code),
-  );
-}
-
-/** Distributor codes that currently have a registered weekly template (drives the upload dropdown). */
-export function weeklyTemplateDistributorCodes(): string[] {
-  const set = new Set<string>();
-  for (const template of WEEKLY_TEMPLATES) for (const code of template.distributorCodes) set.add(code);
-  return [...set];
-}
 
 export function weeklyTemplateDistributorFallbackName(distributorCode: string): string | null {
   const normalized = (distributorCode ?? "").trim().toUpperCase();
