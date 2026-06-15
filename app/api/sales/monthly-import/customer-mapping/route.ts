@@ -23,17 +23,20 @@ export async function POST(request: Request) {
     const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importCustomerMap({ actorLoginId, file });
     const blocked = result.blockedRows.length > 0;
+    // Per-row tolerant: valid rows are upserted even when some are blocked. Only fail hard when nothing
+    // was saved; a partial save succeeds and surfaces the blocked rows for the user to fix and re-upload.
+    const hardFail = blocked && result.inserted + result.updated === 0;
 
     return NextResponse.json(
       {
-        success: !blocked,
+        success: !hardFail,
         result,
-        error: blocked ? "Some rows could not be imported. Fix the listed rows and re-upload." : undefined,
+        error: hardFail ? "No rows could be imported. Fix the listed rows and re-upload." : undefined,
         message: blocked
-          ? "Import blocked."
+          ? `${result.inserted} added, ${result.updated} updated — ${result.blockedRows.length} row(s) need fixing (see below).`
           : `${result.inserted} added, ${result.updated} updated, ${result.skipped} skipped.`,
       },
-      { status: blocked ? 400 : 200 },
+      { status: hardFail ? 400 : 200 },
     );
   } catch (error) {
     if (isForbiddenError(error)) {

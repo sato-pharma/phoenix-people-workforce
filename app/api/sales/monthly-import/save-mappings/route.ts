@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
 
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
     }
 
     const result = await saveMappings(mappings);
+    await writeAuditLog({
+      actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
+      entityId: "source_of_sales_product_aliases",
+      entityType: "sales_import_batch",
+      newValues: { count: mappings.length, ...result, source: "mapping_save" },
+      summary: `Mapping save — ${result.saved} saved from ${mappings.length} submitted (${result.skipped} skipped, ${result.invalid} invalid).`,
+    });
     return NextResponse.json({
       success: true,
       result,

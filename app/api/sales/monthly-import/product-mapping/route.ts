@@ -37,15 +37,20 @@ export async function POST(request: Request) {
     const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importSosProductMappingWorkbook({ file, actorId });
     const blocked = result.blockedRows.length > 0;
+    // Per-row tolerant: valid rows are saved even when some are blocked. Only a hard fail (nothing
+    // saved AND rows blocked) is a 400; a partial save succeeds and surfaces the blocked rows to fix.
+    const hardFail = blocked && result.saved === 0;
 
     return NextResponse.json(
       {
-        success: !blocked,
+        success: !hardFail,
         result,
-        error: blocked ? "Some rows could not be imported. Fix the listed rows and re-upload." : undefined,
-        message: blocked ? "Import blocked." : `${result.saved} mappings saved, ${result.skipped} skipped.`,
+        error: hardFail ? "No rows could be imported. Fix the listed rows and re-upload." : undefined,
+        message: blocked
+          ? `${result.saved} mapping(s) saved — ${result.blockedRows.length} row(s) need fixing (see below).`
+          : `${result.saved} mappings saved, ${result.skipped} skipped.`,
       },
-      { status: blocked ? 400 : 200 },
+      { status: hardFail ? 400 : 200 },
     );
   } catch (error) {
     if (isForbiddenError(error)) {

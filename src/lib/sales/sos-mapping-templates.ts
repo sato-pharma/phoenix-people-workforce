@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
@@ -158,10 +159,18 @@ export async function importSosProductMappingWorkbook(input: { file: File; actor
     mappings.push({ type: "product", raw: alias, code: products.get(productKey)!.code });
   }
 
-  if (blockedRows.length > 0) return { saved: 0, skipped, blockedRows };
-
+  // Per-row tolerant (like importCustomerMap): persist every valid row even when some rows are blocked,
+  // so a single stale/typo'd row in a pre-filled template never discards the user's good edits. The
+  // blocked rows are returned for the user to fix and re-upload (the saved rows upsert idempotently).
   const result = await saveMappings(mappings);
-  return { saved: result.saved, skipped: skipped + result.skipped, blockedRows: [] };
+  await writeAuditLog({
+    actorLoginId: input.actorId ?? "system",
+    entityId: "source_of_sales_product_aliases",
+    entityType: "sales_import_batch",
+    newValues: { blocked: blockedRows.length, saved: result.saved, skipped: skipped + result.skipped, source: "product_mapping_import" },
+    summary: `Product mapping import — ${result.saved} saved, ${skipped + result.skipped} skipped, ${blockedRows.length} blocked.`,
+  });
+  return { saved: result.saved, skipped: skipped + result.skipped, blockedRows };
 }
 
 // ── Customer / Brick template (per-distributor; upload reuses importCustomerMap) ──
