@@ -1,5 +1,5 @@
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
-import { purgeOldActivityEvents } from "@/lib/activity/service";
+import { getInactiveUsers, purgeOldActivityEvents } from "@/lib/activity/service";
 import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
   cleanupOldNotificationData,
@@ -22,5 +22,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const retention = await cleanupOldNotificationData();
   // Activity Control Center retention: drop page-view events older than 90 days.
   const activityRetention = await purgeOldActivityEvents(90);
-  return { activityRetention, attendanceAgent, deferred, exitedDeductions, outbox, probationReminders, reaped, retention, telegram };
+  // Compute users inactive for 7+ days — logged for now; full alert notifications are a follow-up.
+  const inactiveUsers = await getInactiveUsers(7).catch(() => []);
+  if (inactiveUsers.length) {
+    console.info(`[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`);
+  }
+  return { activityRetention, attendanceAgent, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, telegram };
 }

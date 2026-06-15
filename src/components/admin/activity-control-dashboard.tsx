@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
   AlertCircle,
+  BarChart3,
   Clock3,
   Download,
   Eye,
@@ -13,9 +14,11 @@ import {
   Loader2,
   Radio,
   RefreshCw,
+  ShieldOff,
   TriangleAlert,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 
 import {
@@ -27,6 +30,8 @@ import {
 import type {
   ActivityOverview,
   AdoptionStatus,
+  LiveActivity,
+  RoleBenchmark,
   UserActivitySummary,
   UserTimeline,
 } from "@/lib/activity/types";
@@ -37,6 +42,9 @@ const RANGE_OPTIONS = [
   { days: 7, label: "7 days" },
   { days: 30, label: "30 days" },
 ];
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const HOUR_LABELS = ["12a", "3a", "6a", "9a", "12p", "3p", "6p", "9p"];
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -91,7 +99,7 @@ function EngagementBadge({ band, score }: { band: EngagementBand; score: number 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${BAND_STYLES[band]}`}
-      title="Engagement = active time vs logged-in time, blended with how many modules and pages were used. It is a usage indicator, not a performance rating."
+      title="Engagement = active time vs logged-in time, blended with modules and pages visited. Usage indicator, not a performance rating."
     >
       <span className="tabular-nums">{score}</span>
       <span className="uppercase tracking-wide">{band}</span>
@@ -103,7 +111,7 @@ function NoDataChip() {
   return (
     <span
       className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400"
-      title="No page-view activity recorded for this person yet. Tracking only captures navigation going forward."
+      title="No page-view activity recorded yet. Tracking only captures navigation going forward."
     >
       No data yet
     </span>
@@ -148,6 +156,264 @@ const ADOPTION_TONE: Record<AdoptionStatus, string> = {
   never: "text-rose-700",
 };
 
+// ── Heatmap calendar (52 weeks from the range's startedAt data) ──────────────
+
+function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
+  const dateMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of sessions) {
+      if (!s.startedAt) continue;
+      const key = s.startedAt.slice(0, 10); // YYYY-MM-DD
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [sessions]);
+
+  const max = useMemo(() => Math.max(1, ...Array.from(dateMap.values())), [dateMap]);
+
+  // Build 13 weeks (≈90 days) ending today.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weeks: { date: Date; key: string }[][] = [];
+  const current = new Date(today);
+  // Roll back to the Sunday of 12 weeks ago.
+  current.setDate(current.getDate() - current.getDay() - 12 * 7);
+
+  for (let w = 0; w < 13; w++) {
+    const week: { date: Date; key: string }[] = [];
+    for (let d = 0; d < 7; d++) {
+      week.push({ date: new Date(current), key: current.toISOString().slice(0, 10) });
+      current.setDate(current.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  function cellColor(count: number): string {
+    if (!count) return "bg-slate-100";
+    const ratio = count / max;
+    if (ratio < 0.25) return "bg-orange-200";
+    if (ratio < 0.5) return "bg-orange-300";
+    if (ratio < 0.75) return "bg-orange-400";
+    return "bg-orange-600";
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">
+        Login frequency — last 3 months (Cairo)
+      </p>
+      <div className="overflow-x-auto">
+        <div className="flex gap-0.5">
+          {/* Day labels */}
+          <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
+            {WEEKDAY_LABELS.map((d) => (
+              <div key={d} className="h-3 text-[9px] leading-3 text-[#94A3B8]">{d}</div>
+            ))}
+          </div>
+          {/* Week columns */}
+          {weeks.map((week, wi) => (
+            <div key={wi} className="flex flex-col gap-0.5">
+              {/* Month label on first day of month */}
+              <div className="h-3 text-[9px] leading-3 text-[#94A3B8]">
+                {week[0].date.getDate() <= 7
+                  ? week[0].date.toLocaleDateString("en-GB", { month: "short" })
+                  : ""}
+              </div>
+              {week.map(({ date, key }) => {
+                const count = dateMap.get(key) ?? 0;
+                const isToday = key === today.toISOString().slice(0, 10);
+                return (
+                  <div
+                    key={key}
+                    className={`h-3 w-3 rounded-sm ${cellColor(count)} ${isToday ? "ring-1 ring-orange-500" : ""}`}
+                    title={`${date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: ${count} session${count === 1 ? "" : "s"}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
+        <span>Less</span>
+        {["bg-slate-100", "bg-orange-200", "bg-orange-300", "bg-orange-400", "bg-orange-600"].map((c) => (
+          <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
+        ))}
+        <span>More</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Time-of-Day heatmap (7 weekdays × 24 hours) ───────────────────────────────
+
+function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
+  const max = useMemo(() => Math.max(1, ...hourlyHeatmap.flatMap((row) => row)), [hourlyHeatmap]);
+
+  function cellColor(count: number): string {
+    if (!count) return "bg-slate-100";
+    const ratio = count / max;
+    if (ratio < 0.2) return "bg-blue-100";
+    if (ratio < 0.4) return "bg-blue-200";
+    if (ratio < 0.6) return "bg-blue-400";
+    if (ratio < 0.8) return "bg-blue-500";
+    return "bg-blue-700";
+  }
+
+  return (
+    <div className="px-5 py-4">
+      <div className="overflow-x-auto">
+        {/* Hour labels */}
+        <div className="mb-1 flex gap-0.5 pl-10">
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="w-5 text-center text-[8px] text-[#94A3B8]">
+              {HOUR_LABELS[Math.floor(h / 3)] && h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
+            </div>
+          ))}
+        </div>
+        {/* Rows */}
+        {WEEKDAY_LABELS.map((day, wi) => (
+          <div key={day} className="mb-0.5 flex items-center gap-0.5">
+            <div className="w-9 text-right text-[10px] text-[#64748B]">{day}</div>
+            <div className="ml-1 flex gap-0.5">
+              {hourlyHeatmap[wi].map((count, h) => (
+                <div
+                  key={h}
+                  className={`h-5 w-5 rounded-sm ${cellColor(count)}`}
+                  title={`${day} ${h}:00 — ${count} login${count === 1 ? "" : "s"}`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
+        <span>Quiet</span>
+        {["bg-slate-100", "bg-blue-100", "bg-blue-200", "bg-blue-400", "bg-blue-700"].map((c) => (
+          <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
+        ))}
+        <span>Busy</span>
+        <span className="ml-2">· Cairo (EET)</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Role benchmarks table ─────────────────────────────────────────────────────
+
+function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
+  const maxActive = Math.max(1, ...benchmarks.map((b) => b.avgActiveMinutes));
+
+  if (!benchmarks.length) {
+    return <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No data yet.</p>;
+  }
+
+  return (
+    <div className="overflow-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="px-4 py-2 text-left">Role</th>
+            <th className="px-4 py-2 text-right">Users</th>
+            <th className="px-4 py-2 text-right">Avg session</th>
+            <th className="px-4 py-2 text-right">Avg active</th>
+            <th className="px-4 py-2 text-left" colSpan={2}>Avg engagement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {benchmarks.map((b) => (
+            <tr key={b.role} className="border-t border-[#F1F5F9]">
+              <td className="px-4 py-2 font-semibold text-[#0F172A]">{b.role}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{b.userCount}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{formatMinutes(b.avgSessionMinutes)}</td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">{formatMinutes(b.avgActiveMinutes)}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-[#334155] w-12">{b.avgEngagementScore > 0 ? b.avgEngagementScore : "—"}</td>
+              <td className="px-4 py-2 w-28">
+                {b.avgEngagementScore > 0 ? (
+                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]">
+                    <div
+                      className={`h-full rounded-full ${
+                        b.avgEngagementScore >= 66
+                          ? "bg-emerald-500"
+                          : b.avgEngagementScore >= 33
+                          ? "bg-amber-400"
+                          : "bg-rose-400"
+                      }`}
+                      style={{ width: `${b.avgEngagementScore}%` }}
+                    />
+                  </div>
+                ) : null}
+                <div className="h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]" style={{ display: b.avgEngagementScore > 0 ? "none" : "block" }}>
+                  <div className="h-full w-full rounded-full bg-[#F97316]" style={{ width: `${(b.avgActiveMinutes / maxActive) * 100}%` }} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Force-logout confirmation dialog ─────────────────────────────────────────
+
+function ForceLogoutDialog({
+  name,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  name: string;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const [reason, setReason] = useState("Security review");
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-[14px] bg-white shadow-2xl">
+        <div className="border-b border-[#EEF2F7] px-5 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
+          <h3 className="mt-0.5 text-base font-black text-[#0F172A]">{name}</h3>
+          <p className="mt-1 text-xs text-[#64748B]">
+            All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action.
+          </p>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <label className="block">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Reason (logged to audit trail)</span>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="mt-1 w-full rounded-[8px] border border-[#E2E8F0] px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isPending}
+              className="flex-1 rounded-[8px] border border-[#E2E8F0] py-2 text-sm font-semibold text-[#64748B] transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => onConfirm(reason)}
+              disabled={isPending || !reason.trim()}
+              className="flex-1 rounded-[8px] bg-rose-600 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
+              Force logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function ActivityControlDashboard({
@@ -168,8 +434,71 @@ export function ActivityControlDashboard({
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
+  // Live feed state
+  const [liveData, setLiveData] = useState<LiveActivity | null>(null);
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Force-logout state
+  const [forceLogoutTarget, setForceLogoutTarget] = useState<{ name: string; hrId: string } | null>(null);
+  const [forceLogoutPending, setForceLogoutPending] = useState(false);
+  const [forceLogoutFeedback, setForceLogoutFeedback] = useState<string | null>(null);
+
   const days = initialDays;
   const overview = initialOverview;
+
+  // ── Live feed polling ──────────────────────────────────────────────────────
+  // fetchLive is used by handleForceLogout (below) to refresh after a kick.
+  const fetchLive = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/activity/live", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { live: LiveActivity };
+      setLiveData(body.live);
+    } catch {
+      // silently degrade — live feed is non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    // Inline poll so the effect does not hold a direct setState call in its synchronous body.
+    let active = true;
+    function poll() {
+      fetch("/api/admin/activity/live", { credentials: "same-origin" })
+        .then((r) => (r.ok ? (r.json() as Promise<{ live: LiveActivity }>) : null))
+        .then((body) => { if (active && body?.live) setLiveData(body.live); })
+        .catch(() => {});
+    }
+    poll();
+    liveIntervalRef.current = setInterval(poll, 30_000);
+    return () => {
+      active = false;
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+    };
+  }, []);
+
+  // ── Force logout ───────────────────────────────────────────────────────────
+  const handleForceLogout = useCallback(async (reason: string) => {
+    if (!forceLogoutTarget) return;
+    setForceLogoutPending(true);
+    try {
+      const res = await fetch("/api/admin/activity/force-logout", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-phoenix-csrf": "1" },
+        body: JSON.stringify({ hrId: forceLogoutTarget.hrId, reason }),
+      });
+      const body = (await res.json()) as { ok?: boolean; revokedCount?: number; message?: string };
+      if (!res.ok) throw new Error(body.message ?? "Force logout failed");
+      setForceLogoutFeedback(`${forceLogoutTarget.name} has been logged out (${body.revokedCount ?? 0} session${(body.revokedCount ?? 0) === 1 ? "" : "s"} terminated).`);
+      setForceLogoutTarget(null);
+      // Refresh live feed immediately.
+      setTimeout(fetchLive, 1000);
+    } catch (caught) {
+      setForceLogoutFeedback(caught instanceof Error ? caught.message : "Force logout failed.");
+    } finally {
+      setForceLogoutPending(false);
+    }
+  }, [forceLogoutTarget, fetchLive]);
 
   const changeRange = useCallback(
     (nextDays: number) => {
@@ -193,7 +522,7 @@ export function ActivityControlDashboard({
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body?.message ?? "Failed to load timeline.");
+          throw new Error((body as { message?: string })?.message ?? "Failed to load timeline.");
         }
         const body = (await res.json()) as { timeline: UserTimeline };
         setTimeline(body.timeline);
@@ -210,6 +539,9 @@ export function ActivityControlDashboard({
     () => RANGE_OPTIONS.find((option) => option.days === days)?.label ?? `${days} days`,
     [days],
   );
+
+  // Prefer live data for the online section when available.
+  const displayedOnline = liveData?.online ?? overview?.online ?? [];
 
   const heroActions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -262,6 +594,16 @@ export function ActivityControlDashboard({
         }
       />
 
+      {forceLogoutFeedback ? (
+        <AdminCallout tone="warning">
+          <ShieldOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex flex-1 items-center justify-between">
+            <p className="text-xs">{forceLogoutFeedback}</p>
+            <button type="button" onClick={() => setForceLogoutFeedback(null)} className="ml-4 text-xs underline">Dismiss</button>
+          </div>
+        </AdminCallout>
+      ) : null}
+
       {initialError ? (
         <AdminCallout tone="danger">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -279,7 +621,7 @@ export function ActivityControlDashboard({
             <AdminStatCard
               icon={<Radio className="h-5 w-5" />}
               label="Online now"
-              value={overview.kpis.onlineNow}
+              value={displayedOnline.length}
               description="Active sessions right now"
               tone="emerald"
               size="compact"
@@ -339,13 +681,22 @@ export function ActivityControlDashboard({
           ) : null}
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            {/* Who's online now */}
+            {/* Who's online now — LIVE, auto-refreshes every 30s */}
             <SectionCard
               icon={<Radio className="h-4 w-4" />}
               title="Who's online now"
-              description={`${overview.online.length} active session${overview.online.length === 1 ? "" : "s"}`}
+              description={`${displayedOnline.length} active · refreshes every 30s`}
+              action={
+                <div className="flex items-center gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide">Live</span>
+                </div>
+              }
             >
-              {overview.online.length ? (
+              {displayedOnline.length ? (
                 <div className="max-h-[360px] overflow-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -353,10 +704,11 @@ export function ActivityControlDashboard({
                         <th className="px-4 py-2 text-left">User</th>
                         <th className="px-4 py-2 text-left">Current module</th>
                         <th className="px-4 py-2 text-right">Last active</th>
+                        <th className="px-4 py-2 text-right"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {overview.online.map((user) => (
+                      {displayedOnline.map((user) => (
                         <tr key={`${user.key}-${user.startedAt}`}>
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
@@ -371,6 +723,18 @@ export function ActivityControlDashboard({
                           </td>
                           <td className="px-4 py-2 text-[#334155]">{user.currentModule ?? "—"}</td>
                           <td className="px-4 py-2 text-right text-[#64748B]">{formatRelative(user.lastSeenAt)}</td>
+                          <td className="px-4 py-2 text-right">
+                            {user.hrId ? (
+                              <button
+                                type="button"
+                                onClick={() => setForceLogoutTarget({ name: user.name, hrId: user.hrId! })}
+                                className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                                title="Force logout this user"
+                              >
+                                <ShieldOff className="h-3 w-3" /> Logout
+                              </button>
+                            ) : null}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -379,6 +743,29 @@ export function ActivityControlDashboard({
               ) : (
                 <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No one is online right now.</p>
               )}
+
+              {/* Recent navigation events */}
+              {liveData?.recentEvents.length ? (
+                <div className="border-t border-[#EEF2F7]">
+                  <div className="flex items-center gap-2 px-5 py-2.5">
+                    <Zap className="h-3.5 w-3.5 text-[#F97316]" />
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Recent navigation (last 15 min)</p>
+                  </div>
+                  <div className="divide-y divide-[#F8FAFC]">
+                    {liveData.recentEvents.slice(0, 8).map((event, i) => (
+                      <div key={i} className="flex items-center justify-between px-5 py-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] shrink-0" />
+                          <span className="truncate text-xs text-[#0F172A] font-semibold">{event.name}</span>
+                          <span className="text-xs text-[#64748B]">→</span>
+                          <span className="truncate text-xs text-[#334155]">{event.moduleLabel}</span>
+                        </div>
+                        <span className="ml-3 shrink-0 text-[11px] text-[#94A3B8]">{formatRelative(event.occurredAtIso)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </SectionCard>
 
             {/* Module popularity */}
@@ -413,6 +800,15 @@ export function ActivityControlDashboard({
               )}
             </SectionCard>
           </div>
+
+          {/* Time-of-Day heatmap */}
+          <SectionCard
+            icon={<Clock3 className="h-4 w-4" />}
+            title="When is the system used?"
+            description="Login frequency by day and hour (Cairo time) — great for scheduling maintenance"
+          >
+            <TimeOfDayHeatmap hourlyHeatmap={overview.hourlyHeatmap} />
+          </SectionCard>
 
           {/* Top users + engagement */}
           <SectionCard
@@ -486,6 +882,15 @@ export function ActivityControlDashboard({
                 </p>
               </AdminCallout>
             </div>
+          </SectionCard>
+
+          {/* Role benchmarks */}
+          <SectionCard
+            icon={<BarChart3 className="h-4 w-4" />}
+            title="Role benchmarks"
+            description="Average session time, active time, and engagement score by role"
+          >
+            <RoleBenchmarksTable benchmarks={overview.roleBenchmarks} />
           </SectionCard>
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -577,13 +982,24 @@ export function ActivityControlDashboard({
                 <h3 className="text-lg font-black">{selectedUser.name}</h3>
                 <p className="text-xs text-slate-300">{selectedUser.role}{selectedUser.team ? ` · ${selectedUser.team}` : ""} · last {rangeLabel.toLowerCase()}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedUser(null)}
-                className="rounded-full p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedUser.hrId ? (
+                  <button
+                    type="button"
+                    onClick={() => setForceLogoutTarget({ name: selectedUser.name, hrId: selectedUser.hrId! })}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/30 bg-rose-500/20 px-3 py-1.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-500/30"
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" /> Force logout
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setSelectedUser(null)}
+                  className="rounded-full p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4 p-5">
@@ -604,6 +1020,8 @@ export function ActivityControlDashboard({
                     <SummaryTile label="Modules" value={String(timeline.summary.distinctModules)} />
                     <SummaryTile label="Pages" value={String(timeline.summary.pageViews)} />
                   </div>
+
+                  {/* Engagement signal */}
                   <div className="flex items-center justify-between rounded-[12px] border border-[#E2E8F0] bg-[#FBFCFD] px-4 py-3">
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Engagement signal</p>
@@ -618,6 +1036,11 @@ export function ActivityControlDashboard({
                     ) : (
                       <NoDataChip />
                     )}
+                  </div>
+
+                  {/* Login heatmap calendar */}
+                  <div className="rounded-[12px] border border-[#E2E8F0] bg-[#FBFCFD] px-4 py-3">
+                    <HeatmapCalendar sessions={timeline.sessions} />
                   </div>
 
                   {timeline.sessions.length ? (
@@ -661,6 +1084,16 @@ export function ActivityControlDashboard({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {/* Force-logout confirmation dialog */}
+      {forceLogoutTarget ? (
+        <ForceLogoutDialog
+          name={forceLogoutTarget.name}
+          onConfirm={handleForceLogout}
+          onCancel={() => setForceLogoutTarget(null)}
+          isPending={forceLogoutPending}
+        />
       ) : null}
     </div>
   );
