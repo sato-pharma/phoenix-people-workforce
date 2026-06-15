@@ -232,18 +232,24 @@ async function insertPunches(punches: ValidatedPunch[]) {
       continue;
     }
 
-    const row = {
-      ...punchRow,
-      employee_hr_id: employeeHrId,
-      ingested_at: new Date().toISOString(),
-    };
-
-    const { data, error } = await supabase
-      .from("attendance_raw_punches")
-      .insert(row)
-      .select("id");
+    // Conflict-tolerant insert. The DB function uses ON CONFLICT DO NOTHING so
+    // re-pushed punches are silently ignored at the database level (no 23505
+    // ERROR logged). Returns the new id, or null when the punch already existed.
+    const { data, error } = await supabase.rpc("phx_insert_attendance_raw_punch", {
+      p_device_id: punchRow.device_id,
+      p_device_user_id: punchRow.device_user_id,
+      p_employee_hr_id: employeeHrId,
+      p_punch_time: punchRow.punch_time,
+      p_punch_type: punchRow.punch_type,
+      p_verify_mode: punchRow.verify_mode,
+      p_raw_payload: punchRow.raw_payload ?? {},
+      p_source_run_id: punchRow.source_run_id,
+    });
 
     if (error) {
+      // Defensive: a unique violation should no longer surface here, but if the
+      // function is ever briefly unavailable, still treat it as a duplicate
+      // rather than a hard failure.
       if (error.code === "23505") {
         duplicate += 1;
         continue;
@@ -253,10 +259,10 @@ async function insertPunches(punches: ValidatedPunch[]) {
       continue;
     }
 
-    if ((data ?? []).length > 0) {
-      inserted += 1;
-    } else {
+    if (data == null) {
       duplicate += 1;
+    } else {
+      inserted += 1;
     }
   }
 
