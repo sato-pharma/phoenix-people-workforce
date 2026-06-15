@@ -1,0 +1,25 @@
+# Normalize line endings to LF in the repository for all text files.
+# This stops Windows checkouts from showing files as "modified" purely
+# because of CRLF/LF differences (core.autocrlf churn).
+* text=auto eol=lf
+
+# Windows-native scripts must keep CRLF on checkout.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Treat common binary assets as binary (never line-ending converted).
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.zip   binary
