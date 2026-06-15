@@ -27,7 +27,6 @@ const outputRoot = path.join("supabase-export", "staging-rebuild");
 const currentStagingRef = "oaifhavixhdtwmseshff";
 const productionRef = "ozucdzovmcqvepbozvqf";
 const executiveMigrationVersion = "20260602082351";
-const executiveMigrationFile = "20260602082351_executive_dashboard_snapshot.sql";
 const oldStagingArchiveConfirmName = "PHOENIX_CONFIRM_OLD_STAGING_ARCHIVE_ONLINE";
 const oldStagingArchiveConfirmValue = "YES_OLD_STAGING_REMAINS_ONLINE";
 

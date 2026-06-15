@@ -1824,7 +1824,7 @@ function recentCalendarMonthKeys(count: number): string[] {
  * was empty and every action errored with "Select a monthKey filter ..." — a chicken-and-egg
  * because you needed a month picked to Sync, but the list only came from already-synced data.
  */
-export async function listAvailableDeductionMonthKeys(input: {
+export async function listAvailableDeductionMonthKeys(_input: {
   access: AccessContext;
 }): Promise<{ defaultMonthKey: string | undefined; months: string[] }> {
   const supabase = getSupabaseAdmin();

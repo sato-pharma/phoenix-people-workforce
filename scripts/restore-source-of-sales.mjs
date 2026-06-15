@@ -139,7 +139,7 @@ let grandTotal = 0;
 try {
   for (const { table, file } of plan) {
     let rows = JSON.parse(readFileSync(file, "utf8"));
-    if (IDENTITY_ID.has(table)) rows = rows.map(({ id, ...rest }) => rest);
+    if (IDENTITY_ID.has(table)) rows = rows.map(({ id: _id, ...rest }) => rest);
     touched.push(table);
     let done = 0;
     for (let i = 0; i < rows.length; i += CHUNK) {

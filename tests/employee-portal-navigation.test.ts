@@ -103,7 +103,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");
   assert.equal(a3Account.showPlansTab, true, "A-3 should always see the Weekly / Monthly Plan tab");
   assert.equal(a3Account.showReportItTab, true, "A-3 should see Report It");
-  assert.equal(a3Account.showReportItDashboardTab, true, "A-3 should see Reports Dashboard");
+  assert.equal(a3Account.showReportItDashboardTab, false, "A-3 Reports Dashboard is merged into the single Report It tab (no separate dashboard tab needed)");
 
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
