@@ -176,7 +176,6 @@ export function ExpenseCommandDashboard({
           <div className={loading ? "space-y-5 opacity-60 transition-opacity" : "space-y-5 transition-opacity"}>
             <ExpenseHeatmapLayer
               browserKey={mapsBrowserKey}
-              onSelectRegion={(region) => updateFilters({ region })}
               points={heatPoints}
               unmappedAmount={unmappedAmount}
               unmappedCount={data.kpis.unmappableRows}
