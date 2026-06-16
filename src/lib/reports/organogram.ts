@@ -5,7 +5,11 @@ import {
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { applyOrganogramMirrorSafety } from "@/lib/reports/organogram-safety";
-import { getVacancyReport, type VacancyReportData } from "@/lib/reports/vacancies";
+import {
+  getVacancyReport,
+  type VacancyReportData,
+  type VacancyReportDiagnostic,
+} from "@/lib/reports/vacancies";
 
 export type OrganogramScopeMode = "company" | "line";
 
@@ -14,7 +18,10 @@ export type OrganogramReportOptions = {
   mode: OrganogramScopeMode;
 };
 
-const emptyReport = (): VacancyReportData => ({
+const emptyReport = (
+  diagnostic?: VacancyReportDiagnostic,
+): VacancyReportData => ({
+  ...(diagnostic ? { diagnostic } : {}),
   organogramRows: [],
   rows: [],
   summary: {
@@ -91,7 +98,11 @@ export function scopeOrganogramReportData(
   }
 
   if (!options.lineName) {
-    return emptyReport();
+    return emptyReport({
+      code: "line_unresolved",
+      message:
+        "We couldn't resolve your line scope. Ask HR to set your `line_name` on the employee record so the organogram can render your team.",
+    });
   }
 
   const scopedReport = {
@@ -131,11 +142,27 @@ export async function getOrganogramReport(
   options: OrganogramReportOptions = { mode: "company" },
 ): Promise<VacancyReportData> {
   if (options.mode === "company" && !canAccessCompanyOrganogram(access)) {
-    return emptyReport();
+    return emptyReport({
+      code: "company_scope_denied",
+      message:
+        "Your role does not have company-wide organogram access. This is enforced server-side; navigation visibility is not the security boundary.",
+    });
   }
 
-  if (options.mode === "line" && (!isLineScopedOrganogramRole(access) || !options.lineName)) {
-    return emptyReport();
+  if (options.mode === "line" && !isLineScopedOrganogramRole(access)) {
+    return emptyReport({
+      code: "line_scope_denied",
+      message:
+        "Your role is not configured for line-scoped organogram access. Contact HR governance if this looks wrong.",
+    });
+  }
+
+  if (options.mode === "line" && !options.lineName) {
+    return emptyReport({
+      code: "line_unresolved",
+      message:
+        "We couldn't resolve your line scope. Ask HR to set your `line_name` on the employee record so the organogram can render your team.",
+    });
   }
 
   const report = await getVacancyReport();

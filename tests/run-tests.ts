@@ -80,6 +80,7 @@ import { runMarketingRequestServiceTests } from "./marketing-request-service.tes
 import { runMarketingRoiTests } from "./marketing-roi.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
+import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
 import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts";
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
@@ -273,6 +274,7 @@ await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
+await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);

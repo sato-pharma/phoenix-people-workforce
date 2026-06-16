@@ -30,65 +30,132 @@ function sameHrId(left: string | null | undefined, right: string | null | undefi
 /**
  * Resolve the HR team that should be alerted when an employee opens a support
  * ticket: every Super Admin / HR Specialist account, plus any employee whose title
- * marks them as an HR Manager / Admin HR. Best-effort — a failed lookup returns an
- * empty list so a ticket is never blocked from being saved.
+ * marks them as an HR Manager / Admin HR.
+ *
+ * Throws on Supabase failure — callers must catch and fall back to
+ * resolveSuperAdminFallbackRecipients() so a transient error never silently drops
+ * the HR notification. This is the second half of the silent-fail audit fix
+ * (PR for resignations/support/organogram launch readiness).
  */
 async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
   const supabase = getSupabaseAdmin();
-  try {
-    const { data: authRows } = await supabase
-      .from("app_auth_users")
-      .select("login_id,hr_id,role,auth_email")
-      .in("role", ["HR Specialist", "Super Admin"]);
-    const { data: employees } = await supabase
-      .from("employees")
-      .select("hr_id,job_title,position_title,work_email");
+  const { data: authRows, error: authError } = await supabase
+    .from("app_auth_users")
+    .select("login_id,hr_id,role,auth_email")
+    .in("role", ["HR Specialist", "Super Admin"]);
+  if (authError) throw authError;
 
-    const employeeByHrId = new Map(
-      ((employees ?? []) as Array<{ hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }>)
-        .map((row) => [normalizeHrId(row.hr_id), row] as const)
-        .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
-    );
+  const { data: employees, error: employeesError } = await supabase
+    .from("employees")
+    .select("hr_id,job_title,position_title,work_email");
+  if (employeesError) throw employeesError;
 
-    const hrTitledIds = new Set(
-      Array.from(employeeByHrId.values())
-        .filter((row) => /HR Manager|Admin HR/i.test(`${row.job_title ?? ""} ${row.position_title ?? ""}`))
-        .map((row) => normalizeHrId(row.hr_id))
-        .filter((hrId): hrId is string => Boolean(hrId)),
-    );
+  const employeeByHrId = new Map(
+    ((employees ?? []) as Array<{ hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }>)
+      .map((row) => [normalizeHrId(row.hr_id), row] as const)
+      .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
+  );
 
-    const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null; role?: string | null }>)
-      .map((row) => {
-        const employee = employeeByHrId.get(normalizeHrId(row.hr_id) ?? "");
-        return {
-          email: pickDeliverableEmail(employee?.work_email, row.auth_email),
-          hrId: row.hr_id ?? null,
-          userId: row.login_id ?? null,
-        };
-      });
-    for (const hrId of hrTitledIds) {
-      if (!recipients.some((recipient) => sameHrId(recipient.hrId, hrId))) {
-        recipients.push({ email: pickDeliverableEmail(employeeByHrId.get(hrId)?.work_email), hrId, userId: null });
-      }
+  const hrTitledIds = new Set(
+    Array.from(employeeByHrId.values())
+      .filter((row) => /HR Manager|Admin HR/i.test(`${row.job_title ?? ""} ${row.position_title ?? ""}`))
+      .map((row) => normalizeHrId(row.hr_id))
+      .filter((hrId): hrId is string => Boolean(hrId)),
+  );
+
+  const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null; role?: string | null }>)
+    .map((row) => {
+      const employee = employeeByHrId.get(normalizeHrId(row.hr_id) ?? "");
+      return {
+        email: pickDeliverableEmail(employee?.work_email, row.auth_email),
+        hrId: row.hr_id ?? null,
+        userId: row.login_id ?? null,
+      };
+    });
+  for (const hrId of hrTitledIds) {
+    if (!recipients.some((recipient) => sameHrId(recipient.hrId, hrId))) {
+      recipients.push({ email: pickDeliverableEmail(employeeByHrId.get(hrId)?.work_email), hrId, userId: null });
     }
-    return recipients;
-  } catch (error) {
-    console.error("Failed to resolve HR support recipients", error);
-    return [];
   }
+  return recipients;
 }
 
 /**
- * Alert the HR team (in-app + email + Telegram) that a new support ticket was opened.
- * Best-effort and fully isolated: any failure here must never prevent the ticket from
- * being persisted or surface as an error to the submitting employee.
+ * Tighter, more-reliable fallback used when the primary HR lookup throws or
+ * resolves to zero deliverable recipients. Targets only active Super Admin
+ * accounts so HR-Manager B-10 (Omar Anwar Gawish, per the hr-approval-authority
+ * memory) is always reached. Re-throws so the caller can record the failure.
  */
-async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<void> {
-  try {
-    const recipients = (await resolveHrSupportRecipients())
-      .filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
-    if (recipients.length === 0) return;
+async function resolveSuperAdminFallbackRecipients(): Promise<HrRecipient[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("app_auth_users")
+    .select("login_id,hr_id,auth_email,is_active")
+    .eq("role", "Super Admin")
+    .eq("is_active", true);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null }>).map((row) => ({
+    email: pickDeliverableEmail(row.auth_email),
+    hrId: row.hr_id ?? null,
+    userId: row.login_id ?? null,
+  }));
+}
 
+export type SupportNotificationStatus = {
+  errored: boolean;
+  fellBackToSuperAdmin: boolean;
+  recipientCount: number;
+};
+
+/**
+ * Alert the HR team (in-app + email + Telegram) that a new support ticket was opened.
+ * Best-effort for the ticket persistence path: any failure here must never prevent
+ * the ticket from being saved. Returns a structured delivery status so the API
+ * surface can render a "ticket saved but HR notification failed" banner instead
+ * of silently dropping the alert (pre-launch silent-fail audit fix).
+ */
+async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<SupportNotificationStatus> {
+  let recipients: HrRecipient[] = [];
+  let fellBackToSuperAdmin = false;
+  let errored = false;
+
+  try {
+    recipients = await resolveHrSupportRecipients();
+  } catch (error) {
+    errored = true;
+    console.error(
+      `[support-requests] primary HR recipient lookup failed for ticket ${request.id} (hr ${request.hrId})`,
+      error,
+    );
+  }
+
+  recipients = recipients.filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
+
+  if (recipients.length === 0) {
+    try {
+      const fallback = await resolveSuperAdminFallbackRecipients();
+      const filtered = fallback.filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
+      if (filtered.length > 0) {
+        recipients = filtered;
+        fellBackToSuperAdmin = true;
+      }
+    } catch (fallbackError) {
+      errored = true;
+      console.error(
+        `[support-requests] Super Admin fallback lookup failed for ticket ${request.id} (hr ${request.hrId})`,
+        fallbackError,
+      );
+    }
+  }
+
+  if (recipients.length === 0) {
+    console.error(
+      `[support-requests] ticket ${request.id} (hr ${request.hrId}) persisted but no HR recipient was resolved — manual follow-up required`,
+    );
+    return { errored, fellBackToSuperAdmin, recipientCount: 0 };
+  }
+
+  try {
     const subcategory = request.subcategory ? ` / ${request.subcategory}` : "";
     const title = `New HR support request: ${request.subject}`;
     const message = `${request.employeeName} (${request.hrId}) opened a support request — ${request.category}${subcategory}.`;
@@ -136,8 +203,13 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<voi
         }),
       ),
     );
+    return { errored, fellBackToSuperAdmin, recipientCount: recipients.length };
   } catch (error) {
-    console.error("Failed to notify HR of support request", error);
+    console.error(
+      `[support-requests] failed to fan out HR notification for ticket ${request.id} (hr ${request.hrId})`,
+      error,
+    );
+    return { errored: true, fellBackToSuperAdmin, recipientCount: recipients.length };
   }
 }
 
@@ -308,14 +380,25 @@ export async function updateSupportRequestStatus(
   return rowToView(data as Record<string, unknown>);
 }
 
+export type CreateSupportRequestResult = {
+  notification: SupportNotificationStatus;
+  row: SupportRequestRow;
+};
+
 /**
  * Create a new support request. The hr_id is taken from the access context
  * (NOT the request body) so users cannot impersonate other employees.
+ *
+ * Returns the saved ticket plus an HR-notification delivery status. Callers
+ * (the API route, then the submit page) use the notification block to render a
+ * "saved but HR not alerted" diagnostic instead of silently dropping the alert
+ * when the recipient lookup fails. The ticket itself is always persisted before
+ * the HR fan-out runs.
  */
 export async function createSupportRequest(
   access: AccessContext,
   input: CreateSupportRequestInput,
-): Promise<SupportRequestRow> {
+): Promise<CreateSupportRequestResult> {
   const hrId = normalizeHrId(access.hrId) ?? normalizeHrId(input.hrId);
   if (!hrId) {
     throw new Error("HR ID is required to open a support request.");
@@ -357,7 +440,9 @@ export async function createSupportRequest(
   }
 
   const created = rowToView(data as Record<string, unknown>);
-  // Best-effort: alert the HR team. Never let a notification failure break ticket creation.
-  await notifyHrOfSupportRequest(created);
-  return created;
+  // Persist first, then alert HR best-effort. The notification status bubbles up so
+  // the UI can warn the submitter if HR was never reached, instead of silently
+  // dropping the alert.
+  const notification = await notifyHrOfSupportRequest(created);
+  return { notification, row: created };
 }
