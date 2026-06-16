@@ -62,7 +62,8 @@ export async function DELETE(
     const id = Number(rawId);
     if (!Number.isInteger(id) || id <= 0) throw validationError("Invalid exception id.");
 
-    await deleteAttendanceException(id);
+    const reviewedBy = access.hrId ?? access.loginId ?? "system";
+    await deleteAttendanceException(id, reviewedBy);
     return NextResponse.json({ success: true });
   } catch (error) {
     return apiResponse(error, "Attendance exception deletion failed.");

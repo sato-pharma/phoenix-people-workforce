@@ -1,3 +1,4 @@
+import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { getFingerprintAttendanceReport, type FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
@@ -102,11 +103,12 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
 
   const roster = await getAttendanceRoster({ dateFromIso: dateFrom, dateToIso: dateTo });
 
-  const [report, context, leaveMap, policyRows] = await Promise.all([
+  const [report, context, leaveMap, policyRows, exceptionMap] = await Promise.all([
     getFingerprintAttendanceReport({ dateFrom, dateTo }),
     buildAttendanceCalendarContext({ dateFromIso: dateFrom, dateToIso: dateTo }),
     getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: roster.map((entry) => entry.hrId) }),
     loadAttendancePolicyGroups({ activeOnly: true }),
+    getAttendanceExceptionMap(roster.map((entry) => entry.hrId), dateFrom, dateTo),
   ]);
 
   // hrId -> dateIso -> engine row (engine rows only exist for days with punches).
@@ -151,12 +153,21 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
         continue;
       }
 
+      // An approved exception (e.g. field visit / off-site mission) excuses the
+      // whole day — whether or not the employee punched. It is neither expected,
+      // present, nor absent. Without this, a no-punch day with an approved
+      // exception was wrongly counted as an absence (the exceptions feature exists
+      // precisely to cover these no-punch days).
+      if (exceptionMap.get(`${hrId}|${dateIso}`)?.status === "approved") {
+        exceptionDays += 1;
+        continue;
+      }
+
       expectedWorkingDays += 1;
       const row = byDate.get(dateIso);
       if (!row) continue;
 
       presentDays += 1;
-      if (row.hasException) exceptionDays += 1;
       if (row.status === "Late") lateCount += 1;
       if (row.status === "Early leave") earlyLeaveCount += 1;
       if (row.status === "Single punch") singlePunchCount += 1;

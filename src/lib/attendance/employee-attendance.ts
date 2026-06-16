@@ -64,7 +64,7 @@ export async function getEmployeeAttendanceData(
   dateTo: string,
 ): Promise<EmployeeAttendanceData> {
   const [reportData, disputesData, confirmedDates] = await Promise.all([
-    getFingerprintAttendanceReport({ dateFrom, dateTo, employeeHrId: hrId }),
+    getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: hrId }),
     getAttendanceExceptions({ dateFrom, dateTo, employeeHrId: hrId, status: "pending" }),
     getHrConfirmedDeductionDates(hrId),
   ]);

@@ -67,12 +67,18 @@ export type FingerprintReportData = {
     deduction: string;
     department: string;
     deviceUserId: string;
+    // Substring match — for admin free-text search only.
     employeeHrId: string;
+    // Exact, normalized match — used to lock a report to a single employee
+    // (e.g. the self-service portal). Never use the substring filter for scoping.
+    exactEmployeeHrId: string;
     employeeName: string;
     jobTitle: string;
     search: string;
     status: string;
   };
+  // True when the punch query was capped and rows may be incomplete.
+  truncated: boolean;
   hasDateRange: boolean;
   policyDetails: FingerprintPolicyDetailRow[];
   rows: FingerprintReportRow[];
@@ -264,6 +270,12 @@ function contains(value: string, filter: string) {
 }
 
 function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["filters"]) {
+  // Exact-match scoping (self-service portal): lock to a single employee. This
+  // must be an exact normalized comparison, never a substring, or one employee's
+  // HR_ID (e.g. "B-1") would leak every superset ID ("B-10", "B-100", ...).
+  if (filters.exactEmployeeHrId && normalizeHrId(row.employeeHrId) !== filters.exactEmployeeHrId) {
+    return false;
+  }
   const search = filters.search;
   if (
     !contains(row.deviceUserId, filters.deviceUserId) ||
@@ -294,6 +306,11 @@ function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["
 }
 
 function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: FingerprintReportData["filters"]) {
+  // Same exact-match scoping as rows — keeps the Policy Details export sheet from
+  // leaking other employees when a report is locked to one person.
+  if (filters.exactEmployeeHrId && normalizeHrId(row.employeeHrId) !== filters.exactEmployeeHrId) {
+    return false;
+  }
   if (
     !contains(row.employeeHrId, filters.employeeHrId) ||
     !contains(row.employeeName, filters.employeeName) ||
@@ -317,6 +334,8 @@ function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: Fingerp
   ].join(" ").toLowerCase().includes(filters.search.toLowerCase());
 }
 
+const PUNCH_QUERY_LIMIT = 20000;
+
 export async function getFingerprintAttendanceReport(input: {
   dateFrom?: string;
   dateTo?: string;
@@ -324,6 +343,7 @@ export async function getFingerprintAttendanceReport(input: {
   department?: string;
   deviceUserId?: string;
   employeeHrId?: string;
+  exactEmployeeHrId?: string;
   employeeName?: string;
   jobTitle?: string;
   search?: string;
@@ -339,6 +359,7 @@ export async function getFingerprintAttendanceReport(input: {
     department: String(input.department ?? "").trim(),
     deviceUserId: String(input.deviceUserId ?? "").trim(),
     employeeHrId: String(input.employeeHrId ?? "").trim(),
+    exactEmployeeHrId: normalizeHrId(input.exactEmployeeHrId) ?? "",
     employeeName: String(input.employeeName ?? "").trim(),
     jobTitle: String(input.jobTitle ?? "").trim(),
     search: String(input.search ?? "").trim(),
@@ -430,21 +451,43 @@ export async function getFingerprintAttendanceReport(input: {
         shortDays: 0,
         singlePunches: 0,
       },
+      truncated: false,
     };
   }
 
-  const { data: punchData, error: punchError } = await supabase
-    .from("attendance_raw_punches")
-    .select("device_user_id,employee_hr_id,punch_time")
-    .not("employee_hr_id", "is", null)
-    .gte("punch_time", utcBoundaryForLocalDate(dateFrom))
-    .lt("punch_time", utcBoundaryForLocalDate(dateTo, 1))
-    .order("punch_time", { ascending: true })
-    .limit(20000);
+  // Page through punches so a busy month is never silently cut off at the cap.
+  // When the report is locked to one employee we also scope the query to them —
+  // a hard data-layer boundary that removes any cross-employee truncation risk.
+  const punches: RawPunchRow[] = [];
+  let truncated = false;
+  let pageOffset = 0;
+  // Safety ceiling so a runaway range can't loop forever; surfaced as `truncated`.
+  const MAX_PUNCHES = 200000;
+  while (true) {
+    let punchQuery = supabase
+      .from("attendance_raw_punches")
+      .select("device_user_id,employee_hr_id,punch_time")
+      .not("employee_hr_id", "is", null)
+      .gte("punch_time", utcBoundaryForLocalDate(dateFrom))
+      .lt("punch_time", utcBoundaryForLocalDate(dateTo, 1));
+    if (filters.exactEmployeeHrId) {
+      punchQuery = punchQuery.eq("employee_hr_id", filters.exactEmployeeHrId);
+    }
+    const { data: punchPage, error: punchError } = await punchQuery
+      .order("punch_time", { ascending: true })
+      .range(pageOffset, pageOffset + PUNCH_QUERY_LIMIT - 1);
 
-  if (punchError) throw punchError;
+    if (punchError) throw punchError;
 
-  const punches = (punchData ?? []) as RawPunchRow[];
+    const page = (punchPage ?? []) as RawPunchRow[];
+    punches.push(...page);
+    if (page.length < PUNCH_QUERY_LIMIT) break;
+    pageOffset += PUNCH_QUERY_LIMIT;
+    if (punches.length >= MAX_PUNCHES) {
+      truncated = true;
+      break;
+    }
+  }
   const employeeHrIds = Array.from(new Set(punches.map((row) => normalizeHrId(row.employee_hr_id)).filter((value): value is string => Boolean(value))));
   const employeeMap = new Map<string, EmployeeRow>();
 
@@ -548,5 +591,6 @@ export async function getFingerprintAttendanceReport(input: {
     policyDetails,
     rows,
     summary: summarizeFingerprintRows(rows),
+    truncated,
   };
 }

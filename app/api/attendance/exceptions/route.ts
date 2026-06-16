@@ -19,6 +19,13 @@ function apiResponse(error: unknown, fallback: string) {
   return NextResponse.json({ error: apiError.code, message: apiError.message }, { status: apiError.status });
 }
 
+// Company/system-scoped callers (admins, HR) may read/write any employee's
+// exceptions. Everyone else is locked to their own record — otherwise any
+// employee with attendance:read could read or dispute a colleague's attendance.
+function isPrivilegedScope(scope: string) {
+  return scope === "company" || scope === "system";
+}
+
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -26,9 +33,16 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const status = url.searchParams.get("status") ?? undefined;
-    const employeeHrId = url.searchParams.get("employeeHrId") ?? undefined;
+    const requestedHrId = url.searchParams.get("employeeHrId") ?? undefined;
     const dateFrom = url.searchParams.get("dateFrom") ?? undefined;
     const dateTo = url.searchParams.get("dateTo") ?? undefined;
+
+    // Non-privileged callers can only ever see their own exceptions.
+    let employeeHrId = requestedHrId;
+    if (!isPrivilegedScope(access.scope)) {
+      if (!access.hrId) throw validationError("No HR ID on session.");
+      employeeHrId = access.hrId;
+    }
 
     return NextResponse.json(
       await getAttendanceExceptions({
@@ -52,20 +66,33 @@ export async function POST(request: Request) {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw validationError("Exception payload must be an object.");
     }
-    const { employeeHrId, exceptionDate, reason, notes, status } = payload as Record<string, unknown>;
-    if (!employeeHrId || typeof employeeHrId !== "string") throw validationError("employeeHrId is required.");
+    const { employeeHrId, exceptionDate, reason, notes } = payload as Record<string, unknown>;
     if (!exceptionDate || typeof exceptionDate !== "string") throw validationError("exceptionDate is required.");
     if (!reason || typeof reason !== "string" || !reason.trim()) throw validationError("reason is required.");
 
+    // Non-privileged callers can only file a dispute against their own record;
+    // privileged callers (admins/HR) may file on behalf of any employee.
+    let targetHrId: string;
+    if (isPrivilegedScope(access.scope)) {
+      if (!employeeHrId || typeof employeeHrId !== "string") throw validationError("employeeHrId is required.");
+      targetHrId = employeeHrId;
+    } else {
+      if (!access.hrId) throw validationError("No HR ID on session.");
+      targetHrId = access.hrId;
+    }
+
     const requestedBy = access.hrId ?? access.loginId ?? "system";
 
+    // Creating an exception always starts as a dispute (pending). Approval is a
+    // separate, permission-gated review step (PATCH /attendance/exceptions/:id)
+    // — never let a create call self-approve.
     const result = await saveAttendanceException({
-      employeeHrId,
+      employeeHrId: targetHrId,
       exceptionDate,
       notes: typeof notes === "string" ? notes : null,
       reason,
       requestedBy,
-      status: (status === "approved" || status === "pending" || status === "rejected") ? status : "pending",
+      status: "pending",
     });
     return NextResponse.json(result);
   } catch (error) {
