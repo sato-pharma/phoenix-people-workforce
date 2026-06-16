@@ -180,6 +180,24 @@ export async function refreshAppSessionIdle(input: {
   };
 }
 
+export async function updateAppSessionVersion(
+  sessionId: string,
+  newVersion: number,
+): Promise<{ absoluteExpiresAt: string | null; updated: boolean }> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_sessions")
+    .update({ session_version: newVersion })
+    .eq("id", sessionId)
+    .is("revoked_at", null)
+    .select("absolute_expires_at")
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const row = data as { absolute_expires_at: string } | null;
+  return { absoluteExpiresAt: row?.absolute_expires_at ?? null, updated: row !== null };
+}
+
 export async function revokeAppSession(sessionId: string | null | undefined, reason: string) {
   const normalizedSessionId = String(sessionId ?? "").trim();
   if (!normalizedSessionId) return;
