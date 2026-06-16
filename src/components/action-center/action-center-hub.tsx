@@ -795,16 +795,19 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex flex-col overflow-hidden -mx-3 -my-4 sm:-mx-4 sm:-my-5 lg:-mx-6 lg:-my-6 xl:-mx-8"
+      style={{ height: "calc(100dvh - 5rem)", minHeight: "400px" }}
+    >
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
 
       {/* Page header */}
-      <div className="border-b border-slate-200 bg-slate-900 px-4 py-3 sm:px-6">
+      <div className="shrink-0 border-b border-slate-800 bg-slate-900 px-4 py-3 sm:px-6">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400">Phoenix Workforce</p>
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-lg font-black text-white">Action Center</h1>
+          <h1 className="text-xl font-black text-white">Action Center</h1>
           {allItems.length > 0 && (
-            <span className="rounded-full bg-orange-500 px-2.5 py-0.5 text-xs font-black text-white">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-xs font-black text-white">
               {allItems.length}
             </span>
           )}
@@ -813,15 +816,17 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       </div>
 
       {allItems.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-2xl">✓</div>
-          <p className="text-lg font-black text-slate-900">All clear</p>
-          <p className="max-w-xs text-sm text-slate-500">No pending approvals or reviews. Check back when new requests come in.</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 ring-4 ring-emerald-100 text-3xl">✓</div>
+          <div>
+            <p className="text-lg font-black text-slate-900">All clear</p>
+            <p className="mt-1 max-w-xs text-sm text-slate-500">No pending approvals or reviews. You're on top of everything.</p>
+          </div>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
           {/* Left rail */}
-          <div className="flex w-full flex-col border-b border-slate-200 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r">
+          <div className="flex w-full flex-col border-b border-slate-200 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r max-h-[45vh] lg:max-h-none">
             {/* Super-admin view-as switcher */}
             {canViewAs && managers && managers.length > 0 && (
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
@@ -850,22 +855,23 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             )}
 
             {/* Stats bar */}
-            <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px]">
+            <div className="flex shrink-0 items-center gap-5 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px]">
               <span className="text-slate-500">
                 <span className="font-black text-slate-800">{stats.total}</span> pending
               </span>
               {stats.overdue > 0 && (
-                <span className="text-slate-500">
+                <span className="flex items-center gap-1 text-slate-500">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
                   <span className="font-black text-rose-700">{stats.overdue}</span> overdue
                 </span>
               )}
-              <span className="text-slate-500">
-                Avg <span className="font-black text-slate-800">{stats.avgAge}</span>d
+              <span className="text-slate-400">
+                avg <span className="font-black text-slate-700">{stats.avgAge}d</span>
               </span>
             </div>
 
             {/* Module filter tabs */}
-            <div className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 p-2">
+            <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
               {modules.map((mod) => {
                 const count = moduleCounts[mod] ?? 0;
                 if (mod !== "all" && count === 0) return null;
@@ -879,14 +885,16 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       const firstInModule = allItems.find((item) => mod === "all" || item.module === mod);
                       if (firstInModule) selectItem(firstInModule);
                     }}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                    className={`flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-bold transition-all ${
                       activeModule === mod
-                        ? "bg-orange-500 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-slate-200"
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-200 hover:text-slate-800"
                     }`}
                   >
                     {mod === "all" ? "All" : ACTION_HUB_MODULE_LABELS[mod as ActionHubModule]}
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${activeModule === mod ? "bg-orange-600 text-orange-100" : "bg-slate-200 text-slate-700"}`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+                      activeModule === mod ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
+                    }`}>
                       {count}
                     </span>
                   </button>
@@ -895,7 +903,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             </div>
 
             {/* Quick filter chips */}
-            <div className="flex items-center gap-1.5 border-b border-slate-100 bg-white px-3 py-2">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-slate-100 bg-white px-3 py-2">
               {(["all", "overdue", "high"] as const).map((f) => {
                 const chipCount = f === "all" ? filteredByModule.length : f === "overdue" ? overdueTotalCount : highPriorityCount;
                 if (f !== "all" && chipCount === 0) return null;
@@ -903,7 +911,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   <button
                     key={f}
                     onClick={() => setActiveFilter(f)}
-                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold transition-colors ${
+                    className={`rounded border px-2.5 py-0.5 text-[11px] font-bold transition-colors ${
                       activeFilter === f
                         ? f === "overdue"
                           ? "border-rose-400 bg-rose-100 text-rose-800"
@@ -927,15 +935,18 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 <ul className="divide-y divide-slate-100">
                   {filteredItems.map((item) => {
                     const canBulk = isBulkModule(item.module);
+                    const isSelected = selectedId === item.id;
                     return (
-                      <li key={item.id}>
+                      <li key={item.id} className="group">
                         <button
                           onClick={() => selectItem(item)}
                           className={`w-full px-4 py-3 text-left transition-colors hover:bg-orange-50 ${
-                            selectedId === item.id ? "border-l-2 border-orange-500 bg-orange-50" : "border-l-2 border-transparent"
+                            isSelected
+                              ? "border-l-[3px] border-orange-500 bg-orange-50/70 pl-[13px]"
+                              : "border-l-[3px] border-transparent"
                           }`}
                         >
-                          <div className="mb-1.5 flex items-center gap-1.5">
+                          <div className="mb-1.5 flex flex-wrap items-center gap-1">
                             <ModuleBadge module={item.module} />
                             <UrgencyBadge urgency={item.urgency} />
                             <SlaBadge item={item} />
@@ -957,8 +968,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center justify-between gap-1">
-                            <p className="text-sm font-bold text-slate-900">{item.employeeName}</p>
+                          <div className="flex items-start justify-between gap-1">
+                            <p className={`text-sm font-bold leading-snug ${isSelected ? "text-slate-900" : "text-slate-800"}`}>
+                              {item.employeeName}
+                            </p>
                             <button
                               onClick={(e) => { e.stopPropagation(); snoozeAndUpdate(item.id); }}
                               title="Snooze for 24h"
@@ -968,8 +981,8 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               ⏱
                             </button>
                           </div>
-                          <p className="text-xs text-slate-600">{item.title}</p>
-                          <p className="mt-1 text-[11px] text-slate-400">
+                          <p className="text-xs text-slate-500">{item.title}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
                             {item.employeeHrId} · {item.statusLabel}
                           </p>
                         </button>
@@ -1014,293 +1027,249 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
           </div>
 
           {/* Right detail panel */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
             {!selected ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-                <p className="text-sm text-slate-400">Select an item from the list to review it.</p>
-                <p className="text-xs text-slate-300">Tip: press j / k to navigate, ? for keyboard shortcuts</p>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-300 text-2xl">→</div>
+                <p className="text-sm font-semibold text-slate-400">Select an item to review it</p>
+                <p className="text-xs text-slate-300">press j / k to navigate · ? for shortcuts</p>
               </div>
             ) : (
-              <div className="p-5 sm:p-7">
-                {/* Item header */}
-                <div className="mb-5">
-                  <div className="mb-2 flex items-center gap-2">
+              <div>
+                {/* Detail header — dark band */}
+                <div className="border-b border-slate-200 bg-slate-900 px-5 py-4 sm:px-7">
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
                     <ModuleBadge module={selected.module} />
                     <UrgencyBadge urgency={selected.urgency} />
+                    <SlaBadge item={selected} />
                   </div>
-                  <h2 className="text-xl font-black text-slate-900">{selected.employeeName}</h2>
-                  <p className="text-sm text-slate-500">{selected.employeeHrId} · {selected.title}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Status: <span className="font-semibold text-slate-600">{selected.statusLabel}</span>
-                    {" · "}Submitted {new Date(selected.submittedAt).toLocaleDateString("en", { day: "2-digit", month: "short", year: "numeric" })}
-                  </p>
-                  {priorLeaveHint && priorLeaveHint.length > 0 && (
-                    <p className="mt-1.5 text-[11px] text-slate-400">
-                      Prior decisions:{" "}
-                      {priorLeaveHint.map((d, i) => (
-                        <span key={i} className={d === "approved" ? "font-bold text-emerald-600" : d === "rejected" ? "font-bold text-rose-600" : "text-slate-400"}>
-                          {d === "approved" ? "✓" : d === "rejected" ? "✗" : "–"}{" "}
-                        </span>
-                      ))}
-                    </p>
+                  <h2 className="text-lg font-black text-white">{selected.employeeName}</h2>
+                  <p className="text-sm text-slate-400">{selected.employeeHrId} · {selected.title}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                    <span>Status: <span className="font-semibold text-slate-300">{selected.statusLabel}</span></span>
+                    <span>Submitted {new Date(selected.submittedAt).toLocaleDateString("en", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                    {priorLeaveHint && priorLeaveHint.length > 0 && (
+                      <span>
+                        Prior:{" "}
+                        {priorLeaveHint.map((d, i) => (
+                          <span key={i} className={d === "approved" ? "font-bold text-emerald-400" : d === "rejected" ? "font-bold text-rose-400" : "text-slate-500"}>
+                            {d === "approved" ? "✓" : d === "rejected" ? "✗" : "–"}{" "}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-5 sm:p-7">
+                  {/* Details | Context tabs */}
+                  <div className="mb-5 flex gap-1 border-b border-slate-200">
+                    {(["details", "context"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setDetailTab(tab)}
+                        className={`pb-2 px-1 text-xs font-bold transition-colors ${
+                          detailTab === tab
+                            ? "border-b-2 border-orange-500 text-orange-600"
+                            : "text-slate-400 hover:text-slate-600"
+                        }`}
+                      >
+                        {tab === "details" ? "Details" : "Employee Context"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {detailTab === "context" ? (
+                    <div className="mb-6 rounded border border-slate-200 bg-slate-50 p-4">
+                      <EmployeeContextPanel data={contextData} loading={contextLoading} />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Module-specific detail */}
+                      <div className="mb-6 rounded border border-slate-200 bg-slate-50 p-4">
+                        {selected.detail.module === "leave" && <LeaveDetailView detail={selected.detail} />}
+                        {selected.detail.module === "resignation" && <ResignationDetailView detail={selected.detail} />}
+                        {selected.detail.module === "excuse" && <ExcuseDetailView detail={selected.detail} />}
+                        {selected.detail.module === "outstation" && <OutstationDetailView detail={selected.detail} />}
+                        {selected.detail.module === "marketing" && <MarketingDetailView detail={selected.detail} />}
+                        {selected.detail.module === "contract_renewal" && <ContractRenewalDetailView detail={selected.detail} />}
+                      </div>
+
+                      {/* Action zone */}
+                      <div className="rounded border border-slate-200 bg-slate-50 p-4">
+                        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Decision</p>
+                        {notice ? (
+                          <div className="rounded border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                            {notice}
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {/* Template rejection reasons */}
+                            {REJECTION_TEMPLATES[selected.module].length > 0 && (
+                              <select
+                                defaultValue=""
+                                disabled={busy}
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    setComment(e.target.value);
+                                    e.target.value = "";
+                                  }
+                                }}
+                                className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:border-orange-300 focus:outline-none disabled:opacity-50"
+                              >
+                                <option value="">— Select a template reason —</option>
+                                {REJECTION_TEMPLATES[selected.module].map((t) => (
+                                  <option key={t.label} value={t.text}>
+                                    {t.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            <textarea
+                              ref={textareaRef}
+                              value={comment}
+                              onChange={(e) => setComment(e.target.value)}
+                              placeholder="Add a comment or rejection reason…"
+                              rows={3}
+                              disabled={busy}
+                              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
+                            />
+
+                            {error && (
+                              <p className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+                                {error}
+                              </p>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {selected.module === "leave" && selected.detail.module === "leave" && (() => {
+                                const actions = resolveLeaveActions(selected.detail);
+                                return actions.length > 0
+                                  ? actions.map((action) => (
+                                    <button
+                                      key={action.key}
+                                      disabled={busy}
+                                      onClick={() => handleLeaveAction(action.key)}
+                                      className={`rounded px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
+                                        action.variant === "approve"
+                                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                          : action.variant === "reject"
+                                            ? "bg-rose-600 text-white hover:bg-rose-700"
+                                            : "bg-slate-700 text-white hover:bg-slate-800"
+                                      }`}
+                                    >
+                                      {busy ? "…" : action.label}
+                                    </button>
+                                  ))
+                                  : <p className="text-sm text-slate-400">No actions available for you on this request.</p>;
+                              })()}
+
+                              {selected.module === "resignation" && (() => {
+                                const actions = resolveResignationActions(selected.statusLabel.replace(/ /g, "_"));
+                                return actions.length > 0
+                                  ? actions.map((action) => (
+                                    <button
+                                      key={action.key}
+                                      disabled={busy}
+                                      onClick={() => handleResignationAction(action.key)}
+                                      className={`rounded px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
+                                        action.variant === "approve"
+                                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                          : action.variant === "reject"
+                                            ? "bg-rose-600 text-white hover:bg-rose-700"
+                                            : "bg-amber-500 text-white hover:bg-amber-600"
+                                      }`}
+                                    >
+                                      {busy ? "…" : action.label}
+                                    </button>
+                                  ))
+                                  : <p className="text-sm text-slate-400">No workflow actions available.</p>;
+                              })()}
+
+                              {selected.module === "excuse" && (
+                                <>
+                                  <button disabled={busy} onClick={() => handleExcuseAction("approve")}
+                                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                    {busy ? "…" : "Approve"}
+                                  </button>
+                                  <button disabled={busy} onClick={() => handleExcuseAction("reject")}
+                                    className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+                                    {busy ? "…" : "Reject"}
+                                  </button>
+                                </>
+                              )}
+
+                              {selected.module === "outstation" && (
+                                <>
+                                  <button disabled={busy} onClick={() => handleOutstationAction("approve")}
+                                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                    {busy ? "…" : "Approve for Payroll"}
+                                  </button>
+                                  <button disabled={busy} onClick={() => handleOutstationAction("reject")}
+                                    className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+                                    {busy ? "…" : "Reject"}
+                                  </button>
+                                </>
+                              )}
+
+                              {selected.module === "marketing" && selected.detail.module === "marketing" && (() => {
+                                const labels = selected.detail.decisionLabels;
+                                return (
+                                  <>
+                                    <button disabled={busy} onClick={() => handleMarketingAction("approve")}
+                                      className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                      {busy ? "…" : (labels?.approve ?? "Approve")}
+                                    </button>
+                                    {labels?.return && (
+                                      <button disabled={busy} onClick={() => handleMarketingAction("return")}
+                                        className="rounded bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50">
+                                        {busy ? "…" : labels.return}
+                                      </button>
+                                    )}
+                                    <button disabled={busy} onClick={() => handleMarketingAction("reject")}
+                                      className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+                                      {busy ? "…" : (labels?.reject ?? "Reject")}
+                                    </button>
+                                  </>
+                                );
+                              })()}
+
+                              {selected.module === "contract_renewal" && selected.detail.module === "contract_renewal" && (() => {
+                                const status = selected.detail.currentStatus;
+                                return (
+                                  <>
+                                    {status === "requested" && (
+                                      <button disabled={busy} onClick={() => handleContractRenewalAction("manager_review")}
+                                        className="rounded bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50">
+                                        {busy ? "…" : "Mark Under Review"}
+                                      </button>
+                                    )}
+                                    {status === "manager_review" && (
+                                      <button disabled={busy} onClick={() => handleContractRenewalAction("hr_review")}
+                                        className="rounded bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50">
+                                        {busy ? "…" : "Send to HR Review"}
+                                      </button>
+                                    )}
+                                    <button disabled={busy} onClick={() => handleContractRenewalAction("renew")}
+                                      className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                      {busy ? "…" : "Renew Contract"}
+                                    </button>
+                                    <button disabled={busy} onClick={() => handleContractRenewalAction("not_renew")}
+                                      className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+                                      {busy ? "…" : "Do Not Renew"}
+                                    </button>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
-
-                {/* Details | Context tabs */}
-                <div className="mb-4 flex gap-1 border-b border-slate-200">
-                  {(["details", "context"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setDetailTab(tab)}
-                      className={`pb-2 px-1 text-xs font-bold transition-colors ${
-                        detailTab === tab
-                          ? "border-b-2 border-orange-500 text-orange-600"
-                          : "text-slate-400 hover:text-slate-600"
-                      }`}
-                    >
-                      {tab === "details" ? "Details" : "Employee Context"}
-                    </button>
-                  ))}
-                </div>
-
-                {detailTab === "context" ? (
-                  <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <EmployeeContextPanel data={contextData} loading={contextLoading} />
-                  </div>
-                ) : (
-                  <>
-                    {/* Module-specific detail */}
-                    <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      {selected.detail.module === "leave" && <LeaveDetailView detail={selected.detail} />}
-                      {selected.detail.module === "resignation" && <ResignationDetailView detail={selected.detail} />}
-                      {selected.detail.module === "excuse" && <ExcuseDetailView detail={selected.detail} />}
-                      {selected.detail.module === "outstation" && <OutstationDetailView detail={selected.detail} />}
-                      {selected.detail.module === "marketing" && <MarketingDetailView detail={selected.detail} />}
-                      {selected.detail.module === "contract_renewal" && <ContractRenewalDetailView detail={selected.detail} />}
-                    </div>
-
-                    <hr className="mb-6 border-slate-200" />
-
-                    {/* Action zone */}
-                    {notice ? (
-                      <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-                        {notice}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* Template rejection reasons */}
-                        {REJECTION_TEMPLATES[selected.module].length > 0 && (
-                          <div>
-                            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                              Quick templates
-                            </label>
-                            <select
-                              defaultValue=""
-                              disabled={busy}
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  setComment(e.target.value);
-                                  e.target.value = "";
-                                }
-                              }}
-                              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 focus:border-orange-300 focus:outline-none disabled:opacity-50"
-                            >
-                              <option value="">— Select a template reason —</option>
-                              {REJECTION_TEMPLATES[selected.module].map((t) => (
-                                <option key={t.label} value={t.text}>
-                                  {t.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <div>
-                          <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-600">
-                            Comment / reason
-                          </label>
-                          <textarea
-                            ref={textareaRef}
-                            value={comment}
-                            onChange={(e) => setComment(e.target.value)}
-                            placeholder="Add a comment or rejection reason…"
-                            rows={3}
-                            disabled={busy}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-50"
-                          />
-                        </div>
-
-                        {error && (
-                          <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
-                            {error}
-                          </p>
-                        )}
-
-                        {/* Action buttons per module */}
-                        {selected.module === "leave" && selected.detail.module === "leave" && (() => {
-                          const actions = resolveLeaveActions(selected.detail);
-                          return actions.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {actions.map((action) => (
-                                <button
-                                  key={action.key}
-                                  disabled={busy}
-                                  onClick={() => handleLeaveAction(action.key)}
-                                  className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
-                                    action.variant === "approve"
-                                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                      : action.variant === "reject"
-                                        ? "bg-rose-600 text-white hover:bg-rose-700"
-                                        : "bg-slate-600 text-white hover:bg-slate-700"
-                                  }`}
-                                >
-                                  {busy ? "…" : action.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400">No actions available for you on this request.</p>
-                          );
-                        })()}
-
-                        {selected.module === "resignation" && (() => {
-                          const actions = resolveResignationActions(selected.statusLabel.replace(/ /g, "_"));
-                          return actions.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {actions.map((action) => (
-                                <button
-                                  key={action.key}
-                                  disabled={busy}
-                                  onClick={() => handleResignationAction(action.key)}
-                                  className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
-                                    action.variant === "approve"
-                                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                      : action.variant === "reject"
-                                        ? "bg-rose-600 text-white hover:bg-rose-700"
-                                        : "bg-amber-500 text-white hover:bg-amber-600"
-                                  }`}
-                                >
-                                  {busy ? "…" : action.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400">No workflow actions available for you on this resignation.</p>
-                          );
-                        })()}
-
-                        {selected.module === "excuse" && (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              disabled={busy}
-                              onClick={() => handleExcuseAction("approve")}
-                              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                            >
-                              {busy ? "…" : "Approve"}
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => handleExcuseAction("reject")}
-                              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
-                            >
-                              {busy ? "…" : "Reject"}
-                            </button>
-                          </div>
-                        )}
-
-                        {selected.module === "outstation" && (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              disabled={busy}
-                              onClick={() => handleOutstationAction("approve")}
-                              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                            >
-                              {busy ? "…" : "Approve for Payroll"}
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => handleOutstationAction("reject")}
-                              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
-                            >
-                              {busy ? "…" : "Reject"}
-                            </button>
-                          </div>
-                        )}
-
-                        {selected.module === "marketing" && selected.detail.module === "marketing" && (() => {
-                          const labels = selected.detail.decisionLabels;
-                          return (
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                disabled={busy}
-                                onClick={() => handleMarketingAction("approve")}
-                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                {busy ? "…" : (labels?.approve ?? "Approve")}
-                              </button>
-                              {labels?.return && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() => handleMarketingAction("return")}
-                                  className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-amber-600 disabled:opacity-50"
-                                >
-                                  {busy ? "…" : labels.return}
-                                </button>
-                              )}
-                              <button
-                                disabled={busy}
-                                onClick={() => handleMarketingAction("reject")}
-                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
-                              >
-                                {busy ? "…" : (labels?.reject ?? "Reject")}
-                              </button>
-                            </div>
-                          );
-                        })()}
-
-                        {selected.module === "contract_renewal" && selected.detail.module === "contract_renewal" && (() => {
-                          const status = selected.detail.currentStatus;
-                          return (
-                            <div className="flex flex-wrap gap-2">
-                              {status === "requested" && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() => handleContractRenewalAction("manager_review")}
-                                  className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
-                                >
-                                  {busy ? "…" : "Mark Under Review"}
-                                </button>
-                              )}
-                              {status === "manager_review" && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() => handleContractRenewalAction("hr_review")}
-                                  className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
-                                >
-                                  {busy ? "…" : "Send to HR Review"}
-                                </button>
-                              )}
-                              <button
-                                disabled={busy}
-                                onClick={() => handleContractRenewalAction("renew")}
-                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                {busy ? "…" : "Renew Contract"}
-                              </button>
-                              <button
-                                disabled={busy}
-                                onClick={() => handleContractRenewalAction("not_renew")}
-                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
-                              >
-                                {busy ? "…" : "Do Not Renew"}
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             )}
           </div>
