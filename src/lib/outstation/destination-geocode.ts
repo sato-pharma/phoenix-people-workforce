@@ -1,4 +1,4 @@
-import { googleGeocodeAddress } from "@/lib/google-maps/server";
+import { googleGeocodeAddress, hasGoogleServerKey } from "@/lib/google-maps/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Geocode outstation expense destination strings (the historical "to_location" /
@@ -7,9 +7,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //
 // Results are cached persistently in the existing `geo_locations` table (no new
 // migration): each distinct destination is geocoded ONCE, then served from cache.
-// Failures are cached too so they aren't re-tried every load. Everything degrades
-// gracefully — if the table or the server key is unavailable we simply return what
-// we have and the caller falls back to the region centroid.
+// ONLY successful geocodes are cached — a transient failure (rate limit, network, or a
+// temporarily-missing server key) is retried on the next load instead of permanently
+// pinning the destination to the coarse region-centroid fallback. Everything degrades
+// gracefully — if the table or the server key is unavailable we return what we have and
+// the caller falls back to the region centroid.
 
 export type Coords = { lat: number; lng: number };
 
@@ -49,15 +51,23 @@ export async function resolveDestinationCoords(destinations: string[]): Promise<
       (data ?? []).forEach((row) => {
         const key = String((row as { source_key?: unknown }).source_key ?? "");
         if (!key) return;
-        cachedKeys.add(key);
         const lat = (row as { latitude?: number | null }).latitude;
         const lng = (row as { longitude?: number | null }).longitude;
-        if (lat != null && lng != null) result.set(key, { lat: Number(lat), lng: Number(lng) });
+        // Only a row with real coords counts as cached; any previously-"failed" row
+        // falls back into the miss set so it re-geocodes (no permanent poisoning).
+        if (lat != null && lng != null) {
+          result.set(key, { lat: Number(lat), lng: Number(lng) });
+          cachedKeys.add(key);
+        }
       });
     }
   } catch {
     // geo_locations missing — proceed with live geocoding only (no persistent cache).
   }
+
+  // Without a server key, geocoding can only return null — which we must NOT persist
+  // (it would poison the cache for every later load). Return whatever is already cached.
+  if (!hasGoogleServerKey()) return result;
 
   // 2. Geocode the not-yet-attempted destinations in small parallel batches.
   const misses = distinct.filter((key) => !cachedKeys.has(key));
@@ -76,14 +86,15 @@ export async function resolveDestinationCoords(destinations: string[]): Promise<
 
     const toCache: CacheRow[] = [];
     geocoded.forEach(({ key, coords }) => {
-      if (coords) result.set(key, coords);
+      if (!coords) return; // don't cache failures — let them retry on a later load
+      result.set(key, coords);
       toCache.push({
         source_type: SOURCE_TYPE,
         source_key: key,
         label: key,
-        latitude: coords?.lat ?? null,
-        longitude: coords?.lng ?? null,
-        geocode_status: coords ? "success" : "failed",
+        latitude: coords.lat,
+        longitude: coords.lng,
+        geocode_status: "success",
         geocode_provider: "google",
       });
     });

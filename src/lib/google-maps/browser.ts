@@ -4,6 +4,8 @@ export type GoogleLatLngLiteral = { lat: number; lng: number };
 
 export type GoogleMapHandle = {
   fitBounds(bounds: GoogleLatLngBoundsHandle, padding?: number): void;
+  setCenter?(latLng: GoogleLatLngLiteral): void;
+  setZoom?(zoom: number): void;
 };
 
 export type GoogleLatLngBoundsHandle = {

@@ -23,7 +23,7 @@ export async function assertOutstationAdminAccess(
 
   if (!canUseAdminOutstationWorkspace(access)) {
     throw new Error(
-      "Forbidden: only Account Admin, HR Manager, Finance Manager, or CEO can access admin outstation expenses.",
+      "Forbidden: only Super Admin, Finance Manager, or CEO can access admin outstation expenses.",
     );
   }
 }
