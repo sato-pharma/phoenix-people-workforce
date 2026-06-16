@@ -6,14 +6,16 @@ import {
   ArrowUpRight,
   CalendarDays,
   ChevronDown,
+  Download,
   Filter,
+  Loader2,
   Minus,
   Package,
   Store,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
@@ -33,6 +35,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const [data, setData] = useState<WeeklyDashboard | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [filters, setFilters] = useState({
     weeks: initial?.appliedFilters.weekStarts?.length ? [...initial.appliedFilters.weekStarts] : initial?.appliedFilters.weekStart ? [initial.appliedFilters.weekStart] : [],
     allWeeks: initial?.appliedFilters.allWeeks ?? false,
@@ -107,6 +110,41 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     return data.appliedFilters.weekStarts.join(", ");
   }, [data]);
 
+  const handleExport = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.allWeeks) {
+        params.set("allWeeks", "1");
+      } else {
+        for (const week of filters.weeks) params.append("week", week);
+      }
+      if (filters.distributor) params.set("distributor", filters.distributor);
+      if (filters.region) params.set("region", filters.region);
+      if (filters.product) params.set("product", filters.product);
+      if (filters.line) params.set("line", filters.line);
+      const response = await fetch(`/api/sales/weekly/export?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Export failed.");
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? "phoenix-weekly-sales.xlsx";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — network errors show as nothing downloaded
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, filters]);
+
   if (!data) {
     return (
       <div className="p-6">
@@ -137,12 +175,28 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               Consolidated by region, product, branch, and distributor. Stock shown as units only.
             </p>
           </div>
-          {data.weekStart && (
-            <span className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-black text-[#0F172A]" title={selectedWeekTitle}>
-              {selectedWeekSummary}
-              {data.priorWeekStart && <span className="ml-1 font-medium text-[#94A3B8]">vs {data.priorWeekStart}</span>}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {data.weekStart && (
+              <span className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-black text-[#0F172A]" title={selectedWeekTitle}>
+                {selectedWeekSummary}
+                {data.priorWeekStart && <span className="ml-1 font-medium text-[#94A3B8]">vs {data.priorWeekStart}</span>}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={downloading || loading}
+              className="flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+              title="Download Excel report with current filters applied"
+            >
+              {downloading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {downloading ? "Preparing…" : "Export Excel"}
+            </button>
+          </div>
         </div>
       </header>
 

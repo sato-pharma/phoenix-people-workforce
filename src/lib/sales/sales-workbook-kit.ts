@@ -205,6 +205,12 @@ export function writeTable(
 
 // Brand band at the top of a report sheet (black fill, orange title + muted subtitle).
 export function bandHeader(sheet: ExcelJS.Worksheet, cols: number, title: string, subtitle: string) {
+  // Disable gridlines — merge with any existing view (e.g. frozen panes) rather than overwrite.
+  const existingViews = sheet.views as ExcelJS.WorksheetView[];
+  sheet.views = existingViews.length > 0
+    ? existingViews.map((v) => ({ ...v, showGridLines: false }))
+    : [{ showGridLines: false }];
+
   sheet.mergeCells(1, 1, 1, cols);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = `${systemIdentity.appName} — ${title}`;
@@ -220,6 +226,20 @@ export function bandHeader(sheet: ExcelJS.Worksheet, cols: number, title: string
   sub.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   sub.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
   sheet.getRow(2).height = 16;
+
+  // Row 3 — department slogan, still part of the black brand band.
+  sheet.mergeCells(3, 1, 3, cols);
+  const sloganCell = sheet.getCell(3, 1);
+  sloganCell.value = {
+    richText: [
+      { font: { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "SFE Department" },
+      { font: { color: { argb: MUTED }, name: "Calibri", size: 10 }, text: "   ·   " },
+      { font: { italic: true, color: { argb: WHITE }, name: "Calibri", size: 10 }, text: "Where Your Achievement Belongs" },
+    ],
+  } as ExcelJS.CellRichTextValue;
+  sloganCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sloganCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  sheet.getRow(3).height = 16;
 }
 
 export function leaderText(leader: { distributorName: string; share: number } | null) {

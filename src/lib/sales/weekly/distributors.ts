@@ -18,6 +18,7 @@ export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   { code: "PS", name: "Overseas", cadence: "weekly", separateSalesStockFiles: true },
   { code: "EG", name: "EGD", cadence: "twice-monthly" },
   { code: "RM", name: "RAMCO", cadence: "twice-monthly" },
+  { code: "SF", name: "Sofico", cadence: "twice-monthly" },
 ];
 
 export function weeklyDistributorByCode(code: string | null | undefined): WeeklyDistributorDef | undefined {

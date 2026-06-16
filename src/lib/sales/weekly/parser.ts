@@ -304,6 +304,11 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   const sheetDates = new Set<string>();
   const names: string[] = [];
 
+  // Build Arabic-name → numeric-code lookup from the SALES sheet (col2 → col1).
+  // The STOCK sheet headers use Arabic branch names; this map lets us emit stock with
+  // the same numeric key already registered in the branch-mapping template.
+  const branchNameToCode = new Map<string, string>();
+
   const sales = findSheet(workbook, { name: "SALES", includes: "SALES" });
   if (sales) {
     names.push(sales.name);
@@ -315,6 +320,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       // The mapping template uses the numeric code as the join key, so rawBranchCode = col1.
       const branchCode = cellText(at(row, 1));
       const branchName = cellText(at(row, 2));
+      if (branchCode && branchName) branchNameToCode.set(branchName, branchCode);
       const gross = cellNumber(at(row, 11));
       const ret = Math.abs(cellNumber(at(row, 13)));
       const net = cellNumber(at(row, 15)); // صافى كمية — authoritative net of record
@@ -349,27 +355,46 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
     }
   }
 
-  // Stock is a product-level grand total with NO branch — store under an empty branch key, and the
-  // core does NOT block stock-only rows on a missing branch.
+  // STOCK sheet is a wide matrix: one row per product, cols 6-18 are regular branch totals.
+  // Row 2 is the header — each header cell is "إجمالى <branch-name>"; strip the prefix to get the
+  // Arabic branch name, then look up the numeric code we captured from the SALES sheet.
+  // Cols 19+ are tenders / key-accounts / wholesale warehouses — not regular branch inventory.
   const stock = findSheet(workbook, { name: "STOCK", includes: "STOCK" });
   if (stock) {
     names.push(stock.name);
+
+    // Map col index → { numericCode, arabicName } for the regular branch columns (6–18).
+    const branchCols = new Map<number, { code: string; name: string }>();
+    const headerRow = stock.getRow(2);
+    for (let c = 6; c <= 18; c += 1) {
+      const header = cellText(headerRow.getCell(c));
+      // Typical header: "إجمالى شرق" → strip "إجمالى " prefix (with or without trailing space).
+      const arabicName = header.replace(/^إجمالى\s*/u, "").trim();
+      if (!arabicName) continue;
+      const numericCode = branchNameToCode.get(arabicName) ?? arabicName;
+      branchCols.set(c, { code: numericCode, name: arabicName });
+    }
+
     for (let r = 3; r <= stock.rowCount; r += 1) {
       const row = stock.getRow(r);
       const itemCode = cellText(at(row, 4));
       const itemName = cellText(at(row, 5));
-      const qty = cellNumber(at(row, 35));
       if (!itemCode && !itemName) continue;
-      observations.push({
-        side: "stock",
-        sourceRowNumber: r,
-        rawItemCode: itemCode,
-        rawItemName: itemName,
-        rawBranchCode: "",
-        rawBranchName: "",
-        branchFileType: "stock",
-        qty,
-      });
+
+      for (const [col, branch] of branchCols) {
+        const qty = cellNumber(row.getCell(col));
+        if (qty === 0) continue; // skip zero-stock branch entries to keep row count lean
+        observations.push({
+          side: "stock",
+          sourceRowNumber: r,
+          rawItemCode: itemCode,
+          rawItemName: itemName,
+          rawBranchCode: branch.code,
+          rawBranchName: branch.name,
+          branchFileType: "sales", // join on the sales branch mapping (same numeric codes)
+          qty,
+        });
+      }
     }
   }
 
@@ -577,6 +602,59 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
   return { observations, sheetDates, sheetName: names.join(" + ") || "Overseas", blockingReasons };
 }
 
+// SF (Sofico) — single "Sheet1" workbook. Per-customer invoice detail rows (one invoice line per
+// row). Header row 1, data row 2+. col4=ItemID (Sofico product code, not the master — alias key),
+// col5=ItemName (product display name), col12=State (branch numeric ID, e.g. "2" / "11"),
+// col13=statename (Arabic branch name), col20=SalesQty (gross), col21=BonusQty (read, never
+// priced), col22=ReturnQty (positive), col24=NET SALES (authoritative net — same semantics as
+// RM col15). No period-date column; periodDate is always required on upload.
+function adaptSF(ctx: AdapterContext): AdapterResult {
+  const workbook = ctx.workbooks[0];
+  const sheet = findSheet(workbook, { name: "Sheet1", includes: "Sheet" }) ?? workbook.worksheets[0];
+  const observations: WeeklyObservation[] = [];
+  const sheetDates = new Set<string>(); // no date column → always require periodDate
+  if (!sheet) return { observations, sheetDates, sheetName: "Sofico", blockingReasons: [] };
+
+  for (let r = 2; r <= sheet.rowCount; r += 1) {
+    const row = sheet.getRow(r);
+    const itemCode = cellText(at(row, 4));    // ItemID — Sofico's own product code (alias key)
+    const itemName = cellText(at(row, 5));    // ItemName
+    const branchCode = cellText(at(row, 12)); // State — branch numeric ID (e.g. "2", "11")
+    const branchName = cellText(at(row, 13)); // statename — Arabic branch display name
+    if (!itemCode && !branchCode) continue;
+    const gross = cellNumber(at(row, 20));    // SalesQty
+    const ret = cellNumber(at(row, 22));      // ReturnQty (positive in the file)
+    const net = cellNumber(at(row, 24));      // NET SALES — authoritative net of record
+    // BonusQty (col21) is available but never priced (like IS Free Unit).
+
+    observations.push({
+      side: "sales",
+      sourceRowNumber: r,
+      rawItemCode: itemCode,
+      rawItemName: itemName,
+      rawBranchCode: branchCode,
+      rawBranchName: branchName || branchCode,
+      branchFileType: "sales",
+      qty: gross,
+      authoritativeNet: net,
+    });
+    if (ret > 0) {
+      observations.push({
+        side: "return",
+        sourceRowNumber: r,
+        rawItemCode: itemCode,
+        rawItemName: itemName,
+        rawBranchCode: branchCode,
+        rawBranchName: branchName || branchCode,
+        branchFileType: "sales",
+        qty: ret,
+      });
+    }
+  }
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons: [] };
+}
+
+
 // ── core: resolve, validate strictly, aggregate by key union, value, summarize ───────────────────
 
 type ResolvedProduct = {
@@ -688,7 +766,7 @@ function resolveRegion(obs: WeeklyObservation, branchMapIndex: WeeklyBranchRegio
     return { regionCode: entry.regionCode, regionName: entry.regionName, excluded: false, failure: null };
   }
 
-  // RM stock-only rows have no branch → allow without a region, never block.
+  // Stock-only rows with no branch (e.g. a grand-total fallback) → allow without a region, never block.
   const branchKeyRaw = obs.rawBranchCode || obs.rawBranchName;
   if (!branchKeyRaw && obs.side === "stock") {
     return { regionCode: "", regionName: "", excluded: false, failure: null };
@@ -811,7 +889,9 @@ export async function parseWeeklyWorkbookBuffer(input: {
               ? adaptISS(ctx)
               : canonicalCode === "IS"
                 ? adaptIS(ctx)
-                : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
+                : canonicalCode === "SF"
+                  ? adaptSF(ctx)
+                  : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
     }
   } catch (error) {
     return {
@@ -1069,8 +1149,8 @@ export function summarizeWeekly(input: {
     for (const issue of row.validationIssues) issues.push(issue);
 
     // Region/branch breakdowns are geographic — only rows with a resolved region/branch belong.
-    // RAMCO stock is a product-level grand total with no branch/region; it stays in totals + by-product
-    // (below) but must not form a phantom "—" region/branch row.
+    // Rows with no resolved region (e.g. branchless stock fallbacks) stay in totals + by-product
+    // but must not form a phantom "—" region/branch row.
     if (row.regionCode) {
       const region = regions.get(row.regionCode) ?? { regionName: row.regionName || row.regionCode, totals: emptyTotals() };
       addTotals(region.totals, row);

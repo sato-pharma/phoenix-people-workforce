@@ -232,6 +232,11 @@ function writeTable(
 }
 
 function bandHeader(sheet: ExcelJS.Worksheet, line: string | null, period: string | null, subtitle: string, cols: number) {
+  const existingViews = sheet.views as ExcelJS.WorksheetView[];
+  sheet.views = existingViews.length > 0
+    ? existingViews.map((v) => ({ ...v, showGridLines: false }))
+    : [{ showGridLines: false }];
+
   sheet.mergeCells(1, 1, 1, cols);
   const title = sheet.getCell(1, 1);
   title.value = `${systemIdentity.appName} — Monthly Closing`;
@@ -247,6 +252,19 @@ function bandHeader(sheet: ExcelJS.Worksheet, line: string | null, period: strin
   sub.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   sub.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
   sheet.getRow(2).height = 16;
+
+  sheet.mergeCells(3, 1, 3, cols);
+  const sloganCell = sheet.getCell(3, 1);
+  sloganCell.value = {
+    richText: [
+      { font: { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "SFE Department" },
+      { font: { color: { argb: MUTED }, name: "Calibri", size: 10 }, text: "   ·   " },
+      { font: { italic: true, color: { argb: WHITE }, name: "Calibri", size: 10 }, text: "Where Your Achievement Belongs" },
+    ],
+  } as ExcelJS.CellRichTextValue;
+  sloganCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sloganCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  sheet.getRow(3).height = 16;
 }
 
 function leaderText(leader: { distributorName: string; share: number } | null) {
@@ -264,7 +282,7 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
 }
 
 function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs) {
-  const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 4 }] });
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
   const productCols = products.length * 5;
   const totalCols = 2 + productCols + 3;
@@ -273,8 +291,8 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
 
   bandHeader(sheet, matrix.line, matrix.period, "Closing Matrix", totalCols);
 
-  const bandRow = sheet.getRow(3);
-  const metricRow = sheet.getRow(4);
+  const bandRow = sheet.getRow(4);
+  const metricRow = sheet.getRow(5);
   bandRow.height = 20;
   metricRow.height = 18;
   const headerStyle = (cell: ExcelJS.Cell, label: string) => {
@@ -284,20 +302,20 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
     cell.border = gridBorder();
   };
-  sheet.mergeCells(3, 1, 4, 1); headerStyle(sheet.getCell(3, 1), "Area");
-  sheet.mergeCells(3, 2, 4, 2); headerStyle(sheet.getCell(3, 2), "Area Name");
+  sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Area");
+  sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area Name");
   const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %"];
   products.forEach((product, index) => {
     const start = productStart(index);
-    sheet.mergeCells(3, start, 3, start + 4);
-    headerStyle(sheet.getCell(3, start), `${product.productName} (${product.productCode})`);
+    sheet.mergeCells(4, start, 4, start + 4);
+    headerStyle(sheet.getCell(4, start), `${product.productName} (${product.productCode})`);
     metricLabels.forEach((label, metricIndex) => headerStyle(metricRow.getCell(start + metricIndex), label));
   });
-  sheet.mergeCells(3, grandStart, 3, grandStart + 2);
-  headerStyle(sheet.getCell(3, grandStart), "Grand Total");
+  sheet.mergeCells(4, grandStart, 4, grandStart + 2);
+  headerStyle(sheet.getCell(4, grandStart), "Grand Total");
   ["Value", "Tgt Value", "Ach %"].forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
 
-  let rowIndex = 5;
+  let rowIndex = 6;
   let zebra = false;
   // Set while writing a Direct (company) row so its whole band reads blue + bold.
   let rowAccent: string | null = null;
