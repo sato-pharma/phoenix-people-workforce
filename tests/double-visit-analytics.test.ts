@@ -281,6 +281,8 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(component, /dates: new Set/, "per-pair distinct days come from the visit log");
   assert.match(component, /vacantTerritories/, "resigned/vacant-territory visits are split out and counted as manager effort");
   assert.match(component, /Resigned \/ Vacant Territory/, "resigned/vacant territory has its own labeled section");
+  assert.match(component, /Hire Date/, "By-MR table shows each medical rep's hire date");
+  assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
 
   const accessRegistry = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(accessRegistry, /\/api\/admin\/double-visit-analytics\/export/);
