@@ -16,6 +16,7 @@ import { ExpenseDetailTable } from "@/components/outstation/expense-shared/expen
 import { ExpenseExportButton } from "@/components/outstation/expense-shared/expense-export-button";
 import { ExpenseFilterBar } from "@/components/outstation/expense-shared/expense-filter-bar";
 import { ExpenseKpiRow } from "@/components/outstation/expense-shared/expense-kpi-row";
+import { ExpenseSavedViews } from "@/components/outstation/expense-shared/expense-saved-views";
 import { ExpenseTrendChart } from "@/components/outstation/expense-shared/expense-trend-chart";
 import { egp, expenseFiltersToQueryString } from "@/components/outstation/expense-shared/formatters";
 import type {
@@ -163,6 +164,10 @@ export function ExpenseCommandDashboard({
       {data ? (
         <>
           <ExpenseKpiRow kpis={data.kpis} variant={variant} />
+
+          {isAdmin ? (
+            <ExpenseSavedViews currentFilters={filters} onLoad={(loaded) => setFilters(loaded)} />
+          ) : null}
 
           <ExpenseFilterBar
             filters={filters}
