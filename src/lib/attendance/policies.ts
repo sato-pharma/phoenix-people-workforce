@@ -1,8 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  isMissingWorkingWeekdaysColumn,
-  loadAttendancePolicyGroups,
-} from "@/lib/attendance/policy-groups";
+import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 import {
   normalizeAttendanceWorkingWeekdays,
@@ -278,31 +275,7 @@ export async function saveAttendancePolicy(input: {
     if (!data) throw new Error(`Employee HR_ID ${targetValue} does not exist.`);
   }
 
-  const policyRow = {
-    effective_from: effectiveFrom,
-    effective_to: effectiveTo,
-    grace_minutes: graceMinutes,
-    is_active: input.isActive,
-    policy_name: policyName,
-    scheduled_end: scheduledEnd,
-    scheduled_start: scheduledStart,
-    target_type: targetType,
-    target_value: targetValue,
-    updated_at: new Date().toISOString(),
-    working_weekdays: workingWeekdays,
-  };
-  const legacyPolicyRow = {
-    effective_from: policyRow.effective_from,
-    effective_to: policyRow.effective_to,
-    grace_minutes: policyRow.grace_minutes,
-    is_active: policyRow.is_active,
-    policy_name: policyRow.policy_name,
-    scheduled_end: policyRow.scheduled_end,
-    scheduled_start: policyRow.scheduled_start,
-    target_type: policyRow.target_type,
-    target_value: policyRow.target_value,
-    updated_at: policyRow.updated_at,
-  };
+  const now = new Date().toISOString();
 
   const ruleRows = input.rules.map((rawRule, index) => {
     if (!rawRule || typeof rawRule !== "object" || Array.isArray(rawRule)) {
@@ -325,89 +298,27 @@ export async function saveAttendancePolicy(input: {
       recommended_action: recommendedAction,
       sort_order: index + 1,
       to_minutes: cleanNumber(rule.toMinutes, `Rule ${index + 1} toMinutes`, { allowNull: true, integer: true }),
-      updated_at: new Date().toISOString(),
     };
   });
   validatePolicyRules(ruleRows);
 
-  let policyId = id;
-  if (policyId) {
-    let { error } = await supabase
-      .from("attendance_policy_groups")
-      .update(policyRow)
-      .eq("id", policyId);
-    if (error && isMissingWorkingWeekdaysColumn(error)) {
-      const legacyResult = await supabase
-        .from("attendance_policy_groups")
-        .update(legacyPolicyRow)
-        .eq("id", policyId);
-      error = legacyResult.error;
-    }
-    if (error) throw error;
-  } else {
-    let { data, error } = await supabase
-      .from("attendance_policy_groups")
-      .insert({ ...policyRow, created_at: new Date().toISOString() })
-      .select("id")
-      .single();
-    if (error && isMissingWorkingWeekdaysColumn(error)) {
-      const legacyResult = await supabase
-        .from("attendance_policy_groups")
-        .insert({ ...legacyPolicyRow, created_at: new Date().toISOString() })
-        .select("id")
-        .single();
-      data = legacyResult.data;
-      error = legacyResult.error;
-    }
-    if (error) throw error;
-    policyId = (data as { id: number }).id;
-  }
-
-  // Snapshot existing rules first so we can restore them if the re-insert fails.
-  // supabase-js has no multi-statement transaction, so without this a failure
-  // between delete and insert would leave the policy with ZERO rules — silently
-  // disabling every deduction for it. (A DB-side RPC transaction is the fully
-  // atomic fix; this compensation closes the practical gap without a migration.)
-  const { data: priorRules, error: snapshotError } = await supabase
-    .from("attendance_policy_rules")
-    .select("event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
-    .eq("policy_id", policyId);
-  if (snapshotError) throw snapshotError;
-
-  const { error: deleteError } = await supabase
-    .from("attendance_policy_rules")
-    .delete()
-    .eq("policy_id", policyId);
-  if (deleteError) throw deleteError;
-
-  const rules = ruleRows.map((rule) => ({ ...rule, policy_id: policyId }));
-
-  if (rules.length > 0) {
-    const { error } = await supabase
-      .from("attendance_policy_rules")
-      .insert(rules);
-    if (error) {
-      // Restore the snapshot so the policy is never left rule-less.
-      if ((priorRules ?? []).length > 0) {
-        const now = new Date().toISOString();
-        await supabase
-          .from("attendance_policy_rules")
-          .insert((priorRules as RuleDbRow[]).map((rule) => ({
-            deduction_days: rule.deduction_days,
-            deduction_value: rule.deduction_value,
-            event_type: rule.event_type,
-            from_minutes: rule.from_minutes,
-            is_active: rule.is_active,
-            policy_id: policyId,
-            recommended_action: rule.recommended_action,
-            sort_order: rule.sort_order,
-            to_minutes: rule.to_minutes,
-            updated_at: now,
-          })));
-      }
-      throw error;
-    }
-  }
+  // Single atomic RPC call — policy upsert + rule replacement in one transaction.
+  const { error } = await supabase.rpc("phx_save_attendance_policy", {
+    p_id:             id ?? null,
+    p_policy_name:    policyName,
+    p_target_type:    targetType,
+    p_target_value:   targetValue ?? null,
+    p_sched_start:    scheduledStart,
+    p_sched_end:      scheduledEnd,
+    p_grace_minutes:  graceMinutes,
+    p_effective_from: effectiveFrom,
+    p_effective_to:   effectiveTo ?? null,
+    p_is_active:      input.isActive,
+    p_weekdays:       workingWeekdays as number[],
+    p_rules:          ruleRows,
+    p_now:            now,
+  });
+  if (error) throw error;
 }
 
 export async function deleteAttendancePolicy(input: { id: unknown }) {

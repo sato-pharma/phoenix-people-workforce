@@ -80,7 +80,7 @@ export function isAllowedPhoenixOrigin(origin: string | null | undefined) {
   const normalized = normalizeOrigin(origin);
   if (!normalized) return false;
   if (allowedPhoenixOrigins().has(normalized)) return true;
-  return process.env.NODE_ENV !== "production" && isLocalOrigin(normalized);
+  return (process.env.NODE_ENV !== "production" || process.env.PHOENIX_CI_SMOKE_LOGIN === "true") && isLocalOrigin(normalized);
 }
 
 export function requestOriginCandidates(request: Pick<Request, "headers" | "url">) {

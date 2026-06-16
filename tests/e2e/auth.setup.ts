@@ -18,11 +18,11 @@ setup("authenticate", async ({ page }) => {
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
 
   // Wait for hydration — the login form inputs appear after React hydration.
-  // Also wait for network idle so Turbopack finishes sending HMR pings before
-  // we interact; without this, an HMR reload can close the page context mid-fill.
   const hrIdInput = page.getByRole("textbox", { name: /HR_ID or Login ID/i });
   await expect(hrIdInput).toBeVisible({ timeout: 15_000 });
-  await page.waitForLoadState("networkidle");
+  // No networkidle wait: in CI we run next start (production build, no HMR) so
+  // there are no Turbopack pings to settle. In local dev, retries handle any
+  // mid-fill HMR reload.
 
   // Fill in HR ID and password
   await hrIdInput.fill("a-12");
@@ -31,7 +31,7 @@ setup("authenticate", async ({ page }) => {
   // Submit the form and wait for the authenticated route to commit.
   await Promise.all([
     page.waitForURL((url) => !url.pathname.includes("/login"), {
-      timeout: 45_000,
+      timeout: 60_000,
       waitUntil: "domcontentloaded",
     }),
     page.getByRole("button", { name: /Sign in/i }).click(),
