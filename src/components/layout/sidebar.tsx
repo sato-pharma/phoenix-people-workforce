@@ -206,18 +206,32 @@ function writePins(key: string, hrefs: string[]) {
 // ── Pending-count badge for the Action Center nav item ───────────────────────
 function NavBadge({ src }: { src: string }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
+  const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       void globalThis
         .fetch(src)
         .then((r) => r.json())
-        .then((d: { count?: number }) => { if (!cancelled && typeof d.count === "number") setCount(d.count); })
+        .then((d: { count?: number }) => {
+          if (cancelled || typeof d.count !== "number") return;
+          setCount(d.count);
+          if (prevCountRef.current !== null && d.count > prevCountRef.current && "Notification" in window) {
+            if (Notification.permission === "default") {
+              void Notification.requestPermission();
+            } else if (Notification.permission === "granted") {
+              new Notification("Action Center", { body: "New items are awaiting your approval.", icon: "/favicon.ico" });
+            }
+          }
+          prevCountRef.current = d.count;
+        })
         .catch(() => {});
     };
     load();
-    const id = setInterval(load, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const id = setInterval(load, 30_000);
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [src]);
   if (!count) return null;
   return (

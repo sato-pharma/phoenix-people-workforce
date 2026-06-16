@@ -7,6 +7,7 @@ import type {
   ActionHubData,
   ActionHubItem,
   ActionHubModule,
+  ContractRenewalDetail,
   ExcuseDetail,
   LeaveDetail,
   MarketingDetail,
@@ -15,10 +16,31 @@ import type {
 } from "@/components/action-center/types";
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 
+// ── Snooze helpers (localStorage, no backend) ────────────────────────────────
+const SNOOZE_KEY = "phoenix-action-snooze:v1";
+function getSnoozeMap(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? "{}") as Record<string, number>; }
+  catch { return {}; }
+}
+function setSnoozeExpiry(id: string) {
+  const m = getSnoozeMap();
+  m[id] = Date.now() + 86_400_000;
+  localStorage.setItem(SNOOZE_KEY, JSON.stringify(m));
+}
+function isSnoozed(id: string): boolean {
+  return (getSnoozeMap()[id] ?? 0) > Date.now();
+}
+function purgeSnoozed() {
+  const m = getSnoozeMap();
+  const now = Date.now();
+  localStorage.setItem(SNOOZE_KEY, JSON.stringify(Object.fromEntries(Object.entries(m).filter(([, v]) => v > now))));
+}
+
 type Props = {
   initialData: ActionHubData;
   initialModule?: ActionHubModule | null;
   initialId?: string | null;
+  callerRole?: string | null;
 };
 
 type ContextData = {
@@ -53,6 +75,7 @@ const SLA_THRESHOLDS: Record<ActionHubModule, number> = {
   outstation: 3,
   resignation: 5,
   marketing: 3,
+  contract_renewal: 7,
 };
 
 const MODULE_COLORS: Record<ActionHubModule, string> = {
@@ -61,6 +84,7 @@ const MODULE_COLORS: Record<ActionHubModule, string> = {
   excuse: "bg-amber-100 text-amber-900 border-amber-300",
   outstation: "bg-violet-100 text-violet-800 border-violet-300",
   marketing: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  contract_renewal: "bg-teal-100 text-teal-800 border-teal-300",
 };
 
 const URGENCY_COLORS: Record<string, string> = {
@@ -288,6 +312,32 @@ function MarketingDetailView({ detail }: { detail: MarketingDetail }) {
   );
 }
 
+function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }) {
+  return (
+    <dl className="grid grid-cols-2 gap-4">
+      <DetailRow label="Renewal date" value={detail.requestedRenewalDate} />
+      <DetailRow label="Status" value={detail.currentStatus.replace(/_/g, " ")} />
+      <DetailRow label="Job title" value={detail.jobTitle} />
+      <DetailRow label="Line" value={detail.lineName} />
+      <DetailRow label="Area" value={detail.areaName} />
+      {detail.proposedStartDate && <DetailRow label="Proposed start" value={detail.proposedStartDate} />}
+      {detail.proposedEndDate && <DetailRow label="Proposed end" value={detail.proposedEndDate} />}
+      {detail.workflowNotes && (
+        <div className="col-span-2">
+          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Notes</dt>
+          <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.workflowNotes}</dd>
+        </div>
+      )}
+      {detail.decisionReason && (
+        <div className="col-span-2">
+          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-rose-600">Decision reason</dt>
+          <dd className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{detail.decisionReason}</dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
 function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loading: boolean }) {
   if (loading) return <p className="text-sm text-slate-400">Loading context…</p>;
   if (!data) return <p className="text-sm text-slate-400">Context unavailable.</p>;
@@ -420,18 +470,21 @@ function resolveResignationActions(status: string): Array<{ key: string; label: 
   return [];
 }
 
-export function ActionCenterHub({ initialData, initialModule, initialId }: Props) {
+export function ActionCenterHub({ initialData, initialModule, initialId, callerRole }: Props) {
   const router = useRouter();
-  const allItems = useMemo(() => initialData.items, [initialData]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contextCacheRef = useRef(new Map<string, ContextData>());
 
   const [activeModule, setActiveModule] = useState<ActionHubModule | "all">(initialModule ?? "all");
   const [activeFilter, setActiveFilter] = useState<"all" | "overdue" | "high">("all");
+  const [viewAsItems, setViewAsItems] = useState<ActionHubItem[] | null>(null);
+
+  const allItems = useMemo(() => viewAsItems ?? initialData.items, [initialData, viewAsItems]);
+
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (initialId) {
-      const found = allItems.find((item) => item.id === initialId && (initialModule ? item.module === initialModule : true));
-      return found ? found.id : allItems[0]?.id ?? null;
+      const found = initialData.items.find((item) => item.id === initialId && (initialModule ? item.module === initialModule : true));
+      return found ? found.id : initialData.items[0]?.id ?? null;
     }
     return allItems[0]?.id ?? null;
   });
@@ -445,6 +498,12 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
   const [contextData, setContextData] = useState<ContextData | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [snoozeVersion, setSnoozeVersion] = useState(0);
+  const [viewAsHrId, setViewAsHrId] = useState<string | null>(null);
+  const [viewAsLoading, setViewAsLoading] = useState(false);
+  const [managers, setManagers] = useState<Array<{ hrId: string; name: string }> | null>(null);
+
+  const canViewAs = callerRole === "Super Admin" || callerRole === "HR Manager";
 
   const filteredByModule = useMemo(
     () => (activeModule === "all" ? allItems : allItems.filter((item) => item.module === activeModule)),
@@ -452,10 +511,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
   );
 
   const filteredItems = useMemo(() => {
-    if (activeFilter === "overdue") return filteredByModule.filter(itemIsOverdue);
-    if (activeFilter === "high") return filteredByModule.filter((i) => i.urgency === "high");
-    return filteredByModule;
-  }, [filteredByModule, activeFilter]);
+    // snoozeVersion is a counter incremented on every snooze action — forces re-compute
+    void snoozeVersion;
+    const base = filteredByModule.filter((i) => !isSnoozed(i.id));
+    if (activeFilter === "overdue") return base.filter(itemIsOverdue);
+    if (activeFilter === "high") return base.filter((i) => i.urgency === "high");
+    return base;
+  }, [filteredByModule, activeFilter, snoozeVersion]);
 
   const selected = useMemo(() => allItems.find((item) => item.id === selectedId) ?? null, [allItems, selectedId]);
 
@@ -513,6 +575,40 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
     void loadContext();
     return () => { cancelled = true; };
   }, [selected?.employeeHrId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Snooze: purge expired entries on mount
+  useEffect(() => { purgeSnoozed(); }, []);
+
+  // Fetch managers list for super-admin view-as switcher
+  useEffect(() => {
+    if (!canViewAs || managers !== null) return;
+    void fetch("/api/action-center/managers")
+      .then((r) => r.json())
+      .then((d: { managers?: Array<{ hrId: string; name: string }> }) => {
+        if (Array.isArray(d.managers)) setManagers(d.managers);
+      })
+      .catch(() => {});
+  }, [canViewAs, managers]);
+
+  // Fetch view-as items when a manager is selected
+  useEffect(() => {
+    let cancelled = false;
+    async function loadViewAs() {
+      if (!viewAsHrId) { setViewAsItems(null); return; }
+      setViewAsLoading(true);
+      try {
+        const r = await fetch(`/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}`);
+        const d = (await r.json()) as { items?: ActionHubItem[] };
+        if (!cancelled && Array.isArray(d.items)) setViewAsItems(d.items);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setViewAsLoading(false);
+      }
+    }
+    void loadViewAs();
+    return () => { cancelled = true; };
+  }, [viewAsHrId]);
 
   // Keyboard shortcuts
   const approveRef = useRef<(() => void) | null>(null);
@@ -631,6 +727,18 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
     void callApi(`/api/marketing-requests/${selected.id}/decision`, { decision, comment: comment.trim() || null });
   }
 
+  function snoozeAndUpdate(id: string) {
+    setSnoozeExpiry(id);
+    setSnoozeVersion((v) => v + 1);
+    if (selectedId === id) setSelectedId(null);
+  }
+
+  function handleContractRenewalAction(action: string) {
+    if (!selected) return;
+    if (action === "not_renew" && !comment.trim()) { setError("A reason is required when not renewing."); return; }
+    void callApi(`/api/contracts/${selected.id}/workflow`, { action, decisionReason: comment.trim() || undefined });
+  }
+
   async function handleBulkApprove() {
     if (bulkSelected.size === 0) return;
     setBulkBusy(true);
@@ -642,6 +750,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ decision: "approve" }),
+          });
+        }
+        if (item.module === "leave") {
+          return fetch(`/api/vacations/requests/${item.id}/decision`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision: "approve", comment: "" }),
           });
         }
         return fetch(`/api/admin/outstation/${item.id}`, {
@@ -672,8 +787,8 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
     });
   }
 
-  const modules: Array<ActionHubModule | "all"> = ["all", "leave", "resignation", "excuse", "outstation", "marketing"];
-  const isBulkModule = (m: ActionHubModule | "all") => m === "excuse" || m === "outstation";
+  const modules: Array<ActionHubModule | "all"> = ["all", "leave", "resignation", "excuse", "outstation", "marketing", "contract_renewal"];
+  const isBulkModule = (m: ActionHubModule | "all") => m === "excuse" || m === "outstation" || m === "leave";
 
   const priorLeaveHint = contextData?.recentLeave.length
     ? contextData.recentLeave.map((r) => r.hrDecision ?? r.managerDecision)
@@ -707,6 +822,33 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Left rail */}
           <div className="flex w-full flex-col border-b border-slate-200 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r">
+            {/* Super-admin view-as switcher */}
+            {canViewAs && managers && managers.length > 0 && (
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
+                {viewAsLoading ? (
+                  <p className="text-[11px] text-slate-400">Loading queue…</p>
+                ) : (
+                  <select
+                    value={viewAsHrId ?? ""}
+                    onChange={(e) => {
+                      setViewAsHrId(e.target.value || null);
+                      setViewAsItems(null);
+                      setSelectedId(null);
+                    }}
+                    className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 focus:outline-none"
+                  >
+                    <option value="">My queue</option>
+                    {managers.map((m) => (
+                      <option key={m.hrId} value={m.hrId}>{m.name} ({m.hrId})</option>
+                    ))}
+                  </select>
+                )}
+                {viewAsHrId && (
+                  <p className="mt-0.5 text-[10px] text-orange-600 font-bold">Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue</p>
+                )}
+              </div>
+            )}
+
             {/* Stats bar */}
             <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px]">
               <span className="text-slate-500">
@@ -815,7 +957,17 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-bold text-slate-900">{item.employeeName}</p>
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-sm font-bold text-slate-900">{item.employeeName}</p>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); snoozeAndUpdate(item.id); }}
+                              title="Snooze for 24h"
+                              className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-500"
+                              aria-label="Snooze 24h"
+                            >
+                              ⏱
+                            </button>
+                          </div>
                           <p className="text-xs text-slate-600">{item.title}</p>
                           <p className="mt-1 text-[11px] text-slate-400">
                             {item.employeeHrId} · {item.statusLabel}
@@ -924,6 +1076,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
                       {selected.detail.module === "excuse" && <ExcuseDetailView detail={selected.detail} />}
                       {selected.detail.module === "outstation" && <OutstationDetailView detail={selected.detail} />}
                       {selected.detail.module === "marketing" && <MarketingDetailView detail={selected.detail} />}
+                      {selected.detail.module === "contract_renewal" && <ContractRenewalDetailView detail={selected.detail} />}
                     </div>
 
                     <hr className="mb-6 border-slate-200" />
@@ -1100,6 +1253,46 @@ export function ActionCenterHub({ initialData, initialModule, initialId }: Props
                                 className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
                               >
                                 {busy ? "…" : (labels?.reject ?? "Reject")}
+                              </button>
+                            </div>
+                          );
+                        })()}
+
+                        {selected.module === "contract_renewal" && selected.detail.module === "contract_renewal" && (() => {
+                          const status = selected.detail.currentStatus;
+                          return (
+                            <div className="flex flex-wrap gap-2">
+                              {status === "requested" && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() => handleContractRenewalAction("manager_review")}
+                                  className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
+                                >
+                                  {busy ? "…" : "Mark Under Review"}
+                                </button>
+                              )}
+                              {status === "manager_review" && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() => handleContractRenewalAction("hr_review")}
+                                  className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
+                                >
+                                  {busy ? "…" : "Send to HR Review"}
+                                </button>
+                              )}
+                              <button
+                                disabled={busy}
+                                onClick={() => handleContractRenewalAction("renew")}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {busy ? "…" : "Renew Contract"}
+                              </button>
+                              <button
+                                disabled={busy}
+                                onClick={() => handleContractRenewalAction("not_renew")}
+                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+                              >
+                                {busy ? "…" : "Do Not Renew"}
                               </button>
                             </div>
                           );

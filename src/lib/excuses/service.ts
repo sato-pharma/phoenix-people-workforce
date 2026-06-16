@@ -637,6 +637,47 @@ export function isExcusesSchemaMissing(error: unknown) {
   return isExcusesSchemaMissingMessage(error);
 }
 
+export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: number }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("v2_excuse_requests")
+    .select("id, employee_name, excuse_date, excuse_type, created_at, manager_hr_id")
+    .eq("status", "pending_manager")
+    .not("manager_hr_id", "is", null);
+  if (error) return { processed: 0, errors: 1 };
+
+  let processed = 0;
+  let errors = 0;
+  const now = Date.now();
+  for (const row of data ?? []) {
+    const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
+    if (ageDays < 2) continue;
+    try {
+      await createSystemNotification({
+        channels: ["email"],
+        eventType: "excuse_sla_reminder",
+        message: `${String(row.employee_name)}'s ${String(row.excuse_type)} excuse for ${String(row.excuse_date)} has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
+        metadata: { idempotencyKey: `excuse:${String(row.id)}:sla:${String(row.manager_hr_id)}:${today}` },
+        module: "excuse",
+        priority: "normal",
+        recipientHrId: String(row.manager_hr_id),
+        title: "Excuse approval overdue",
+        actionUrl: `/admin/action-center?module=excuse&id=${String(row.id)}`,
+        email: {
+          ctaHref: `/admin/action-center?module=excuse&id=${String(row.id)}`,
+          ctaLabel: "Review now",
+          tone: "warning" as const,
+        },
+      });
+      processed++;
+    } catch {
+      errors++;
+    }
+  }
+  return { processed, errors };
+}
+
 export function excuseErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error ?? "");
 }

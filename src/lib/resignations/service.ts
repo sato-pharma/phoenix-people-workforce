@@ -1519,3 +1519,53 @@ export async function runResignationWorkflow(
   invalidateExecutiveDashboardCache("resignation workflow updated", ["resignations", "employees", "vacancies"]);
   return record;
 }
+
+export async function runResignationSlaDaily(): Promise<{ processed: number; errors: number }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employee_resignations")
+    .select("id, employee_name, employee_hr_id, effective_date, created_at, status")
+    .in("status", ["submitted", "under_review"]);
+  if (error) return { processed: 0, errors: 1 };
+
+  const { data: hrApprovers } = await supabase
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", ["Super Admin", "HR Manager"])
+    .eq("is_active", true);
+  const hrHrIds = (hrApprovers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
+  if (hrHrIds.length === 0) return { processed: 0, errors: 0 };
+
+  let processed = 0;
+  let errors = 0;
+  const now = Date.now();
+  for (const row of data ?? []) {
+    const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
+    if (ageDays < 5) continue;
+    for (const hrId of hrHrIds) {
+      try {
+        await createSystemNotification({
+          channels: ["email"],
+          eventType: "resignation_sla_reminder",
+          message: `${String(row.employee_name)}'s resignation (effective: ${String(row.effective_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"} with no final decision.`,
+          metadata: { idempotencyKey: `resignation:${String(row.id)}:sla:${hrId}:${today}` },
+          module: "resignation",
+          priority: "high",
+          recipientHrId: hrId,
+          title: "Resignation pending decision",
+          actionUrl: `/admin/action-center?module=resignation&id=${String(row.id)}`,
+          email: {
+            ctaHref: `/admin/action-center?module=resignation&id=${String(row.id)}`,
+            ctaLabel: "Review resignation",
+            tone: "danger" as const,
+          },
+        });
+        processed++;
+      } catch {
+        errors++;
+      }
+    }
+  }
+  return { processed, errors };
+}

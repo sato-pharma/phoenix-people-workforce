@@ -2975,3 +2975,55 @@ export async function deleteOutstationRequestAsAdmin(
     request: existing,
   };
 }
+
+
+export async function runOutstationSlaDaily(): Promise<{ processed: number; errors: number }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("id, employee_name, employee_hr_id, trip_start_date, created_at")
+    .eq("status", "submitted");
+  if (error) return { processed: 0, errors: 1 };
+
+  // Find HR-level approver HR IDs from app_auth_users
+  const { data: approvers } = await supabase
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", ["Super Admin", "Finance Manager", "CEO"])
+    .eq("is_active", true);
+  const approverHrIds = (approvers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
+  if (approverHrIds.length === 0) return { processed: 0, errors: 0 };
+
+  let processed = 0;
+  let errors = 0;
+  const now = Date.now();
+  for (const row of data ?? []) {
+    const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
+    if (ageDays < 3) continue;
+    for (const hrId of approverHrIds) {
+      try {
+        await createSystemNotification({
+          channels: ["email"],
+          eventType: "outstation_sla_reminder",
+          message: `${String(row.employee_name)}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
+          metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${hrId}:${today}` },
+          module: "outstation",
+          priority: "normal",
+          recipientHrId: hrId,
+          title: "Outstation approval overdue",
+          actionUrl: `/admin/action-center?module=outstation&id=${String(row.id)}`,
+          email: {
+            ctaHref: `/admin/action-center?module=outstation&id=${String(row.id)}`,
+            ctaLabel: "Review now",
+            tone: "warning" as const,
+          },
+        });
+        processed++;
+      } catch {
+        errors++;
+      }
+    }
+  }
+  return { processed, errors };
+}
