@@ -7,6 +7,7 @@ import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
+import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
@@ -33,6 +34,7 @@ async function runDailyNotifications(request: Request) {
     marketingSla,
     recruitment,
     telegramDigest,
+    outstationGeocodeWarmup,
     outstationHighRisk,
     excuseSla,
     outstationSla,
@@ -44,6 +46,7 @@ async function runDailyNotifications(request: Request) {
     runMarketingSlaDaily(),
     runRecruitmentDailyNotifications(),
     runTelegramDailyHrDigest(),
+    runOutstationGeocodeWarmup(),
     runOutstationHighRiskDigest(),
     runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
@@ -59,6 +62,7 @@ async function runDailyNotifications(request: Request) {
     contractRenewals,
     excuseSla,
     marketingSla,
+    outstationGeocodeWarmup,
     outstationHighRisk,
     outstationSla,
     recruitment,
