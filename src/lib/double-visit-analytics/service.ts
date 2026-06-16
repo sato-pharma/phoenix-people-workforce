@@ -774,13 +774,13 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     const posRole = resolveJobFunctionRole(dvEmployee.positionTitle);
     const jobRole = resolveJobFunctionRole(dvEmployee.jobTitle);
     const isLineScopedRole =
-      posRole === "Product Manager" || posRole === "Group Product Manager" ||
-      jobRole === "Product Manager" || jobRole === "Group Product Manager";
+      posRole === "Product Manager" || posRole === "Group Product Manager" || posRole === "Training Manager" ||
+      jobRole === "Product Manager" || jobRole === "Group Product Manager" || jobRole === "Training Manager";
 
-    // Product lines aren't in the employee directory (lineName is geographic).
-    // Match PM/GPM to exactly the MRs they visited — this naturally scopes to
-    // their product line(s) without any hardcoded mapping. A PM covering two
-    // lines (e.g. Pedia + Anti Inf) automatically gets both sets of MR scores.
+    // PM/GPM/TM have no fixed org-chart team, so scope their executive report to
+    // exactly the MRs they actually visited. This is self-scoping: a PM covering two
+    // lines (e.g. Pedia + Anti Inf) automatically gets both sets of MR scores, and a
+    // TM does not get incorrectly assigned the entire MR universe.
     const dvVisitedMrKeys = isLineScopedRole
       ? new Set(
           rows
