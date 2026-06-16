@@ -1490,27 +1490,6 @@ export async function finalizeMonthlyDeductions(input: {
     totalAmount += row.decision?.appliedAmount ?? 0;
   }
 
-  const summaryPayload = {
-    candidate_count: approved.length,
-    employee_count: employeeCodes.size,
-    finalized_by: actor,
-    month,
-    month_key: monthKey,
-    notes: String(input.notes ?? "").trim() || null,
-    source_counts: sourceCounts,
-    total_amount: Math.round(totalAmount * 100) / 100,
-    total_days: Math.round(totalDays * 100) / 100,
-    year,
-  };
-
-  const summaryInsert = await getSupabaseAdmin()
-    .from("deduction_monthly_summaries")
-    .insert(summaryPayload)
-    .select("id, month_key, month, year, status, finalized_by, finalized_at, candidate_count, employee_count, total_days, total_amount, source_counts, notes, created_at")
-    .single();
-  if (summaryInsert.error) throw summaryInsert.error;
-  const summary = mapSummaryRow(summaryInsert.data as SummaryRow);
-
   const linePayloads = approved.map((row) => ({
     applied_amount: row.decision?.appliedAmount ?? 0,
     applied_deduction_value: row.decision?.appliedDeductionValue ?? 0,
@@ -1521,36 +1500,49 @@ export async function finalizeMonthlyDeductions(input: {
     deduction_unit: row.deductionUnit,
     employee_code: row.employeeCode,
     employee_hr_id_compact: row.employeeHrIdCompact,
-    employee_name: row.employeeName,
+    employee_name: row.employeeName ?? null,
     hr_note: row.decision?.hrNote ?? null,
     month_key: row.monthKey,
     original_deduction_value: row.deductionValue,
     payroll_column: row.decision?.payrollColumn,
-    reason: row.reason,
+    reason: row.reason ?? null,
     source_module: row.sourceModule,
-    summary_id: summary.id,
   }));
-
-  const linesInsert = await getSupabaseAdmin()
-    .from("deduction_monthly_summary_lines")
-    .insert(linePayloads)
-    .select("id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at");
-  if (linesInsert.error) throw linesInsert.error;
-  const lines = ((linesInsert.data ?? []) as SummaryLineRow[]).map(mapSummaryLineRow);
 
   const decisionIds = approved
     .map((row) => row.decision?.id)
     .filter((value): value is string => Boolean(value));
-  if (decisionIds.length > 0) {
-    const update = await getSupabaseAdmin()
-      .from("deduction_decisions")
-      .update({
-        finalized_summary_id: summary.id,
-        payroll_handoff_status: "Pending integration",
-      })
-      .in("id", decisionIds);
-    if (update.error) throw update.error;
-  }
+
+  // Single atomic RPC — summary insert + lines insert + decisions update in one transaction.
+  const { data: rpcData, error: rpcError } = await getSupabaseAdmin().rpc(
+    "phx_finalize_monthly_deductions",
+    {
+      p_month_key:       monthKey,
+      p_month:           month,
+      p_year:            year,
+      p_finalized_by:    actor,
+      p_candidate_count: approved.length,
+      p_employee_count:  employeeCodes.size,
+      p_total_days:      Math.round(totalDays * 100) / 100,
+      p_total_amount:    Math.round(totalAmount * 100) / 100,
+      p_source_counts:   sourceCounts,
+      p_notes:           String(input.notes ?? "").trim() || null,
+      p_lines:           linePayloads,
+      p_decision_ids:    decisionIds,
+    },
+  );
+  if (rpcError) throw rpcError;
+
+  const summary = mapSummaryRow(rpcData as SummaryRow);
+
+  // Load the newly created lines so the caller gets the full hydrated result.
+  const linesResult = await getSupabaseAdmin()
+    .from("deduction_monthly_summary_lines")
+    .select("id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at")
+    .eq("summary_id", summary.id)
+    .order("employee_name", { ascending: true });
+  if (linesResult.error) throw linesResult.error;
+  const lines = ((linesResult.data ?? []) as SummaryLineRow[]).map(mapSummaryLineRow);
 
   await writeAuditLog({
     actorLoginId: actor,

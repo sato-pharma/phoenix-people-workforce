@@ -60,12 +60,14 @@ if (config.AutoSyncEnabled) {
 }
 
 app.MapGet("/health", async (StartupValidator startupValidator) => {
-  var checks = await startupValidator.CheckAsync(includeDeviceConnect: false);
-  var healthy = checks.TokenConfigured && checks.SdkRegistered && checks.DeviceTcpReachable && checks.PhoenixReachable;
-  return Results.Json(new {
-    status = healthy ? "ok" : "degraded",
-    checks,
-  }, statusCode: healthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
+  var checks = await startupValidator.CheckAsync(includeDeviceConnect: true);
+  // "critical" checks determine 200 vs 503: agent can still receive commands even when device is offline.
+  var critical = checks.TokenConfigured && checks.SdkRegistered && checks.PhoenixReachable;
+  var status = critical && checks.DeviceConnects ? "ok"
+    : critical ? "degraded"
+    : "down";
+  return Results.Json(new { status, checks },
+    statusCode: critical ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
 });
 
 app.MapPost("/test-device", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient) => {

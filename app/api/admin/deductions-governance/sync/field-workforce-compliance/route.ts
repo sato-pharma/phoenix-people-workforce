@@ -4,10 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertDeductionsGovernanceDecisionActor } from "@/lib/deductions-governance/calculations";
-import {
-  syncFieldWorkforceApprovedDecisions,
-  syncFieldWorkforceNoActivityCandidates,
-} from "@/lib/deductions-governance/connectors/field-workforce-compliance";
+import { syncFieldWorkforceApprovedDecisions } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -40,7 +37,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "read");
     assertDeductionsGovernanceDecisionActor(access);
 
-    let body: { importId?: unknown; monthKey?: unknown; legacyApprovedOnly?: unknown } | null = null;
+    let body: { importId?: unknown; monthKey?: unknown } | null = null;
     try {
       body = await request.json();
     } catch {
@@ -65,17 +62,7 @@ export async function POST(request: Request) {
     }
 
     const createdBy = access.loginId ?? "system";
-    const result = body?.legacyApprovedOnly
-      ? await syncFieldWorkforceApprovedDecisions({
-          importId,
-          monthKey,
-          createdBy,
-        })
-      : await syncFieldWorkforceNoActivityCandidates({
-          archiveId: importId,
-          monthKey,
-          createdBy,
-        });
+    const result = await syncFieldWorkforceApprovedDecisions({ importId, monthKey, createdBy });
 
     await writeAuditLog({
       actorLoginId: createdBy,

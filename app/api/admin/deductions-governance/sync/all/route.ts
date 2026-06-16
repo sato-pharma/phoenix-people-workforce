@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertDeductionsGovernanceDecisionActor } from "@/lib/deductions-governance/calculations";
 import { syncAttendanceDeviceDeductionCandidates } from "@/lib/deductions-governance/connectors/attendance-device";
-import { syncFieldWorkforceNoActivityCandidates } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
+import { syncFieldWorkforceApprovedDecisions } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { syncVacationWithoutBalanceDeductionCandidates } from "@/lib/deductions-governance/connectors/vacation";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
     const createdBy = access.loginId ?? access.hrId ?? "system";
     const [fieldWorkforce, attendanceDevice, vacation] = await Promise.all([
-      syncFieldWorkforceNoActivityCandidates({ createdBy, monthKey }),
+      syncFieldWorkforceApprovedDecisions({ createdBy, monthKey }),
       syncAttendanceDeviceDeductionCandidates({ createdBy, monthKey }),
       syncVacationWithoutBalanceDeductionCandidates({ createdBy, monthKey }),
     ]);
