@@ -169,6 +169,7 @@ function writeTable(
   titleCell.font = { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 12 };
   titleCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   titleCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  titleCell.border = { top: { style: "medium" as const, color: { argb: ORANGE } } };
   sheet.getRow(row).height = 22;
   row += 1;
 
@@ -243,7 +244,7 @@ function bandHeader(sheet: ExcelJS.Worksheet, line: string | null, period: strin
   title.font = { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 16 };
   title.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   title.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-  sheet.getRow(1).height = 28;
+  sheet.getRow(1).height = 36;
 
   sheet.mergeCells(2, 1, 2, cols);
   const sub = sheet.getCell(2, 1);
@@ -251,20 +252,20 @@ function bandHeader(sheet: ExcelJS.Worksheet, line: string | null, period: strin
   sub.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 10 };
   sub.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   sub.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-  sheet.getRow(2).height = 16;
+  sheet.getRow(2).height = 18;
 
+  // Row 3 — amber slogan band: two lines, centred, clearly visible.
   sheet.mergeCells(3, 1, 3, cols);
   const sloganCell = sheet.getCell(3, 1);
   sloganCell.value = {
     richText: [
-      { font: { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "SFE Department" },
-      { font: { color: { argb: MUTED }, name: "Calibri", size: 10 }, text: "   ·   " },
-      { font: { italic: true, color: { argb: WHITE }, name: "Calibri", size: 10 }, text: "Where Your Achievement Belongs" },
+      { font: { bold: true, color: { argb: "FFD97706" }, name: "Calibri", size: 12 }, text: "SFE DEPARTMENT\n" },
+      { font: { italic: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "Where Your Achievement Belongs" },
     ],
   } as ExcelJS.CellRichTextValue;
-  sloganCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-  sloganCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-  sheet.getRow(3).height = 16;
+  sloganCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  sloganCell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+  sheet.getRow(3).height = 42;
 }
 
 function leaderText(leader: { distributorName: string; share: number } | null) {
