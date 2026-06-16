@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import {
   attachPlanningConflictWarnings,
@@ -237,4 +237,51 @@ export function runWeeklyMonthlyPlansV1Tests() {
     }) ?? "",
     /warning only/i,
   );
+  // ── cancel state-machine transitions (PR 3 of the 10/10 plan) ────────────
+  assert.equal(getNextEmployeePlanStatus("draft", "cancel"), "cancelled", "cancel from draft must reach cancelled");
+  assert.equal(getNextEmployeePlanStatus("submitted", "cancel"), "cancelled", "cancel from submitted must reach cancelled");
+  assert.equal(getNextEmployeePlanStatus("manager_returned", "cancel"), "cancelled", "cancel from manager_returned must reach cancelled");
+  assert.equal(getNextEmployeePlanStatus("ceo_returned", "cancel"), "cancelled", "cancel from ceo_returned must reach cancelled");
+  assert.throws(() => getNextEmployeePlanStatus("final_approved", "cancel"), "cancel from final_approved must throw");
+  assert.throws(() => getNextEmployeePlanStatus("hr_acknowledged", "cancel"), "cancel from hr_acknowledged must throw");
+  assert.throws(() => getNextEmployeePlanStatus("cancelled", "cancel"), "cancel from already-cancelled must throw");
+
+  // ── cancel route exists ───────────────────────────────────────────────────
+  const routeDir = "app/api/weekly-plans/[id]/cancel";
+  const cancelRouteExists = readdirSync(routeDir).some((f) => f === "route.ts");
+  assert.ok(cancelRouteExists, "cancel route.ts must exist at app/api/weekly-plans/[id]/cancel/route.ts");
+
+  const cancelRouteSource = readFileSync("app/api/weekly-plans/[id]/cancel/route.ts", "utf8");
+  assert.match(cancelRouteSource, /cancelEmployeePlan/, "cancel route must delegate to cancelEmployeePlan");
+  assert.match(cancelRouteSource, /assertSameOriginMutation/, "cancel route must enforce CSRF");
+  assert.match(cancelRouteSource, /isWeeklyPlanRpcError/, "cancel route must map RPC errors to HTTP status");
+
+  // ── RPC wiring invariant: every write function uses supabase.rpc() ────────
+  // Guards against a future regression back to bare multi-step writes.
+  // Every service-level write function must directly call a phx_weekly_plan_* RPC
+  // OR call one of the internal rpc*Plan wrapper functions (rpcSubmitPlan,
+  // rpcDecidePlan, rpcAcknowledgePlan, rpcCancelPlan) that themselves call the RPC.
+  for (const fn of ["createEmployeePlan", "updateEmployeePlan", "decideEmployeePlan", "acknowledgeEmployeePlan", "cancelEmployeePlan"]) {
+    const fnStart = serviceSource.indexOf(`export async function ${fn}`);
+    assert.ok(fnStart >= 0, `${fn} must be exported from service.ts`);
+    const fnBody = serviceSource.slice(fnStart, fnStart + 3000);
+    const callsRpcDirectly = fnBody.includes('rpc("phx_weekly_plan_');
+    const callsRpcWrapper = /rpc(?:Submit|Decide|Acknowledge|Cancel)Plan\(/.test(fnBody);
+    assert.ok(
+      callsRpcDirectly || callsRpcWrapper,
+      `${fn} must call supabase.rpc("phx_weekly_plan_…") or a rpc*Plan wrapper — bare multi-step writes regressed`,
+    );
+  }
+
+  // ── import-route-does-not-exist invariant ─────────────────────────────────
+  // The audit raised XLSX import as a gap; we deliberately have no import route.
+  // Pin the absence so future audits don't re-raise it as an accidental omission.
+  const routeFiles = readdirSync("app/api/weekly-plans").flatMap((entry) => {
+    try { return readdirSync(`app/api/weekly-plans/${entry}`).map((f) => `${entry}/${f}`); } catch { return [entry]; }
+  });
+  assert.ok(
+    !routeFiles.some((f) => /import/.test(f)),
+    "weekly-plans must NOT have an import route — XLSX import is deliberately out of scope",
+  );
+
 }

@@ -802,6 +802,23 @@ async function rpcAcknowledgePlan(input: {
   if (error) rethrowWeeklyPlanRpcError(error);
 }
 
+async function rpcCancelPlan(input: {
+  access: AccessContext;
+  comment?: string | null;
+  expectedRevision: number;
+  planId: string;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_cancel", {
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_comment: input.comment ?? null,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
 // Note: row-level return notes are now written inside phx_weekly_plan_decide
 // (migration 20260617090000). The previous recordReturnNotes() helper was
 // retired with the atomicity rewire and no longer has a caller.
@@ -1352,6 +1369,22 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
     entityId: planId,
     entityType: "weekly_plan",
     summary: `${plan.plan_kind} plan acknowledged by HR`,
+  });
+  return mapPlan(await loadPlanRow(planId));
+}
+
+export async function cancelEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
+  await assertPermission(access, "weekly_plans", "update");
+  const plan = await loadPlanRow(planId);
+  assertPlanOwner(access, plan);
+  await rpcCancelPlan({ access, comment, expectedRevision: plan.revision, planId });
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: "cancelled" },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan cancelled`,
   });
   return mapPlan(await loadPlanRow(planId));
 }
