@@ -4,9 +4,9 @@
 // into duplicate / "Unspecified" buckets in the breakdowns, filters, and table.
 
 /**
- * Canonical transportation mode. Real modes are car / train / bus / other; a meeting
- * expense has no travel, so a row with no transport mode but a meeting amount (or a
- * meeting trip type) is labelled "Meeting" — meetings are a legitimate, common expense.
+ * Canonical transportation mode — car / train / bus / other only. Meeting expenses
+ * have no travel mode; they return "" so they are excluded from the transportation
+ * breakdown and appear only in the "Spend by type" chart via their tripType.
  */
 export function normalizeTransportation(
   transport: string | null | undefined,
@@ -18,10 +18,7 @@ export function normalizeTransportation(
   if (value === "train") return "Train";
   if (value === "bus") return "Bus";
   if (value === "other") return "Other";
-
-  const isMeeting = (meetingAmount ?? 0) > 0 || (tripType ?? "").toLowerCase().includes("meeting");
-  if (!value && isMeeting) return "Meeting";
-  return "Other";
+  return "";
 }
 
 /** Title-case the expense type so case variants ("Other"/"other") collapse to one bucket. */

@@ -436,7 +436,10 @@ export async function getOutstationExpenseCommandData(
     byLine: groupPayrollExpenses(rows, (row) => (row as ExpenseCommandRow).line ?? "Unassigned"),
     byEmployee: groupPayrollExpenses(rows, (row) => row.specialist || "Unassigned"),
     bySource: groupPayrollExpenses(rows, (row) => sourceLabels[(row as ExpenseCommandRow).source]),
-    byTransportation: groupPayrollExpenses(rows, (row) => row.transportationType || "Unspecified"),
+    byTransportation: groupPayrollExpenses(
+      rows.filter((row) => !!row.transportationType),
+      (row) => row.transportationType,
+    ),
     // Group by tripType (NOT requestType) so the "by type" slice key matches the
     // expenseType filter field and the Expense-type dropdown options.
     byExpenseType: groupPayrollExpenses(rows, (row) => (row as ExpenseCommandRow).tripType || "Unspecified"),
