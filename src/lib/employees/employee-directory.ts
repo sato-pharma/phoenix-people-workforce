@@ -1321,6 +1321,22 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   };
 }
 
+// Page past the PostgREST db-max-rows cap (~1000) so a large headcount is never silently
+// truncated. A total order (full_name + hr_id tiebreaker) keeps offset paging exact.
+async function fetchAllEmployeeRows(params: URLSearchParams): Promise<EmployeeDbRow[]> {
+  const pageSize = 1000;
+  const all: EmployeeDbRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const pageParams = new URLSearchParams(params);
+    pageParams.set("limit", String(pageSize));
+    pageParams.set("offset", String(offset));
+    const page = await supabaseRest<EmployeeDbRow[]>(`employees?${pageParams.toString()}`);
+    all.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return all;
+}
+
 export async function getEmployeeDirectoryRows(
   options: { includeInactive?: boolean } = {},
 ): Promise<EmployeeDirectoryRow[]> {
@@ -1328,14 +1344,12 @@ export async function getEmployeeDirectoryRows(
     "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
-    order: "full_name.asc",
+    order: "full_name.asc,hr_id.asc",
   });
   let employeeRows: EmployeeDbRow[];
 
   try {
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(
-      `employees?${employeeParams}`,
-    );
+    employeeRows = await fetchAllEmployeeRows(employeeParams);
   } catch (error) {
     if (!isMissingRelationMessage(error)) {
       throw error;
@@ -1343,11 +1357,9 @@ export async function getEmployeeDirectoryRows(
 
     const fallbackParams = new URLSearchParams({
       select: baseEmployeeSelect,
-      order: "full_name.asc",
+      order: "full_name.asc,hr_id.asc",
     });
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(
-      `employees?${fallbackParams}`,
-    );
+    employeeRows = await fetchAllEmployeeRows(fallbackParams);
   }
 
   const [departmentNames, lineNames, areaNames, positionTitles, teamNames, managerNames, compensationByHrId] =
