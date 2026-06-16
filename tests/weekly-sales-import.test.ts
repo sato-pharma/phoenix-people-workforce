@@ -213,19 +213,25 @@ async function rmWorkbook(opts?: { multiDate?: boolean; divergentNet?: boolean }
 
     const stock = wb.addWorksheet("STOCK");
     stock.addRow(["RAMCO Stock"]);
+    // Row 2: wide header — cols 6-18 are branch totals (stripped of "إجمالى " prefix in the adapter).
+    // We test with two branch columns matching the SALES branch names so the aggKey joins correctly.
     const stockHeader = new Array(35).fill("");
-    stockHeader[3] = "كود"; // col4
-    stockHeader[4] = "إسم الصنف"; // col5
-    stockHeader[34] = "الإجمالى"; // col35 grand total
+    stockHeader[3] = "كود"; // col4 product code
+    stockHeader[4] = "إسم الصنف"; // col5 product name
+    stockHeader[5] = "إجمالى Cairo Branch"; // col6 — adapter strips prefix → "Cairo Branch"
+    stockHeader[6] = "إجمالى Giza Branch"; // col7 — adapter strips prefix → "Giza Branch"
+    stockHeader[34] = "الإجمالى"; // col35 grand total (no longer read by adapter)
     stock.addRow(stockHeader);
-    const mkStock = (code: string, qty: number) => {
+    const mkStock = (code: string, cairoQty: number, gizaQty: number) => {
       const r = new Array(35).fill("");
       r[3] = code;
       r[4] = "SAGINKGO";
-      r[34] = qty;
+      r[5] = cairoQty; // col6
+      r[6] = gizaQty; // col7
+      r[34] = cairoQty + gizaQty; // col35 grand total (ignored by adapter now)
       return r;
     };
-    stock.addRow(mkStock("RM-SAG", 40)); // product-level total, no branch
+    stock.addRow(mkStock("RM-SAG", 40, 0)); // 40 units in Cairo Branch, 0 in Giza
   });
 }
 
@@ -334,6 +340,51 @@ async function psStockWorkbook(opts?: { driftHeader?: boolean }): Promise<ExcelJ
   });
 }
 
+// ── SF (Sofico) synthetic workbook ──────────────────────────────────────────────────────────────
+// col4=ItemID (Sofico code), col5=ItemName, col12=State (branch numeric ID), col13=statename
+// (Arabic branch name), col20=SalesQty, col21=BonusQty, col22=ReturnQty, col24=NET SALES.
+// No date column — always requires periodDate.
+async function sfWorkbook(opts?: { hasReturn?: boolean }): Promise<ExcelJS.Buffer> {
+  return bufferOf((wb) => {
+    const sheet = wb.addWorksheet("Sheet1");
+    const header = new Array(24).fill("");
+    header[0] = "VENDOR";       // col1
+    header[1] = "VendorName";   // col2
+    header[2] = "InventSiteID"; // col3 (not used by adapter)
+    header[3] = "ItemID";       // col4 — Sofico product code (alias key)
+    header[4] = "ItemName";     // col5
+    header[11] = "State";       // col12 — branch numeric ID
+    header[12] = "statename";   // col13 — Arabic branch name
+    header[19] = "SalesQty";    // col20 — gross
+    header[20] = "BonusQty";    // col21 — read, not priced
+    header[21] = "ReturnQty";   // col22
+    header[23] = "NET SALES";   // col24 — authoritative net
+    sheet.addRow(header);
+    const mkRow = (branchId: string, branchName: string, itemCode: string, gross: number, ret: number, net: number, bonus = 0) => {
+      const r = new Array(24).fill("");
+      r[0] = "SOFICO";
+      r[3] = itemCode;    // col4 ItemID
+      r[4] = "SAGINKGO";  // col5 ItemName
+      r[11] = branchId;   // col12 State (branch numeric ID)
+      r[12] = branchName; // col13 statename
+      r[19] = gross;
+      r[20] = bonus;
+      r[21] = ret;
+      r[23] = net;
+      return r;
+    };
+    // Two rows for branch "2" (Giza) — must aggregate to one fact row (net 3 + 5 = 8).
+    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 3, 0, 3));
+    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 5, 0, 5));
+    if (opts?.hasReturn) {
+      // Branch "11" (Alexandria) with a return: gross 10, ret 2, NET SALES 8 (authoritative).
+      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 10, 2, 8, 1));
+    } else {
+      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 6, 0, 6));
+    }
+  });
+}
+
 export async function runWeeklySalesImportTests() {
   // ════════════ EG (EGD) ════════════
   {
@@ -421,29 +472,34 @@ export async function runWeeklySalesImportTests() {
       assert.equal(cairo?.salesQty, 12, "RM gross from بيع");
       assert.equal(cairo?.returnQty, 2, "RM return from مرتجع بيع");
       assert.equal(cairo?.salesValue, round2(10 * PRICES.SA001), "RM value = net * factory_price");
-      // Stock-only product-level row (no branch) is allowed (not blocked).
-      const stockRow = rm.rows.find((row) => row.productCode === "SA001" && row.stockQty === 40 && !row.branchCode);
-      assert.ok(stockRow, "RM stock-only row present under empty branch");
-      assert.equal(rm.result.totals.stockQty, 40, "RM stock total from الإجمالى");
+      // Stock is now per-branch: the adapter reads each branch column (6-18) from the STOCK sheet
+      // header, strips the "إجمالى " prefix, and joins back on the same branch code used in SALES.
+      // RM-SAG has 40 units in Cairo Branch — that stock merges into the Cairo sales fact row.
+      const cairoFact = rm.rows.find((row) => row.productCode === "SA001" && row.branchCode === "Cairo Branch");
+      assert.ok(cairoFact, "RM Cairo fact present after stock merge");
+      assert.equal(cairoFact?.stockQty, 40, "RM stock per-branch: 40 units merged into Cairo fact");
+      assert.equal(rm.result.totals.stockQty, 40, "RM stock total correct (per-branch, Giza qty=0 skipped)");
 
-      // The branchless stock grand-total must NOT create a phantom "—" region/branch on the dashboard.
+      // Per-branch stock means stock now shows in the branch and region breakdowns.
+      const sagProduct = rm.result.byProduct.find((p) => p.productCode === "SA001");
+      assert.ok(sagProduct, "RM byProduct has SA001");
+      assert.equal(sagProduct?.stockQty, 40, "RM stock visible under the product");
+      const cairoRegion = rm.result.byRegion.find((r) => r.regionCode === "CA");
+      assert.ok(cairoRegion, "RM byRegion keeps Cairo");
+      assert.equal(cairoRegion?.stockQty, 40, "RM stock visible in Cairo region");
+      assert.ok(rm.result.byRegion.some((r) => r.regionCode === "GZ"), "RM byRegion keeps Giza");
+
+      // No phantom empty/— region or branch rows.
       assert.equal(
         rm.result.byRegion.some((r) => !r.regionCode || r.regionCode === "—"),
         false,
-        "RM byRegion has no empty/— bucket from the stock grand-total",
+        "RM byRegion has no phantom empty/— bucket",
       );
       assert.equal(
         rm.result.byBranch.some((b) => !b.branchCode || b.branchCode === "—"),
         false,
-        "RM byBranch has no empty/— bucket from the stock grand-total",
+        "RM byBranch has no phantom empty/— bucket",
       );
-      // Stock stays visible where it belongs: under the product and in the grand totals.
-      const sagProduct = rm.result.byProduct.find((p) => p.productCode === "SA001");
-      assert.ok(sagProduct, "RM byProduct has SA001");
-      assert.equal(sagProduct?.stockQty, 40, "RM stock shown under the product (not a phantom region)");
-      // Real sales geography is untouched: Cairo + Giza regions still present.
-      assert.ok(rm.result.byRegion.some((r) => r.regionCode === "CA"), "RM byRegion keeps Cairo");
-      assert.ok(rm.result.byRegion.some((r) => r.regionCode === "GZ"), "RM byRegion keeps Giza");
     }
 
     // صافى كمية (col15) is AUTHORITATIVE: when it diverges from بيع − مرتجع, the parser must use
@@ -723,6 +779,83 @@ export async function runWeeklySalesImportTests() {
       assert.equal(excluded.result.status, "validated", "excluded branch does not block");
       assert.equal(excluded.result.totals.salesValue, 0, "excluded branch cells dropped from totals");
       assert.equal(excluded.result.rowCount, 0, "excluded branch produces no fact rows");
+    }
+  }
+
+  // ════════════ SF (Sofico) — per-customer invoice detail, twice-monthly ════════════
+  {
+    // Branch codes are the numeric State IDs from col12: "2" = Giza, "11" = Alexandria.
+    const branch = branchIndex({
+      branches: [
+        { key: "2", fileType: "sales", region: "GZ" },
+        { key: "11", fileType: "sales", region: "CA" },
+      ],
+    });
+    const aliases = aliasIndex("SF", { "SF-SAG": "SA001" });
+
+    // No periodDate → blocked (file has no date column).
+    const noDate = await parseWeeklyWorkbookBuffer({
+      buffer: await sfWorkbook(),
+      distributorCode: "SF",
+      distributorName: "Sofico",
+      fileName: "SF.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(noDate.ok, true, "SF parses");
+    if (noDate.ok) assert.equal(noDate.result.status, "blocked", "SF blocks without periodDate (no date column)");
+
+    // With periodDate → validates; multiple rows for same (product, branch) aggregate.
+    const sf = await parseWeeklyWorkbookBuffer({
+      buffer: await sfWorkbook(),
+      distributorCode: "SF",
+      distributorName: "Sofico",
+      fileName: "SF.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+      periodDate: "2025-05-31",
+    });
+    assert.equal(sf.ok, true);
+    if (sf.ok) {
+      assert.equal(sf.result.status, "validated", "SF validates with periodDate");
+      assert.equal(sf.result.weekStart, "2025-05-31", "SF uses supplied periodDate");
+
+      // Two rows for branch "2" (Giza) aggregate into one fact row (net 3 + 5 = 8).
+      const giza = sf.rows.find((row) => row.branchCode === "2");
+      assert.ok(giza, "SF Giza (branch 2) fact row present — aggregated from 2 invoice lines");
+      assert.equal(giza?.netQty, 8, "SF Giza authoritative net = 3 + 5");
+      assert.equal(giza?.salesQty, 8, "SF Giza gross = 3 + 5");
+      assert.equal(giza?.returnQty, 0, "SF Giza return = 0");
+      assert.equal(giza?.salesValue, round2(8 * PRICES.SA001), "SF value = net * factory_price");
+      assert.equal(giza?.regionCode, "GZ", "SF region resolved from branch map");
+
+      const alex = sf.rows.find((row) => row.branchCode === "11");
+      assert.ok(alex, "SF Alexandria (branch 11) fact row present");
+      assert.equal(alex?.netQty, 6, "SF Alexandria net = 6");
+    }
+
+    // Return rows: NET SALES is authoritative, return reconciled to gross − net.
+    const withReturn = await parseWeeklyWorkbookBuffer({
+      buffer: await sfWorkbook({ hasReturn: true }),
+      distributorCode: "SF",
+      distributorName: "Sofico",
+      fileName: "SF.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+      periodDate: "2025-05-31",
+    });
+    assert.equal(withReturn.ok, true);
+    if (withReturn.ok) {
+      assert.equal(withReturn.result.status, "validated", "SF with return validates");
+      const alexRet = withReturn.rows.find((row) => row.branchCode === "11");
+      assert.ok(alexRet, "SF Alexandria return fact row present");
+      assert.equal(alexRet?.netQty, 8, "SF Alexandria net = NET SALES column (8)");
+      assert.equal(alexRet?.salesQty, 10, "SF Alexandria gross stays as SalesQty (10)");
+      assert.equal(alexRet?.returnQty, 2, "SF Alexandria return reconciled to gross − net = 10 − 8 = 2");
+      assert.equal(alexRet?.salesValue, round2(8 * PRICES.SA001), "SF value = authoritative net * factory_price");
     }
   }
 

@@ -367,8 +367,8 @@ function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: Fa
   for (const row of rows) {
     totalValue += row.salesValue;
     const key = keyOf(row);
-    // No-group-key rows (e.g. RAMCO stock is a product-level grand total with no region) stay in the
-    // KPI totals and the by-product table, but must not form a phantom "—" region/distributor bucket.
+    // No-group-key rows (e.g. branchless stock fallbacks) stay in the KPI totals and the by-product
+    // table but must not form a phantom "—" region/distributor bucket.
     if (!key) continue;
     const current = groups.get(key) ?? { name: nameOf(row) || key, salesValue: 0, salesUnits: 0, stockUnits: 0 };
     current.salesValue += row.salesValue;
@@ -397,7 +397,7 @@ function rankBranches(rows: FactRow[]): WeeklyBranchComparisonRow[] {
   for (const row of rows) {
     totalValue += row.salesValue;
     const key = row.branchCode || row.branchName;
-    // Branchless rows (RAMCO stock grand-total) stay in totals + by-product, never a phantom "-" branch.
+    // Branchless rows stay in totals + by-product, never a phantom "-" branch.
     if (!key) continue;
     const current = groups.get(key) ?? {
       name: row.branchName || key,
@@ -576,7 +576,7 @@ export async function loadWeeklyDashboard(filters?: {
   const branchAgg = new Map<string, { branchName: string; regionName: string; salesValue: number; salesUnits: number; stockUnits: number }>();
   for (const row of weekRows) {
     const key = row.branchCode || row.branchName;
-    // Skip branchless rows (RAMCO stock grand-total) so the zero-sales list never shows a "—" branch.
+    // Skip branchless rows so the zero-sales list never shows a "—" branch.
     if (!key) continue;
     const current = branchAgg.get(key) ?? { branchName: row.branchName || key, regionName: row.regionName, salesValue: 0, salesUnits: 0, stockUnits: 0 };
     current.salesValue += row.salesValue;
