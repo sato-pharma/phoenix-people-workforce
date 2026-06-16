@@ -179,12 +179,18 @@ export function summarizeNotificationOutboxRows(
 
 export function summarizeNotificationMonitoring(input: {
   deliveryEvents?: EmailDeliveryEventMetricRow[];
+  /**
+   * @deprecated The notification_delivery_logs table was retired by migration
+   * 20260616120000 (zero writers, zero rows in prod). This field is still
+   * accepted for backward-compat with older callers, but `failed24h` and
+   * `sent24h` are now derived from `deliveryEvents` (email_delivery_events)
+   * which is the canonical Resend-webhook log. Pass nothing here.
+   */
   deliveryLogs?: NotificationDeliveryLogMetricRow[];
   notificationEvents?: NotificationEventMetricRow[];
   sinceIso?: string;
 }) {
   const sinceIso = input.sinceIso;
-  const deliveryLogs = (input.deliveryLogs ?? []).filter((row) => inWindow(row.sentAt, sinceIso));
   const notificationEvents = (input.notificationEvents ?? []).filter((row) => inWindow(row.createdAt, sinceIso));
   const deliveryCounts = Object.fromEntries(deliveryStatuses.map((status) => [status, 0])) as Record<(typeof deliveryStatuses)[number], number>;
 
@@ -197,7 +203,7 @@ export function summarizeNotificationMonitoring(input: {
 
   return {
     actualDelivery24h: deliveryCounts,
-    failed24h: deliveryLogs.filter((row) => normalizedStatus(row.status) === "failed").length,
+    failed24h: deliveryCounts.failed,
     pending24h: notificationEvents.filter((row) => normalizedStatus(row.status) === "pending").length,
     recentDeliveryEvents: (input.deliveryEvents ?? [])
       .slice()
@@ -211,7 +217,7 @@ export function summarizeNotificationMonitoring(input: {
         status: String(row.status ?? "unknown"),
         subject: row.subject ?? null,
       })),
-    sent24h: deliveryLogs.filter((row) => normalizedStatus(row.status) === "sent").length,
+    sent24h: deliveryCounts.sent,
     totalQueuedEvents: notificationEvents.length,
   };
 }
