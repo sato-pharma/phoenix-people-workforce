@@ -561,13 +561,13 @@ export function ExpensesDashboard({
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {!portalMode && (
               <>
-                <Link href="/admin/outstation/requests">
+                <Link href="/admin/outstation/expense-command?tab=queue">
                   <Button className="gap-2 rounded-xl">
                     <MapPinned className="h-4 w-4" />
                     Review Requests
                   </Button>
                 </Link>
-                <Link href="/admin/outstation/requests?action=create-manager-expense">
+                <Link href="/admin/outstation/expense-command?tab=queue&action=create-manager-expense">
                   <Button className="gap-2 rounded-xl" variant="secondary">
                     <ReceiptText className="h-4 w-4" />
                     Add Manual
