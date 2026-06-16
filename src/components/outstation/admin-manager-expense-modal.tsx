@@ -816,7 +816,7 @@ export function AdminManagerExpenseModal({
                   </span>
                 ) : null}
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
                   <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
                     Fuel (round trip)
@@ -831,14 +831,6 @@ export function AdminManagerExpenseModal({
                   </p>
                   <p className="mt-0.5 text-sm font-black text-[#0F172A]">
                     {formatEgp(calcPreview.allowanceAmount)}
-                  </p>
-                </div>
-                <div className="rounded-md bg-[#FFF7ED] px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
-                    Expected total
-                  </p>
-                  <p className="mt-0.5 text-sm font-black text-[#EA580C]">
-                    {formatEgp(calcPreview.expectedTotalAmount)}
                   </p>
                 </div>
               </div>
@@ -857,7 +849,7 @@ export function AdminManagerExpenseModal({
               ) : null}
               {calcPreview.eligibilityStatus === "not_eligible" ? (
                 <p className="mt-3 text-xs font-semibold text-[#B91C1C]">
-                  Distance is below the policy minimum, so the expected payout is EGP 0. The
+                  Distance is below the policy minimum, so the policy payout is EGP 0. The
                   claim can still be filed for manual review.
                 </p>
               ) : null}

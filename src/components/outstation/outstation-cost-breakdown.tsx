@@ -28,19 +28,9 @@ export function OutstationCostBreakdown({
         <Line accent="border-l-emerald-400" label="Allowance" value={egp(result.allowanceAmount)} />
         <Line accent="border-l-sky-400" label="Ticket Amount" value={egp(result.ticketAmount)} />
         <Line
-          accent="border-l-orange-500"
-          label="Expected Total"
-          value={egp(result.expectedTotalAmount)}
-        />
-        <Line
           accent="border-l-slate-400"
           label="Claimed Total"
           value={egp(result.claimedTotalAmount)}
-        />
-        <Line
-          accent="border-l-amber-400"
-          label="Variance"
-          value={`${egp(result.varianceAmount)} (${result.variancePercent.toFixed(1)}%)`}
         />
         <Line
           accent="border-l-emerald-300"

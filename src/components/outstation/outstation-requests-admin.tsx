@@ -321,9 +321,7 @@ function RequestDetailsModal({
             <Info label="Residence coordinates" value={request.residenceLatitude != null && request.residenceLongitude != null ? `${request.residenceLatitude.toFixed(5)}, ${request.residenceLongitude.toFixed(5)}` : "N/A"} />
             <Info label="Distance" value={formatKm(request.distanceFromResidenceKm)} />
             <Info label="Duration" value={request.durationMinutes != null ? `${request.durationMinutes.toFixed(0)} mins` : "N/A"} />
-            <Info label="Expected amount" value={formatCurrency(request.expectedTotalAmount)} />
             <Info label="Claimed amount" value={formatCurrency(request.claimedTotalAmount)} />
-            <Info label="Variance" value={`${formatCurrency(request.varianceAmount)} (${request.variancePercent.toFixed(1)}%)`} />
             <Info label="Transportation" value={formatStatus(request.transportationType)} />
             <Info label="Expense type" value={formatStatus(request.expenseType)} />
             <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
@@ -346,10 +344,10 @@ function RequestDetailsModal({
               </span>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Allowance calculation</p>
-                <h3 className="mt-1 text-lg font-black text-[#0F172A]">How the expected amount is built</h3>
+                <h3 className="mt-1 text-lg font-black text-[#0F172A]">How fuel &amp; allowance are calculated</h3>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
                 <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">Fuel (round trip)</p>
                 <p className="mt-1 text-lg font-black text-[#0F172A]">{formatCurrency(request.fuelAmount)}</p>
@@ -365,11 +363,6 @@ function RequestDetailsModal({
                     ? "Same-day trip"
                     : `${request.overnightDays} overnight ${request.overnightDays === 1 ? "night" : "nights"} + return day`}
                 </p>
-              </div>
-              <div className="rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#EA580C]">Expected total</p>
-                <p className="mt-1 text-lg font-black text-[#EA580C]">{formatCurrency(request.expectedTotalAmount)}</p>
-                <p className="mt-0.5 text-[11px] text-[#EA580C]/70">Fuel + allowance</p>
               </div>
             </div>
             {request.allowanceBreakdown && request.allowanceBreakdown.rows.length > 0 ? (
@@ -615,7 +608,6 @@ export function OutstationRequestsAdmin({
       { key: "travelCost", label: "Travel cost", numeric: true, width: 13 },
       { key: "allowance", label: "Allowance", numeric: true, width: 13 },
       { key: "meeting", label: "Meeting", numeric: true, width: 12 },
-      { key: "expected", label: "Expected", numeric: true, width: 13 },
       { key: "claimed", label: "Claimed", numeric: true, width: 13 },
       { key: "recommendation", label: "Recommendation", width: 18 },
     ],
@@ -637,7 +629,6 @@ export function OutstationRequestsAdmin({
         travelCost: roundForExport(request.fuelAmount + request.ticketAmount),
         allowance: roundForExport(request.allowanceAmount),
         meeting: roundForExport(request.expenseType === "meeting" ? request.claimedTotalAmount : 0),
-        expected: roundForExport(request.expectedTotalAmount),
         claimed: roundForExport(request.claimedTotalAmount),
         recommendation: formatStatus(request.approvalRecommendation),
       })),
@@ -661,13 +652,11 @@ export function OutstationRequestsAdmin({
       (accumulator, request) => {
         accumulator.approved += request.status === "approved" ? 1 : 0;
         accumulator.claimed += request.claimedTotalAmount;
-        accumulator.expected += request.expectedTotalAmount;
         accumulator.rejected += request.status === "rejected" ? 1 : 0;
         accumulator.submitted += request.status === "submitted" ? 1 : 0;
-        accumulator.variance += request.varianceAmount;
         return accumulator;
       },
-      { approved: 0, claimed: 0, expected: 0, rejected: 0, submitted: 0, variance: 0 },
+      { approved: 0, claimed: 0, rejected: 0, submitted: 0 },
     );
   }, [filtered]);
 
@@ -842,7 +831,7 @@ export function OutstationRequestsAdmin({
     <OutstationAdminShell>
       <div className="space-y-6">
         <AdminPageHero
-          description="Review uploaded history, employee requests, manual entries, eligibility, expected payout, claimed amount, evidence, route validation, and final admin decisions."
+          description="Review uploaded history, employee requests, manual entries, eligibility, claimed amount, evidence, route validation, and final admin decisions."
           eyebrow="Outstation expenses"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Outstation expenses"
@@ -869,19 +858,17 @@ export function OutstationRequestsAdmin({
           badges={(
             <>
               <AdminInsightChip tone="orange">Requests: {filtered.length}</AdminInsightChip>
-              <AdminInsightChip tone="slate">Expected: {formatCurrency(totals.expected)}</AdminInsightChip>
               <AdminInsightChip tone="slate">Claimed: {formatCurrency(totals.claimed)}</AdminInsightChip>
               <AdminInsightChip tone="emerald">Approved: {totals.approved}</AdminInsightChip>
             </>
           )}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="Requests" value={String(filtered.length)} />
           <Metric label="Submitted" value={String(totals.submitted)} />
           <Metric label="Approved" value={String(totals.approved)} />
           <Metric label="Rejected" value={String(totals.rejected)} />
-          <Metric label="Expected" value={formatCurrency(totals.expected)} />
           <Metric label="Claimed" value={formatCurrency(totals.claimed)} />
         </div>
 
@@ -982,9 +969,7 @@ export function OutstationRequestsAdmin({
                     <th className={adminTableHeaderClassName}>Distance</th>
                     <th className={adminTableHeaderClassName}>Eligibility</th>
                     <th className={adminTableHeaderClassName}>Status</th>
-                    <th className={adminTableHeaderClassName}>Expected</th>
                     <th className={adminTableHeaderClassName}>Claimed</th>
-                    <th className={adminTableHeaderClassName}>Variance</th>
                     <th className={adminTableHeaderClassName}>Recommendation</th>
                     <th className={adminTableHeaderClassName}>Actions</th>
                   </tr>
@@ -1020,13 +1005,7 @@ export function OutstationRequestsAdmin({
                           </span>
                         </td>
                         <td className="px-4 py-3 font-semibold text-[#64748B]">
-                          {formatCurrency(request.expectedTotalAmount)}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-[#64748B]">
                           {formatCurrency(request.claimedTotalAmount)}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-[#64748B]">
-                          {formatCurrency(request.varianceAmount)} ({request.variancePercent.toFixed(1)}%)
                         </td>
                         <td className={`px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${recommendationTone(request.approvalRecommendation)}`}>
                           {formatStatus(request.approvalRecommendation)}
