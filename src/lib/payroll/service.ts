@@ -1175,7 +1175,7 @@ function normalizePersistedValue(column: string, value: unknown) {
   if (column === "hire_date") return String(value).slice(0, 10);
   if (salaryRecordNumericColumns.has(column)) {
     const numberValue = Number(value);
-    return Number.isFinite(numberValue) ? Math.round((numberValue + Number.EPSILON) * 100) / 100 : value;
+    return Number.isFinite(numberValue) ? Math.round(numberValue * 100) / 100 : value;
   }
   return String(value);
 }
@@ -1304,13 +1304,6 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
 
   const batch = mapBatch(batchData as Record<string, unknown>);
   await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
-  await writeRequiredAuditLog({
-    actorLoginId: input.uploadedBy,
-    entityId: batch.id,
-    entityType: "payroll_batch",
-    newValues: { fileName: input.fileName, month: input.month, recordCount: recordPayloads.length, status: "uploaded", year: input.year },
-    summary: `Payroll batch created for ${input.year}-${String(input.month).padStart(2, "0")}.`,
-  });
   invalidateExecutiveDashboardCache("payroll batch created", ["payroll"]);
 
   return {
@@ -1320,15 +1313,8 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
   };
 }
 
-export async function deleteSalaryBatch(batchId: string, actorHrId?: string | null) {
+export async function deleteSalaryBatch(batchId: string) {
   const supabase = getSupabaseAdmin();
-
-  const { data: batchMeta } = await supabase
-    .from("salary_batches")
-    .select("year, month, status")
-    .eq("id", batchId)
-    .maybeSingle();
-
   const { error } = await supabase.rpc("phx_delete_salary_batch", {
     p_batch_id: batchId,
   });
@@ -1341,13 +1327,6 @@ export async function deleteSalaryBatch(batchId: string, actorHrId?: string | nu
     throw error;
   }
 
-  await writeRequiredAuditLog({
-    actorLoginId: actorHrId ?? null,
-    entityId: batchId,
-    entityType: "payroll_batch",
-    oldValues: batchMeta ? { month: batchMeta.month, status: batchMeta.status, year: batchMeta.year } : null,
-    summary: `Payroll batch deleted.`,
-  });
   invalidateExecutiveDashboardCache("payroll batch deleted", ["payroll"]);
   return true;
 }
@@ -1423,14 +1402,6 @@ export async function replaceSalaryBatch(
   }
 
   await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
-  await writeRequiredAuditLog({
-    actorLoginId: input.uploadedBy,
-    entityId: existing.id,
-    entityType: "payroll_batch",
-    newValues: { fileName: input.fileName, recordCount: recordPayloads.length },
-    oldValues: { status: existing.status },
-    summary: `Payroll batch replaced for ${existing.year}-${String(existing.month).padStart(2, "0")}.`,
-  });
   invalidateExecutiveDashboardCache("payroll batch replaced", ["payroll"]);
 
   return {
