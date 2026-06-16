@@ -4002,10 +4002,13 @@ export async function getMedicalRepPortalData(
           distance: periodExpenses.reduce((sum, e) => sum + (e.km || 0), 0),
         };
       }),
+      // Match against the canonical (normalized) trip types via case-insensitive
+      // substring so the buckets stay non-zero: "Traveling"/"Overnight stay" → Travel,
+      // "Return same day" → Return, "Meeting" → Meeting.
       workloadDistribution: [
-        { name: "Travel", value: expenses.filter((e) => e.tripType === "Travel").length, color: "#f97316" },
-        { name: "Return", value: expenses.filter((e) => e.tripType === "Return").length, color: "#f59e0b" },
-        { name: "Meeting", value: expenses.filter((e) => e.tripType === "Meeting").length, color: "#94a3b8" },
+        { name: "Travel", value: expenses.filter((e) => { const t = (e.tripType || "").toLowerCase(); return t.includes("travel") || t.includes("overnight"); }).length, color: "#f97316" },
+        { name: "Return", value: expenses.filter((e) => (e.tripType || "").toLowerCase().includes("return")).length, color: "#f59e0b" },
+        { name: "Meeting", value: expenses.filter((e) => (e.tripType || "").toLowerCase().includes("meeting")).length, color: "#94a3b8" },
       ],
       heatmapData: expenses.reduce((acc, e) => {
         if (!e.date) return acc;

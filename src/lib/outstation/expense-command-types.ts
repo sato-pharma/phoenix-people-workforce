@@ -85,6 +85,21 @@ export type ExpenseCommandKpis = {
   highRiskRows: number | null;
 };
 
+/**
+ * Percent change of each KPI vs. the immediately-preceding window of the same
+ * duration. `null` per-field when the previous window had a zero base (can't divide).
+ * Whole object is `null` for preset="all" (no meaningful previous window).
+ */
+export type ExpenseCommandKpiDeltas = {
+  totalAmountPct: number | null;
+  approvedAmountPct: number | null;
+  pendingAmountPct: number | null;
+  totalRowsPct: number | null;
+  employeeCountPct: number | null;
+  highRiskRowsPct: number | null;
+  previousLabel: string;
+};
+
 export type ExpenseCommandBreakdowns = {
   byRegion: PayrollExpenseGroupRow[];
   byLine: PayrollExpenseGroupRow[];
@@ -139,6 +154,7 @@ export type OutstationExpenseCommandData = {
   appliedFilters: ExpenseCommandFilters;
   filterOptions: ExpenseCommandFilterOptions;
   kpis: ExpenseCommandKpis;
+  kpiDeltas: ExpenseCommandKpiDeltas | null;
   trend: PayrollExpenseTrendPoint[];
   breakdowns: ExpenseCommandBreakdowns;
   leaderboards: ExpenseCommandLeaderboards;

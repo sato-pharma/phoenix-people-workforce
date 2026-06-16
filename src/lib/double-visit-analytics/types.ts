@@ -4,6 +4,7 @@ export type DoubleVisitPeriod = "AM" | "PM" | "UNKNOWN";
 export type DoubleVisitVisitedEmployeeStatus =
   | "active_mapped"
   | "blank_hr_id"
+  | "non_mr"
   | "resigned"
   | "unmapped"
   | "vacant";
@@ -111,6 +112,7 @@ export type DoubleVisitMrScore = {
   distinctDoubleVisitors: number;
   dvsLast90Days: number;
   employeeStatus: string | null;
+  hireDate: string | null;
   hrId: string;
   lastDoubleVisitorName: string | null;
   lastDvDate: string | null;

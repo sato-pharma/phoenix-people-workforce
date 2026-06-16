@@ -1,35 +1,74 @@
 "use client";
 
 import type { ReactNode } from "react";
-import {
-  Banknote,
-  Route,
-  ShieldAlert,
-  Target,
-  Users,
-  Wallet,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Banknote, Route, ShieldAlert, Target, Users, Wallet } from "lucide-react";
 
 import { AdminStatCard } from "@/components/admin/admin-design-system";
-import { egp, orDash } from "@/components/outstation/expense-shared/formatters";
+import { egp, orDash, pct } from "@/components/outstation/expense-shared/formatters";
 import type {
+  ExpenseCommandKpiDeltas,
   ExpenseCommandKpis,
   ExpenseDashboardVariant,
 } from "@/components/outstation/expense-shared/types";
 
+/**
+ * Render the primary KPI number and, when a previous-period comparison is available,
+ * a small delta subtitle like "▲ 12.3% vs prev 30d". `sentiment` tells us whether
+ * "up" is good ("up"), bad ("down"), or neutral ("neutral") — colouring follows.
+ */
+function KpiValue({
+  primary,
+  deltaPct,
+  previousLabel,
+  sentiment,
+}: {
+  primary: string;
+  deltaPct: number | null | undefined;
+  previousLabel: string | null;
+  sentiment: "up" | "down" | "neutral";
+}) {
+  if (deltaPct === null || deltaPct === undefined || !previousLabel) {
+    return <span>{primary}</span>;
+  }
+  // Treat <0.05% as flat to avoid jittery "+0.0%" noise.
+  const flat = Math.abs(deltaPct) < 0.05;
+  const positive = !flat && deltaPct > 0;
+  const tone =
+    flat || sentiment === "neutral"
+      ? "text-slate-400"
+      : (positive && sentiment === "up") || (!positive && sentiment === "down")
+        ? "text-emerald-600"
+        : "text-rose-600";
+  const Icon = flat ? null : positive ? ArrowUp : ArrowDown;
+
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>{primary}</span>
+      <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${tone}`}>
+        {Icon ? <Icon className="h-2.5 w-2.5" /> : null}
+        <span>{flat ? "≈ flat" : pct(deltaPct)}</span>
+        <span className="font-semibold text-slate-400">{previousLabel}</span>
+      </span>
+    </span>
+  );
+}
+
 export function ExpenseKpiRow({
   kpis,
+  kpiDeltas,
   variant = "admin",
 }: {
   kpis: ExpenseCommandKpis;
+  kpiDeltas?: ExpenseCommandKpiDeltas | null;
   variant?: ExpenseDashboardVariant;
 }) {
   const totalLabel = variant === "portal" ? "My Total Spend" : "Total Spend";
+  const previousLabel = kpiDeltas?.previousLabel ?? null;
 
   type KpiCard = {
     key: string;
     label: string;
-    value: string;
+    value: ReactNode;
     description: string;
     tone: "orange" | "blue" | "emerald" | "violet" | "rose";
     icon: ReactNode;
@@ -39,25 +78,46 @@ export function ExpenseKpiRow({
     {
       key: "total",
       label: totalLabel,
-      value: orDash(kpis.totalAmount, egp),
+      value: (
+        <KpiValue
+          deltaPct={kpiDeltas?.totalAmountPct}
+          previousLabel={previousLabel}
+          primary={orDash(kpis.totalAmount, egp)}
+          sentiment="down"
+        />
+      ),
       description: `${kpis.totalRows.toLocaleString()} trip${kpis.totalRows === 1 ? "" : "s"}`,
-      tone: "orange" as const,
+      tone: "orange",
       icon: <Wallet className="h-4 w-4" />,
     },
     {
       key: "approved",
       label: "Approved",
-      value: orDash(kpis.approvedAmount, egp),
+      value: (
+        <KpiValue
+          deltaPct={kpiDeltas?.approvedAmountPct}
+          previousLabel={previousLabel}
+          primary={orDash(kpis.approvedAmount, egp)}
+          sentiment="up"
+        />
+      ),
       description: `${kpis.approvedRows.toLocaleString()} approved`,
-      tone: "emerald" as const,
+      tone: "emerald",
       icon: <Banknote className="h-4 w-4" />,
     },
     {
       key: "pending",
       label: "Pending",
-      value: orDash(kpis.pendingAmount, egp),
+      value: (
+        <KpiValue
+          deltaPct={kpiDeltas?.pendingAmountPct}
+          previousLabel={previousLabel}
+          primary={orDash(kpis.pendingAmount, egp)}
+          sentiment="down"
+        />
+      ),
       description: `${kpis.pendingRows.toLocaleString()} awaiting`,
-      tone: "blue" as const,
+      tone: "blue",
       icon: <Target className="h-4 w-4" />,
     },
   ];
@@ -69,23 +129,37 @@ export function ExpenseKpiRow({
         label: "Distance",
         value: kpis.totalDistance > 0 ? `${Math.round(kpis.totalDistance).toLocaleString()} km` : "—",
         description: "total travelled",
-        tone: "violet" as const,
+        tone: "violet",
         icon: <Route className="h-4 w-4" />,
       },
       {
         key: "risk",
         label: "High-Risk",
-        value: kpis.highRiskRows && kpis.highRiskRows > 0 ? kpis.highRiskRows.toLocaleString() : "—",
+        value: (
+          <KpiValue
+            deltaPct={kpiDeltas?.highRiskRowsPct}
+            previousLabel={previousLabel}
+            primary={kpis.highRiskRows && kpis.highRiskRows > 0 ? kpis.highRiskRows.toLocaleString() : "—"}
+            sentiment="down"
+          />
+        ),
         description: "fraud / territory flags",
-        tone: "rose" as const,
+        tone: "rose",
         icon: <ShieldAlert className="h-4 w-4" />,
       },
       {
         key: "employees",
         label: "Employees",
-        value: kpis.employeeCount > 0 ? kpis.employeeCount.toLocaleString() : "—",
+        value: (
+          <KpiValue
+            deltaPct={kpiDeltas?.employeeCountPct}
+            previousLabel={previousLabel}
+            primary={kpis.employeeCount > 0 ? kpis.employeeCount.toLocaleString() : "—"}
+            sentiment="up"
+          />
+        ),
         description: "on outstation trips",
-        tone: "blue" as const,
+        tone: "blue",
         icon: <Users className="h-4 w-4" />,
       },
     );
@@ -96,7 +170,7 @@ export function ExpenseKpiRow({
         label: "Distance",
         value: kpis.totalDistance > 0 ? `${Math.round(kpis.totalDistance).toLocaleString()} km` : "—",
         description: "total travelled",
-        tone: "violet" as const,
+        tone: "violet",
         icon: <Route className="h-4 w-4" />,
       },
       {
@@ -104,7 +178,7 @@ export function ExpenseKpiRow({
         label: "Avg / Trip",
         value: orDash(kpis.averageCostPerTrip, egp),
         description: "average trip cost",
-        tone: "blue" as const,
+        tone: "blue",
         icon: <Target className="h-4 w-4" />,
       },
     );

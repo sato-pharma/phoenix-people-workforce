@@ -301,13 +301,14 @@ async function sendManagerEmail(input: {
   token: string;
 }) {
   const typeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
+  const managerActionUrl = `/admin/action-center?module=excuse&id=${encodeURIComponent(input.request.id)}`;
   await createSystemNotification({
-    actionUrl: "/employee-portals/excuses",
+    actionUrl: managerActionUrl,
     actorId: input.request.employeeHrId,
     channels: ["email"],
     email: {
-      ctaHref: "/employee-portals/excuses",
-      ctaLabel: "Open in Phoenix",
+      ctaHref: managerActionUrl,
+      ctaLabel: "Review in Action Center",
       employeeHrId: input.request.employeeHrId,
       metrics: [
         { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
@@ -450,7 +451,7 @@ export async function createExcuseRequest(
     enqueueInAppNotification({
       category: "excuse",
       dedupeKey: `excuse-manager-${request.id}`,
-      href: "/employee-portals/excuses",
+      href: `/admin/action-center?module=excuse&id=${encodeURIComponent(request.id)}`,
       message: `${request.employeeName} submitted a ${request.excuseType} excuse for ${request.excuseDate}.`,
       metadata: { requestId: request.id, status: request.status },
       recipientHrId: request.managerHrId ?? "",
@@ -527,6 +528,88 @@ export async function decideExcuseRequestByToken(input: {
     .update({ used_at: now })
     .eq("request_id", input.requestId)
     .eq("token_hash", tokenHash);
+
+  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
+  await Promise.all([
+    sendEmployeeDecisionEmail({
+      request: {
+        ...request,
+        employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
+      },
+    }),
+    enqueueInAppNotification({
+      category: "excuse",
+      dedupeKey: `excuse-employee-${request.id}-${status}`,
+      href: "/employee-portals/excuses",
+      message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
+      metadata: { requestId: request.id, status },
+      recipientHrId: request.employeeHrId,
+      title: `Excuse ${status}`,
+    }),
+  ]);
+
+  return request;
+}
+
+export async function getManagerPendingExcuses(access: AccessContext): Promise<EmployeeExcuseRequest[]> {
+  const supabase = getSupabaseAdmin();
+  const isSystemActor = access.scope === "system";
+  let query = supabase
+    .from("v2_excuse_requests")
+    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .eq("status", "pending_manager")
+    .order("created_at", { ascending: true });
+
+  if (!isSystemActor) {
+    const actorHrId = resolveEmployeeIdentityId(access);
+    if (!actorHrId) return [];
+    const normalized = normalizeHrId(actorHrId) ?? actorHrId;
+    query = query.ilike("manager_hr_id", normalized);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as ExcuseRequestRow[]).map((row) => mapExcuseRequestRow(row));
+}
+
+export async function decideExcuseRequestAsManager(
+  access: AccessContext,
+  input: { requestId: string; decision: EmployeeExcuseDecision; comment?: string | null },
+): Promise<EmployeeExcuseRequest> {
+  const actorHrId = resolveEmployeeIdentityId(access);
+  const isSystemActor = access.scope === "system";
+
+  const requestRow = await fetchRequestById(input.requestId);
+  if (!requestRow) throw new Error("Excuse request was not found.");
+  if (requestRow.status !== "pending_manager") {
+    throw new Error("This excuse request has already been decided.");
+  }
+
+  if (!isSystemActor) {
+    if (!actorHrId) throw new Error("Your employee profile is not linked. Contact HR.");
+    if (normalizeHrId(actorHrId) !== normalizeHrId(requestRow.manager_hr_id)) {
+      throw new Error("You are not the assigned manager for this excuse request.");
+    }
+  }
+
+  const deciderHrId = actorHrId ?? requestRow.manager_hr_id;
+  const status: EmployeeExcuseStatus = input.decision === "approve" ? "approved" : "rejected";
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .update({
+      manager_decision: status,
+      manager_decision_at: now,
+      manager_decision_by_hr_id: deciderHrId,
+      manager_decision_comment: input.comment ?? null,
+      status,
+      updated_at: now,
+    })
+    .eq("id", input.requestId)
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .single();
+
+  if (updateError) throw updateError;
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
   await Promise.all([

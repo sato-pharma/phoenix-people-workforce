@@ -23,7 +23,8 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
 
   // ── Deep-link targets (module-level constants) ─────────────────────────────────
-  assert.match(service, /OUTSTATION_ADMIN_REVIEW_URL = "\/admin\/outstation\/expense-command\?tab=queue"/, "approvers deep-link must be the admin review queue (Queue tab on the command center)");
+  assert.match(service, /function outstationActionCenterUrl/, "per-request action center URL helper must exist");
+  assert.match(service, /admin\/action-center.*module=outstation/, "action center URL must target the outstation module");
   assert.match(service, /OUTSTATION_EMPLOYEE_PORTAL_URL = "\/employee-portals\/expenses"/, "employee deep-link must be the expenses portal");
 
   // ── Recipient resolution: submitter's direct manager + Super Admin approver(s) ──
@@ -47,7 +48,7 @@ export function runOutstationNotificationsTests() {
   );
   assert.match(submit, /priority: "high"/, "submit is action-required (high priority)");
   assert.match(submit, /outstation:\$\{r\.id\}:request_submitted:\$\{recipient\.hrId\}/, "submit idempotency key per (request, recipient)");
-  assert.match(submit, /actionUrl: OUTSTATION_ADMIN_REVIEW_URL/, "submit must deep-link approvers to the review queue");
+  assert.match(submit, /actionUrl: reviewUrl/, "submit must deep-link approvers to the per-request action center URL");
   assert.match(submit, /Promise\.allSettled/, "submit must fan out with allSettled");
   assert.match(submit, /try \{/, "submit dispatch must be wrapped in try/catch");
   assert.match(submit, /catch \(error\)/, "submit dispatch must swallow errors (non-blocking)");

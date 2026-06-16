@@ -94,7 +94,18 @@ export type OrganogramReportRow = {
   vacancyCode?: string | null;
 };
 
+export type VacancyReportDiagnosticCode =
+  | "line_unresolved"
+  | "company_scope_denied"
+  | "line_scope_denied";
+
+export type VacancyReportDiagnostic = {
+  code: VacancyReportDiagnosticCode;
+  message: string;
+};
+
 export type VacancyReportData = {
+  diagnostic?: VacancyReportDiagnostic;
   organogramRows: OrganogramReportRow[];
   rows: VacancyReportRow[];
   summary: {

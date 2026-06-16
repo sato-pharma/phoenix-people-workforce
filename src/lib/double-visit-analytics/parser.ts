@@ -131,14 +131,20 @@ export function extractEmployeeNameAreaLine(value: unknown) {
   };
 }
 
-function summaryFromRows(rows: DoubleVisitNormalizedRow[], warnings: DoubleVisitValidationIssue[]): DoubleVisitImportSummary {
+export function summaryFromRows(rows: DoubleVisitNormalizedRow[], warnings: DoubleVisitValidationIssue[]): DoubleVisitImportSummary {
   const totalVisits = rows.reduce((sum, row) => sum + row.visitCount, 0);
   const activeMappedVisitCount = rows
     .filter((row) => row.visitedEmployeeStatus === "active_mapped")
     .reduce((sum, row) => sum + row.visitCount, 0);
   const vacantOrUnmappedVisitCount = totalVisits - activeMappedVisitCount;
   const doubleVisitors = new Set(rows.map((row) => canonicalHrIdKey(row.doubleVisitorHrId)).filter(Boolean));
-  const coveredMrs = new Set(rows.map((row) => canonicalHrIdKey(row.visitedEmployeeHrId)).filter(Boolean));
+  // Only count active_mapped rows — non_mr (manager-to-manager) rows are excluded
+  const coveredMrs = new Set(
+    rows
+      .filter((row) => row.visitedEmployeeStatus === "active_mapped")
+      .map((row) => canonicalHrIdKey(row.visitedEmployeeHrId))
+      .filter(Boolean),
+  );
   const areas = new Set(rows.map((row) => lower(row.areaName)).filter(Boolean));
   const lines = new Set(rows.map((row) => lower(row.lineName)).filter(Boolean));
   return {
@@ -352,6 +358,42 @@ export async function buildDoubleVisitPreviewFromWorkbook(input: {
     rows,
     sheetName: worksheet.name,
   });
+}
+
+// Flags rows where the visited employee is a manager (DSM/RM/NSM/PM/GPM/TM) rather than
+// a Medical Rep. These are CRM data errors — a DV is always manager → MR, never manager
+// → manager. The caller (service.ts) builds managerHrIdKeys using resolveDvRole so we
+// avoid a circular import here.
+export function markManagerVisitedRows(
+  preview: DoubleVisitPreview,
+  managerHrIdKeys: Set<string>,
+): DoubleVisitPreview {
+  let flagged = 0;
+  const rows = preview.rows.map((row) => {
+    if (row.visitedEmployeeStatus !== "active_mapped" || !row.visitedEmployeeHrId) return row;
+    const key = canonicalHrIdKey(row.visitedEmployeeHrId) ?? "";
+    if (!managerHrIdKeys.has(key)) return row;
+    flagged++;
+    return { ...row, visitedEmployeeStatus: "non_mr" as DoubleVisitVisitedEmployeeStatus };
+  });
+
+  if (flagged === 0) return preview;
+  const warnings: DoubleVisitValidationIssue[] = [
+    ...preview.warnings,
+    {
+      code: "visited_employee_is_manager",
+      message: `${flagged} row(s) had a visited employee who is a manager (DSM/RM/NSM/PM/GPM/TM), not a Medical Rep — these are CRM data errors and are excluded from DV counts.`,
+      rowNumber: null,
+      severity: "warning",
+    },
+  ];
+  return {
+    ...preview,
+    rows,
+    sampleRows: rows.slice(0, 25),
+    summary: summaryFromRows(rows, warnings),
+    warnings,
+  };
 }
 
 function employeeByCrmId(employees: EmployeeDirectoryRow[]) {

@@ -1252,7 +1252,9 @@ export async function calculateOutstationExpense(
 // submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
 // to the in-app "general" bell category and the "general" email type) with explicit
 // recipients + channels, so no notification policy/governance changes are needed.
-const OUTSTATION_ADMIN_REVIEW_URL = "/admin/outstation/expense-command?tab=queue";
+function outstationActionCenterUrl(requestId: number | string) {
+  return `/admin/action-center?module=outstation&id=${encodeURIComponent(String(requestId))}`;
+}
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 
 function formatEgp(value: number) {
@@ -1339,16 +1341,19 @@ async function notifyOutstationSubmitted(input: {
         .map((recipient) => pickDeliverableEmail(recipient.email))
         .filter((email): email is string => Boolean(email)),
     ));
+    const reviewUrl = outstationActionCenterUrl(r.id);
     await Promise.allSettled(
       recipients.map((recipient) =>
         createSystemNotification({
-          actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
+          actionUrl: reviewUrl,
           category: "general",
           channels: normalizeHrIdForAccess(recipient.hrId) === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
           ...(normalizeHrIdForAccess(recipient.hrId) === primaryKey
             ? {
                 email: {
                   cc: ccEmails,
+                  ctaHref: reviewUrl,
+                  ctaLabel: "Review in Action Center",
                   metrics: [
                     { label: "Employee", value: r.employeeName },
                     { label: "Amount", value: amount },
@@ -1363,7 +1368,7 @@ async function notifyOutstationSubmitted(input: {
           eventType: "request_submitted",
           message: `${r.employeeName} submitted an ${kind} for ${amount} (${r.tripStartDate} to ${r.tripEndDate}, ${destination}). Review is pending your decision.`,
           metadata: {
-            actionUrl: OUTSTATION_ADMIN_REVIEW_URL,
+            actionUrl: reviewUrl,
             amount,
             approvalStep: recipient.role,
             destination,
@@ -1374,7 +1379,7 @@ async function notifyOutstationSubmitted(input: {
             recipientName: recipient.name,
             requestId: String(r.id),
             requestType: kind,
-            requestUrl: OUTSTATION_ADMIN_REVIEW_URL,
+            requestUrl: reviewUrl,
             status: "Pending your approval",
             tripEndDate: r.tripEndDate,
             tripStartDate: r.tripStartDate,
@@ -1384,7 +1389,7 @@ async function notifyOutstationSubmitted(input: {
           recipientHrId: recipient.hrId,
           recordId: String(r.id),
           subjectHrId: r.employeeHrId,
-          telegram: { buttons: [{ label: "Review in Phoenix", url: OUTSTATION_ADMIN_REVIEW_URL }] },
+          telegram: { buttons: [{ label: "Review in Action Center", url: reviewUrl }] },
           title: `${r.employeeName} submitted an ${kind}`,
         }),
       ),
