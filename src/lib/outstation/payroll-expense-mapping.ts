@@ -1,5 +1,6 @@
 import type { PayrollExpenseApproval, ExpenseTripRecord } from "@/lib/payroll/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
@@ -173,9 +174,9 @@ export function mapOutstationRequestRowToPayrollApproval(
     to: destination,
     toDate: tripEndDate,
     total,
-    transportationType: toText(row.transportation_type) || "other",
+    transportationType: normalizeTransportation(toText(row.transportation_type), tripType, meetingAmount),
     travelCost,
     tripId: outstationPayrollTripId(requestId),
-    tripType,
+    tripType: normalizeExpenseType(tripType),
   };
 }
