@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { resolveAccessContext } from "@/lib/auth/server";
 import {
+  decideExcuseRequestAsManager,
   decideExcuseRequestByToken,
   excuseErrorMessage,
   isExcusesSchemaMissing,
@@ -80,9 +82,32 @@ export async function GET(
   }
 }
 
-export async function POST() {
-  return NextResponse.json(
-    { error: "unsupported_method", message: "Use the secure email decision link.", success: false },
-    { status: 405 },
-  );
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const access = await resolveAccessContext(request);
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const decision = parseExcuseDecision(body.decision);
+    if (!decision) {
+      return NextResponse.json(
+        { error: "invalid_decision", message: "Decision must be 'approve' or 'reject'.", success: false },
+        { status: 400 },
+      );
+    }
+    const comment = typeof body.comment === "string" ? body.comment.trim() || null : null;
+    const result = await decideExcuseRequestAsManager(access, { requestId: id, decision, comment });
+    return NextResponse.json({ success: true, data: result });
+  } catch (error) {
+    const message = isExcusesSchemaMissing(error)
+      ? "Excuse database tables are not deployed yet."
+      : excuseErrorMessage(error) || "Unable to decide excuse request.";
+    const isForbidden = message.startsWith("Forbidden") || message.includes("not the assigned manager");
+    return NextResponse.json(
+      { error: "decision_failed", message, success: false },
+      { status: isForbidden ? 403 : 400 },
+    );
+  }
 }

@@ -66,6 +66,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
+  navBadge?: "action-center-pending";
 };
 
 export type NavigationSection = {
@@ -95,6 +96,7 @@ export const adminNavigationSections = [
   {
     id: "people-management",
     items: [
+      { href: "/admin/action-center", icon: Inbox, label: "Action Center", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },

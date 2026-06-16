@@ -1580,7 +1580,7 @@ function throwVacationDatabaseError(error: unknown) {
  * Falls back to the relative path locally when the base is unset.
  */
 function toAbsoluteAppUrl(path: string): string {
-  const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+  const base = (process.env.NOTIFICATION_DASHBOARD_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
   if (!base) return path;
   if (/^https?:\/\//.test(path)) return path;
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
