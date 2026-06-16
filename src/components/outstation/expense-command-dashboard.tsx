@@ -163,7 +163,7 @@ export function ExpenseCommandDashboard({
 
       {data ? (
         <>
-          <ExpenseKpiRow kpis={data.kpis} variant={variant} />
+          <ExpenseKpiRow kpiDeltas={data.kpiDeltas} kpis={data.kpis} variant={variant} />
 
           {isAdmin ? (
             <ExpenseSavedViews currentFilters={filters} onLoad={(loaded) => setFilters(loaded)} />
