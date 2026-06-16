@@ -14,20 +14,29 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildDoubleVisitPreviewFromWorkbook,
   normalizeIReports360DoubleVisits,
+  recoverVisitedEmployeesByCrmUsername,
 } from "@/lib/double-visit-analytics/parser";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import type {
   DoubleVisitBreakdownRow,
   DoubleVisitDashboardData,
   DoubleVisitExecutiveManagerReport,
+  DoubleVisitExecutiveSummary,
   DoubleVisitExpenseWorkloadEvidence,
+  DoubleVisitIdleManager,
   DoubleVisitImportListItem,
   DoubleVisitImportStatus,
+  DoubleVisitInsight,
+  DoubleVisitInsightSeverity,
   DoubleVisitKpis,
   DoubleVisitLogEntry,
+  DoubleVisitManagerMrPair,
+  DoubleVisitManagerSummary,
   DoubleVisitMrScore,
   DoubleVisitNormalizedRow,
   DoubleVisitPreview,
+  DoubleVisitRoleCode,
+  DoubleVisitRoleRollup,
   DoubleVisitSourceType,
   DoubleVisitVisitedEmployeeStatus,
 } from "@/lib/double-visit-analytics/types";
@@ -124,6 +133,7 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
     dateFrom,
     dateTo,
     executiveReports: [],
+    executiveSummary: { idleManagers: [], insights: [], roleRollups: [] },
     filters: { areas: [], doubleVisitors: [], lines: [] },
     heatmap: { byArea: [], byLine: [] },
     imports: [],
@@ -142,6 +152,7 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
       vacantOrUnmappedShare: 0,
       vacantOrUnmappedVisitCount: 0,
     },
+    managerSummaries: [],
     mrScores: [],
     publishedImport: null,
     salesComparisonAvailable: false,
@@ -364,6 +375,14 @@ export async function saveDoubleVisitPreview(input: {
     throwSchemaMissingError();
   }
 
+  // Abort an import that parsed rows but zero visits — a strong signal the Count column
+  // is missing/empty or misread. Better to fail than to publish an all-zeros snapshot.
+  if (input.preview.rows.length > 0 && input.preview.summary.totalVisits <= 0) {
+    throw new Error(
+      "Parsed rows but zero total visits — the Count column may be missing, empty, or misread. Import aborted; check the file and re-upload.",
+    );
+  }
+
   const importPayload = {
     active_mapped_visit_count: input.preview.summary.activeMappedVisitCount,
     am_visit_count: input.preview.summary.amVisitCount,
@@ -405,6 +424,23 @@ export async function saveDoubleVisitPreview(input: {
     if (rowsError) ensureNoSchemaError(rowsError);
   }
 
+  // Post-insert reconciliation: the header row already records total_rows/total_visits,
+  // and chunked inserts are NOT transactional. If any row failed to persist, the snapshot
+  // would be publishable while under-counting every metric (the failure class we are
+  // hardening against). Verify the stored count and roll the import back on mismatch.
+  const { count: storedRowCount, error: countError } = await supabase
+    .from(rowsTable)
+    .select("id", { count: "exact", head: true })
+    .eq("import_id", importId);
+  if (countError) ensureNoSchemaError(countError);
+  if ((storedRowCount ?? 0) !== inserts.length) {
+    await supabase.from(rowsTable).delete().eq("import_id", importId);
+    await supabase.from(importsTable).delete().eq("id", importId);
+    throw new Error(
+      `Double Visit import row mismatch: expected ${inserts.length} rows but ${storedRowCount ?? 0} persisted. The import was rolled back; please retry.`,
+    );
+  }
+
   await writeRequiredAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: importId,
@@ -429,12 +465,18 @@ export async function buildAndSaveDoubleVisitExcelImport(input: {
   arrayBuffer: ArrayBuffer;
   fileName: string;
 }) {
-  const preview = await buildDoubleVisitPreviewFromWorkbook({
-    arrayBuffer: input.arrayBuffer,
-    fileName: input.fileName,
-  });
-  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview });
-  return { import: saved, preview: { ...preview, importId: saved.id } };
+  const [preview, employees] = await Promise.all([
+    buildDoubleVisitPreviewFromWorkbook({
+      arrayBuffer: input.arrayBuffer,
+      fileName: input.fileName,
+    }),
+    getEmployeeDirectoryRows({ includeInactive: true }),
+  ]);
+  // Recover visited MRs whose seat was logged as "Vacant"/blank but whose name matches an
+  // active employee, so their received double visits are credited to the real MR.
+  const recovered = recoverVisitedEmployeesByCrmUsername(preview, employees);
+  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview: recovered });
+  return { import: saved, preview: { ...recovered, importId: saved.id } };
 }
 
 export async function buildAndSaveDoubleVisitIReports360Import(input: {
@@ -543,22 +585,48 @@ async function getPublishedImportForRange(dateFrom: string, dateTo: string) {
   return data ? mapImportRow(data as DoubleVisitImportRow) : null;
 }
 
+async function getLatestPublishedImport() {
+  const { data, error } = await getSupabaseAdmin()
+    .from(importsTable)
+    .select("*")
+    .eq("status", "published")
+    .order("published_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    if (schemaMissing(error)) return null;
+    throw new Error(error.message);
+  }
+  return data ? mapImportRow(data as DoubleVisitImportRow) : null;
+}
+
 async function getPublishedRows(dateFrom: string, dateTo: string) {
   const importRow = await getPublishedImportForRange(dateFrom, dateTo);
   if (!importRow) return { importRow: null, rows: [] as DoubleVisitDbRow[] };
-  const { data, error } = await getSupabaseAdmin()
-    .from(rowsTable)
-    .select("*")
-    .eq("import_id", importRow.id)
-    .gte("activity_date", dateFrom)
-    .lte("activity_date", dateTo)
-    .order("activity_date", { ascending: true })
-    .limit(20000);
-  if (error) {
-    if (schemaMissing(error)) return { importRow: null, rows: [] as DoubleVisitDbRow[] };
-    throw new Error(error.message);
+  // PostgREST caps a single response (db-max-rows, ~1000), and `.limit()` cannot exceed
+  // that cap — so page through EVERY row. A published snapshot routinely exceeds 1000 rows
+  // and must never be silently truncated (that under-counts every KPI, score, and summary).
+  const pageSize = 1000;
+  const rows: DoubleVisitDbRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(rowsTable)
+      .select("*")
+      .eq("import_id", importRow.id)
+      .gte("activity_date", dateFrom)
+      .lte("activity_date", dateTo)
+      .order("activity_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (schemaMissing(error)) return { importRow: null, rows: [] as DoubleVisitDbRow[] };
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as DoubleVisitDbRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
-  return { importRow, rows: (data ?? []) as DoubleVisitDbRow[] };
+  return { importRow, rows };
 }
 
 function isActiveEmployee(employee: EmployeeDirectoryRow) {
@@ -747,6 +815,401 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     .sort((left, right) => right.neglectedMrCount - left.neglectedMrCount || left.managerName.localeCompare(right.managerName));
 }
 
+// ── Personal-effort summaries (one row per double-visitor) ──────────────────────
+
+const DV_ROLE_CODES: Record<string, DoubleVisitRoleCode> = {
+  "District Manager": "DSM",
+  "Group Product Manager": "GPM",
+  "National Sales Manager": "NSM",
+  "Product Manager": "PM",
+  "Regional Manager": "RM",
+  "Training Manager": "TM",
+};
+
+const DV_ROLE_LABELS: Record<DoubleVisitRoleCode, string> = {
+  DSM: "District Manager",
+  GPM: "Group Product Manager",
+  NSM: "National Sales Manager",
+  PM: "Product Manager",
+  RM: "Regional Manager",
+  TM: "Training Manager",
+};
+
+const DV_ROLE_CODE_ORDER: DoubleVisitRoleCode[] = ["DSM", "RM", "NSM", "PM", "GPM", "TM"];
+const HIERARCHY_ROLE_CODES = new Set<DoubleVisitRoleCode>(["DSM", "RM", "NSM"]);
+
+// Single source of truth for a double-visitor's role code. Mirrors isAllowedDoubleVisitor /
+// isFunctionalDoubleVisitorRole: check positionTitle, then jobTitle. CEO has no code → null.
+function resolveDvRole(employee: EmployeeDirectoryRow | null): { role: string; roleCode: DoubleVisitRoleCode } | null {
+  if (!employee) return null;
+  const posRole = resolveJobFunctionRole(employee.positionTitle);
+  if (DV_ROLE_CODES[posRole]) return { role: posRole, roleCode: DV_ROLE_CODES[posRole] };
+  const jobRole = resolveJobFunctionRole(employee.jobTitle);
+  if (DV_ROLE_CODES[jobRole]) return { role: jobRole, roleCode: DV_ROLE_CODES[jobRole] };
+  return null;
+}
+
+export function buildManagerSummariesDetailed(
+  rows: DoubleVisitDbRow[],
+  employees: EmployeeDirectoryRow[],
+  asOfDate: string,
+): { summaries: DoubleVisitManagerSummary[]; visitedKeysByManager: Map<string, Set<string>> } {
+  const employeesByHrId = new Map(
+    employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+
+  // Team-MR denominator lives in the descendantHrIds normalization domain
+  // (normalizeHrIdForAccess), which is DISTINCT from canonicalHrIdKey. We only ever
+  // COUNT across the two domains — never intersect sets — so mixing is safe here.
+  const activeMrKeys = new Set(
+    employees
+      .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
+      .map((employee) => normalizedHrKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const teamMrCountMemo = new Map<string, number>();
+  const teamMrCountFor = (managerNormKey: string) => {
+    if (!managerNormKey) return 0;
+    const cached = teamMrCountMemo.get(managerNormKey);
+    if (cached != null) return cached;
+    let count = 0;
+    for (const key of descendantHrIds(managerNormKey, employees)) {
+      if (key !== managerNormKey && activeMrKeys.has(key)) count += 1;
+    }
+    teamMrCountMemo.set(managerNormKey, count);
+    return count;
+  };
+
+  const rowsByVisitor = new Map<string, DoubleVisitDbRow[]>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.double_visitor_hr_id);
+    if (!key) continue;
+    rowsByVisitor.set(key, [...(rowsByVisitor.get(key) ?? []), row]);
+  }
+
+  const summaries: DoubleVisitManagerSummary[] = [];
+  const visitedKeysByManager = new Map<string, Set<string>>();
+
+  for (const [visitorKey, visitorRows] of rowsByVisitor) {
+    const employee = employeesByHrId.get(visitorKey) ?? null;
+    const dv = resolveDvRole(employee);
+
+    const totalDvs = visitorRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    const activeDvDays = new Set(visitorRows.map((row) => row.activity_date).filter(Boolean)).size;
+    const amVisits = visitorRows.filter((row) => row.period === "AM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    const pmVisits = visitorRows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+
+    const visitedTally = new Map<string, number>();
+    for (const row of visitorRows) {
+      const mrKey = canonicalHrIdKey(row.visited_employee_hr_id);
+      if (!mrKey) continue;
+      visitedTally.set(mrKey, (visitedTally.get(mrKey) ?? 0) + asNumber(row.visit_count));
+    }
+    const distinctMrs = visitedTally.size;
+    visitedKeysByManager.set(visitorKey, new Set(visitedTally.keys()));
+
+    const tallyValues = Array.from(visitedTally.values());
+    const visitedSum = tallyValues.reduce((sum, value) => sum + value, 0);
+    const avgPerMr = tallyValues.length ? visitedSum / tallyValues.length : 0;
+    const top4 = [...tallyValues].sort((a, b) => b - a).slice(0, 4).reduce((sum, value) => sum + value, 0);
+    const concentrationPct = totalDvs > 0 ? round((top4 / totalDvs) * 100, 1) : null;
+    const overFocusedMrCount = tallyValues.filter((value) => avgPerMr > 0 && value >= Math.max(5, avgPerMr * 2)).length;
+
+    const teamMrCount = dv && HIERARCHY_ROLE_CODES.has(dv.roleCode) && employee
+      ? teamMrCountFor(normalizedHrKey(employee.hrId) ?? "")
+      : null;
+    const coveragePct = teamMrCount && teamMrCount > 0 ? round((distinctMrs / teamMrCount) * 100, 1) : null;
+    const neglectedMrCount = teamMrCount && teamMrCount > 0 ? Math.max(0, teamMrCount - distinctMrs) : null;
+
+    const sortedDates = visitorRows.map((row) => row.activity_date).filter(Boolean).sort();
+    const firstDvDate = sortedDates.at(0) ?? null;
+    const lastDvDate = sortedDates.at(-1) ?? null;
+
+    summaries.push({
+      activeDvDays,
+      amVisits,
+      areaName: employee?.areaName ?? nullableText(visitorRows.find((row) => nullableText(row.area_name))?.area_name),
+      callsPerActiveDay: activeDvDays > 0 ? round(totalDvs / activeDvDays, 2) : 0,
+      concentrationPct,
+      coveragePct,
+      daysSinceLastDv: daysBetween(lastDvDate, asOfDate),
+      distinctMrs,
+      firstDvDate,
+      inDirectory: Boolean(employee),
+      lastDvDate,
+      lineName: employee?.lineName ?? nullableText(visitorRows.find((row) => nullableText(row.line_name))?.line_name),
+      managerHrId: visitorKey,
+      managerName: nullableText(employee?.fullName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
+      neglectedMrCount,
+      overFocusedMrCount,
+      pmVisits,
+      role: dv?.role ?? null,
+      roleCode: dv?.roleCode ?? null,
+      teamMrCount,
+      totalDvs,
+    });
+  }
+
+  summaries.sort((left, right) => right.totalDvs - left.totalDvs || left.managerName.localeCompare(right.managerName));
+  return { summaries, visitedKeysByManager };
+}
+
+export function buildManagerSummaries(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow[], asOfDate: string) {
+  return buildManagerSummariesDetailed(rows, employees, asOfDate).summaries;
+}
+
+function buildDoubleVisitInsights(
+  summaries: DoubleVisitManagerSummary[],
+  mrScores: DoubleVisitMrScore[],
+  kpis: DoubleVisitKpis,
+  idleManagers: DoubleVisitIdleManager[],
+  scopedEmployees: EmployeeDirectoryRow[],
+): DoubleVisitInsight[] {
+  const raw: Array<Omit<DoubleVisitInsight, "rank">> = [];
+
+  const topCallRate = summaries
+    .filter((summary) => summary.activeDvDays >= 2 && summary.callsPerActiveDay > 0)
+    .slice()
+    .sort((a, b) => b.callsPerActiveDay - a.callsPerActiveDay)[0];
+  if (topCallRate) {
+    raw.push({
+      category: "performance",
+      detail: `${topCallRate.managerName} averaged ${topCallRate.callsPerActiveDay} double visits per active day across ${topCallRate.activeDvDays} days.`,
+      id: "top-call-rate",
+      managerHrId: topCallRate.managerHrId,
+      mrHrId: null,
+      severity: "positive",
+      title: "Highest call rate per day",
+    });
+  }
+
+  const biggest = summaries.filter((summary) => summary.totalDvs > 0).slice().sort((a, b) => b.totalDvs - a.totalDvs)[0];
+  if (biggest) {
+    const share = kpis.totalVisits > 0 ? round((biggest.totalDvs / kpis.totalVisits) * 100, 1) : 0;
+    raw.push({
+      category: "performance",
+      detail: `${biggest.managerName} performed ${biggest.totalDvs} double visits (${share}% of all DV effort).`,
+      id: "biggest-contributor",
+      managerHrId: biggest.managerHrId,
+      mrHrId: null,
+      severity: "positive",
+      title: "Top double-visit contributor",
+    });
+  }
+
+  const mostOverFocused = summaries
+    .filter((summary) => summary.teamMrCount != null && summary.teamMrCount > 0 && summary.distinctMrs < summary.teamMrCount && summary.concentrationPct != null)
+    .slice()
+    .sort((a, b) => (b.concentrationPct ?? 0) - (a.concentrationPct ?? 0))[0];
+  if (mostOverFocused) {
+    raw.push({
+      category: "concentration",
+      detail: `${mostOverFocused.managerName} put ${mostOverFocused.concentrationPct}% of double visits on ${mostOverFocused.distinctMrs} of ${mostOverFocused.teamMrCount} team MRs — rotation gap.`,
+      id: "most-over-focused",
+      managerHrId: mostOverFocused.managerHrId,
+      mrHrId: null,
+      severity: "warning",
+      title: "Most concentrated coverage",
+    });
+  }
+
+  const lowestCoverage = summaries
+    .filter((summary) => summary.coveragePct != null && summary.teamMrCount != null)
+    .slice()
+    .sort((a, b) => (a.coveragePct ?? 0) - (b.coveragePct ?? 0))[0];
+  if (lowestCoverage && (lowestCoverage.coveragePct ?? 100) < 70) {
+    raw.push({
+      category: "coverage",
+      detail: `${lowestCoverage.managerName} double-visited only ${lowestCoverage.distinctMrs} of ${lowestCoverage.teamMrCount} team MRs (${lowestCoverage.coveragePct}%).`,
+      id: "lowest-coverage",
+      managerHrId: lowestCoverage.managerHrId,
+      mrHrId: null,
+      severity: (lowestCoverage.coveragePct ?? 100) < 40 ? "critical" : "warning",
+      title: "Lowest team coverage",
+    });
+  }
+
+  if (idleManagers.length > 0) {
+    const dvRoleEmployeeCount = scopedEmployees.filter((employee) => isActiveEmployee(employee) && resolveDvRole(employee)).length;
+    const idleShare = dvRoleEmployeeCount > 0 ? idleManagers.length / dvRoleEmployeeCount : 0;
+    raw.push({
+      category: "inactivity",
+      detail: `${idleManagers.length} manager${idleManagers.length === 1 ? "" : "s"} (DSM/RM/NSM/PM/GPM/TM) performed zero double visits this period.`,
+      id: "idle-managers",
+      managerHrId: null,
+      mrHrId: null,
+      severity: idleShare > 0.25 ? "critical" : "warning",
+      title: "Managers with zero double visits",
+    });
+  }
+
+  const am = kpis.amVisitCount;
+  const pm = kpis.pmVisitCount;
+  const totalPeriod = am + pm;
+  if (totalPeriod > 0) {
+    const minorityShare = Math.min(am, pm) / totalPeriod;
+    const amPct = round((am / totalPeriod) * 100, 0);
+    raw.push({
+      category: "balance",
+      detail: `Field effort splits ${am} AM vs ${pm} PM (${amPct}% AM). ${am <= pm ? "Mornings are under-covered." : "Afternoons are under-covered."}`,
+      id: "ampm-imbalance",
+      managerHrId: null,
+      mrHrId: null,
+      severity: minorityShare < 0.2 ? "warning" : "info",
+      title: "AM / PM balance",
+    });
+  }
+
+  const worstMr = mrScores
+    .slice()
+    .sort((a, b) => {
+      const av = a.daysSinceLastDv == null ? Number.POSITIVE_INFINITY : a.daysSinceLastDv;
+      const bv = b.daysSinceLastDv == null ? Number.POSITIVE_INFINITY : b.daysSinceLastDv;
+      return bv - av;
+    })[0];
+  if (worstMr) {
+    const never = worstMr.daysSinceLastDv == null;
+    raw.push({
+      category: "neglect",
+      detail: never
+        ? `${worstMr.mrName} has never received a double visit in this snapshot.`
+        : `${worstMr.mrName} last received a double visit ${worstMr.daysSinceLastDv} days ago.`,
+      id: "longest-mr-gap",
+      managerHrId: canonicalHrIdKey(worstMr.managerHrId),
+      mrHrId: canonicalHrIdKey(worstMr.hrId),
+      severity: worstMr.band === "critical" ? "critical" : "warning",
+      title: never ? "MR never double-visited" : "Longest gap since a double visit",
+    });
+  }
+
+  const severityWeight: Record<DoubleVisitInsightSeverity, number> = { critical: 0, info: 2, positive: 3, warning: 1 };
+  return raw
+    .map((insight, index) => ({ index, insight }))
+    .sort((a, b) => severityWeight[a.insight.severity] - severityWeight[b.insight.severity] || a.index - b.index)
+    .slice(0, 8)
+    .map(({ insight }, rank) => ({ ...insight, rank }));
+}
+
+export function buildExecutiveSummary(
+  summaries: DoubleVisitManagerSummary[],
+  mrScores: DoubleVisitMrScore[],
+  kpis: DoubleVisitKpis,
+  scopedEmployees: EmployeeDirectoryRow[],
+  visitedKeysByManager: Map<string, Set<string>>,
+): DoubleVisitExecutiveSummary {
+  const byRole = new Map<DoubleVisitRoleCode, DoubleVisitManagerSummary[]>();
+  for (const summary of summaries) {
+    if (!summary.roleCode) continue;
+    byRole.set(summary.roleCode, [...(byRole.get(summary.roleCode) ?? []), summary]);
+  }
+
+  const activeVisitorKeys = new Set(summaries.map((summary) => summary.managerHrId));
+  const idleManagers: DoubleVisitIdleManager[] = [];
+  for (const employee of scopedEmployees) {
+    if (!isActiveEmployee(employee)) continue;
+    const dv = resolveDvRole(employee);
+    if (!dv) continue;
+    const key = canonicalHrIdKey(employee.hrId);
+    if (!key || activeVisitorKeys.has(key)) continue;
+    idleManagers.push({
+      areaName: employee.areaName,
+      hrId: key,
+      lineName: employee.lineName,
+      name: employee.fullName || employee.hrId || key,
+      role: dv.role,
+      roleCode: dv.roleCode,
+    });
+  }
+  idleManagers.sort((left, right) =>
+    DV_ROLE_CODE_ORDER.indexOf(left.roleCode) - DV_ROLE_CODE_ORDER.indexOf(right.roleCode) ||
+    left.name.localeCompare(right.name));
+
+  const roleRollups: DoubleVisitRoleRollup[] = [];
+  for (const roleCode of DV_ROLE_CODE_ORDER) {
+    const group = byRole.get(roleCode) ?? [];
+    if (group.length === 0) continue;
+    const coverageValues = group.map((summary) => summary.coveragePct).filter((value): value is number => value != null);
+    const neglectedValues = group.map((summary) => summary.neglectedMrCount).filter((value): value is number => value != null);
+    const union = new Set<string>();
+    for (const summary of group) {
+      for (const key of visitedKeysByManager.get(summary.managerHrId) ?? []) union.add(key);
+    }
+    roleRollups.push({
+      activeManagerCount: group.length,
+      amVisits: group.reduce((sum, summary) => sum + summary.amVisits, 0),
+      avgCallsPerDay: group.length ? round(group.reduce((sum, summary) => sum + summary.callsPerActiveDay, 0) / group.length, 2) : null,
+      avgCoveragePct: coverageValues.length ? round(coverageValues.reduce((sum, value) => sum + value, 0) / coverageValues.length, 1) : null,
+      distinctMrs: union.size,
+      neglectedMrCount: neglectedValues.length ? neglectedValues.reduce((sum, value) => sum + value, 0) : null,
+      pmVisits: group.reduce((sum, summary) => sum + summary.pmVisits, 0),
+      roleCode,
+      roleLabel: DV_ROLE_LABELS[roleCode],
+      totalActiveDvDays: group.reduce((sum, summary) => sum + summary.activeDvDays, 0),
+      totalDvs: group.reduce((sum, summary) => sum + summary.totalDvs, 0),
+    });
+  }
+
+  const insights = buildDoubleVisitInsights(summaries, mrScores, kpis, idleManagers, scopedEmployees);
+  return { idleManagers, insights, roleRollups };
+}
+
+// Per (double-visitor × MR) pair: visits + DISTINCT DAYS + span. Answers
+// "Saad Salama × Ahmed Ashraf = 29 visits in how many days?". Server analogue of the
+// client buildManagerProfile pair computation, used by the Excel export.
+export function buildManagerMrPairs(visitLog: DoubleVisitLogEntry[]): DoubleVisitManagerMrPair[] {
+  type Acc = {
+    area: string | null;
+    dates: Set<string>;
+    firstDate: string | null;
+    lastDate: string | null;
+    managerHrId: string;
+    managerName: string;
+    mrHrId: string | null;
+    mrName: string;
+    visits: number;
+  };
+  const pairs = new Map<string, Acc>();
+  for (const entry of visitLog) {
+    const managerKey = canonicalHrIdKey(entry.doubleVisitorHrId);
+    if (!managerKey) continue;
+    const mrKey = canonicalHrIdKey(entry.visitedHrId);
+    const pairKey = `${managerKey}|${mrKey ?? `name:${entry.visitedName ?? "unknown"}`}`;
+    const day = entry.date.slice(0, 10);
+    const existing: Acc = pairs.get(pairKey) ?? {
+      area: entry.area,
+      dates: new Set<string>(),
+      firstDate: null,
+      lastDate: null,
+      managerHrId: managerKey,
+      managerName: entry.doubleVisitorName ?? managerKey,
+      mrHrId: entry.visitedHrId,
+      mrName: entry.visitedName ?? "Unmapped MR",
+      visits: 0,
+    };
+    existing.visits += entry.visitCount;
+    existing.dates.add(day);
+    if (!existing.firstDate || entry.date < existing.firstDate) existing.firstDate = entry.date;
+    if (!existing.lastDate || entry.date > existing.lastDate) existing.lastDate = entry.date;
+    pairs.set(pairKey, existing);
+  }
+  return Array.from(pairs.values())
+    .map((pair) => ({
+      area: pair.area,
+      days: pair.dates.size,
+      firstDate: pair.firstDate,
+      lastDate: pair.lastDate,
+      managerHrId: pair.managerHrId,
+      managerName: pair.managerName,
+      mrHrId: pair.mrHrId,
+      mrName: pair.mrName,
+      visits: pair.visits,
+      visitsPerDay: pair.dates.size > 0 ? round(pair.visits / pair.dates.size, 2) : 0,
+    }))
+    .sort((left, right) => right.visits - left.visits);
+}
+
 function buildHeatmapRows(
   scores: DoubleVisitMrScore[],
   field: "areaName" | "lineName",
@@ -808,12 +1271,15 @@ export async function getDoubleVisitDashboardData(input: {
   dateTo?: string | null;
 }): Promise<DoubleVisitDashboardData> {
   const month = currentMonthBounds();
-  const dateFrom = input.dateFrom || month.start;
-  const dateTo = input.dateTo || month.end;
   const schemaReady = await isDoubleVisitSchemaReady();
   if (!schemaReady) {
-    return emptyDashboard(dateFrom, dateTo);
+    return emptyDashboard(input.dateFrom || month.start, input.dateTo || month.end);
   }
+  // Default to the published snapshot's FULL span (not the current calendar month) so the
+  // dashboard reflects the entire official file unless the user explicitly narrows the range.
+  const latestPublished = await getLatestPublishedImport();
+  const dateFrom = input.dateFrom || latestPublished?.dateFrom || month.start;
+  const dateTo = input.dateTo || latestPublished?.dateTo || month.end;
 
   const imports = await listDoubleVisitImports();
   const { importRow, rows } = await getPublishedRows(dateFrom, dateTo);
@@ -828,6 +1294,9 @@ export async function getDoubleVisitDashboardData(input: {
   const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId);
   const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
   const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
+  const kpisValue = buildKpis(filteredRows);
+  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, dateTo);
+  const executiveSummary = buildExecutiveSummary(managerSummaries, mrScores, kpisValue, scopedEmployees, visitedKeysByManager);
   const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
   const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();
   const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
@@ -854,13 +1323,15 @@ export async function getDoubleVisitDashboardData(input: {
     dateFrom,
     dateTo,
     executiveReports,
+    executiveSummary,
     filters: { areas, doubleVisitors, lines },
     heatmap: {
       byArea: buildHeatmapRows(mrScores, "areaName", areaBuckets),
       byLine: buildHeatmapRows(mrScores, "lineName", lineBuckets),
     },
     imports,
-    kpis: buildKpis(filteredRows),
+    kpis: kpisValue,
+    managerSummaries,
     mrScores,
     publishedImport: importRow,
     salesComparisonAvailable: false,
@@ -1095,7 +1566,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { metric: "AM Activity", value: data.kpis.amVisitCount },
     { metric: "PM Activity", value: data.kpis.pmVisitCount },
     { metric: "Average Visits per DV Day", value: data.kpis.averageVisitsPerDoubleVisitDay },
-    { metric: "Vacant/Unmapped Share", value: `${data.kpis.vacantOrUnmappedShare}%` },
+    { metric: "Resigned / Vacant Territory Share", value: `${data.kpis.vacantOrUnmappedShare}%` },
     { metric: "Neglected MRs", value: data.mrScores.filter((score) => score.band !== "healthy").length },
   ]);
 
@@ -1128,6 +1599,73 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Total DVs", key: "totalDvs", width: 12 },
   ];
   managers.addRows(data.executiveReports);
+
+  const activity = workbook.addWorksheet("Manager Activity");
+  activity.columns = [
+    { header: "Manager", key: "managerName", width: 28 },
+    { header: "HR ID", key: "managerHrId", width: 14 },
+    { header: "Role", key: "roleCode", width: 10 },
+    { header: "Title", key: "role", width: 26 },
+    { header: "Area", key: "areaName", width: 20 },
+    { header: "Line", key: "lineName", width: 12 },
+    { header: "Total DVs", key: "totalDvs", width: 12 },
+    { header: "Active DV Days", key: "activeDvDays", width: 16 },
+    { header: "Calls / Day", key: "callsPerActiveDay", width: 12 },
+    { header: "AM Visits", key: "amVisits", width: 12 },
+    { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "MRs Visited", key: "distinctMrs", width: 14 },
+    { header: "Team Size", key: "teamMrCount", width: 12 },
+    { header: "Coverage %", key: "coveragePct", width: 12 },
+    { header: "Neglected MRs", key: "neglectedMrCount", width: 15 },
+    { header: "Concentration %", key: "concentrationPct", width: 16 },
+    { header: "Over-Focused MRs", key: "overFocusedMrCount", width: 18 },
+    { header: "First DV", key: "firstDvDate", width: 14 },
+    { header: "Last DV", key: "lastDvDate", width: 14 },
+    { header: "Days Since Last DV", key: "daysSinceLastDv", width: 18 },
+  ];
+  activity.addRows(data.managerSummaries);
+
+  const byRole = workbook.addWorksheet("By Role");
+  byRole.columns = [
+    { header: "Role", key: "roleCode", width: 10 },
+    { header: "Role Name", key: "roleLabel", width: 26 },
+    { header: "Managers", key: "activeManagerCount", width: 12 },
+    { header: "Total DVs", key: "totalDvs", width: 12 },
+    { header: "Active DV Days", key: "totalActiveDvDays", width: 16 },
+    { header: "Avg Calls / Day", key: "avgCallsPerDay", width: 16 },
+    { header: "Avg Coverage %", key: "avgCoveragePct", width: 16 },
+    { header: "AM Visits", key: "amVisits", width: 12 },
+    { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "MRs Covered", key: "distinctMrs", width: 14 },
+    { header: "Neglected MRs", key: "neglectedMrCount", width: 15 },
+  ];
+  byRole.addRows(data.executiveSummary.roleRollups);
+
+  const insights = workbook.addWorksheet("Insights");
+  insights.columns = [
+    { header: "Severity", key: "severity", width: 12 },
+    { header: "Category", key: "category", width: 16 },
+    { header: "Finding", key: "title", width: 40 },
+    { header: "Detail", key: "detail", width: 64 },
+    { header: "Manager HR ID", key: "managerHrId", width: 16 },
+    { header: "MR HR ID", key: "mrHrId", width: 14 },
+  ];
+  insights.addRows(data.executiveSummary.insights);
+
+  const pairs = workbook.addWorksheet("Manager × MR Pairs");
+  pairs.columns = [
+    { header: "Manager", key: "managerName", width: 26 },
+    { header: "Manager HR ID", key: "managerHrId", width: 16 },
+    { header: "MR", key: "mrName", width: 26 },
+    { header: "MR HR ID", key: "mrHrId", width: 14 },
+    { header: "Area", key: "area", width: 18 },
+    { header: "Visits", key: "visits", width: 10 },
+    { header: "Distinct Days", key: "days", width: 14 },
+    { header: "Visits / Day", key: "visitsPerDay", width: 14 },
+    { header: "First Visit", key: "firstDate", width: 14 },
+    { header: "Last Visit", key: "lastDate", width: 14 },
+  ];
+  pairs.addRows(buildManagerMrPairs(data.visitLog));
 
   for (const sheet of workbook.worksheets) {
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
