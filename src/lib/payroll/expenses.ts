@@ -12,6 +12,7 @@ import { PayrollConflictError } from "@/lib/payroll/errors";
 import { roundCurrency } from "@/lib/payroll/money";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
+import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -397,10 +398,14 @@ function mapExpense(row: Record<string, unknown>): PayrollExpenseApproval {
     to: String(row.to_location ?? ""),
     toDate: row.to_date ? new Date(String(row.to_date)).toISOString() : "",
     total: Number(row.total ?? 0),
-    transportationType: String(row.transportation_type ?? ""),
+    transportationType: normalizeTransportation(
+      String(row.transportation_type ?? ""),
+      String(row.trip_type ?? ""),
+      Number(row.meeting_amount ?? 0),
+    ),
     travelCost: Number(row.travel_cost ?? 0),
     tripId: String(row.trip_id ?? ""),
-    tripType: String(row.trip_type ?? ""),
+    tripType: normalizeExpenseType(String(row.trip_type ?? "")),
   };
 }
 
