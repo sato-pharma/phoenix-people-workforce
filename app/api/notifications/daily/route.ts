@@ -12,6 +12,7 @@ import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
+import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ async function runDailyNotifications(request: Request) {
     excuseSla,
     outstationSla,
     resignationSla,
+    weeklyPlansDrift,
   ] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
@@ -51,6 +53,7 @@ async function runDailyNotifications(request: Request) {
     runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
+    runWeeklyPlansDriftCheck().catch((e: unknown) => ({ ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) })),
   ]);
   const [birthdays, contractRenewals] = await Promise.all([
     birthdayResponse.json(),
@@ -70,6 +73,7 @@ async function runDailyNotifications(request: Request) {
     success: true,
     telegramDigest,
     vacationSla,
+    weeklyPlansDrift,
   });
 }
 
