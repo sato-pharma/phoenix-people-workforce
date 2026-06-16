@@ -21,6 +21,7 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type {
   ExpenseCommandFilters,
   ExpenseCommandHeatPoint,
+  ExpenseCommandKpiDeltas,
   ExpenseCommandRow,
   ExpenseCommandScope,
   ExpenseSource,
@@ -102,6 +103,49 @@ function resolveDateWindow(filters: ExpenseCommandFilters): DateWindow {
     default:
       return { from: null, to: null, label: "All time" };
   }
+}
+
+/**
+ * The window immediately preceding the current window, of the same duration. Used
+ * to compute "vs prev …" KPI deltas. Returns null for preset="all" (no meaningful
+ * comparison) and for custom ranges with no `from` bound.
+ */
+function resolvePreviousWindow(
+  filters: ExpenseCommandFilters,
+  current: DateWindow,
+): { from: number; to: number; label: string } | null {
+  const preset = filters.preset ?? "all";
+  if (preset === "all") return null;
+
+  if (preset === "today") {
+    const yest = new Date(Date.now() - 86_400_000);
+    return { from: startOfDay(yest), to: endOfDay(yest), label: "vs yesterday" };
+  }
+
+  if (preset === "month") {
+    const now = new Date();
+    const lastMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    // Day 0 of the current month = last day of the previous month.
+    const lastMonthLast = new Date(now.getFullYear(), now.getMonth(), 0);
+    return {
+      from: startOfDay(lastMonthFirst),
+      to: endOfDay(lastMonthLast),
+      label: "vs last month",
+    };
+  }
+
+  // 7d / 30d / 90d / custom: mirror the current duration immediately before it.
+  if (current.from === null || current.to === null) return null;
+  const duration = current.to - current.from;
+  const prevTo = current.from - 1;
+  const prevFrom = prevTo - duration;
+  const labels: Record<string, string> = {
+    "7d": "vs prev 7d",
+    "30d": "vs prev 30d",
+    "90d": "vs prev 90d",
+    custom: "vs prev period",
+  };
+  return { from: prevFrom, to: prevTo, label: labels[preset] ?? "vs prev period" };
 }
 
 function withinWindow(row: PayrollExpenseApproval, window: DateWindow): boolean {
@@ -341,6 +385,43 @@ export async function getOutstationExpenseCommandData(
     highRiskRows,
   };
 
+  // Cross-period deltas: same in-memory rows, but filtered to the previous window of
+  // the same duration. All other filters identical so the comparison is apples-to-apples.
+  const previousWindow = resolvePreviousWindow(filters, window);
+  let kpiDeltas: ExpenseCommandKpiDeltas | null = null;
+  if (previousWindow && rows.length > 0) {
+    const previousRows = visibleEnriched.filter((row) => {
+      if (!withinWindow(row, previousWindow)) return false;
+      if (filterRegion && (row.region || "Unassigned") !== filterRegion) return false;
+      if (filterLine && (row.line || "Unassigned") !== filterLine) return false;
+      if (filterEmployee && normalizeHrIdForAccess(row.hrId) !== filterEmployee) return false;
+      if (filterStatus && row.status !== filterStatus) return false;
+      if (filterSource && row.source !== filterSource) return false;
+      if (filterTransport && (row.transportationType || "Unspecified") !== filterTransport) return false;
+      if (filterExpenseType && (row.tripType || "Unspecified") !== filterExpenseType) return false;
+      return true;
+    });
+    const prevSummary = summarizePayrollExpenses(previousRows);
+    const prevEmployeeCount = new Set(
+      previousRows.map((row) => normalizeHrIdForAccess(row.hrId)).filter(Boolean),
+    ).size;
+    const prevHighRiskRows = isAdmin ? previousRows.filter((row) => row.isHighRisk).length : 0;
+
+    const pctDelta = (current: number, previous: number): number | null => {
+      if (previous === 0) return null;
+      return roundCurrency(((current - previous) / previous) * 100);
+    };
+    kpiDeltas = {
+      totalAmountPct: pctDelta(summary.totalAmount, prevSummary.totalAmount),
+      approvedAmountPct: pctDelta(summary.approvedAmount, prevSummary.approvedAmount),
+      pendingAmountPct: pctDelta(summary.pendingAmount, prevSummary.pendingAmount),
+      totalRowsPct: pctDelta(summary.totalRows, prevSummary.totalRows),
+      employeeCountPct: pctDelta(employeeCount, prevEmployeeCount),
+      highRiskRowsPct: isAdmin ? pctDelta(highRiskRows ?? 0, prevHighRiskRows) : null,
+      previousLabel: previousWindow.label,
+    };
+  }
+
   // Breakdowns (reuse groupPayrollExpenses; ExpenseCommandRow extends the base row).
   const sourceLabels: Record<ExpenseSource, string> = {
     historical: "Historical upload",
@@ -445,6 +526,7 @@ export async function getOutstationExpenseCommandData(
     appliedFilters: filters,
     filterOptions,
     kpis,
+    kpiDeltas,
     trend: buildPayrollExpenseTrend(rows, 0),
     breakdowns,
     leaderboards: {
