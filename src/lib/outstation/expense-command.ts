@@ -15,6 +15,7 @@ import {
 import { listUnifiedOutstationExpenses } from "@/lib/payroll/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
+import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { normalizeDestinationKey, resolveDestinationCoords } from "@/lib/outstation/destination-geocode";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -29,7 +30,6 @@ import type {
   OutstationExpenseCommandData,
 } from "@/lib/outstation/expense-command-types";
 
-const HIGH_RISK_SCORE_THRESHOLD = 50;
 const LEADERBOARD_LIMIT = 10;
 const OUTSTATION_TRIP_PREFIX = "OUTSTATION-";
 
@@ -241,10 +241,13 @@ export async function getOutstationExpenseCommandData(
     const suspiciousLocationScore = request ? request.suspiciousLocationScore : null;
     const approvalRecommendation = request ? request.approvalRecommendation : null;
     const fraudFlags = request ? [...request.fraudFlags] : null;
-    const isHighRisk =
-      approvalRecommendation === "reject" ||
-      (suspiciousLocationScore ?? 0) >= HIGH_RISK_SCORE_THRESHOLD ||
-      (fraudFlags?.length ?? 0) > 0;
+    const isHighRisk = request
+      ? isHighRiskRequest({
+          approvalRecommendation,
+          suspiciousLocationScore,
+          fraudFlags,
+        })
+      : false;
 
     return {
       ...expense,
