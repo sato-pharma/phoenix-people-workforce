@@ -820,7 +820,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 ring-4 ring-emerald-100 text-3xl">✓</div>
           <div>
             <p className="text-lg font-black text-slate-900">All clear</p>
-            <p className="mt-1 max-w-xs text-sm text-slate-500">No pending approvals or reviews. You're on top of everything.</p>
+            <p className="mt-1 max-w-xs text-sm text-slate-500">No pending approvals or reviews. You&apos;re on top of everything.</p>
           </div>
         </div>
       ) : (

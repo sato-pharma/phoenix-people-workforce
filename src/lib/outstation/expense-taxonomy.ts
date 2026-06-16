@@ -10,8 +10,8 @@
  */
 export function normalizeTransportation(
   transport: string | null | undefined,
-  tripType: string | null | undefined,
-  meetingAmount: number | null | undefined,
+  _tripType: string | null | undefined,
+  _meetingAmount: number | null | undefined,
 ): string {
   const value = (transport ?? "").trim().toLowerCase();
   if (value === "car") return "Car";
