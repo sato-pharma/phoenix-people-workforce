@@ -1252,7 +1252,7 @@ export async function calculateOutstationExpense(
 // submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
 // to the in-app "general" bell category and the "general" email type) with explicit
 // recipients + channels, so no notification policy/governance changes are needed.
-const OUTSTATION_ADMIN_REVIEW_URL = "/admin/outstation/requests";
+const OUTSTATION_ADMIN_REVIEW_URL = "/admin/outstation/expense-command?tab=queue";
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 
 function formatEgp(value: number) {
