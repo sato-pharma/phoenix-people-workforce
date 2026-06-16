@@ -7,9 +7,12 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { getApproverPendingRequests } from "@/lib/marketing-requests/service";
+import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
 export async function GET(request: Request) {
   try {
@@ -26,6 +29,9 @@ export async function GET(request: Request) {
         .then((d) => d.filter((r) => r.status === "submitted").length)
         .catch(() => 0),
       getApproverPendingRequests(access).then((d) => d.rows.length).catch(() => 0),
+      getContractRenewalDashboardData(access)
+        .then((d) => d.rows.filter((r) => r.workflow && ACTIVE_CONTRACT_STATUSES.has(r.workflow.status)).length)
+        .catch(() => 0),
     ]);
 
     const count = settled.reduce(

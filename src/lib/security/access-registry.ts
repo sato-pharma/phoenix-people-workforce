@@ -284,6 +284,8 @@ export const accessRegistry = [
   sessionApi({ methods: ["POST"], pattern: "/api/activity/track", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget activity beacon: records ONLY the authenticated caller's own page view. Identity is taken from the session cookie, never the request body, so there is no cross-site mutation surface." }),
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/employee-context", permission: { resource: "leave", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/action-center/hub-data", permission: { resource: "employees", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/action-center/managers", permission: { resource: "employees", action: "read" } }),
 
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans/calendar", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },

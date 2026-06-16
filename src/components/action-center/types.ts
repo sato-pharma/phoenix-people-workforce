@@ -3,7 +3,8 @@ export type ActionHubModule =
   | "resignation"
   | "excuse"
   | "outstation"
-  | "marketing";
+  | "marketing"
+  | "contract_renewal";
 
 export type ActionHubUrgency = "high" | "normal" | "low";
 
@@ -78,12 +79,26 @@ export type MarketingDetail = {
   decisionLabels: { approve: string; reject: string; return?: string } | null;
 };
 
+export type ContractRenewalDetail = {
+  module: "contract_renewal";
+  requestedRenewalDate: string;
+  proposedStartDate: string | null;
+  proposedEndDate: string | null;
+  jobTitle: string | null;
+  lineName: string | null;
+  areaName: string | null;
+  workflowNotes: string | null;
+  decisionReason: string | null;
+  currentStatus: string;
+};
+
 export type ActionHubDetail =
   | LeaveDetail
   | ResignationDetail
   | ExcuseDetail
   | OutstationDetail
-  | MarketingDetail;
+  | MarketingDetail
+  | ContractRenewalDetail;
 
 // ── Unified item ──────────────────────────────────────────────────────────────
 
@@ -112,6 +127,7 @@ export const ACTION_HUB_MODULE_LABELS: Record<ActionHubModule, string> = {
   excuse: "Excuse",
   outstation: "Outstation",
   marketing: "Marketing",
+  contract_renewal: "Contract Renewal",
 };
 
 export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string; text: string }>> = {
@@ -135,5 +151,10 @@ export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string;
   marketing: [
     { label: "Budget not approved", text: "This marketing request exceeds the approved budget allocation." },
     { label: "Customer not validated", text: "The customer has not completed the required validation process." },
+  ],
+  contract_renewal: [
+    { label: "Pending salary review", text: "Contract renewal deferred pending completion of the annual salary review process." },
+    { label: "Documentation incomplete", text: "Required contract documentation has not been received or is incomplete." },
+    { label: "Position under review", text: "The position itself is under organizational review; renewal will follow that outcome." },
   ],
 };

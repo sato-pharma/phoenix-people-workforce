@@ -8,6 +8,9 @@ import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
+import { runExcuseSlaDaily } from "@/lib/excuses/service";
+import { runOutstationSlaDaily } from "@/lib/outstation/service";
+import { runResignationSlaDaily } from "@/lib/resignations/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +34,9 @@ async function runDailyNotifications(request: Request) {
     recruitment,
     telegramDigest,
     outstationHighRisk,
+    excuseSla,
+    outstationSla,
+    resignationSla,
   ] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
@@ -39,6 +45,9 @@ async function runDailyNotifications(request: Request) {
     runRecruitmentDailyNotifications(),
     runTelegramDailyHrDigest(),
     runOutstationHighRiskDigest(),
+    runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
+    runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
+    runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
   ]);
   const [birthdays, contractRenewals] = await Promise.all([
     birthdayResponse.json(),
@@ -48,9 +57,12 @@ async function runDailyNotifications(request: Request) {
   return NextResponse.json({
     birthdays,
     contractRenewals,
+    excuseSla,
     marketingSla,
     outstationHighRisk,
+    outstationSla,
     recruitment,
+    resignationSla,
     success: true,
     telegramDigest,
     vacationSla,

@@ -14,11 +14,13 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { getApproverPendingRequests } from "@/lib/marketing-requests/service";
+import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import type { VacationActionCenterRow } from "@/lib/vacation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { EmployeeExcuseRequest } from "@/lib/excuses/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
+import type { ContractRow } from "@/lib/contracts/types";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +160,35 @@ function mapMarketingItem(row: MarketingApproverInboxRow): ActionHubItem {
   };
 }
 
+const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
+
+function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
+  if (!row.workflow || !ACTIVE_CONTRACT_STATUSES.has(row.workflow.status)) return null;
+  const w = row.workflow;
+  return {
+    id: w.id,
+    module: "contract_renewal",
+    employeeName: w.employeeName,
+    employeeHrId: w.employeeHrId,
+    title: `Contract Renewal · ${w.requestedRenewalDate}`,
+    statusLabel: w.status.replace(/_/g, " "),
+    submittedAt: w.createdAt,
+    urgency: "high",
+    detail: {
+      module: "contract_renewal",
+      requestedRenewalDate: w.requestedRenewalDate,
+      proposedStartDate: w.proposedStartDate,
+      proposedEndDate: w.proposedEndDate,
+      jobTitle: w.jobTitle,
+      lineName: w.lineName,
+      areaName: w.areaName,
+      workflowNotes: w.workflowNotes,
+      decisionReason: w.decisionReason,
+      currentStatus: w.status,
+    },
+  };
+}
+
 export default async function ActionCenterPage({
   searchParams,
 }: {
@@ -178,9 +209,10 @@ export default async function ActionCenterPage({
     getManagerPendingExcuses(access).catch(() => null),
     listOutstationRequests().catch(() => null),
     getApproverPendingRequests(access).catch(() => null),
+    getContractRenewalDashboardData(access).catch(() => null),
   ]);
 
-  const [leaveResult, resignationsResult, excusesResult, outstationResult, marketingResult] = settled;
+  const [leaveResult, resignationsResult, excusesResult, outstationResult, marketingResult, contractResult] = settled;
 
   const items: ActionHubItem[] = [];
 
@@ -219,6 +251,13 @@ export default async function ActionCenterPage({
     }
   }
 
+  if (contractResult.status === "fulfilled" && contractResult.value) {
+    for (const row of contractResult.value.rows) {
+      const item = mapContractRenewalItem(row);
+      if (item) items.push(item);
+    }
+  }
+
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
 
   const data: ActionHubData = {
@@ -231,6 +270,7 @@ export default async function ActionCenterPage({
       initialData={data}
       initialModule={initialModule}
       initialId={initialId}
+      callerRole={access.role}
     />
   );
 }
