@@ -24,10 +24,12 @@ import type {
   DoubleVisitImportListItem,
   DoubleVisitImportStatus,
   DoubleVisitKpis,
+  DoubleVisitLogEntry,
   DoubleVisitMrScore,
   DoubleVisitNormalizedRow,
   DoubleVisitPreview,
   DoubleVisitSourceType,
+  DoubleVisitVisitedEmployeeStatus,
 } from "@/lib/double-visit-analytics/types";
 
 const importsTable = "double_visit_imports";
@@ -144,6 +146,7 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
     publishedImport: null,
     salesComparisonAvailable: false,
     schemaReady: false,
+    visitLog: [],
   };
 }
 
@@ -832,6 +835,20 @@ export async function getDoubleVisitDashboardData(input: {
   const lines = Array.from(new Set(filteredRows.map((row) => nullableText(row.line_name)).filter((value): value is string => Boolean(value)))).sort();
   const doubleVisitors = Array.from(new Set(filteredRows.map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id)).filter((value): value is string => Boolean(value)))).sort();
 
+  const visitLog: DoubleVisitLogEntry[] = filteredRows
+    .map((row) => ({
+      area: nullableText(row.area_name),
+      date: row.activity_date,
+      doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
+      doubleVisitorName: nullableText(row.double_visitor_name),
+      period: row.period,
+      visitCount: asNumber(row.visit_count),
+      visitedHrId: nullableText(row.visited_employee_hr_id),
+      visitedName: nullableText(row.visited_employee_name),
+      visitedStatus: row.visited_employee_status as DoubleVisitVisitedEmployeeStatus,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
   return {
     asOfDate: todayIso(),
     dateFrom,
@@ -848,6 +865,7 @@ export async function getDoubleVisitDashboardData(input: {
     publishedImport: importRow,
     salesComparisonAvailable: false,
     schemaReady: true,
+    visitLog,
   };
 }
 

@@ -137,6 +137,18 @@ export type DoubleVisitExecutiveManagerReport = {
   totalDvs: number;
 };
 
+export type DoubleVisitLogEntry = {
+  area: string | null;
+  date: string;
+  doubleVisitorHrId: string | null;
+  doubleVisitorName: string | null;
+  period: DoubleVisitPeriod;
+  visitCount: number;
+  visitedHrId: string | null;
+  visitedName: string | null;
+  visitedStatus: DoubleVisitVisitedEmployeeStatus;
+};
+
 export type DoubleVisitExpenseWorkloadEvidence = {
   amWorkload: number;
   dateBreakdown: Array<{
@@ -175,4 +187,5 @@ export type DoubleVisitDashboardData = {
   publishedImport: DoubleVisitImportListItem | null;
   salesComparisonAvailable: boolean;
   schemaReady: boolean;
+  visitLog: DoubleVisitLogEntry[];
 };
