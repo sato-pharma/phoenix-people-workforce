@@ -2,13 +2,23 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { updateEmployeePlan, type EmployeePlanItemInput } from "@/lib/weekly-planning/service";
+import {
+  isWeeklyPlanRpcError,
+  updateEmployeePlan,
+  type EmployeePlanItemInput,
+} from "@/lib/weekly-planning/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unable to update plan.";
+  if (isWeeklyPlanRpcError(error)) {
+    return NextResponse.json(
+      { error: `weekly_plan_${error.code}`, message: error.message, success: false },
+      { status: error.status },
+    );
+  }
   return NextResponse.json(
     {
       error: isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:")
