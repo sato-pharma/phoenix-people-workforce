@@ -114,18 +114,12 @@ export type ExpenseCommandLeaderboards = {
 };
 
 export type ExpenseCommandHeatPoint = {
-  id: string;
+  id: string; // region key
   latitude: number;
   longitude: number;
-  weight: number; // = total spend
+  weight: number; // = total spend for the region
   region: string | null;
-  city: string | null;
-  line: string | null;
-  employeeName: string;
-  source: ExpenseSource;
-  status: string;
-  // Admin-only — null in self scope.
-  recommendation: string | null;
+  count: number; // expense rows aggregated into this region bubble
 };
 
 export type ExpenseCommandFilterOptions = {

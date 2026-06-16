@@ -15,6 +15,8 @@ import {
 import { listUnifiedOutstationExpenses } from "@/lib/payroll/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
+import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
+import { normalizeDestinationKey, resolveDestinationCoords } from "@/lib/outstation/destination-geocode";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type {
   ExpenseCommandFilters,
@@ -184,11 +186,13 @@ export async function getOutstationExpenseCommandData(
     const line = directoryRow?.lineName ?? request?.employeeLine ?? null;
     const city = request?.toCity ?? null;
 
-    const latitude =
-      request && Number.isFinite(request.capturedLatitude) ? request.capturedLatitude : null;
-    const longitude =
-      request && Number.isFinite(request.capturedLongitude) ? request.capturedLongitude : null;
-    const mappable = latitude !== null && longitude !== null;
+    // Place every row on the map by its brick-master region centroid (covers the
+    // historical/manual rows that have no GPS — the bulk of spend). Rows whose
+    // region has no known centroid stay unmapped and are disclosed honestly.
+    const regionCentroid = resolveRegionCentroid(region);
+    const latitude = regionCentroid?.lat ?? null;
+    const longitude = regionCentroid?.lng ?? null;
+    const mappable = regionCentroid !== null;
 
     const suspiciousLocationScore = request ? request.suspiciousLocationScore : null;
     const approvalRecommendation = request ? request.approvalRecommendation : null;
@@ -268,6 +272,29 @@ export async function getOutstationExpenseCommandData(
     if (filterTransport && (row.transportationType || "Unspecified") !== filterTransport) return false;
     if (filterExpenseType && (row.tripType || "Unspecified") !== filterExpenseType) return false;
     return true;
+  });
+
+  // Upgrade region-centroid coordinates to PRECISE coordinates: exact GPS for live
+  // submissions, else the geocoded destination town (cached). Rows whose destination
+  // can't be geocoded keep their region-centroid fallback. Net: the map plots actual
+  // destinations and still covers the full spend.
+  const destinationCoords = await resolveDestinationCoords(
+    rows.map((row) => row.to || row.location || "").filter(Boolean),
+  );
+  rows.forEach((row) => {
+    const requestId = requestIdFromTripId(row.tripId);
+    const request = requestId !== null ? requestById.get(requestId) ?? null : null;
+    const gps =
+      request && Number.isFinite(request.capturedLatitude) && Number.isFinite(request.capturedLongitude)
+        ? { lat: request.capturedLatitude, lng: request.capturedLongitude }
+        : null;
+    const destKey = normalizeDestinationKey(row.to || row.location || "");
+    const precise = gps ?? (destKey ? destinationCoords.get(destKey) ?? null : null);
+    if (precise) {
+      row.latitude = precise.lat;
+      row.longitude = precise.lng;
+      row.mappable = true;
+    }
   });
 
   // KPIs (reuse the canonical money math).
@@ -356,22 +383,36 @@ export async function getOutstationExpenseCommandData(
       .slice(0, LEADERBOARD_LIMIT);
   }
 
-  // Heat points — mappable rows only.
-  const heatPoints: ExpenseCommandHeatPoint[] = rows
+  // Location bubbles: aggregate spend by resolved coordinate (geocoded destination
+  // town, exact GPS, or region-centroid fallback). One weighted, clickable
+  // proportional marker per location — covers the FULL spend without the deprecated
+  // heat layer.
+  const bubbleMap = new Map<string, ExpenseCommandHeatPoint>();
+  rows
     .filter((row) => row.mappable && row.latitude !== null && row.longitude !== null)
-    .map((row) => ({
-      id: row.tripId,
-      latitude: row.latitude as number,
-      longitude: row.longitude as number,
-      weight: row.total || 0,
-      region: row.region,
-      city: row.city,
-      line: row.line,
-      employeeName: row.specialist || "Unknown",
-      source: row.source,
-      status: row.status,
-      recommendation: isAdmin ? row.approvalRecommendation : null,
-    }));
+    .forEach((row) => {
+      const lat = row.latitude as number;
+      const lng = row.longitude as number;
+      const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+      const label = row.to || row.location || row.region || "Unassigned";
+      const existing = bubbleMap.get(key);
+      if (existing) {
+        existing.weight += row.total || 0;
+        existing.count += 1;
+      } else {
+        bubbleMap.set(key, {
+          id: key,
+          latitude: lat,
+          longitude: lng,
+          weight: row.total || 0,
+          region: label,
+          count: 1,
+        });
+      }
+    });
+  const heatPoints: ExpenseCommandHeatPoint[] = Array.from(bubbleMap.values())
+    .map((point) => ({ ...point, weight: roundCurrency(point.weight) }))
+    .sort((a, b) => b.weight - a.weight);
 
   // In self scope, strip admin-only intelligence from the rows themselves.
   const exposedRows: ExpenseCommandRow[] = isAdmin

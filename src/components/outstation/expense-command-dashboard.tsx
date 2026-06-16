@@ -9,7 +9,7 @@ import { ExpenseLeaderboards } from "@/components/outstation/expense-command/exp
 import { ExpenseRiskPanel } from "@/components/outstation/expense-command/expense-risk-panel";
 import {
   ExpenseHeatmapLayer,
-  type ExpenseHeatPointInput,
+  type ExpenseBubbleInput,
 } from "@/components/outstation/expense-heatmap-layer";
 import { ExpenseBreakdownCharts } from "@/components/outstation/expense-shared/expense-breakdown-charts";
 import { ExpenseDetailTable } from "@/components/outstation/expense-shared/expense-detail-table";
@@ -101,19 +101,15 @@ export function ExpenseCommandDashboard({
     setFilters({ preset: "all" });
   }, []);
 
-  const heatPoints: ExpenseHeatPointInput[] = useMemo(
+  const heatPoints: ExpenseBubbleInput[] = useMemo(
     () =>
       (data?.heatPoints ?? []).map((point) => ({
         id: point.id,
         lat: point.latitude,
         lng: point.longitude,
         weight: point.weight,
-        employeeName: point.employeeName,
         region: point.region,
-        city: point.city,
-        line: point.line,
-        status: point.status,
-        source: point.source,
+        count: point.count,
       })),
     [data?.heatPoints],
   );
@@ -180,9 +176,7 @@ export function ExpenseCommandDashboard({
           <div className={loading ? "space-y-5 opacity-60 transition-opacity" : "space-y-5 transition-opacity"}>
             <ExpenseHeatmapLayer
               browserKey={mapsBrowserKey}
-              onSelectPoint={(point) => {
-                if (point.region) updateFilters({ region: point.region });
-              }}
+              onSelectRegion={(region) => updateFilters({ region })}
               points={heatPoints}
               unmappedAmount={unmappedAmount}
               unmappedCount={data.kpis.unmappableRows}
