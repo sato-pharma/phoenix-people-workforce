@@ -392,6 +392,7 @@ function ExpandableMrRow({
           <p className="text-sm font-semibold text-slate-800">{score.mrName}</p>
           <p className="text-xs text-slate-400">{score.hrId} · {score.areaName ?? "No area"}</p>
         </td>
+        <td className="px-3 py-3 text-sm text-slate-600">{fmtDate(score.hireDate)}</td>
         <td className="px-3 py-3 text-xs">
           {score.managerName ? (
             <button
@@ -416,7 +417,7 @@ function ExpandableMrRow({
       </tr>
       {open && (
         <tr className="bg-slate-50">
-          <td colSpan={9} className="px-6 py-4">
+          <td colSpan={10} className="px-6 py-4">
             {mrHistory.length === 0 ? (
               <p className="text-sm text-slate-400">
                 No visits recorded for this MR{periodFilter !== "ALL" ? ` in ${periodFilter}` : ""}.
@@ -1233,6 +1234,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 <tr>
                   <th className="w-8 px-3 py-3" />
                   <th className="px-3 py-3">MR</th>
+                  <th className="px-3 py-3">Hire Date</th>
                   <th className="px-3 py-3">Manager</th>
                   <th className="px-3 py-3 text-right">Total DVs</th>
                   <th className="px-3 py-3 text-right">DVs (90d)</th>
@@ -1258,7 +1260,7 @@ export function DoubleVisitAnalyticsWorkspace({
                   );
                 })}
                 {filteredMrScores.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-10 text-center text-sm text-slate-400">
+                  <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-slate-400">
                     {mrSearch ? "No MRs match your search — clear it to see all." : "No MRs in this snapshot."}
                   </td></tr>
                 )}

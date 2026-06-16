@@ -54,14 +54,15 @@ export function runCommunicationSourceOfTruthTests() {
     },
   );
 
+  // notification_delivery_logs retired by migration 20260616120000.
+  // failed24h / sent24h are now derived from deliveryEvents (email_delivery_events)
+  // which is the canonical Resend webhook log.
   const monitoring = summarizeNotificationMonitoring({
     deliveryEvents: [
       { id: "1", occurredAt: "2026-05-18T10:00:00Z", status: "delivered", subject: "A", recipients: ["a@x.com"] },
       { id: "2", occurredAt: "2026-05-18T11:00:00Z", status: "bounced", subject: "B", recipients: ["b@y.com"] },
-    ],
-    deliveryLogs: [
-      { sentAt: "2026-05-18T10:00:00Z", status: "sent" },
-      { sentAt: "2026-05-18T11:00:00Z", status: "failed" },
+      { id: "3", occurredAt: "2026-05-18T12:00:00Z", status: "sent", subject: "C", recipients: ["c@x.com"] },
+      { id: "4", occurredAt: "2026-05-18T13:00:00Z", status: "failed", subject: "D", recipients: ["d@x.com"] },
     ],
     notificationEvents: [
       { createdAt: "2026-05-18T10:00:00Z", status: "pending" },
@@ -71,6 +72,8 @@ export function runCommunicationSourceOfTruthTests() {
   });
   assert.equal(monitoring.actualDelivery24h.delivered, 1);
   assert.equal(monitoring.actualDelivery24h.bounced, 1);
+  assert.equal(monitoring.actualDelivery24h.sent, 1);
+  assert.equal(monitoring.actualDelivery24h.failed, 1);
   assert.equal(monitoring.sent24h, 1);
   assert.equal(monitoring.failed24h, 1);
   assert.equal(monitoring.pending24h, 1);

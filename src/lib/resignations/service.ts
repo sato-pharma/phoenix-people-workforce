@@ -361,17 +361,21 @@ async function notifyResignationWorkflow(
     effectiveDate: string;
     employeeHrId: string;
     employeeName: string;
+    id?: string;
     status: string;
   },
   title: string,
   tone: "success" | "warning" | "danger" | "neutral" = "warning",
 ) {
+  const actionUrl = record.id
+    ? `/admin/action-center?module=resignation&id=${encodeURIComponent(record.id)}`
+    : "/admin/action-center?module=resignation";
   await createSystemNotification({
-    actionUrl: "/resignations",
+    actionUrl,
     actorId: "system",
     email: {
-      ctaHref: "/resignations",
-      ctaLabel: "Open resignations",
+      ctaHref: actionUrl,
+      ctaLabel: "Review in Action Center",
       employeeHrId: record.employeeHrId,
       metrics: [
         { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
@@ -1008,6 +1012,7 @@ async function createResignationForEmployee(
       effectiveDate,
       employeeHrId: employee.hrId,
       employeeName: employee.fullName,
+      id: resignationId,
       status: "submitted",
     },
     "Resignation Submitted",
@@ -1163,6 +1168,7 @@ export async function resignEmployeeAndOpenVacancy(
       effectiveDate,
       employeeHrId: employee.hrId,
       employeeName: employee.fullName,
+      id: result.resignation_id,
       status: "submitted",
     },
     "Resignation Submitted",

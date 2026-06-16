@@ -676,7 +676,7 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
 }
 
 function dashboardUrl(path = "/") {
-  const base = String(process.env.NOTIFICATION_DASHBOARD_URL ?? "").replace(/\/+$/, "");
+  const base = (process.env.NOTIFICATION_DASHBOARD_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
   if (!base) return path;
   if (/^https?:\/\//.test(path)) return path;
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;

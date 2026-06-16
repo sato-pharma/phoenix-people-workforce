@@ -45,8 +45,43 @@ export function runSupportRequestsNotificationsTests() {
   assert.match(service, /Promise\.allSettled/, "HR fan-out must use allSettled");
   assert.match(
     service,
-    /await notifyHrOfSupportRequest\(created\);\r?\n {2}return created;/,
-    "creation must persist the ticket first, then alert HR best-effort",
+    /const notification = await notifyHrOfSupportRequest\(created\);\r?\n {2}return \{ notification, row: created \};/,
+    "creation must persist the ticket first, then alert HR best-effort while bubbling delivery status",
+  );
+
+  // ── Silent-fail audit: HR recipient lookup must not swallow errors to [] ──────────
+  assert.doesNotMatch(
+    service,
+    /Failed to resolve HR support recipients[\s\S]*?return \[\];/,
+    "resolveHrSupportRecipients must surface failures, not silently return []",
+  );
+  assert.match(
+    service,
+    /async function resolveSuperAdminFallbackRecipients/,
+    "Super Admin fallback path must exist for when the primary HR lookup fails or returns 0",
+  );
+  assert.match(
+    service,
+    /resolveSuperAdminFallbackRecipients\(\)/,
+    "notifyHrOfSupportRequest must invoke the Super Admin fallback when the primary lookup yields no recipients",
+  );
+  assert.match(
+    service,
+    /export type SupportNotificationStatus = \{[\s\S]*?errored: boolean;[\s\S]*?fellBackToSuperAdmin: boolean;[\s\S]*?recipientCount: number;[\s\S]*?\};/,
+    "SupportNotificationStatus must expose errored / fellBackToSuperAdmin / recipientCount to the API surface",
+  );
+  assert.match(
+    service,
+    /Promise<CreateSupportRequestResult>/,
+    "createSupportRequest must return { row, notification } so the route can render a delivery diagnostic",
+  );
+
+  // ── API route forwards the delivery diagnostic so the UI can render a banner ──────
+  const submitRoute = source("app/api/support/requests/route.ts");
+  assert.match(
+    submitRoute,
+    /NextResponse\.json\(\{ item: row, notification \}/,
+    "submit route must surface notification status alongside the saved ticket",
   );
 
   // ── Admin management surface: list-all + status update, server-enforced ────────────

@@ -409,10 +409,13 @@ async function notifyContractWorkflow(
   title: string,
   tone: "success" | "warning" | "danger" | "neutral",
 ) {
+  const actionUrl = `/admin/action-center?module=contract_renewal&id=${encodeURIComponent(record.id)}`;
   await createSystemNotification({
-    actionUrl: "/contracts/renewals",
+    actionUrl,
     actorId: "system",
     email: {
+      ctaHref: actionUrl,
+      ctaLabel: "Review in Action Center",
       employeeHrId: record.employeeHrId,
       metrics: [
         { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },

@@ -7,6 +7,7 @@ export type {
   ExpenseCommandFilterOptions,
   ExpenseCommandRow,
   ExpenseCommandKpis,
+  ExpenseCommandKpiDeltas,
   ExpenseCommandBreakdowns,
   ExpenseCommandLeaderboards,
   ExpenseCommandHeatPoint,

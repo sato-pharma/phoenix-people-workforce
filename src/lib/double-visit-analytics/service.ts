@@ -13,6 +13,7 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildDoubleVisitPreviewFromWorkbook,
+  markManagerVisitedRows,
   normalizeIReports360DoubleVisits,
   recoverVisitedEmployeesByCrmUsername,
 } from "@/lib/double-visit-analytics/parser";
@@ -475,8 +476,17 @@ export async function buildAndSaveDoubleVisitExcelImport(input: {
   // Recover visited MRs whose seat was logged as "Vacant"/blank but whose name matches an
   // active employee, so their received double visits are credited to the real MR.
   const recovered = recoverVisitedEmployeesByCrmUsername(preview, employees);
-  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview: recovered });
-  return { import: saved, preview: { ...recovered, importId: saved.id } };
+  // Flag rows where the visited "employee" is actually a manager (DSM/RM/NSM/PM/GPM/TM).
+  // These are CRM data errors (a DV is always manager→MR) and must not count as valid DVs.
+  const managerHrIdKeys = new Set(
+    employees
+      .filter((e) => resolveDvRole(e) !== null)
+      .map((e) => canonicalHrIdKey(e.hrId))
+      .filter((k): k is string => Boolean(k)),
+  );
+  const withNonMrFlagged = markManagerVisitedRows(recovered, managerHrIdKeys);
+  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview: withNonMrFlagged });
+  return { import: saved, preview: { ...withNonMrFlagged, importId: saved.id } };
 }
 
 export async function buildAndSaveDoubleVisitIReports360Import(input: {
@@ -708,6 +718,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       distinctDoubleVisitors: distinctVisitors.size,
       dvsLast90Days,
       employeeStatus: employee.employmentStatus,
+      hireDate: employee.hireDate,
       hrId: employee.hrId,
       lastDoubleVisitorName: last?.double_visitor_name ?? null,
       lastDvDate,
@@ -1291,7 +1302,19 @@ export async function getDoubleVisitDashboardData(input: {
       .map((employee) => [normalizedHrKey(employee.hrId), employee])
       .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
   );
-  const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId);
+  // Build a set of manager HR ID keys (DSM/RM/NSM/PM/GPM/TM) to exclude manager-to-manager
+  // rows. The runtime filter covers rows already in the DB as 'active_mapped' before this
+  // validation was added, as well as newly-imported 'non_mr' rows.
+  const managerHrIdKeys = new Set(
+    scopedEmployees
+      .filter((e) => resolveDvRole(e) !== null)
+      .map((e) => canonicalHrIdKey(e.hrId))
+      .filter((k): k is string => Boolean(k)),
+  );
+  const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId).filter((row) => {
+    if (!row.visited_employee_hr_id) return true;
+    return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
+  });
   const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
   const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
   const kpisValue = buildKpis(filteredRows);
@@ -1574,6 +1597,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
   mrSheet.columns = [
     { header: "MR", key: "mrName", width: 28 },
     { header: "HR ID", key: "hrId", width: 14 },
+    { header: "Hire Date", key: "hireDate", width: 14 },
     { header: "Area", key: "areaName", width: 20 },
     { header: "Line", key: "lineName", width: 12 },
     { header: "Manager", key: "managerName", width: 28 },

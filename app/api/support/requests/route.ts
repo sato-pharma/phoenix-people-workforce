@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       .json()
       .catch(() => ({}))) as CreateSupportRequestBody;
 
-    const created = await createSupportRequest(access, {
+    const { notification, row } = await createSupportRequest(access, {
       attachments: normaliseAttachments(body.attachments),
       category: stringField(body.category),
       description: stringField(body.description),
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       subject: stringField(body.subject),
     });
 
-    return NextResponse.json({ item: created }, { status: 201 });
+    return NextResponse.json({ item: row, notification }, { status: 201 });
   } catch (error) {
     const { message, status } = errorResponse(error);
     return NextResponse.json(
