@@ -32,17 +32,16 @@ type MapsLibrary = {
 
 const EGYPT_CENTER = { lat: 26.8206, lng: 30.8025 };
 
-// Low → high spend colour ramp for the bubbles.
-const RAMP = ["#FED7AA", "#FDBA74", "#FB923C", "#F97316", "#EA580C", "#9A3412"];
+// Low → high spend colour ramp for the dots.
+const RAMP = ["#FDBA74", "#FB923C", "#F97316", "#EA580C", "#C2410C", "#9A3412"];
+
+// Uniform dot size — clear, even markers (no confusing variable bubbles). Spend is
+// conveyed by colour and the click popover, not size.
+const DOT_SCALE = 6.5;
 
 function colorFor(ratio: number): string {
   const index = Math.min(RAMP.length - 1, Math.max(0, Math.round(ratio * (RAMP.length - 1))));
   return RAMP[index];
-}
-
-function radiusFor(ratio: number): number {
-  // sqrt keeps area roughly proportional to spend; clamp to a sensible pixel range.
-  return Math.max(9, Math.min(46, 9 + Math.sqrt(Math.max(0, ratio)) * 37));
 }
 
 function escapeHtml(value: string): string {
@@ -70,16 +69,14 @@ export function ExpenseHeatmapLayer({
   height = 520,
   unmappedCount = 0,
   unmappedAmount = 0,
-  onSelectRegion,
   title = "Expense concentration",
-  subtitle = "Each bubble is a destination, sized and shaded by total outstation spend.",
+  subtitle = "Each dot is a destination — colour shows total spend (light = low, dark = high).",
 }: {
   points: ExpenseBubbleInput[];
   browserKey: string;
   height?: number;
   unmappedCount?: number;
   unmappedAmount?: number;
-  onSelectRegion?: (region: string) => void;
   title?: string;
   subtitle?: string;
 }) {
@@ -91,11 +88,6 @@ export function ExpenseHeatmapLayer({
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-
-  const onSelectRef = useRef(onSelectRegion);
-  useEffect(() => {
-    onSelectRef.current = onSelectRegion;
-  }, [onSelectRegion]);
 
   const maxWeight = useMemo(
     () => points.reduce((peak, point) => Math.max(peak, point.weight), 0) || 1,
@@ -196,10 +188,10 @@ export function ExpenseHeatmapLayer({
             zIndex: Math.round(point.weight),
             icon: {
               path: circlePath,
-              scale: radiusFor(ratio),
+              scale: DOT_SCALE,
               fillColor: colorFor(ratio),
-              fillOpacity: 0.58,
-              strokeColor: "#9A3412",
+              fillOpacity: 0.95,
+              strokeColor: "#FFFFFF",
               strokeWeight: 1.2,
             },
           });
@@ -209,7 +201,6 @@ export function ExpenseHeatmapLayer({
               info.setContent(infoContent(point));
               info.open({ anchor: marker, map });
             }
-            if (point.region) onSelectRef.current?.(point.region);
           });
           markersRef.current.push(marker);
           bounds.extend({ lat: point.lat, lng: point.lng });
