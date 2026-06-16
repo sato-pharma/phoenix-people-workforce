@@ -14,7 +14,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "delete");
     const { id } = await params;
-    await deleteSalaryBatch(id);
+    await deleteSalaryBatch(id, access.hrId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
