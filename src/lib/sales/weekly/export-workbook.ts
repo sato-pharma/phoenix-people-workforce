@@ -85,20 +85,20 @@ function buildSummarySheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard, ge
   const filterLabel = labelFilters(data.appliedFilters);
   bandHeader(sheet, COLS, "Weekly Sales Report", filterLabel);
 
-  // Generated-at row (row 3)
-  sheet.mergeCells(3, 1, 3, COLS);
-  const genCell = sheet.getCell(3, 1);
+  // Generated-at row (row 4 — row 3 is now the slogan from bandHeader)
+  sheet.mergeCells(4, 1, 4, COLS);
+  const genCell = sheet.getCell(4, 1);
   genCell.value = `Generated: ${generatedAt}`;
   genCell.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 9 };
   genCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   genCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-  sheet.getRow(3).height = 14;
+  sheet.getRow(4).height = 14;
 
   // Blank separator
-  sheet.getRow(4).height = 8;
+  sheet.getRow(5).height = 8;
 
-  // ── KPI tiles (rows 5-7) ──
-  const kpiTileRow = 5;
+  // ── KPI tiles (rows 6-8) ──
+  const kpiTileRow = 6;
   const kpis = data.kpis;
   const compare = data.compare;
 
@@ -132,10 +132,10 @@ function buildSummarySheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard, ge
   }
 
   // Blank separator before tables
-  sheet.getRow(9).height = 10;
+  sheet.getRow(10).height = 10;
 
   // ── Top Regions summary ──
-  let cursor = 10;
+  let cursor = 11;
   cursor = writeTable(sheet, cursor, {
     title: "Top Regions",
     columns: [
