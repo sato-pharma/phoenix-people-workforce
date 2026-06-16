@@ -2,6 +2,7 @@ import { AlertCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { AdminProfileForm } from "@/components/admin/admin-profile-form";
+import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -46,6 +47,9 @@ export default async function AdminProfilePage() {
     profile ? (
       <div className="space-y-6">
         <AdminProfileForm profile={profile} />
+        <div className="px-4 sm:px-6 lg:px-8">
+          <ChangePasswordForm />
+        </div>
         <div className="px-4 pb-8 sm:px-6 lg:px-8">
           <NotificationSettingsPanel />
         </div>
