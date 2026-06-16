@@ -363,6 +363,17 @@ export async function saveAttendancePolicy(input: {
     policyId = (data as { id: number }).id;
   }
 
+  // Snapshot existing rules first so we can restore them if the re-insert fails.
+  // supabase-js has no multi-statement transaction, so without this a failure
+  // between delete and insert would leave the policy with ZERO rules — silently
+  // disabling every deduction for it. (A DB-side RPC transaction is the fully
+  // atomic fix; this compensation closes the practical gap without a migration.)
+  const { data: priorRules, error: snapshotError } = await supabase
+    .from("attendance_policy_rules")
+    .select("event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
+    .eq("policy_id", policyId);
+  if (snapshotError) throw snapshotError;
+
   const { error: deleteError } = await supabase
     .from("attendance_policy_rules")
     .delete()
@@ -375,7 +386,27 @@ export async function saveAttendancePolicy(input: {
     const { error } = await supabase
       .from("attendance_policy_rules")
       .insert(rules);
-    if (error) throw error;
+    if (error) {
+      // Restore the snapshot so the policy is never left rule-less.
+      if ((priorRules ?? []).length > 0) {
+        const now = new Date().toISOString();
+        await supabase
+          .from("attendance_policy_rules")
+          .insert((priorRules as RuleDbRow[]).map((rule) => ({
+            deduction_days: rule.deduction_days,
+            deduction_value: rule.deduction_value,
+            event_type: rule.event_type,
+            from_minutes: rule.from_minutes,
+            is_active: rule.is_active,
+            policy_id: policyId,
+            recommended_action: rule.recommended_action,
+            sort_order: rule.sort_order,
+            to_minutes: rule.to_minutes,
+            updated_at: now,
+          })));
+      }
+      throw error;
+    }
   }
 }
 

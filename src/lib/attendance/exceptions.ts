@@ -198,11 +198,15 @@ export async function reviewAttendanceException(
   return toException(data as ExceptionDbRow, new Map());
 }
 
-export async function deleteAttendanceException(id: number): Promise<void> {
+// Soft-delete: flips the exception to "rejected" (which un-suppresses any
+// deduction it was excusing). Records who did it so the change is auditable —
+// a silent status flip with no reviewer is a governance hole.
+export async function deleteAttendanceException(id: number, reviewedBy: string): Promise<void> {
   const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from("attendance_exceptions")
-    .update({ status: "rejected", updated_at: new Date().toISOString() })
+    .update({ reviewed_at: now, reviewed_by: reviewedBy, status: "rejected", updated_at: now })
     .eq("id", id);
   if (error) throw error;
 }

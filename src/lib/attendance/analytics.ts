@@ -1,6 +1,8 @@
 import { getFingerprintAttendanceReport, type FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
-import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { getAttendanceRoster, isWithinEmploymentSpan, type AttendanceRosterEmployee } from "@/lib/attendance/roster";
+import { type AttendanceWorkingWeekday } from "@/lib/attendance/work-schedule";
 import {
   buildAttendanceCalendarContext,
   cairoTodayIso,
@@ -12,6 +14,16 @@ import {
 } from "@/lib/attendance/working-days";
 
 type RosterEmployee = AttendanceRosterEmployee;
+
+// Resolves an employee's configured working weekdays for a given day, memoized so
+// the per-day policy lookup isn't recomputed across the three analytics passes.
+// Analytics MUST classify days with the same per-employee policy the monthly
+// summary uses, otherwise the two screens report different absent/late numbers
+// for the same employee.
+type WorkingWeekdaysResolver = (
+  employee: Pick<RosterEmployee, "hrId" | "jobTitle">,
+  dateIso: string,
+) => AttendanceWorkingWeekday[] | null | undefined;
 
 export type AttendanceAnalyticsData = {
   chronicLate: Array<{
@@ -103,11 +115,33 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
 
   // One engine call per calendar-month slice (punch query is capped per call).
   const slices = monthSlices(windowFrom, windowTo);
-  const [sliceReports, context, leaveMap] = await Promise.all([
+  const [sliceReports, context, leaveMap, policyRows] = await Promise.all([
     Promise.all(slices.map((slice) => getFingerprintAttendanceReport({ dateFrom: slice.from, dateTo: slice.to }))),
     buildAttendanceCalendarContext({ dateFromIso: windowFrom, dateToIso: windowTo }),
     getApprovedLeaveDayMap({ dateFromIso: windowFrom, dateToIso: windowTo, employeeHrIds: roster.map((entry) => entry.hrId) }),
+    loadAttendancePolicyGroups({ activeOnly: true }),
   ]);
+
+  // Memoized per-(employee, day) working-weekday resolver — mirrors the monthly
+  // summary so the two surfaces agree on which days are working days.
+  const workingWeekdaysCache = new Map<string, AttendanceWorkingWeekday[] | null | undefined>();
+  const resolveWorkingWeekdays: WorkingWeekdaysResolver = (employee, dateIso) => {
+    const cacheKey = `${employee.hrId}|${employee.jobTitle}|${dateIso}`;
+    if (workingWeekdaysCache.has(cacheKey)) return workingWeekdaysCache.get(cacheKey);
+    const policy = resolveActiveAttendancePolicy(
+      { hr_id: employee.hrId, job_title: employee.jobTitle },
+      policyRows,
+      dateIso,
+      dateIso,
+    );
+    const value = policy?.working_weekdays ?? undefined;
+    workingWeekdaysCache.set(cacheKey, value);
+    return value;
+  };
+
+  if (sliceReports.some((report) => report.truncated)) {
+    dataUnavailable.push("Punch volume exceeded the safety cap for part of this window — some days may be under-counted.");
+  }
 
   // hrId -> dateIso -> engine row.
   const rowsByEmployee = new Map<string, Map<string, FingerprintReportRow>>();
@@ -121,7 +155,7 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
     }
   }
 
-  const today = buildTodaySnapshot({ context, leaveMap, roster, rowsByEmployee, todayIso });
+  const today = buildTodaySnapshot({ context, leaveMap, resolveWorkingWeekdays, roster, rowsByEmployee, todayIso });
 
   const lateWindowFrom = shiftIsoDate(todayIso, -(CHRONIC_LATE_WINDOW_DAYS - 1));
   const effectiveLateFrom = lateWindowFrom > windowFrom ? lateWindowFrom : windowFrom;
@@ -134,6 +168,7 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
       dateFromIso: effectiveLateFrom,
       dateToIso: todayIso,
       leaveMap,
+      resolveWorkingWeekdays,
       roster,
       rowsByEmployee,
     });
@@ -188,7 +223,7 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
       const bucket = byWeek.get(week.key)!;
       for (const employee of roster) {
         if (!isWithinEmploymentSpan(employee, dateIso)) continue;
-        const day = classifyAttendanceDay({ context, dateIso, jobTitle: employee.jobTitle });
+        const day = classifyAttendanceDay({ context, dateIso, jobTitle: employee.jobTitle, workingWeekdays: resolveWorkingWeekdays(employee, dateIso) });
         if (!day.isExpectedWorkingDay) continue;
         if (leaveMap.get(employee.hrId)?.has(dateIso)) continue;
         bucket.expectedDays += 1;
@@ -225,11 +260,12 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
 function buildTodaySnapshot(input: {
   context: AttendanceCalendarContext;
   leaveMap: Map<string, Set<string>>;
+  resolveWorkingWeekdays: WorkingWeekdaysResolver;
   roster: RosterEmployee[];
   rowsByEmployee: Map<string, Map<string, FingerprintReportRow>>;
   todayIso: string;
 }): AttendanceAnalyticsData["today"] {
-  const { context, leaveMap, roster, rowsByEmployee, todayIso } = input;
+  const { context, leaveMap, resolveWorkingWeekdays, roster, rowsByEmployee, todayIso } = input;
   const absentees: AttendanceAnalyticsData["today"]["absentees"] = [];
   let expectedCount = 0;
   let punchedInCount = 0;
@@ -239,7 +275,7 @@ function buildTodaySnapshot(input: {
 
   for (const employee of roster) {
     if (!isWithinEmploymentSpan(employee, todayIso)) continue;
-    const day = classifyAttendanceDay({ context, dateIso: todayIso, jobTitle: employee.jobTitle });
+    const day = classifyAttendanceDay({ context, dateIso: todayIso, jobTitle: employee.jobTitle, workingWeekdays: resolveWorkingWeekdays(employee, todayIso) });
     holidayName = day.holidayName ?? holidayName;
     if (!day.isWeeklyOff && !day.isHoliday) isWorkingDay = true;
     if (!day.isExpectedWorkingDay) continue;
@@ -278,6 +314,7 @@ function aggregatePerEmployee(input: {
   dateFromIso: string;
   dateToIso: string;
   leaveMap: Map<string, Set<string>>;
+  resolveWorkingWeekdays: WorkingWeekdaysResolver;
   roster: RosterEmployee[];
   rowsByEmployee: Map<string, Map<string, FingerprintReportRow>>;
 }) {
@@ -290,7 +327,7 @@ function aggregatePerEmployee(input: {
 
     for (const dateIso of days) {
       if (!isWithinEmploymentSpan(employee, dateIso)) continue;
-      const day = classifyAttendanceDay({ context: input.context, dateIso, jobTitle: employee.jobTitle });
+      const day = classifyAttendanceDay({ context: input.context, dateIso, jobTitle: employee.jobTitle, workingWeekdays: input.resolveWorkingWeekdays(employee, dateIso) });
       if (!day.isExpectedWorkingDay) continue;
       if (input.leaveMap.get(employee.hrId)?.has(dateIso)) continue;
       expectedDays += 1;

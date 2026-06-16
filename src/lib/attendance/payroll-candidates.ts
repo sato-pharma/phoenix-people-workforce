@@ -25,7 +25,11 @@ type EmployeeSalaryRow = { base_salary: number | null; hr_id: string };
 
 export async function generateAttendanceDeductionCandidates(
   monthKey: string,
+  options: { actor?: string } = {},
 ): Promise<GenerateCandidatesResult> {
+  // Who triggered this generation — recorded on every candidate for audit/accountability.
+  // Callers must enforce that this is a company/system-scoped actor (see the route).
+  const actor = options.actor?.trim() || "system";
   const { dateFrom, dateTo } = parseMonthKey(monthKey);
 
   const report = await getFingerprintAttendanceReport({ dateFrom, dateTo });
@@ -85,7 +89,7 @@ export async function generateAttendanceDeductionCandidates(
     const payload = {
       calculation_status: estimatedAmount != null ? "calculated" : "requires_payroll_formula",
       candidate_key: candidateKey,
-      created_by: "system",
+      created_by: actor,
       dates: dates as unknown as string,
       deduction_type: "absence",
       deduction_unit: "days",
@@ -96,7 +100,9 @@ export async function generateAttendanceDeductionCandidates(
       evidence: JSON.stringify({ absentDays, lateDays, shortDays }),
       month: parseInt(monthKey.split("-")[1], 10),
       month_key: monthKey,
-      reason: `${deductionRows.length} day(s) with attendance violations in ${monthKey}`,
+      // Distinguish the violation-day count from the policy-weighted deduction days
+      // (the latter drives the amount via salary/30 × deduction-days).
+      reason: `${deductionRows.length} day(s) with attendance violations in ${monthKey} (${Math.round(totalDeductionDays * 100) / 100} deduction day(s)): ${absentDays} absence, ${lateDays} late/early, ${shortDays} short`,
       severity: totalDeductionDays >= 2 ? "high" : "medium",
       source_module: "ATTENDANCE_DEVICE",
       source_record_id: candidateKey,

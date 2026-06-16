@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const dateFrom = url.searchParams.get("dateFrom") ?? undefined;
     const dateTo = url.searchParams.get("dateTo") ?? undefined;
 
-    const data = await getFingerprintAttendanceReport({ dateFrom, dateTo, employeeHrId: hrId });
+    const data = await getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: hrId });
     const workbook = await generateFingerprintReportWorkbook(data);
     const buffer = await workbook.xlsx.writeBuffer();
 
