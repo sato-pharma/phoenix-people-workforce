@@ -7,7 +7,6 @@ import { compactEgp, egp } from "@/components/outstation/expense-shared/formatte
 import {
   importGoogleLibrary,
   loadGoogleMaps,
-  type GoogleHeatmapLayerHandle,
   type GoogleInfoWindowHandle,
   type GoogleLatLngBoundsHandle,
   type GoogleMapHandle,
@@ -15,38 +14,36 @@ import {
   type GoogleMarkerHandle,
 } from "@/lib/google-maps/browser";
 
-export type ExpenseHeatPointInput = {
+export type ExpenseBubbleInput = {
   id: string | number;
   lat: number;
   lng: number;
-  weight: number;
-  employeeName?: string;
+  weight: number; // total spend for the region
   region?: string | null;
-  city?: string | null;
-  line?: string | null;
-  status?: string | null;
-  source?: string | null;
+  count?: number;
 };
 
-type HeatmapMode = "heat" | "markers" | "both";
-
 type MapsLibrary = {
-  HeatmapLayer?: NonNullable<NonNullable<GoogleMapsApi["visualization"]>["HeatmapLayer"]>;
   InfoWindow?: NonNullable<GoogleMapsApi["InfoWindow"]>;
-  LatLng?: NonNullable<GoogleMapsApi["LatLng"]>;
   LatLngBounds?: new () => GoogleLatLngBoundsHandle;
   Map?: NonNullable<GoogleMapsApi["Map"]>;
   Marker?: NonNullable<GoogleMapsApi["Marker"]>;
 };
 
 const EGYPT_CENTER = { lat: 26.8206, lng: 30.8025 };
-const HEAT_GRADIENT = [
-  "rgba(249, 115, 22, 0)",
-  "rgba(251, 191, 36, 0.55)",
-  "rgba(249, 115, 22, 0.8)",
-  "rgba(234, 88, 12, 0.95)",
-  "rgba(154, 52, 18, 1)",
-];
+
+// Low → high spend colour ramp for the bubbles.
+const RAMP = ["#FED7AA", "#FDBA74", "#FB923C", "#F97316", "#EA580C", "#9A3412"];
+
+function colorFor(ratio: number): string {
+  const index = Math.min(RAMP.length - 1, Math.max(0, Math.round(ratio * (RAMP.length - 1))));
+  return RAMP[index];
+}
+
+function radiusFor(ratio: number): number {
+  // sqrt keeps area roughly proportional to spend; clamp to a sensible pixel range.
+  return Math.max(9, Math.min(46, 9 + Math.sqrt(Math.max(0, ratio)) * 37));
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -57,59 +54,54 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function infoContent(point: ExpenseHeatPointInput): string {
-  const lines: string[] = [];
-  lines.push(
-    `<div style="font-weight:800;color:#0F172A;font-size:13px">${escapeHtml(point.employeeName ?? "Unknown")}</div>`,
-  );
-  const place = [point.region, point.city].filter(Boolean).join(" · ");
-  if (place) lines.push(`<div style="color:#475569;font-size:12px">${escapeHtml(place)}</div>`);
-  lines.push(
-    `<div style="margin-top:4px;color:#C2410C;font-weight:800;font-size:12px">${escapeHtml(egp(point.weight))}</div>`,
-  );
-  const meta = [point.status, point.source].filter(Boolean).join(" · ");
-  if (meta) lines.push(`<div style="color:#64748B;font-size:11px">${escapeHtml(meta)}</div>`);
-  return `<div style="min-width:160px;font-family:system-ui,-apple-system,sans-serif">${lines.join("")}</div>`;
+function infoContent(point: ExpenseBubbleInput): string {
+  const region = escapeHtml(point.region ?? "Unassigned");
+  const trips = point.count ? `${point.count.toLocaleString()} trip${point.count === 1 ? "" : "s"}` : "";
+  return `<div style="min-width:150px;font-family:system-ui,-apple-system,sans-serif">
+    <div style="font-weight:800;color:#0F172A;font-size:13px">${region}</div>
+    <div style="margin-top:3px;color:#C2410C;font-weight:800;font-size:13px">${escapeHtml(egp(point.weight))}</div>
+    ${trips ? `<div style="color:#64748B;font-size:11px">${escapeHtml(trips)}</div>` : ""}
+  </div>`;
 }
 
 export function ExpenseHeatmapLayer({
   points,
   browserKey,
   height = 520,
-  initialMode = "both",
   unmappedCount = 0,
   unmappedAmount = 0,
-  onSelectPoint,
+  onSelectRegion,
   title = "Expense concentration",
-  subtitle = "Spend-weighted destination activity across the company.",
+  subtitle = "Each bubble is a destination, sized and shaded by total outstation spend.",
 }: {
-  points: ExpenseHeatPointInput[];
+  points: ExpenseBubbleInput[];
   browserKey: string;
   height?: number;
-  initialMode?: HeatmapMode;
   unmappedCount?: number;
   unmappedAmount?: number;
-  onSelectPoint?: (point: ExpenseHeatPointInput) => void;
+  onSelectRegion?: (region: string) => void;
   title?: string;
   subtitle?: string;
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<GoogleMapHandle | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
-  const heatLayerRef = useRef<GoogleHeatmapLayerHandle | null>(null);
   const infoWindowRef = useRef<GoogleInfoWindowHandle | null>(null);
-  const modeRef = useRef<HeatmapMode>(initialMode);
 
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [heatmapAvailable, setHeatmapAvailable] = useState(true);
-  const [mode, setMode] = useState<HeatmapMode>(initialMode);
 
-  modeRef.current = mode;
+  const onSelectRef = useRef(onSelectRegion);
+  useEffect(() => {
+    onSelectRef.current = onSelectRegion;
+  }, [onSelectRegion]);
 
-  const onSelectRef = useRef(onSelectPoint);
-  onSelectRef.current = onSelectPoint;
+  const maxWeight = useMemo(
+    () => points.reduce((peak, point) => Math.max(peak, point.weight), 0) || 1,
+    [points],
+  );
+  const mappedSpend = useMemo(() => points.reduce((sum, point) => sum + point.weight, 0), [points]);
 
   // Load Google Maps once.
   useEffect(() => {
@@ -132,17 +124,13 @@ export function ExpenseHeatmapLayer({
     };
   }, [browserKey]);
 
-  // A Maps auth failure (e.g. the API key's allowed-referrer list doesn't include
-  // this domain) can fire AFTER the script loads, when the map paints. Surface an
-  // honest message instead of Google's bare "Oops" overlay plus a misleading
-  // "showing markers" note (there are no markers — the whole map failed).
+  // A late Maps auth failure (key not authorized for this domain) → honest message.
   useEffect(() => {
     if (!browserKey) return;
     const previous = window.gm_authFailure;
     window.gm_authFailure = () => {
       previous?.();
       setReady(false);
-      setHeatmapAvailable(true);
       setError(
         "Google Maps is not authorized for this domain. Check the API key's allowed referrers — the map renders on the production domain.",
       );
@@ -152,13 +140,12 @@ export function ExpenseHeatmapLayer({
     };
   }, [browserKey]);
 
-  // Build map + markers + heat layer whenever the point set changes.
+  // Build / refresh the bubbles whenever the point set changes.
   useEffect(() => {
     const mapElement = mapRef.current;
     if (!ready || !mapElement || !googleMaps) return;
 
     let cancelled = false;
-
     const run = async () => {
       const mapsLibrary = await importGoogleLibrary<MapsLibrary>(googleMaps, "maps", {
         Map: googleMaps.Map,
@@ -168,28 +155,15 @@ export function ExpenseHeatmapLayer({
         Marker: googleMaps.Marker,
       });
       const coreLibrary = await importGoogleLibrary<MapsLibrary>(googleMaps, "core", {
-        LatLng: googleMaps.LatLng,
         LatLngBounds: googleMaps.LatLngBounds,
       });
-
-      let visualizationLibrary: MapsLibrary = {};
-      let heatAvailable = true;
-      try {
-        visualizationLibrary = await importGoogleLibrary<MapsLibrary>(googleMaps, "visualization", {});
-        if (!visualizationLibrary.HeatmapLayer && !googleMaps.visualization?.HeatmapLayer) {
-          heatAvailable = false;
-        }
-      } catch {
-        heatAvailable = false;
-      }
       if (cancelled) return;
 
       const mapCtor = mapsLibrary.Map ?? googleMaps.Map;
       const markerCtor = markerLibrary.Marker ?? mapsLibrary.Marker ?? googleMaps.Marker;
       const latLngBoundsCtor = coreLibrary.LatLngBounds ?? mapsLibrary.LatLngBounds ?? googleMaps.LatLngBounds;
-      const latLngCtor = coreLibrary.LatLng ?? googleMaps.LatLng;
       const infoWindowCtor = mapsLibrary.InfoWindow ?? googleMaps.InfoWindow;
-      const heatmapCtor = visualizationLibrary.HeatmapLayer ?? googleMaps.visualization?.HeatmapLayer;
+      const circlePath = googleMaps.SymbolPath?.CIRCLE ?? 0;
       if (!mapCtor || !markerCtor || !latLngBoundsCtor) return;
 
       const map =
@@ -206,55 +180,40 @@ export function ExpenseHeatmapLayer({
         infoWindowRef.current = new infoWindowCtor();
       }
 
-      // Reset previous markers + heat.
       markersRef.current.forEach((marker) => marker.setMap?.(null));
       markersRef.current = [];
-      heatLayerRef.current?.setMap(null);
-      heatLayerRef.current = null;
 
       const bounds = new latLngBoundsCtor();
-      points.forEach((point) => {
-        const marker = new markerCtor({
-          map,
-          position: { lat: point.lat, lng: point.lng },
-          title: point.employeeName ?? "",
-        });
-        marker.addListener?.("click", () => {
-          const info = infoWindowRef.current;
-          if (info) {
-            info.setContent(infoContent(point));
-            info.open({ anchor: marker, map });
-          }
-          onSelectRef.current?.(point);
-        });
-        markersRef.current.push(marker);
-        bounds.extend({ lat: point.lat, lng: point.lng });
-      });
-
-      if (heatAvailable && heatmapCtor && latLngCtor && points.length > 0) {
-        try {
-          heatLayerRef.current = new heatmapCtor({
-            data: points.map((point) => ({
-              location: new latLngCtor(point.lat, point.lng),
-              weight: Math.max(0, point.weight),
-            })),
-            dissipating: true,
-            gradient: HEAT_GRADIENT,
-            opacity: 0.85,
-            radius: 28,
+      // Largest bubbles first so smaller ones stay clickable on top.
+      [...points]
+        .sort((a, b) => b.weight - a.weight)
+        .forEach((point) => {
+          const ratio = point.weight / maxWeight;
+          const marker = new markerCtor({
+            map,
+            position: { lat: point.lat, lng: point.lng },
+            title: `${point.region ?? "Unassigned"} · ${egp(point.weight)}`,
+            zIndex: Math.round(point.weight),
+            icon: {
+              path: circlePath,
+              scale: radiusFor(ratio),
+              fillColor: colorFor(ratio),
+              fillOpacity: 0.58,
+              strokeColor: "#9A3412",
+              strokeWeight: 1.2,
+            },
           });
-        } catch {
-          heatAvailable = false;
-        }
-      }
-
-      setHeatmapAvailable(heatAvailable);
-      if (!heatAvailable && modeRef.current !== "markers") {
-        modeRef.current = "markers";
-        setMode("markers");
-      }
-
-      applyVisibility(modeRef.current);
+          marker.addListener?.("click", () => {
+            const info = infoWindowRef.current;
+            if (info) {
+              info.setContent(infoContent(point));
+              info.open({ anchor: marker, map });
+            }
+            if (point.region) onSelectRef.current?.(point.region);
+          });
+          markersRef.current.push(marker);
+          bounds.extend({ lat: point.lat, lng: point.lng });
+        });
 
       if (points.length > 0) {
         map.fitBounds(bounds);
@@ -265,39 +224,15 @@ export function ExpenseHeatmapLayer({
     return () => {
       cancelled = true;
     };
-  }, [points, googleMaps, ready]);
-
-  // Apply heat/marker visibility on mode change without rebuilding the map.
-  function applyVisibility(nextMode: HeatmapMode) {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    markersRef.current.forEach((marker) => marker.setMap?.(nextMode === "heat" ? null : map));
-    heatLayerRef.current?.setMap(nextMode === "markers" ? null : map);
-  }
-
-  useEffect(() => {
-    applyVisibility(mode);
-  }, [mode]);
+  }, [points, googleMaps, ready, maxWeight]);
 
   // Cleanup on unmount.
   useEffect(() => {
     return () => {
       markersRef.current.forEach((marker) => marker.setMap?.(null));
       markersRef.current = [];
-      heatLayerRef.current?.setMap(null);
-      heatLayerRef.current = null;
     };
   }, []);
-
-  const modeOptions = useMemo(
-    () =>
-      (["heat", "markers", "both"] as HeatmapMode[]).map((value) => ({
-        value,
-        label: value === "heat" ? "Heat" : value === "markers" ? "Markers" : "Both",
-        disabled: value !== "markers" && !heatmapAvailable,
-      })),
-    [heatmapAvailable],
-  );
 
   const hasPoints = points.length > 0;
 
@@ -316,35 +251,14 @@ export function ExpenseHeatmapLayer({
             <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">{title}</h2>
             <p className="mt-1 text-sm text-[#CBD5E1]">{subtitle}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#CBD5E1]">
-              <span>Low</span>
-              <span
-                aria-hidden="true"
-                className="h-2 w-24 rounded-full"
-                style={{ background: "linear-gradient(90deg, #FBBF24 0%, #F97316 55%, #9A3412 100%)" }}
-              />
-              <span>High</span>
-            </div>
-            <div className="flex overflow-hidden rounded-full border border-white/15 bg-white/[0.06]">
-              {modeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={option.disabled}
-                  onClick={() => setMode(option.value)}
-                  className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] transition-colors ${
-                    mode === option.value
-                      ? "bg-[#F97316] text-white"
-                      : option.disabled
-                        ? "cursor-not-allowed text-white/25"
-                        : "text-[#CBD5E1] hover:bg-white/10"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#CBD5E1]">
+            <span>Low</span>
+            <span
+              aria-hidden="true"
+              className="h-2.5 w-28 rounded-full"
+              style={{ background: "linear-gradient(90deg, #FED7AA 0%, #F97316 55%, #9A3412 100%)" }}
+            />
+            <span>High</span>
           </div>
         </div>
       </div>
@@ -374,22 +288,13 @@ export function ExpenseHeatmapLayer({
           ) : null}
         </div>
 
-        {browserKey && ready && !error && !heatmapAvailable ? (
-          <AdminCallout tone="warning">
-            <span>
-              Heat layer is unavailable on this Maps key — showing clickable markers instead. Totals and
-              analytics are unaffected.
-            </span>
-          </AdminCallout>
-        ) : null}
-
         {unmappedCount > 0 ? (
           <AdminCallout tone="warning">
             <span>
               <strong>{unmappedCount.toLocaleString()}</strong> expense row{unmappedCount === 1 ? "" : "s"}
-              {unmappedAmount > 0 ? ` (${egp(unmappedAmount)})` : ""} have no resolved coordinates and are not
-              shown on the map. They remain in every KPI, chart, table, and the export — only the map view is
-              partial. Mappable spend shown: {compactEgp(points.reduce((sum, point) => sum + point.weight, 0))}.
+              {unmappedAmount > 0 ? ` (${egp(unmappedAmount)})` : ""} have no resolved location and aren&apos;t shown
+              on the map. They remain in every KPI, chart, table, and the export. Mapped spend shown:{" "}
+              {compactEgp(mappedSpend)} across {points.length} location{points.length === 1 ? "" : "s"}.
             </span>
           </AdminCallout>
         ) : null}
