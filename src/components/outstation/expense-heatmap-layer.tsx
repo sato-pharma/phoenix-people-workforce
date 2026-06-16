@@ -21,7 +21,21 @@ export type ExpenseBubbleInput = {
   weight: number; // total spend for the region
   region?: string | null;
   count?: number;
+  // Optional approval-split fields. When present they let the map split bubbles by
+  // approval status via the All / Approved / Pending pill in the header.
+  approvedWeight?: number;
+  pendingWeight?: number;
+  approvedCount?: number;
+  pendingCount?: number;
 };
+
+type BubbleMode = "all" | "approved" | "pending";
+
+const MODE_OPTIONS: ReadonlyArray<{ value: BubbleMode; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "approved", label: "Approved" },
+  { value: "pending", label: "Pending" },
+];
 
 type MapsLibrary = {
   InfoWindow?: NonNullable<GoogleMapsApi["InfoWindow"]>;
@@ -32,16 +46,19 @@ type MapsLibrary = {
 
 const EGYPT_CENTER = { lat: 26.8206, lng: 30.8025 };
 
-// Low → high spend colour ramp for the dots.
-const RAMP = ["#FDBA74", "#FB923C", "#F97316", "#EA580C", "#C2410C", "#9A3412"];
+// Low → high spend colour ramps. Orange for All / Approved, amber for Pending so the
+// two modes are immediately distinguishable at a glance.
+const RAMP_ORANGE = ["#FDBA74", "#FB923C", "#F97316", "#EA580C", "#C2410C", "#9A3412"];
+const RAMP_AMBER = ["#FDE68A", "#FCD34D", "#F59E0B", "#D97706", "#B45309", "#78350F"];
 
 // Uniform dot size — clear, even markers (no confusing variable bubbles). Spend is
 // conveyed by colour and the click popover, not size.
 const DOT_SCALE = 6.5;
 
-function colorFor(ratio: number): string {
-  const index = Math.min(RAMP.length - 1, Math.max(0, Math.round(ratio * (RAMP.length - 1))));
-  return RAMP[index];
+function colorFor(ratio: number, mode: BubbleMode): string {
+  const ramp = mode === "pending" ? RAMP_AMBER : RAMP_ORANGE;
+  const index = Math.min(ramp.length - 1, Math.max(0, Math.round(ratio * (ramp.length - 1))));
+  return ramp[index];
 }
 
 function escapeHtml(value: string): string {
@@ -53,13 +70,27 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function infoContent(point: ExpenseBubbleInput): string {
+function infoContent(point: ExpenseBubbleInput, mode: BubbleMode): string {
   const region = escapeHtml(point.region ?? "Unassigned");
-  const trips = point.count ? `${point.count.toLocaleString()} trip${point.count === 1 ? "" : "s"}` : "";
+  const amount =
+    mode === "approved" ? point.approvedWeight ?? 0
+    : mode === "pending" ? point.pendingWeight ?? 0
+    : point.weight;
+  const tripCount =
+    mode === "approved" ? point.approvedCount ?? 0
+    : mode === "pending" ? point.pendingCount ?? 0
+    : point.count ?? 0;
+  const amountColor = mode === "pending" ? "#92400E" : "#C2410C";
+  const trips = tripCount ? `${tripCount.toLocaleString()} trip${tripCount === 1 ? "" : "s"}` : "";
+  const modeLine =
+    mode === "all" && (point.approvedWeight !== undefined || point.pendingWeight !== undefined)
+      ? `<div style="margin-top:4px;color:#64748B;font-size:11px">Approved ${escapeHtml(egp(point.approvedWeight ?? 0))} · Pending ${escapeHtml(egp(point.pendingWeight ?? 0))}</div>`
+      : "";
   return `<div style="min-width:150px;font-family:system-ui,-apple-system,sans-serif">
     <div style="font-weight:800;color:#0F172A;font-size:13px">${region}</div>
-    <div style="margin-top:3px;color:#C2410C;font-weight:800;font-size:13px">${escapeHtml(egp(point.weight))}</div>
+    <div style="margin-top:3px;color:${amountColor};font-weight:800;font-size:13px">${escapeHtml(egp(amount))}</div>
     ${trips ? `<div style="color:#64748B;font-size:11px">${escapeHtml(trips)}</div>` : ""}
+    ${modeLine}
   </div>`;
 }
 
@@ -88,12 +119,39 @@ export function ExpenseHeatmapLayer({
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<BubbleMode>("all");
 
-  const maxWeight = useMemo(
-    () => points.reduce((peak, point) => Math.max(peak, point.weight), 0) || 1,
+  // Show only the approval-split toggle if at least one bubble carries the split data
+  // (otherwise the toggle would be meaningless for the rows on the map).
+  const supportsApprovalSplit = useMemo(
+    () => points.some((point) => point.approvedWeight !== undefined || point.pendingWeight !== undefined),
     [points],
   );
-  const mappedSpend = useMemo(() => points.reduce((sum, point) => sum + point.weight, 0), [points]);
+
+  const weightFor = (point: ExpenseBubbleInput): number => {
+    if (mode === "approved") return point.approvedWeight ?? 0;
+    if (mode === "pending") return point.pendingWeight ?? 0;
+    return point.weight;
+  };
+
+  // Points that contribute to the active mode — anything with zero weight in this
+  // mode (e.g. an all-approved bubble in "Pending" view) is filtered out entirely.
+  const displayPoints = useMemo(
+    () => points.filter((point) => weightFor(point) > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [points, mode],
+  );
+
+  const maxWeight = useMemo(
+    () => displayPoints.reduce((peak, point) => Math.max(peak, weightFor(point)), 0) || 1,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayPoints, mode],
+  );
+  const mappedSpend = useMemo(
+    () => displayPoints.reduce((sum, point) => sum + weightFor(point), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayPoints, mode],
+  );
 
   // Load Google Maps once.
   useEffect(() => {
@@ -177,19 +235,20 @@ export function ExpenseHeatmapLayer({
 
       const bounds = new latLngBoundsCtor();
       // Largest bubbles first so smaller ones stay clickable on top.
-      [...points]
-        .sort((a, b) => b.weight - a.weight)
+      [...displayPoints]
+        .sort((a, b) => weightFor(b) - weightFor(a))
         .forEach((point) => {
-          const ratio = point.weight / maxWeight;
+          const value = weightFor(point);
+          const ratio = value / maxWeight;
           const marker = new markerCtor({
             map,
             position: { lat: point.lat, lng: point.lng },
-            title: `${point.region ?? "Unassigned"} · ${egp(point.weight)}`,
-            zIndex: Math.round(point.weight),
+            title: `${point.region ?? "Unassigned"} · ${egp(value)}`,
+            zIndex: Math.round(value),
             icon: {
               path: circlePath,
               scale: DOT_SCALE,
-              fillColor: colorFor(ratio),
+              fillColor: colorFor(ratio, mode),
               fillOpacity: 0.95,
               strokeColor: "#FFFFFF",
               strokeWeight: 1.2,
@@ -198,7 +257,7 @@ export function ExpenseHeatmapLayer({
           marker.addListener?.("click", () => {
             const info = infoWindowRef.current;
             if (info) {
-              info.setContent(infoContent(point));
+              info.setContent(infoContent(point, mode));
               info.open({ anchor: marker, map });
             }
           });
@@ -206,12 +265,12 @@ export function ExpenseHeatmapLayer({
           bounds.extend({ lat: point.lat, lng: point.lng });
         });
 
-      if (points.length === 1) {
+      if (displayPoints.length === 1) {
         // A single bubble → fitBounds on a zero-area bounds zooms to building level on a
         // region centroid, which looks broken. Centre it at a region-appropriate zoom.
-        map.setCenter?.({ lat: points[0].lat, lng: points[0].lng });
+        map.setCenter?.({ lat: displayPoints[0].lat, lng: displayPoints[0].lng });
         map.setZoom?.(9);
-      } else if (points.length > 1) {
+      } else if (displayPoints.length > 1) {
         map.fitBounds(bounds);
       }
     };
@@ -220,7 +279,8 @@ export function ExpenseHeatmapLayer({
     return () => {
       cancelled = true;
     };
-  }, [points, googleMaps, ready, maxWeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayPoints, googleMaps, ready, maxWeight, mode]);
 
   // Cleanup on unmount.
   useEffect(() => {
@@ -230,7 +290,11 @@ export function ExpenseHeatmapLayer({
     };
   }, []);
 
-  const hasPoints = points.length > 0;
+  const hasPoints = displayPoints.length > 0;
+  const legendGradient =
+    mode === "pending"
+      ? "linear-gradient(90deg, #FDE68A 0%, #F59E0B 55%, #78350F 100%)"
+      : "linear-gradient(90deg, #FED7AA 0%, #F97316 55%, #9A3412 100%)";
 
   return (
     <div className="overflow-hidden rounded-[18px] border border-[#D8E0EA] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
@@ -247,14 +311,32 @@ export function ExpenseHeatmapLayer({
             <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">{title}</h2>
             <p className="mt-1 text-sm text-[#CBD5E1]">{subtitle}</p>
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#CBD5E1]">
-            <span>Low</span>
-            <span
-              aria-hidden="true"
-              className="h-2.5 w-28 rounded-full"
-              style={{ background: "linear-gradient(90deg, #FED7AA 0%, #F97316 55%, #9A3412 100%)" }}
-            />
-            <span>High</span>
+          <div className="flex flex-wrap items-center gap-3">
+            {supportsApprovalSplit ? (
+              <div className="flex overflow-hidden rounded-full border border-white/15 bg-white/[0.06]">
+                {MODE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition-colors ${
+                      mode === option.value ? "bg-[#F97316] text-white" : "text-[#CBD5E1] hover:text-white"
+                    }`}
+                    onClick={() => setMode(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#CBD5E1]">
+              <span>Low</span>
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-28 rounded-full transition-colors"
+                style={{ background: legendGradient }}
+              />
+              <span>High</span>
+            </div>
           </div>
         </div>
       </div>
@@ -280,7 +362,13 @@ export function ExpenseHeatmapLayer({
           ) : !ready ? (
             <p className="text-sm font-semibold text-[#64748B]">Loading Google Maps…</p>
           ) : !hasPoints ? (
-            <p className="text-sm font-semibold text-[#64748B]">No mappable expenses for these filters.</p>
+            <p className="text-sm font-semibold text-[#64748B]">
+              {mode === "approved"
+                ? "No approved expenses on the map for these filters."
+                : mode === "pending"
+                  ? "No pending expenses on the map for these filters."
+                  : "No mappable expenses for these filters."}
+            </p>
           ) : null}
         </div>
 
@@ -290,7 +378,7 @@ export function ExpenseHeatmapLayer({
               <strong>{unmappedCount.toLocaleString()}</strong> expense row{unmappedCount === 1 ? "" : "s"}
               {unmappedAmount > 0 ? ` (${egp(unmappedAmount)})` : ""} have no resolved location and aren&apos;t shown
               on the map. They remain in every KPI, chart, table, and the export. Mapped spend shown:{" "}
-              {compactEgp(mappedSpend)} across {points.length} location{points.length === 1 ? "" : "s"}.
+              {compactEgp(mappedSpend)} across {displayPoints.length} location{displayPoints.length === 1 ? "" : "s"}.
             </span>
           </AdminCallout>
         ) : null}
