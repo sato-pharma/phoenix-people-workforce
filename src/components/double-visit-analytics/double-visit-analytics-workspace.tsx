@@ -6,12 +6,16 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   Flame,
   MapPinned,
   RefreshCcw,
   Upload,
+  User,
+  Users,
   UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -20,36 +24,72 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { DoubleVisitDashboardData, DoubleVisitImportListItem } from "@/lib/double-visit-analytics/types";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import type {
+  DoubleVisitDashboardData,
+  DoubleVisitImportListItem,
+  DoubleVisitLogEntry,
+  DoubleVisitMrScore,
+} from "@/lib/double-visit-analytics/types";
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
+type Tab = "overview" | "managers" | "mr-status" | "imports";
+type PeriodFilter = "ALL" | "AM" | "PM";
+
+// Always join HR_IDs on the same canonical key the server uses (trim + lowercase
+// + aaa→aa alias). visitLog ids are raw import values while mrScores/executiveReports
+// ids are raw directory values — comparing them raw silently drops matches.
+const hk = (value: string | null | undefined) => canonicalHrIdKey(value) ?? "";
+
+// ─── Formatting helpers ───────────────────────────────────────────────────────
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n);
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "N/A";
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+function fmtDate(v: string | null | undefined) {
+  if (!v) return "—";
+  const d = new Date(`${v.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? v
+    : new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
-function statusClass(status: "critical" | "healthy" | "warning") {
-  if (status === "healthy") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-  if (status === "warning") return "bg-amber-50 text-amber-700 ring-amber-200";
+// Midnight-UTC to midnight-UTC so this matches the server's daysSinceLastDv exactly
+// (no intraday off-by-one between the two numbers shown in the same UI).
+function daysBetween(isoDate: string | null) {
+  if (!isoDate) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const ms = Date.parse(`${today}T00:00:00Z`) - Date.parse(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.round(ms / 86_400_000));
+}
+
+function bandClass(b: "critical" | "healthy" | "warning") {
+  if (b === "healthy") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (b === "warning") return "bg-amber-50 text-amber-700 ring-amber-200";
   return "bg-rose-50 text-rose-700 ring-rose-200";
 }
 
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  hint: string;
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) {
+// AM/PM two-tone kept on-brand: AM = orange accent, PM = neutral slate.
+function periodPillClass(p: "AM" | "PM" | "UNKNOWN") {
+  if (p === "AM") return "bg-orange-100 text-orange-700";
+  if (p === "PM") return "bg-slate-200 text-slate-700";
+  return "bg-slate-100 text-slate-500";
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatChip({ label, value, sub, span }: { label: string; span?: boolean; sub?: string; value: string }) {
+  return (
+    <div className={["rounded border border-slate-200 bg-slate-50 px-4 py-3", span ? "col-span-2 sm:col-span-1" : ""].join(" ")}>
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+      {sub ? <p className="mt-0.5 text-xs font-semibold text-slate-500">{sub}</p> : null}
+    </div>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, hint }: { hint: string; icon: LucideIcon; label: string; value: string }) {
   return (
     <div className="rounded border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
@@ -57,12 +97,27 @@ function KpiCard({
           <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded bg-slate-100 text-slate-700">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-slate-100 text-slate-700">
           <Icon className="h-5 w-5" />
         </span>
       </div>
       <p className="mt-3 text-xs font-semibold text-slate-500">{hint}</p>
     </div>
+  );
+}
+
+function MiniStat({ value, label, tone }: { label: string; tone?: "orange" | "rose" | "slate"; value: string }) {
+  const toneClass =
+    tone === "orange"
+      ? "border-orange-200 bg-orange-50 text-orange-700"
+      : tone === "rose"
+        ? "border-rose-200 bg-rose-50 text-rose-700"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+  return (
+    <span className={["inline-flex items-baseline gap-1.5 rounded border px-3 py-1.5", toneClass].join(" ")}>
+      <span className="text-sm font-black">{value}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</span>
+    </span>
   );
 }
 
@@ -79,29 +134,204 @@ function ImportRow({
     <tr className="border-t border-slate-100">
       <td className="px-3 py-3 text-sm font-semibold text-slate-800">{item.sourceFilename}</td>
       <td className="px-3 py-3 text-sm text-slate-600">{item.sourceType}</td>
-      <td className="px-3 py-3 text-sm text-slate-600">{formatDate(item.dateFrom)} - {formatDate(item.dateTo)}</td>
-      <td className="px-3 py-3 text-sm font-semibold text-slate-800">{formatNumber(item.totalVisits)}</td>
+      <td className="px-3 py-3 text-sm text-slate-600">{fmtDate(item.dateFrom)} – {fmtDate(item.dateTo)}</td>
+      <td className="px-3 py-3 text-sm font-semibold text-slate-800">{fmt(item.totalVisits)}</td>
       <td className="px-3 py-3">
-        <span className={[
-          "rounded px-2 py-1 text-xs font-black uppercase",
-          item.status === "published" ? "bg-emerald-50 text-emerald-700" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700",
-        ].join(" ")}>
+        <span className={["rounded px-2 py-1 text-xs font-black uppercase", item.status === "published" ? "bg-emerald-50 text-emerald-700" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700"].join(" ")}>
           {item.status}
         </span>
       </td>
       <td className="px-3 py-3 text-right">
-        <Button
-          className="min-h-9 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50"
-          disabled={item.status === "published" || publishingId === item.id}
-          onClick={() => onPublish(item.id)}
-          type="button"
-        >
-          {publishingId === item.id ? "Publishing" : "Publish"}
+        <Button className="min-h-9 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" disabled={item.status === "published" || publishingId === item.id} onClick={() => onPublish(item.id)} type="button">
+          {publishingId === item.id ? "Publishing…" : "Publish"}
         </Button>
       </td>
     </tr>
   );
 }
+
+// ─── Manager profile (computed from visit log) ────────────────────────────────
+
+type MrVisitRow = {
+  am: number;
+  area: string | null;
+  hrId: string | null;
+  key: string;
+  lastDate: string | null;
+  name: string;
+  pm: number;
+  score: DoubleVisitMrScore | null;
+  visits: number;
+};
+
+function buildManagerProfile(
+  managerKey: string,
+  visitLog: DoubleVisitLogEntry[],
+  mrScores: DoubleVisitMrScore[],
+  periodFilter: PeriodFilter,
+) {
+  // All-period rows for this manager — drives the stable summary chips.
+  const allRows = visitLog.filter((e) => hk(e.doubleVisitorHrId) === managerKey);
+  const totalVisits = allRows.reduce((s, e) => s + e.visitCount, 0);
+  const amVisits = allRows.filter((e) => e.period === "AM").reduce((s, e) => s + e.visitCount, 0);
+  const pmVisits = allRows.filter((e) => e.period === "PM").reduce((s, e) => s + e.visitCount, 0);
+  const lastDate = [...new Set(allRows.map((e) => e.date))].sort().at(-1) ?? null;
+
+  // All-period visited set — an MR visited in any period is NOT neglected.
+  const visitedKeysAll = new Set(allRows.map((e) => hk(e.visitedHrId)).filter(Boolean));
+
+  // Period-scoped rows reshape only the breakdown table below the chips.
+  const scopedRows = periodFilter === "ALL" ? allRows : allRows.filter((e) => e.period === periodFilter);
+
+  const byMr = new Map<string, MrVisitRow>();
+  for (const row of scopedRows) {
+    const key = hk(row.visitedHrId) || `name:${row.visitedName ?? "unknown"}`;
+    const existing =
+      byMr.get(key) ??
+      { am: 0, area: row.area, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pm: 0, score: null, visits: 0 };
+    existing.visits += row.visitCount;
+    if (row.period === "AM") existing.am += row.visitCount;
+    if (row.period === "PM") existing.pm += row.visitCount;
+    if (!existing.lastDate || row.date > existing.lastDate) existing.lastDate = row.date;
+    byMr.set(key, existing);
+  }
+
+  const scoreByKey = new Map(mrScores.map((s) => [hk(s.hrId), s]));
+  for (const [, row] of byMr) {
+    row.score = row.hrId ? (scoreByKey.get(hk(row.hrId)) ?? null) : null;
+  }
+
+  const mrBreakdown = Array.from(byMr.values()).sort((a, b) => b.visits - a.visits);
+
+  // Direct-report MRs this manager never visited (any period).
+  const neglectedMrs = mrScores.filter((s) => hk(s.managerHrId) === managerKey && !visitedKeysAll.has(hk(s.hrId)));
+
+  // Concentration / over-focus signal from the scoped breakdown.
+  const scopedTotal = mrBreakdown.reduce((s, r) => s + r.visits, 0);
+  const maxVisits = mrBreakdown.reduce((m, r) => Math.max(m, r.visits), 0);
+  const avgVisits = mrBreakdown.length ? scopedTotal / mrBreakdown.length : 0;
+  const topN = Math.min(4, mrBreakdown.length);
+  const topShare = scopedTotal > 0 ? mrBreakdown.slice(0, topN).reduce((s, r) => s + r.visits, 0) / scopedTotal : 0;
+  const overFocusedKeys = new Set(
+    mrBreakdown.filter((r) => mrBreakdown.length > 1 && avgVisits > 0 && r.visits >= avgVisits * 2).map((r) => r.key),
+  );
+
+  return {
+    amVisits,
+    avgVisits,
+    concentrationPct: Math.round(topShare * 100),
+    lastDate,
+    maxVisits,
+    mrBreakdown,
+    neglectedMrs,
+    overFocusedKeys,
+    pmVisits,
+    topN,
+    totalVisits,
+    visitedCount: visitedKeysAll.size,
+  };
+}
+
+// ─── Expandable MR row (used in By MR tab) ────────────────────────────────────
+
+function ExpandableMrRow({
+  open,
+  onToggle,
+  onSelectManager,
+  periodFilter,
+  score,
+  visitLog,
+}: {
+  onSelectManager: (managerHrId: string | null) => void;
+  onToggle: () => void;
+  open: boolean;
+  periodFilter: PeriodFilter;
+  score: DoubleVisitMrScore;
+  visitLog: DoubleVisitLogEntry[];
+}) {
+  const mrHistory = useMemo(() => {
+    const scoreKey = hk(score.hrId);
+    const rows = visitLog.filter(
+      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || e.period === periodFilter),
+    );
+    return [...rows].sort((a, b) => b.date.localeCompare(a.date));
+  }, [visitLog, score.hrId, periodFilter]);
+
+  return (
+    <>
+      <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={onToggle}>
+        <td className="w-8 px-3 py-3 text-slate-400">
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </td>
+        <td className="px-3 py-3">
+          <p className="text-sm font-semibold text-slate-800">{score.mrName}</p>
+          <p className="text-xs text-slate-400">{score.hrId} · {score.areaName ?? "No area"}</p>
+        </td>
+        <td className="px-3 py-3 text-xs">
+          {score.managerName ? (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); onSelectManager(score.managerHrId); }}
+              className="font-semibold text-orange-700 underline decoration-orange-300 underline-offset-2 hover:text-orange-800"
+            >
+              {score.managerName}
+            </button>
+          ) : <span className="text-slate-400">—</span>}
+        </td>
+        <td className="px-3 py-3 text-right text-sm font-black text-slate-950 tabular-nums">{score.totalDvs}</td>
+        <td className="px-3 py-3 text-right text-sm text-slate-700 tabular-nums">{score.dvsLast90Days}</td>
+        <td className="px-3 py-3 text-sm text-slate-700">{fmtDate(score.lastDvDate)}</td>
+        <td className="px-3 py-3 text-right text-sm font-semibold text-slate-700 tabular-nums">
+          {score.daysSinceLastDv ?? <span className="text-rose-600">Never</span>}
+        </td>
+        <td className="px-3 py-3 text-sm text-slate-500">{score.lastDoubleVisitorName ?? "—"}</td>
+        <td className="px-3 py-3">
+          <span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>
+        </td>
+      </tr>
+      {open && (
+        <tr className="bg-slate-50">
+          <td colSpan={9} className="px-6 py-4">
+            {mrHistory.length === 0 ? (
+              <p className="text-sm text-slate-400">
+                No visits recorded for this MR{periodFilter !== "ALL" ? ` in ${periodFilter}` : ""}.
+              </p>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-xs font-black uppercase tracking-wide text-slate-500">
+                    <th className="pb-2 pr-6">Date</th>
+                    <th className="pb-2 pr-6">Manager / DV</th>
+                    <th className="pb-2 pr-6">Area</th>
+                    <th className="pb-2 pr-6">Period</th>
+                    <th className="pb-2 text-right">Visits</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mrHistory.map((e, i) => (
+                    <tr key={`${e.date}-${hk(e.doubleVisitorHrId) || e.doubleVisitorName || "dv"}-${e.period}-${e.visitCount}-${i}`} className="border-t border-slate-200">
+                      <td className="py-1.5 pr-6 font-semibold text-slate-800">{fmtDate(e.date)}</td>
+                      <td className="py-1.5 pr-6 text-slate-700">{e.doubleVisitorName ?? e.doubleVisitorHrId ?? "—"}</td>
+                      <td className="py-1.5 pr-6 text-slate-600">{e.area ?? "—"}</td>
+                      <td className="py-1.5 pr-6">
+                        {e.period !== "UNKNOWN" ? (
+                          <span className={`rounded px-1.5 py-0.5 text-xs font-black ${periodPillClass(e.period)}`}>{e.period}</span>
+                        ) : "—"}
+                      </td>
+                      <td className="py-1.5 text-right font-bold text-slate-800 tabular-nums">{e.visitCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ─── Main workspace ───────────────────────────────────────────────────────────
 
 export function DoubleVisitAnalyticsWorkspace({
   canImport,
@@ -114,6 +344,12 @@ export function DoubleVisitAnalyticsWorkspace({
   dashboard: DoubleVisitDashboardData;
   ireports360Configured: boolean;
 }) {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [selectedManagerKey, setSelectedManagerKey] = useState<string>("");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("ALL");
+  const [mrSearch, setMrSearch] = useState("");
+  const [expandedMrKeys, setExpandedMrKeys] = useState<Set<string>>(new Set());
+
   const [dateFrom, setDateFrom] = useState(dashboard.dateFrom);
   const [dateTo, setDateTo] = useState(dashboard.dateTo);
   const [file, setFile] = useState<File | null>(null);
@@ -121,287 +357,578 @@ export function DoubleVisitAnalyticsWorkspace({
   const [busy, setBusy] = useState(false);
   const [publishingId, setPublishingId] = useState<string | null>(null);
 
-  const criticalMrs = useMemo(() => dashboard.mrScores.filter((score) => score.band === "critical"), [dashboard.mrScores]);
-  const weakMrs = useMemo(() => dashboard.mrScores.filter((score) => score.band !== "healthy"), [dashboard.mrScores]);
+  const visitLog = useMemo(() => dashboard.visitLog ?? [], [dashboard.visitLog]);
+  const criticalMrs = dashboard.mrScores.filter((s) => s.band === "critical");
+  const weakMrs = dashboard.mrScores.filter((s) => s.band !== "healthy");
+
+  // Per-manager all-period totals (drives the sidebar ranking — always all periods).
+  const managerTotals = useMemo(() => {
+    const map = new Map<string, { dvs: number; lastDate: string | null; mrs: Set<string>; name: string }>();
+    for (const e of visitLog) {
+      const mKey = hk(e.doubleVisitorHrId);
+      if (!mKey) continue;
+      const existing = map.get(mKey) ?? { dvs: 0, lastDate: null, mrs: new Set<string>(), name: e.doubleVisitorName ?? e.doubleVisitorHrId ?? mKey };
+      existing.dvs += e.visitCount;
+      const visited = hk(e.visitedHrId);
+      if (visited) existing.mrs.add(visited);
+      if (!existing.lastDate || e.date > existing.lastDate) existing.lastDate = e.date;
+      map.set(mKey, existing);
+    }
+    return map;
+  }, [visitLog]);
+
+  const managerProfile = useMemo(
+    () => (selectedManagerKey ? buildManagerProfile(selectedManagerKey, visitLog, dashboard.mrScores, periodFilter) : null),
+    [selectedManagerKey, visitLog, dashboard.mrScores, periodFilter],
+  );
+
+  // By-MR list: search only. Period scopes each MR's expanded history, never row
+  // membership — hiding MRs by period would hide exactly the neglected ones.
+  const filteredMrScores = useMemo(() => {
+    if (!mrSearch) return dashboard.mrScores;
+    const q = mrSearch.toLowerCase();
+    return dashboard.mrScores.filter(
+      (s) => s.mrName.toLowerCase().includes(q) || s.hrId.toLowerCase().includes(q) || (s.managerName ?? "").toLowerCase().includes(q),
+    );
+  }, [dashboard.mrScores, mrSearch]);
+
+  const managerList = useMemo(
+    () =>
+      dashboard.executiveReports
+        .map((r) => {
+          const totals = managerTotals.get(hk(r.managerHrId));
+          return { ...r, actualDvs: totals?.dvs ?? 0, actualMrs: totals?.mrs.size ?? 0, lastDate: totals?.lastDate ?? null };
+        })
+        .sort((a, b) => b.actualDvs - a.actualDvs),
+    [dashboard.executiveReports, managerTotals],
+  );
+
+  const selectedExec = selectedManagerKey
+    ? dashboard.executiveReports.find((r) => hk(r.managerHrId) === selectedManagerKey)
+    : undefined;
+  const selectedName =
+    selectedExec?.managerName ??
+    managerTotals.get(selectedManagerKey)?.name ??
+    dashboard.mrScores.find((s) => hk(s.managerHrId) === selectedManagerKey)?.managerName ??
+    selectedManagerKey.toUpperCase();
+
+  function openManager(managerHrId: string | null) {
+    const key = hk(managerHrId);
+    if (!key) return;
+    setSelectedManagerKey(key);
+    setActiveTab("managers");
+  }
+
+  function focusMr(score: DoubleVisitMrScore) {
+    setMrSearch(score.hrId);
+    setExpandedMrKeys(new Set([hk(score.hrId)]));
+    setActiveTab("mr-status");
+  }
+
+  function toggleMr(scoreKey: string) {
+    setExpandedMrKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(scoreKey)) next.delete(scoreKey);
+      else next.add(scoreKey);
+      return next;
+    });
+  }
 
   async function uploadExcel() {
-    if (!file) {
-      setMessage("Select a Double Visit Excel file first.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
+    if (!file) { setMessage("Select a Double Visit Excel file first."); return; }
+    setBusy(true); setMessage(null);
     try {
       const formData = new FormData();
       formData.set("file", file);
-      const response = await fetch("/api/admin/double-visit-analytics/imports/excel", { body: formData, method: "POST" });
-      const payload = await response.json();
-      if (!response.ok) {
-        setMessage(payload.message ?? "Excel import failed.");
-        return;
-      }
-      setMessage(`Preview saved: ${formatNumber(payload.data.preview.summary.totalVisits)} visits, ${formatNumber(payload.data.preview.summary.vacantOrUnmappedVisitCount)} vacant/unmapped visits preserved.`);
+      const res = await fetch("/api/admin/double-visit-analytics/imports/excel", { body: formData, method: "POST" });
+      const payload = await res.json();
+      if (!res.ok) { setMessage(payload.message ?? "Excel import failed."); return; }
+      setMessage(`Preview saved: ${fmt(payload.data.preview.summary.totalVisits)} visits.`);
       window.location.reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Excel import failed.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Excel import failed."); }
+    finally { setBusy(false); }
   }
 
   async function importLive() {
-    setBusy(true);
-    setMessage(null);
+    setBusy(true); setMessage(null);
     try {
-      const response = await fetch("/api/admin/double-visit-analytics/imports/ireports360", {
-        body: JSON.stringify({ dateFrom, dateTo }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        setMessage(payload.message ?? "iReports360 import failed.");
-        return;
-      }
-      setMessage(`Live preview saved: ${formatNumber(payload.data.preview.summary.totalVisits)} double visits.`);
+      const res = await fetch("/api/admin/double-visit-analytics/imports/ireports360", { body: JSON.stringify({ dateFrom, dateTo }), headers: { "Content-Type": "application/json" }, method: "POST" });
+      const payload = await res.json();
+      if (!res.ok) { setMessage(payload.message ?? "iReports360 import failed."); return; }
+      setMessage(`Live preview saved: ${fmt(payload.data.preview.summary.totalVisits)} double visits.`);
       window.location.reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "iReports360 import failed.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setMessage(e instanceof Error ? e.message : "iReports360 import failed."); }
+    finally { setBusy(false); }
   }
 
   async function publish(id: string) {
-    setPublishingId(id);
-    setMessage(null);
+    setPublishingId(id); setMessage(null);
     try {
-      const response = await fetch(`/api/admin/double-visit-analytics/imports/${id}/publish`, { method: "POST" });
-      const payload = await response.json();
-      if (!response.ok) {
-        setMessage(payload.message ?? "Publish failed.");
-        return;
-      }
+      const res = await fetch(`/api/admin/double-visit-analytics/imports/${id}/publish`, { method: "POST" });
+      const payload = await res.json();
+      if (!res.ok) { setMessage(payload.message ?? "Publish failed."); return; }
       setMessage("Published as official Double Visit snapshot.");
       window.location.reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Publish failed.");
-    } finally {
-      setPublishingId(null);
-    }
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Publish failed."); }
+    finally { setPublishingId(null); }
   }
 
   const exportHref = `/api/admin/double-visit-analytics/export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
+  const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
+
+  const TABS: { icon: LucideIcon; id: Tab; label: string }[] = [
+    { id: "overview", icon: Activity, label: "Overview" },
+    { id: "managers", icon: Users, label: "By Manager" },
+    { id: "mr-status", icon: User, label: "By MR" },
+    { id: "imports", icon: FileSpreadsheet, label: "Imports" },
+  ];
 
   return (
     <div className="space-y-6">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Field performance evidence</p>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Field performance evidence</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
           <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-            Role-neutral double visit evidence for coaching coverage, neglected MRs, area/line heat, and expense AM/PM workload automation.
+            {dashboard.publishedImport
+              ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.publishedImport.dateFrom)} – ${fmtDate(dashboard.publishedImport.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
+              : "No published snapshot — go to Imports to upload and publish a DV file."}
           </p>
         </div>
         <a href={exportHref}>
           <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
-            <Download className="h-4 w-4" />
-            Executive Excel
+            <Download className="h-4 w-4" /> Executive Excel
           </Button>
         </a>
       </div>
 
-      {message ? (
-        <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
-          {message}
-        </div>
-      ) : null}
+      {message ? <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">{message}</div> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black text-slate-950">Official snapshot</h2>
-              <p className="text-sm font-medium text-slate-500">
-                Dashboards and expense automation use the published snapshot only.
-              </p>
-            </div>
-            <Badge variant={dashboard.publishedImport ? "success" : "warning"}>
-              {dashboard.publishedImport ? "Published" : "No published snapshot"}
-            </Badge>
+      {/* ── Tabs ───────────────────────────────────────────────────────── */}
+      <div className="flex gap-0 overflow-x-auto rounded border border-slate-200 bg-white shadow-sm">
+        {TABS.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={[
+              "flex items-center gap-2 whitespace-nowrap px-5 py-3 text-sm font-bold transition-colors",
+              activeTab === id ? "border-b-2 border-[#F97316] bg-orange-50 text-slate-950" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
+            ].join(" ")}
+          >
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Shared period + search bar (shown on Managers / By MR tabs) ─ */}
+      {(activeTab === "managers" || activeTab === "mr-status") && (
+        <div className="flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex overflow-hidden rounded border border-slate-200">
+            {(["ALL", "AM", "PM"] as PeriodFilter[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriodFilter(p)}
+                className={["px-4 py-2 text-xs font-black uppercase", periodFilter === p ? "bg-[#F97316] text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
+              >
+                {p === "ALL" ? "All Periods" : p}
+              </button>
+            ))}
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">From</span>
-              <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">To</span>
-              <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            </label>
-            <div className="flex items-end">
-              <Button className="min-h-10 w-full gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => window.location.assign(`/admin/double-visit-analytics?dateFrom=${dateFrom}&dateTo=${dateTo}`)} type="button">
-                <RefreshCcw className="h-4 w-4" />
-                Refresh
-              </Button>
-            </div>
-          </div>
-          {!dashboard.schemaReady ? (
-            <p className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-              Double Visit Analytics tables are not provisioned in this environment. Apply migration 20260612172427_double_visit_analytics.sql and reopen this page.
-            </p>
-          ) : (
-            <p className="mt-4 text-sm font-semibold text-slate-600">
-              {dashboard.publishedImport
-                ? `${dashboard.publishedImport.sourceFilename} published for ${formatDate(dashboard.publishedImport.dateFrom)} - ${formatDate(dashboard.publishedImport.dateTo)}`
-                : "Import and publish a snapshot before KPI and expense evidence can be populated."}
-            </p>
+          {activeTab === "mr-status" && (
+            <Input
+              className="min-w-[220px] flex-1 rounded border-slate-200 text-sm"
+              placeholder="Search MR name, HR ID, or manager…"
+              value={mrSearch}
+              onChange={(e) => setMrSearch(e.target.value)}
+            />
           )}
-        </Card>
+          {activeTab === "mr-status" && periodFilter !== "ALL" && (
+            <span className="text-xs font-semibold text-slate-400">Period applies to each MR&apos;s expanded history.</span>
+          )}
+          {(periodFilter !== "ALL" || mrSearch) && (
+            <button type="button" onClick={() => { setPeriodFilter("ALL"); setMrSearch(""); }} className="text-xs font-bold text-slate-400 underline hover:text-slate-700">
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-slate-950">Import evidence</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Excel and live iReports360 imports are saved as previews first.</p>
-          <div className="mt-4 grid gap-3">
-            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded border border-dashed border-sky-300 bg-sky-50 px-4 text-sm font-bold text-sky-700">
-              <Upload className="h-4 w-4" />
-              {file ? file.name : "Select Excel DV file"}
-              <input className="hidden" type="file" accept=".xlsx" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-            </label>
-            <Button className="min-h-11 gap-2 rounded bg-sky-600 px-4 text-white hover:bg-sky-700" disabled={!canImport || busy || !dashboard.schemaReady} onClick={() => void uploadExcel()} type="button">
-              <FileSpreadsheet className="h-4 w-4" />
-              Save Excel Preview
+      {/* ═══════════════════════════════════════════════════════════════════
+          OVERVIEW TAB
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === "overview" && (
+        !dashboard.publishedImport ? (
+          <Card className="rounded border border-slate-200 bg-white p-10 text-center shadow-sm">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-300" />
+            <h2 className="mt-4 text-lg font-black text-slate-950">No published snapshot yet</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
+              Double Visit Analytics shows data from the one published snapshot. Import a DV Excel file (or pull live iReports360) and publish it to populate every tab.
+            </p>
+            <Button className="mt-5 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" onClick={() => setActiveTab("imports")} type="button">
+              <Upload className="h-4 w-4" /> Go to Imports
             </Button>
-            <Button className="min-h-11 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50" disabled={!canImport || !ireports360Configured || busy || !dashboard.schemaReady} onClick={() => void importLive()} type="button">
-              <Activity className="h-4 w-4" />
-              Import Live iReports360
-            </Button>
+          </Card>
+        ) : (
+          <>
+            {/* KPI cards */}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot." />
+              <KpiCard icon={CalendarDays} label="Active DV Days" value={fmt(dashboard.kpis.activeDoubleVisitDays)} hint="Distinct manager × date combinations." />
+              <KpiCard icon={UsersRound} label="MR Coverage" value={fmt(dashboard.kpis.mrCoverageCount)} hint="Mapped MRs with at least one DV in range." />
+              <KpiCard icon={Flame} label="Neglected MRs" value={fmt(weakMrs.length)} hint={`${criticalMrs.length} critical (≥60 days or 0 DVs/90d).`} />
+              <KpiCard icon={Activity} label="AM Visits" value={fmt(dashboard.kpis.amVisitCount)} hint="Morning double visit workload." />
+              <KpiCard icon={Activity} label="PM Visits" value={fmt(dashboard.kpis.pmVisitCount)} hint="Afternoon double visit workload." />
+              <KpiCard icon={CheckCircle2} label="Avg / DV Day" value={fmt(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits per active double visit day." />
+              <KpiCard icon={AlertTriangle} label="Vacant / Unmapped" value={`${dashboard.kpis.vacantOrUnmappedShare}%`} hint="Preserved in evidence; still counted as effort." />
+            </div>
+
+            {/* Heatmaps */}
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Area heatmap</h2>
+                <p className="mt-1 text-xs text-slate-500">Coverage from active MRs in scope.</p>
+                <div className="mt-4 grid gap-2">
+                  {dashboard.heatmap.byArea.length === 0 && <p className="text-sm text-slate-400">No coverage data in range.</p>}
+                  {dashboard.heatmap.byArea.slice(0, 20).map((row) => (
+                    <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
+                      <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
+                      <div className="relative h-2 rounded bg-slate-100">
+                        <div className="absolute left-0 top-0 h-2 rounded bg-[#F97316]" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
+                      </div>
+                      <span className="text-right text-sm font-bold text-slate-700">{row.coveragePercent ?? 0}%</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+              <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Line heatmap</h2>
+                <p className="mt-1 text-xs text-slate-500">Every scoped line shown, 0% when no DV activity.</p>
+                <div className="mt-4 grid gap-2">
+                  {dashboard.heatmap.byLine.length === 0 && <p className="text-sm text-slate-400">No coverage data in range.</p>}
+                  {dashboard.heatmap.byLine.slice(0, 20).map((row) => (
+                    <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
+                      <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
+                      <div className="relative h-2 rounded bg-slate-100">
+                        <div className="absolute left-0 top-0 h-2 rounded bg-[#F97316]" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
+                      </div>
+                      <span className="text-right text-sm font-bold text-slate-700">{row.coveragePercent ?? 0}%</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </>
+        )
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          BY MANAGER TAB
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === "managers" && (
+        <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+          {/* Manager list */}
+          <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm self-start max-h-[calc(100vh-220px)] overflow-auto">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Managers ({managerList.length})</h2>
+              <p className="text-[11px] font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
+            </div>
+            {managerList.map((m) => {
+              const mKey = hk(m.managerHrId);
+              return (
+                <button
+                  key={m.managerHrId}
+                  type="button"
+                  onClick={() => setSelectedManagerKey(selectedManagerKey === mKey ? "" : mKey)}
+                  className={[
+                    "w-full border-t border-slate-100 px-4 py-3 text-left transition-colors hover:bg-slate-50",
+                    selectedManagerKey === mKey ? "bg-orange-50 border-l-2 border-l-[#F97316]" : "",
+                  ].join(" ")}
+                >
+                  <p className="truncate text-sm font-bold text-slate-800">{m.managerName}</p>
+                  <p className="text-xs text-slate-400">{m.managerHrId}</p>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-600">{fmt(m.actualDvs)} DVs</span>
+                    <span className="text-xs text-slate-400">·</span>
+                    <span className="text-xs font-semibold text-slate-600">{m.actualMrs} MRs</span>
+                    {m.lastDate && (
+                      <>
+                        <span className="text-xs text-slate-400">·</span>
+                        <span className="text-xs text-slate-500">{fmtDate(m.lastDate)}</span>
+                      </>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+            {managerList.length === 0 && (
+              <p className="px-4 py-6 text-sm text-slate-400">No managers found in published snapshot.</p>
+            )}
+          </Card>
+
+          {/* Manager profile panel */}
+          <div className="space-y-4">
+            {!selectedManagerKey ? (
+              <Card className="rounded border border-slate-200 bg-white p-8 text-center shadow-sm">
+                <Users className="mx-auto h-10 w-10 text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-500">Select a manager on the left to see their full DV profile.</p>
+              </Card>
+            ) : managerProfile ? (
+              <>
+                {/* Identity */}
+                <div>
+                  <h2 className="text-xl font-black text-slate-950">{selectedName}</h2>
+                  <p className="text-sm text-slate-500">
+                    {selectedExec?.managerHrId ?? selectedManagerKey.toUpperCase()} {periodLabel ? `· ${periodLabel} breakdown` : ""}
+                  </p>
+                </div>
+
+                {/* Stat summary (always all-period) */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                  <StatChip label="Total DVs" value={fmt(managerProfile.totalVisits)} />
+                  <StatChip label="MRs Visited" value={String(managerProfile.visitedCount)} />
+                  <StatChip label="AM Visits" value={fmt(managerProfile.amVisits)} />
+                  <StatChip label="PM Visits" value={fmt(managerProfile.pmVisits)} />
+                  <StatChip span label="Last Visit" value={fmtDate(managerProfile.lastDate)} sub={managerProfile.lastDate ? `${daysBetween(managerProfile.lastDate) ?? "—"} days ago` : undefined} />
+                </div>
+
+                {/* Concentration / focus signal */}
+                <div className="flex flex-wrap gap-2">
+                  <MiniStat value={String(managerProfile.mrBreakdown.length)} label={`MRs visited${periodLabel ? ` (${periodLabel})` : ""}`} />
+                  {managerProfile.mrBreakdown.length > 0 && (
+                    <MiniStat tone="orange" value={`${managerProfile.concentrationPct}%`} label={`of DVs on top ${managerProfile.topN}`} />
+                  )}
+                  {managerProfile.overFocusedKeys.size > 0 && (
+                    <MiniStat tone="orange" value={String(managerProfile.overFocusedKeys.size)} label="over-focused" />
+                  )}
+                  {managerProfile.neglectedMrs.length > 0 && (
+                    <MiniStat tone="rose" value={String(managerProfile.neglectedMrs.length)} label="not visited" />
+                  )}
+                </div>
+
+                {/* MR visit breakdown */}
+                <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+                  <div className="border-b border-slate-100 px-5 py-4">
+                    <h3 className="text-base font-black text-slate-950">
+                      MRs Visited{periodLabel ? ` — ${periodLabel} only` : ""} · sorted by visit count
+                    </h3>
+                    <p className="text-sm text-slate-500">Longest bars = over-focused MRs; direct reports with zero visits are listed below.</p>
+                  </div>
+                  <div className="max-h-[480px] overflow-auto">
+                    <table className="w-full min-w-[640px] text-left">
+                      <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-3">MR</th>
+                          <th className="px-3 py-3">Visits</th>
+                          <th className="px-3 py-3 text-right">AM</th>
+                          <th className="px-3 py-3 text-right">PM</th>
+                          <th className="px-3 py-3">Last Visit</th>
+                          <th className="px-3 py-3">Band</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {managerProfile.mrBreakdown.map((row) => (
+                          <tr key={row.key} className="border-t border-slate-100">
+                            <td className="px-3 py-2.5">
+                              <p className="text-sm font-semibold text-slate-800">{row.name}</p>
+                              <p className="text-xs text-slate-400">{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</p>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="relative h-2 w-20 bg-slate-100">
+                                  <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${managerProfile.maxVisits ? (row.visits / managerProfile.maxVisits) * 100 : 0}%` }} />
+                                </div>
+                                <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
+                                {managerProfile.overFocusedKeys.has(row.key) && (
+                                  <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5 text-sm text-slate-600">{fmtDate(row.lastDate)}</td>
+                            <td className="px-3 py-2.5">
+                              {row.score ? (
+                                <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
+                              ) : <span className="text-xs text-slate-400">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                        {managerProfile.mrBreakdown.length === 0 && (
+                          <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-400">No visits recorded{periodLabel ? ` for ${periodLabel}` : ""}.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                {/* Neglected MRs (direct reports not visited) */}
+                {managerProfile.neglectedMrs.length > 0 && (
+                  <Card className="rounded border border-rose-200 bg-rose-50 p-0 shadow-sm">
+                    <div className="border-b border-rose-200 px-5 py-4">
+                      <h3 className="text-base font-black text-rose-800">
+                        {managerProfile.neglectedMrs.length} Direct-Report MR{managerProfile.neglectedMrs.length !== 1 ? "s" : ""} Not Visited
+                      </h3>
+                      <p className="text-sm text-rose-600">These MRs report to this manager but received zero DVs in the current snapshot. Click one to see its history.</p>
+                    </div>
+                    <div className="px-5 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        {managerProfile.neglectedMrs.map((m) => (
+                          <button
+                            key={m.hrId}
+                            type="button"
+                            onClick={() => focusMr(m)}
+                            className="rounded border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                          >
+                            {m.mrName} <span className="text-rose-400">({m.hrId})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </Card>
+                )}
+              </>
+            ) : null}
           </div>
-        </Card>
-      </div>
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard icon={Activity} label="Double Visits" value={formatNumber(dashboard.kpis.totalVisits)} hint="Official visit count from Count/source event." />
-        <KpiCard icon={CalendarDays} label="Active DV Days" value={formatNumber(dashboard.kpis.activeDoubleVisitDays)} hint="Distinct double visitor and date combinations." />
-        <KpiCard icon={UsersRound} label="MR Coverage" value={formatNumber(dashboard.kpis.mrCoverageCount)} hint="Mapped MRs with at least one DV in range." />
-        <KpiCard icon={AlertTriangle} label="Vacant/Unmapped Share" value={`${dashboard.kpis.vacantOrUnmappedShare}%`} hint="Preserved records; still counted as field effort." />
-        <KpiCard icon={Activity} label="AM Activity" value={formatNumber(dashboard.kpis.amVisitCount)} hint="Morning double visit workload." />
-        <KpiCard icon={Activity} label="PM Activity" value={formatNumber(dashboard.kpis.pmVisitCount)} hint="Afternoon double visit workload." />
-        <KpiCard icon={CheckCircle2} label="Avg per DV Day" value={formatNumber(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits divided by active double visit days." />
-        <KpiCard icon={Flame} label="Neglected MRs" value={formatNumber(weakMrs.length)} hint={`${criticalMrs.length} critical by 30/60/90 rule.`} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* ═══════════════════════════════════════════════════════════════════
+          BY MR TAB
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === "mr-status" && (
         <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
-          <div className="border-b border-slate-100 p-5">
-            <h2 className="text-lg font-black text-slate-950">Executive coverage gaps</h2>
-            <p className="text-sm font-medium text-slate-500">Expected MRs vs actually touched MRs by reporting hierarchy.</p>
+          <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+            <div>
+              <h2 className="text-lg font-black text-slate-950">MR Support Score</h2>
+              <p className="text-sm text-slate-500">Click any row to expand visit history. Total DVs · 90-day frequency · last DV · days since · visitor diversity.</p>
+            </div>
+            <span className="rounded bg-slate-100 px-3 py-1 text-sm font-black text-slate-600">
+              {filteredMrScores.length} MRs
+            </span>
           </div>
-          <div className="max-h-[420px] overflow-auto">
-            <table className="w-full min-w-[780px] text-left">
+          <div className="overflow-auto">
+            <table className="w-full min-w-[920px] text-left">
               <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                <tr><th className="px-3 py-3">Manager</th><th className="px-3 py-3">Expected</th><th className="px-3 py-3">Touched</th><th className="px-3 py-3">Neglected</th><th className="px-3 py-3">Over-focused</th><th className="px-3 py-3">Concentration</th></tr>
+                <tr>
+                  <th className="w-8 px-3 py-3" />
+                  <th className="px-3 py-3">MR</th>
+                  <th className="px-3 py-3">Manager</th>
+                  <th className="px-3 py-3 text-right">Total DVs</th>
+                  <th className="px-3 py-3 text-right">DVs (90d)</th>
+                  <th className="px-3 py-3">Last DV</th>
+                  <th className="px-3 py-3 text-right">Days</th>
+                  <th className="px-3 py-3">Last By</th>
+                  <th className="px-3 py-3">Band</th>
+                </tr>
               </thead>
               <tbody>
-                {dashboard.executiveReports.slice(0, 40).map((row) => (
-                  <tr key={row.managerHrId} className="border-t border-slate-100">
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-800">{row.managerName}<div className="text-xs text-slate-500">{row.areaName ?? "No area"} - {row.lineName ?? "No line"}</div></td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.expectedMrCount}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.touchedMrCount} ({row.touchedPercent}%)</td>
-                    <td className="px-3 py-3 text-sm font-bold text-rose-700">{row.neglectedMrCount}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.overFocusedMrCount}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{formatNumber(row.concentrationRatio * 100)}%</td>
-                  </tr>
-                ))}
+                {filteredMrScores.map((score) => {
+                  const sKey = hk(score.hrId);
+                  return (
+                    <ExpandableMrRow
+                      key={score.hrId}
+                      score={score}
+                      visitLog={visitLog}
+                      periodFilter={periodFilter}
+                      open={expandedMrKeys.has(sKey)}
+                      onToggle={() => toggleMr(sKey)}
+                      onSelectManager={openManager}
+                    />
+                  );
+                })}
+                {filteredMrScores.length === 0 && (
+                  <tr><td colSpan={9} className="px-3 py-10 text-center text-sm text-slate-400">
+                    {mrSearch ? "No MRs match your search — clear it to see all." : "No MRs in this snapshot."}
+                  </td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </Card>
+      )}
 
-        <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
-          <div className="border-b border-slate-100 p-5">
-            <h2 className="text-lg font-black text-slate-950">MR support score</h2>
-            <p className="text-sm font-medium text-slate-500">Last DV, days since coaching support, 90-day frequency, and visitor diversity.</p>
-          </div>
-          <div className="max-h-[420px] overflow-auto">
-            <table className="w-full min-w-[860px] text-left">
-              <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                <tr><th className="px-3 py-3">MR</th><th className="px-3 py-3">Last DV</th><th className="px-3 py-3">Days</th><th className="px-3 py-3">90 Days</th><th className="px-3 py-3">Visitors</th><th className="px-3 py-3">Band</th></tr>
-              </thead>
-              <tbody>
-                {dashboard.mrScores.slice(0, 80).map((row) => (
-                  <tr key={row.hrId} className="border-t border-slate-100">
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-800">{row.mrName}<div className="text-xs text-slate-500">{row.hrId} - {row.areaName ?? "No area"} - {row.managerName ?? "No manager"}</div></td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{formatDate(row.lastDvDate)}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.daysSinceLastDv ?? "Never"}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.dvsLast90Days}</td>
-                    <td className="px-3 py-3 text-sm text-slate-700">{row.distinctDoubleVisitors}</td>
-                    <td className="px-3 py-3"><span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${statusClass(row.band)}`}>{row.band}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Area heatmap</h2>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">Coverage is calculated from active MRs in scope and includes scope areas with no visits as 0%.</p>
-          <div className="mt-4 grid gap-2">
-            {dashboard.heatmap.byArea.slice(0, 16).map((row) => (
-              <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_110px_90px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
-                <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
-                <span className={`rounded px-2 py-1 text-center text-xs font-black uppercase ring-1 ${statusClass(row.status ?? "critical")}`}>{row.coveragePercent ?? 0}%</span>
-                <span className="text-right text-sm font-semibold text-slate-700">{row.totalVisits} DVs</span>
+      {/* ═══════════════════════════════════════════════════════════════════
+          IMPORTS TAB
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === "imports" && (
+        <>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-black text-slate-950">Official snapshot</h2>
+                  <p className="text-sm font-medium text-slate-500">Dashboards and expense automation use the published snapshot only.</p>
+                </div>
+                <Badge variant={dashboard.publishedImport ? "success" : "warning"}>
+                  {dashboard.publishedImport ? "Published" : "No snapshot"}
+                </Badge>
               </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><MapPinned className="h-5 w-5" /> Line heatmap</h2>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">Coverage is calculated from active MRs in scope and shows every scoped line, even when no DV activity exists.</p>
-          <div className="mt-4 grid gap-2">
-            {dashboard.heatmap.byLine.slice(0, 16).map((row) => (
-              <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_110px_90px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
-                <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
-                <span className={`rounded px-2 py-1 text-center text-xs font-black uppercase ring-1 ${statusClass(row.status ?? "critical")}`}>{row.coveragePercent ?? 0}%</span>
-                <span className="text-right text-sm font-semibold text-slate-700">{row.totalVisits} DVs</span>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">From</span>
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">To</span>
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                </label>
+                <div className="flex items-end">
+                  <Button className="min-h-10 w-full gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => window.location.assign(`/admin/double-visit-analytics?dateFrom=${dateFrom}&dateTo=${dateTo}`)} type="button">
+                    <RefreshCcw className="h-4 w-4" /> Refresh
+                  </Button>
+                </div>
               </div>
-            ))}
+              {!dashboard.schemaReady ? (
+                <p className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Tables not provisioned. Apply migration 20260612172427.</p>
+              ) : (
+                <p className="mt-4 text-sm font-semibold text-slate-600">
+                  {dashboard.publishedImport ? `${dashboard.publishedImport.sourceFilename} — ${fmtDate(dashboard.publishedImport.dateFrom)} to ${fmtDate(dashboard.publishedImport.dateTo)}` : "Import and publish a snapshot to populate the dashboard."}
+                </p>
+              )}
+            </Card>
+            <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-black text-slate-950">Import evidence</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">Excel and live iReports360 imports saved as previews first.</p>
+              <div className="mt-4 grid gap-3">
+                <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700">
+                  <Upload className="h-4 w-4" /> {file ? file.name : "Select Excel DV file"}
+                  <input className="hidden" type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </label>
+                <Button className="min-h-11 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" disabled={!canImport || busy || !dashboard.schemaReady} onClick={() => void uploadExcel()} type="button">
+                  <FileSpreadsheet className="h-4 w-4" /> Save Excel Preview
+                </Button>
+                <Button className="min-h-11 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50" disabled={!canImport || !ireports360Configured || busy || !dashboard.schemaReady} onClick={() => void importLive()} type="button">
+                  <Activity className="h-4 w-4" /> Import Live iReports360
+                </Button>
+              </div>
+            </Card>
           </div>
-        </Card>
-      </div>
-
-      <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
-        <div className="border-b border-slate-100 p-5">
-          <h2 className="text-lg font-black text-slate-950">Import history</h2>
-          <p className="text-sm font-medium text-slate-500">Publish exactly one official snapshot for dashboards and expense automation.</p>
-        </div>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[860px] text-left">
-            <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-              <tr><th className="px-3 py-3">File</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Range</th><th className="px-3 py-3">Visits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Action</th></tr>
-            </thead>
-              <tbody>
-                {dashboard.imports.map((item) => (
-                  <ImportRow
-                    key={item.id}
-                    item={item}
-                    publishingId={publishingId}
-                    onPublish={canPublish && dashboard.schemaReady ? (id) => void publish(id) : () => undefined}
-                  />
-                ))}
-              </tbody>
-            </table>
-        </div>
-      </Card>
+          <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="text-lg font-black text-slate-950">Import history</h2>
+              <p className="text-sm font-medium text-slate-500">Publish exactly one official snapshot for dashboards and expense automation.</p>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[860px] text-left">
+                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-3 py-3">File</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Range</th><th className="px-3 py-3">Visits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Action</th></tr>
+                </thead>
+                <tbody>
+                  {dashboard.imports.map((item) => (
+                    <ImportRow key={item.id} item={item} publishingId={publishingId} onPublish={canPublish && dashboard.schemaReady ? (id) => void publish(id) : () => undefined} />
+                  ))}
+                  {dashboard.imports.length === 0 && (
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No imports yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
