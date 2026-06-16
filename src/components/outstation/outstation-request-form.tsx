@@ -326,9 +326,7 @@ export function OutstationRequestForm({
             <InfoCard label="Fuel Amount" value={egp(calculation.fuelAmount)} />
             <InfoCard label="Allowance" value={egp(calculation.allowanceAmount)} />
             <InfoCard label="Ticket Amount" value={egp(calculation.ticketAmount)} />
-            <InfoCard label="Expected Total" value={egp(calculation.expectedTotalAmount)} />
             <InfoCard label="Claimed Total" value={egp(Number(claimedTotalAmount || 0))} />
-            <InfoCard label="Variance" value={`${egp(calculation.varianceAmount)} (${calculation.variancePercent.toFixed(1)}%)`} />
             <InfoCard label="Recommendation" value={calculation.approvalRecommendation.replace(/_/g, " ")} />
           </div>
           <p className="mt-4 text-sm font-medium text-slate-700">{calculation.eligibilityReason}</p>
