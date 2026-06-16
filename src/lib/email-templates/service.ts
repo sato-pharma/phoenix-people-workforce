@@ -1757,7 +1757,7 @@ function recipientNameForGreeting(recipients: Recipient[], context: Partial<Emai
 }
 
 function templateSupportsAction(templateKey: EmailTemplateKey) {
-  return templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY && templateKey !== EMAIL_TEMPLATE_KEYS.CONTRACT_RENEWAL;
+  return templateKey !== EMAIL_TEMPLATE_KEYS.BIRTHDAY;
 }
 
 function templateSubtitle(templateKey: EmailTemplateKey) {

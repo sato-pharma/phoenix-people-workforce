@@ -30,6 +30,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
 
 import {
   getNavigationSections,
@@ -202,6 +203,30 @@ function writePins(key: string, hrefs: string[]) {
   }
 }
 
+// ── Pending-count badge for the Action Center nav item ───────────────────────
+function NavBadge({ src }: { src: string }): ReactNode {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      void globalThis
+        .fetch(src)
+        .then((r) => r.json())
+        .then((d: { count?: number }) => { if (!cancelled && typeof d.count === "number") setCount(d.count); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [src]);
+  if (!count) return null;
+  return (
+    <span className="ml-auto min-w-[20px] rounded-full bg-orange-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 // ── A single navigation entry ────────────────────────────────────────────────
 function NavRow({
   active,
@@ -266,7 +291,12 @@ function NavRow({
         >
           <Icon className="h-4 w-4" />
         </span>
-        {!rail && <span className={cn("min-w-0 flex-1 truncate tracking-[-0.01em]", onTogglePin && "pr-6")}>{item.label}</span>}
+        {!rail && (
+          <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
+            <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
+            {item.navBadge === "action-center-pending" && <NavBadge src="/api/action-center/pending-count" />}
+          </span>
+        )}
       </Link>
       {!rail && onTogglePin ? (
         <button
