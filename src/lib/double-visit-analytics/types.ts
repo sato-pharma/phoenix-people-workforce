@@ -149,6 +149,97 @@ export type DoubleVisitLogEntry = {
   visitedStatus: DoubleVisitVisitedEmployeeStatus;
 };
 
+export type DoubleVisitRoleCode = "DSM" | "GPM" | "NSM" | "PM" | "RM" | "TM";
+
+// Personal-effort lens: one row per double-visitor (what THIS manager personally did),
+// distinct from DoubleVisitExecutiveManagerReport which measures DVs received by a team.
+export type DoubleVisitManagerSummary = {
+  activeDvDays: number;
+  amVisits: number;
+  areaName: string | null;
+  callsPerActiveDay: number;
+  concentrationPct: number | null;
+  coveragePct: number | null;
+  daysSinceLastDv: number | null;
+  distinctMrs: number;
+  firstDvDate: string | null;
+  inDirectory: boolean;
+  lastDvDate: string | null;
+  lineName: string | null;
+  managerHrId: string;
+  managerName: string;
+  neglectedMrCount: number | null;
+  overFocusedMrCount: number;
+  pmVisits: number;
+  role: string | null;
+  roleCode: DoubleVisitRoleCode | null;
+  teamMrCount: number | null;
+  totalDvs: number;
+};
+
+export type DoubleVisitRoleRollup = {
+  activeManagerCount: number;
+  amVisits: number;
+  avgCallsPerDay: number | null;
+  avgCoveragePct: number | null;
+  distinctMrs: number;
+  neglectedMrCount: number | null;
+  pmVisits: number;
+  roleCode: DoubleVisitRoleCode;
+  roleLabel: string;
+  totalActiveDvDays: number;
+  totalDvs: number;
+};
+
+export type DoubleVisitInsightCategory =
+  | "balance"
+  | "concentration"
+  | "coverage"
+  | "inactivity"
+  | "neglect"
+  | "performance";
+
+export type DoubleVisitInsightSeverity = "critical" | "info" | "positive" | "warning";
+
+export type DoubleVisitInsight = {
+  category: DoubleVisitInsightCategory;
+  detail: string;
+  id: string;
+  managerHrId: string | null;
+  mrHrId: string | null;
+  rank: number;
+  severity: DoubleVisitInsightSeverity;
+  title: string;
+};
+
+export type DoubleVisitIdleManager = {
+  areaName: string | null;
+  hrId: string;
+  lineName: string | null;
+  name: string;
+  role: string;
+  roleCode: DoubleVisitRoleCode;
+};
+
+export type DoubleVisitExecutiveSummary = {
+  idleManagers: DoubleVisitIdleManager[];
+  insights: DoubleVisitInsight[];
+  roleRollups: DoubleVisitRoleRollup[];
+};
+
+export type DoubleVisitManagerMrPair = {
+  area: string | null;
+  days: number;
+  firstDate: string | null;
+  lastDate: string | null;
+  managerHrId: string;
+  managerName: string;
+  mrHrId: string | null;
+  mrName: string;
+  visits: number;
+  visitsPerDay: number;
+};
+
 export type DoubleVisitExpenseWorkloadEvidence = {
   amWorkload: number;
   dateBreakdown: Array<{
@@ -172,6 +263,7 @@ export type DoubleVisitDashboardData = {
   dateFrom: string;
   dateTo: string;
   executiveReports: DoubleVisitExecutiveManagerReport[];
+  executiveSummary: DoubleVisitExecutiveSummary;
   filters: {
     areas: string[];
     doubleVisitors: string[];
@@ -183,6 +275,7 @@ export type DoubleVisitDashboardData = {
   };
   imports: DoubleVisitImportListItem[];
   kpis: DoubleVisitKpis;
+  managerSummaries: DoubleVisitManagerSummary[];
   mrScores: DoubleVisitMrScore[];
   publishedImport: DoubleVisitImportListItem | null;
   salesComparisonAvailable: boolean;

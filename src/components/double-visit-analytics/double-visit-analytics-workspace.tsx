@@ -3,16 +3,18 @@
 import { useMemo, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Download,
   FileSpreadsheet,
   Flame,
+  Gauge,
   MapPinned,
   RefreshCcw,
+  Sparkles,
+  TrendingUp,
   Upload,
   User,
   Users,
@@ -28,16 +30,28 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   DoubleVisitDashboardData,
   DoubleVisitImportListItem,
+  DoubleVisitInsight,
   DoubleVisitLogEntry,
+  DoubleVisitManagerSummary,
   DoubleVisitMrScore,
+  DoubleVisitRoleCode,
+  DoubleVisitRoleRollup,
 } from "@/lib/double-visit-analytics/types";
 
-type Tab = "overview" | "managers" | "mr-status" | "imports";
+type Tab = "summary" | "managers" | "mr-status" | "imports";
 type PeriodFilter = "ALL" | "AM" | "PM";
+type RoleFilter = "ALL" | DoubleVisitRoleCode;
+type SortKey =
+  | "activeDvDays"
+  | "callsPerActiveDay"
+  | "concentrationPct"
+  | "coveragePct"
+  | "daysSinceLastDv"
+  | "distinctMrs"
+  | "name"
+  | "totalDvs";
 
-// Always join HR_IDs on the same canonical key the server uses (trim + lowercase
-// + aaa→aa alias). visitLog ids are raw import values while mrScores/executiveReports
-// ids are raw directory values — comparing them raw silently drops matches.
+// Join HR_IDs on the same canonical key the server uses (trim + lowercase + aaa→aa).
 const hk = (value: string | null | undefined) => canonicalHrIdKey(value) ?? "";
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -54,8 +68,7 @@ function fmtDate(v: string | null | undefined) {
     : new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
-// Midnight-UTC to midnight-UTC so this matches the server's daysSinceLastDv exactly
-// (no intraday off-by-one between the two numbers shown in the same UI).
+// Midnight-UTC to midnight-UTC so this matches the server's daysSinceLastDv exactly.
 function daysBetween(isoDate: string | null) {
   if (!isoDate) return null;
   const today = new Date().toISOString().slice(0, 10);
@@ -77,7 +90,44 @@ function periodPillClass(p: "AM" | "PM" | "UNKNOWN") {
   return "bg-slate-100 text-slate-500";
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function coverageClass(pct: number | null) {
+  if (pct == null) return "bg-slate-100 text-slate-400";
+  if (pct >= 80) return "bg-emerald-50 text-emerald-700";
+  if (pct >= 50) return "bg-amber-50 text-amber-700";
+  return "bg-rose-50 text-rose-700";
+}
+
+function insightStripe(severity: DoubleVisitInsight["severity"]) {
+  if (severity === "critical") return "border-l-rose-500 bg-rose-50/40";
+  if (severity === "warning") return "border-l-amber-500 bg-amber-50/40";
+  if (severity === "positive") return "border-l-emerald-500 bg-emerald-50/40";
+  return "border-l-slate-400 bg-slate-50";
+}
+
+// ─── Small shared pieces ──────────────────────────────────────────────────────
+
+function RoleBadge({ role }: { role: DoubleVisitRoleCode | null }) {
+  const tone =
+    role === "NSM" || role === "GPM"
+      ? "bg-orange-100 text-orange-700"
+      : role === "RM" || role === "PM"
+        ? "bg-slate-200 text-slate-700"
+        : role
+          ? "bg-slate-100 text-slate-600"
+          : "bg-slate-100 text-slate-400";
+  return <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
+}
+
+function AmPmBar({ am, pm }: { am: number; pm: number }) {
+  const total = am + pm;
+  const amPct = total > 0 ? (am / total) * 100 : 0;
+  return (
+    <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={`AM ${am} · PM ${pm}`}>
+      <div className="h-2 bg-[#F97316]" style={{ width: `${amPct}%` }} />
+      <div className="h-2 bg-slate-400" style={{ width: `${100 - amPct}%` }} />
+    </div>
+  );
+}
 
 function StatChip({ label, value, sub, span }: { label: string; span?: boolean; sub?: string; value: string }) {
   return (
@@ -121,6 +171,58 @@ function MiniStat({ value, label, tone }: { label: string; tone?: "orange" | "ro
   );
 }
 
+function RoleFilterBar({
+  value,
+  options,
+  onChange,
+}: {
+  onChange: (next: RoleFilter) => void;
+  options: DoubleVisitRoleCode[];
+  value: RoleFilter;
+}) {
+  const all: RoleFilter[] = ["ALL", ...options];
+  return (
+    <div className="flex flex-wrap overflow-hidden rounded border border-slate-200">
+      {all.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={["px-3.5 py-2 text-xs font-black uppercase", value === option ? "bg-[#F97316] text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
+        >
+          {option === "ALL" ? "All Roles" : option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  field,
+  sortKey,
+  sortDir,
+  onSort,
+  align = "left",
+}: {
+  align?: "left" | "right";
+  field: SortKey;
+  label: string;
+  onSort: (key: SortKey) => void;
+  sortDir: "asc" | "desc";
+  sortKey: SortKey;
+}) {
+  const active = sortKey === field;
+  return (
+    <th className={`px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button type="button" onClick={() => onSort(field)} className={`inline-flex items-center gap-1 ${active ? "text-[#F97316]" : ""}`}>
+        {label}
+        {active ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+      </button>
+    </th>
+  );
+}
+
 function ImportRow({
   item,
   onPublish,
@@ -155,6 +257,9 @@ function ImportRow({
 type MrVisitRow = {
   am: number;
   area: string | null;
+  dates: Set<string>;
+  days: number;
+  firstDate: string | null;
   hrId: string | null;
   key: string;
   lastDate: string | null;
@@ -162,6 +267,7 @@ type MrVisitRow = {
   pm: number;
   score: DoubleVisitMrScore | null;
   visits: number;
+  visitsPerDay: number;
 };
 
 function buildManagerProfile(
@@ -188,25 +294,35 @@ function buildManagerProfile(
     const key = hk(row.visitedHrId) || `name:${row.visitedName ?? "unknown"}`;
     const existing =
       byMr.get(key) ??
-      { am: 0, area: row.area, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pm: 0, score: null, visits: 0 };
+      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pm: 0, score: null, visits: 0, visitsPerDay: 0 };
     existing.visits += row.visitCount;
     if (row.period === "AM") existing.am += row.visitCount;
     if (row.period === "PM") existing.pm += row.visitCount;
+    existing.dates.add(row.date.slice(0, 10));
     if (!existing.lastDate || row.date > existing.lastDate) existing.lastDate = row.date;
+    if (!existing.firstDate || row.date < existing.firstDate) existing.firstDate = row.date;
     byMr.set(key, existing);
   }
 
   const scoreByKey = new Map(mrScores.map((s) => [hk(s.hrId), s]));
   for (const [, row] of byMr) {
     row.score = row.hrId ? (scoreByKey.get(hk(row.hrId)) ?? null) : null;
+    row.days = row.dates.size;
+    row.visitsPerDay = row.days > 0 ? row.visits / row.days : 0;
   }
 
-  const mrBreakdown = Array.from(byMr.values()).sort((a, b) => b.visits - a.visits);
+  const allByMr = Array.from(byMr.values());
+  const mrBreakdown = allByMr.filter((r) => r.hrId != null).sort((a, b) => b.visits - a.visits);
+  // Resigned reps' accounts get renamed to their area in the CRM (no HR id). These are
+  // real manager effort (counted in the totals) — surfaced as their own labeled line, not
+  // as MRs and not as a data gap.
+  const vacantTerritories = allByMr.filter((r) => r.hrId == null).sort((a, b) => b.visits - a.visits);
+  const vacantVisits = vacantTerritories.reduce((s, r) => s + r.visits, 0);
 
   // Direct-report MRs this manager never visited (any period).
   const neglectedMrs = mrScores.filter((s) => hk(s.managerHrId) === managerKey && !visitedKeysAll.has(hk(s.hrId)));
 
-  // Concentration / over-focus signal from the scoped breakdown.
+  // Concentration / over-focus signal from the real-MR breakdown.
   const scopedTotal = mrBreakdown.reduce((s, r) => s + r.visits, 0);
   const maxVisits = mrBreakdown.reduce((m, r) => Math.max(m, r.visits), 0);
   const avgVisits = mrBreakdown.length ? scopedTotal / mrBreakdown.length : 0;
@@ -228,8 +344,17 @@ function buildManagerProfile(
     pmVisits,
     topN,
     totalVisits,
+    vacantTerritories,
+    vacantVisits,
     visitedCount: visitedKeysAll.size,
   };
+}
+
+// Display the recorded account name as-is for a resigned/area-renamed territory,
+// stripping only the wrapping parentheses (e.g. "( Cairo East 1 / F )" → "Cairo East 1 / F").
+function territoryLabel(row: { area: string | null; name: string }) {
+  const cleaned = row.name.replace(/^\(\s*/, "").replace(/\s*\)$/, "").trim();
+  return cleaned || row.area || "Unknown territory";
 }
 
 // ─── Expandable MR row (used in By MR tab) ────────────────────────────────────
@@ -331,6 +456,41 @@ function ExpandableMrRow({
   );
 }
 
+// ─── Role rollup card ─────────────────────────────────────────────────────────
+
+function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick: () => void; rollup: DoubleVisitRoleRollup }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded border bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50",
+        active ? "border-l-2 border-l-[#F97316] border-slate-200 bg-orange-50" : "border-slate-200",
+      ].join(" ")}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <RoleBadge role={rollup.roleCode} />
+        <span className="text-xs font-semibold text-slate-500">{rollup.activeManagerCount} {rollup.activeManagerCount === 1 ? "manager" : "managers"}</span>
+      </div>
+      <p className="mt-2 text-2xl font-black text-slate-950">{fmt(rollup.totalDvs)} <span className="text-sm font-bold text-slate-400">DVs</span></p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <MiniStat tone="orange" value={rollup.avgCallsPerDay != null ? fmt(rollup.avgCallsPerDay) : "—"} label="calls/day" />
+        <MiniStat value={rollup.avgCoveragePct != null ? `${rollup.avgCoveragePct}%` : "—"} label="coverage" />
+        {rollup.neglectedMrCount != null && rollup.neglectedMrCount > 0 && (
+          <MiniStat tone="rose" value={String(rollup.neglectedMrCount)} label="neglected" />
+        )}
+      </div>
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          <span>AM {rollup.amVisits}</span>
+          <span>PM {rollup.pmVisits}</span>
+        </div>
+        <div className="mt-1"><AmPmBar am={rollup.amVisits} pm={rollup.pmVisits} /></div>
+      </div>
+    </button>
+  );
+}
+
 // ─── Main workspace ───────────────────────────────────────────────────────────
 
 export function DoubleVisitAnalyticsWorkspace({
@@ -344,9 +504,12 @@ export function DoubleVisitAnalyticsWorkspace({
   dashboard: DoubleVisitDashboardData;
   ireports360Configured: boolean;
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("summary");
   const [selectedManagerKey, setSelectedManagerKey] = useState<string>("");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("ALL");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
+  const [sortKey, setSortKey] = useState<SortKey>("totalDvs");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [mrSearch, setMrSearch] = useState("");
   const [expandedMrKeys, setExpandedMrKeys] = useState<Set<string>>(new Set());
 
@@ -358,8 +521,16 @@ export function DoubleVisitAnalyticsWorkspace({
   const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const visitLog = useMemo(() => dashboard.visitLog ?? [], [dashboard.visitLog]);
+  const managerSummaries = useMemo(() => dashboard.managerSummaries ?? [], [dashboard.managerSummaries]);
+  const executiveSummary = dashboard.executiveSummary;
   const criticalMrs = dashboard.mrScores.filter((s) => s.band === "critical");
   const weakMrs = dashboard.mrScores.filter((s) => s.band !== "healthy");
+
+  const summaryByKey = useMemo(
+    () => new Map(managerSummaries.map((s) => [hk(s.managerHrId), s])),
+    [managerSummaries],
+  );
+  const availableRoles = executiveSummary?.roleRollups.map((r) => r.roleCode) ?? [];
 
   // Per-manager all-period totals (drives the sidebar ranking — always all periods).
   const managerTotals = useMemo(() => {
@@ -392,6 +563,7 @@ export function DoubleVisitAnalyticsWorkspace({
     );
   }, [dashboard.mrScores, mrSearch]);
 
+  // Sidebar manager list — scoped by the shared role filter.
   const managerList = useMemo(
     () =>
       dashboard.executiveReports
@@ -399,18 +571,54 @@ export function DoubleVisitAnalyticsWorkspace({
           const totals = managerTotals.get(hk(r.managerHrId));
           return { ...r, actualDvs: totals?.dvs ?? 0, actualMrs: totals?.mrs.size ?? 0, lastDate: totals?.lastDate ?? null };
         })
+        .filter((r) => roleFilter === "ALL" || summaryByKey.get(hk(r.managerHrId))?.roleCode === roleFilter)
         .sort((a, b) => b.actualDvs - a.actualDvs),
-    [dashboard.executiveReports, managerTotals],
+    [dashboard.executiveReports, managerTotals, roleFilter, summaryByKey],
   );
 
+  // Leaderboard — role-filtered + sorted (nulls always last).
+  const leaderboardRows = useMemo(() => {
+    const filtered = roleFilter === "ALL" ? managerSummaries : managerSummaries.filter((s) => s.roleCode === roleFilter);
+    const value = (s: DoubleVisitManagerSummary): number | string | null => {
+      switch (sortKey) {
+        case "name": return s.managerName.toLowerCase();
+        case "coveragePct": return s.coveragePct;
+        case "concentrationPct": return s.concentrationPct;
+        case "daysSinceLastDv": return s.daysSinceLastDv;
+        case "activeDvDays": return s.activeDvDays;
+        case "callsPerActiveDay": return s.callsPerActiveDay;
+        case "distinctMrs": return s.distinctMrs;
+        default: return s.totalDvs;
+      }
+    };
+    const mult = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (av == null && bv == null) return a.managerName.localeCompare(b.managerName);
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string" && typeof bv === "string") return mult * av.localeCompare(bv);
+      return mult * ((av as number) - (bv as number));
+    });
+  }, [managerSummaries, roleFilter, sortKey, sortDir]);
+
+  const leaderboardMaxDvs = leaderboardRows.reduce((m, s) => Math.max(m, s.totalDvs), 0);
+  const selectedSummary = selectedManagerKey ? summaryByKey.get(selectedManagerKey) ?? null : null;
   const selectedExec = selectedManagerKey
     ? dashboard.executiveReports.find((r) => hk(r.managerHrId) === selectedManagerKey)
     : undefined;
   const selectedName =
+    selectedSummary?.managerName ??
     selectedExec?.managerName ??
     managerTotals.get(selectedManagerKey)?.name ??
     dashboard.mrScores.find((s) => hk(s.managerHrId) === selectedManagerKey)?.managerName ??
     selectedManagerKey.toUpperCase();
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "name" ? "asc" : "desc"); }
+  }
 
   function openManager(managerHrId: string | null) {
     const key = hk(managerHrId);
@@ -423,6 +631,11 @@ export function DoubleVisitAnalyticsWorkspace({
     setMrSearch(score.hrId);
     setExpandedMrKeys(new Set([hk(score.hrId)]));
     setActiveTab("mr-status");
+  }
+
+  function focusMrByHrId(mrHrId: string | null) {
+    const score = dashboard.mrScores.find((s) => hk(s.hrId) === hk(mrHrId));
+    if (score) focusMr(score);
   }
 
   function toggleMr(scoreKey: string) {
@@ -475,9 +688,11 @@ export function DoubleVisitAnalyticsWorkspace({
 
   const exportHref = `/api/admin/double-visit-analytics/export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
   const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
+  const activeManagerCount = managerSummaries.length;
+  const idleCount = executiveSummary?.idleManagers.length ?? 0;
 
   const TABS: { icon: LucideIcon; id: Tab; label: string }[] = [
-    { id: "overview", icon: Activity, label: "Overview" },
+    { id: "summary", icon: Sparkles, label: "Summary" },
     { id: "managers", icon: Users, label: "By Manager" },
     { id: "mr-status", icon: User, label: "By MR" },
     { id: "imports", icon: FileSpreadsheet, label: "Imports" },
@@ -492,7 +707,7 @@ export function DoubleVisitAnalyticsWorkspace({
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
           <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
             {dashboard.publishedImport
-              ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.publishedImport.dateFrom)} – ${fmtDate(dashboard.publishedImport.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
+              ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.dateFrom)} – ${fmtDate(dashboard.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
               : "No published snapshot — go to Imports to upload and publish a DV file."}
           </p>
         </div>
@@ -522,7 +737,7 @@ export function DoubleVisitAnalyticsWorkspace({
         ))}
       </div>
 
-      {/* ── Shared period + search bar (shown on Managers / By MR tabs) ─ */}
+      {/* ── Shared period + search bar (Managers / By MR tabs) ─ */}
       {(activeTab === "managers" || activeTab === "mr-status") && (
         <div className="flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="flex overflow-hidden rounded border border-slate-200">
@@ -557,9 +772,9 @@ export function DoubleVisitAnalyticsWorkspace({
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          OVERVIEW TAB
+          SUMMARY TAB
       ═══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "overview" && (
+      {activeTab === "summary" && (
         !dashboard.publishedImport ? (
           <Card className="rounded border border-slate-200 bg-white p-10 text-center shadow-sm">
             <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-300" />
@@ -573,17 +788,156 @@ export function DoubleVisitAnalyticsWorkspace({
           </Card>
         ) : (
           <>
-            {/* KPI cards */}
+            {/* Headline KPI band */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot." />
               <KpiCard icon={CalendarDays} label="Active DV Days" value={fmt(dashboard.kpis.activeDoubleVisitDays)} hint="Distinct manager × date combinations." />
+              <KpiCard icon={Users} label="Active Double-Visitors" value={fmt(activeManagerCount)} hint={`${idleCount} eligible manager${idleCount === 1 ? "" : "s"} did zero DVs.`} />
+              <KpiCard icon={Gauge} label="Avg Calls / Day" value={fmt(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits per active double visit day." />
               <KpiCard icon={UsersRound} label="MR Coverage" value={fmt(dashboard.kpis.mrCoverageCount)} hint="Mapped MRs with at least one DV in range." />
               <KpiCard icon={Flame} label="Neglected MRs" value={fmt(weakMrs.length)} hint={`${criticalMrs.length} critical (≥60 days or 0 DVs/90d).`} />
               <KpiCard icon={Activity} label="AM Visits" value={fmt(dashboard.kpis.amVisitCount)} hint="Morning double visit workload." />
               <KpiCard icon={Activity} label="PM Visits" value={fmt(dashboard.kpis.pmVisitCount)} hint="Afternoon double visit workload." />
-              <KpiCard icon={CheckCircle2} label="Avg / DV Day" value={fmt(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits per active double visit day." />
-              <KpiCard icon={AlertTriangle} label="Vacant / Unmapped" value={`${dashboard.kpis.vacantOrUnmappedShare}%`} hint="Preserved in evidence; still counted as effort." />
             </div>
+
+            {/* Role rollups */}
+            {executiveSummary && executiveSummary.roleRollups.length > 0 && (
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><TrendingUp className="h-5 w-5" /> Effort by role</h2>
+                <p className="mt-1 text-xs text-slate-500">Click a role to filter the leaderboard below.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {executiveSummary.roleRollups.map((rollup) => (
+                    <RoleRollupCard
+                      key={rollup.roleCode}
+                      rollup={rollup}
+                      active={roleFilter === rollup.roleCode}
+                      onClick={() => setRoleFilter(roleFilter === rollup.roleCode ? "ALL" : rollup.roleCode)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Auto-insights */}
+            {executiveSummary && executiveSummary.insights.length > 0 && (
+              <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><Sparkles className="h-5 w-5 text-[#F97316]" /> What the report found</h2>
+                  <p className="text-sm text-slate-500">Auto-generated findings from this snapshot.</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {executiveSummary.insights.map((insight) => (
+                    <div key={insight.id} className={`flex items-start gap-3 border-l-4 px-5 py-3 ${insightStripe(insight.severity)}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-black text-slate-900">{insight.title}</p>
+                        <p className="text-sm text-slate-600">{insight.detail}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {insight.managerHrId && (
+                          <button type="button" onClick={() => openManager(insight.managerHrId)} className="text-xs font-bold text-orange-700 underline hover:text-orange-800">Open manager</button>
+                        )}
+                        {insight.mrHrId && (
+                          <button type="button" onClick={() => focusMrByHrId(insight.mrHrId)} className="text-xs font-bold text-orange-700 underline hover:text-orange-800">Open MR</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Idle managers */}
+            {executiveSummary && executiveSummary.idleManagers.length > 0 && (
+              <Card className="rounded border border-rose-200 bg-rose-50 p-0 shadow-sm">
+                <div className="border-b border-rose-200 px-5 py-4">
+                  <h2 className="text-base font-black text-rose-800">{executiveSummary.idleManagers.length} Manager{executiveSummary.idleManagers.length !== 1 ? "s" : ""} Did Zero Double Visits</h2>
+                  <p className="text-sm text-rose-600">Eligible DSM/RM/NSM/PM/GPM/TM with no DV activity in this snapshot.</p>
+                </div>
+                <div className="px-5 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    {executiveSummary.idleManagers.map((m) => (
+                      <span key={m.hrId} className="inline-flex items-center gap-1.5 rounded border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700">
+                        <RoleBadge role={m.roleCode} /> {m.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Leaderboard */}
+            <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-black text-slate-950">Manager leaderboard</h2>
+                  <p className="text-sm text-slate-500">Every double-visitor — sort by any column, filter by role, click a row for the full profile.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <RoleFilterBar value={roleFilter} options={availableRoles} onChange={setRoleFilter} />
+                  <span className="rounded bg-slate-100 px-3 py-1 text-sm font-black text-slate-600">{leaderboardRows.length} {leaderboardRows.length === 1 ? "manager" : "managers"}</span>
+                </div>
+              </div>
+              <div className="overflow-auto">
+                <table className="w-full min-w-[980px] text-left">
+                  <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-3">#</th>
+                      <SortHeader label="Manager" field="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                      <th className="px-3 py-3">Role</th>
+                      <SortHeader label="DVs" field="totalDvs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Active Days" field="activeDvDays" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                      <SortHeader label="Calls/Day" field="callsPerActiveDay" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                      <SortHeader label="MRs / Team" field="distinctMrs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                      <SortHeader label="Coverage" field="coveragePct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Concentration" field="concentrationPct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                      <th className="px-3 py-3">AM / PM</th>
+                      <SortHeader label="Last Visit" field="daysSinceLastDv" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboardRows.map((row, index) => (
+                      <tr key={row.managerHrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => openManager(row.managerHrId)}>
+                        <td className="px-3 py-2.5 text-sm font-bold tabular-nums text-slate-400">{index + 1}</td>
+                        <td className="px-3 py-2.5">
+                          <p className="text-sm font-bold text-slate-800">{row.managerName}</p>
+                          <p className="text-xs text-slate-400">{row.managerHrId.toUpperCase()}</p>
+                        </td>
+                        <td className="px-3 py-2.5"><RoleBadge role={row.roleCode} /></td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="relative h-2 w-16 bg-slate-100">
+                              <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${leaderboardMaxDvs ? (row.totalDvs / leaderboardMaxDvs) * 100 : 0}%` }} />
+                            </div>
+                            <span className="text-sm font-black tabular-nums text-slate-950">{row.totalDvs}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.activeDvDays}</td>
+                        <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{fmt(row.callsPerActiveDay)}</td>
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                          {row.distinctMrs} <span className="text-slate-400">/ {row.teamMrCount ?? "—"}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`rounded px-2 py-0.5 text-xs font-black ${coverageClass(row.coveragePct)}`}>{row.coveragePct != null ? `${row.coveragePct}%` : "—"}</span>
+                        </td>
+                        <td className={`px-3 py-2.5 text-right text-sm font-bold tabular-nums ${row.concentrationPct != null && row.concentrationPct >= 60 ? "text-orange-600" : "text-slate-600"}`}>
+                          {row.concentrationPct != null ? `${row.concentrationPct}%` : "—"}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="w-24"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
+                        </td>
+                        <td className="px-3 py-2.5 text-sm text-slate-600">
+                          {fmtDate(row.lastDvDate)}
+                          {row.daysSinceLastDv != null && <span className="block text-xs text-slate-400">{row.daysSinceLastDv}d ago</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {leaderboardRows.length === 0 && (
+                      <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-400">No double-visitors{roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in this snapshot.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
 
             {/* Heatmaps */}
             <div className="grid gap-4 xl:grid-cols-2">
@@ -634,6 +988,9 @@ export function DoubleVisitAnalyticsWorkspace({
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Managers ({managerList.length})</h2>
               <p className="text-[11px] font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
+              {availableRoles.length > 0 && (
+                <div className="mt-2"><RoleFilterBar value={roleFilter} options={availableRoles} onChange={setRoleFilter} /></div>
+              )}
             </div>
             {managerList.map((m) => {
               const mKey = hk(m.managerHrId);
@@ -647,7 +1004,10 @@ export function DoubleVisitAnalyticsWorkspace({
                     selectedManagerKey === mKey ? "bg-orange-50 border-l-2 border-l-[#F97316]" : "",
                   ].join(" ")}
                 >
-                  <p className="truncate text-sm font-bold text-slate-800">{m.managerName}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-bold text-slate-800">{m.managerName}</p>
+                    <RoleBadge role={summaryByKey.get(mKey)?.roleCode ?? null} />
+                  </div>
                   <p className="text-xs text-slate-400">{m.managerHrId}</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <span className="text-xs font-semibold text-slate-600">{fmt(m.actualDvs)} DVs</span>
@@ -664,7 +1024,7 @@ export function DoubleVisitAnalyticsWorkspace({
               );
             })}
             {managerList.length === 0 && (
-              <p className="px-4 py-6 text-sm text-slate-400">No managers found in published snapshot.</p>
+              <p className="px-4 py-6 text-sm text-slate-400">No managers{roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in published snapshot.</p>
             )}
           </Card>
 
@@ -679,24 +1039,39 @@ export function DoubleVisitAnalyticsWorkspace({
               <>
                 {/* Identity */}
                 <div>
-                  <h2 className="text-xl font-black text-slate-950">{selectedName}</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-slate-950">{selectedName}</h2>
+                    <RoleBadge role={selectedSummary?.roleCode ?? null} />
+                  </div>
                   <p className="text-sm text-slate-500">
-                    {selectedExec?.managerHrId ?? selectedManagerKey.toUpperCase()} {periodLabel ? `· ${periodLabel} breakdown` : ""}
+                    {selectedSummary?.managerHrId.toUpperCase() ?? selectedExec?.managerHrId ?? selectedManagerKey.toUpperCase()}
+                    {selectedSummary?.role ? ` · ${selectedSummary.role}` : ""}
+                    {periodLabel ? ` · ${periodLabel} breakdown` : ""}
                   </p>
                 </div>
 
-                {/* Stat summary (always all-period) */}
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                  <StatChip label="Total DVs" value={fmt(managerProfile.totalVisits)} />
-                  <StatChip label="MRs Visited" value={String(managerProfile.visitedCount)} />
-                  <StatChip label="AM Visits" value={fmt(managerProfile.amVisits)} />
-                  <StatChip label="PM Visits" value={fmt(managerProfile.pmVisits)} />
-                  <StatChip span label="Last Visit" value={fmtDate(managerProfile.lastDate)} sub={managerProfile.lastDate ? `${daysBetween(managerProfile.lastDate) ?? "—"} days ago` : undefined} />
+                {/* Stat summary (always all-period; from server when available) */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                  <StatChip label="Total DVs" value={fmt(selectedSummary?.totalDvs ?? managerProfile.totalVisits)} />
+                  <StatChip label="Active DV Days" value={fmt(selectedSummary?.activeDvDays ?? 0)} />
+                  <StatChip label="Calls / Day" value={fmt(selectedSummary?.callsPerActiveDay ?? 0)} />
+                  <StatChip label="MRs Visited" value={String(selectedSummary?.distinctMrs ?? managerProfile.visitedCount)} />
+                  <StatChip label="Coverage" value={selectedSummary?.coveragePct != null ? `${selectedSummary.coveragePct}%` : "—"} sub={selectedSummary?.teamMrCount != null ? `${selectedSummary.distinctMrs} of ${selectedSummary.teamMrCount} team` : undefined} />
+                  <StatChip span label="Last Visit" value={fmtDate(selectedSummary?.lastDvDate ?? managerProfile.lastDate)} sub={(selectedSummary?.lastDvDate ?? managerProfile.lastDate) ? `${daysBetween(selectedSummary?.lastDvDate ?? managerProfile.lastDate) ?? "—"} days ago` : undefined} />
                 </div>
+                {periodLabel ? (
+                  <p className="-mt-1 text-xs font-semibold text-slate-400">Headline stats above cover all periods; the {periodLabel} filter applies to the MR breakdown below.</p>
+                ) : null}
 
-                {/* Concentration / focus signal */}
-                <div className="flex flex-wrap gap-2">
-                  <MiniStat value={String(managerProfile.mrBreakdown.length)} label={`MRs visited${periodLabel ? ` (${periodLabel})` : ""}`} />
+                {/* AM/PM + concentration / focus signal */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits}</span>
+                    <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
+                  </div>
+                  {selectedSummary?.teamMrCount != null && (
+                    <MiniStat tone="orange" value={`${selectedSummary.distinctMrs}/${selectedSummary.teamMrCount}`} label="team MRs visited" />
+                  )}
                   {managerProfile.mrBreakdown.length > 0 && (
                     <MiniStat tone="orange" value={`${managerProfile.concentrationPct}%`} label={`of DVs on top ${managerProfile.topN}`} />
                   )}
@@ -714,17 +1089,19 @@ export function DoubleVisitAnalyticsWorkspace({
                     <h3 className="text-base font-black text-slate-950">
                       MRs Visited{periodLabel ? ` — ${periodLabel} only` : ""} · sorted by visit count
                     </h3>
-                    <p className="text-sm text-slate-500">Longest bars = over-focused MRs; direct reports with zero visits are listed below.</p>
+                    <p className="text-sm text-slate-500">Visits = total calls; Days = distinct dates; Visits/Day shows intensity (e.g. 29 visits across 6 days). Resigned-rep territories are listed separately below.</p>
                   </div>
                   <div className="max-h-[480px] overflow-auto">
-                    <table className="w-full min-w-[640px] text-left">
+                    <table className="w-full min-w-[760px] text-left">
                       <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-3 py-3">MR</th>
                           <th className="px-3 py-3">Visits</th>
+                          <th className="px-3 py-3 text-right">Days</th>
+                          <th className="px-3 py-3 text-right">Visits/Day</th>
+                          <th className="px-3 py-3">Span</th>
                           <th className="px-3 py-3 text-right">AM</th>
                           <th className="px-3 py-3 text-right">PM</th>
-                          <th className="px-3 py-3">Last Visit</th>
                           <th className="px-3 py-3">Band</th>
                         </tr>
                       </thead>
@@ -746,9 +1123,11 @@ export function DoubleVisitAnalyticsWorkspace({
                                 )}
                               </div>
                             </td>
+                            <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{row.days}</td>
+                            <td className={`px-3 py-2.5 text-right text-sm tabular-nums ${row.visitsPerDay > 4 ? "font-black text-orange-600" : "text-slate-600"}`}>{fmt(row.visitsPerDay)}</td>
+                            <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
                             <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
                             <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
-                            <td className="px-3 py-2.5 text-sm text-slate-600">{fmtDate(row.lastDate)}</td>
                             <td className="px-3 py-2.5">
                               {row.score ? (
                                 <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
@@ -757,12 +1136,51 @@ export function DoubleVisitAnalyticsWorkspace({
                           </tr>
                         ))}
                         {managerProfile.mrBreakdown.length === 0 && (
-                          <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-400">No visits recorded{periodLabel ? ` for ${periodLabel}` : ""}.</td></tr>
+                          <tr><td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-400">No visits recorded{periodLabel ? ` for ${periodLabel}` : ""}.</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                 </Card>
+
+                {/* Resigned / vacant-territory visits — resigned reps' accounts renamed to their area */}
+                {managerProfile.vacantTerritories.length > 0 && (
+                  <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+                    <div className="border-b border-slate-100 px-5 py-4">
+                      <h3 className="text-base font-black text-slate-950">Resigned / Vacant Territory · {fmt(managerProfile.vacantVisits)} visits</h3>
+                      <p className="text-sm text-slate-500">Visits to territories whose rep resigned (the CRM renames the account to the area). These are real effort — already counted in this manager&apos;s Total DVs above — but there is no active MR to credit, so they are listed by territory exactly as recorded.</p>
+                    </div>
+                    <div className="max-h-[320px] overflow-auto">
+                      <table className="w-full min-w-[560px] text-left">
+                        <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-3">Territory (as recorded)</th>
+                            <th className="px-3 py-3 text-right">Visits</th>
+                            <th className="px-3 py-3 text-right">Days</th>
+                            <th className="px-3 py-3 text-right">AM</th>
+                            <th className="px-3 py-3 text-right">PM</th>
+                            <th className="px-3 py-3">Span</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {managerProfile.vacantTerritories.map((row) => (
+                            <tr key={row.key} className="border-t border-slate-100">
+                              <td className="px-3 py-2.5">
+                                <span className="text-sm font-semibold text-slate-800">{territoryLabel(row)}</span>
+                                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-950">{row.visits}</td>
+                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
+                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
+                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                              <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
 
                 {/* Neglected MRs (direct reports not visited) */}
                 {managerProfile.neglectedMrs.length > 0 && (

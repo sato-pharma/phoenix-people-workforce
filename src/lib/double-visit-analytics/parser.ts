@@ -68,6 +68,18 @@ function toIsoDate(value: unknown): string | null {
     return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
+  // Day-first text dates (dd/mm/yyyy, dd-mm-yyyy) — common in localized exports. Only
+  // treat as day-first when unambiguous (day > 12); otherwise `new Date` would parse
+  // "25/06/2026" as Invalid and the row would be SILENTLY dropped as invalid.
+  const dmy = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmy) {
+    const day = Number(dmy[1]);
+    const month = Number(dmy[2]);
+    if (day > 12 && month >= 1 && month <= 12) {
+      return `${dmy[3]}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+
   const date = new Date(raw);
   if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
   return null;
@@ -264,14 +276,75 @@ export function normalizeDoubleVisitExcelRows(input: {
   });
 }
 
+// When the sheet's "HR ID" column is Vacant/blank/#N/A but the "Employee" cell exactly
+// matches an ACTIVE employee's crm_username, credit the visit to that real MR. The source
+// sheet sometimes marks an active rep's seat "Vacant", which otherwise drops their received
+// double visits into the unmapped bucket and makes them look like zero-coverage MRs.
+// Excel-only: the iReports360 path already maps the visited employee by CRM id.
+export function recoverVisitedEmployeesByCrmUsername(
+  preview: DoubleVisitPreview,
+  employees: EmployeeDirectoryRow[],
+): DoubleVisitPreview {
+  const byUsername = new Map<string, EmployeeDirectoryRow[]>();
+  for (const employee of employees) {
+    const status = lower(employee.employmentStatus);
+    if (status !== "active" && status !== "on_leave") continue;
+    const key = lower(employee.crmUsername);
+    if (!key) continue;
+    byUsername.set(key, [...(byUsername.get(key) ?? []), employee]);
+  }
+
+  let recovered = 0;
+  const rows = preview.rows.map((row) => {
+    if (row.visitedEmployeeStatus === "active_mapped" || row.visitedEmployeeHrId) return row;
+    const employeeCell = lower(valueByHeader(row.rawPayload, "Employee"));
+    if (!employeeCell) return row;
+    const matches = byUsername.get(employeeCell);
+    if (!matches || matches.length !== 1) return row; // exact + unique active match only
+    const hrId = canonicalHrIdForDisplay(matches[0].hrId);
+    if (!hrId) return row;
+    recovered += 1;
+    return {
+      ...row,
+      areaName: row.areaName ?? matches[0].areaName,
+      lineName: row.lineName ?? matches[0].lineName,
+      visitedEmployeeHrId: hrId,
+      visitedEmployeeName: matches[0].fullName ?? row.visitedEmployeeName,
+      visitedEmployeeStatus: "active_mapped" as DoubleVisitVisitedEmployeeStatus,
+    };
+  });
+
+  if (recovered === 0) return preview;
+  const warnings: DoubleVisitValidationIssue[] = [
+    ...preview.warnings,
+    {
+      code: "visited_hr_id_recovered",
+      message: `${recovered} visit row(s) had a missing/Vacant HR ID but were matched to an active employee by name (crm_username) and credited to that MR.`,
+      rowNumber: null,
+      severity: "warning",
+    },
+  ];
+  return {
+    ...preview,
+    rows,
+    sampleRows: rows.slice(0, 25),
+    summary: summaryFromRows(rows, warnings),
+    warnings,
+  };
+}
+
 export async function buildDoubleVisitPreviewFromWorkbook(input: {
   arrayBuffer: ArrayBuffer;
   fileName: string;
 }) {
   const workbook = await loadExcelWorkbook(input.arrayBuffer);
   const worksheet = findDoubleVisitWorksheet(workbook);
-  if (!worksheet) {
-    throw new Error("No usable worksheet was found in the Double Visit workbook.");
+  // Fail loudly on a wrong sheet / renamed-or-missing columns instead of silently
+  // importing an empty/zero snapshot from the fallback sheet[0].
+  if (!worksheet || !hasRequiredHeaders(worksheet)) {
+    throw new Error(
+      "This workbook is missing the required Double Visit columns (Double Visit with, DV HR ID, Employee, HR ID, Date, Count, AM \\ PM). Check the file and sheet, then re-upload.",
+    );
   }
   const rows = excelWorksheetToJsonRows(worksheet, 1);
   return normalizeDoubleVisitExcelRows({
