@@ -21,16 +21,38 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  MapPin,
+  PlusCircle,
   Printer,
   RefreshCw,
   Search,
 } from "lucide-react";
+import Link from "next/link";
 
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
+import {
+  ExpenseHeatmapLayer,
+  type ExpenseBubbleInput,
+} from "@/components/outstation/expense-heatmap-layer";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { extractKnownPlace } from "@/lib/utils/places";
+
+/** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
+function relativeDaysFrom(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const days = Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.round(days / 7)} week${days < 14 ? "" : "s"} ago`;
+  if (days < 365) return `${Math.round(days / 30)} month${days < 60 ? "" : "s"} ago`;
+  return `${Math.round(days / 365)} year${days < 730 ? "" : "s"} ago`;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -58,6 +80,8 @@ type ExpenseRow = {
   pmWorkload: number;
   description: string;
   hrNotes: string;
+  approvedAt: string; // ISO timestamp of the HR decision; "" when no decision yet
+  hrApproved: boolean;
 };
 
 export type WorkloadAdminKeyCards = {
@@ -605,6 +629,8 @@ export function PersonalExpenseWorkloadDashboard({
       pmWorkload: Number(expense.pmWorkload ?? 0),
       description: normalizeString(expense.description),
       hrNotes: normalizeString(expense.hrNotes || expense.description),
+      approvedAt: normalizeString(expense.approvedAt ?? ""),
+      hrApproved: Boolean(expense.hrApproved),
     }));
   }, [data.workload?.expenseRows]);
 
@@ -794,6 +820,61 @@ export function PersonalExpenseWorkloadDashboard({
   const tripsLastMonth = filteredTrips.filter((trip) => trip.date.startsWith(previousMonth)).length;
   const tripsDeltaPercent = tripsLastMonth > 0 ? ((tripsThisMonth - tripsLastMonth) / tripsLastMonth) * 100 : null;
   const pendingCount = filteredTrips.filter((t) => mapStatusCategory(t.status) === "Pending").length;
+  // Most recent decision date across all rows on this view — drives the "Last decision: …" line
+  // on the pending chip so reps can see how stale (or fresh) approval activity has been.
+  const lastDecisionAt = filteredTrips.reduce(
+    (latest, trip) => (trip.approvedAt && trip.approvedAt > latest ? trip.approvedAt : latest),
+    "",
+  );
+  const lastDecisionLabel = lastDecisionAt ? relativeDaysFrom(lastDecisionAt) : "";
+
+  // Personal dot map — aggregate the filtered trips by destination region centroid so reps see
+  // where they've travelled. Pure client-side: the curated `resolveRegionCentroid` lookup is
+  // static (no API calls). Spend per dot drives colour. The All / Approved / Pending pill
+  // (admin Batch 3) is intentionally NOT wired here yet — it lands automatically when #234 merges.
+  const personalMapPoints = useMemo<ExpenseBubbleInput[]>(() => {
+    const map = new Map<string, ExpenseBubbleInput>();
+    for (const trip of filteredTrips) {
+      const label = trip.destinationCity || trip.toCity || trip.to || "";
+      const centroid = resolveRegionCentroid(label);
+      if (!centroid) continue;
+      const lat = centroid.lat;
+      const lng = centroid.lng;
+      const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+      const amount = Number(trip.total) || 0;
+      const existing = map.get(key);
+      if (existing) {
+        existing.weight = (existing.weight ?? 0) + amount;
+        existing.count = (existing.count ?? 0) + 1;
+      } else {
+        map.set(key, {
+          id: key,
+          lat,
+          lng,
+          weight: amount,
+          region: label || null,
+          count: 1,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+  }, [filteredTrips]);
+  const personalMapUnmappedCount = useMemo(
+    () =>
+      filteredTrips.filter((trip) => {
+        const label = trip.destinationCity || trip.toCity || trip.to || "";
+        return !resolveRegionCentroid(label);
+      }).length,
+    [filteredTrips],
+  );
+  const personalMapUnmappedAmount = useMemo(
+    () =>
+      filteredTrips.reduce((sum, trip) => {
+        const label = trip.destinationCity || trip.toCity || trip.to || "";
+        return resolveRegionCentroid(label) ? sum : sum + (Number(trip.total) || 0);
+      }, 0),
+    [filteredTrips],
+  );
   const approvedSpend = filteredTrips
     .filter((t) => mapStatusCategory(t.status) === "Confirmed by HR")
     .reduce((s, t) => s + t.total, 0);
@@ -1082,6 +1163,28 @@ export function PersonalExpenseWorkloadDashboard({
           </p>
         </section>
       )}
+
+      {/* ---- Submit CTA ---- */}
+      <Link
+        className={`group flex items-center justify-between gap-4 rounded border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-4 transition-all hover:border-orange-300 hover:shadow-md print:hidden ${cardShadow}`}
+        href="/employee-portals/submit-expense"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-orange-100 text-orange-600">
+            <PlusCircle className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-900">Submit a new outstation expense</p>
+            <p className="mt-0.5 text-[12px] text-slate-600">
+              Start the guided trip submission. Captures location, distance, and allowance automatically.
+            </p>
+          </div>
+        </div>
+        <span className="hidden flex-none items-center gap-2 rounded-full bg-orange-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors group-hover:bg-orange-700 sm:inline-flex">
+          Start submission
+          <ChevronRight className="h-4 w-4" />
+        </span>
+      </Link>
 
       {/* ---- KPI Stat Cards ---- */}
       <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
@@ -1592,12 +1695,51 @@ export function PersonalExpenseWorkloadDashboard({
         </ChartCard>
       </section>
 
+      {/* ---- Personal Dot Map: Where I've travelled ---- */}
+      {personalMapPoints.length > 0 ? (
+        <section className="space-y-3 print:hidden">
+          <div className="flex items-center gap-2">
+            <span className="h-7 w-1 bg-orange-500" />
+            <div>
+              <h2 className="text-base font-bold text-slate-900 sm:text-lg">Where I&apos;ve travelled</h2>
+              <p className="text-[12px] text-slate-500">
+                Each dot is a destination — colour shows your spend. Toggle All / Approved / Pending.
+              </p>
+            </div>
+          </div>
+          <ExpenseHeatmapLayer
+            browserKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? ""}
+            height={420}
+            points={personalMapPoints}
+            subtitle="Your destinations sized and shaded by spend. Click a dot for details."
+            title="My outstation footprint"
+            unmappedAmount={personalMapUnmappedAmount}
+            unmappedCount={personalMapUnmappedCount}
+          />
+        </section>
+      ) : personalMapUnmappedCount > 0 ? (
+        <section className="flex items-start gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-600 print:hidden">
+          <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+          <div>
+            <p className="font-semibold text-slate-700">No destinations to map yet</p>
+            <p className="mt-0.5">
+              Once your trips carry recognised destinations they&apos;ll appear here as dots on a map.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       {pendingCount > 0 && (
         <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
           <div className="mt-0.5 h-2 w-2 flex-none bg-amber-400" />
           <div>
             <p className="text-[12px] font-bold text-amber-800">
-              {pendingCount} trip{pendingCount > 1 ? "s" : ""} awaiting approval
+              {pendingCount} trip{pendingCount > 1 ? "s" : ""} pending HR approval
+              {lastDecisionLabel ? (
+                <span className="ml-2 font-medium text-amber-700">
+                  · last decision {lastDecisionLabel}
+                </span>
+              ) : null}
             </p>
             <p className="mt-0.5 text-[11px] text-amber-700">
               These trips are in the approval queue and have not yet been confirmed for payroll inclusion.
