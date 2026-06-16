@@ -5,6 +5,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   createEmployeePlan,
   getEmployeePlansWorkspace,
+  isWeeklyPlanRpcError,
   type EmployeePlanItemInput,
 } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind } from "@/lib/weekly-planning/plan-v1";
@@ -14,6 +15,12 @@ export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
+  if (isWeeklyPlanRpcError(error)) {
+    return NextResponse.json(
+      { error: `weekly_plan_${error.code}`, message: error.message, success: false },
+      { status: error.status },
+    );
+  }
   return NextResponse.json(
     {
       error: isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:")
