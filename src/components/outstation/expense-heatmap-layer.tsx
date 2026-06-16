@@ -206,7 +206,12 @@ export function ExpenseHeatmapLayer({
           bounds.extend({ lat: point.lat, lng: point.lng });
         });
 
-      if (points.length > 0) {
+      if (points.length === 1) {
+        // A single bubble → fitBounds on a zero-area bounds zooms to building level on a
+        // region centroid, which looks broken. Centre it at a region-appropriate zoom.
+        map.setCenter?.({ lat: points[0].lat, lng: points[0].lng });
+        map.setZoom?.(9);
+      } else if (points.length > 1) {
         map.fitBounds(bounds);
       }
     };

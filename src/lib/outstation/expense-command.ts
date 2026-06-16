@@ -204,6 +204,12 @@ export async function getOutstationExpenseCommandData(
 
     return {
       ...expense,
+      // Single source of truth for "approved" across the whole dashboard: derive the
+      // displayed status from hr_approved so the "Approved spend" KPI, the By Status
+      // chart, the Status filter, and the ledger table all agree. (Historical Excel
+      // uploads store `status` text independently from hr_approved; using HR approval
+      // as the canonical signal mirrors what HR actually signed off.)
+      status: expense.hrApproved ? "Approved" : "Pending",
       source,
       region,
       line,
@@ -284,8 +290,15 @@ export async function getOutstationExpenseCommandData(
   rows.forEach((row) => {
     const requestId = requestIdFromTripId(row.tripId);
     const request = requestId !== null ? requestById.get(requestId) ?? null : null;
+    // Only treat REAL GPS as precise. captured_latitude/longitude are coerced to 0 for
+    // null DB values (and the medical-rep manual flow stores 0,0 when residence GPS is
+    // missing), so 0,0 is a "no fix" sentinel — not a coordinate off the coast of Africa.
+    // Let those fall through to the geocoded destination town / region centroid.
     const gps =
-      request && Number.isFinite(request.capturedLatitude) && Number.isFinite(request.capturedLongitude)
+      request &&
+      Number.isFinite(request.capturedLatitude) &&
+      Number.isFinite(request.capturedLongitude) &&
+      (request.capturedLatitude !== 0 || request.capturedLongitude !== 0)
         ? { lat: request.capturedLatitude, lng: request.capturedLongitude }
         : null;
     const destKey = normalizeDestinationKey(row.to || row.location || "");
