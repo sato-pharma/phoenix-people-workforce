@@ -57,6 +57,9 @@ export default async function OrganogramPage() {
       const lineName = await resolveOrganogramLineForEmployee(access);
       initialReport = await getOrganogramReport(access, { mode: "line", lineName });
     }
+    if (initialReport?.diagnostic) {
+      initialError = initialReport.diagnostic.message;
+    }
   } catch (error) {
     initialError = organogramPageError(error);
   }
