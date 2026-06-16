@@ -132,9 +132,13 @@ export type ExpenseCommandHeatPoint = {
   id: string; // region key
   latitude: number;
   longitude: number;
-  weight: number; // = total spend for the region
+  weight: number; // = total spend for the location (all rows)
+  approvedWeight: number; // spend where row.hrApproved
+  pendingWeight: number; // spend where !row.hrApproved
+  approvedCount: number;
+  pendingCount: number;
   region: string | null;
-  count: number; // expense rows aggregated into this region bubble
+  count: number; // expense rows aggregated into this location bubble
 };
 
 export type ExpenseCommandFilterOptions = {

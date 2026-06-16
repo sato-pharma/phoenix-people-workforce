@@ -489,23 +489,41 @@ export async function getOutstationExpenseCommandData(
       const lng = row.longitude as number;
       const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
       const label = row.to || row.location || row.region || "Unassigned";
+      const amount = row.total || 0;
+      const isApproved = Boolean(row.hrApproved);
       const existing = bubbleMap.get(key);
       if (existing) {
-        existing.weight += row.total || 0;
+        existing.weight += amount;
         existing.count += 1;
+        if (isApproved) {
+          existing.approvedWeight += amount;
+          existing.approvedCount += 1;
+        } else {
+          existing.pendingWeight += amount;
+          existing.pendingCount += 1;
+        }
       } else {
         bubbleMap.set(key, {
           id: key,
           latitude: lat,
           longitude: lng,
-          weight: row.total || 0,
+          weight: amount,
+          approvedWeight: isApproved ? amount : 0,
+          pendingWeight: isApproved ? 0 : amount,
+          approvedCount: isApproved ? 1 : 0,
+          pendingCount: isApproved ? 0 : 1,
           region: label,
           count: 1,
         });
       }
     });
   const heatPoints: ExpenseCommandHeatPoint[] = Array.from(bubbleMap.values())
-    .map((point) => ({ ...point, weight: roundCurrency(point.weight) }))
+    .map((point) => ({
+      ...point,
+      weight: roundCurrency(point.weight),
+      approvedWeight: roundCurrency(point.approvedWeight),
+      pendingWeight: roundCurrency(point.pendingWeight),
+    }))
     .sort((a, b) => b.weight - a.weight);
 
   // In self scope, strip admin-only intelligence from the rows themselves.
