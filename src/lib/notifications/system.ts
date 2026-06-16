@@ -69,6 +69,13 @@ export type SystemNotificationResult = {
   eventKey: string;
 };
 
+/** Shared delivery-status shape for best-effort notification fan-outs. */
+export type NotificationDeliveryStatus = {
+  errored: boolean;
+  fellBackToSuperAdmin: boolean;
+  recipientCount: number;
+};
+
 type RecipientProfile = {
   email: string | null;
   hrId: string | null;

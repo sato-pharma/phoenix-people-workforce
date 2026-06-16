@@ -60,7 +60,7 @@ import {
 } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -500,10 +500,15 @@ function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
   }
 }
 
-function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
+async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
   if (access.role === "Super Admin") return;
   if (!hrIdsMatch(access.hrId, plan.manager_hr_id)) {
     throw new Error("Forbidden: only the direct manager can decide this plan.");
+  }
+  const directory = await getEmployeeDirectory();
+  const managerEmployee = directory.employees.find((emp) => hrIdsMatch(emp.hrId, plan.manager_hr_id));
+  if (managerEmployee && !isActiveEmployee(managerEmployee)) {
+    throw new Error("Forbidden: only an active direct manager can decide this plan.");
   }
 }
 
@@ -886,6 +891,19 @@ async function notifyRecipients(input: {
     })));
 }
 
+async function resolveSuperAdminRecipients() {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("login_id,hr_id")
+    .eq("role", "Super Admin")
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>).map((row) => ({
+    hrId: row.hr_id ?? null,
+    userId: row.login_id ?? null,
+  }));
+}
+
 async function authUsersByRole(role: PhoenixRole) {
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
@@ -917,32 +935,96 @@ async function hrAcknowledgementRecipients() {
   return recipients;
 }
 
-async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []) {
-  await notifyRecipients({
-    actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-    emailCcRecipients: ccRecipients,
-    eventType: "plan_submitted",
-    message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
-    plan,
-    recipients: [{ hrId: plan.manager_hr_id }],
-    title: `${plan.employee_name}'s ${plan.plan_kind} plan needs manager review`,
-  });
+async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []): Promise<NotificationDeliveryStatus> {
+  let fellBackToSuperAdmin = false;
+  let errored = false;
+
+  let managerRecipients: Array<{ hrId: string | null; userId?: string | null }> =
+    plan.manager_hr_id ? [{ hrId: plan.manager_hr_id }] : [];
+
+  // Fallback 1: skip-level manager from directory
+  if (managerRecipients.length === 0) {
+    try {
+      const directory = await getEmployeeDirectory();
+      const emp = directory.employees.find((e) => hrIdsMatch(e.hrId, plan.employee_hr_id));
+      const mgr = emp?.managerHrId ? directory.employees.find((e) => hrIdsMatch(e.hrId, emp.managerHrId)) : null;
+      const skipLevel = mgr?.managerHrId ? directory.employees.find((e) => hrIdsMatch(e.hrId, mgr.managerHrId)) : null;
+      if (skipLevel?.hrId) {
+        managerRecipients = [{ hrId: skipLevel.hrId }];
+        console.error(`[weekly-plans] plan ${plan.id} has NULL manager_hr_id — routing to skip-level manager ${skipLevel.hrId}`);
+      }
+    } catch (lookupError) {
+      errored = true;
+      console.error(`[weekly-plans] skip-level manager lookup failed for plan ${plan.id}`, lookupError);
+    }
+  }
+
+  // Fallback 2: Super Admin
+  if (managerRecipients.length === 0) {
+    try {
+      const admins = await resolveSuperAdminRecipients();
+      if (admins.length > 0) {
+        managerRecipients = admins;
+        fellBackToSuperAdmin = true;
+        console.error(`[weekly-plans] plan ${plan.id} falling back to Super Admin — no manager resolved`);
+      }
+    } catch (fallbackError) {
+      errored = true;
+      console.error(`[weekly-plans] Super Admin fallback failed for plan ${plan.id}`, fallbackError);
+    }
+  }
+
+  if (managerRecipients.length === 0) {
+    console.error(`[weekly-plans] plan ${plan.id} (employee ${plan.employee_hr_id}) persisted but no manager recipient resolved — manual follow-up required`);
+    return { errored, fellBackToSuperAdmin, recipientCount: 0 };
+  }
+
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      emailCcRecipients: ccRecipients,
+      eventType: "plan_submitted",
+      message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
+      plan,
+      recipients: managerRecipients,
+      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs manager review`,
+    });
+    return { errored, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
+  } catch (notifyError) {
+    console.error(`[weekly-plans] failed to notify manager for plan ${plan.id}`, notifyError);
+    return { errored: true, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
+  }
 }
 
 // HR must be alerted (in-app + email + Telegram) for EVERY plan submission, not only at
 // the final acknowledgement stage. The direct manager is excluded here so an HR person who
 // is also the submitter's manager is not double-notified (they already got the review ping).
 async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<{ hrId: string | null; userId?: string | null }>) {
-  const recipients = (resolvedRecipients ?? await hrAcknowledgementRecipients())
+  let primary = (resolvedRecipients ?? await hrAcknowledgementRecipients())
     .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
-  if (recipients.length === 0) return;
+
+  // If hrAcknowledgementRecipients() yields nothing, fall back to Super Admin so the
+  // submission is never silently dropped. Mirrors the PR #238 support-request pattern.
+  if (primary.length === 0) {
+    try {
+      const admins = await resolveSuperAdminRecipients();
+      primary = admins.filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
+      if (primary.length > 0) {
+        console.error(`[weekly-plans] hrAcknowledgementRecipients() returned 0 for plan ${plan.id} — using Super Admin fallback`);
+      }
+    } catch (fallbackError) {
+      console.error(`[weekly-plans] HR + Super Admin fallback lookup failed for plan ${plan.id}`, fallbackError);
+    }
+  }
+
+  if (primary.length === 0) return;
   await notifyRecipients({
     actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
     emailMode: "none",
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
     plan,
-    recipients,
+    recipients: primary,
     title: `${plan.employee_name}'s ${plan.plan_kind} plan was submitted`,
   });
 }
@@ -1064,6 +1146,9 @@ export async function createEmployeePlan(access: AccessContext, input: {
   if (!employee.managerHrId) {
     throw new Error("Direct manager is missing from employee profile.");
   }
+  if (!isActiveEmployee(employee)) {
+    throw new Error("Forbidden: only active employees can submit plans.");
+  }
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
   const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee), {
     submit: Boolean(input.submit),
@@ -1129,6 +1214,9 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     // atomically. The revise audit row is written separately so the new row's
     // history starts with a `revise` decision row before the optional submit.
     const owner = await currentEmployee(access);
+    if (owner && !isActiveEmployee(owner)) {
+      throw new Error("Forbidden: only active employees can revise plans.");
+    }
     const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
       submit: Boolean(input.submit),
     });
@@ -1205,7 +1293,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     // org assignment, independent of the global weekly_plans:approve grant. This lets eligible
     // submitters' managers (e.g. Marketing/Group Product/National Sales Manager) approve, return,
     // or reject their reports' plans even though their role lacks a company-wide approve grant.
-    assertManagerReviewer(access, plan);
+    await assertManagerReviewer(access, plan);
   } else if (input.action.startsWith("ceo_")) {
     await assertPermission(access, "weekly_plans", "approve");
     assertCeoReviewer(access);

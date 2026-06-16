@@ -44,6 +44,7 @@ import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.t
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test.ts";
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
+import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
@@ -241,6 +242,7 @@ await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
+await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
