@@ -166,16 +166,16 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
         </AdminTableShell>
 
         <AdminTableShell
-          description="Delivery throughput and queue pressure from notification logs."
+          description="Delivery throughput and queue pressure from the Resend email-delivery event stream."
           title="Notification Monitoring"
         >
           <div className="grid gap-4 p-4 sm:grid-cols-2">
             <div className={metricTileClass}>
-              <p className="text-xs font-semibold text-slate-500">Sent logs (24h)</p>
+              <p className="text-xs font-semibold text-slate-500">Sent events (24h)</p>
               <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.notifications.sent24h}</p>
             </div>
             <div className={metricTileClass}>
-              <p className="text-xs font-semibold text-slate-500">Failed logs (24h)</p>
+              <p className="text-xs font-semibold text-slate-500">Failed events (24h)</p>
               <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.notifications.failed24h}</p>
             </div>
             <div className={metricTileClass}>
@@ -183,7 +183,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
               <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.notifications.pending24h}</p>
             </div>
             <div className={metricTileClass}>
-              <p className="text-xs font-semibold text-slate-500">Total delivery logs</p>
+              <p className="text-xs font-semibold text-slate-500">Total email events</p>
               <p className="mt-2 text-[1.6rem] font-semibold leading-tight text-slate-950">{stats.notifications.totalLogs}</p>
             </div>
           </div>

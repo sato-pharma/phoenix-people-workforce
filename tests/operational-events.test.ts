@@ -10,7 +10,15 @@ export function runOperationalEventsTests() {
   assert.match(operationsSource, /from\("salary_batches"\)/);
   assert.match(operationsSource, /from\("sales_audit_logs"\)/);
   assert.match(operationsSource, /from\("job_offer_audit_logs"\)/);
-  assert.match(operationsSource, /from\("notification_delivery_logs"\)/);
+  // Migration 20260616120000 retired the empty notification_delivery_logs
+  // table and rewired the "Total email events" tile to email_delivery_events.
+  // operations/events.ts must NOT reference the dead table.
+  assert.doesNotMatch(
+    operationsSource,
+    /from\("notification_delivery_logs"\)/,
+    "notification_delivery_logs was retired (zero writers, zero rows); reads must come from email_delivery_events",
+  );
+  assert.match(operationsSource, /from\("email_delivery_events"\)/);
   assert.match(operationsSource, /from\("notification_events"\)/);
   assert.match(operationsSource, /@\/lib\/fixture-hygiene/);
   assert.match(operationsSource, /isDisposableFixtureText/);

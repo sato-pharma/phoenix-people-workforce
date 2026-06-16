@@ -498,8 +498,7 @@ export async function getOperationalMonitoringStats(
     forcedPasswordResets,
     failedAttempts,
     authAuditCount,
-    notificationLogCount,
-    notificationLogs24h,
+    emailEventCount,
     notificationEvents24h,
     authUsersWithUid,
     accessProfileUids,
@@ -510,11 +509,15 @@ export async function getOperationalMonitoringStats(
     supabase.from("app_auth_users").select("*", { count: "exact", head: true }).eq("force_password_reset", true),
     supabase.from("auth_login_attempts").select("ip,success,attempted_at").eq("success", false).gte("attempted_at", since24h),
     supabase.from("audit_logs").select("*", { count: "exact", head: true }).eq("entity_type", "auth_session").gte("created_at", since24h),
-    supabase.from("notification_delivery_logs").select("*", { count: "exact", head: true }),
+    // Total-email-events tile reads from email_delivery_events — the canonical
+    // Resend webhook log. The old notification_delivery_logs table was empty in
+    // prod (zero writers anywhere in the codebase) so the tile always read 0.
+    // Migration 20260616120000 drops that dead table; the tile label was renamed
+    // "Total delivery logs" → "Total email events" in the same PR.
     supabase
-      .from("notification_delivery_logs")
-      .select("status,sent_at")
-      .gte("sent_at", since24h),
+      .from("email_delivery_events")
+      .select("*", { count: "exact", head: true })
+      .then((result) => (isMissingEmailDeliveryEventsTable(result.error) ? { count: 0, error: null } : result)),
     supabase
       .from("notification_events")
       .select("status,created_at")
@@ -556,7 +559,6 @@ export async function getOperationalMonitoringStats(
       .filter((value): value is string => typeof value === "string" && value.length > 0),
   ).size;
 
-  const notificationLogRows = notificationLogs24h.data ?? [];
   const notificationEventRows = notificationEvents24h.data ?? [];
   const emailDeliveryMonitoring = await getEmailDeliveryMonitoring(supabase, since24h).catch((error) => {
     if (!isMissingEmailDeliveryEventsTable(error)) throw error;
@@ -581,10 +583,6 @@ export async function getOperationalMonitoringStats(
       recipients: row.recipients,
       status: row.status,
       subject: row.subject,
-    })),
-    deliveryLogs: notificationLogRows.map((row) => ({
-      sentAt: typeof row.sent_at === "string" ? row.sent_at : null,
-      status: typeof row.status === "string" ? row.status : null,
     })),
     notificationEvents: notificationEventRows.map((row) => ({
       createdAt: typeof row.created_at === "string" ? row.created_at : null,
@@ -684,7 +682,7 @@ export async function getOperationalMonitoringStats(
       pending24h: notificationMonitoring.pending24h,
       recentDeliveryEvents: notificationMonitoring.recentDeliveryEvents,
       sent24h: notificationMonitoring.sent24h,
-      totalLogs: notificationLogCount.count ?? 0,
+      totalLogs: emailEventCount.count ?? 0,
       totalQueuedEvents: notificationMonitoring.totalQueuedEvents,
     },
     operations,
