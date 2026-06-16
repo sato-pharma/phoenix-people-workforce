@@ -81,7 +81,7 @@ function buildSummarySheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard, ge
     views: [{ showGridLines: false }],
   });
 
-  // Brand header (rows 1-2)
+  // Brand header (rows 1-3)
   const filterLabel = labelFilters(data.appliedFilters);
   bandHeader(sheet, COLS, "Weekly Sales Report", filterLabel);
 
