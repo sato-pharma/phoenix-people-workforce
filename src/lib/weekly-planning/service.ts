@@ -1,6 +1,56 @@
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+
+/**
+ * Typed errors raised by the weekly-plan state-transition RPCs introduced in
+ * migration 20260617090000. The RPC body raises a P0001 exception whose message
+ * begins with one of the well-known prefixes below; the supabase-js wrapper
+ * surfaces it as `{ message: "weekly_plan_*: ..." }` which we recognise here
+ * and rethrow as `WeeklyPlanRpcError`. Route handlers map this class to the
+ * right HTTP status (409 for conflict/transition, 404 for not-found).
+ */
+export type WeeklyPlanRpcErrorCode =
+  | "revision_conflict"
+  | "invalid_transition"
+  | "not_found";
+
+export class WeeklyPlanRpcError extends Error {
+  code: WeeklyPlanRpcErrorCode;
+  status: number;
+  constructor(code: WeeklyPlanRpcErrorCode, message: string) {
+    super(message);
+    this.name = "WeeklyPlanRpcError";
+    this.code = code;
+    this.status = code === "not_found" ? 404 : 409;
+  }
+}
+
+function rethrowWeeklyPlanRpcError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.startsWith("weekly_plan_revision_conflict")) {
+    throw new WeeklyPlanRpcError(
+      "revision_conflict",
+      "This plan was updated by someone else. Refresh and try again.",
+    );
+  }
+  if (message.startsWith("weekly_plan_invalid_transition")) {
+    throw new WeeklyPlanRpcError(
+      "invalid_transition",
+      message.replace(/^weekly_plan_invalid_transition:\s*/, "Invalid plan transition: "),
+    );
+  }
+  if (message.startsWith("weekly_plan_not_found")) {
+    throw new WeeklyPlanRpcError("not_found", "Plan was not found.");
+  }
+  throw error instanceof Error ? error : new Error(message);
+}
+
+/** True when the thrown error came from a weekly-plan RPC guard. */
+export function isWeeklyPlanRpcError(error: unknown): error is WeeklyPlanRpcError {
+  return error instanceof WeeklyPlanRpcError;
+}
+
 import {
   assertPermission,
   canAccess,
@@ -10,7 +60,7 @@ import {
 } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -450,10 +500,15 @@ function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
   }
 }
 
-function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
+async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
   if (access.role === "Super Admin") return;
   if (!hrIdsMatch(access.hrId, plan.manager_hr_id)) {
     throw new Error("Forbidden: only the direct manager can decide this plan.");
+  }
+  const directory = await getEmployeeDirectory();
+  const managerEmployee = directory.employees.find((emp) => hrIdsMatch(emp.hrId, plan.manager_hr_id));
+  if (managerEmployee && !isActiveEmployee(managerEmployee)) {
+    throw new Error("Forbidden: only an active direct manager can decide this plan.");
   }
 }
 
@@ -679,43 +734,94 @@ async function recordDecision(input: {
   if (error) throw error;
 }
 
-async function recordReturnNotes(input: {
+/**
+ * Atomic state-transition wrappers around the SECURITY DEFINER functions
+ * introduced in migration 20260617090000. Each call bundles
+ *   SELECT FOR UPDATE header → revision-match guard → UPDATE header →
+ *   INSERT into employee_plan_decisions (+ return-notes for return actions)
+ * into a single Postgres transaction. The revision column is the optimistic-
+ * lock token; concurrent callers with the same expected_revision lose with
+ * a `weekly_plan_revision_conflict` exception that the route layer maps to
+ * HTTP 409. Notifications stay outside the RPC: they were never the source
+ * of the drift bug and remain best-effort.
+ */
+async function rpcSubmitPlan(input: {
   access: AccessContext;
-  action: Extract<EmployeePlanAction, "manager_return" | "ceo_return">;
-  notes?: EmployeePlanReturnNoteInput[];
-  plan: PlanHeaderRow;
+  expectedRevision: number;
+  planId: string;
 }) {
-  const cleanNotes = (input.notes ?? [])
-    .map((note) => ({
-      itemId: cleanText(note.itemId),
-      note: cleanText(note.note),
-    }))
-    .filter((note) => note.itemId && note.note);
-  if (cleanNotes.length === 0) return;
-
-  const itemsById = new Map((input.plan.employee_plan_items ?? []).map((item) => [item.id, item]));
-  const rows = cleanNotes.map((note) => {
-    const item = itemsById.get(note.itemId);
-    if (!item) {
-      throw new Error("Row return feedback includes an item that does not belong to this plan.");
-    }
-    return {
-      action: input.action,
-      activity_date: item.activity_date,
-      activity_title: item.activity_title,
-      actor_hr_id: input.access.hrId,
-      actor_login_id: input.access.loginId ?? null,
-      actor_role: input.access.role,
-      item_id: item.id,
-      note: note.note,
-      plan_id: input.plan.id,
-      sort_order: item.sort_order,
-    };
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_submit", {
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
   });
-
-  const { error } = await getSupabaseAdmin().from("employee_plan_item_return_notes").insert(rows);
-  if (error) throw error;
+  if (error) rethrowWeeklyPlanRpcError(error);
 }
+
+async function rpcDecidePlan(input: {
+  access: AccessContext;
+  action: Extract<EmployeePlanAction, "manager_approve" | "manager_reject" | "manager_return" | "ceo_approve" | "ceo_reject" | "ceo_return">;
+  comment?: string | null;
+  expectedRevision: number;
+  planId: string;
+  returnNotes?: EmployeePlanReturnNoteInput[];
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_decide", {
+    p_action: input.action,
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_comment: input.comment ?? null,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
+    p_return_notes: (input.returnNotes ?? [])
+      .map((note) => ({ itemId: cleanText(note.itemId), note: cleanText(note.note) }))
+      .filter((note) => note.itemId && note.note),
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
+async function rpcAcknowledgePlan(input: {
+  comment?: string | null;
+  expectedRevision: number;
+  hrId: string;
+  loginId: string | null;
+  planId: string;
+  roleLabel: string | null;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_acknowledge", {
+    p_comment: input.comment ?? null,
+    p_expected_revision: input.expectedRevision,
+    p_hr_id: input.hrId,
+    p_login_id: input.loginId,
+    p_plan_id: input.planId,
+    p_role_label: input.roleLabel,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
+async function rpcCancelPlan(input: {
+  access: AccessContext;
+  comment?: string | null;
+  expectedRevision: number;
+  planId: string;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_cancel", {
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_comment: input.comment ?? null,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
+// Note: row-level return notes are now written inside phx_weekly_plan_decide
+// (migration 20260617090000). The previous recordReturnNotes() helper was
+// retired with the atomicity rewire and no longer has a caller.
 
 async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>) {
   const hrIds = Array.from(new Set(recipients.map((recipient) => normalizeHrId(recipient.hrId)).filter(Boolean)));
@@ -802,6 +908,19 @@ async function notifyRecipients(input: {
     })));
 }
 
+async function resolveSuperAdminRecipients() {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("login_id,hr_id")
+    .eq("role", "Super Admin")
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>).map((row) => ({
+    hrId: row.hr_id ?? null,
+    userId: row.login_id ?? null,
+  }));
+}
+
 async function authUsersByRole(role: PhoenixRole) {
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
@@ -833,32 +952,96 @@ async function hrAcknowledgementRecipients() {
   return recipients;
 }
 
-async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []) {
-  await notifyRecipients({
-    actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-    emailCcRecipients: ccRecipients,
-    eventType: "plan_submitted",
-    message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
-    plan,
-    recipients: [{ hrId: plan.manager_hr_id }],
-    title: `${plan.employee_name}'s ${plan.plan_kind} plan needs manager review`,
-  });
+async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []): Promise<NotificationDeliveryStatus> {
+  let fellBackToSuperAdmin = false;
+  let errored = false;
+
+  let managerRecipients: Array<{ hrId: string | null; userId?: string | null }> =
+    plan.manager_hr_id ? [{ hrId: plan.manager_hr_id }] : [];
+
+  // Fallback 1: skip-level manager from directory
+  if (managerRecipients.length === 0) {
+    try {
+      const directory = await getEmployeeDirectory();
+      const emp = directory.employees.find((e) => hrIdsMatch(e.hrId, plan.employee_hr_id));
+      const mgr = emp?.managerHrId ? directory.employees.find((e) => hrIdsMatch(e.hrId, emp.managerHrId)) : null;
+      const skipLevel = mgr?.managerHrId ? directory.employees.find((e) => hrIdsMatch(e.hrId, mgr.managerHrId)) : null;
+      if (skipLevel?.hrId) {
+        managerRecipients = [{ hrId: skipLevel.hrId }];
+        console.error(`[weekly-plans] plan ${plan.id} has NULL manager_hr_id — routing to skip-level manager ${skipLevel.hrId}`);
+      }
+    } catch (lookupError) {
+      errored = true;
+      console.error(`[weekly-plans] skip-level manager lookup failed for plan ${plan.id}`, lookupError);
+    }
+  }
+
+  // Fallback 2: Super Admin
+  if (managerRecipients.length === 0) {
+    try {
+      const admins = await resolveSuperAdminRecipients();
+      if (admins.length > 0) {
+        managerRecipients = admins;
+        fellBackToSuperAdmin = true;
+        console.error(`[weekly-plans] plan ${plan.id} falling back to Super Admin — no manager resolved`);
+      }
+    } catch (fallbackError) {
+      errored = true;
+      console.error(`[weekly-plans] Super Admin fallback failed for plan ${plan.id}`, fallbackError);
+    }
+  }
+
+  if (managerRecipients.length === 0) {
+    console.error(`[weekly-plans] plan ${plan.id} (employee ${plan.employee_hr_id}) persisted but no manager recipient resolved — manual follow-up required`);
+    return { errored, fellBackToSuperAdmin, recipientCount: 0 };
+  }
+
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      emailCcRecipients: ccRecipients,
+      eventType: "plan_submitted",
+      message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
+      plan,
+      recipients: managerRecipients,
+      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs manager review`,
+    });
+    return { errored, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
+  } catch (notifyError) {
+    console.error(`[weekly-plans] failed to notify manager for plan ${plan.id}`, notifyError);
+    return { errored: true, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
+  }
 }
 
 // HR must be alerted (in-app + email + Telegram) for EVERY plan submission, not only at
 // the final acknowledgement stage. The direct manager is excluded here so an HR person who
 // is also the submitter's manager is not double-notified (they already got the review ping).
 async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<{ hrId: string | null; userId?: string | null }>) {
-  const recipients = (resolvedRecipients ?? await hrAcknowledgementRecipients())
+  let primary = (resolvedRecipients ?? await hrAcknowledgementRecipients())
     .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
-  if (recipients.length === 0) return;
+
+  // If hrAcknowledgementRecipients() yields nothing, fall back to Super Admin so the
+  // submission is never silently dropped. Mirrors the PR #238 support-request pattern.
+  if (primary.length === 0) {
+    try {
+      const admins = await resolveSuperAdminRecipients();
+      primary = admins.filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
+      if (primary.length > 0) {
+        console.error(`[weekly-plans] hrAcknowledgementRecipients() returned 0 for plan ${plan.id} — using Super Admin fallback`);
+      }
+    } catch (fallbackError) {
+      console.error(`[weekly-plans] HR + Super Admin fallback lookup failed for plan ${plan.id}`, fallbackError);
+    }
+  }
+
+  if (primary.length === 0) return;
   await notifyRecipients({
     actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
     emailMode: "none",
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
     plan,
-    recipients,
+    recipients: primary,
     title: `${plan.employee_name}'s ${plan.plan_kind} plan was submitted`,
   });
 }
@@ -980,13 +1163,20 @@ export async function createEmployeePlan(access: AccessContext, input: {
   if (!employee.managerHrId) {
     throw new Error("Direct manager is missing from employee profile.");
   }
+  if (!isActiveEmployee(employee)) {
+    throw new Error("Forbidden: only active employees can submit plans.");
+  }
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
   const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee), {
     submit: Boolean(input.submit),
   });
-  const status: EmployeePlanStatus = input.submit ? "submitted" : "draft";
-  const now = new Date().toISOString();
 
+  // Always create the row in 'draft' first. If the caller asked to submit, we
+  // insert items, then atomically promote to 'submitted' through the
+  // phx_weekly_plan_submit RPC (which also records the decision row). This
+  // guarantees the header never advertises a state that isn't backed by both
+  // its items AND a decision row, and that two concurrent submits can't both
+  // succeed.
   const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
     .insert({
@@ -1005,9 +1195,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
       period_key: period.periodKey,
       period_start_date: period.periodStartDate,
       plan_kind: input.planKind,
-      status,
-      submitted_at: input.submit ? now : null,
-      submitted_by_login_id: input.submit ? access.loginId ?? null : null,
+      status: "draft",
     })
     .select(planSelect)
     .single();
@@ -1015,14 +1203,14 @@ export async function createEmployeePlan(access: AccessContext, input: {
   const plan = data as PlanHeaderRow;
   await replacePlanItems(plan.id, items);
   if (input.submit) {
-    await recordDecision({ access, action: "submit", fromStatus: "draft", planId: plan.id, toStatus: "submitted" });
+    await rpcSubmitPlan({ access, expectedRevision: plan.revision, planId: plan.id });
     await notifyPlanSubmitted(await loadPlanRow(plan.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
     entityId: plan.id,
     entityType: "weekly_plan",
-    newValues: { planKind: input.planKind, status },
+    newValues: { planKind: input.planKind, status: input.submit ? "submitted" : "draft" },
     summary: `${input.planKind} plan ${input.submit ? "submitted" : "draft created"}`,
   });
   return mapPlan(await loadPlanRow(plan.id));
@@ -1037,8 +1225,15 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   assertPlanOwner(access, existing);
 
   if (isClosedEmployeePlanStatus(existing.status)) {
-    const next = getNextEmployeePlanStatus(existing.status, "revise");
+    // Revising a closed plan: spawn a new draft revision (parent_plan_id chain).
+    // We always create it as 'draft' first; if the caller wants to submit in
+    // the same call, the phx_weekly_plan_submit RPC promotes the new revision
+    // atomically. The revise audit row is written separately so the new row's
+    // history starts with a `revise` decision row before the optional submit.
     const owner = await currentEmployee(access);
+    if (owner && !isActiveEmployee(owner)) {
+      throw new Error("Forbidden: only active employees can revise plans.");
+    }
     const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
       submit: Boolean(input.submit),
     });
@@ -1058,30 +1253,30 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
         period_start_date: existing.period_start_date,
         plan_kind: existing.plan_kind,
         revision: existing.revision + 1,
-        status: input.submit ? "submitted" : next,
-        submitted_at: input.submit ? new Date().toISOString() : null,
-        submitted_by_login_id: input.submit ? access.loginId ?? null : null,
+        status: "draft",
       })
       .select(planSelect)
       .single();
     if (error) throw error;
-    const revision = data as PlanHeaderRow;
-    await replacePlanItems(revision.id, items);
+    const revisionRow = data as PlanHeaderRow;
+    await replacePlanItems(revisionRow.id, items);
     await recordDecision({
       access,
       action: "revise",
       fromStatus: existing.status,
-      planId: revision.id,
-      toStatus: input.submit ? "submitted" : "draft",
+      planId: revisionRow.id,
+      toStatus: "draft",
     });
-    if (input.submit) await notifyPlanSubmitted(await loadPlanRow(revision.id));
-    return mapPlan(await loadPlanRow(revision.id));
+    if (input.submit) {
+      await rpcSubmitPlan({ access, expectedRevision: revisionRow.revision, planId: revisionRow.id });
+      await notifyPlanSubmitted(await loadPlanRow(revisionRow.id));
+    }
+    return mapPlan(await loadPlanRow(revisionRow.id));
   }
 
   if (!canEditEmployeePlanStatus(existing.status)) {
     throw new Error("This plan cannot be edited in its current status.");
   }
-  const nextStatus = input.submit ? getNextEmployeePlanStatus(existing.status, "submit") : existing.status;
   const owner = await currentEmployee(access);
   await replacePlanItems(
     existing.id,
@@ -1089,24 +1284,15 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       submit: Boolean(input.submit),
     }),
   );
-  const { error } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .update({
-      status: nextStatus,
-      submitted_at: input.submit ? new Date().toISOString() : existing.submitted_at,
-      submitted_by_login_id: input.submit ? access.loginId ?? null : existing.submitted_by_login_id,
-    })
-    .eq("id", existing.id);
-  if (error) throw error;
   if (input.submit) {
-    await recordDecision({ access, action: "submit", fromStatus: existing.status, planId: existing.id, toStatus: nextStatus });
+    await rpcSubmitPlan({ access, expectedRevision: existing.revision, planId: existing.id });
     await notifyPlanSubmitted(await loadPlanRow(existing.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
     entityId: existing.id,
     entityType: "weekly_plan",
-    newValues: { status: nextStatus },
+    newValues: { status: input.submit ? "submitted" : existing.status },
     oldValues: { status: existing.status },
     summary: `${existing.plan_kind} plan ${input.submit ? "submitted" : "updated"}`,
   });
@@ -1124,45 +1310,25 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     // org assignment, independent of the global weekly_plans:approve grant. This lets eligible
     // submitters' managers (e.g. Marketing/Group Product/National Sales Manager) approve, return,
     // or reject their reports' plans even though their role lacks a company-wide approve grant.
-    assertManagerReviewer(access, plan);
+    await assertManagerReviewer(access, plan);
   } else if (input.action.startsWith("ceo_")) {
     await assertPermission(access, "weekly_plans", "approve");
     assertCeoReviewer(access);
   }
+  // The next status is computed client-side for the audit-log entry and the
+  // notification branch below, but the SQL function recomputes the same rule
+  // server-side using phx_weekly_plan_next_status, which is the source of
+  // truth. The RPC also runs SELECT FOR UPDATE on the header row before
+  // writing, so two concurrent decides can't both succeed.
   const nextStatus = getNextEmployeePlanStatus(plan.status, input.action, { comment: input.comment });
-  const now = new Date().toISOString();
-  const patch: Record<string, unknown> = { status: nextStatus };
-  if (input.action.startsWith("manager_")) {
-    patch.manager_decision_at = now;
-    patch.manager_decision_by_hr_id = access.hrId;
-    patch.manager_decision_comment = input.comment ?? null;
-  }
-  if (input.action.startsWith("ceo_")) {
-    patch.ceo_decision_at = now;
-    patch.ceo_decision_by_hr_id = access.hrId;
-    patch.ceo_decision_comment = input.comment ?? null;
-  }
-  if (nextStatus === "final_approved") {
-    patch.final_approved_at = now;
-  }
-  const { error } = await getSupabaseAdmin().from("employee_plan_headers").update(patch).eq("id", planId);
-  if (error) throw error;
-  await recordDecision({
+  await rpcDecidePlan({
     access,
     action: input.action,
     comment: input.comment,
-    fromStatus: plan.status,
+    expectedRevision: plan.revision,
     planId,
-    toStatus: nextStatus,
+    returnNotes: input.returnNotes,
   });
-  if (input.action === "manager_return" || input.action === "ceo_return") {
-    await recordReturnNotes({
-      access,
-      action: input.action,
-      notes: input.returnNotes,
-      plan,
-    });
-  }
 
   const updated = await loadPlanRow(planId);
   if (input.action === "manager_approve") await notifyCeo(updated);
@@ -1189,36 +1355,36 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
     throw new Error("Forbidden: only HR Manager/Admin HR can acknowledge approved plans.");
   }
   const plan = await loadPlanRow(planId);
-  const nextStatus = getNextEmployeePlanStatus(plan.status, "hr_acknowledge");
   const hrId = access.hrId ?? access.loginId ?? `system-${crypto.randomUUID()}`;
-  const { error: ackError } = await getSupabaseAdmin()
-    .from("employee_plan_hr_acknowledgements")
-    .upsert({
-      comment: nullableText(comment),
-      hr_id: hrId,
-      login_id: access.loginId ?? null,
-      plan_id: planId,
-      role_label: employeeTitle(employee, access.role),
-    }, { onConflict: "plan_id,hr_id" });
-  if (ackError) throw ackError;
-  const { error: updateError } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .update({ status: nextStatus })
-    .eq("id", planId);
-  if (updateError) throw updateError;
-  await recordDecision({
-    access,
-    action: "hr_acknowledge",
+  await rpcAcknowledgePlan({
     comment,
-    fromStatus: plan.status,
+    expectedRevision: plan.revision,
+    hrId,
+    loginId: access.loginId ?? null,
     planId,
-    toStatus: nextStatus,
+    roleLabel: employeeTitle(employee, access.role),
   });
   await writeAuditLog({
     actorLoginId: access.loginId,
     entityId: planId,
     entityType: "weekly_plan",
     summary: `${plan.plan_kind} plan acknowledged by HR`,
+  });
+  return mapPlan(await loadPlanRow(planId));
+}
+
+export async function cancelEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
+  await assertPermission(access, "weekly_plans", "update");
+  const plan = await loadPlanRow(planId);
+  assertPlanOwner(access, plan);
+  await rpcCancelPlan({ access, comment, expectedRevision: plan.revision, planId });
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: "cancelled" },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan cancelled`,
   });
   return mapPlan(await loadPlanRow(planId));
 }
