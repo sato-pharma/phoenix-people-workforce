@@ -23,7 +23,7 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
 
   // ── Deep-link targets (module-level constants) ─────────────────────────────────
-  assert.match(service, /OUTSTATION_ADMIN_REVIEW_URL = "\/admin\/outstation\/requests"/, "approvers deep-link must be the admin review queue");
+  assert.match(service, /OUTSTATION_ADMIN_REVIEW_URL = "\/admin\/outstation\/expense-command\?tab=queue"/, "approvers deep-link must be the admin review queue (Queue tab on the command center)");
   assert.match(service, /OUTSTATION_EMPLOYEE_PORTAL_URL = "\/employee-portals\/expenses"/, "employee deep-link must be the expenses portal");
 
   // ── Recipient resolution: submitter's direct manager + Super Admin approver(s) ──
