@@ -21,17 +21,20 @@ export function normalizeCodeKey(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
-// item code OR item name -> Phoenix product code. Tries a direct product-code match first, then
-// the alias table (by code then by normalized name).
-export function resolveProduct(rawValues: (string | null | undefined)[], maps: Crosswalks): string | null {
+// item code OR item name -> Phoenix product code. Tries a direct (global) product-code match first,
+// then this DISTRIBUTOR's alias table (by code then by normalized name). Product aliases are
+// per-distributor: the key is `${distributor} ${normalized alias}` (see crosswalks.loadCrosswalks).
+export function resolveProduct(rawValues: (string | null | undefined)[], maps: Crosswalks, distributorCode = ""): string | null {
+  const dist = normalizeCodeKey(distributorCode);
   for (const raw of rawValues) {
     const text = String(raw ?? "").trim();
     if (!text) continue;
     const code = normalizeCodeKey(text);
     if (maps.productByCode.has(code)) return code;
-    const byCodeAlias = maps.productAliasByKey.get(normalizeAliasKey(code));
+    if (!dist) continue;
+    const byCodeAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(code)}`);
     if (byCodeAlias) return byCodeAlias;
-    const byNameAlias = maps.productAliasByKey.get(normalizeAliasKey(text));
+    const byNameAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(text)}`);
     if (byNameAlias) return byNameAlias;
   }
   return null;

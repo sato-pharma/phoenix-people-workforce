@@ -11,8 +11,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 // Source of Sales — mapping templates (download → fill → upload), the Weekly-style
 // front door for the monthly distributor importer. Two templates:
-//   • Product Mapping  — raw item code/name → Phoenix product_code (GLOBAL dictionary;
-//     SoS product aliases are not distributor-scoped). Persists to source_of_sales_product_aliases.
+//   • Product Mapping  — raw item code/name → Phoenix product_code, PER-DISTRIBUTOR (the Distrub ID
+//     column is locked to the selected distributor). Persists to source_of_sales_product_aliases,
+//     keyed by (distributor_code, normalized_alias).
 //   • Customer / Brick — distributor customer code → Phoenix Brick ID (per-distributor).
 //     Round-trips the SAME sheet importCustomerMap() already accepts.
 // Filled mappings let the distributor's RAW sheet upload as-is (the normalizer engine joins them).
@@ -64,9 +65,10 @@ async function loadProductIndex(): Promise<Map<string, { code: string; name: str
   return map;
 }
 
-/** Existing global product aliases (alias → product_code), paginated past PostgREST's 1000-row cap. */
-async function loadExistingProductAliases(): Promise<{ alias: string; productCode: string }[]> {
+/** Existing product aliases FOR ONE DISTRIBUTOR (alias → product_code), paged past PostgREST's 1000 cap. */
+async function loadExistingProductAliases(distributorCode: string): Promise<{ alias: string; productCode: string }[]> {
   const supabase = getSupabaseAdmin();
+  const code = normalizeCodeKey(distributorCode);
   const pageSize = 1000;
   const rows: { alias: string; productCode: string }[] = [];
   let from = 0;
@@ -75,6 +77,7 @@ async function loadExistingProductAliases(): Promise<{ alias: string; productCod
       .from("source_of_sales_product_aliases")
       .select("alias, product_code")
       .eq("active", true)
+      .eq("distributor_code", code)
       .order("alias", { ascending: true })
       .range(from, from + pageSize - 1);
     if (result.error) break; // tolerate (e.g. table absent); return what we have
@@ -86,10 +89,52 @@ async function loadExistingProductAliases(): Promise<{ alias: string; productCod
   return rows;
 }
 
-// ── Product Mapping template (global) ──
+// Blank rows the user can fill on a downloaded template without unprotecting it (overflow can still be
+// added with Excel's "insert rows", which inherits the locked Distrub-ID + unlocked editable columns).
+const SPARE_ROWS = 1000;
 
-export async function buildSosProductMappingTemplate(): Promise<ArrayBuffer> {
-  const [products, aliases] = await Promise.all([loadProductIndex(), loadExistingProductAliases()]);
+/** Header-row column index whose label matches any of `names` (case-insensitive); 0 if none. */
+function headerIndex(sheet: ExcelJS.Worksheet, names: string[]): number {
+  const wanted = names.map((n) => n.trim().toLowerCase());
+  let found = 0;
+  sheet.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
+    if (found) return;
+    if (wanted.includes(String(cell.text ?? "").trim().toLowerCase())) found = col;
+  });
+  return found;
+}
+
+// Lock the Distrub-ID column (col 1) to the chosen distributor so the user NEVER fills it, while every
+// other column stays freely editable — plus a buffer of blank rows for new entries. Mirrors the
+// master-data export-workbook protection pattern. `editableColumns` = count of columns after col 1.
+async function lockDistributorColumn(sheet: ExcelJS.Worksheet, distributorCode: string, editableColumns: number, prefilledRows: number) {
+  const totalRows = prefilledRows + SPARE_ROWS;
+  for (let i = 0; i < totalRows; i += 1) {
+    const row = sheet.getRow(2 + i);
+    const distCell = row.getCell(1);
+    distCell.value = distributorCode; // hardcoded on every row — the user never types it
+    distCell.protection = { locked: true };
+    distCell.font = { color: { argb: "FF64748B" } };
+    for (let c = 2; c <= editableColumns + 1; c += 1) row.getCell(c).protection = { locked: false };
+  }
+  await sheet.protect("", {
+    autoFilter: true,
+    formatCells: false,
+    formatColumns: true,
+    formatRows: true,
+    insertRows: true,
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    sort: true,
+  });
+}
+
+// ── Product Mapping template (PER-DISTRIBUTOR) ──
+
+export async function buildSosProductMappingTemplate(distributorCode: string): Promise<ArrayBuffer> {
+  const code = String(distributorCode ?? "").trim();
+  if (!code) throw new SalesWorkflowError("invalid_request", "A distributor is required.", 400);
+  const [products, aliases] = await Promise.all([loadProductIndex(), loadExistingProductAliases(code)]);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
@@ -97,18 +142,20 @@ export async function buildSosProductMappingTemplate(): Promise<ArrayBuffer> {
 
   const sheet = workbook.addWorksheet("Product Mapping");
   sheet.columns = [
+    { header: "Distrub ID", key: "distributor", width: 14 },
     { header: "ALIAS", key: "alias", width: 44 },
     { header: "PRODUCT_CODE", key: "productCode", width: 16 },
     { header: "PRODUCT_NAME", key: "productName", width: 44 },
   ];
   for (const row of aliases) {
     const product = products.get(normalizeCodeKey(row.productCode));
-    sheet.addRow({ alias: row.alias, productCode: row.productCode, productName: product?.name ?? row.productCode });
+    sheet.addRow({ distributor: code, alias: row.alias, productCode: row.productCode, productName: product?.name ?? row.productCode });
   }
   if (aliases.length === 0) {
-    sheet.addRow({ alias: "paste the distributor's item code or item name", productCode: "MASTER_CODE", productName: "(filled automatically)" });
+    sheet.addRow({ distributor: code, alias: "paste this distributor's item code or item name", productCode: "MASTER_CODE", productName: "(filled automatically)" });
   }
   headerStyle(sheet, ORANGE);
+  await lockDistributorColumn(sheet, code, 3, Math.max(aliases.length, 1));
 
   const reference = workbook.addWorksheet("Master Products");
   reference.columns = [
@@ -125,11 +172,29 @@ export async function buildSosProductMappingTemplate(): Promise<ArrayBuffer> {
   return workbook.xlsx.writeBuffer() as unknown as ArrayBuffer;
 }
 
-export async function importSosProductMappingWorkbook(input: { file: File; actorId: string | null }): Promise<SosMappingImportResult> {
+export async function importSosProductMappingWorkbook(input: { file: File; actorId: string | null; distributorCode?: string }): Promise<SosMappingImportResult> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load((await input.file.arrayBuffer()) as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.getWorksheet("Product Mapping") ?? workbook.worksheets[0];
   if (!sheet) throw new SalesWorkflowError("invalid_mapping_template", "The mapping workbook has no sheets.", 400);
+
+  // Locate columns by header so both the per-distributor layout (Distrub ID | ALIAS | PRODUCT_CODE | …)
+  // and any older global sheet (ALIAS | PRODUCT_CODE | …) round-trip.
+  const aliasCol = headerIndex(sheet, ["ALIAS", "Alias"]);
+  const codeCol = headerIndex(sheet, ["PRODUCT_CODE", "PRODUCT CODE", "Product code"]);
+  if (!aliasCol || !codeCol) {
+    throw new SalesWorkflowError("invalid_mapping_template", "Use the downloaded Product Mapping template — its ALIAS and PRODUCT_CODE columns are required.", 400);
+  }
+  const distCol = headerIndex(sheet, ["Distrub ID", "Distributor", "Distributor code", "Distrib ID"]);
+
+  // The distributor is authoritative from the selected dropdown; fall back to the sheet's locked column.
+  let distributorCode = String(input.distributorCode ?? "").trim();
+  if (!distributorCode && distCol) {
+    for (let r = 2; r <= sheet.rowCount; r += 1) { const v = cellString(sheet.getRow(r), distCol); if (v) { distributorCode = v; break; } }
+  }
+  if (!distributorCode) {
+    throw new SalesWorkflowError("invalid_request", "A distributor is required — product mappings are per-distributor.", 400);
+  }
 
   const products = await loadProductIndex();
   const blockedRows: SosMappingImportResult["blockedRows"] = [];
@@ -139,8 +204,8 @@ export async function importSosProductMappingWorkbook(input: { file: File; actor
 
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
-    const alias = cellString(row, 1);
-    const productCodeRaw = cellString(row, 2);
+    const alias = cellString(row, aliasCol);
+    const productCodeRaw = cellString(row, codeCol);
     if (!alias && !productCodeRaw) { skipped += 1; continue; }
     if (!alias) { blockedRows.push({ rowNumber, reason: "Alias is required.", values: productCodeRaw }); continue; }
     const productKey = normalizeCodeKey(productCodeRaw);
@@ -156,7 +221,7 @@ export async function importSosProductMappingWorkbook(input: { file: File; actor
       continue;
     }
     seen.set(normalizedAlias, productKey);
-    mappings.push({ type: "product", raw: alias, code: products.get(productKey)!.code });
+    mappings.push({ type: "product", raw: alias, code: products.get(productKey)!.code, distributorCode });
   }
 
   // Per-row tolerant (like importCustomerMap): persist every valid row even when some rows are blocked,
@@ -167,8 +232,8 @@ export async function importSosProductMappingWorkbook(input: { file: File; actor
     actorLoginId: input.actorId ?? "system",
     entityId: "source_of_sales_product_aliases",
     entityType: "sales_import_batch",
-    newValues: { blocked: blockedRows.length, saved: result.saved, skipped: skipped + result.skipped, source: "product_mapping_import" },
-    summary: `Product mapping import — ${result.saved} saved, ${skipped + result.skipped} skipped, ${blockedRows.length} blocked.`,
+    newValues: { blocked: blockedRows.length, distributorCode, saved: result.saved, skipped: skipped + result.skipped, source: "product_mapping_import" },
+    summary: `Product mapping import (${distributorCode}) — ${result.saved} saved, ${skipped + result.skipped} skipped, ${blockedRows.length} blocked.`,
   });
   return { saved: result.saved, skipped: skipped + result.skipped, blockedRows };
 }
@@ -180,7 +245,9 @@ export async function buildSosCustomerBrickTemplate(distributorCode: string): Pr
   if (!code) throw new SalesWorkflowError("invalid_request", "A distributor is required.", 400);
 
   const [existing, refs] = await Promise.all([
-    listCustomerMap({ distributorCode: code }),
+    // Stored distributor codes are canonical (normalizeCodeKey'd); match that so the prefill isn't empty
+    // when the dropdown value differs in case/spacing.
+    listCustomerMap({ distributorCode: normalizeCodeKey(code) }),
     loadSalesReferenceData({ includeCustomerBricks: false }),
   ]);
 
@@ -204,6 +271,7 @@ export async function buildSosCustomerBrickTemplate(distributorCode: string): Pr
     sheet.addRow({ distributor: code, customerCode: "paste the distributor's customer code", customerName: "", address: "", brickId: "MASTER_BRICK_ID" });
   }
   headerStyle(sheet, ORANGE);
+  await lockDistributorColumn(sheet, code, 4, Math.max(existing.length, 1));
 
   const reference = workbook.addWorksheet("Master Bricks");
   reference.columns = [

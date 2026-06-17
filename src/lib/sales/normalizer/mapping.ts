@@ -130,10 +130,15 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
     if (!key) { invalid += 1; continue; }
     const fromDistributor = distributorLabel(mapping.distributorCode);
     if (mapping.type === "product") {
+      // Product aliases are PER-DISTRIBUTOR: the same raw code/name can mean different products for
+      // different distributors, so a distributor is required and the dedup key is distributor-scoped.
+      const dist = normalizeCodeKey(mapping.distributorCode);
+      if (!dist) { invalid += 1; continue; }
       if (!productCodes.has(code)) { invalid += 1; continue; }
-      if (haveProd.has(key)) { skipped += 1; continue; }
-      haveProd.add(key);
-      productRows.push({ alias: raw, normalized_alias: key, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
+      const pk = `${dist} ${key}`;
+      if (haveProd.has(pk)) { skipped += 1; continue; }
+      haveProd.add(pk);
+      productRows.push({ alias: raw, normalized_alias: key, distributor_code: dist, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
     } else {
       if (!brickById.has(code)) { invalid += 1; continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
@@ -147,7 +152,7 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
     new Error(`${label}: ${[error.message, error.details, error.hint].filter(Boolean).join(" — ") || "insert failed"}`);
   let saved = 0;
   if (productRows.length) {
-    const { data, error } = await supabase.from("source_of_sales_product_aliases").upsert(productRows, { onConflict: "normalized_alias" }).select("id");
+    const { data, error } = await supabase.from("source_of_sales_product_aliases").upsert(productRows, { onConflict: "distributor_code,normalized_alias" }).select("id");
     if (error) throw failed("product aliases", error);
     saved += data?.length ?? 0;
   }

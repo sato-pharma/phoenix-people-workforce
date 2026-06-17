@@ -17,6 +17,10 @@ export function runCustomerMapImportTests() {
   // Fully blank row → silently skipped (not counted, not blocked).
   assert.equal(classifyCustomerMapRow({}, makeCtx()).kind, "skip-blank");
 
+  // Distributor-only row (per-distributor template stamps the locked Distrub ID on every blank spare
+  // row) → still skip-blank, NOT a false "Customer code is required" block.
+  assert.equal(classifyCustomerMapRow({ distributorCode: "EG" }, makeCtx()).kind, "skip-blank");
+
   // Missing distributor → blocked.
   {
     const r = classifyCustomerMapRow({ brickId: "B1-2", customerCode: "100" }, makeCtx());

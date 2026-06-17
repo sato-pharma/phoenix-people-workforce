@@ -105,7 +105,11 @@ export function classifyCustomerMapRow(
   const name = String(raw.customerName ?? "").trim();
   const address = String(raw.address ?? "").trim();
 
-  if (!dist && !custRaw && !brickKey && !name && !address) return { kind: "skip-blank" };
+  // Truly-empty row → skip. The distributor is IGNORED here on purpose: the per-distributor templates
+  // pre-stamp the (locked) Distrub ID on every spare row, so a blank spare row carries the distributor
+  // but no customer data. Without this, each of those ~1000 spare rows would falsely block as
+  // "Customer code is required" and could trip the route's hardFail (HTTP 400) on a valid upload.
+  if (!custRaw && !brickKey && !name && !address) return { kind: "skip-blank" };
   if (!dist) return { kind: "blocked", key: "", reason: "Distrub ID is required." };
   if (!ctx.distributorCodes.has(dist)) {
     return { kind: "blocked", key: `${dist} / ${custRaw}`, reason: `Distributor "${dist}" is not in the distributors master.` };

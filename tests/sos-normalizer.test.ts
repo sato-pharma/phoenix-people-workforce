@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 
 import { normalizeRawWorkbook } from "../src/lib/sales/normalizer/engine.ts";
 import { distinctUnknowns, suggestProduct, type ProductRef } from "../src/lib/sales/normalizer/mapping.ts";
-import { deriveHierarchy, normalizeAliasKey, resolveBrick, resolveProduct } from "../src/lib/sales/normalizer/resolvers.ts";
+import { deriveHierarchy, normalizeAliasKey, normalizeCodeKey, resolveBrick, resolveProduct } from "../src/lib/sales/normalizer/resolvers.ts";
 import type { Crosswalks, DistributorProfile, NormalizeException } from "../src/lib/sales/normalizer/types.ts";
 
 const maps: Crosswalks = {
@@ -13,7 +13,8 @@ const maps: Crosswalks = {
   areaByCode: new Map([["A1", { areaCode: "A1", areaName: "Area One", regionCode: "CA", regionName: "Cairo" }]]),
   regionByCode: new Map([["CA", { regionCode: "CA", regionName: "Cairo" }]]),
   productByCode: new Map([["LA001", { productCode: "LA001", productName: "Lacto 1", factoryPrice: 10, line: "Pedia" }]]),
-  productAliasByKey: new Map([[normalizeAliasKey("لاكتو 1 لبن"), "LA001"], [normalizeAliasKey("VENOMOP"), "IGNORE"]]),
+  // Product aliases are PER-DISTRIBUTOR: keyed `${distributor} ${normalized alias}` (profile is "IS").
+  productAliasByKey: new Map([[`${normalizeCodeKey("IS")} ${normalizeAliasKey("لاكتو 1 لبن")}`, "LA001"], [`${normalizeCodeKey("IS")} ${normalizeAliasKey("VENOMOP")}`, "IGNORE"]]),
   territoryAliasByKey: new Map([[normalizeAliasKey("الدقى/بين السريات"), { targetType: "brick", targetCode: "B1" }]]),
   areaAliasByKey: new Map(),
   regionAliasByKey: new Map(),
@@ -48,11 +49,13 @@ export async function runSosNormalizerTests() {
   assert.equal(normalizeAliasKey("الدقى / بين السريات"), normalizeAliasKey("الدقي/بين السريات"));
   assert.equal(normalizeAliasKey("  Foo   Bar  "), "foo bar");
 
-  // resolveProduct — direct code, alias-by-name, miss.
+  // resolveProduct — direct code (global, no distributor needed), alias-by-name (per-distributor), miss.
   assert.equal(resolveProduct(["LA001"], maps), "LA001");
-  assert.equal(resolveProduct(["لاكتو 1 لبن"], maps), "LA001");
-  assert.equal(resolveProduct(["", "لاكتو 1 لبن"], maps), "LA001"); // first blank, second resolves
-  assert.equal(resolveProduct(["ZZ-NOPE"], maps), null);
+  assert.equal(resolveProduct(["لاكتو 1 لبن"], maps, "IS"), "LA001");
+  assert.equal(resolveProduct(["", "لاكتو 1 لبن"], maps, "IS"), "LA001"); // first blank, second resolves
+  assert.equal(resolveProduct(["لاكتو 1 لبن"], maps, "RM"), null); // another distributor's alias does NOT leak
+  assert.equal(resolveProduct(["لاكتو 1 لبن"], maps), null); // no distributor → alias does not resolve
+  assert.equal(resolveProduct(["ZZ-NOPE"], maps, "IS"), null);
 
   // resolveBrick — priority customer > direct > territory; territory match across ya/alef variants.
   assert.equal(resolveBrick({ customerKey: "IS C123" }, maps)?.source, "customer");

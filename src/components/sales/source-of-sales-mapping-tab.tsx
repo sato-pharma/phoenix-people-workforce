@@ -324,7 +324,7 @@ function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string
     setSaving(true); setError(null); setMessage(null);
     try {
       const response = await fetch("/api/sales/monthly-import/save-mappings", {
-        body: JSON.stringify({ mappings }),
+        body: JSON.stringify({ distributorCode, mappings }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
@@ -501,7 +501,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Inline "add one" — distributor item code/name -> Phoenix product (no upload needed). */
-function ProductAddForm({ products }: { products: { code: string; name: string }[] }) {
+function ProductAddForm({ distributorCode, products }: { distributorCode: string; products: { code: string; name: string }[] }) {
   const [alias, setAlias] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -510,10 +510,11 @@ function ProductAddForm({ products }: { products: { code: string; name: string }
 
   async function add() {
     if (!alias.trim() || !code) { setError("Enter the alias and pick a product."); return; }
+    if (!distributorCode) { setError("Pick a distributor first — product mappings are per-distributor."); return; }
     setBusy(true); setMessage(null); setError(null);
     try {
       const response = await fetch("/api/sales/monthly-import/save-mappings", {
-        body: JSON.stringify({ mappings: [{ type: "product", raw: alias.trim(), code }] }),
+        body: JSON.stringify({ distributorCode, mappings: [{ type: "product", raw: alias.trim(), code, distributorCode }] }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
@@ -542,7 +543,7 @@ function ProductAddForm({ products }: { products: { code: string; name: string }
             ))}
           </select>
         </Field>
-        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy} onClick={() => void add()} type="button">
+        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
       </div>
@@ -649,13 +650,14 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
       </Card>
 
       <TemplateCard
-        description="Map each distributor's raw item code or item name to a Phoenix Product ID. Shared across all distributors. The downloaded file is pre-filled with what's already mapped and includes a read-only Master Products reference sheet."
-        templateHref="/api/sales/monthly-import/product-mapping/template"
+        description="Map this distributor's raw item code or item name to a Phoenix Product ID. The Distrub ID column is locked to the selected distributor — you never fill it. The downloaded file is pre-filled with everything already mapped for this distributor and includes a read-only Master Products reference sheet. Update it any time and re-upload."
+        templateHref={`/api/sales/monthly-import/product-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
         templateLabel="Download Product Mapping template"
-        title="Product Mapping"
+        title={`Product Mapping — ${distributorCode || "(pick a distributor)"}`}
+        uploadFields={{ distributorCode }}
         uploadUrl="/api/sales/monthly-import/product-mapping"
       >
-        <ProductAddForm products={products} />
+        <ProductAddForm distributorCode={distributorCode} products={products} />
       </TemplateCard>
 
       <TemplateCard
