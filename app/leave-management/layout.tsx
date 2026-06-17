@@ -1,5 +1,5 @@
 import { EmployeePortalServerShell } from "@/components/employee-portal/employee-portal-server-shell";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { AppShell } from "@/components/layout/app-shell";
 import { redirect } from "next/navigation";
@@ -15,7 +15,19 @@ export default async function LeaveManagementLayout({
     redirect("/login");
   }
 
-  await assertPermission(access, "employee_profile", "read");
+  try {
+    await assertPermission(access, "employee_profile", "read");
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      console.warn("[leave-mgmt] employee_profile:read denied — redirecting to login", {
+        role: access.role,
+        scope: access.scope,
+        source: access.source,
+      });
+      redirect("/login");
+    }
+    throw error;
+  }
 
   const navigationMode = resolveNavigationMode(access);
 
