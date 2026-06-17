@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -12,16 +12,18 @@ import {
   Plus,
   RotateCcw,
   Search,
+  TrendingDown,
   TrendingUp,
   UsersRound,
 } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
-  Line,
-  LineChart,
+  LabelList,
   Pie,
   PieChart,
   Tooltip,
@@ -125,6 +127,10 @@ const zoneColors: Record<string, string> = {
   yellow_zone: "#F97316",
 };
 
+// Chart design tokens — quiet axes, hairline grid, brand orange focal.
+const CHART_GRID = "#EEF2F7";
+const CHART_AXIS = "#94A3B8";
+
 const completedStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
 
 function formatNumber(value: number | string | null | undefined, digits = 0) {
@@ -157,12 +163,32 @@ function zoneLabel(zone: string | null | undefined) {
   return zoneLabels[zone as CoachingPerformanceZone];
 }
 
+function zoneShortLabel(zone: string | null | undefined) {
+  if (zone === "critical_red" || zone === "red_zone") return "Below";
+  if (zone === "yellow_zone") return "Needs Work";
+  if (zone === "green_zone") return "Meets";
+  if (zone === "excellence_zone") return "Exceeds";
+  return "Not scored";
+}
+
 function zoneClassName(zone: string | null | undefined) {
   if (zone === "critical_red" || zone === "red_zone") return "border-rose-200 bg-rose-50 text-rose-700";
   if (zone === "yellow_zone") return "border-orange-200 bg-orange-50 text-orange-700";
   if (zone === "green_zone") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (zone === "excellence_zone") return "border-amber-200 bg-amber-50 text-amber-800";
   return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+/** Colour a score (0-100) by the performance zone it falls into. */
+function scoreZoneColor(percent: number) {
+  if (percent <= 65) return zoneColors.red_zone;
+  if (percent <= 80) return zoneColors.yellow_zone;
+  if (percent <= 90) return zoneColors.green_zone;
+  return zoneColors.excellence_zone;
+}
+
+function truncateLabel(value: string) {
+  return value.length > 16 ? `${value.slice(0, 15)}…` : value;
 }
 
 function completedReports(data: CoachingAnalyticsPayload) {
@@ -172,6 +198,70 @@ function completedReports(data: CoachingAnalyticsPayload) {
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+type TooltipItem = {
+  color?: string;
+  name?: string;
+  value?: number | string;
+  payload?: { fill?: string; label?: string };
+};
+
+/** Premium, consistent tooltip card shared by every chart. */
+function ChartTooltip({
+  active,
+  label,
+  payload,
+  suffix = "",
+}: {
+  active?: boolean;
+  label?: string | number;
+  payload?: TooltipItem[];
+  suffix?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="pointer-events-none min-w-[150px] rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-[0_16px_36px_-14px_rgba(15,23,42,0.45)]">
+      {label !== undefined && label !== "" ? (
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">{label}</p>
+      ) : null}
+      {payload.map((item, index) => (
+        <div className="mt-1 flex items-center justify-between gap-4" key={index}>
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-[#475569]">
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: item.color ?? item.payload?.fill ?? "#F97316" }}
+            />
+            {item.payload?.label ?? item.name}
+          </span>
+          <span className="text-sm font-black tabular-nums text-[#0F172A]">
+            {item.value}
+            {suffix}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DonutLegend({ items }: { items: { color: string; label: string; value: number }[] }) {
+  const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
+  return (
+    <ul className="w-[150px] shrink-0 space-y-2.5">
+      {items.map((item) => (
+        <li className="flex items-center justify-between gap-2" key={item.label}>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} />
+            <span className="truncate text-xs font-bold text-[#475569]">{item.label}</span>
+          </span>
+          <span className="shrink-0 text-xs font-black tabular-nums text-[#0F172A]">
+            {item.value}
+            <span className="ml-1 font-bold text-[#94A3B8]">{Math.round((item.value / total) * 100)}%</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function SelectField({
@@ -244,9 +334,7 @@ function ChartPanel({
     <Card className={cn(adminPanelClassName, "min-w-0 overflow-hidden p-0")}>
       <AdminSectionHeader description={description} title={title} />
       <div className="h-[320px] min-h-[320px] min-w-0 p-4">
-        <div className="h-full min-h-0 min-w-0">
-          {children}
-        </div>
+        <div className="h-full min-h-0 min-w-0">{children}</div>
       </div>
     </Card>
   );
@@ -260,13 +348,107 @@ function EmptyChart({ message }: { message: string }) {
   );
 }
 
+/** Donut (pie) with a centred total overlay + side legend. */
+function DonutChart({
+  caption,
+  items,
+}: {
+  caption: string;
+  items: { color: string; key: string; label: string; value: number }[];
+}) {
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  return (
+    <div className="flex h-full min-h-0 items-center gap-3">
+      <div className="relative h-full min-w-0 flex-1">
+        <SafeResponsiveContainer className="h-full">
+          <PieChart>
+            <Pie
+              cornerRadius={5}
+              data={items}
+              dataKey="value"
+              innerRadius="64%"
+              outerRadius="94%"
+              paddingAngle={items.length > 1 ? 2 : 0}
+              stroke="none"
+            >
+              {items.map((entry) => (
+                <Cell fill={entry.color} key={entry.key} />
+              ))}
+            </Pie>
+            <Tooltip content={<ChartTooltip />} cursor={false} />
+          </PieChart>
+        </SafeResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[28px] font-black leading-none tracking-[-0.04em] text-[#0F172A]">{total}</span>
+          <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#94A3B8]">{caption}</span>
+        </div>
+      </div>
+      <DonutLegend items={items} />
+    </div>
+  );
+}
+
+/** Horizontal bar chart. Score bars are zone-coloured; count bars use one accent. */
+function HorizontalBars({
+  data,
+  gradientId,
+  mode,
+}: {
+  data: { label: string; value: number }[];
+  gradientId: string;
+  mode: "score" | "count";
+}) {
+  return (
+    <SafeResponsiveContainer className="h-full">
+      <BarChart data={data} layout="vertical" margin={{ bottom: 4, left: 6, right: 34, top: 4 }}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor={mode === "score" ? "#FB923C" : "#334155"} stopOpacity={0.9} />
+            <stop offset="100%" stopColor={mode === "score" ? "#F97316" : "#0F172A"} stopOpacity={1} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid horizontal={false} stroke={CHART_GRID} strokeDasharray="4 8" />
+        <XAxis
+          allowDecimals={false}
+          domain={mode === "score" ? [0, 100] : undefined}
+          hide
+          type="number"
+        />
+        <YAxis
+          axisLine={false}
+          dataKey="label"
+          tick={{ fill: "#475569", fontSize: 11, fontWeight: 700 }}
+          tickFormatter={truncateLabel}
+          tickLine={false}
+          type="category"
+          width={132}
+        />
+        <Tooltip content={<ChartTooltip suffix={mode === "score" ? "%" : ""} />} cursor={{ fill: "rgba(249,115,22,0.06)" }} />
+        <Bar dataKey="value" maxBarSize={26} radius={[0, 8, 8, 0]}>
+          {data.map((entry, index) => (
+            <Cell fill={mode === "score" ? scoreZoneColor(entry.value) : `url(#${gradientId})`} key={index} />
+          ))}
+          <LabelList
+            dataKey="value"
+            fill="#475569"
+            fontSize={11}
+            fontWeight={800}
+            formatter={(value) => (mode === "score" ? `${value ?? ""}%` : `${value ?? ""}`)}
+            position="right"
+          />
+        </Bar>
+      </BarChart>
+    </SafeResponsiveContainer>
+  );
+}
+
 function buildZoneData(data: CoachingAnalyticsPayload) {
   const counts = data.analytics.zoneCounts;
   return [
-    { key: "red_zone", label: "Red Zone", value: (counts.critical_red ?? 0) + (counts.red_zone ?? 0) },
-    { key: "yellow_zone", label: "Yellow Zone", value: counts.yellow_zone ?? 0 },
-    { key: "green_zone", label: "Green Zone", value: counts.green_zone ?? 0 },
-    { key: "excellence_zone", label: "Excellence Zone", value: counts.excellence_zone ?? 0 },
+    { color: zoneColors.red_zone, key: "red_zone", label: "Red Zone", value: (counts.critical_red ?? 0) + (counts.red_zone ?? 0) },
+    { color: zoneColors.yellow_zone, key: "yellow_zone", label: "Yellow Zone", value: counts.yellow_zone ?? 0 },
+    { color: zoneColors.green_zone, key: "green_zone", label: "Green Zone", value: counts.green_zone ?? 0 },
+    { color: zoneColors.excellence_zone, key: "excellence_zone", label: "Excellence Zone", value: counts.excellence_zone ?? 0 },
   ].filter((row) => row.value > 0);
 }
 
@@ -307,8 +489,8 @@ function buildAcknowledgmentSplit(reports: CoachingReportSummaryRow[]) {
   const acknowledged = reports.filter((report) => report.acknowledged).length;
   const pending = Math.max(reports.length - acknowledged, 0);
   return [
-    { key: "acknowledged", label: "Acknowledged", value: acknowledged },
-    { key: "pending", label: "Pending", value: pending },
+    { color: "#10B981", key: "acknowledged", label: "Acknowledged", value: acknowledged },
+    { color: "#CBD5E1", key: "pending", label: "Pending", value: pending },
   ].filter((row) => row.value > 0);
 }
 
@@ -337,12 +519,10 @@ function buildRepRows(data: CoachingAnalyticsPayload) {
       firstScore: row.firstScore,
       hrId: row.medicalRepHrId,
       improvementScore: row.improvementScore,
-      keyDevelopmentArea: "Not available",
       lastCoachingDate: latestReport?.coachingDate ?? null,
       latestScore: row.latestScore,
       latestZone: row.latestZone,
       medicalRep: latestReport?.medicalRepName || row.medicalRepHrId,
-      strongestParameter: "Not available",
     };
   }).sort((left, right) => right.improvementScore - left.improvementScore);
 }
@@ -510,7 +690,7 @@ export function CoachingAnalyticsDashboard({
       {data.reports.length > 0 ? (
         <>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard helper="All coaching reports in the current scope." icon={<ClipboardIcon />} label="Total Coaching Reports" value={formatNumber(data.reports.length)} />
+        <KpiCard helper="All coaching reports in the current scope." icon={<BarChart3 className="h-5 w-5" />} label="Total Coaching Reports" value={formatNumber(data.reports.length)} />
         <KpiCard helper="Average score across submitted, reviewed, and locked reports." icon={<Award className="h-5 w-5" />} label="Average Coaching Score" value={formatPercent(data.analytics.averageScore)} />
         <KpiCard helper="Share of completed reports acknowledged by employees." icon={<CheckCircle2 className="h-5 w-5" />} label="Acknowledgment Rate" value={formatPercent(acknowledgmentRate)} />
         <KpiCard helper={mostImproved ? `${mostImproved.hrId} improved by ${formatPercent(mostImproved.improvementScore)}` : "No positive improvement trend yet."} icon={<TrendingUp className="h-5 w-5" />} label="Most Improved Medical Rep" value={mostImproved?.medicalRep ?? "Not available"} />
@@ -523,97 +703,66 @@ export function CoachingAnalyticsDashboard({
       <div className="grid gap-5 xl:grid-cols-2">
         <ChartPanel description="Distribution of completed reports by performance zone." title="Reports by Performance Zone">
           {zoneData.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <PieChart>
-                <Pie data={zoneData} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
-                  {zoneData.map((entry) => <Cell fill={zoneColors[entry.key]} key={entry.key} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [value, "Reports"]} />
-              </PieChart>
-            </SafeResponsiveContainer>
+            <DonutChart caption="reports" items={zoneData} />
           ) : <EmptyChart message="No scored reports available for this view." />}
         </ChartPanel>
 
-        <ChartPanel description="Quarterly average coaching score by employee summary rows." title="Average Score by Quarter">
+        <ChartPanel description="Quarterly average coaching score across employee summaries." title="Average Score by Quarter">
           {quarterTrend.length ? (
             <SafeResponsiveContainer className="h-full">
-              <LineChart data={quarterTrend}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
-                <YAxis domain={[0, 100]} stroke="#64748B" tickLine={false} />
-                <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
-                <Line dataKey="value" dot={{ fill: "#F97316", r: 4 }} stroke="#F97316" strokeWidth={3} type="monotone" />
-              </LineChart>
+              <AreaChart data={quarterTrend} margin={{ bottom: 0, left: -18, right: 14, top: 12 }}>
+                <defs>
+                  <linearGradient id="coachingTrendFill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#F97316" stopOpacity={0.26} />
+                    <stop offset="100%" stopColor="#F97316" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 8" vertical={false} />
+                <XAxis axisLine={false} dataKey="label" tick={{ fill: CHART_AXIS, fontSize: 11, fontWeight: 700 }} tickLine={false} tickMargin={8} />
+                <YAxis axisLine={false} domain={[0, 100]} tick={{ fill: CHART_AXIS, fontSize: 10, fontWeight: 600 }} tickLine={false} width={42} />
+                <Tooltip content={<ChartTooltip suffix="%" />} cursor={{ stroke: "#F97316", strokeDasharray: "4 4", strokeWidth: 1 }} />
+                <Area
+                  activeDot={{ fill: "#FFFFFF", r: 6, stroke: "#F97316", strokeWidth: 3 }}
+                  animationDuration={650}
+                  dataKey="value"
+                  dot={{ fill: "#FFFFFF", r: 4, stroke: "#F97316", strokeWidth: 2 }}
+                  fill="url(#coachingTrendFill)"
+                  stroke="#F97316"
+                  strokeWidth={2.5}
+                  type="monotone"
+                />
+              </AreaChart>
             </SafeResponsiveContainer>
           ) : <EmptyChart message="No quarterly trend is available yet." />}
         </ChartPanel>
 
-        <ChartPanel description="Average coaching score grouped by line." title="Average Score by Line">
+        <ChartPanel description="Average coaching score grouped by line (bars coloured by performance zone)." title="Average Score by Line">
           {lineAverages.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <BarChart data={lineAverages}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis dataKey="label" stroke="#64748B" tickLine={false} />
-                <YAxis domain={[0, 100]} stroke="#64748B" tickLine={false} />
-                <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
-                <Bar dataKey="value" fill="#F97316" radius={[12, 12, 0, 0]} />
-              </BarChart>
-            </SafeResponsiveContainer>
+            <HorizontalBars data={lineAverages} gradientId="coachingLineBar" mode="score" />
           ) : <EmptyChart message="No line score data available." />}
         </ChartPanel>
 
-        <ChartPanel description="Average coaching score grouped by area." title="Average Score by Area">
+        <ChartPanel description="Average coaching score grouped by area (bars coloured by performance zone)." title="Average Score by Area">
           {areaAverages.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <BarChart data={areaAverages} layout="vertical" margin={{ left: 24, right: 16 }}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis domain={[0, 100]} stroke="#64748B" tickLine={false} type="number" />
-                <YAxis dataKey="label" stroke="#64748B" tickLine={false} type="category" width={110} />
-                <Tooltip formatter={(value) => [`${value}%`, "Average score"]} />
-                <Bar dataKey="value" fill="#0F172A" radius={[0, 12, 12, 0]} />
-              </BarChart>
-            </SafeResponsiveContainer>
+            <HorizontalBars data={areaAverages} gradientId="coachingAreaBar" mode="score" />
           ) : <EmptyChart message="No area score data available." />}
         </ChartPanel>
 
         <ChartPanel description="Employee acknowledgment split for completed coaching reports." title="Acknowledgment Status Split">
           {acknowledgmentSplit.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <PieChart>
-                <Pie data={acknowledgmentSplit} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={3}>
-                  {acknowledgmentSplit.map((entry) => <Cell fill={entry.key === "acknowledged" ? "#10B981" : "#CBD5E1"} key={entry.key} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [value, "Reports"]} />
-              </PieChart>
-            </SafeResponsiveContainer>
+            <DonutChart caption="reports" items={acknowledgmentSplit} />
           ) : <EmptyChart message="No acknowledgment data available." />}
         </ChartPanel>
 
         <ChartPanel description="Most frequent strongest scoring parameter across completed reports." title="Strongest Parameters Distribution">
           {strongestParameterData.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <BarChart data={strongestParameterData} layout="vertical" margin={{ left: 24, right: 16 }}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />
-                <YAxis dataKey="label" stroke="#64748B" tickLine={false} type="category" width={155} />
-                <Tooltip formatter={(value) => [`${value} reports`, "Reports"]} />
-                <Bar dataKey="value" fill="#F97316" radius={[0, 12, 12, 0]} />
-              </BarChart>
-            </SafeResponsiveContainer>
+            <HorizontalBars data={strongestParameterData} gradientId="coachingStrongBar" mode="count" />
           ) : <EmptyChart message="Strongest parameter distribution will appear after scored coaching reports are submitted." />}
         </ChartPanel>
 
         <ChartPanel description="Most frequent priority development focus by report-level category averages." title="Top Development Areas">
           {keyDevelopmentAreaData.length ? (
-            <SafeResponsiveContainer className="h-full">
-              <BarChart data={keyDevelopmentAreaData} layout="vertical" margin={{ left: 24, right: 16 }}>
-                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
-                <XAxis allowDecimals={false} stroke="#64748B" tickLine={false} type="number" />
-                <YAxis dataKey="label" stroke="#64748B" tickLine={false} type="category" width={155} />
-                <Tooltip formatter={(value) => [`${value} reports`, "Reports"]} />
-                <Bar dataKey="value" fill="#0F172A" radius={[0, 12, 12, 0]} />
-              </BarChart>
-            </SafeResponsiveContainer>
+            <HorizontalBars data={keyDevelopmentAreaData} gradientId="coachingDevBar" mode="count" />
           ) : <EmptyChart message="Priority Development Focus analytics will appear after scored coaching reports are submitted." />}
         </ChartPanel>
       </div>
@@ -624,61 +773,76 @@ export function CoachingAnalyticsDashboard({
           description="Per Medical Rep improvement trend and appraisal-support summary."
           action={<UsersRound className="h-5 w-5 text-[#F97316]" />}
         />
-        <div className="overflow-x-auto">
-          <table className="min-w-[1180px] w-full border-collapse text-left">
-            <thead className="bg-[#F8FAFC]">
-              <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                <th className="px-5 py-3">Medical Rep</th>
-                <th className="px-5 py-3">HR ID</th>
-                <th className="px-5 py-3">Coaching Count</th>
-                <th className="px-5 py-3">Average Score</th>
-                <th className="px-5 py-3">First Score</th>
-                <th className="px-5 py-3">Latest Score</th>
-                <th className="px-5 py-3">Improvement Trend</th>
-                <th className="px-5 py-3">Latest Zone</th>
-                <th className="px-5 py-3">Strongest Parameter</th>
-                <th className="px-5 py-3">Key Development Area</th>
-                <th className="px-5 py-3">Last Coaching Date</th>
+        <table className="w-full table-fixed border-collapse text-left">
+          <colgroup>
+            <col style={{ width: "26%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "11%" }} />
+          </colgroup>
+          <thead className="text-[11px] font-black uppercase tracking-[0.12em]">
+            <tr>
+              <th className="px-4 py-3 text-left">Medical Rep</th>
+              <th className="px-3 py-3">Sessions</th>
+              <th className="px-3 py-3">Avg</th>
+              <th className="px-3 py-3">First</th>
+              <th className="px-3 py-3">Latest</th>
+              <th className="px-3 py-3">Trend</th>
+              <th className="px-3 py-3">Zone</th>
+              <th className="px-3 py-3">Last Coached</th>
+            </tr>
+          </thead>
+          <tbody>
+            {repRows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={8}>
+                  No quarterly intelligence rows are available for the current filters.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {repRows.length === 0 ? (
-                <tr>
-                  <td className="px-5 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={11}>
-                    No quarterly intelligence rows are available for the current filters.
-                  </td>
-                </tr>
-              ) : repRows.map((row) => (
-                <tr className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]" key={`${row.hrId}-${row.lastCoachingDate ?? "none"}`}>
-                  <td className="px-5 py-4 font-black text-[#0F172A]">{row.medicalRep}</td>
-                  <td className="px-5 py-4 font-mono text-xs font-black text-[#475569]">{row.hrId}</td>
-                  <td className="px-5 py-4 font-semibold text-[#475569]">{formatNumber(row.coachingCount)}</td>
-                  <td className="px-5 py-4 font-black text-[#0F172A]">{formatPercent(row.averageScore)}</td>
-                  <td className="px-5 py-4 text-[#475569]">{formatPercent(row.firstScore)}</td>
-                  <td className="px-5 py-4 text-[#475569]">{formatPercent(row.latestScore)}</td>
-                  <td className={cn("px-5 py-4 font-black", row.improvementScore >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    {row.improvementScore >= 0 ? "+" : ""}{formatPercent(row.improvementScore)}
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className={cn("inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black", zoneClassName(row.latestZone))}>
-                      {zoneLabel(row.latestZone)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-[#475569]">{row.strongestParameter}</td>
-                  <td className="px-5 py-4 text-[#475569]">{row.keyDevelopmentArea}</td>
-                  <td className="px-5 py-4 text-[#475569]">{formatDate(row.lastCoachingDate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ) : repRows.map((row) => (
+              <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.hrId}-${row.lastCoachingDate ?? "none"}`}>
+                <td className="px-4 py-3.5">
+                  <div className="min-w-0">
+                    <p className="truncate font-black text-[#0F172A]" title={row.medicalRep}>{row.medicalRep}</p>
+                    <p className="truncate font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                  </div>
+                </td>
+                <td className="px-3 py-3.5 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.coachingCount)}</td>
+                <td className="px-3 py-3.5 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averageScore)}</td>
+                <td className="px-3 py-3.5 text-center tabular-nums text-[#64748B]">{formatPercent(row.firstScore)}</td>
+                <td className="px-3 py-3.5 text-center tabular-nums text-[#0F172A]">{formatPercent(row.latestScore)}</td>
+                <td className="px-3 py-3.5 text-center">
+                  <span
+                    className={cn(
+                      "inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-black tabular-nums",
+                      row.improvementScore > 0
+                        ? "bg-emerald-50 text-emerald-700"
+                        : row.improvementScore < 0
+                          ? "bg-rose-50 text-rose-700"
+                          : "bg-slate-100 text-slate-500",
+                    )}
+                  >
+                    {row.improvementScore > 0 ? <TrendingUp className="h-3 w-3" /> : row.improvementScore < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                    {row.improvementScore > 0 ? "+" : ""}{formatPercent(row.improvementScore)}
+                  </span>
+                </td>
+                <td className="px-3 py-3.5 text-center">
+                  <span className={cn("inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-black", zoneClassName(row.latestZone))} title={zoneLabel(row.latestZone)}>
+                    {zoneShortLabel(row.latestZone)}
+                  </span>
+                </td>
+                <td className="px-3 py-3.5 text-center whitespace-nowrap text-[13px] text-[#475569]">{formatDate(row.lastCoachingDate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Card>
         </>
       ) : null}
     </div>
   );
-}
-
-function ClipboardIcon() {
-  return <BarChart3 className="h-5 w-5" />;
 }
