@@ -342,7 +342,6 @@ const INVOICE_DATE_HEADER_ALIASES = ["Invoice Date", "Date", "INVOICE_DATE", "in
 const BRICK_ID_HEADER_ALIASES = ["Brick ID", "Brick ID2"];
 
 const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "B. Qty",
   customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
   discountField: "Discount%",
   distributorCodes: ["PS"],
@@ -363,7 +362,6 @@ const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplateDef = {
 };
 
 const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "Free Unit",
   customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
   discountField: "Discount%",
   distributorCodes: ["IS"],
@@ -385,8 +383,8 @@ const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplateDef = {
 };
 
 // Ibn Sina "Sato" branch (PAS feed) — treated as its own distributor (code IS-S). Same
-// coded format as IS. "Total Quantity" is the combined paid+free column and must be read
-// before the plain "Quantity" column (which excludes free units).
+// coded format as IS. "Total Quantity" is the authoritative qty column; free units are
+// excluded from all totals per the system-wide bonus-neglect policy.
 const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
   discountField: "Discount%",
@@ -409,8 +407,8 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
 };
 
 // EPDA "Pharmacies" direct feed (code EP-S). Coded format like IS-S, but quantity is "qnt",
-// the date is "inv_date", and each line carries an is_bonus flag (free-goods lines add no
-// value). Captures the customer fields (cust_code / cust_name / cust_address).
+// the date is "inv_date", and each line carries an is_bonus flag. Bonus-flagged rows are
+// skipped entirely (free goods are not counted as sales). Captures the customer fields.
 const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplateDef = {
   bonusFlagField: "is_bonus",
   customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
@@ -484,9 +482,8 @@ const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
 // MEC (code MC). Fully-coded MEC monthly sheet (MEC's raw Arabic export + appended Product ID / Brick
 // ID / Area ID / Region ID / Distrub ID, where Distrub ID = "MC"). MEC keeps ARABIC raw headers: qty
 // "الكمية" (net), date "تاريخ المستند" (the invoice date — NOT the creation date "تاريخ الإنشاء"),
-// customer كود/العميل/address, bonus "بونص", discount "خصم", productName "إسم الصنف". Value RECOMPUTED.
+// customer كود/العميل/address, discount "خصم", productName "إسم الصنف". Value RECOMPUTED.
 const MEC_MC_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "بونص",
   customerFields: { address: ["address"], code: ["كود"], name: ["العميل"] },
   discountField: "خصم",
   distributorCodes: ["MC"],
@@ -541,12 +538,10 @@ const SOFICO_SF_TEMPLATE: DistributorSalesTemplateDef = {
 // columns (Product ID / Brick ID / Area ID / Region ID / Distrub ID) appended, read straight from
 // those coded columns. Ramco keeps ARABIC raw headers, so the qty is the net "صافى كمية" (returns
 // already signed) and the date is "تاريخ" (a real Excel date cell — unambiguous, no day-first issue);
-// both are listed first, then the shared English aliases as a defensive fallback. Bonus is the net
-// "صافى بونص", discount the Ramco "خصم%". Value is RECOMPUTED from Qty x factory_price x (1 - discount)
-// (no valueField — the sheet's "صافى البيع" includes tax and is ignored). Captures the Ramco customer
-// code/name/address.
+// both are listed first, then the shared English aliases as a defensive fallback. Discount is
+// "خصم%". Value is RECOMPUTED from Qty x factory_price x (1 - discount) (no valueField —
+// the sheet's "صافى البيع" includes tax and is ignored). Captures the Ramco customer code/name/address.
 const RAMCO_RM_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "صافى بونص",
   customerFields: { address: ["عنوان"], code: ["كود"], name: ["عميل"] },
   discountField: "خصم%",
   distributorCodes: ["RM"],
@@ -569,10 +564,8 @@ const RAMCO_RM_TEMPLATE: DistributorSalesTemplateDef = {
 // Direct (company) channel — orders shipped straight from the company, not through a
 // distributor. Region-only (no area/brick), and the SALE VALUE is taken from the sheet's own
 // "Value" column (real per-deal pricing; e.g. Satoslim has Price 0 but a real Value), never
-// recomputed from factory price. Quantity is "QTY" (Bonus excluded). Region "National" is a
-// special bucket for orders tied to no region.
+// recomputed from factory price. Region "National" is a special bucket for orders tied to no region.
 const DIRECT_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "Bonus",
   customerFields: { address: [], code: [], name: ["Pharmacy Name"] },
   distributorCodes: ["Direct"],
   fields: {
@@ -599,7 +592,6 @@ const DIRECT_TEMPLATE: DistributorSalesTemplateDef = {
 // in templateForDistributor — tried AFTER the distributor's own template — so a coded sheet validates
 // under any distributor while raw/hand-coded sheets still match their dedicated template first.
 export const NORMALIZER_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusField: "B. Qty",
   customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
   discountField: "Discount%",
   distributorCodes: ["NORMALIZER"],
@@ -1314,7 +1306,6 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const rawProductCode = valueAt(row, headerMap, "productCode");
     const rawProductName = optionalValueAt(row, headerMap, "productName");
     const rawQty = valueAt(row, headerMap, "qty");
-    const rawBonusQty = valueAtHeader(row, headerMap, headerMap.template.bonusField);
     const rawDiscount = valueAtHeader(row, headerMap, headerMap.template.discountField);
     const rawDistributorCode = valueAt(row, headerMap, "distributorCode");
     const rawInvoiceDate = valueAt(row, headerMap, "invoiceDate");
@@ -1348,20 +1339,15 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const productCode = normalizeCode(rawProductCode);
     const rowDistributorCode = normalizeCode(rawDistributorCode);
     const parsedQty = parseNumber(rawQty);
-    let bonusQty = parseNumber(rawBonusQty, { emptyAsZero: true });
-    // Whole-line bonus flag (e.g. is_bonus = 1): the line is free goods. Its quantity
-    // STILL counts toward total quantity — it is part of the qty column the distributor
-    // reports — but free units carry no revenue. We bill them at a 100% discount so the
-    // value is zero in both the importer total and the value-recompute RPCs, while the
-    // qty stays intact. The free units are also recorded under bonus qty for visibility.
+    // Whole-line bonus flag (e.g. is_bonus = 1 in EPDA exports): the row is a free-goods
+    // delivery, not a sale. Skip it entirely — free units are never counted as sales qty.
     const rawBonusFlag = valueAtHeader(row, headerMap, headerMap.template.bonusFlagField);
     const isBonusRow = Boolean(headerMap.template.bonusFlagField)
       && ["1", "true", "yes", "y"].includes(normalizeDisplay(rawBonusFlag).toLowerCase());
+    if (isBonusRow) continue;
+    const bonusQty = 0;
     const qty = parsedQty;
-    if (isBonusRow) {
-      bonusQty += Number.isFinite(parsedQty) ? parsedQty : 0;
-    }
-    const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
+    const discountRate = discountFraction(rawDiscount);
     let period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
     let invoiceDate = resolveInvoiceDate(rawInvoiceDate, invoiceDateDayFirst, period);
     // Sheet has no usable date for this row → fall back to the user-selected period (if any).

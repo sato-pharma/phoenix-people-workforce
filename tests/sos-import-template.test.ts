@@ -22,9 +22,8 @@ export function runSosImportTemplateTests() {
       `NORMALIZER_TEMPLATE field [${aliases.join(", ")}] must include a CODED_HEADERS column`,
     );
   }
-  // the bonus + discount columns the template reads are also emitted; discount drives the value recompute
-  // (Qty x factory_price x (1 - Discount%)) that reproduces the engine's value exactly.
-  assert.ok(NORMALIZER_TEMPLATE.bonusField && coded.has(norm(NORMALIZER_TEMPLATE.bonusField)), "bonusField must be a coded column");
+  // bonus is always neglected; discount drives the value recompute (Qty x factory_price x (1 - Discount%)).
+  assert.equal(NORMALIZER_TEMPLATE.bonusField, undefined, "bonusField must be absent — bonus is always neglected");
   assert.ok(NORMALIZER_TEMPLATE.discountField && coded.has(norm(NORMALIZER_TEMPLATE.discountField)), "discountField (drives value recompute) must be a coded column");
   // optional product-name fallback(s) are present too
   for (const header of NORMALIZER_TEMPLATE.optionalFields?.productName ?? []) {

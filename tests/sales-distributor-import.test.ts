@@ -216,7 +216,7 @@ export async function runSalesDistributorImportTests() {
   assert.equal(psResult.rowCount, 3);
   assert.equal(psResult.failedRows, 1);
   assert.equal(psResult.totals.totalQty, 18);
-  assert.equal(psResult.totals.totalBonusQty, 3);
+  assert.equal(psResult.totals.totalBonusQty, 0);
   assert.equal(psResult.totals.totalValue, 380);
   assert.equal(psResult.period, "2026-04");
   assert.equal(psResult.byArea.find((row) => row.areaCode === "A1")?.totalQty, 13);
@@ -241,7 +241,7 @@ export async function runSalesDistributorImportTests() {
   assert.equal(ibnResult.failedRows, 0);
   assert.equal(ibnResult.warningRows, 0);
   assert.equal(ibnResult.totals.totalQty, 26);
-  assert.equal(ibnResult.totals.totalBonusQty, 1);
+  assert.equal(ibnResult.totals.totalBonusQty, 0);
   assert.equal(ibnResult.totals.totalValue, 340);
   assert.equal(ibnResult.byLine.find((row) => row.line === "CNS")?.totalQty, 24);
 
@@ -318,7 +318,7 @@ export async function runSalesDistributorImportTests() {
 
   assert.equal(discountResult.status, "validated");
   assert.equal(discountResult.totals.totalQty, 14);
-  assert.equal(discountResult.totals.totalBonusQty, 5);
+  assert.equal(discountResult.totals.totalBonusQty, 0);
   assert.equal(discountResult.totals.totalValue, 275);
   assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-A")?.totalValue, 75);
   assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-B")?.totalValue, 200);
@@ -364,9 +364,9 @@ export async function runSalesDistributorImportTests() {
   assert.equal(epdaResult.status, "validated");
   assert.equal(epdaResult.period, "2026-04"); // single month: the 1st-of-month text date stays in April
   assert.deepEqual(epdaResult.blockingReasons, []); // no "multiple invoice months" block
-  assert.equal(epdaResult.totals.totalQty, 19); // 10 + 5 (bonus qty still counts) + 4 = full qnt column
-  assert.equal(epdaResult.totals.totalBonusQty, 5); // the bonus line's qnt, recorded for visibility
-  assert.equal(epdaResult.totals.totalValue, 300); // 10*10 + 0 (free goods, 100% discount) + 4*50
+  assert.equal(epdaResult.totals.totalQty, 14); // 10 + 4; bonus row (is_bonus=1, qnt=5) is skipped
+  assert.equal(epdaResult.totals.totalBonusQty, 0); // bonus rows skipped entirely
+  assert.equal(epdaResult.totals.totalValue, 300); // 10*10 + 4*50; bonus row skipped, value unchanged
 
   const dashboard = buildSourceOfSalesDashboard({
     availablePeriods: ["2026-04"],
