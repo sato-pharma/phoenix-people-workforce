@@ -229,17 +229,18 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     discountColumns: ["خصم%"],
   },
   {
-    // Sofico Tender: same raw layout as SF.
+    // Sofico Tender: customer account from ORDERACCOUNT; brick resolved directly from IQVIBRICKCODE.
     distributorCode: "SF-T",
     distributorName: "Sofico Tender",
     productColumns: ["ITEMIDE", "OLDITEM", "ITEMNAME"],
-    qtyColumns: ["SOLDQTY", "qty"],
+    qtyColumns: ["qty", "SOLDQTY"],
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
-    customerCodeColumns: ["CUSTOMERCODE", "ORDERACCOUNT"],
+    customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
-    territoryColumns: ["IQVIBRICKCODE", "ORDERGROUPNAME", "GOVER", "bricks"],
+    brickIdColumns: ["IQVIBRICKCODE"],
+    territoryColumns: ["ORDERGROUPNAME", "GOVER", "bricks"],
     discountColumns: ["Discount%"],
   },
   {
