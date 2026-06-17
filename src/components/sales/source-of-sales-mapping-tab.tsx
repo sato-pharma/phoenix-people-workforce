@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Copy, Download, Loader2, Plus, Search, Sparkles, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, Loader2, Plus, Search, Sparkles, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 
@@ -185,6 +185,72 @@ function TemplateCard({
   );
 }
 
+type Tip = { icon: string; title: string; body: string; href?: string; scrollId?: string; actionLabel?: string };
+const TIPS: Tip[] = [
+  { icon: "⚡", title: "Bootstrap from a coded file", body: "Have a sheet with Phoenix codes already? Upload it once — the system maps 100+ products and areas instantly.", scrollId: "sos-bootstrap", actionLabel: "Go to Bootstrap ↓" },
+  { icon: "🤖", title: "AI fills the gaps for you", body: "Upload a raw file in the Analyze section, click AI Suggest — GPT-4o fills every product and area code. Review, save, done.", scrollId: "sos-analyze", actionLabel: "Go to Analyze ↓" },
+  { icon: "💾", title: "Map once, reuse forever", body: "Once saved, those raw values auto-map forever on every future upload — zero repeat work each month." },
+  { icon: "🎯", title: "Leave blanks intentionally", body: "Empty code = exclude those rows cleanly. Good for discontinued products or invalid territories — don't force-map them." },
+  { icon: "🔗", title: "Fix Missing Data first", body: "Red product or area codes block rows from importing. Fix them here before uploading raw files.", href: "/sales/missing-data", actionLabel: "Open Missing Data →" },
+];
+
+function TipsPanel() {
+  const [open, setOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return localStorage.getItem("sos-tips-open") === "true"; } catch { return false; }
+  });
+
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("sos-tips-open", String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#FED7AA] bg-[#FFF7ED]">
+      <button
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        onClick={toggle}
+        type="button"
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-[#F97316]" />
+          <span className="text-sm font-black text-[#0F172A]">5 mapping tips &amp; tricks</span>
+        </div>
+        <ChevronDown className={cn("h-4 w-4 text-[#F97316] transition-transform duration-200", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="grid gap-4 border-t border-[#FED7AA] px-4 pb-4 pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {TIPS.map((tip) => (
+            <div className="flex gap-2.5" key={tip.title}>
+              <span className="mt-0.5 shrink-0 text-base leading-none">{tip.icon}</span>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-black text-[#0F172A]">{tip.title}</p>
+                <p className="text-xs leading-5 text-[#64748B]">{tip.body}</p>
+                {tip.href ? (
+                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" href={tip.href}>
+                    {tip.actionLabel}
+                  </Link>
+                ) : tip.scrollId ? (
+                  <button
+                    className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white"
+                    onClick={() => document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    type="button"
+                  >
+                    {tip.actionLabel}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function NoProfileNote({ distributorCode }: { distributorCode: string }) {
   return (
     <AdminCallout tone="neutral">
@@ -266,9 +332,16 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const [territoryCodes, setTerritoryCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const [mappingsSaved, setMappingsSaved] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   async function analyze(file: File) {
     setBusy(true); setError(null); setMessage(null); setPreview(null);
+    setMappingsSaved(false); setImportMessage(null); setImportError(null); setImportResult(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -329,7 +402,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
         method: "POST",
       });
       const payload = await readJson<ImportResponse>(response, { success: false });
-      if (payload.success) setMessage(payload.message ?? "Mappings saved.");
+      if (payload.success) { setMessage(payload.message ?? "Mappings saved."); setMappingsSaved(true); }
       else setError(payload.error ?? "Save failed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Save failed.");
@@ -338,9 +411,36 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
     }
   }
 
+  async function handleImportNow(file: File) {
+    setImporting(true); setImportResult(null); setImportMessage(null); setImportError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("distributorCode", distributorCode);
+      if (preview?.period) formData.append("period", preview.period);
+      const response = await fetch("/api/sales/monthly-import/validate", { body: formData, method: "POST" });
+      const payload = await readJson<ImportResponse>(response, { success: false });
+      setImportResult(payload.result ?? null);
+      if (payload.success) setImportMessage(payload.message ?? "Import complete.");
+      else setImportError(payload.error ?? "Import failed.");
+    } catch (caught) {
+      setImportError(caught instanceof Error ? caught.message : "Import failed.");
+    } finally {
+      setImporting(false);
+      if (importRef.current) importRef.current.value = "";
+    }
+  }
+
   const fullyCodedPct = preview && preview.summary.totalRows > 0
     ? Math.round((preview.summary.fullyCoded / preview.summary.totalRows) * 100)
     : 0;
+
+  const productsMapped = Object.values(productCodes).filter(Boolean).length;
+  const productsTotal = preview?.unknownProducts.length ?? 0;
+  const territoriesMapped = Object.values(territoryCodes).filter(Boolean).length;
+  const territoriesTotal = preview?.unknownTerritories.length ?? 0;
+  const hasUnknowns = productsTotal > 0 || territoriesTotal > 0;
+  const allReady = hasUnknowns && productsMapped === productsTotal && territoriesMapped === territoriesTotal;
 
   return (
     <Card className={cn(panelClassName, "space-y-4 p-5")}>
@@ -382,6 +482,62 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             ) : null}
           </div>
 
+          {hasUnknowns ? (
+            <div className="space-y-1.5">
+              {productsTotal > 0 ? (
+                <div className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Products</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
+                    <div
+                      className={cn("h-full rounded-full transition-all duration-300", productsMapped === productsTotal ? "bg-emerald-500" : "bg-[#F97316]")}
+                      style={{ width: `${Math.round((productsMapped / productsTotal) * 100)}%` }}
+                    />
+                  </div>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", productsMapped === productsTotal ? "text-emerald-600" : "text-[#F97316]")}>
+                    {productsMapped}/{productsTotal}
+                  </span>
+                </div>
+              ) : null}
+              {territoriesTotal > 0 ? (
+                <div className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Areas</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
+                    <div
+                      className={cn("h-full rounded-full transition-all duration-300", territoriesMapped === territoriesTotal ? "bg-emerald-500" : "bg-[#F97316]")}
+                      style={{ width: `${Math.round((territoriesMapped / territoriesTotal) * 100)}%` }}
+                    />
+                  </div>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-[#F97316]")}>
+                    {territoriesMapped}/{territoriesTotal}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {allReady ? (
+            <AdminCallout tone="success">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex flex-1 items-center justify-between gap-3">
+                <p className="font-semibold text-sm">
+                  {[
+                    productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "",
+                    territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : "",
+                  ].filter(Boolean).join(" + ")} ready — save now
+                </p>
+                <Button
+                  className="h-8 shrink-0 gap-1.5 rounded-xl bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]"
+                  disabled={saving}
+                  onClick={() => void save()}
+                  type="button"
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Save All
+                </Button>
+              </div>
+            </AdminCallout>
+          ) : null}
+
           {preview.unknownProducts.length > 0 ? (
             <UnknownTable
               busyAi={aiKind === "product"}
@@ -419,13 +575,49 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
           ) : (
             <AdminCallout tone="success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Every product and area in this sheet is already mapped. Upload the raw sheet on the Uploaded Sheets tab.</p>
+              <p>Every product and area in this sheet is already mapped — import it now below.</p>
             </AdminCallout>
           )}
         </div>
       ) : null}
 
       <ResultBanner error={error} message={message} result={null} />
+
+      {(mappingsSaved || (preview !== null && !hasUnknowns)) && !importMessage ? (
+        <div className="rounded-2xl border border-[#E0F2FE] bg-[#F0F9FF] p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#0369A1]">
+              <UploadCloud className="h-4 w-4 shrink-0" />
+              <span>
+                {mappingsSaved
+                  ? "Mappings saved — upload the same raw file to import:"
+                  : "All items already mapped — upload the raw file to import:"}
+              </span>
+            </div>
+            <Button
+              className="h-9 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]"
+              disabled={importing}
+              onClick={() => importRef.current?.click()}
+              type="button"
+            >
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              {importing ? "Importing…" : "Import raw file"}
+            </Button>
+            <input
+              accept=".xlsx"
+              className="hidden"
+              onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImportNow(file); }}
+              ref={importRef}
+              type="file"
+            />
+          </div>
+          <p className="mt-2 text-xs text-[#64748B]">Upload the same raw file you just analyzed — it will be imported with your saved mappings applied.</p>
+        </div>
+      ) : null}
+
+      {importMessage || importError || (importResult?.blockedRows?.length ?? 0) > 0 ? (
+        <ResultBanner error={importError} message={importMessage} result={importResult} />
+      ) : null}
     </Card>
   );
 }
@@ -512,9 +704,12 @@ function UnknownTable({
   return (
     <div className="rounded-2xl border border-[#E2E8F0]">
       <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-2.5">
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-          Unknown {kind === "product" ? "products" : "areas"} ({rows.length})
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+            Unknown {kind === "product" ? "products" : "areas"} ({rows.length})
+          </p>
+          {busyAi ? <span className="animate-pulse text-xs font-bold text-[#F97316]">AI working…</span> : null}
+        </div>
         <Button className="h-8 gap-2" disabled={busyAi} onClick={onAi} type="button" variant="secondary">
           {busyAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           AI suggest
@@ -539,12 +734,19 @@ function UnknownTable({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-[#64748B]">{row.count}</td>
                 <td className="px-4 py-2">
-                  <MappingCombobox
-                    onChange={(code) => onChange(row.raw, code)}
-                    options={options}
-                    placeholder={kind === "product" ? "e.g. TE001" : "e.g. B100-11"}
-                    value={codes[row.raw] ?? ""}
-                  />
+                  <div className="flex items-center gap-2">
+                    <MappingCombobox
+                      onChange={(code) => onChange(row.raw, code)}
+                      options={options}
+                      placeholder={kind === "product" ? "e.g. TE001" : "e.g. B100-11"}
+                      value={codes[row.raw] ?? ""}
+                    />
+                    {codes[row.raw] ? (
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">✓</span>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-500">○</span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -700,6 +902,8 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
           </p>
         </div>
       </AdminCallout>
+
+      <TipsPanel />
 
       <Card className={cn(panelClassName, "flex flex-wrap items-center gap-3 p-4")}>
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>

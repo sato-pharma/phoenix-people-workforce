@@ -194,6 +194,8 @@ export const adminNavigationSections = [
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }] },
       { href: "/sales/weekly/branch-mapping", icon: MapPin, label: "Branch Region Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
       { href: "/sales/weekly/product-mapping", icon: Tags, label: "Product Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
+      { href: "/sales/weekly/mapping", icon: Tags, label: "Weekly Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
+      { href: "/sales/weekly/missing", icon: TriangleAlert, label: "Weekly Missing Data", permissions: [{ action: "update", resource: "weekly_sales" }] },
       { href: "/sales/weekly/missing-products", icon: TriangleAlert, label: "Missing Products", permissions: [{ action: "update", resource: "weekly_sales" }] },
       { href: "/sales/weekly/assignments", icon: UsersRound, label: "Weekly Product Access", permissions: [{ action: "update", resource: "weekly_sales" }] },
     ],
