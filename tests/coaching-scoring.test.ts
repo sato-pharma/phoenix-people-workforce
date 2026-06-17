@@ -25,7 +25,7 @@ export function runCoachingScoringTests() {
   assert.equal(coachingScoreItems.length, coachingScoreItemCount);
   assert.equal(coachingMaxScore, coachingScoreItemCount * coachingMaxItemScore);
   assert.equal(coachingMinItemScore, 1);
-  assert.equal(coachingMaxItemScore, 6);
+  assert.equal(coachingMaxItemScore, 5);
 
   assert.deepEqual(
     coachingScoreItems.map((item) => item.label),
@@ -56,24 +56,24 @@ export function runCoachingScoringTests() {
   assert.throws(() => calculateCoachingScore({}), /Missing coaching score/);
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 0 }),
-    /from 1 to 6/,
+    /from 1 to 5/,
   );
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 7 }),
-    /from 1 to 6/,
+    /from 1 to 5/,
   );
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 4.5 }),
-    /from 1 to 6/,
+    /from 1 to 5/,
   );
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), unknown_score: 4 } as CoachingScoreInput),
     /Unknown coaching score item/,
   );
 
-  const perfect = calculateCoachingScore(scoresWith(6));
-  assert.equal(perfect.actualScore, 120);
-  assert.equal(perfect.maxScore, 120);
+  const perfect = calculateCoachingScore(scoresWith(5));
+  assert.equal(perfect.actualScore, 100);
+  assert.equal(perfect.maxScore, 100);
   assert.equal(perfect.finalScorePercent, 100);
   assert.equal(perfect.performanceZone, "excellence_zone");
 
@@ -91,10 +91,10 @@ export function runCoachingScoringTests() {
       competitor_knowledge: 1,
       medical_patient_knowledge: 1,
       product_knowledge: 1,
-      execution_follow_up: 6,
-      pre_call_planning: 6,
-      time_territory_planning: 6,
-      using_promotional_material: 6,
+      execution_follow_up: 5,
+      pre_call_planning: 5,
+      time_territory_planning: 5,
+      using_promotional_material: 5,
     }),
   );
   assert.equal(mixed.strongestParameter.category, "business_planning");

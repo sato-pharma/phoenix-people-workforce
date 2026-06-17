@@ -29,7 +29,7 @@ function summary(): CoachingReportSummaryRow {
   return {
     acknowledged: true,
     acknowledgedAt: "2026-05-10T10:00:00.000Z",
-    actualScore: 102,
+    actualScore: 85,
     areaId: 1,
     areaName: "Cairo",
     coachHrId: "TM-1",
@@ -42,7 +42,7 @@ function summary(): CoachingReportSummaryRow {
     finalScorePercent: 85,
     lineId: 1,
     lineName: "CNS",
-    maxScore: 120,
+    maxScore: 100,
     medicalRepHrId: "B-777",
     medicalRepName: "أحمد Phoenix Rep",
     performanceZone: "green_zone",
@@ -60,7 +60,7 @@ function detail(longText: string): CoachingReportDetail {
   return {
     report: {
       acknowledged_at: "2026-05-10T10:00:00.000Z",
-      actual_score: 102,
+      actual_score: 85,
       area_id: 1,
       area_of_development: `Improve follow-up discipline\u0001 ${longText}`,
       coach_hr_id: "TM-1",
@@ -77,7 +77,7 @@ function detail(longText: string): CoachingReportDetail {
       id: "report-1",
       line_id: 1,
       locked_at: null,
-      max_score: 120,
+      max_score: 100,
       medical_rep_hr_id: "B-777",
       performance_zone: "green_zone",
       report_number: "COACH-2026-0001",
@@ -115,8 +115,8 @@ export async function runCoachingExcelExportTests() {
   assert.equal(coachingZoneLabel("critical_red"), "Red Zone / Below Expectations");
   assert.equal(coachingZoneLabel("red_zone"), "Red Zone / Below Expectations");
   assert.equal(coachingStatusLabel("reviewed_by_employee"), "Reviewed by Employee");
-  assert.equal(coachingScoreMeaning(2), "Below Expectations");
-  assert.equal(coachingScoreMeaning(6), "Exceeds Expectations / Outstanding");
+  assert.equal(coachingScoreMeaning(1), "Below Expectations");
+  assert.equal(coachingScoreMeaning(5), "Exceeds Expectations");
 
   const buffer = await generateCoachingReportsWorkbook({
     exportDate: new Date("2026-05-11T10:00:00.000Z"),

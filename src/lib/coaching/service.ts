@@ -12,6 +12,7 @@ import {
   lineScopeIncludesEmployee,
   reportsToManagerSeat,
 } from "@/lib/workforce/hierarchy-resolver";
+import { coachingMaxScore } from "@/lib/coaching/constants";
 import {
   buildCoachingScoreAnalytics,
   emptyCoachingScoreAnalytics,
@@ -394,7 +395,7 @@ export async function createDraftCoachingReport(input: CoachingReportCreateInput
       final_score_percent: scoreResult?.finalScorePercent ?? 0,
       general_remarks: cleanText(input.generalRemarks),
       line_id: medicalRep.lineId,
-      max_score: scoreResult?.maxScore ?? 120,
+      max_score: scoreResult?.maxScore ?? coachingMaxScore,
       medical_rep_hr_id: medicalRep.hrId,
       performance_zone: scoreResult?.performanceZone ?? null,
       status: "draft",

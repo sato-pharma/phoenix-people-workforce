@@ -101,11 +101,11 @@ export function coachingStatusLabel(status: string | null | undefined) {
 
 export function coachingScoreMeaning(score: number | string | null | undefined) {
   const numeric = Number(score);
-  if (numeric <= 2) return "Below Expectations";
-  if (numeric === 3) return "Needs Improvement";
-  if (numeric === 4) return "Within Average";
-  if (numeric === 5) return "Meets Expectations";
-  if (numeric === 6) return "Exceeds Expectations / Outstanding";
+  if (numeric === 1) return "Below Expectations";
+  if (numeric === 2) return "Needs Improvement";
+  if (numeric === 3) return "Within Average";
+  if (numeric === 4) return "Meets Expectations";
+  if (numeric === 5) return "Exceeds Expectations";
   return "Not scored";
 }
 

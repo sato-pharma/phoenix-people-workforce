@@ -156,13 +156,13 @@ function zoneClassName(zone: string | null | undefined) {
   return zoneClassNames[zone as CoachingPerformanceZone];
 }
 
-/** Color-grading for individual score items (1-6 scale). */
+/** Color-grading for individual score items (1-5 scale). */
 function scoreColorClass(score: number | null | undefined): string {
   const s = Number(score ?? 0);
-  if (s >= 6) return "border-sky-200 bg-sky-50 text-sky-700 ring-sky-100";
-  if (s >= 5) return "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-100";
-  if (s >= 4) return "border-amber-200 bg-amber-50 text-amber-700 ring-amber-100";
-  if (s >= 3) return "border-orange-200 bg-orange-50 text-orange-700 ring-orange-100";
+  if (s >= 5) return "border-sky-200 bg-sky-50 text-sky-700 ring-sky-100";
+  if (s >= 4) return "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (s >= 3) return "border-amber-200 bg-amber-50 text-amber-700 ring-amber-100";
+  if (s >= 2) return "border-orange-200 bg-orange-50 text-orange-700 ring-orange-100";
   return "border-rose-200 bg-rose-50 text-rose-700 ring-rose-100";
 }
 
@@ -177,10 +177,10 @@ function categoryColorClass(percent: number): string {
 
 /** Color for distribution bar segments. */
 function distributionSegmentColor(score: number): string {
-  if (score >= 6) return "bg-sky-500";
-  if (score >= 5) return "bg-emerald-500";
-  if (score >= 4) return "bg-amber-400";
-  if (score >= 3) return "bg-orange-400";
+  if (score >= 5) return "bg-sky-500";
+  if (score >= 4) return "bg-emerald-500";
+  if (score >= 3) return "bg-amber-400";
+  if (score >= 2) return "bg-orange-400";
   return "bg-rose-500";
 }
 
@@ -279,14 +279,14 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
 }
 
 function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
-  const distribution = [6, 5, 4, 3, 2, 1].map((s) => ({
+  const distribution = [5, 4, 3, 2, 1].map((s) => ({
     count: scores.filter((item) => item.score === s).length,
     score: s,
   }));
   const total = scores.length || 1;
 
   return (
-    <div aria-label={`Score distribution: ${distribution.filter((d) => d.count > 0).map((d) => `${d.score}/6: ${d.count}`).join(", ")}`} role="img">
+    <div aria-label={`Score distribution: ${distribution.filter((d) => d.count > 0).map((d) => `${d.score}/5: ${d.count}`).join(", ")}`} role="img">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Score distribution</p>
       <div className="mt-2 flex h-6 w-full overflow-hidden rounded">
         {distribution.map((d) =>
@@ -307,7 +307,7 @@ function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
           d.count > 0 ? (
             <span className="flex items-center gap-1 text-[10px] text-slate-500" key={d.score}>
               <span className={cn("inline-block h-2 w-2 rounded-sm", distributionSegmentColor(d.score))} />
-              {d.score}/6: {d.count}
+              {d.score}/5: {d.count}
             </span>
           ) : null,
         )}
@@ -531,7 +531,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
               20 field excellence points
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Each scoring item is rated from 1 to 6 across five coaching parameters.
+              Each scoring item is rated from 1 to 5 across five coaching parameters.
             </p>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded bg-orange-50 text-orange-600">

@@ -58,6 +58,7 @@ import { runCommunicationSourceOfTruthTests } from "./communication-source-of-tr
 import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
 import { runCoachingAnalyticsTests } from "./coaching-analytics.test.ts";
 import { runCoachingExcelExportTests } from "./coaching-excel-export.test.ts";
+import { runCoachingImportTests } from "./coaching-import.test.ts";
 import { runCoachingAccessScopeTests } from "./coaching-access-scope.test.ts";
 import { runSalesOthersBucketTests } from "./sales-others-bucket.test.ts";
 import { runSalesRoleMappingTests } from "./sales-role-mapping.test.ts";
@@ -254,6 +255,7 @@ await runTest("communication source of truth", runCommunicationSourceOfTruthTest
 await runTest("coaching scoring", runCoachingScoringTests);
 await runTest("coaching analytics", runCoachingAnalyticsTests);
 await runTest("coaching excel export", runCoachingExcelExportTests);
+await runTest("coaching import", runCoachingImportTests);
 await runTest("coaching access scope", runCoachingAccessScopeTests);
 await runTest("coaching permissions", runCoachingPermissionTests);
 await runTest("coaching in-app notifications", runCoachingInAppNotificationTests);
