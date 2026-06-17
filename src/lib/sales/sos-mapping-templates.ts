@@ -91,7 +91,8 @@ async function loadExistingProductAliases(distributorCode: string): Promise<{ al
 
 // Blank rows the user can fill on a downloaded template without unprotecting it (overflow can still be
 // added with Excel's "insert rows", which inherits the locked Distrub-ID + unlocked editable columns).
-const SPARE_ROWS = 1000;
+const PRODUCT_SPARE_ROWS = 1000;
+const CUSTOMER_SPARE_ROWS = 30000;
 
 /** Header-row column index whose label matches any of `names` (case-insensitive); 0 if none. */
 function headerIndex(sheet: ExcelJS.Worksheet, names: string[]): number {
@@ -104,15 +105,14 @@ function headerIndex(sheet: ExcelJS.Worksheet, names: string[]): number {
   return found;
 }
 
-// Lock the Distrub-ID column (col 1) to the chosen distributor so the user NEVER fills it, while every
-// other column stays freely editable — plus a buffer of blank rows for new entries. Mirrors the
-// master-data export-workbook protection pattern. `editableColumns` = count of columns after col 1.
-async function lockDistributorColumn(sheet: ExcelJS.Worksheet, distributorCode: string, editableColumns: number, prefilledRows: number) {
-  const totalRows = prefilledRows + SPARE_ROWS;
+// Locks the Distrub-ID column (col 1) and protects the sheet — used by the product mapping template
+// (small row count, protection prevents accidental code edits).
+async function lockDistributorColumn(sheet: ExcelJS.Worksheet, distributorCode: string, editableColumns: number, prefilledRows: number, spareRows: number) {
+  const totalRows = prefilledRows + spareRows;
   for (let i = 0; i < totalRows; i += 1) {
     const row = sheet.getRow(2 + i);
     const distCell = row.getCell(1);
-    distCell.value = distributorCode; // hardcoded on every row — the user never types it
+    distCell.value = distributorCode;
     distCell.protection = { locked: true };
     distCell.font = { color: { argb: "FF64748B" } };
     for (let c = 2; c <= editableColumns + 1; c += 1) row.getCell(c).protection = { locked: false };
@@ -127,6 +127,19 @@ async function lockDistributorColumn(sheet: ExcelJS.Worksheet, distributorCode: 
     selectUnlockedCells: true,
     sort: true,
   });
+}
+
+// Pre-stamps the Distrub-ID column (col 1) on every row WITHOUT sheet protection.
+// Used by the customer/brick template: Excel's Ctrl+V blocks paste into protected sheets even
+// when target cells are unlocked, so protection is omitted here. The distributor is validated
+// server-side on import, making the lock unnecessary.
+function stampDistributorColumn(sheet: ExcelJS.Worksheet, distributorCode: string, prefilledRows: number, spareRows: number) {
+  const totalRows = prefilledRows + spareRows;
+  for (let i = 0; i < totalRows; i += 1) {
+    const distCell = sheet.getRow(2 + i).getCell(1);
+    distCell.value = distributorCode;
+    distCell.font = { color: { argb: "FF64748B" } };
+  }
 }
 
 // ── Product Mapping template (PER-DISTRIBUTOR) ──
@@ -155,7 +168,7 @@ export async function buildSosProductMappingTemplate(distributorCode: string): P
     sheet.addRow({ distributor: code, alias: "paste this distributor's item code or item name", productCode: "MASTER_CODE", productName: "(filled automatically)" });
   }
   headerStyle(sheet, ORANGE);
-  await lockDistributorColumn(sheet, code, 3, Math.max(aliases.length, 1));
+  await lockDistributorColumn(sheet, code, 3, Math.max(aliases.length, 1), PRODUCT_SPARE_ROWS);
 
   const reference = workbook.addWorksheet("Master Products");
   reference.columns = [
@@ -271,7 +284,7 @@ export async function buildSosCustomerBrickTemplate(distributorCode: string): Pr
     sheet.addRow({ distributor: code, customerCode: "paste the distributor's customer code", customerName: "", address: "", brickId: "MASTER_BRICK_ID" });
   }
   headerStyle(sheet, ORANGE);
-  await lockDistributorColumn(sheet, code, 4, Math.max(existing.length, 1));
+  stampDistributorColumn(sheet, code, Math.max(existing.length, 1), CUSTOMER_SPARE_ROWS);
 
   const reference = workbook.addWorksheet("Master Bricks");
   reference.columns = [
