@@ -168,10 +168,10 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     discountColumns: ["Discount%"],
   },
   {
-    // EGD-PH — a branch of EGD (parent EG): the hospital/transfer export. Different headers from the
-    // regular EGD pharmacy file (ITEM_NAME_ENG / CARD_DATE / TO_COMPANY_ENTITY_* / VALUE / QTY).
-    distributorCode: "EGD-PH",
-    distributorName: "EGD-PH",
+    // EGD Branch (EG-BR) — a branch of EGD (parent EG): the hospital/transfer export. Different headers
+    // from the regular EGD pharmacy file (ITEM_NAME_ENG / CARD_DATE / TO_COMPANY_ENTITY_* / VALUE / QTY).
+    distributorCode: "EG-BR",
+    distributorName: "EGD Branch",
     productColumns: ["ITEM_CODE", "ITEM_NAME_ENG"],
     qtyColumns: ["QTY"],
     valueColumns: ["VALUE"],

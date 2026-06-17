@@ -32,7 +32,7 @@ export type MasterImportResult = {
 //   • "Direct" — the company-direct channel (region-only; sale value taken straight from the sheet's
 //     Value column — see DIRECT_TEMPLATE in monthly-distributor-import.ts).
 //   • "EP-R" — the EPDA Bulk (wholesale) branch (coded template + normalizer profile).
-//   • "EGD-PH" — a branch of EGD (parent EG), coded template only.
+//   • "EG-BR" — EGD Branch (parent EG), coded template only.
 // These are code-defined and are NOT in the user's distributor-master file, so the add-only master
 // import + a data reset would silently drop them (exactly how "Direct" vanished from the Upload Sales
 // dropdown after the 2026-06-08 reset). They are re-ensured after every distributor-master import.
@@ -40,7 +40,7 @@ export type MasterImportResult = {
 const SYSTEM_DISTRIBUTORS = [
   { distributor_code: "Direct", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
   { distributor_code: "EP-R", distributor_name: "EPDA Bulk", normalized_distributor_name: "epda bulk" },
-  { distributor_code: "EGD-PH", distributor_name: "EGD-PH", normalized_distributor_name: "egd-ph" },
+  { distributor_code: "EG-BR", distributor_name: "EGD Branch", normalized_distributor_name: "egd branch" },
   // Tender channels — separate distributors so tender/hospital sales stay distinct from the
   // distributor's regular pharmacy file. Each has a code-defined raw profile in normalizer/profiles.ts.
   { distributor_code: "IS-T", distributor_name: "Ibn Sina Tender", normalized_distributor_name: "ibn sina tender" },
