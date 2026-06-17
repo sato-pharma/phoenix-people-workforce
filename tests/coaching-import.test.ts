@@ -66,8 +66,16 @@ export async function runCoachingImportTests() {
   // Date parsing — day-first text + ISO + Excel Date object.
   assert.equal(parseCoachingDate("16/02/2026").date, "2026-02-16");
   assert.equal(parseCoachingDate("2026-03-09").date, "2026-03-09");
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14))).date, "2026-01-14");
   assert.equal(parseCoachingDate("not a date").date, null);
+  // Excel Date with day > 12 is unambiguous — kept as-is, not swapped.
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14))).date, "2026-01-14");
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14))).corrected, false);
+  // Excel Date with both fields <= 12 = US-locale day/month swap; recover day-first.
+  // Stored 2026-09-02 (Excel read "09/02" as Sep 2) -> coach meant 9 Feb -> 2026-02-09.
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2))).date, "2026-02-09");
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2))).corrected, true);
+  // Stored 2026-04-05 (Excel read "04/05" as Apr 5) -> coach meant 4 May -> 2026-05-04.
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 3, 5))).date, "2026-05-04");
 
   const workbook = buildWorkbook();
   const { rows, sheetName } = parseCoachingWorkbookRows(workbook);

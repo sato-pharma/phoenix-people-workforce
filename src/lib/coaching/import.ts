@@ -84,6 +84,7 @@ export type CoachingImportRawRow = {
   claimedHrId: string | null;
   coachingDate: string | null;
   coachingDateRaw: string;
+  dateCorrected: boolean;
   generalRemarks: string | null;
   overallScore: number | null;
   repCode: string | null;
@@ -147,17 +148,28 @@ function parseRepName(source: string) {
   return { repCode: null, repName: source.trim() || null, territory: null };
 }
 
-export function parseCoachingDate(value: ExcelJS.CellValue): { date: string | null; display: string } {
+export function parseCoachingDate(value: ExcelJS.CellValue): { corrected: boolean; date: string | null; display: string } {
   const readable = readableExcelCellValue(value);
   if (readable instanceof Date) {
     const iso = readable.toISOString().slice(0, 10);
-    return { date: iso, display: iso };
+    const [year, month, day] = iso.split("-").map(Number);
+    // Coaches enter dates day-first (dd/mm/yyyy). Excel under a US (mm/dd) locale
+    // silently re-stores some of them as a real date with day and month swapped —
+    // but only when the coach's day was <= 12 (a larger day stays text and is parsed
+    // correctly below). When both fields are <= 12 the stored date is ambiguous, so
+    // recover the intended day-first date by swapping month and day. The adjustment
+    // is flagged and shown in the import preview for verification.
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 12 && month !== day) {
+      const swapped = `${year}-${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}`;
+      return { corrected: true, date: swapped, display: iso };
+    }
+    return { corrected: false, date: iso, display: iso };
   }
   const text = String(readable ?? "").trim();
-  if (!text) return { date: null, display: "" };
+  if (!text) return { corrected: false, date: null, display: "" };
 
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return { date: `${iso[1]}-${iso[2]}-${iso[3]}`, display: text };
+  if (iso) return { corrected: false, date: `${iso[1]}-${iso[2]}-${iso[3]}`, display: text };
 
   // Day-first locale (Egypt): dd/mm/yyyy, d/m/yyyy, also "-" or "." separators.
   const dmy = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
@@ -165,10 +177,10 @@ export function parseCoachingDate(value: ExcelJS.CellValue): { date: string | nu
     const day = dmy[1].padStart(2, "0");
     const month = dmy[2].padStart(2, "0");
     if (Number(month) >= 1 && Number(month) <= 12 && Number(day) >= 1 && Number(day) <= 31) {
-      return { date: `${dmy[3]}-${month}-${day}`, display: text };
+      return { corrected: false, date: `${dmy[3]}-${month}-${day}`, display: text };
     }
   }
-  return { date: null, display: text };
+  return { corrected: false, date: null, display: text };
 }
 
 function periodFromDate(date: string | null) {
@@ -247,6 +259,7 @@ export function parseCoachingWorkbookRows(
       claimedHrId,
       coachingDate: parsedDate.date,
       coachingDateRaw: parsedDate.display,
+      dateCorrected: parsedDate.corrected,
       generalRemarks: cellText(worksheet, META_COLUMNS.generalRemarks, rowNumber) || null,
       overallScore,
       repCode: name.repCode,
