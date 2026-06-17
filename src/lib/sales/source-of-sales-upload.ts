@@ -129,7 +129,7 @@ export async function importSourceOfSalesFile(input: {
       };
     }
 
-    return createSourceOfSalesUploadFromBuffer({
+    const persistResult = await createSourceOfSalesUploadFromBuffer({
       buffer: coded.buffer as ArrayBuffer,
       distributorCode: input.distributorCode,
       fileName: input.file.name,
@@ -137,5 +137,17 @@ export async function importSourceOfSalesFile(input: {
       uploadedBy: input.uploadedBy,
       periodOverride: input.periodOverride,
     });
+
+    // Surface ignored rows as an advisory so the user knows exactly how many units were excluded
+    // and why — without blocking the import (the "ignore" mapping is intentional).
+    const { ignoredRows } = normalizeResult;
+    if (ignoredRows.length === 0) return persistResult;
+
+    const totalIgnoredQty = ignoredRows.reduce((sum, r) => sum + r.qty, 0);
+    const ignoredAdvisory =
+      `${ignoredRows.length} row${ignoredRows.length === 1 ? "" : "s"} (${totalIgnoredQty} unit${totalIgnoredQty === 1 ? "" : "s"}) were skipped — ` +
+      `their products are mapped as "ignore" in the Mapping tab. ` +
+      `If this is unexpected, go to the Mapping tab → update those product mappings → Save → re-upload.`;
+    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), ignoredAdvisory] };
   }
 }
