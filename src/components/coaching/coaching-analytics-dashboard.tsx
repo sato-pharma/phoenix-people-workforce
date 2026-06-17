@@ -500,27 +500,32 @@ function buildParameterDistributionData(rows: CoachingParameterDistributionRow[]
   }));
 }
 
+// One row per medical rep, aggregated across that rep's FULL coaching history
+// (not per quarter). Improvement is the rep's first-ever score vs. their latest
+// score, so reps coached more than once — even across different quarters — show a
+// real trend (and drive the "Most Improved" KPI). Single-coaching reps show 0.
 function buildRepRows(data: CoachingAnalyticsPayload) {
-  const reportByHrId = new Map<string, CoachingReportSummaryRow[]>();
-  for (const report of data.reports) {
-    reportByHrId.set(report.medicalRepHrId, [...(reportByHrId.get(report.medicalRepHrId) ?? []), report]);
+  const reportsByHrId = new Map<string, CoachingReportSummaryRow[]>();
+  for (const report of completedReports(data)) {
+    reportsByHrId.set(report.medicalRepHrId, [...(reportsByHrId.get(report.medicalRepHrId) ?? []), report]);
   }
 
-  return data.quarterlySummary.map((row) => {
-    const reports = (reportByHrId.get(row.medicalRepHrId) ?? [])
-      .sort((left, right) => right.coachingDate.localeCompare(left.coachingDate));
-    const latestReport = reports[0] ?? null;
+  return [...reportsByHrId.entries()].map(([hrId, reports]) => {
+    const ordered = [...reports].sort((left, right) => left.coachingDate.localeCompare(right.coachingDate));
+    const first = ordered[0];
+    const latest = ordered[ordered.length - 1];
+    const scores = ordered.map((report) => report.finalScorePercent);
 
     return {
-      averageScore: row.averageScore,
-      coachingCount: row.coachingCount,
-      firstScore: row.firstScore,
-      hrId: row.medicalRepHrId,
-      improvementScore: row.improvementScore,
-      lastCoachingDate: latestReport?.coachingDate ?? null,
-      latestScore: row.latestScore,
-      latestZone: row.latestZone,
-      medicalRep: latestReport?.medicalRepName || row.medicalRepHrId,
+      averageScore: Number(average(scores).toFixed(1)),
+      coachingCount: ordered.length,
+      firstScore: first.finalScorePercent,
+      hrId,
+      improvementScore: Number((latest.finalScorePercent - first.finalScorePercent).toFixed(1)),
+      lastCoachingDate: latest.coachingDate ?? null,
+      latestScore: latest.finalScorePercent,
+      latestZone: latest.performanceZone,
+      medicalRep: latest.medicalRepName || hrId,
     };
   }).sort((left, right) => right.improvementScore - left.improvementScore);
 }
@@ -767,8 +772,8 @@ export function CoachingAnalyticsDashboard({
 
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
         <AdminSectionHeader
-          title="Quarterly Intelligence"
-          description="Per Medical Rep improvement trend and appraisal-support summary."
+          title="Per-Rep Coaching Intelligence"
+          description="One row per medical rep across their full coaching history — first vs latest score, improvement trend, and appraisal-support summary."
           action={<UsersRound className="h-5 w-5 text-[#F97316]" />}
         />
         <table className="w-full table-fixed border-collapse text-left">
