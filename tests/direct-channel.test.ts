@@ -57,8 +57,8 @@ export async function runDirectChannelTests() {
   assert.equal(result.status, "validated"); // no "Area code is required" / "Brick ID is required"
   assert.deepEqual(result.blockingReasons, []);
   assert.equal(result.period, "2026-05");
-  assert.equal(result.totals.totalQty, 15); // 10 + 5 (bonus excluded)
-  assert.equal(result.totals.totalBonusQty, 3); // 2 + 1
+  assert.equal(result.totals.totalQty, 15); // 10 + 5
+  assert.equal(result.totals.totalBonusQty, 0); // bonus column no longer read
   assert.equal(result.totals.totalValue, 550); // 250 + 300, straight from the sheet (NOT 100 + 250)
 
   // ── injectDirectIntoMatrix: regional Direct → region subtotal; National → its own row ──

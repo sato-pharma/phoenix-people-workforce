@@ -206,7 +206,7 @@ export function normalizeRows(
 
     const product = maps.productByCode.get(productCode);
     const qty = parseNum(firstValue(row, header, profile.qtyColumns));
-    const bonusQty = parseNum(firstValue(row, header, profile.bonusColumns), true);
+    const bonusQty = 0;
     const discount = discountFrac(firstValue(row, header, profile.discountColumns));
     const sheetValue = parseNum(firstValue(row, header, profile.valueColumns), true);
     const value = profile.valueSource === "sheet"

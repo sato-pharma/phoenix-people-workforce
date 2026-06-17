@@ -440,7 +440,7 @@ function adaptISS(ctx: AdapterContext): AdapterResult {
 }
 
 // IS (Ibn Sina, "ISP" file) — single sheet "Sheet2", header row 1, data row 2+. NO Date column.
-// Sales Quantity (col9) signed (negative = return). Free Unit (col10) read but NOT priced.
+// Sales Quantity (col9) signed (negative = return). Free Unit (col10) is ignored.
 function adaptIS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const sheet = findSheet(workbook, { name: "Sheet2", includes: "Sheet2" }) ?? workbook.worksheets[0];
@@ -457,7 +457,7 @@ function adaptIS(ctx: AdapterContext): AdapterResult {
     if (!itemCode && !branchCode) continue;
     const stock = cellNumber(at(row, 7));
     const signedSales = cellNumber(at(row, 9));
-    // Free Unit (col10) is read for completeness but deliberately never priced or aggregated.
+    // col10 (Free Unit) is ignored — free units are never counted as sales.
     pushSignedSales(observations, r, { itemCode, itemName, branchCode, branchName }, signedSales);
     if (stock !== 0 || itemCode || branchCode) {
       observations.push({
@@ -605,8 +605,8 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
 // SF (Sofico) — single "Sheet1" workbook. Per-customer invoice detail rows (one invoice line per
 // row). Header row 1, data row 2+. col4=ItemID (Sofico product code, not the master — alias key),
 // col5=ItemName (product display name), col12=State (branch numeric ID, e.g. "2" / "11"),
-// col13=statename (Arabic branch name), col20=SalesQty (gross), col21=BonusQty (read, never
-// priced), col22=ReturnQty (positive), col24=NET SALES (authoritative net — same semantics as
+// col13=statename (Arabic branch name), col20=SalesQty (gross), col21=BonusQty (ignored),
+// col22=ReturnQty (positive), col24=NET SALES (authoritative net — same semantics as
 // RM col15). No period-date column; periodDate is always required on upload.
 function adaptSF(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
@@ -625,7 +625,7 @@ function adaptSF(ctx: AdapterContext): AdapterResult {
     const gross = cellNumber(at(row, 20));    // SalesQty
     const ret = cellNumber(at(row, 22));      // ReturnQty (positive in the file)
     const net = cellNumber(at(row, 24));      // NET SALES — authoritative net of record
-    // BonusQty (col21) is available but never priced (like IS Free Unit).
+    // col21 (BonusQty) is ignored — free units are never counted as sales.
 
     observations.push({
       side: "sales",
