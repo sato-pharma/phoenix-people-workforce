@@ -791,7 +791,8 @@ function marketingProductMatchesRequesterLine(product: MarketingProductDbRow, re
   const productLineName = normalizeScopeText(product.line);
   if (!requesterLineName || !productLineName) return false;
   const resolvedProductLineName = PRODUCT_LINE_TEXT_ALIASES[productLineName] ?? productLineName;
-  return resolvedProductLineName === requesterLineName;
+  const resolvedRequesterLineName = PRODUCT_LINE_TEXT_ALIASES[requesterLineName] ?? requesterLineName;
+  return resolvedProductLineName === resolvedRequesterLineName;
 }
 
 function assertMarketingActor(access: AccessContext) {
