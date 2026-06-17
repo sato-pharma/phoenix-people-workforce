@@ -161,7 +161,7 @@ export function CoachingImportWorkspace() {
                 {result ? "Imported" : `Confirm & import (${totals.matched} report${totals.matched === 1 ? "" : "s"})`}
               </button>
             }
-            description={`Sheet "${preview.sheetName ?? "—"}" · ${totals.total} rows parsed. Review before importing — imported reports are submitted without notifying reps.`}
+            description={`Sheet "${preview.sheetName ?? "—"}" · ${totals.total} rows parsed. Review before importing — imported reports are submitted and auto-acknowledged by the rep, with no notifications sent.`}
             title="Preview"
           />
           <div className="flex flex-wrap gap-2 px-5 pt-5 sm:px-6">
@@ -255,14 +255,14 @@ function CommitSummary({ result }: { result: CoachingImportCommitResult }) {
   return (
     <Card className={cn(adminPanelClassName, "p-0 overflow-hidden")}>
       <AdminSectionHeader
-        description="Historical coaching reports were created as submitted (no rep notifications). Resigned-rep evaluations were archived."
+        description="Historical coaching reports were created as submitted and auto-acknowledged by the rep (no notifications). Resigned-rep evaluations were archived."
         title="Import complete"
       />
       <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
         <AdminCallout tone="success">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            <strong>{result.created.length}</strong> coaching report{result.created.length === 1 ? "" : "s"} imported.
+            <strong>{result.created.length}</strong> coaching report{result.created.length === 1 ? "" : "s"} imported &amp; auto-acknowledged.
           </span>
         </AdminCallout>
         <AdminCallout tone="warning">
