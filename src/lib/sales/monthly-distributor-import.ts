@@ -237,7 +237,7 @@ type HeaderMap = {
   template: DistributorSalesTemplate;
 };
 
-type ParsedDistributorRow = {
+export type ParsedDistributorRow = {
   areaCode: string;
   areaName: string;
   blockCode: string;
@@ -1114,7 +1114,7 @@ function roundedTotals<T extends DistributorSalesTotal>(row: T): T {
   };
 }
 
-function summarizeRows(rows: ParsedDistributorRow[]) {
+export function summarizeRows(rows: ParsedDistributorRow[]) {
   const totals = emptyTotals();
   const areaMap = new Map<string, DistributorSalesAreaSummary>();
   const brickMap = new Map<string, DistributorSalesBrickSummary>();
@@ -2454,13 +2454,38 @@ async function insertSourceOfSalesRows(
   }
 }
 
+// Period lock guard — once a Monthly Sales period is locked, all uploads/deletes for that period are
+// rejected until it is re-opened. Tolerant of a missing lock table (pre-migration = not locked) so it
+// never blocks a normal upload before the Monthly Sales migration is applied.
+export async function assertPeriodNotLocked(period: string | null): Promise<void> {
+  if (!period) return;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("monthly_sales_period_lock")
+    .select("locked")
+    .eq("period", period)
+    .eq("locked", true)
+    .maybeSingle();
+  if (error) return; // table absent or unreachable → treat as not locked (defensive)
+  if (data) {
+    throw new SalesWorkflowError(
+      "period_locked",
+      `${period} is locked. Re-open the Monthly Sales closing for ${period} before changing its uploads.`,
+      409,
+    );
+  }
+}
+
 // Shared persist step: insert the batch + its rows + summaries. Used by both the File-based upload and
 // the in-memory buffer-based upload (the Normalizer's validated import).
-async function persistDistributorSalesUpload(
+export async function persistDistributorSalesUpload(
   parsed: DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] },
   uploadedBy: string,
 ) {
   const { parsedRows, ...result } = parsed;
+
+  // Locked period: reject before writing anything (covers normal, normalizer-buffer, and Office paths).
+  await assertPeriodNotLocked(result.period);
 
   const supabase = getSupabaseAdmin();
 
@@ -2602,6 +2627,9 @@ export async function deleteSourceOfSalesUploadBatch(input: {
 
   if (existingError) throw existingError;
   if (!existing) return null;
+
+  // Locked period: deletes are frozen too, so a locked month can't be quietly altered.
+  await assertPeriodNotLocked(existing.period ? String(existing.period) : null);
 
   const { error } = await supabase
     .from("source_of_sales_import_batches")
