@@ -574,7 +574,7 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
 
   const { error } = await getSupabaseAdmin()
     .from("notification_events")
-    .upsert(rows, { onConflict: "event_key" });
+    .upsert(rows, { onConflict: "event_key", ignoreDuplicates: true });
   if (error && !isProbationSchemaMissing(error)) throw error;
 }
 

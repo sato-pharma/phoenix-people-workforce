@@ -242,6 +242,7 @@ async function authUserByHrId(hrId: string | null | undefined): Promise<AuthReci
       .select("login_id,hr_id,name,auth_email,role,is_active,line,manager_hr_id")
       .ilike("hr_id", normalized)
       .eq("is_active", true)
+      .limit(1)
       .maybeSingle();
     if (error) throw error;
     return data as AuthRecipientRow | null;
@@ -261,6 +262,7 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
       .from("employees")
         .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
       .ilike("hr_id", normalized)
+      .limit(1)
         .maybeSingle(),
       authUserByHrId(normalized),
     ]);
