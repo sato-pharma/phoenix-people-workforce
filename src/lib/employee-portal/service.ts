@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -1210,26 +1211,6 @@ function buildEmployeePayrollBatches(records: PortalPayrollRecord[]) {
     const rightSort = (right.year ?? 0) * 12 + (right.month ?? 0);
     return rightSort - leftSort;
   });
-}
-
-// Supabase PostgREST max_rows caps every query at 1000 rows by default.
-// This helper pages through all results 1000 at a time so callers get everything.
-async function fetchAllRows<T = Record<string, unknown>>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  buildQuery: () => any,
-  pageSize = 1000,
-): Promise<T[]> {
-  const results: T[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    const rows = toSafeArray(data) as T[];
-    results.push(...rows);
-    if (rows.length < pageSize) break;
-    offset += pageSize;
-  }
-  return results;
 }
 
 async function fetchPortalSalesRecords(

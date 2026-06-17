@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   buildSalesOwnershipContext,
   classifyEmployeeNode,
@@ -280,26 +281,6 @@ function relationName(value: unknown, key: string) {
   return rowText(source as Record<string, unknown>, key);
 }
 
-async function fetchAllDataHealthRows<T = Record<string, unknown>>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  buildQuery: () => any,
-  pageSize = 1000,
-): Promise<T[]> {
-  const rows: T[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    const pageRows = (Array.isArray(data) ? data : []) as T[];
-    rows.push(...pageRows);
-    if (pageRows.length < pageSize) break;
-    offset += pageSize;
-  }
-
-  return rows;
-}
-
 function emptySalesClassificationSummary(): DataHealthStats["salesClassification"] {
   return Object.fromEntries(
     salesOwnershipClassifications.map((classification) => [
@@ -380,28 +361,28 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     orphanAudit,
   ] = await Promise.all([
     getEmployeeDirectory(),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase.from("app_auth_users").select("hr_id,is_active,login_id"),
     ),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
     ),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("sales_records")
         .select("id,batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state,month,year"),
     ),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("position_vacancies")
         .select("id,vacancy_code,area_id,line_id,manager_hr_id,status,areas(name),lines(name)"),
     ),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("attendance_device_user_map")
         .select("employee_hr_id,is_active"),
     ),
-    fetchAllDataHealthRows<Record<string, unknown>>(() =>
+    fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("v2_vacation_requests")
         .select("employee_hr_id,status,payment_status,duration_days,manager_decision"),
