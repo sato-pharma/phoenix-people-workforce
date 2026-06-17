@@ -20,7 +20,11 @@ export type OfficePivotParseResult = {
 const PRODUCT_HEADERS = ["row labels", "product", "product name", "item", "item name"];
 // "Sum of المبيعات" = "Sum of Sales" (the units column on the office pivot). Accept a few variants so
 // a slightly different pivot caption still resolves.
-const UNITS_HEADERS = ["sum of المبيعات", "المبيعات", "sum of sales", "sales", "units", "qty", "quantity"];
+const UNITS_HEADERS = [
+  "sum of المبيعات", "المبيعات", "sum of sales", "sales", "units", "qty", "quantity",
+  // Excel pivot auto-prefixes "Sum of Sum of …" when the measure name already starts with "Sum of"
+  "sum of sum of billing quantity", "sum of billing quantity", "billing quantity",
+];
 
 function cellText(cell: ExcelJS.Cell | undefined): string {
   const value = cell?.value as unknown;
