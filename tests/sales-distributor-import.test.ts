@@ -323,10 +323,9 @@ export async function runSalesDistributorImportTests() {
   assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-A")?.totalValue, 75);
   assert.equal(discountResult.byProduct.find((row) => row.productCode === "P-B")?.totalValue, 200);
 
-  // Ibn Sina Sato (IS-S) feed: "Total Quantity" is the primary qty column (combined
-  // paid+free, read before plain "Quantity" which excludes free units). Value = TotalQty
-  // × price; the sheet Net column is ignored. There is no free-unit field so bonusQty = 0.
-  // Row 1: TotalQty=12 (Quantity=10 + 2 free), Row 2: TotalQty=4 (no free units).
+  // Ibn Sina Sato (IS-S) feed: recognised without a free-unit column. "Total Quantity"
+  // (combined paid + free) is read before the plain "Quantity"; value = Total Quantity x
+  // price, ignoring the sheet Net.
   const satoBuffer = await buildSatoWorkbookBuffer([
     ["2026/04/30", 10, 99999, 12, null, "Product A", "P-A", "B-1", "A1", "CA", "IS-S"],
     ["2026/04/30", 4, 88888, 4, null, "Product B", "P-B", "B-2", "A2", "AB", "IS-S"],
@@ -342,9 +341,9 @@ export async function runSalesDistributorImportTests() {
   assert.equal(satoResult.templateKey, "ibn_sina_sato_iss");
   assert.equal(satoResult.status, "validated");
   assert.equal(satoResult.failedRows, 0);
-  assert.equal(satoResult.totals.totalQty, 16);        // Total Quantity: 12 + 4
-  assert.equal(satoResult.totals.totalBonusQty, 0);   // no free-unit column
-  assert.equal(satoResult.totals.totalValue, 320);    // 12*10 + 4*50, Net ignored
+  assert.equal(satoResult.totals.totalQty, 16); // Total Quantity (12 + 4), read before plain Quantity
+  assert.equal(satoResult.totals.totalBonusQty, 0); // no free-unit column
+  assert.equal(satoResult.totals.totalValue, 320); // Total Quantity x price: 12*10 + 4*50, Net ignored
 
   // EPDA Pharmacies (EP-S): recognised; value = qnt × price; the is_bonus line adds nothing.
   // The first row carries a US text date on the 1st of the month — exactly the shape

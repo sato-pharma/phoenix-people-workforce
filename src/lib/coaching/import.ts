@@ -7,6 +7,7 @@ import {
   getEmployeeDirectoryRows,
 } from "@/lib/employees/employee-directory";
 import {
+  coachingImportCoachHrId,
   coachingMaxItemScore,
   coachingMinItemScore,
   coachingScoreItems,
@@ -355,18 +356,23 @@ export async function commitCoachingImport(
   const directoryIndex = buildDirectoryIndex(directory);
   const classified = classifyCoachingImportRows(rows, directoryIndex);
 
-  // Coaching reports must be attributed to a coach (the importing user). If the
-  // importer's account is not linked to an employee, every matched row would fail
-  // its create with a per-row error that is easy to miss. Block the whole import
-  // up front with one clear message so nothing is written and the user can retry
-  // signed in as the coach (or a linked admin).
-  const coachKey = normalizeHrId(access.hrId);
+  // Every imported coaching report is attributed to the fixed field-coaching coach
+  // (A-7), regardless of which admin runs the upload. This makes the coach of record
+  // consistent and removes the dependency on the uploader being a linked employee.
+  const coachKey = normalizeHrId(coachingImportCoachHrId);
   const hasMatched = classified.some((row) => row.classification === "matched");
   if (hasMatched && (!coachKey || !directoryIndex.has(coachKey))) {
     throw new Error(
-      "A linked employee HR_ID is required to import coaching reports: your account is not linked to an employee, so reports cannot be attributed to a coach. No reports were created — sign in as the coach (or a linked admin) and re-upload.",
+      `The coaching import coach (${coachingImportCoachHrId}) was not found among active employees, so reports cannot be created. No reports were created.`,
     );
   }
+  const coachAccess: AccessContext = {
+    hrId: coachingImportCoachHrId,
+    loginId: coachingImportCoachHrId,
+    role: "Training Manager",
+    scope: "system",
+    source: access.source,
+  };
 
   const importBatchId = globalThis.crypto.randomUUID();
   const result: CoachingImportCommitResult = {
@@ -416,10 +422,10 @@ export async function commitCoachingImport(
             scores: row.scores,
             strengthPoints: row.strengthPoints,
           },
-          access,
+          coachAccess,
         );
         const reportId = draft.report.id;
-        const submitted = await submitCoachingReport(reportId, null, access);
+        const submitted = await submitCoachingReport(reportId, null, coachAccess);
         existingReportKeys.add(key);
 
         // Historical reports were already reviewed in person — auto-acknowledge on
@@ -472,7 +478,7 @@ export async function commitCoachingImport(
     archivedInputs.push({
       areaOfDevelopment: row.areaOfDevelopment,
       claimedHrId: row.claimedHrId,
-      coachHrId: access.hrId,
+      coachHrId: coachingImportCoachHrId,
       coachingDate: row.coachingDate,
       coachingQuarter: row.coachingQuarter,
       coachingYear: row.coachingYear,
