@@ -228,7 +228,14 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
                 <td className="px-4 py-3 font-bold text-[#0F172A]">{row.repName ?? row.sourceName}</td>
                 <td className="px-4 py-3 text-[#475569]">{row.territory ?? "—"}</td>
                 <td className="px-4 py-3 text-[#475569]">{row.claimedHrId ?? "—"}</td>
-                <td className="px-4 py-3 text-[#475569]">{row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}</td>
+                <td className="px-4 py-3 text-[#475569]">
+                  {row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}
+                  {row.dateCorrected ? (
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-[#FFF7ED] px-1.5 py-0.5 text-[10px] font-bold text-[#C2410C]" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
+                      adjusted
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3 font-black text-[#0F172A]">
                   {Object.keys(row.scores).length === 20 ? sum : <span className="text-rose-600">{sum} (incomplete)</span>}
                 </td>
