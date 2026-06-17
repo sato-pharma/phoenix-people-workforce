@@ -22,13 +22,15 @@ export async function POST(request: Request) {
 
     let file: File | null = null;
     let distributorCode = "";
+    let period = "";
     const contentType = request.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
       // Large-file path: the browser already uploaded the workbook straight to Storage (bypassing the
       // ~4.5MB serverless body cap) and now passes its storagePath. Download + process it server-side.
-      const body = (await request.json().catch(() => ({}))) as { storagePath?: string; distributorCode?: string };
+      const body = (await request.json().catch(() => ({}))) as { storagePath?: string; distributorCode?: string; period?: string };
       distributorCode = String(body?.distributorCode ?? "").trim();
+      period = String(body?.period ?? "").trim();
       const storagePath = String(body?.storagePath ?? "").trim();
       if (!storagePath) {
         return NextResponse.json({ success: false, error: "Uploaded file reference is missing." }, { status: 400 });
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
       const formFile = formData.get("file");
       file = formFile instanceof File ? formFile : null;
       distributorCode = String(formData.get("distributorCode") ?? "").trim();
+      period = String(formData.get("period") ?? "").trim();
     }
 
     if (!file) {
@@ -79,7 +82,7 @@ export async function POST(request: Request) {
     }
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy });
+    const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy, periodOverride: period });
     const blocked = result.status === "blocked";
 
     return NextResponse.json(

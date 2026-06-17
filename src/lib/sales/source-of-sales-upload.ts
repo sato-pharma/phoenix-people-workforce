@@ -28,6 +28,7 @@ export async function importSourceOfSalesFile(input: {
   distributorCode: string;
   file: File;
   uploadedBy: string;
+  periodOverride?: string;
 }) {
   try {
     return await createSourceOfSalesUpload(input);
@@ -55,6 +56,7 @@ export async function importSourceOfSalesFile(input: {
       fileName: input.file.name,
       persistOnlyIfValidated: false,
       uploadedBy: input.uploadedBy,
+      periodOverride: input.periodOverride,
     });
   }
 }
