@@ -1,9 +1,8 @@
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 
-// Code-defined raw-distributor profiles (Phase 1). Each says which raw column holds what, for the
-// distributor's own untouched export. Later these move into the source_of_sales_distributor_profile
-// table so new distributors need zero code. Territory columns are tried in order until one resolves
-// a brick via the territory alias.
+// Code-defined raw-distributor profiles (Phase 1). Each profile says which raw column holds what,
+// for the distributor's own untouched export. Brick/territory is resolved ONLY via the customer
+// mapping sheet (customerCode → mapping → brick ID). No territory-text or direct-brick-ID fallback.
 
 export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
@@ -17,7 +16,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Customer"],
     customerNameColumns: ["Customer Name"],
     customerAddressColumns: ["Customer Address"],
-    territoryColumns: ["Sal. Dist. Desc.", "Sal. District", "Region"],
     discountColumns: ["Discount%"],
   },
   {
@@ -31,7 +29,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code", "Main Customer Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
-    territoryColumns: ["Brick Name", "Territory Name", "old brick name", "Brick", "old brick", "Governorate Name"],
     discountColumns: ["Discount%"],
   },
   {
@@ -45,20 +42,18 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
-    territoryColumns: ["Brick Name", "Territory Name", "Brick", "Governorate Name"],
     discountColumns: ["Discount%"],
   },
   {
     distributorCode: "SF",
     distributorName: "sofico",
     productColumns: ["ITEMIDE", "OLDITEM", "ITEMNAME"],
-    qtyColumns: ["SOLDQTY", "qty"],
+    qtyColumns: ["qty", "SOLDQTY"],
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
-    customerCodeColumns: ["CUSTOMERCODE", "ORDERACCOUNT"],
+    customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
-    territoryColumns: ["IQVIBRICKCODE", "ORDERGROUPNAME", "GOVER", "bricks"],
     discountColumns: ["Discount%"],
   },
   {
@@ -72,7 +67,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
-    territoryColumns: ["MRKZ_N", "PROVINCE_NAME", "CUSTOMER_ADDRESS"],
     discountColumns: ["Discount%"],
   },
   {
@@ -86,7 +80,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["AccountSerial"],
     customerNameColumns: ["AccountName"],
     customerAddressColumns: ["Address"],
-    territoryColumns: ["TerritoryName", "Address"],
     discountColumns: ["Discount%"],
   },
   {
@@ -100,13 +93,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
-    territoryColumns: ["cust_address"],
     discountColumns: ["Discount%"],
   },
   {
-    // EPDA "Bulk" (wholesale / جملة) branch — same raw EPDA layout as EP-S, but each row carries the
-    // resolved Phoenix Brick ID in its own column ("Column1"), so the brick is read DIRECTLY (no
-    // address-alias guess). Products still resolve from class_code/class_name via the dictionary.
+    // EPDA "Bulk" (wholesale / جملة) branch — same raw EPDA layout as EP-S.
+    // Brick resolves from cust_code via the customer mapping sheet.
     distributorCode: "EP-R",
     distributorName: "EPDA Bulk",
     productColumns: ["class_code", "class_name"],
@@ -117,8 +108,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
-    territoryColumns: ["cust_address"],
-    brickIdColumns: ["Brick ID", "Column1"],
     discountColumns: ["Discount%"],
   },
   {
@@ -133,7 +122,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateColumns: ["تاريخ المستند"],
     customerCodeColumns: ["كود"],
     customerNameColumns: ["العميل"],
-    territoryColumns: ["المنطقة", "bricks"],
     discountColumns: ["خصم"],
   },
   {
@@ -147,14 +135,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
-    territoryColumns: ["منطقة", "عنوان"],
     discountColumns: ["خصم%"],
   },
   {
-    // Chimipharm exports a pivot: "Area name A" (territory) | "Value" (= units sold) | Column2/Column1
-    // (always 0/1) | "Attribute" (product NAME). The quantity lives in the "Value" column — NOT in
-    // "Column2" (which is always 0) — and there is no per-row price column (value is recomputed from the
-    // master). Geography is area-based with no customer code, so areas resolve via territory aliases.
+    // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | Column2/Column1 (always 0/1)
+    // | "Attribute" (product NAME). Quantity lives in "Value" — NOT "Column2" (always 0). No per-row
+    // price column; value is recomputed from master. Brick resolves from customer code via mapping sheet.
     distributorCode: "CP",
     distributorName: "chimipharm",
     productColumns: ["Attribute", "Column1"],
@@ -164,7 +150,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateColumns: ["Date", "Invoice Date"],
     customerCodeColumns: ["Customer", "كود"],
     customerNameColumns: ["Customer Name", "العميل"],
-    territoryColumns: ["Area name A", "Area", "المنطقة"],
     discountColumns: ["Discount%"],
   },
   {
@@ -179,7 +164,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateColumns: ["CARD_DATE"],
     customerCodeColumns: ["TO_COMPANY_ENTITY_CODE"],
     customerNameColumns: ["TO_COMPANY_ENTITY_NAME"],
-    territoryColumns: ["GOV_NAME", "TO_COMPANY_ENTITY_NAME"],
     discountColumns: ["Discount%"],
   },
   {
@@ -195,7 +179,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code", "Main Customer Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
-    territoryColumns: ["Brick Name", "Territory Name", "Brick", "Governorate Name"],
     discountColumns: ["Discount%"],
   },
   {
@@ -210,7 +193,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Ship-To"],
     customerNameColumns: ["Ship-to party", "Name"],
     customerAddressColumns: ["address"],
-    territoryColumns: ["Plant", "Name"],
     discountColumns: ["Discount%"],
   },
   {
@@ -225,11 +207,10 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
-    territoryColumns: ["منطقة", "عنوان"],
     discountColumns: ["خصم%"],
   },
   {
-    // Sofico Tender: customer account from ORDERACCOUNT; brick resolved directly from IQVIBRICKCODE.
+    // Sofico Tender: customer account from ORDERACCOUNT; brick resolved via customer mapping sheet.
     distributorCode: "SF-T",
     distributorName: "Sofico Tender",
     productColumns: ["ITEMIDE", "OLDITEM", "ITEMNAME"],
@@ -253,7 +234,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
-    territoryColumns: ["MRKZ_N", "PROVINCE_NAME", "CUSTOMER_ADDRESS"],
     discountColumns: ["Discount%"],
   },
 ];
