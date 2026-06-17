@@ -135,6 +135,41 @@ function buildRevisedPlanItems(anchorDate: string) {
 // ─── Workflow test ────────────────────────────────────────────────────────────
 
 test.describe("Weekly Plans – full approval workflow", () => {
+  /**
+   * Cancel any active plan A-8 has for the test week so the test is idempotent
+   * across re-runs (avoids employee_plan_headers_active_period_uidx duplicate key).
+   */
+  test.beforeEach(async ({ page }) => {
+    const available = await devAuthAvailable(page);
+    if (!available) return;
+
+    await devAuth(page, "Group Product Manager", "A-8", PORTAL_PLANS_PATH);
+    await page.waitForURL(/employee-portals\/plans/, { timeout: 15_000 });
+
+    type PlanRow = { id: string; periodStartDate: string; periodEndDate: string; status: string };
+    const workspace = await page.evaluate(async () => {
+      const res = await fetch("/api/weekly-plans");
+      return res.json() as Promise<{ data: { plans: PlanRow[] }; success: boolean }>;
+    });
+
+    if (!workspace.success) return;
+
+    const anchorMs = new Date(ANCHOR_DATE).getTime();
+    for (const plan of workspace.data.plans ?? []) {
+      const start = new Date(plan.periodStartDate).getTime();
+      const end   = new Date(plan.periodEndDate).getTime();
+      if (anchorMs >= start && anchorMs <= end && plan.status !== "hr_acknowledged") {
+        await page.evaluate(async (id) => {
+          await fetch(`/api/weekly-plans/${id}/cancel`, {
+            body: JSON.stringify({ comment: "e2e cleanup" }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          });
+        }, plan.id);
+      }
+    }
+  });
+
   test("submit → manager_return → resubmit → manager_approve → ceo_approve → hr_acknowledge", async ({
     page,
   }) => {

@@ -27,7 +27,14 @@ export class WeeklyPlanRpcError extends Error {
 }
 
 function rethrowWeeklyPlanRpcError(error: unknown): never {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  // supabase-js .rpc() returns errors as plain objects { message, code, details, hint }
+  // (not PostgrestError instances) unless .throwOnError() is chained.
+  const obj = error != null && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const message = error instanceof Error
+    ? error.message
+    : typeof obj.message === "string"
+      ? obj.message
+      : String(error ?? "");
   if (message.startsWith("weekly_plan_revision_conflict")) {
     throw new WeeklyPlanRpcError(
       "revision_conflict",
