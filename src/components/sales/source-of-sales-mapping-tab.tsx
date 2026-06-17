@@ -256,7 +256,7 @@ function BootstrapCard({ distributorCode, hasProfile }: { distributorCode: strin
 }
 
 /** Upload a raw sheet → coverage + DISTINCT unknowns with editable codes + AI suggest + save. */
-function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string; hasProfile: boolean }) {
+function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distributorCode: string; hasProfile: boolean; products: { code: string; name: string }[]; bricks: { id: string; name: string }[] }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [aiKind, setAiKind] = useState<"product" | "territory" | null>(null);
@@ -389,6 +389,7 @@ function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string
               kind="product"
               onAi={() => void aiSuggest("product")}
               onChange={(raw, code) => setProductCodes((prev) => ({ ...prev, [raw]: code }))}
+              options={products}
               rows={preview.unknownProducts}
             />
           ) : null}
@@ -400,6 +401,7 @@ function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string
               kind="territory"
               onAi={() => void aiSuggest("territory")}
               onChange={(raw, code) => setTerritoryCodes((prev) => ({ ...prev, [raw]: code }))}
+              options={bricks.map((b) => ({ code: b.id, name: b.name }))}
               rows={preview.unknownTerritories}
             />
           ) : null}
@@ -428,10 +430,72 @@ function MissingPanel({ distributorCode, hasProfile }: { distributorCode: string
   );
 }
 
+function MappingCombobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  options: { code: string; name: string }[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function openWithPos() {
+    if (inputRef.current) {
+      const r = inputRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 2, left: r.left, width: r.width });
+    }
+    setOpen(true);
+  }
+
+  const q = value.toLowerCase();
+  const filtered = q
+    ? options.filter((o) => o.code.toLowerCase().includes(q) || o.name.toLowerCase().includes(q)).slice(0, 25)
+    : options.slice(0, 25);
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        className="h-9 w-full rounded-lg border border-[#E2E8F0] px-2 text-sm focus:border-[#FDBA74] focus:outline-none"
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => { onChange(e.target.value); openWithPos(); }}
+        onFocus={openWithPos}
+        placeholder={placeholder}
+        value={value}
+      />
+      {open && filtered.length > 0 && pos && (
+        <div
+          className="z-[9999] max-h-48 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
+        >
+          {filtered.map((o) => (
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
+              key={o.code}
+              onMouseDown={() => { onChange(o.code); setOpen(false); }}
+              type="button"
+            >
+              <span className="shrink-0 font-mono text-xs font-bold text-[#F97316]">{o.code}</span>
+              <span className="truncate text-xs text-[#64748B]">{o.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UnknownTable({
   rows,
   codes,
   kind,
+  options,
   busyAi,
   onAi,
   onChange,
@@ -439,6 +503,7 @@ function UnknownTable({
   rows: DistinctUnknown[];
   codes: Record<string, string>;
   kind: "product" | "territory";
+  options: { code: string; name: string }[];
   busyAi: boolean;
   onAi: () => void;
   onChange: (raw: string, code: string) => void;
@@ -473,9 +538,9 @@ function UnknownTable({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-[#64748B]">{row.count}</td>
                 <td className="px-4 py-2">
-                  <input
-                    className="h-9 w-full rounded-lg border border-[#E2E8F0] px-2 text-sm focus:border-[#FDBA74] focus:outline-none"
-                    onChange={(event) => onChange(row.raw, event.target.value)}
+                  <MappingCombobox
+                    onChange={(code) => onChange(row.raw, code)}
+                    options={options}
                     placeholder={kind === "product" ? "e.g. TE001" : "e.g. B100-11"}
                     value={codes[row.raw] ?? ""}
                   />
@@ -673,7 +738,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
 
       <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
 
-      <MissingPanel distributorCode={distributorCode} hasProfile={hasProfile} />
+      <MissingPanel bricks={bricks} distributorCode={distributorCode} hasProfile={hasProfile} products={products} />
 
       <Card className={cn(panelClassName, "space-y-3 p-5")}>
         <div>

@@ -35,6 +35,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Direct channel sheets use the Direct import on Source of Sales (pick 'Direct'). The validated Normalizer import is for distributor sheets." }, { status: 400 });
     }
 
+    // Block if any rows could not be mapped — never silently drop qty.
+    if (result.exceptions.length > 0) {
+      const rowLines = result.exceptions.slice(0, 20).map((exc) => {
+        const item = exc.rawProductName || exc.rawProduct || "?";
+        const area = exc.rawTerritory || exc.rawCustomerCode || "?";
+        if (exc.reason === "product") return `Row ${exc.rawRowNumber}: product "${item}" not mapped`;
+        if (exc.reason === "brick") return `Row ${exc.rawRowNumber}: territory "${area}" not mapped`;
+        return `Row ${exc.rawRowNumber}: product "${item}" and territory "${area}" not mapped`;
+      });
+      const more = result.exceptions.length > 20 ? ` …and ${result.exceptions.length - 20} more.` : "";
+      return NextResponse.json({
+        success: false,
+        error: `${result.exceptions.length} row${result.exceptions.length === 1 ? "" : "s"} could not be imported — product or territory not mapped. Fix them in the Mapping tab then re-import.`,
+        data: {
+          blockingReasons: [...rowLines, more].filter(Boolean),
+          failedRows: result.exceptions.length,
+          importableRows: result.coded.length,
+          status: "blocked",
+        },
+      }, { status: 400 });
+    }
+
     const persisted = await createSourceOfSalesUploadFromBuffer({
       buffer: buffer as ArrayBuffer,
       distributorCode,

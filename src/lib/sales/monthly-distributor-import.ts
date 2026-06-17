@@ -2229,11 +2229,20 @@ function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSum
 
 export async function loadSourceOfSalesDashboard(period?: string | null): Promise<SourceOfSalesDashboard> {
   const supabase = getSupabaseAdmin();
-  // The brick-name master is independent of period/batch/summary selection, so fire it now
-  // in parallel instead of as a 4th sequential round-trip at the end.
+  // The brick/area/region-name masters are independent of period/batch/summary selection, so fire
+  // them now in parallel instead of as extra sequential round-trips at the end. Used to self-heal
+  // group labels to their master NAME (areas/regions/bricks), so the dashboard never shows a bare code.
   const brickNamesPromise = supabase
     .from("source_of_sales_bricks")
     .select("brick_id,brick_name")
+    .eq("active", true);
+  const regionNamesPromise = supabase
+    .from("source_of_sales_regions")
+    .select("region_code,region_name")
+    .eq("active", true);
+  const areaNamesPromise = supabase
+    .from("source_of_sales_areas")
+    .select("area_code,area_name,region_code")
     .eq("active", true);
 
   const periodsResult = await supabase
@@ -2294,26 +2303,63 @@ export async function loadSourceOfSalesDashboard(period?: string | null): Promis
     summaries: (summariesResult.data ?? []).map((row) => mapSourceOfSalesSummary(row as Record<string, unknown>)),
   });
 
-  // Resolve brick display names live from the master. Historical imports were saved
-  // while the brick reference query was failing, so their stored brick label is the raw
-  // ID. Overriding the label here self-heals the table without a re-import. The query was
-  // started in parallel at the top of this function.
-  const brickNamesResult = await brickNamesPromise;
+  // Resolve display NAMES live from the masters for regions, areas, and bricks. Historical imports
+  // (and aggregated sheets that only carry a code or an Arabic territory) stored the raw code as the
+  // label; overriding the label here self-heals the dashboard without a re-import so every group shows
+  // its master name, never a bare code. The queries were started in parallel at the top of this fn.
+  const [brickNamesResult, regionNamesResult, areaNamesResult] = await Promise.all([
+    brickNamesPromise,
+    regionNamesPromise,
+    areaNamesPromise,
+  ]);
+
+  // region_code → region_name
+  const regionNameByCode = new Map<string, string>();
+  if (!regionNamesResult.error) {
+    for (const row of regionNamesResult.data ?? []) {
+      const code = normalizeCode(String(row.region_code ?? ""));
+      const name = String(row.region_name ?? "");
+      if (code && name) regionNameByCode.set(code, name);
+    }
+  }
+  // area_code → { name, region_code } (region_code lets an area resolve its parent region name)
+  const areaInfoByCode = new Map<string, { name: string; regionCode: string }>();
+  if (!areaNamesResult.error) {
+    for (const row of areaNamesResult.data ?? []) {
+      const code = normalizeCode(String(row.area_code ?? ""));
+      const name = String(row.area_name ?? "");
+      if (code) areaInfoByCode.set(code, { name, regionCode: normalizeCode(String(row.region_code ?? "")) });
+    }
+  }
+  // brick_id → brick_name
+  const brickNameById = new Map<string, string>();
   if (!brickNamesResult.error) {
-    const brickNameById = new Map<string, string>();
     for (const row of brickNamesResult.data ?? []) {
       const code = normalizeCode(String(row.brick_id ?? ""));
       const name = String(row.brick_name ?? "");
       if (code && name) brickNameById.set(code, name);
     }
-    const byBrick = dashboard.byBrick.map((group) => {
-      const name = group.code ? brickNameById.get(normalizeCode(group.code)) : undefined;
-      return name && name !== group.label ? { ...group, label: name } : group;
-    });
-    return { ...dashboard, byBrick };
   }
 
-  return dashboard;
+  // The master is the source of truth for names: whenever it has a name for the group's code, use it.
+  const byRegion = dashboard.byRegion.map((group) => {
+    const name = group.code ? regionNameByCode.get(normalizeCode(group.code)) : undefined;
+    return name && name !== group.label ? { ...group, label: name } : group;
+  });
+  const byArea = dashboard.byArea.map((group) => {
+    const info = group.code ? areaInfoByCode.get(normalizeCode(group.code)) : undefined;
+    const label = info?.name || group.label;
+    // The area's parent column (group.line) holds the region label; resolve it to the region name too.
+    const parentName = info?.regionCode ? regionNameByCode.get(info.regionCode) : undefined;
+    const line = parentName || group.line;
+    return label !== group.label || line !== group.line ? { ...group, label, line } : group;
+  });
+  const byBrick = dashboard.byBrick.map((group) => {
+    const name = group.code ? brickNameById.get(normalizeCode(group.code)) : undefined;
+    return name && name !== group.label ? { ...group, label: name } : group;
+  });
+
+  return { ...dashboard, byArea, byBrick, byRegion };
 }
 
 function sourceOfSalesSummaryRows(batchId: string, result: DistributorSalesValidationResult) {
