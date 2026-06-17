@@ -7,6 +7,7 @@ import {
   Database,
   FileSpreadsheet,
   Filter,
+  ListChecks,
   Loader2,
   Package,
   RefreshCw,
@@ -26,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -762,7 +764,7 @@ function SourceOfSalesDashboardPanel({
   );
 }
 
-type SourceOfSalesTab = "dashboard" | "mapping" | "products" | "sheets";
+type SourceOfSalesTab = "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1040,6 +1042,17 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
+              activeTab === "monthly-sales" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("monthly-sales")}
+            variant="secondary"
+          >
+            <ListChecks className="h-4 w-4" />
+            Monthly Sales
+          </Button>
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
               activeTab === "sheets" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
             )}
             onClick={() => setActiveTab("sheets")}
@@ -1090,6 +1103,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             onRefresh={() => void reloadDashboard(dashboard?.period)}
             refreshing={isRefreshingDashboard}
           />
+        ) : activeTab === "monthly-sales" ? (
+          <MonthlySalesWizard />
         ) : activeTab === "sheets" ? (
           <>
         <AdminTableShell
