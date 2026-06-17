@@ -190,7 +190,7 @@ const TIPS: Tip[] = [
   { icon: "⚡", title: "Bootstrap from a coded file", body: "Have a sheet with Phoenix codes already? Upload it once — the system maps 100+ products and areas instantly.", scrollId: "sos-bootstrap", actionLabel: "Go to Bootstrap ↓" },
   { icon: "🤖", title: "AI fills the gaps for you", body: "Upload a raw file in the Analyze section, click AI Suggest — GPT-4o fills every product and area code. Review, save, done.", scrollId: "sos-analyze", actionLabel: "Go to Analyze ↓" },
   { icon: "💾", title: "Map once, reuse forever", body: "Once saved, those raw values auto-map forever on every future upload — zero repeat work each month." },
-  { icon: "🎯", title: "Leave blanks intentionally", body: "Empty code = exclude those rows cleanly. Good for discontinued products or invalid territories — don't force-map them." },
+  { icon: "🎯", title: "Leave blanks intentionally", body: "Empty code = exclude those rows cleanly. Good for discontinued products or invalid territories." },
   { icon: "🔗", title: "Fix Missing Data first", body: "Red product or area codes block rows from importing. Fix them here before uploading raw files.", href: "/sales/missing-data", actionLabel: "Open Missing Data →" },
 ];
 
@@ -199,22 +199,16 @@ function TipsPanel() {
     if (typeof window === "undefined") return false;
     try { return localStorage.getItem("sos-tips-open") === "true"; } catch { return false; }
   });
-
   function toggle() {
     setOpen((prev) => {
       const next = !prev;
-      try { localStorage.setItem("sos-tips-open", String(next)); } catch { /* ignore */ }
+      try { localStorage.setItem("sos-tips-open", String(next)); } catch { }
       return next;
     });
   }
-
   return (
     <div className="rounded-2xl border border-[#FED7AA] bg-[#FFF7ED]">
-      <button
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-        onClick={toggle}
-        type="button"
-      >
+      <button className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={toggle} type="button">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-[#F97316]" />
           <span className="text-sm font-black text-[#0F172A]">5 mapping tips &amp; tricks</span>
@@ -230,17 +224,9 @@ function TipsPanel() {
                 <p className="text-xs font-black text-[#0F172A]">{tip.title}</p>
                 <p className="text-xs leading-5 text-[#64748B]">{tip.body}</p>
                 {tip.href ? (
-                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" href={tip.href}>
-                    {tip.actionLabel}
-                  </Link>
+                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
                 ) : tip.scrollId ? (
-                  <button
-                    className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white"
-                    onClick={() => document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    type="button"
-                  >
-                    {tip.actionLabel}
-                  </button>
+                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" onClick={() => document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" })} type="button">{tip.actionLabel}</button>
                 ) : null}
               </div>
             </div>
@@ -290,7 +276,7 @@ function BootstrapCard({ distributorCode, hasProfile }: { distributorCode: strin
   }
 
   return (
-    <Card className={cn(panelClassName, "space-y-4 p-5")}>
+    <Card className={cn(panelClassName, "space-y-4 p-5")} id="sos-bootstrap">
       <div>
         <h3 className="text-lg font-black tracking-tight text-slate-950">Learn from a coded file</h3>
         <p className="mt-1 text-sm leading-6 text-[#64748B]">
@@ -431,10 +417,6 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
     }
   }
 
-  const fullyCodedPct = preview && preview.summary.totalRows > 0
-    ? Math.round((preview.summary.fullyCoded / preview.summary.totalRows) * 100)
-    : 0;
-
   const productsMapped = Object.values(productCodes).filter(Boolean).length;
   const productsTotal = preview?.unknownProducts.length ?? 0;
   const territoriesMapped = Object.values(territoryCodes).filter(Boolean).length;
@@ -442,8 +424,12 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const hasUnknowns = productsTotal > 0 || territoriesTotal > 0;
   const allReady = hasUnknowns && productsMapped === productsTotal && territoriesMapped === territoriesTotal;
 
+  const fullyCodedPct = preview && preview.summary.totalRows > 0
+    ? Math.round((preview.summary.fullyCoded / preview.summary.totalRows) * 100)
+    : 0;
+
   return (
-    <Card className={cn(panelClassName, "space-y-4 p-5")}>
+    <Card className={cn(panelClassName, "space-y-4 p-5")} id="sos-analyze">
       <div>
         <h3 className="text-lg font-black tracking-tight text-slate-950">Find unmapped items (AI assist)</h3>
         <p className="mt-1 text-sm leading-6 text-[#64748B]">
@@ -488,28 +474,18 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
                 <div className="flex items-center gap-3">
                   <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Products</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
-                    <div
-                      className={cn("h-full rounded-full transition-all duration-300", productsMapped === productsTotal ? "bg-emerald-500" : "bg-[#F97316]")}
-                      style={{ width: `${Math.round((productsMapped / productsTotal) * 100)}%` }}
-                    />
+                    <div className={cn("h-full rounded-full transition-all duration-300", productsMapped === productsTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: `${Math.round((productsMapped / productsTotal) * 100)}%` }} />
                   </div>
-                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", productsMapped === productsTotal ? "text-emerald-600" : "text-[#F97316]")}>
-                    {productsMapped}/{productsTotal}
-                  </span>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", productsMapped === productsTotal ? "text-emerald-600" : "text-[#F97316]")}>{productsMapped}/{productsTotal}</span>
                 </div>
               ) : null}
               {territoriesTotal > 0 ? (
                 <div className="flex items-center gap-3">
                   <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Areas</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
-                    <div
-                      className={cn("h-full rounded-full transition-all duration-300", territoriesMapped === territoriesTotal ? "bg-emerald-500" : "bg-[#F97316]")}
-                      style={{ width: `${Math.round((territoriesMapped / territoriesTotal) * 100)}%` }}
-                    />
+                    <div className={cn("h-full rounded-full transition-all duration-300", territoriesMapped === territoriesTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: `${Math.round((territoriesMapped / territoriesTotal) * 100)}%` }} />
                   </div>
-                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-[#F97316]")}>
-                    {territoriesMapped}/{territoriesTotal}
-                  </span>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-[#F97316]")}>{territoriesMapped}/{territoriesTotal}</span>
                 </div>
               ) : null}
             </div>
@@ -519,18 +495,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             <AdminCallout tone="success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex flex-1 items-center justify-between gap-3">
-                <p className="font-semibold text-sm">
-                  {[
-                    productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "",
-                    territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : "",
-                  ].filter(Boolean).join(" + ")} ready — save now
+                <p className="text-sm font-semibold">
+                  {[productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "", territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : ""].filter(Boolean).join(" + ")} ready — save now
                 </p>
-                <Button
-                  className="h-8 shrink-0 gap-1.5 rounded-xl bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]"
-                  disabled={saving}
-                  onClick={() => void save()}
-                  type="button"
-                >
+                <Button className="h-8 shrink-0 gap-1.5 rounded-xl bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={saving} onClick={() => void save()} type="button">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                   Save All
                 </Button>
@@ -588,28 +556,13 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 text-sm font-bold text-[#0369A1]">
               <UploadCloud className="h-4 w-4 shrink-0" />
-              <span>
-                {mappingsSaved
-                  ? "Mappings saved — upload the same raw file to import:"
-                  : "All items already mapped — upload the raw file to import:"}
-              </span>
+              <span>{mappingsSaved ? "Mappings saved — upload the same raw file to import:" : "All items already mapped — upload the raw file to import:"}</span>
             </div>
-            <Button
-              className="h-9 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]"
-              disabled={importing}
-              onClick={() => importRef.current?.click()}
-              type="button"
-            >
+            <Button className="h-9 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={importing} onClick={() => importRef.current?.click()} type="button">
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
               {importing ? "Importing…" : "Import raw file"}
             </Button>
-            <input
-              accept=".xlsx"
-              className="hidden"
-              onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImportNow(file); }}
-              ref={importRef}
-              type="file"
-            />
+            <input accept=".xlsx" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImportNow(file); }} ref={importRef} type="file" />
           </div>
           <p className="mt-2 text-xs text-[#64748B]">Upload the same raw file you just analyzed — it will be imported with your saved mappings applied.</p>
         </div>
@@ -893,7 +846,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
       <AdminCallout tone="neutral">
         <UploadCloud className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
-          <p className="font-semibold">Map once, then upload the raw sheet as-is.</p>
+          <p className="font-semibold">Map once, then upload the raw sheet as-is — no coded columns to add by hand.</p>
           <p className="text-sm">
             Set up the product and customer mappings below (the AI assist and &ldquo;learn from a coded file&rdquo; do most of
             the work). Then upload each distributor&apos;s <b>raw export</b> on the <b>Uploaded Sheets</b> tab — no coded
