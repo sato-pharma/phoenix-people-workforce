@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Sanity-checks the supabase/migrations directory before CI proceeds.
 // Exits non-zero on any violation so it can gate the validate job.
-'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
 const FILENAME_RE = /^\d{14}_[\w-]+\.sql$/;
