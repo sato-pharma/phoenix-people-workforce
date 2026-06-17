@@ -1256,8 +1256,14 @@ async function parseDistributorSalesWorkbookBuffer(input: {
   distributorCode: string;
   fileName: string;
   references: SalesReferenceData;
+  periodOverride?: string;
 }): Promise<DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] }> {
   const selectedDistributorCode = normalizeCode(input.distributorCode);
+  // Optional period (YYYY-MM) the user picks when a sheet has no date column (e.g. Chimipharm). It is
+  // applied only to rows whose own date can't be resolved — sheets that DO carry dates still auto-detect.
+  const periodOverride = /^\d{4}-\d{2}$/.test(String(input.periodOverride ?? "").trim())
+    ? String(input.periodOverride).trim()
+    : "";
   const maps = buildReferenceMaps(input.references);
   const distributor = maps.distributorByCode.get(selectedDistributorCode);
 
@@ -1356,8 +1362,13 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       bonusQty += Number.isFinite(parsedQty) ? parsedQty : 0;
     }
     const discountRate = isBonusRow ? 1 : discountFraction(rawDiscount);
-    const period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
-    const invoiceDate = resolveInvoiceDate(rawInvoiceDate, invoiceDateDayFirst, period);
+    let period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
+    let invoiceDate = resolveInvoiceDate(rawInvoiceDate, invoiceDateDayFirst, period);
+    // Sheet has no usable date for this row → fall back to the user-selected period (if any).
+    if (!period && periodOverride) {
+      period = periodOverride;
+      invoiceDate = `${periodOverride}-01`;
+    }
 
     // Direct (company) channel: the row value is read STRAIGHT from the sheet's value column
     // (real per-deal pricing), never recomputed from factory price. The row is flagged direct
@@ -1599,7 +1610,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     );
   }
   if (periods.length === 0) {
-    blockingReasons.push("No valid invoice month was detected.");
+    blockingReasons.push("No invoice month found in this sheet — choose a Period (month) above, then upload again.");
   }
   if (periods.length > 1) {
     blockingReasons.push(`The sheet contains multiple invoice months: ${periods.join(", ")}.`);
@@ -2489,6 +2500,7 @@ export async function createSourceOfSalesUpload(input: {
   distributorCode: string;
   file: File;
   uploadedBy: string;
+  periodOverride?: string;
 }) {
   const references = await loadSalesReferenceData();
   const buffer = await input.file.arrayBuffer();
@@ -2497,6 +2509,7 @@ export async function createSourceOfSalesUpload(input: {
     distributorCode: input.distributorCode,
     fileName: input.file.name,
     references,
+    periodOverride: input.periodOverride,
   });
   return persistDistributorSalesUpload(parsed, input.uploadedBy);
 }
@@ -2511,6 +2524,7 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
   fileName: string;
   persistOnlyIfValidated?: boolean;
   uploadedBy: string;
+  periodOverride?: string;
 }) {
   const references = await loadSalesReferenceData();
   const parsed = await parseDistributorSalesWorkbookBuffer({
@@ -2518,6 +2532,7 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
     distributorCode: input.distributorCode,
     fileName: input.fileName,
     references,
+    periodOverride: input.periodOverride,
   });
   if (input.persistOnlyIfValidated && parsed.status !== "validated") {
     // Blocked: return the validation result WITHOUT persisting (fail-closed); drop parsedRows.

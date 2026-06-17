@@ -773,6 +773,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
 
   const [selectedDistributorCode, setSelectedDistributorCode] = useState(defaultDistributor?.code ?? "");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState("");
   const [batches, setBatches] = useState(initialBatches);
   const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
   const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
@@ -925,12 +926,13 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         response = await fetch("/api/sales/monthly-import/validate", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ storagePath: urlPayload.path, distributorCode: selectedDistributorCode }),
+          body: JSON.stringify({ storagePath: urlPayload.path, distributorCode: selectedDistributorCode, period: selectedPeriod }),
         });
       } else {
         const formData = new FormData();
         formData.append("file", selectedFile);
         formData.append("distributorCode", selectedDistributorCode);
+        if (selectedPeriod) formData.append("period", selectedPeriod);
         response = await fetch("/api/sales/monthly-import/validate", {
           body: formData,
           method: "POST",
@@ -1105,20 +1107,33 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </div>
           <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
-                <select
-                  className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
-                  onChange={(event) => setSelectedDistributorCode(event.target.value)}
-                  value={selectedDistributorCode}
-                >
-                  {distributors.map((distributor) => (
-                    <option key={distributor.code} value={distributor.code}>
-                      {distributor.name} / {distributor.code}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="space-y-3">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
+                  <select
+                    className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                    onChange={(event) => setSelectedDistributorCode(event.target.value)}
+                    value={selectedDistributorCode}
+                  >
+                    {distributors.map((distributor) => (
+                      <option key={distributor.code} value={distributor.code}>
+                        {distributor.name} / {distributor.code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
+                    Period <span className="font-medium normal-case tracking-normal text-[#94A3B8]">— only if the sheet has no date</span>
+                  </span>
+                  <input
+                    className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                    onChange={(event) => setSelectedPeriod(event.target.value)}
+                    type="month"
+                    value={selectedPeriod}
+                  />
+                </label>
+              </div>
               <div className="space-y-2">
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
                 <button

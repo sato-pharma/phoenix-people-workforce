@@ -156,11 +156,15 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     discountColumns: ["خصم%"],
   },
   {
+    // Chimipharm exports a pivot: "Area name A" (territory) | "Value" (= units sold) | Column2/Column1
+    // (always 0/1) | "Attribute" (product NAME). The quantity lives in the "Value" column — NOT in
+    // "Column2" (which is always 0) — and there is no per-row price column (value is recomputed from the
+    // master). Geography is area-based with no customer code, so areas resolve via territory aliases.
     distributorCode: "CP",
     distributorName: "chimipharm",
     productColumns: ["Attribute", "Column1"],
-    qtyColumns: ["Column2", "Qty"],
-    valueColumns: ["Value"],
+    qtyColumns: ["Value", "Column2", "Qty"],
+    valueColumns: [],
     valueSource: "recompute",
     dateColumns: ["Date", "Invoice Date"],
     customerCodeColumns: ["Customer", "كود"],
