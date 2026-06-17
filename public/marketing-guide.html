@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Marketing Requests — User Guide · Phoenix Workforce</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  :root {
+    --orange:#f97316; --orange-d:#ea580c; --orange-bg:#fff7ed; --orange-border:#fed7aa;
+    --bg:#ffffff; --bg-soft:#f8fafc; --bg-muted:#f1f5f9;
+    --text:#0f172a; --text-2:#475569; --text-3:#94a3b8;
+    --border:#e2e8f0; --card:#ffffff;
+    --green:#22c55e; --green-bg:#f0fdf4; --green-border:#bbf7d0;
+    --yellow:#f59e0b; --yellow-bg:#fffbeb; --yellow-border:#fde68a;
+    --red:#ef4444; --red-bg:#fef2f2; --red-border:#fecaca;
+    --blue:#3b82f6; --blue-bg:#eff6ff; --blue-border:#bfdbfe;
+    --dark:#0f172a; --dark2:#1e293b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;}
+
+  /* COVER */
+  .cover{background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f172a 100%);color:#fff;padding:64px 48px 56px;position:relative;overflow:hidden;}
+  .cover::before{content:'';position:absolute;top:-100px;right:-100px;width:500px;height:500px;background:radial-gradient(circle,rgba(249,115,22,.15) 0%,transparent 70%);border-radius:50%;}
+  .ci{position:relative;z-index:1;max-width:900px;}
+  .c-brand{display:flex;align-items:center;gap:12px;margin-bottom:44px;}
+  .c-brand img{width:40px;height:40px;object-fit:contain;}
+  .c-brand-label{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.45);}
+  .c-pill{display:inline-flex;align-items:center;gap:7px;background:rgba(249,115,22,.13);border:1px solid rgba(249,115,22,.3);color:#fed7aa;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:5px 14px;border-radius:100px;margin-bottom:20px;}
+  .c-pill::before{content:'●';font-size:7px;color:var(--orange);}
+  .cover h1{font-size:clamp(28px,5vw,50px);font-weight:900;line-height:1.08;letter-spacing:-.03em;margin-bottom:18px;}
+  .cover h1 span{color:var(--orange);}
+  .c-sub{font-size:16px;color:rgba(255,255,255,.55);max-width:520px;line-height:1.7;margin-bottom:40px;}
+  .c-meta{display:flex;gap:36px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.09);padding-top:28px;}
+  .c-meta-l{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.3);margin-bottom:3px;}
+  .c-meta-v{font-size:14px;font-weight:600;color:rgba(255,255,255,.75);}
+
+  /* PAGE */
+  .page{max-width:900px;margin:0 auto;padding:0 36px;}
+
+  /* SECTION */
+  .sec{padding:56px 0 0;}
+  .sec-tag{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--orange);margin-bottom:10px;}
+  .sec-tag::before{content:'';width:18px;height:2px;background:var(--orange);display:inline-block;}
+  .sec h2{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px;}
+  .sec-desc{font-size:15px;color:var(--text-2);max-width:640px;}
+
+  hr.div{border:none;border-top:1px solid var(--border);margin:48px 0 0;}
+
+  /* SCREENSHOT */
+  .ss{margin:24px 0 6px;border-radius:14px;overflow:hidden;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.04);}
+  .ss img{width:100%;display:block;}
+  .ss-cap{text-align:center;font-size:12px;color:var(--text-3);margin-bottom:4px;}
+
+  /* CALLOUT */
+  .box{border-radius:12px;padding:16px 20px;display:flex;gap:13px;align-items:flex-start;margin:20px 0;}
+  .box-icon{font-size:19px;flex-shrink:0;margin-top:1px;}
+  .box-body{}
+  .box-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}
+  .box-text{font-size:14px;line-height:1.65;}
+  .box.tip{background:var(--orange-bg);border:1px solid var(--orange-border);}
+  .box.tip .box-title{color:var(--orange-d);}
+  .box.warn{background:var(--yellow-bg);border:1px solid var(--yellow-border);}
+  .box.warn .box-title{color:#92400e;}
+  .box.ok{background:var(--green-bg);border:1px solid var(--green-border);}
+  .box.ok .box-title{color:#166534;}
+  .box.info{background:var(--blue-bg);border:1px solid var(--blue-border);}
+  .box.info .box-title{color:#1e40af;}
+
+  /* STEPS */
+  .steps{margin:28px 0;}
+  .step{display:flex;gap:18px;padding-bottom:28px;position:relative;}
+  .step:last-child{padding-bottom:0;}
+  .step-l{flex-shrink:0;display:flex;flex-direction:column;align-items:center;}
+  .step-n{width:34px;height:34px;border-radius:50%;background:var(--orange);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;z-index:1;}
+  .step-line{width:2px;background:var(--border);flex:1;margin-top:6px;}
+  .step:last-child .step-line{display:none;}
+  .step-b{flex:1;padding-top:4px;}
+  .step-title{font-size:16px;font-weight:700;margin-bottom:6px;}
+  .step-desc{font-size:14px;color:var(--text-2);line-height:1.65;}
+
+  /* FIELD LABEL */
+  .field-tag{display:inline-block;background:var(--dark);color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:5px;letter-spacing:.02em;margin:0 2px;}
+  .field-tag.orange{background:var(--orange);}
+  .field-tag.green{background:#166534;}
+  .field-tag.gray{background:#64748b;}
+
+  /* BADGE */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:100px;font-size:11px;font-weight:700;}
+  .badge.draft{background:var(--bg-muted);color:#64748b;border:1px solid var(--border);}
+  .badge.pending{background:var(--yellow-bg);color:#92400e;border:1px solid var(--yellow-border);}
+  .badge.approved{background:var(--green-bg);color:#166534;border:1px solid var(--green-border);}
+  .badge.active{background:var(--blue-bg);color:#1e40af;border:1px solid var(--blue-border);}
+  .badge.rejected{background:var(--red-bg);color:#991b1b;border:1px solid var(--red-border);}
+  .badge.returned{background:var(--orange-bg);color:#c2410c;border:1px solid var(--orange-border);}
+
+  /* FLOW */
+  .flow{display:flex;align-items:center;flex-wrap:wrap;gap:0;row-gap:10px;margin:20px 0;}
+  .fn{border-radius:9px;padding:9px 15px;font-size:12px;font-weight:700;text-align:center;}
+  .fn.d{background:var(--bg-muted);color:#64748b;border:1px solid var(--border);}
+  .fn.p{background:var(--yellow-bg);color:#92400e;border:1px solid var(--yellow-border);}
+  .fn.a{background:var(--green-bg);color:#166534;border:1px solid var(--green-border);}
+  .fn.ac{background:var(--blue-bg);color:#1e40af;border:1px solid var(--blue-border);}
+  .fn.r{background:var(--bg-muted);color:#94a3b8;border:1px solid var(--border);}
+  .fn.rej{background:var(--red-bg);color:#991b1b;border:1px solid var(--red-border);}
+  .fn.ret{background:var(--orange-bg);color:#c2410c;border:1px solid var(--orange-border);}
+  .fa{font-size:18px;color:var(--orange);padding:0 5px;flex-shrink:0;}
+
+  /* STATUS TABLE */
+  .status-list{display:flex;flex-direction:column;gap:8px;margin:20px 0;}
+  .status-row{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;}
+  .status-desc .name{font-size:13px;font-weight:700;margin-bottom:2px;}
+  .status-desc .meaning{font-size:13px;color:var(--text-2);}
+  .status-desc .action{font-size:12px;color:var(--text-3);margin-top:3px;font-style:italic;}
+
+  /* CHAIN */
+  .chain{margin:24px 0;}
+  .ch-step{display:flex;gap:15px;align-items:flex-start;padding:15px;background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;}
+  .ch-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+  .ch-body{}
+  .ch-role{font-size:13px;font-weight:700;}
+  .ch-desc{font-size:12px;color:var(--text-2);margin-top:2px;}
+  .ch-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .ch-tag{font-size:11px;font-weight:600;padding:2px 9px;border-radius:100px;border:1px solid var(--border);background:var(--bg-muted);color:var(--text-2);}
+  .ch-tag.ok{background:var(--green-bg);color:#166534;border-color:var(--green-border);}
+  .ch-tag.ret{background:var(--yellow-bg);color:#92400e;border-color:var(--yellow-border);}
+  .ch-tag.rej{background:var(--red-bg);color:#991b1b;border-color:var(--red-border);}
+  .ch-tag.cc{background:var(--blue-bg);color:#1e40af;border-color:var(--blue-border);}
+
+  /* ROI BOX */
+  .roi-dark{background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:14px;padding:26px 30px;color:#fff;margin:24px 0;position:relative;overflow:hidden;}
+  .roi-dark::after{content:'×10';position:absolute;right:24px;top:50%;transform:translateY(-50%);font-size:80px;font-weight:900;color:rgba(249,115,22,.12);line-height:1;letter-spacing:-.04em;}
+  .roi-dark h3{font-size:16px;font-weight:700;margin-bottom:8px;}
+  .roi-dark p{font-size:14px;color:rgba(255,255,255,.6);line-height:1.65;max-width:500px;}
+  .roi-formula{display:inline-flex;align-items:center;gap:10px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.11);border-radius:9px;padding:9px 16px;margin-top:14px;font-size:14px;font-weight:600;}
+  .roi-formula .eq{color:var(--orange);font-size:17px;}
+
+  /* QUICK REF */
+  .qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0;}
+  .qr-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px;}
+  .qr-card h4{font-size:13px;font-weight:800;margin-bottom:10px;}
+  .qr-card li{font-size:13px;color:var(--text-2);margin-bottom:6px;list-style:none;display:flex;gap:8px;align-items:flex-start;}
+  .qr-card li::before{content:'✦';color:var(--orange);font-size:11px;flex-shrink:0;margin-top:2px;}
+
+  /* NAV KEY */
+  .nav-key{display:inline-flex;align-items:center;gap:6px;background:var(--dark);color:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;}
+  .nav-key .arrow{color:var(--orange);font-size:14px;}
+
+  /* FOOTER */
+  .footer{background:var(--dark);color:rgba(255,255,255,.4);padding:28px 48px;margin-top:72px;font-size:13px;}
+  .footer-in{max-width:900px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .footer-brand{color:rgba(255,255,255,.7);font-weight:600;}
+
+  @media(max-width:600px){
+    .cover{padding:40px 20px 32px;}
+    .page{padding:0 18px;}
+    .qr-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="ci">
+    <div class="c-brand">
+      <img src="/brand/phoenix-primary-icon.png" alt="Phoenix"/>
+      <div class="c-brand-label">Phoenix Workforce · Employee Portal</div>
+    </div>
+    <div class="c-pill">User Guide</div>
+    <h1>Marketing<br/><span>Requests</span></h1>
+    <p class="c-sub">From your very first request to tracking your ROI — a complete step-by-step guide using the real system.</p>
+    <div class="c-meta">
+      <div><div class="c-meta-l">Section</div><div class="c-meta-v">Employee Portal → Marketing Requests</div></div>
+      <div><div class="c-meta-l">Audience</div><div class="c-meta-v">All Eligible Employees</div></div>
+      <div><div class="c-meta-l">Version</div><div class="c-meta-v">June 2026</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════ SECTION 1 — OVERVIEW -->
+  <div class="sec">
+    <div class="sec-tag">01 · Overview</div>
+    <h2>What is a Marketing Request?</h2>
+    <p class="sec-desc">A marketing request (called an <strong>Activity request</strong> in the system) is how you propose and get approval for a field marketing activity — a doctor visit, a hospital group meeting, a deal, a conference, and more.</p>
+
+    <div class="box tip" style="margin-top:24px;">
+      <div class="box-icon">📢</div>
+      <div class="box-body">
+        <div class="box-title">In simple words</div>
+        <div class="box-text">You want to run an activity with a doctor, clinic, or hospital. You create a request in the system with the customer, the products, the cost, and a forecast of sales. Managers and departments approve it one by one. Then finance executes the payment and you track results.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:28px;font-size:14px;font-weight:600;color:var(--text-2);margin-bottom:10px;">Find it in your portal sidebar under <strong>MARKETING REQUESTS</strong> ↓</div>
+    <div class="ss">
+      <img src="guide-screenshots/03-marketing-workspace.png" alt="Marketing Requests section in sidebar"/>
+    </div>
+    <p class="ss-cap">↑ The sidebar shows: Customer Validation · Marketing Requests · Approval Inbox · ROI Tracking</p>
+
+    <div style="margin-top:28px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px;">The 4 sections you will use:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px;">✅ Customer Validation</div>
+          <div style="font-size:13px;color:var(--text-2);">Validate a customer and their pharmacies before you can use them in any request.</div>
+        </div>
+        <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px;">📋 Marketing Requests</div>
+          <div style="font-size:13px;color:var(--text-2);">Create your activity request, add products, set cost, and submit for approval.</div>
+        </div>
+        <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px;">📥 Approval Inbox</div>
+          <div style="font-size:13px;color:var(--text-2);">Where approvers see requests waiting for their decision. You also see it if you are a manager.</div>
+        </div>
+        <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px;">📊 ROI Tracking</div>
+          <div style="font-size:13px;color:var(--text-2);">After your request is approved and active, track whether real sales met your forecast.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 2 — CUSTOMER VALIDATION -->
+  <div class="sec">
+    <div class="sec-tag">02 · First Step</div>
+    <h2>Customer Validation</h2>
+    <p class="sec-desc">This must be done <strong>before</strong> creating any activity request. The system only lets you select customers that have been validated. If your customer is not validated yet, start here.</p>
+
+    <div class="box warn">
+      <div class="box-icon">⚠️</div>
+      <div class="box-body">
+        <div class="box-title">Important — do this before anything else</div>
+        <div class="box-text">The <span class="field-tag">CUSTOMER</span> field in your request will be greyed out and disabled until you validate at least one customer. You cannot submit a request without a validated customer.</div>
+      </div>
+    </div>
+
+    <div class="ss" style="margin-top:20px;">
+      <img src="guide-screenshots/04-validation-workspace.png" alt="Customer Validation page"/>
+    </div>
+    <p class="ss-cap">↑ Customer Validation page — stats at top: SYSTEM VALIDATED · SFE VALIDATED · PENDING · REJECTED</p>
+
+    <div style="margin-top:28px;">
+      <div class="steps">
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">1</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Click "Customer Validation" in the sidebar</div>
+            <div class="step-desc">You will land on the Customer Validation page. Click the <strong style="color:var(--orange);">Validate Customer</strong> button (orange). The form "Customer and pharmacy evidence" will open below it.</div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">2</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Fill in the Customer information</div>
+            <div class="step-desc">Complete all the fields shown in the <strong>CUSTOMER VALIDATION</strong> section:</div>
+            <div class="ss"><img src="guide-screenshots/04c-validation-scrolled.png" alt="Customer validation form fields"/></div>
+            <p class="ss-cap">↑ Customer fields — all GPS fields are filled automatically when you capture location</p>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">CUSTOMER TYPE</span><span style="font-size:13px;color:var(--text-2);">Select from: Clinic, Doctor, Hospital, Account, or Other</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">CUSTOMER NAME</span><span style="font-size:13px;color:var(--text-2);">Type the full name of the doctor, clinic, or hospital</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">AREA (GPS)</span><span style="font-size:13px;color:var(--text-2);">Filled automatically from your GPS capture</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">GOVERNORATE (GPS)</span><span style="font-size:13px;color:var(--text-2);">Filled automatically from your GPS capture</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">PHONE</span><span style="font-size:13px;color:var(--text-2);">Mobile number (optional)</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">ADDRESS (GPS)</span><span style="font-size:13px;color:var(--text-2);">Full address — filled automatically from GPS capture</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">3</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Capture the Customer GPS + Live Sign Photo</div>
+            <div class="step-desc">This is required. Look for the <strong>"Customer GPS + live sign photo"</strong> box. It will show <span style="background:#fff7ed;border:1px solid #fed7aa;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;color:#c2410c;">LOCATION REQUIRED</span> and <span style="background:#fff7ed;border:1px solid #fed7aa;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;color:#c2410c;">LIVE PHOTO REQUIRED</span> until you complete both.</div>
+            <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;">
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <div style="font-size:13px;font-weight:700;">📍 GPS button</div>
+                <div style="font-size:13px;color:var(--text-2);">Tap to capture your exact location. Area, Governorate, and Address fields fill automatically.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <div style="font-size:13px;font-weight:700;">📷 Photo button</div>
+                <div style="font-size:13px;color:var(--text-2);">Take a live photo with a timestamp. This proves you were physically at the location.</div>
+              </div>
+            </div>
+            <div class="box ok" style="margin-top:12px;">
+              <div class="box-icon">✓</div>
+              <div class="box-body">
+                <div class="box-title">When done correctly</div>
+                <div class="box-text">The two orange tags disappear and the box turns green, showing your coordinates and photo filename. The GPS and location fields are now filled automatically.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">4</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Fill in the Pharmacy Validation</div>
+            <div class="step-desc">Scroll down to the <strong>PHARMACY VALIDATION</strong> section. At least one pharmacy is required. Fill in Pharmacy 1 (more can be added with <strong>"+ Add Pharmacy"</strong>).</div>
+            <div class="ss"><img src="guide-screenshots/04d-validation-bottom.png" alt="Pharmacy validation fields"/></div>
+            <p class="ss-cap">↑ Pharmacy section — name, GPS capture, photo, and Vendor Codes with distributor dropdown</p>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">PHARMACY NAME</span><span style="font-size:13px;color:var(--text-2);">Full name of the pharmacy</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">AREA / GOVERNORATE / ADDRESS (GPS)</span><span style="font-size:13px;color:var(--text-2);">All filled from GPS capture</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">Pharmacy GPS + live sign photo</span><span style="font-size:13px;color:var(--text-2);">Same as customer — capture location + take live photo at the pharmacy</span></div>
+              <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">VENDOR CODES</span><span style="font-size:13px;color:var(--text-2);">Select your distributor (e.g. chimipharm) from the dropdown, then type the pharmacy's code with that distributor. Click <strong>"+ Add"</strong> for more distributors.</span></div>
+            </div>
+            <div class="box info" style="margin-top:14px;">
+              <div class="box-icon">💡</div>
+              <div class="box-body">
+                <div class="box-title">What is a Vendor Code?</div>
+                <div class="box-text">It is the pharmacy's unique code in your distributor's system (like chimipharm or IQVIA). The system checks this code to confirm the pharmacy is real and trackable. Without it, the validation cannot pass automatically.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">5</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Click "Save Validation"</div>
+            <div class="step-desc">When the bottom bar shows <strong>"1 pharmacy row ready"</strong> (or more), the <span style="background:var(--orange);color:#fff;border-radius:6px;padding:2px 10px;font-size:12px;font-weight:700;">Save Validation</span> button becomes active. Click it to submit your evidence.</div>
+            <div class="box ok" style="margin-top:12px;">
+              <div class="box-icon">🤖</div>
+              <div class="box-body">
+                <div class="box-title">What happens next — System Validation</div>
+                <div class="box-text">The system automatically checks: Is the GPS + photo complete? Does the vendor code match the reference database? If yes to both → the customer status becomes <strong>SYSTEM VALIDATED</strong> and you can immediately use them in a request. If something doesn't match, an SFE Manager can manually approve it → status becomes <strong>SFE VALIDATED</strong>.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-l"><div class="step-n">6</div><div class="step-line"></div></div>
+          <div class="step-b">
+            <div class="step-title">Check the "Validated" tab to confirm</div>
+            <div class="step-desc">Click the <strong>Validated</strong> tab (next to Validate Customer). Your customer should now appear there with a <span style="background:var(--green-bg);border:1px solid var(--green-border);border-radius:100px;padding:2px 10px;font-size:11px;font-weight:700;color:#166534;">SYSTEM VALIDATED</span> or <span style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:100px;padding:2px 10px;font-size:11px;font-weight:700;color:#1e40af;">SFE VALIDATED</span> status. You are now ready to create your activity request.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 3 — CREATE ACTIVITY REQUEST -->
+  <div class="sec">
+    <div class="sec-tag">03 · Create a Request</div>
+    <h2>Creating an Activity Request</h2>
+    <p class="sec-desc">Click <strong>Marketing Requests</strong> in the sidebar. The page shows the draft creation form and all your existing requests below it.</p>
+
+    <div class="ss">
+      <img src="guide-screenshots/03-marketing-workspace.png" alt="Marketing Requests workspace"/>
+    </div>
+    <p class="ss-cap">↑ Marketing Requests workspace — stats at top (DRAFTS · APPROVED · CUSTOMERS · PRODUCTS) and the form below</p>
+
+    <div class="box tip">
+      <div class="box-icon">📌</div>
+      <div class="box-body">
+        <div class="box-title">The form is always visible</div>
+        <div class="box-text">Unlike most systems, you don't need to click a separate button to open the form. The <strong>CREATE DRAFT — Activity request</strong> form is always shown on the Marketing Requests page. Just fill it in and click Save Draft.</div>
+      </div>
+    </div>
+
+    <div class="steps" style="margin-top:28px;">
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">1</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Select Customer and Request Type</div>
+          <div class="step-desc">At the top of the CREATE DRAFT form:</div>
+          <div class="ss"><img src="guide-screenshots/03c-marketing-form-scrolled.png" alt="Activity request form top section"/></div>
+          <p class="ss-cap">↑ The CREATE DRAFT · Activity request form with all required fields</p>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span class="field-tag orange">CUSTOMER</span>
+              <span style="font-size:13px;color:var(--text-2);">Select from the dropdown. Only <strong>validated</strong> customers appear here. If the dropdown is empty or greyed out, go to Customer Validation first (Section 02).</span>
+            </div>
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span class="field-tag orange">REQUEST TYPE</span>
+              <span style="font-size:13px;color:var(--text-2);">Choose the type of marketing activity.</span>
+            </div>
+          </div>
+          <div class="ss"><img src="guide-screenshots/11-request-type-open.png" alt="Request Type dropdown options"/></div>
+          <p class="ss-cap">↑ Request Type options: Special request · Hospital Group Meeting · Deal · RTD · Conference · Other</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">2</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Set the dates and cost</div>
+          <div class="step-desc">Three fields on the same row:</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">REQUEST DATE</span><span style="font-size:13px;color:var(--text-2);">The date you're making this request. Defaults to today.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">PAY DATE</span><span style="font-size:13px;color:var(--text-2);">The date you expect payment / the activity to be executed. Must be in the future.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">ROI DURATION (MONTHS)</span><span style="font-size:13px;color:var(--text-2);">How many months after execution to track actual sales performance. Default is 3.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag orange">ESTIMATED COST (EGP)</span><span style="font-size:13px;color:var(--text-2);">The total budget you need for this activity in Egyptian Pounds.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">3</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Add Products</div>
+          <div class="step-desc">Under <strong>PRODUCTS</strong> (your assigned line is shown — e.g. "Line: Pedia"), add the products you will promote in this activity.</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">Select product</span><span style="font-size:13px;color:var(--text-2);">Pick from the dropdown. Only products from your assigned line appear.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">Qty</span><span style="font-size:13px;color:var(--text-2);">Enter the number of units you expect to sell as a result of this activity.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">UNIT</span><span style="font-size:13px;color:var(--text-2);">Factory price per unit — filled automatically from the product catalogue.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">VALUE</span><span style="font-size:13px;color:var(--text-2);">Calculated automatically: Qty × Unit price.</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;"><span class="field-tag">SHARE</span><span style="font-size:13px;color:var(--text-2);">This product's share of total expected sales value. Calculated automatically.</span></div>
+          </div>
+          <div class="box tip" style="margin-top:12px;">
+            <div class="box-icon">➕</div>
+            <div class="box-body">
+              <div class="box-title">Add more products</div>
+              <div class="box-text">Click the <strong>Add</strong> button on the right to add another product row. You can add as many products as you need.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">4</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Add a Note (optional)</div>
+          <div class="step-desc">The <span class="field-tag">NOTE</span> field ("Optional request note") lets you add context for the approvers — why this activity is important, special circumstances, etc. It is not required but helps approvers decide faster.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">5</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Check the ROI Preview</div>
+          <div class="step-desc">Below the form, the <strong>ROI Preview</strong> section calculates automatically every time you save. You must understand these numbers before submitting.</div>
+          <div class="ss"><img src="guide-screenshots/03d-marketing-form-bottom.png" alt="ROI Preview section"/></div>
+          <p class="ss-cap">↑ ROI Preview — EST. COST · REQUIRED · EXPECTED · COVERAGE shown live</p>
+
+          <div class="roi-dark" style="margin-top:16px;">
+            <h3>The ROI Rule</h3>
+            <p>Your expected sales from the activity must be at least 10 times what you spend. This is the <strong>Required ROI</strong>.</p>
+            <div class="roi-formula">
+              <span>Expected Sales</span><span class="eq">≥</span><span>Estimated Cost × 10</span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;">
+            <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:4px;">EST. COST</div>
+              <div style="font-size:13px;font-weight:700;">What you entered</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:4px;">REQUIRED</div>
+              <div style="font-size:13px;font-weight:700;">Cost × 10 (minimum needed)</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:4px;">EXPECTED</div>
+              <div style="font-size:13px;font-weight:700;">Sum of all product values</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:4px;">COVERAGE</div>
+              <div style="font-size:13px;font-weight:700;">Expected ÷ Required × 100%</div>
+            </div>
+          </div>
+
+          <div class="box warn" style="margin-top:14px;">
+            <div class="box-icon">⚠️</div>
+            <div class="box-body">
+              <div class="box-title">Coverage must reach 100% or more</div>
+              <div class="box-text">If Coverage is below 100%, the system will block submission. Increase your product quantities or add more products until Expected ≥ Required.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">6</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Click "Save Draft"</div>
+          <div class="step-desc">Click the <span style="background:var(--orange);color:#fff;border-radius:6px;padding:3px 12px;font-size:12px;font-weight:700;">Save Draft</span> button on the right. Your request is saved in the <strong>Draft Rows</strong> section below. You can save as many times as you need — nothing is sent to anyone yet.</div>
+          <div class="box ok" style="margin-top:12px;">
+            <div class="box-icon">💾</div>
+            <div class="box-body">
+              <div class="box-title">Drafts are safe</div>
+              <div class="box-text">Saving as draft does not notify anyone. Come back and edit anytime. The ROI Preview recalculates every time you save. When you're happy with everything, the next step is to submit for approval.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-l"><div class="step-n">7</div><div class="step-line"></div></div>
+        <div class="step-b">
+          <div class="step-title">Submit for Approval</div>
+          <div class="step-desc">Once your draft has a validated customer, at least one product with quantity, a cost, and the ROI Coverage is 100% or more — the <strong>Submit</strong> option becomes available from the Draft Rows section. Click it to send your request into the approval chain.</div>
+          <div class="box ok" style="margin-top:12px;">
+            <div class="box-icon">🚀</div>
+            <div class="box-body">
+              <div class="box-title">After you submit</div>
+              <div class="box-text">The request moves to <strong>Pending Approval</strong>. It is automatically assigned to your first approver. You will receive a notification at each stage. The status badge on your request will update as it moves through the chain.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 4 — APPROVAL CHAIN -->
+  <div class="sec">
+    <div class="sec-tag">04 · Approval Chain</div>
+    <h2>How Approval Works</h2>
+    <p class="sec-desc">Once submitted, your request travels through a chain of approvers. Each approver sees it in their <strong>Approval Inbox</strong>.</p>
+
+    <div class="ss">
+      <img src="guide-screenshots/05-inbox.png" alt="Approval Inbox"/>
+    </div>
+    <p class="ss-cap">↑ Approval Inbox — where managers and reviewers see requests waiting for their decision</p>
+
+    <div class="chain" style="margin-top:24px;">
+      <div class="ch-step">
+        <div class="ch-icon" style="background:var(--yellow-bg);">🧑‍💼</div>
+        <div class="ch-body">
+          <div class="ch-role">Step 1 — Management Chain</div>
+          <div class="ch-desc">Starts with your direct manager and moves up the hierarchy until it reaches the National Sales Manager. Each manager in the chain decides before it moves on.</div>
+          <div class="ch-tags"><div class="ch-tag ok">✓ Approve</div><div class="ch-tag ret">↩ Return for Changes</div><div class="ch-tag rej">✕ Reject</div></div>
+        </div>
+      </div>
+      <div class="ch-step">
+        <div class="ch-icon" style="background:var(--blue-bg);">📋</div>
+        <div class="ch-body">
+          <div class="ch-role">Step 2 — SFE Review</div>
+          <div class="ch-desc">The SFE Manager reviews the activity plan, product targets, and ROI. Product Managers are notified (CC only — they don't block the flow).</div>
+          <div class="ch-tags"><div class="ch-tag ok">✓ Approve</div><div class="ch-tag ret">↩ Return for Changes</div><div class="ch-tag rej">✕ Reject</div><div class="ch-tag cc">📧 Product Managers (CC)</div></div>
+        </div>
+      </div>
+      <div class="ch-step">
+        <div class="ch-icon" style="background:var(--orange-bg);">📣</div>
+        <div class="ch-body">
+          <div class="ch-role">Step 3 — Marketing Review</div>
+          <div class="ch-desc">The Marketing Manager reviews alignment with brand strategy and ongoing campaigns.</div>
+          <div class="ch-tags"><div class="ch-tag ok">✓ Approve</div><div class="ch-tag ret">↩ Return for Changes</div><div class="ch-tag rej">✕ Reject</div></div>
+        </div>
+      </div>
+      <div class="ch-step">
+        <div class="ch-icon" style="background:#fdf4ff;">👔</div>
+        <div class="ch-body">
+          <div class="ch-role">Step 4 — CEO Final Approval</div>
+          <div class="ch-desc">The CEO gives the final sign-off before the request goes to finance.</div>
+          <div class="ch-tags"><div class="ch-tag ok">✓ Approve</div><div class="ch-tag ret">↩ Return for Changes</div><div class="ch-tag rej">✕ Reject</div></div>
+        </div>
+      </div>
+      <div class="ch-step">
+        <div class="ch-icon" style="background:var(--green-bg);">💳</div>
+        <div class="ch-body">
+          <div class="ch-role">Step 5 — Finance Execution</div>
+          <div class="ch-desc">Finance processes the payment and marks the request as Active. ROI tracking begins from this point.</div>
+          <div class="ch-tags"><div class="ch-tag ok">✓ Execute (becomes Active)</div><div class="ch-tag ret">↩ Return for Changes</div><div class="ch-tag rej">✕ Reject</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box warn" style="margin-top:4px;">
+      <div class="box-icon">↩</div>
+      <div class="box-body">
+        <div class="box-title">If your request is Returned</div>
+        <div class="box-text">The approver will leave a comment explaining what to change. Open the request, read the comment, make the edits, recalculate the ROI if needed, then click <strong>Resubmit</strong>. The request resumes from the same step — you do not start over from Step 1.</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 5 — ROI TRACKING -->
+  <div class="sec">
+    <div class="sec-tag">05 · After Approval</div>
+    <h2>ROI Tracking</h2>
+    <p class="sec-desc">Once Finance marks your request as Active, the system starts monitoring whether real pharmacy sales match what you forecasted.</p>
+
+    <div class="ss">
+      <img src="guide-screenshots/06-roi-tracking.png" alt="ROI Tracking page"/>
+    </div>
+    <p class="ss-cap">↑ ROI Tracking page — TRACKED · ON TRACK · BEHIND · NO SALES YET and the "Actual vs required return" table</p>
+
+    <div style="margin-top:24px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+      <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:4px;">TRACKED</div>
+        <div style="font-size:13px;color:var(--text-2);">All active requests being monitored</div>
+      </div>
+      <div style="background:var(--green-bg);border:1px solid var(--green-border);border-radius:10px;padding:12px 14px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#166534;margin-bottom:4px;">ON TRACK</div>
+        <div style="font-size:13px;color:#15803d;">Actual sales ≥ required ROI</div>
+      </div>
+      <div style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:10px;padding:12px 14px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#991b1b;margin-bottom:4px;">BEHIND</div>
+        <div style="font-size:13px;color:#b91c1c;">Actual sales below target</div>
+      </div>
+      <div style="background:var(--bg-muted);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:4px;">NO SALES YET</div>
+        <div style="font-size:13px;color:var(--text-2);">No distributor data received yet</div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;background:var(--bg-soft);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;">Columns in "Actual vs required return" table</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:10px;"><span class="field-tag">REQUEST</span><span style="font-size:13px;color:var(--text-2);">Your request code (e.g. MKT-REQ-…)</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">CUSTOMER</span><span style="font-size:13px;color:var(--text-2);">The validated customer from your request</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">LINE</span><span style="font-size:13px;color:var(--text-2);">Your product line</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">ROI WINDOW</span><span style="font-size:13px;color:var(--text-2);">The month(s) being tracked (e.g. 2026-07)</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">REQUIRED ROI</span><span style="font-size:13px;color:var(--text-2);">Cost × 10 — what you needed to hit</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">EXPECTED ROI</span><span style="font-size:13px;color:var(--text-2);">Your original product forecast value</span></div>
+        <div style="display:flex;gap:10px;"><span class="field-tag">ACTUAL SALES</span><span style="font-size:13px;color:var(--text-2);">Real sales reported by the distributor at the tracked pharmacies</span></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 6 — STATUS REFERENCE -->
+  <div class="sec">
+    <div class="sec-tag">06 · Status Reference</div>
+    <h2>What Each Status Means</h2>
+    <p class="sec-desc">Every request has a status badge. Here is what each one means and what you should do.</p>
+
+    <div class="status-list" style="margin-top:20px;">
+      <div class="status-row">
+        <div><span class="badge draft">Draft</span></div>
+        <div class="status-desc">
+          <div class="name">Draft</div>
+          <div class="meaning">You started the request but haven't submitted it yet. Only you can see it.</div>
+          <div class="action">→ Complete the form and submit when ready.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge pending">Pending Approval</span></div>
+        <div class="status-desc">
+          <div class="name">Pending Approval</div>
+          <div class="meaning">In the approval chain — one of the approvers is currently reviewing it.</div>
+          <div class="action">→ Wait. You'll receive a notification when there is a decision.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge returned">Returned</span></div>
+        <div class="status-desc">
+          <div class="name">Returned</div>
+          <div class="meaning">An approver sent it back to you with a note. Something needs to change.</div>
+          <div class="action">→ Read the return comment, edit the request, then click Resubmit.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge approved">Approved</span></div>
+        <div class="status-desc">
+          <div class="name">Approved</div>
+          <div class="meaning">All approval steps are complete. Waiting for Finance to execute the payment.</div>
+          <div class="action">→ No action needed from you. Finance will process it.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge active">Active</span></div>
+        <div class="status-desc">
+          <div class="name">Active</div>
+          <div class="meaning">Finance has processed the payment. The activity is now running.</div>
+          <div class="action">→ Execute the activity. ROI tracking has started.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge" style="background:#fdf4ff;color:#7e22ce;border:1px solid #e9d5ff;">ROI Tracking</span></div>
+        <div class="status-desc">
+          <div class="name">ROI Tracking</div>
+          <div class="meaning">Activity done. The system monitors real pharmacy sales vs. your forecast for the ROI window.</div>
+          <div class="action">→ Check your ROI Tracking page for actual sales performance.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge" style="background:var(--bg-muted);color:var(--text-3);border:1px solid var(--border);">Closed</span></div>
+        <div class="status-desc">
+          <div class="name">Closed</div>
+          <div class="meaning">The ROI tracking window ended. Request is complete and archived.</div>
+          <div class="action">→ View only. No further action.</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div><span class="badge rejected">Rejected</span></div>
+        <div class="status-desc">
+          <div class="name">Rejected</div>
+          <div class="meaning">An approver permanently rejected the request. It cannot be resubmitted.</div>
+          <div class="action">→ Read the rejection reason. Create a new request if needed.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div"/>
+
+  <!-- ═══════════════════════════════ SECTION 7 — QUICK REFERENCE -->
+  <div class="sec">
+    <div class="sec-tag">07 · Quick Reference</div>
+    <h2>At a Glance</h2>
+
+    <!-- Full lifecycle -->
+    <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:20px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:16px;">Complete Request Lifecycle</div>
+      <div class="flow">
+        <div class="fn d">Draft</div><div class="fa">→</div>
+        <div class="fn p">Pending Approval</div><div class="fa">→</div>
+        <div class="fn a">Approved</div><div class="fa">→</div>
+        <div class="fn ac">Active</div><div class="fa">→</div>
+        <div class="fn" style="background:#fdf4ff;color:#7e22ce;border:1px solid #e9d5ff;">ROI Tracking</div><div class="fa">→</div>
+        <div class="fn r">Closed</div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);"><span class="fn rej" style="padding:4px 10px;">Rejected</span> — permanent, cannot resubmit</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);"><span class="fn ret" style="padding:4px 10px;">Returned</span> — edit and resubmit from same step</div>
+      </div>
+    </div>
+
+    <div class="qr-grid" style="margin-top:20px;">
+      <div class="qr-card">
+        <h4>Before You Can Submit</h4>
+        <ul>
+          <li>Customer must be System Validated or SFE Validated</li>
+          <li>At least 1 product with a quantity</li>
+          <li>Estimated Cost (EGP) filled in</li>
+          <li>ROI Coverage must be 100% or more</li>
+          <li>Pay Date must be set</li>
+        </ul>
+      </div>
+      <div class="qr-card">
+        <h4>Key Rules to Remember</h4>
+        <ul>
+          <li>Required ROI = Estimated Cost × 10</li>
+          <li>Products are locked after submission</li>
+          <li>Rejected = permanent — create a new request</li>
+          <li>Returned = resume from same step, not from start</li>
+          <li>ROI Preview recalculates every time you Save Draft</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:72px;"></div>
+</div>
+
+<div class="footer">
+  <div class="footer-in">
+    <div><div class="footer-brand">Phoenix Workforce</div><div style="margin-top:3px;">Marketing Requests User Guide · June 2026</div></div>
+    <div style="text-align:right;">For help, contact your SFE Manager or HR team.<br/><span style="color:rgba(255,255,255,.2);">phoenix-workforce.vercel.app</span></div>
+  </div>
+</div>
+
+</body>
+</html>
