@@ -43,3 +43,38 @@ export function weeklyTemplateDistributorFallbackName(distributorCode: string): 
   const normalized = (distributorCode ?? "").trim().toUpperCase();
   return normalized ? WEEKLY_DISTRIBUTOR_FALLBACK_NAMES[normalized] ?? null : null;
 }
+
+// Distributors that ship separate Sales and Stock weekly files (PS only). Add codes here
+// when other split-file distributors are onboarded.
+const WEEKLY_SPLIT_SALES_STOCK_DISTRIBUTORS = ["PS"];
+
+/** True when a distributor ships its weekly feed as separate Sales and Stock files. */
+export function weeklyDistributorSplitsSalesStock(distributorCode: string): boolean {
+  return WEEKLY_SPLIT_SALES_STOCK_DISTRIBUTORS.includes((distributorCode ?? "").trim().toUpperCase());
+}
+
+// All weekly-enabled distributor codes (drives the branch-map admin dropdown).
+const ALL_WEEKLY_DISTRIBUTOR_CODES = ["IS-S", "IS", "PS", "EG", "RM"];
+
+/** Distributors shown in the Branch Mapping admin tab dropdown. */
+export function weeklyBranchMapDistributors(): { code: string; name: string; splitsSalesStock: boolean }[] {
+  return ALL_WEEKLY_DISTRIBUTOR_CODES.map((code) => ({
+    code,
+    name: weeklyTemplateDistributorFallbackName(code) ?? code,
+    splitsSalesStock: weeklyDistributorSplitsSalesStock(code),
+  }));
+}
+
+// Fixed list for the Weekly Mapping admin tab. Curated by the business — not every
+// distributor needs mapping, so this is an explicit list rather than auto-derived.
+const WEEKLY_MAPPING_DISTRIBUTOR_LIST: { code: string; name: string }[] = [
+  { code: "IS-S", name: "Ibn Sina Sato" },
+  { code: "RM", name: "Ramco" },
+  { code: "PS", name: "POS" },
+  { code: "EGD", name: "EGD" },
+];
+
+/** Distributors shown in the Weekly Mapping admin tab dropdown. */
+export function weeklyMappingDistributors(): { code: string; name: string }[] {
+  return WEEKLY_MAPPING_DISTRIBUTOR_LIST.map((d) => ({ ...d }));
+}

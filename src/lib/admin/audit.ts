@@ -37,6 +37,7 @@ export type AuditEntityType =
   | "vacation_request"
   | "vacation_weekly_off_policy"
   | "weekly_plan"
+  | "weekly_sales_mapping"
   | "weekly_plan_day"
   | "workflow_registry";
 
