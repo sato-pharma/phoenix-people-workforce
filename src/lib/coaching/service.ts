@@ -624,6 +624,28 @@ export async function acknowledgeCoachingReport(
   return getCoachingReportById((data as CoachingReportRow).id, access);
 }
 
+/**
+ * Acknowledge a coaching report on behalf of the medical rep when backfilling
+ * historical reports via the Excel importer. Calls the acknowledge RPC directly
+ * (with the rep's HR_ID) so it is not gated by the interactive employee-only
+ * workflow check; the RPC still enforces that the HR_ID matches the report's rep
+ * and that the report is in the "submitted" state.
+ */
+export async function acknowledgeImportedCoachingReport(
+  id: string,
+  employeeHrId: string,
+  acknowledgmentText = "Acknowledged automatically on historical coaching report import.",
+) {
+  const { error } = await getSupabaseAdmin().rpc("acknowledge_coaching_report", {
+    p_acknowledgment_text: acknowledgmentText,
+    p_employee_hr_id: employeeHrId,
+    p_ip_address: null,
+    p_report_id: id,
+    p_user_agent: null,
+  });
+  if (error) throw error;
+}
+
 export async function getCoachingReportById(id: string, access: AccessContext): Promise<CoachingReportDetail> {
   const [report, scores, summaries] = await Promise.all([
     loadReport(id),

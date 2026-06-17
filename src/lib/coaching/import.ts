@@ -24,6 +24,7 @@ import {
   type CoachingArchivedEvaluationInput,
 } from "@/lib/coaching/archived";
 import {
+  acknowledgeImportedCoachingReport,
   createDraftCoachingReport,
   submitCoachingReport,
 } from "@/lib/coaching/service";
@@ -118,6 +119,7 @@ export type CoachingImportPreview = {
 export type CoachingImportCommitResult = {
   archived: number;
   created: Array<{
+    acknowledged: boolean;
     finalScorePercent: number | null;
     hrId: string;
     performanceZone: string | null;
@@ -405,7 +407,24 @@ export async function commitCoachingImport(
         const reportId = draft.report.id;
         const submitted = await submitCoachingReport(reportId, null, access);
         existingReportKeys.add(key);
+
+        // Historical reports were already reviewed in person — auto-acknowledge on
+        // behalf of the rep so they land in the "reviewed_by_employee" state rather
+        // than waiting in the rep's pending queue.
+        let acknowledged = false;
+        try {
+          await acknowledgeImportedCoachingReport(reportId, row.resolvedHrId);
+          acknowledged = true;
+        } catch (ackError) {
+          result.errors.push({
+            error: `Report created but auto-acknowledge failed: ${ackError instanceof Error ? ackError.message : "unknown error"}`,
+            rowNumber: row.rowNumber,
+            sourceName: row.sourceName,
+          });
+        }
+
         result.created.push({
+          acknowledged,
           finalScorePercent: Number(submitted.report.final_score_percent ?? draft.report.final_score_percent ?? 0),
           hrId: row.resolvedHrId,
           performanceZone: submitted.report.performance_zone ?? null,
