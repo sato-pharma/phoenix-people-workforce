@@ -243,9 +243,9 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     discountColumns: ["Discount%"],
   },
   {
-    // EGD Tender (مركز تموين مستشفيات — hospital supply): EGD-style hospital/tender export.
-    distributorCode: "EG-T",
-    distributorName: "EGD Tender",
+    // EGD Hospital (مركز تموين مستشفيات — hospital supply): EGD-style hospital/tender export.
+    distributorCode: "EG-HOS",
+    distributorName: "EGD Hospital",
     productColumns: ["ITEM_CODE", "ITEM_NAME"],
     qtyColumns: ["QTY_INVOICE"],
     valueColumns: ["TOTAL_VALUE_INVOICE"],
