@@ -19,11 +19,8 @@ import {
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
-  LabelList,
   Pie,
   PieChart,
   Tooltip,
@@ -185,10 +182,6 @@ function scoreZoneColor(percent: number) {
   if (percent <= 80) return zoneColors.yellow_zone;
   if (percent <= 90) return zoneColors.green_zone;
   return zoneColors.excellence_zone;
-}
-
-function truncateLabel(value: string) {
-  return value.length > 16 ? `${value.slice(0, 15)}…` : value;
 }
 
 function completedReports(data: CoachingAnalyticsPayload) {
@@ -388,57 +381,62 @@ function DonutChart({
   );
 }
 
-/** Horizontal bar chart. Score bars are zone-coloured; count bars use one accent. */
-function HorizontalBars({
+/**
+ * Premium ranked bar list — fully readable category labels (no truncation),
+ * gradient fills, rank chips, and the value + share. Renders crisp in the admin
+ * shell's square-corner system. Score bars are coloured by performance zone;
+ * count bars use a single gradient accent.
+ */
+function BarList({
+  accent = "orange",
   data,
-  gradientId,
   mode,
 }: {
+  accent?: "orange" | "slate";
   data: { label: string; value: number }[];
-  gradientId: string;
-  mode: "score" | "count";
+  mode: "count" | "score";
 }) {
+  const max = mode === "score" ? 100 : Math.max(1, ...data.map((item) => item.value));
+  const total = data.reduce((sum, item) => sum + item.value, 0) || 1;
+  const gradient =
+    accent === "orange"
+      ? "linear-gradient(90deg, #FDBA74 0%, #F97316 100%)"
+      : "linear-gradient(90deg, #64748B 0%, #0F172A 100%)";
+
   return (
-    <SafeResponsiveContainer className="h-full">
-      <BarChart data={data} layout="vertical" margin={{ bottom: 4, left: 6, right: 34, top: 4 }}>
-        <defs>
-          <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor={mode === "score" ? "#FB923C" : "#334155"} stopOpacity={0.9} />
-            <stop offset="100%" stopColor={mode === "score" ? "#F97316" : "#0F172A"} stopOpacity={1} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid horizontal={false} stroke={CHART_GRID} strokeDasharray="4 8" />
-        <XAxis
-          allowDecimals={false}
-          domain={mode === "score" ? [0, 100] : undefined}
-          hide
-          type="number"
-        />
-        <YAxis
-          axisLine={false}
-          dataKey="label"
-          tick={{ fill: "#475569", fontSize: 11, fontWeight: 700 }}
-          tickFormatter={truncateLabel}
-          tickLine={false}
-          type="category"
-          width={132}
-        />
-        <Tooltip content={<ChartTooltip suffix={mode === "score" ? "%" : ""} />} cursor={{ fill: "rgba(249,115,22,0.06)" }} />
-        <Bar dataKey="value" maxBarSize={26} radius={[0, 8, 8, 0]}>
-          {data.map((entry, index) => (
-            <Cell fill={mode === "score" ? scoreZoneColor(entry.value) : `url(#${gradientId})`} key={index} />
-          ))}
-          <LabelList
-            dataKey="value"
-            fill="#475569"
-            fontSize={11}
-            fontWeight={800}
-            formatter={(value) => (mode === "score" ? `${value ?? ""}%` : `${value ?? ""}`)}
-            position="right"
-          />
-        </Bar>
-      </BarChart>
-    </SafeResponsiveContainer>
+    <div className="flex h-full flex-col justify-center gap-3.5 overflow-y-auto py-1 pr-0.5">
+      {data.map((item, index) => {
+        const width = Math.max(3, Math.round((item.value / max) * 100));
+        const background = mode === "score" ? scoreZoneColor(item.value) : gradient;
+        return (
+          <div key={`${item.label}-${index}`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center bg-[#0F172A] text-[10px] font-black text-white">
+                  {index + 1}
+                </span>
+                <span className="text-[13px] font-bold leading-tight text-[#1E293B]">{item.label}</span>
+              </span>
+              <span className="shrink-0 text-sm font-black tabular-nums text-[#0F172A]">
+                {mode === "score" ? (
+                  `${item.value}%`
+                ) : (
+                  <>
+                    {item.value}
+                    <span className="ml-1.5 text-xs font-bold text-[#94A3B8]">
+                      {Math.round((item.value / total) * 100)}%
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="mt-1.5 h-2.5 w-full bg-[#EEF2F7]">
+              <div className="h-full" style={{ background, width: `${width}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -738,13 +736,13 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Average coaching score grouped by line (bars coloured by performance zone)." title="Average Score by Line">
           {lineAverages.length ? (
-            <HorizontalBars data={lineAverages} gradientId="coachingLineBar" mode="score" />
+            <BarList data={lineAverages} mode="score" />
           ) : <EmptyChart message="No line score data available." />}
         </ChartPanel>
 
         <ChartPanel description="Average coaching score grouped by area (bars coloured by performance zone)." title="Average Score by Area">
           {areaAverages.length ? (
-            <HorizontalBars data={areaAverages} gradientId="coachingAreaBar" mode="score" />
+            <BarList data={areaAverages} mode="score" />
           ) : <EmptyChart message="No area score data available." />}
         </ChartPanel>
 
@@ -756,13 +754,13 @@ export function CoachingAnalyticsDashboard({
 
         <ChartPanel description="Most frequent strongest scoring parameter across completed reports." title="Strongest Parameters Distribution">
           {strongestParameterData.length ? (
-            <HorizontalBars data={strongestParameterData} gradientId="coachingStrongBar" mode="count" />
+            <BarList accent="orange" data={strongestParameterData} mode="count" />
           ) : <EmptyChart message="Strongest parameter distribution will appear after scored coaching reports are submitted." />}
         </ChartPanel>
 
         <ChartPanel description="Most frequent priority development focus by report-level category averages." title="Top Development Areas">
           {keyDevelopmentAreaData.length ? (
-            <HorizontalBars data={keyDevelopmentAreaData} gradientId="coachingDevBar" mode="count" />
+            <BarList accent="slate" data={keyDevelopmentAreaData} mode="count" />
           ) : <EmptyChart message="Priority Development Focus analytics will appear after scored coaching reports are submitted." />}
         </ChartPanel>
       </div>

@@ -40,7 +40,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     distributorCode: "IS-S",
     distributorName: "Ibn Sina-Sato",
     productColumns: ["Item Code", "Item Name"],
-    qtyColumns: ["Quantity"],
+    qtyColumns: ["Total Quantity", "Quantity"],
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
