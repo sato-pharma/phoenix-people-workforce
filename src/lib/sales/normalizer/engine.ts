@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { deriveHierarchy, normalizeCodeKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
-import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeResult } from "@/lib/sales/normalizer/types";
+import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
 // ── small self-contained parsers (kept local so the normalizer doesn't reach into the importer) ──
 
@@ -154,6 +154,7 @@ export function normalizeRows(
   let productResolved = 0;
   let brickResolved = 0;
   let ignored = 0;
+  const ignoredRows: NormalizeIgnoredRow[] = [];
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
@@ -166,8 +167,19 @@ export function normalizeRows(
     const productValues = profile.productColumns.map((cName) => firstValue(row, header, [cName]));
     const productCode = resolveProduct(productValues, maps, profile.distributorCode);
 
-    // "We don't sell this" — the item is explicitly mapped to ignore: drop the row entirely.
-    if (productCode === IGNORE_PRODUCT_CODE) { ignored += 1; continue; }
+    // "We don't sell this" — the item is explicitly mapped to ignore: drop the row from coding
+    // but record it so the import surface can tell the user exactly how many units were excluded.
+    if (productCode === IGNORE_PRODUCT_CODE) {
+      ignored += 1;
+      const ignoredQty = parseNum(firstValue(row, header, profile.qtyColumns));
+      ignoredRows.push({
+        rawProduct,
+        rawProductName: productValues.slice(1).find(Boolean) ?? "",
+        rawRowNumber: r,
+        qty: Number.isFinite(ignoredQty) ? ignoredQty : 0,
+      });
+      continue;
+    }
 
     const customerCode = firstValue(row, header, profile.customerCodeColumns);
     const customerKey = customerCode ? `${normalizeCodeKey(profile.distributorCode)} ${normalizeCodeKey(customerCode)}` : null;
@@ -229,6 +241,7 @@ export function normalizeRows(
     coded,
     distributorCode: profile.distributorCode,
     exceptions,
+    ignoredRows,
     summary: { brickResolved, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored },
   };
 }
@@ -242,7 +255,7 @@ export async function normalizeRawWorkbook(
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
   if (!sheet) {
-    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], summary: { brickResolved: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0 } };
+    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], summary: { brickResolved: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0 } };
   }
   return normalizeRows(sheet, profile, maps);
 }

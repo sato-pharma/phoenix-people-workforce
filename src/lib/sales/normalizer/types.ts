@@ -77,6 +77,15 @@ export type CodedRow = {
   value: number;
 };
 
+// A row whose product is explicitly mapped as "ignore" — dropped from coding intentionally but
+// tracked so the import surface can tell the user how many units were excluded and why.
+export type NormalizeIgnoredRow = {
+  rawProduct: string;
+  rawProductName: string;
+  rawRowNumber: number;
+  qty: number;
+};
+
 // A row the normalizer could not fully code — surfaced for one-time mapping (never dropped).
 export type NormalizeException = {
   rawProduct: string;
@@ -97,6 +106,7 @@ export type NormalizeResult = {
   coded: CodedRow[];
   distributorCode: string;
   exceptions: NormalizeException[];
+  ignoredRows: NormalizeIgnoredRow[];
   summary: {
     brickResolved: number;
     fullyCoded: number;
