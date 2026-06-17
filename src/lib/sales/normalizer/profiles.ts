@@ -239,8 +239,6 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateColumns: ["BILLINGDATE"],
     customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
-    brickIdColumns: ["IQVIBRICKCODE"],
-    territoryColumns: ["ORDERGROUPNAME", "GOVER", "bricks"],
     discountColumns: ["Discount%"],
   },
   {
