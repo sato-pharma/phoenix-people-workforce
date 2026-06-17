@@ -1,7 +1,7 @@
-export const coachingMaxScore = 120;
+export const coachingMaxScore = 100;
 export const coachingScoreItemCount = 20;
 export const coachingMinItemScore = 1;
-export const coachingMaxItemScore = 6;
+export const coachingMaxItemScore = 5;
 
 // "critical_red" is stored for backend analytics only. Employee/admin UI should
 // display it as the standard red zone label instead of exposing harsh wording.

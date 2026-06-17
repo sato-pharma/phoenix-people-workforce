@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   BellRing,
   BriefcaseBusiness,
   CalendarCheck,
@@ -203,6 +204,8 @@ export const adminNavigationSections = [
     items: [
       { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
+      { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
+      { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
     ],
     label: "Field Coaching",
   },

@@ -65,7 +65,7 @@ export function runCoachingAnalyticsTests() {
       business_intelligence: 4,
       business_planning: 2,
       call_structure_skills: 4,
-      knowledge: 6,
+      knowledge: 5,
       personal_skills: 4,
     }),
     ...rowsForReport("report-b", {
@@ -73,7 +73,7 @@ export function runCoachingAnalyticsTests() {
       business_planning: 4,
       call_structure_skills: 4,
       knowledge: 2,
-      personal_skills: 6,
+      personal_skills: 5,
     }),
   ];
 
@@ -97,8 +97,8 @@ export function runCoachingAnalyticsTests() {
   );
 
   const knowledge = analytics.categoryAverageScores.find((row) => row.parameterCategory === "knowledge");
-  assert.equal(knowledge?.averageScore, 4);
-  assert.equal(knowledge?.averagePercent, 66.67);
+  assert.equal(knowledge?.averageScore, 3.5);
+  assert.equal(knowledge?.averagePercent, 70);
   assert.equal(knowledge?.reportCount, 2);
 
   const lowestItem = analytics.scoreItemAverageScores[0];

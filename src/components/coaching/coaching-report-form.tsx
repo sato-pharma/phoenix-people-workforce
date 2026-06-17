@@ -90,11 +90,11 @@ const categoryLetters: Record<CoachingParameterKey, string> = {
 };
 
 const ratingMeanings = [
-  { label: "Below Expectations", value: "1-2" },
-  { label: "Needs Improvement", value: "3" },
-  { label: "Within Average", value: "4" },
-  { label: "Meets Expectations", value: "5" },
-  { label: "Exceeds Expectations / Outstanding", value: "6" },
+  { label: "Below Expectations", value: "1" },
+  { label: "Needs Improvement", value: "2" },
+  { label: "Within Average", value: "3" },
+  { label: "Meets Expectations", value: "4" },
+  { label: "Exceeds Expectations", value: "5" },
 ];
 
 const zoneClassNames: Record<CoachingPerformanceZone, string> = {
@@ -397,7 +397,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
 
         <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
           <AdminSectionHeader
-            description="Rate every field observation from 1 to 6. The score panel updates when all 20 items are complete."
+            description="Rate every field observation from 1 to 5. The score panel updates when all 20 items are complete."
             title="Structured Scoring"
           />
           <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 sm:px-5">
@@ -434,8 +434,8 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                             Point {item.displayOrder} of {coachingScoreItems.length}
                           </p>
                         </div>
-                        <div className="grid grid-cols-6 gap-1.5">
-                          {[1, 2, 3, 4, 5, 6].map((rating) => {
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {[1, 2, 3, 4, 5].map((rating) => {
                             const selected = scores[item.key] === rating;
                             return (
                               <button
