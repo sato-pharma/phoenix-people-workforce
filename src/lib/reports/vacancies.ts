@@ -1,4 +1,5 @@
-﻿import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+﻿import { getRequiredEnv } from "@/lib/env";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 
 import {
   applyOrganogramMirrorSafety,
@@ -119,15 +120,6 @@ export type VacancyReportData = {
 
 const databaseQueryTimeoutMs = 5000;
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is required.`);
-  }
-
-  return value;
-}
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

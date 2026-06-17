@@ -1,8 +1,4 @@
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required.`);
-  return value;
-}
+import { getRequiredEnv } from "@/lib/env";
 
 const databaseQueryTimeoutMs = 8000;
 

@@ -1,3 +1,4 @@
+import { getRequiredEnv } from "@/lib/env";
 import {
   normalizePayrollPaymentMode,
   resolveFixedSalaryAmounts,
@@ -369,16 +370,6 @@ function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
       label: status.replace(/_/g, " "),
       value: status,
     }));
-}
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is required.`);
-  }
-
-  return value;
 }
 
 export function employeeDirectoryErrorMessage(error: unknown) {
