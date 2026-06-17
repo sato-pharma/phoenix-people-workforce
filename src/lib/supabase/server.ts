@@ -1,16 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
 
 const supabaseRequestTimeoutMs = 15000;
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is required.`);
-  }
-
-  return value;
-}
 
 function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequestTimeoutMs): SupabaseClient {
   return createClient(
@@ -47,11 +38,6 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
       },
     },
   );
-}
-
-function getOptionalEnv(name: string) {
-  const value = process.env[name];
-  return value && value.trim() ? value : null;
 }
 
 /**

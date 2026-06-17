@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { getRequiredEnv } from "@/lib/env";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
@@ -277,12 +278,6 @@ type OfferDecisionContext = {
 const databaseQueryTimeoutMs = 15000;
 const databaseQueryRetryMs = 30000;
 const databaseQueryMaxAttempts = 2;
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required.`);
-  return value;
-}
 
 export function offerErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
