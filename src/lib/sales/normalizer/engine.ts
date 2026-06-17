@@ -164,7 +164,7 @@ export function normalizeRows(
 
     const rawProduct = profile.productColumns.map((cName) => firstValue(row, header, [cName])).find(Boolean) ?? "";
     const productValues = profile.productColumns.map((cName) => firstValue(row, header, [cName]));
-    const productCode = resolveProduct(productValues, maps);
+    const productCode = resolveProduct(productValues, maps, profile.distributorCode);
 
     // "We don't sell this" — the item is explicitly mapped to ignore: drop the row entirely.
     if (productCode === IGNORE_PRODUCT_CODE) { ignored += 1; continue; }

@@ -33,7 +33,7 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
   const supabase = getSupabaseAdmin();
   const [refs, prodA, terrA, areaA, regionA, custMap] = await Promise.all([
     preRefs ?? loadSalesReferenceData(),
-    selectAllActive(supabase, "source_of_sales_product_aliases", "alias,product_code"),
+    selectAllActive(supabase, "source_of_sales_product_aliases", "alias,product_code,distributor_code"),
     selectAllActive(supabase, "source_of_sales_territory_aliases", "alias,target_type,target_code"),
     selectAllActive(supabase, "source_of_sales_area_aliases", "alias,area_code,region_code"),
     selectAllActive(supabase, "source_of_sales_region_aliases", "alias,region_code"),
@@ -53,10 +53,13 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     productCode: normalizeCodeKey(p.productCode), productName: p.productName, factoryPrice: p.factoryPrice, line: p.line,
   }]));
 
+  // Per-distributor: key by `${distributor} ${normalized alias}` so each distributor's raw codes/names
+  // resolve only for that distributor (resolveProduct builds the same composite key).
   const productAliasByKey = new Map<string, string>();
   for (const row of prodA) {
+    const dist = normalizeCodeKey(row.distributor_code);
     const key = normalizeAliasKey(row.alias); const code = normalizeCodeKey(row.product_code);
-    if (key && code) productAliasByKey.set(key, code);
+    if (dist && key && code) productAliasByKey.set(`${dist} ${key}`, code);
   }
   const territoryAliasByKey = new Map<string, { targetType: string; targetCode: string }>();
   for (const row of terrA) {

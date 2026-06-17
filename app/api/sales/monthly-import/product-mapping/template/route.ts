@@ -12,11 +12,13 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    const buffer = await buildSosProductMappingTemplate();
+    const distributor = new URL(request.url).searchParams.get("distributor")?.trim() ?? "";
+    const buffer = await buildSosProductMappingTemplate(distributor);
+    const safeName = distributor.replace(/[^A-Za-z0-9._-]+/g, "-") || "product";
     return new Response(buffer, {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="source-of-sales-product-mapping.xlsx"`,
+        "Content-Disposition": `attachment; filename="source-of-sales-product-mapping-${safeName}.xlsx"`,
         "Content-Type": SOS_MAPPING_XLSX_CONTENT_TYPE,
       },
     });

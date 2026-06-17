@@ -66,7 +66,7 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
     scannedRows += 1;
     const pid = normalizeCodeKey(text(row, productIdCol));
     if (pid && productCodes.has(pid)) {
-      for (const ci of rawProductCols) { const raw = text(row, ci); const key = `p:${raw.toLowerCase()}`; if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: pid, raw, type: "product" }); } }
+      for (const ci of rawProductCols) { const raw = text(row, ci); const key = `p:${raw.toLowerCase()}`; if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: pid, distributorCode, raw, type: "product" }); } }
     }
     const bid = normalizeCodeKey(text(row, brickIdCol));
     if (bid && brickIds.has(bid)) {

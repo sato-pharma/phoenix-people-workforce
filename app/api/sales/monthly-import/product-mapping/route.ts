@@ -17,8 +17,12 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const formFile = formData.get("file");
     const file = formFile instanceof File ? formFile : null;
+    const distributorCode = String(formData.get("distributorCode") ?? "").trim();
     if (!file) {
       return NextResponse.json({ success: false, error: "A product mapping file is required." }, { status: 400 });
+    }
+    if (!distributorCode) {
+      return NextResponse.json({ success: false, error: "A distributor is required — product mappings are per-distributor." }, { status: 400 });
     }
 
     const validation = validateSpreadsheetFile(file, {
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await importSosProductMappingWorkbook({ file, actorId });
+    const result = await importSosProductMappingWorkbook({ file, actorId, distributorCode });
     const blocked = result.blockedRows.length > 0;
     // Per-row tolerant: valid rows are saved even when some are blocked. Only a hard fail (nothing
     // saved AND rows blocked) is a 400; a partial save succeeds and surfaces the blocked rows to fix.
