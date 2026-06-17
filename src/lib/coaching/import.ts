@@ -352,7 +352,21 @@ export async function commitCoachingImport(
   const workbook = await loadExcelWorkbook(buffer);
   const { rows } = parseCoachingWorkbookRows(workbook);
   const directory = await getEmployeeDirectoryRows();
-  const classified = classifyCoachingImportRows(rows, buildDirectoryIndex(directory));
+  const directoryIndex = buildDirectoryIndex(directory);
+  const classified = classifyCoachingImportRows(rows, directoryIndex);
+
+  // Coaching reports must be attributed to a coach (the importing user). If the
+  // importer's account is not linked to an employee, every matched row would fail
+  // its create with a per-row error that is easy to miss. Block the whole import
+  // up front with one clear message so nothing is written and the user can retry
+  // signed in as the coach (or a linked admin).
+  const coachKey = normalizeHrId(access.hrId);
+  const hasMatched = classified.some((row) => row.classification === "matched");
+  if (hasMatched && (!coachKey || !directoryIndex.has(coachKey))) {
+    throw new Error(
+      "A linked employee HR_ID is required to import coaching reports: your account is not linked to an employee, so reports cannot be attributed to a coach. No reports were created — sign in as the coach (or a linked admin) and re-upload.",
+    );
+  }
 
   const importBatchId = globalThis.crypto.randomUUID();
   const result: CoachingImportCommitResult = {
