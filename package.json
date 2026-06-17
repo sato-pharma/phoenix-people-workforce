@@ -57,7 +57,7 @@
     "audit:dashboard": "node --no-warnings --experimental-strip-types --experimental-specifier-resolution=node scripts/audit/generate-management-dashboard.ts",
     "leave:retention:dry-run": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/vacation-retention-purge.ts",
     "db:marketing:sync-sales-codes": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/sync-sales-pharmacy-codes-into-marketing.ts",
-    "check:migrations": "node scripts/check-migrations.js",
+    "check:migrations": "node scripts/check-migrations.mjs",
     "coverage": "c8 --reporter=text --reporter=html --reporter=json node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
