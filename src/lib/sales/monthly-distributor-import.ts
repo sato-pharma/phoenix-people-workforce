@@ -455,14 +455,14 @@ const EPDA_BULK_EPR_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
-// EGD-PH (code EGD-PH) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
+// EGD Branch (code EG-BR) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
 // EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
-// Distrub ID, where Distrub ID = "EGD-PH") appended. Date is "Invoice Date", qty the net "Qty",
+// Distrub ID, where Distrub ID = "EG-BR") appended. Date is "Invoice Date", qty the net "Qty",
 // customer CUSTOMER_CODE/NAME/ADDRESS. Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
 const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["CUSTOMER_ADDRESS"], code: ["CUSTOMER_CODE"], name: ["CUSTOMER_NAME"] },
   discountField: "Discount%",
-  distributorCodes: ["EGD-PH"],
+  distributorCodes: ["EG-BR"],
   fields: {
     areaCode: "Area ID",
     brickId: BRICK_ID_HEADER_ALIASES,
@@ -473,7 +473,7 @@ const EGD_PH_TEMPLATE: DistributorSalesTemplateDef = {
     regionCode: "Region ID",
   },
   key: "egd_ph",
-  name: "EGD-PH coded template",
+  name: "EGD Branch coded template",
   optionalFields: {
     productName: ["ITEM_NAME"],
   },
