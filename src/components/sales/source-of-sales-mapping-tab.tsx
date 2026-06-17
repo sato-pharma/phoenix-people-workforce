@@ -453,6 +453,7 @@ function MappingCombobox({
     setOpen(true);
   }
 
+
   const q = value.toLowerCase();
   const filtered = q
     ? options.filter((o) => o.code.toLowerCase().includes(q) || o.name.toLowerCase().includes(q)).slice(0, 25)
