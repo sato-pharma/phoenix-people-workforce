@@ -3,6 +3,11 @@ export const coachingScoreItemCount = 20;
 export const coachingMinItemScore = 1;
 export const coachingMaxItemScore = 5;
 
+// All Excel-imported coaching reports are attributed to this coach — the field
+// coaching Training Manager (A-7) who conducts the coaching — regardless of which
+// admin runs the upload. Single edit point if the coach of record ever changes.
+export const coachingImportCoachHrId = "A-7";
+
 // "critical_red" is stored for backend analytics only. Employee/admin UI should
 // display it as the standard red zone label instead of exposing harsh wording.
 export const coachingPerformanceZoneDisplayLabels = {
