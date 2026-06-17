@@ -383,8 +383,8 @@ const IBN_SINA_IS_TEMPLATE: DistributorSalesTemplateDef = {
 };
 
 // Ibn Sina "Sato" branch (PAS feed) — treated as its own distributor (code IS-S). Same
-// coded format as IS. "Total Quantity" is the authoritative qty column; free units are
-// excluded from all totals per the system-wide bonus-neglect policy.
+// coded format as IS. "Quantity" is paid units only; "Total Quantity" (paid+free) is
+// never used — free units are always neglected per the system-wide bonus-neglect policy.
 const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["Address_En", "Address_Ar"], code: ["Client Code"], name: ["Client Name"] },
   discountField: "Discount%",
@@ -395,7 +395,7 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
     distributorCode: "Distrub ID",
     invoiceDate: INVOICE_DATE_HEADER_ALIASES,
     productCode: "Product ID",
-    qty: ["Total Quantity", ...QTY_HEADER_ALIASES],
+    qty: QTY_HEADER_ALIASES,
     regionCode: "Region ID",
   },
   key: "ibn_sina_sato_iss",
