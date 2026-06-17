@@ -161,6 +161,7 @@ function applyNumericFormat(cell: ExcelJS.Cell, key: string) {
   else moneyFormat(cell);
 }
 
+
 function styleBand(cell: ExcelJS.Cell, fill: string, fontColor = WHITE) {
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
   cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: fontColor } };

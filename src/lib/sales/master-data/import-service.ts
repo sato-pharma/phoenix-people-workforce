@@ -354,6 +354,100 @@ export async function importMasterWorkbook(input: {
   return { blockedRows, inserted, master: def.master, skipped, totalRead, updated };
 }
 
+export async function addSingleMasterRow(input: {
+  actorLoginId: string;
+  master: MasterKey;
+  row: Record<string, string>;
+}): Promise<{ success: boolean; error?: string; inserted?: boolean }> {
+  const def = MASTER_DEFINITIONS[input.master];
+  const existing = await preloadKeyed(def.table, def.keyColumn);
+  const parentMaps = new Map<MasterKey, Map<string, Record<string, unknown>>>();
+  for (const parent of def.parents) {
+    if (!parentMaps.has(parent.parentMaster)) {
+      const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
+      parentMaps.set(parent.parentMaster, await preloadKeyed(parentDef.table, parentDef.keyColumn));
+    }
+  }
+  const supabase = getSupabaseAdmin();
+
+  const key = normalizeCode(input.row[def.keyColumn] ?? "");
+  if (!key) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} is required.` };
+  }
+  if (existing.has(key)) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} "${key}" already exists.` };
+  }
+
+  // Resolve parents
+  const parentValues: Record<string, string | null> = {};
+  for (const parent of def.parents) {
+    const code = normalizeCode(input.row[parent.codeColumn]);
+    const copyCodes = parent.copyCodes ?? {};
+    if (!code) {
+      if (parent.optional) {
+        for (const targetColumn of Object.values(copyCodes)) parentValues[targetColumn] = null;
+        continue;
+      }
+      return { success: false, error: `${columnLabel(def, parent.codeColumn)} is required.` };
+    }
+    const parentRow = parentMaps.get(parent.parentMaster)?.get(code);
+    if (!parentRow) {
+      return { success: false, error: `${columnLabel(def, parent.codeColumn)} "${code}" is not in ${MASTER_DEFINITIONS[parent.parentMaster].label}.` };
+    }
+    for (const [parentColumn, targetColumn] of Object.entries(copyCodes)) {
+      parentValues[targetColumn] = normalizeCode(parentRow[parentColumn]);
+    }
+  }
+
+  const derived = def.derive(input.row);
+  const payload: Record<string, unknown> = { ...parentValues, ...derived };
+  let invalid: string | null = null;
+  for (const column of def.columns) {
+    const value = typeValue(column, input.row[column.key] ?? "");
+    if (column.required) {
+      if (column.type === "number" && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+        invalid = `${column.label} must be a non-negative number.`;
+        break;
+      }
+      if (value === "" || value === null) {
+        invalid = `${column.label} is required to add a new row.`;
+        break;
+      }
+    }
+    if (value !== "") payload[column.key] = value;
+  }
+  if (invalid) {
+    return { success: false, error: invalid };
+  }
+
+  const { error } = await supabase.from(def.table).insert(payload);
+  if (error) {
+    const reason = error.code === "23505"
+      ? `${columnLabel(def, def.keyColumn)} "${key}" already exists.`
+      : error.message;
+    return { success: false, error: reason };
+  }
+
+  let systemEnsured = 0;
+  if (def.master === "distributors") {
+    systemEnsured = await ensureSystemDistributors(supabase);
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: key,
+    entityType: def.auditEntityType,
+    newValues: {
+      master: def.master,
+      source: "database_mapping_single_add",
+      systemEnsured,
+    },
+    summary: `Database Mapping single add — ${def.label}: ${key} added.`,
+  });
+
+  return { success: true, inserted: true };
+}
+
 function columnLabel(def: MasterDefinition, key: string) {
   return def.columns.find((column) => column.key === key)?.label ?? key;
 }

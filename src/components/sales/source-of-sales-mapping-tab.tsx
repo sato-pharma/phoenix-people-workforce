@@ -472,7 +472,7 @@ function MappingCombobox({
       />
       {open && filtered.length > 0 && pos && (
         <div
-          className="z-[9999] max-h-48 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          className="z-9999 max-h-48 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
           style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
         >
           {filtered.map((o) => (
@@ -678,6 +678,8 @@ function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: st
     </div>
   );
 }
+
+export { MappingCombobox };
 
 export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistributorChange, profiledDistributorCodes, products, bricks }: Props) {
   const [headersCopied, setHeadersCopied] = useState(false);
