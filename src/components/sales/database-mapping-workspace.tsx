@@ -11,6 +11,7 @@ import {
   Map as MapIcon,
   MapPin,
   Package,
+  Plus,
   Puzzle,
   RefreshCw,
   ShieldCheck,
@@ -24,8 +25,10 @@ import type { LucideIcon } from "lucide-react";
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
 import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
 import { DistributorProfileEditor } from "@/components/sales/distributor-profile-editor";
+import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import {
@@ -40,6 +43,17 @@ import {
 } from "@/lib/sales/master-data/definitions";
 import type { MasterImportResult } from "@/lib/sales/master-data/import-service";
 import { cn } from "@/lib/utils";
+
+const fieldInputClass = "h-9 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 const MASTER_ICONS: Record<MasterKey, LucideIcon> = {
   areas: MapPin,
@@ -95,6 +109,8 @@ function MasterTab({
   const [refreshing, setRefreshing] = useState(false);
   const [result, setResult] = useState<MasterImportResult | null>(null);
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
+  const [addFormValues, setAddFormValues] = useState<Record<string, string>>({});
+  const [adding, setAdding] = useState(false);
 
   const editableLabels = def.columns.filter((column) => !column.locked).map((column) => column.label);
   const showHierarchyHint = def.parents.length > 0;
@@ -184,6 +200,30 @@ function MasterTab({
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleAddRow() {
+    setAdding(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/sales/database-mapping/${def.master}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addFormValues),
+      });
+      const payload = await readJson<{ success: boolean; message?: string; error?: string }>(response);
+      if (payload.success) {
+        setMessage({ type: "success", text: payload.message ?? "Row added successfully." });
+        setAddFormValues({});
+        await refresh();
+      } else {
+        setMessage({ type: "error", text: payload.error ?? "Add failed." });
+      }
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "Add failed." });
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -291,6 +331,57 @@ function MasterTab({
           </div>
         </AdminTableShell>
       ) : null}
+
+      <Card className="rounded-[32px] border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)] p-5">
+        <div className="space-y-3">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Add Single Row</p>
+          <div className="flex flex-wrap items-end gap-2">
+            {def.columns.map((column) => {
+              // Check if this column is a parent code column
+              const isParentCode = def.parents.some((p) => p.codeColumn === column.key);
+              if (isParentCode) {
+                // Find the parent master
+                const parent = def.parents.find((p) => p.codeColumn === column.key)!;
+                const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
+                const parentOptions = allRows[parent.parentMaster].map((row) => ({
+                  code: String(row[parentDef.keyColumn]),
+                  name: String(row[parentDef.keyColumn]),
+                }));
+                return (
+                  <Field key={column.key} label={column.label}>
+                    <MappingCombobox
+                      value={addFormValues[column.key] || ""}
+                      onChange={(code) => setAddFormValues((prev) => ({ ...prev, [column.key]: code }))}
+                      options={parentOptions}
+                      placeholder={`Select ${parentDef.label}`}
+                    />
+                  </Field>
+                );
+              }
+              return (
+                <Field key={column.key} label={column.label}>
+                  <input
+                    className={cn(fieldInputClass, "w-48")}
+                    disabled={adding}
+                    onChange={(e) => setAddFormValues((prev) => ({ ...prev, [column.key]: e.target.value }))}
+                    placeholder={column.label}
+                    type={column.type === "number" ? "number" : "text"}
+                    value={addFormValues[column.key] || ""}
+                  />
+                </Field>
+              );
+            })}
+            <Button
+              className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
+              disabled={adding}
+              onClick={() => void handleAddRow()}
+              type="button"
+            >
+              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <AdminTableShell description={`Live rows currently stored in ${def.table}.`} title={`${def.label} Rows`}>
         <div className="overflow-x-auto p-4 md:p-5">
