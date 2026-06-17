@@ -776,6 +776,12 @@ function canUseAnyMarketingProductLine(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin" || access.role === "SFE Manager";
 }
 
+// Maps free-text product line labels → canonical org line names (both normalized).
+// Needed because marketing_products.line carries the full name while lines.name is abbreviated.
+const PRODUCT_LINE_TEXT_ALIASES: Record<string, string> = {
+  "anti infective": "anti inf",
+};
+
 function marketingProductMatchesRequesterLine(product: MarketingProductDbRow, requester: MarketingRequesterLine) {
   const requesterLineId = requester.lineId ?? null;
   const productLineId = product.line_id === null || product.line_id === undefined ? null : Number(product.line_id);
@@ -783,7 +789,9 @@ function marketingProductMatchesRequesterLine(product: MarketingProductDbRow, re
 
   const requesterLineName = normalizeScopeText(requester.lineName);
   const productLineName = normalizeScopeText(product.line);
-  return Boolean(requesterLineName && productLineName && requesterLineName === productLineName);
+  if (!requesterLineName || !productLineName) return false;
+  const resolvedProductLineName = PRODUCT_LINE_TEXT_ALIASES[productLineName] ?? productLineName;
+  return resolvedProductLineName === requesterLineName;
 }
 
 function assertMarketingActor(access: AccessContext) {
