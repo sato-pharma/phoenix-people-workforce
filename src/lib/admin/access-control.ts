@@ -8,6 +8,7 @@ import {
   getPermissionMatrix,
   getRolePrivilegeRank,
   getSalesScope,
+  isRolePermissionWithinHardBoundary,
   parsePermissionActionStrict,
   parsePermissionResourceStrict,
   parseRoleStrict,
@@ -409,6 +410,11 @@ export async function upsertRolePermissionOverride(
   const permissionRole = parseRoleStrict(input.role);
   const resource = parsePermissionResourceStrict(input.resource);
   const action = parsePermissionActionStrict(input.action);
+  if (input.isAllowed && !isRolePermissionWithinHardBoundary(permissionRole, resource, action)) {
+    throw new Error(
+      `Forbidden: ${permissionRole} cannot be granted ${action} ${resource}; this is blocked by the hard role-authority boundary.`,
+    );
+  }
 
   const supabase = getSupabaseAdmin();
   const { data: previousRow } = await supabase

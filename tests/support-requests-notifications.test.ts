@@ -27,8 +27,9 @@ export function runSupportRequestsNotificationsTests() {
   // ── HR notification wired on ticket creation ───────────────────────────────────────
   assert.match(service, /createSystemNotification/, "support service must use the unified notification engine");
   assert.match(service, /async function resolveHrSupportRecipients/, "HR recipient resolver must exist");
-  assert.match(service, /\.in\("role", \["HR Specialist", "Super Admin"\]\)/, "HR audience must include HR Specialist + Super Admin accounts");
-  assert.match(service, /HR Manager|Admin HR/i, "HR audience must include HR Manager / Admin HR titled employees");
+  assert.match(service, /\.in\("role", \["Talent Acquisition", "Super Admin"\]\)/, "HR audience must include Talent Acquisition + Super Admin accounts");
+  assert.match(service, /descriptive only and must not grant HR inbox authority/, "job titles must not grant HR support inbox authority");
+  assert.doesNotMatch(service, /HR Manager|Admin HR/i, "HR support inbox authority must not be derived from HR-titled employees");
   assert.match(service, /async function notifyHrOfSupportRequest/, "support service must alert HR on creation");
   assert.match(service, /module: "support_requests"/, "support notification must use the support_requests module");
   assert.match(
@@ -74,6 +75,11 @@ export function runSupportRequestsNotificationsTests() {
     service,
     /Promise<CreateSupportRequestResult>/,
     "createSupportRequest must return { row, notification } so the route can render a delivery diagnostic",
+  );
+  assert.match(
+    service,
+    /createSupportRequest[\s\S]*?assertPermission\(access, "support_requests", "create"\)/,
+    "non-HR submitters must use support_requests:create, not HR inbox read authority",
   );
 
   // ── API route forwards the delivery diagnostic so the UI can render a banner ──────
@@ -121,7 +127,7 @@ export function runSupportRequestsNotificationsTests() {
   const systemNavigation = source("src/config/system-navigation.ts");
   assert.match(
     systemNavigation,
-    /href: "\/admin\/support-requests"[\s\S]*?resource: "support_requests"/,
-    "admin nav must expose HR Support Requests gated by the support_requests permission",
+    /href: "\/admin\/support-requests"[\s\S]*?resource: "support_requests"[\s\S]*?roles: hrAuthorityNavigationRoles/,
+    "admin nav must expose HR Support Requests only to HR authority roles",
   );
 }

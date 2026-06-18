@@ -181,6 +181,63 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Manager",
 ]);
 
+export const hrAuthorityRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
+const hrAuthorityRoleSet = new Set<PhoenixRole>(hrAuthorityRoles);
+const hrSupportStaffActions: PermissionAction[] = ["read", "create", "update", "export"];
+const supportRequestSenderActions: PermissionAction[] = ["create"];
+
+export function isHrAuthorityRole(role: PhoenixRole): boolean {
+  return hrAuthorityRoleSet.has(role);
+}
+
+function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResource): PermissionAction[] | null {
+  switch (resource) {
+    case "employees":
+      return role === "Super Admin" ? allActions : [];
+    case "employee_documents":
+    case "recruitment":
+    case "candidates":
+    case "offers":
+      return isHrAuthorityRole(role) ? allActions : [];
+    case "support_requests":
+      return isHrAuthorityRole(role) ? hrSupportStaffActions : supportRequestSenderActions;
+    default:
+      return null;
+  }
+}
+
+export function isRolePermissionWithinHardBoundary(
+  role: PhoenixRole,
+  resource: PermissionResource,
+  action: PermissionAction,
+): boolean {
+  const allowedActions = hardBoundaryAllowedActions(role, resource);
+  return !allowedActions || allowedActions.includes(action);
+}
+
+function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
+  for (const role of phoenixRoles) {
+    for (const resource of permissionResources) {
+      const allowedActions = hardBoundaryAllowedActions(role, resource);
+      if (!allowedActions) continue;
+
+      if (resource === "support_requests") {
+        matrix[role][resource] = [...allowedActions];
+        continue;
+      }
+
+      const currentActions = matrix[role][resource] ?? [];
+      const boundedActions = currentActions.filter((action) => allowedActions.includes(action));
+      if (boundedActions.length > 0) {
+        matrix[role][resource] = boundedActions;
+      } else {
+        delete matrix[role][resource];
+      }
+    }
+  }
+  return matrix;
+}
+
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     admin: allActions,
@@ -267,12 +324,14 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create", "export"],
   },
   "Talent Acquisition": {
+    employee_documents: ["read", "create", "update", "export"],
     employee_profile: ["read", "update"],
+    leave: ["read", "update", "export"],
     offers: ["read", "create", "update", "export"],
     vacancies: ["read", "create", "update", "export"],
     recruitment: ["read", "create", "update", "export", "import"],
     candidates: ["read", "create", "update", "delete", "export", "import"],
-    support_requests: ["read", "create"],
+    support_requests: ["read", "create", "update", "export"],
     report_it: ["read", "create"],
   },
   "Finance Manager": {
@@ -514,7 +573,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
 };
 
-export const permissionMatrix: PermissionMap = structuredClone(defaultPermissionMatrix);
+export const permissionMatrix: PermissionMap = applyHardPermissionBoundaries(structuredClone(defaultPermissionMatrix));
 
 export const systemAccessContext: AccessContext = {
   hrId: null,
@@ -780,7 +839,7 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
     merged[role][resource] = override.is_allowed ? [...withoutAction, action] : withoutAction;
   });
 
-  return merged;
+  return applyHardPermissionBoundaries(merged);
 }
 
 async function getPermissionMatrixFromDb(): Promise<PermissionMatrix> {
@@ -822,7 +881,7 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
           "[permissions] role_permission_overrides load failed; retaining last-known matrix",
           error,
         );
-        return permissionCache?.matrix ?? clonePermissionMatrix(defaultPermissionMatrix);
+        return permissionCache?.matrix ?? applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
       })
       .finally(() => {
         permissionMatrixPromise = null;

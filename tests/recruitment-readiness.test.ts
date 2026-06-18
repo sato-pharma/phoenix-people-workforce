@@ -87,10 +87,15 @@ export function runRecruitmentReadinessTests() {
   assert.ok(permissionMatrix["Super Admin"].candidates?.includes("import"));
   assert.ok(permissionMatrix["Talent Acquisition"].recruitment?.includes("create"));
   assert.ok(permissionMatrix["Talent Acquisition"].candidates?.includes("read"));
-  assert.deepEqual(permissionMatrix.CEO.recruitment, ["read"]);
-  assert.deepEqual(permissionMatrix.CEO.candidates, ["read"]);
-  assert.deepEqual(permissionMatrix["District Manager"].recruitment, ["read", "update"]);
+  assert.ok(permissionMatrix["Talent Acquisition"].employee_documents?.includes("update"));
+  assert.ok(permissionMatrix["Talent Acquisition"].leave?.includes("update"));
+  assert.deepEqual(permissionMatrix.CEO.recruitment, undefined);
+  assert.deepEqual(permissionMatrix.CEO.candidates, undefined);
+  assert.deepEqual(permissionMatrix.CEO.offers, undefined);
+  assert.deepEqual(permissionMatrix["District Manager"].recruitment, undefined);
   assert.equal(permissionMatrix["District Manager"].candidates, undefined, "managers get no candidate PII");
+  assert.equal(permissionMatrix["Marketing Manager"].recruitment, undefined, "Marketing Manager gets no recruitment access");
+  assert.equal(permissionMatrix["Marketing Manager"].offers, undefined, "Marketing Manager gets no offer lifecycle access");
   assert.equal(permissionMatrix.Employee.recruitment, undefined, "employees get no recruitment access");
 
   // --- Access registry ---------------------------------------------------

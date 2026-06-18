@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
+import { CalendarDays, ClipboardCheck, ShieldCheck } from "lucide-react";
 
+import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { PlansWorkspace } from "@/components/employee-portal/plans-workspace";
-import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
@@ -27,10 +28,36 @@ export default async function AdminWeeklyPlansPage({
 
   return (
     <div className="space-y-6">
-      <PremiumHero
-        kicker="Planning Workflow"
+      <AdminPageHero
+        badges={
+          <>
+            <AdminInsightChip tone="orange">Admin Shell</AdminInsightChip>
+            <AdminInsightChip tone="slate">Manager Reviews</AdminInsightChip>
+            <AdminInsightChip tone="emerald">CEO Decisions</AdminInsightChip>
+          </>
+        }
+        description="Review submitted field plans, return corrections with row-level notes, finalize CEO decisions, and track HR acknowledgements from the desktop admin workspace."
+        eyebrow="Planning Governance"
+        icon={<CalendarDays className="h-3.5 w-3.5" />}
         title="Weekly / Monthly Plans"
-        subtitle="Review manager-approved plans, finalize CEO decisions, and track HR acknowledgements after approval."
+        aside={
+          <div className="grid min-w-[260px] gap-2 text-xs font-bold text-slate-200 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
+              <div className="flex items-center gap-2 text-orange-100">
+                <ClipboardCheck className="h-4 w-4" />
+                Review queue
+              </div>
+              <p className="mt-1 text-[11px] leading-4 text-slate-300">Manager approvals, returns, and CEO decisions.</p>
+            </div>
+            <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
+              <div className="flex items-center gap-2 text-emerald-100">
+                <ShieldCheck className="h-4 w-4" />
+                HR acknowledgement
+              </div>
+              <p className="mt-1 text-[11px] leading-4 text-slate-300">Final approvals remain visible for HR follow-through.</p>
+            </div>
+          </div>
+        }
       />
       <PlansWorkspace
         access={access}

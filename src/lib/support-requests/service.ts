@@ -29,8 +29,8 @@ function sameHrId(left: string | null | undefined, right: string | null | undefi
 
 /**
  * Resolve the HR team that should be alerted when an employee opens a support
- * ticket: every Super Admin / HR Specialist account, plus any employee whose title
- * marks them as an HR Manager / Admin HR.
+ * ticket: every active Super Admin / Talent Acquisition account. Job titles are
+ * descriptive only and must not grant HR inbox authority.
  *
  * Throws on Supabase failure — callers must catch and fall back to
  * resolveSuperAdminFallbackRecipients() so a transient error never silently drops
@@ -41,8 +41,9 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
   const supabase = getSupabaseAdmin();
   const { data: authRows, error: authError } = await supabase
     .from("app_auth_users")
-    .select("login_id,hr_id,role,auth_email")
-    .in("role", ["HR Specialist", "Super Admin"]);
+    .select("login_id,hr_id,role,auth_email,is_active")
+    .in("role", ["Talent Acquisition", "Super Admin"])
+    .eq("is_active", true);
   if (authError) throw authError;
 
   const { data: employees, error: employeesError } = await supabase
@@ -56,13 +57,6 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
       .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
   );
 
-  const hrTitledIds = new Set(
-    Array.from(employeeByHrId.values())
-      .filter((row) => /HR Manager|Admin HR/i.test(`${row.job_title ?? ""} ${row.position_title ?? ""}`))
-      .map((row) => normalizeHrId(row.hr_id))
-      .filter((hrId): hrId is string => Boolean(hrId)),
-  );
-
   const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null; role?: string | null }>)
     .map((row) => {
       const employee = employeeByHrId.get(normalizeHrId(row.hr_id) ?? "");
@@ -72,11 +66,6 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
         userId: row.login_id ?? null,
       };
     });
-  for (const hrId of hrTitledIds) {
-    if (!recipients.some((recipient) => sameHrId(recipient.hrId, hrId))) {
-      recipients.push({ email: pickDeliverableEmail(employeeByHrId.get(hrId)?.work_email), hrId, userId: null });
-    }
-  }
   return recipients;
 }
 
@@ -399,6 +388,8 @@ export async function createSupportRequest(
   access: AccessContext,
   input: CreateSupportRequestInput,
 ): Promise<CreateSupportRequestResult> {
+  await assertPermission(access, "support_requests", "create");
+
   const hrId = normalizeHrId(access.hrId) ?? normalizeHrId(input.hrId);
   if (!hrId) {
     throw new Error("HR ID is required to open a support request.");

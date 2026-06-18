@@ -30,6 +30,7 @@ const phase22Roles: PhoenixRole[] = [
   "Super Admin",
   "Talent Acquisition",
   "Finance Manager",
+  "Marketing Manager",
   "CEO",
   "Manager",
   "District Manager",
@@ -99,11 +100,20 @@ async function verifyRoleMatrix() {
   await expectAccess(superAdmin, "user_admin", "update", true);
   await expectAccess(superAdmin, "payroll", "import", true);
   await expectAccess(superAdmin, "sales", "approve", true);
+  await expectAccess(superAdmin, "employees", "update", true);
+  await expectAccess(superAdmin, "support_requests", "update", true);
+  await expectAccess(superAdmin, "recruitment", "approve", true);
+  await expectAccess(superAdmin, "offers", "update", true);
 
   const talentAcquisition = contextFor("Talent Acquisition");
   await expectAccess(talentAcquisition, "recruitment", "create", true);
   await expectAccess(talentAcquisition, "candidates", "read", true);
   await expectAccess(talentAcquisition, "offers", "create", true);
+  await expectAccess(talentAcquisition, "employee_documents", "update", true);
+  await expectAccess(talentAcquisition, "leave", "update", true);
+  await expectAccess(talentAcquisition, "support_requests", "read", true);
+  await expectAccess(talentAcquisition, "support_requests", "update", true);
+  await expectAccess(talentAcquisition, "support_requests", "export", true);
   await expectAccess(talentAcquisition, "employee_profile", "update", true);
   await expectAccess(talentAcquisition, "employees", "read", false);
   await expectAccess(talentAcquisition, "overview", "read", false);
@@ -120,14 +130,33 @@ async function verifyRoleMatrix() {
   await expectAccess(finance, "payroll", "approve", true);
   await expectAccess(finance, "expenses", "approve", true);
   await expectAccess(finance, "employees", "read", false);
+  await expectAccess(finance, "support_requests", "create", true);
+  await expectAccess(finance, "support_requests", "read", false);
+  await expectAccess(finance, "recruitment", "read", false);
   await expectAccess(finance, "user_admin", "update", false);
   await expectAccess(finance, "sales", "import", false);
 
+  const marketingManager = contextFor("Marketing Manager");
+  await expectAccess(marketingManager, "weekly_plans", "approve", true);
+  await expectAccess(marketingManager, "support_requests", "create", true);
+  await expectAccess(marketingManager, "support_requests", "read", false);
+  await expectAccess(marketingManager, "employees", "read", false);
+  await expectAccess(marketingManager, "recruitment", "update", false);
+  await expectAccess(marketingManager, "candidates", "read", false);
+  await expectAccess(marketingManager, "offers", "read", false);
+  await expectAccess(marketingManager, "payroll", "read", true);
+
   const ceo = contextFor("CEO");
   await expectAccess(ceo, "payroll", "read", true);
-  await expectAccess(ceo, "expenses", "approve", true);
+  await expectAccess(ceo, "employees", "read", false);
+  await expectAccess(ceo, "expenses", "approve", false);
   await expectAccess(ceo, "contracts", "approve", true);
   await expectAccess(ceo, "leave", "approve", true);
+  await expectAccess(ceo, "support_requests", "create", true);
+  await expectAccess(ceo, "support_requests", "read", false);
+  await expectAccess(ceo, "recruitment", "read", false);
+  await expectAccess(ceo, "candidates", "read", false);
+  await expectAccess(ceo, "offers", "read", false);
   await expectAccess(ceo, "user_admin", "update", false);
   await expectAccess(ceo, "payroll", "import", false);
 
@@ -139,6 +168,11 @@ async function verifyRoleMatrix() {
     await expectAccess(context, "leave", "approve", true);
     await expectAccess(context, "payroll", "read", true);
     await expectAccess(context, "payroll", "import", false);
+    await expectAccess(context, "support_requests", "create", true);
+    await expectAccess(context, "support_requests", "read", false);
+    await expectAccess(context, "recruitment", "read", false);
+    await expectAccess(context, "candidates", "read", false);
+    await expectAccess(context, "offers", "read", false);
     await expectAccess(context, "user_admin", "update", false);
     await expectAccess(context, "admin", "read", false);
   }
@@ -155,6 +189,11 @@ async function verifyRoleMatrix() {
     await expectAccess(context, "admin", "read", false);
     await expectAccess(context, "sales", "import", false);
     await expectAccess(context, "payroll", "update", false);
+    await expectAccess(context, "support_requests", "create", true);
+    await expectAccess(context, "support_requests", "read", false);
+    await expectAccess(context, "recruitment", "read", false);
+    await expectAccess(context, "candidates", "read", false);
+    await expectAccess(context, "offers", "read", false);
     await expectAccess(context, "expenses", "approve", false);
     await expectAccess(context, "contracts", "approve", false);
   }
@@ -164,6 +203,7 @@ function verifyScopeHelpers() {
   expectScope("Super Admin navigation mode is admin", resolveNavigationMode(contextFor("Super Admin")), "admin");
   expectScope("Talent Acquisition navigation mode is admin", resolveNavigationMode(contextFor("Talent Acquisition")), "admin");
   expectScope("Finance Manager navigation mode is admin", resolveNavigationMode(contextFor("Finance Manager")), "admin");
+  expectScope("Marketing Manager navigation mode is admin", resolveNavigationMode(contextFor("Marketing Manager")), "admin");
   expectScope("CEO navigation mode is admin", resolveNavigationMode(contextFor("CEO")), "admin");
   expectScope("District Manager navigation mode is employee portal", resolveNavigationMode(contextFor("District Manager")), "employee-portal");
   expectScope("Medical Rep navigation mode is employee portal", resolveNavigationMode(contextFor("Medical Rep")), "employee-portal");
@@ -217,7 +257,9 @@ function verifyStaticEntryPoints() {
   const salesUploadRoute = readFileSync("app/api/sales/imports/upload/route.ts", "utf8");
   const salesActionRoute = readFileSync("app/api/sales/imports/[id]/[action]/route.ts", "utf8");
   const bulkUsersRoute = readFileSync("app/api/admin/users/bulk-action/route.ts", "utf8");
+  const contactHrSupportPage = readFileSync("app/employee-portals/contact-hr-support/page.tsx", "utf8");
   const probationPortalPage = readFileSync("app/employee-portals/probation/page.tsx", "utf8");
+  const vacationService = readFileSync("src/lib/vacation/service.ts", "utf8");
   const attendancePoliciesPage = readFileSync("app/(admin)/attendance/policies/page.tsx", "utf8");
   const attendanceDeviceMappingPage = readFileSync("app/(admin)/attendance/device-user-mapping/page.tsx", "utf8");
   const attendancePoliciesRoute = readFileSync("app/api/attendance/policies/route.ts", "utf8");
@@ -243,6 +285,8 @@ function verifyStaticEntryPoints() {
   addCheck("Admin expenses dashboard redirects employee-portal roles", /resolveNavigationMode\(access\) === "employee-portal"[\s\S]*redirect\("\/employee-portals\/expenses"\)/.test(expensesDashboardPage));
   addCheck("Employee portal layout requires employee profile read permission", /assertPermission\(access, "employee_profile", "read"\)/.test(portalLayout));
   addCheck("Employee portal payroll fetch is current-HR-ID only", /getEmployeePortalPayrollDashboard\(currentHrId\)/.test(portalService));
+  addCheck("Employee portal HR support submission uses sender permission", /assertPermission\(access, "support_requests", "create"\)/.test(contactHrSupportPage));
+  addCheck("Vacation Control service is HR-authority gated", /assertVacationControlAuthority\(access\)[\s\S]*assertPermission\(access, "leave", "update"\)/.test(vacationService));
   addCheck("Employee portal sales fetch uses scoped HR IDs or scoped line", /getScopedEmployeePortalSalesDashboard\(\{[\s\S]*targetSalesHrIds/.test(portalService));
   addCheck("Employee portal workforce has self/team/line/company branches", /isCompanyWorkforceRole\(role\)[\s\S]*isLineWorkforceRole\(role\)[\s\S]*isTeamWorkforceRole\(role\)[\s\S]*return activeRows\.filter/.test(portalService));
   addCheck("Probation portal uses read permission and scoped service", /assertPermission\(access, "probation", "read"\)/.test(probationPortalPage) && /getProbationRows\(access\)/.test(probationPortalPage));

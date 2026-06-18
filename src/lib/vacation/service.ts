@@ -5,6 +5,7 @@ import ExcelJS from "exceljs";
 import {
   assertPermission,
   canAccess,
+  isHrAuthorityRole,
   normalizeHrIdForAccess,
   normalizeLineName,
   resolveEmployeeIdentityId,
@@ -3263,7 +3264,14 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
   return { canAssign: isHrActor, generatedAt: new Date().toISOString(), rows };
 }
 
+function assertVacationControlAuthority(access: AccessContext) {
+  if (!isHrAuthorityRole(access.role)) {
+    throw new Error("Forbidden: only HR authority roles can manage vacation control.");
+  }
+}
+
 export async function getVacationControlData(access: AccessContext): Promise<VacationControlData> {
+  assertVacationControlAuthority(access);
   await assertPermission(access, "leave", "update");
   const [directory, policiesResult] = await Promise.all([
     getEmployeeDirectory(),
@@ -3297,6 +3305,7 @@ export async function updateVacationWeeklyOffPolicy(access: AccessContext, input
   saturday: unknown;
   thursday: unknown;
 }) {
+  assertVacationControlAuthority(access);
   await assertPermission(access, "leave", "update");
   const jobTitle = text(input.jobTitle);
   if (!jobTitle) throw new Error("Job title is required.");
