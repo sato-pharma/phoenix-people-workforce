@@ -32,7 +32,10 @@ function toDisplayText(node: React.ReactNode): string {
   if (Array.isArray(node)) return node.map(toDisplayText).join(" ").trim();
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (typeof node === "boolean") return "";
-  if (React.isValidElement(node)) return toDisplayText(node.props?.children);
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: React.ReactNode };
+    return toDisplayText(props.children);
+  }
   return "";
 }
 
