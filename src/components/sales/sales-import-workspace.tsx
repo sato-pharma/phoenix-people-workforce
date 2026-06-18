@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ImportPreviewModal, type PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
@@ -65,9 +66,10 @@ type Props = {
 
 type ValidationResponse = {
   code?: string;
-  data?: DistributorSalesValidationResult;
+  data?: PreviewResult;
   error?: string;
   message?: string;
+  storagePath?: string | null;
   success: boolean;
 };
 
@@ -780,9 +782,12 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
   const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
   const [productsCount, setProductsCount] = useState(initialProducts.length);
-  const [result, setResult] = useState<DistributorSalesValidationResult | null>(null);
+  const [result, setResult] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [isValidating, setIsValidating] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [pendingStoragePath, setPendingStoragePath] = useState<string | null>(null);
   const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
   const [isRefreshingBatches, setIsRefreshingBatches] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
@@ -886,20 +891,25 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
     }
   }
 
-  async function handleValidate() {
+  // Step 1 of the mandatory preview → confirm flow: validate the upload WITHOUT persisting, then open
+  // the preview modal. For large files the workbook is uploaded to Storage first; its path is kept so
+  // Confirm can reuse it (no re-upload).
+  async function handlePreview() {
     if (!selectedFile || !selectedDistributorCode) return;
 
     setIsValidating(true);
     setError(null);
     setResult(null);
+    setPendingStoragePath(null);
 
     // Large workbooks (> ~4MB) cannot be POSTed through the serverless function — Vercel caps the request
     // body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE). Those upload straight to Storage via a short-lived
-    // signed URL, then validate by reference. Small files keep the original direct multipart POST.
+    // signed URL, then preview by reference. Small files keep the original direct multipart POST.
     const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
 
     try {
       let response: Response;
+      let storagePath: string | null = null;
       if (selectedFile.size > LARGE_FILE_THRESHOLD) {
         const urlResponse = await fetch("/api/sales/monthly-import/upload-url", {
           method: "POST",
@@ -925,7 +935,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         if (!putResponse.ok) {
           throw new Error("The file could not be uploaded. Please try again.");
         }
-        response = await fetch("/api/sales/monthly-import/validate", {
+        storagePath = urlPayload.path;
+        response = await fetch("/api/sales/monthly-import/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ storagePath: urlPayload.path, distributorCode: selectedDistributorCode, period: selectedPeriod }),
@@ -935,7 +946,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         formData.append("file", selectedFile);
         formData.append("distributorCode", selectedDistributorCode);
         if (selectedPeriod) formData.append("period", selectedPeriod);
-        response = await fetch("/api/sales/monthly-import/validate", {
+        response = await fetch("/api/sales/monthly-import/preview", {
           body: formData,
           method: "POST",
         });
@@ -943,28 +954,81 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
       const payload = await readJsonResponse(response);
       const data = payload.data ?? null;
       setResult(data);
-      if (data?.batchId) {
-        await reloadBatches();
-        // Pin the dashboard to the just-uploaded period so the new data is visibly reflected.
-        await reloadDashboard(data.period ?? null);
-        if (data.status === "validated") {
-          const periodLabel = data.period ?? "an undated period (check the sheet's dates)";
-          const distributorLabel = data.distributor?.name ?? selectedDistributorCode;
-          setActionMessage({
-            type: "success",
-            text: `Saved ${formatNumber(data.rowCount)} rows — ${formatCurrency(data.totals.totalValue)} for ${periodLabel} (${distributorLabel}). Dashboard updated.`,
-          });
-          // Make the dashboard update obvious instead of leaving the user on the upload tab.
-          setActiveTab("dashboard");
-        }
+      setPendingStoragePath(storagePath);
+      if (data) {
+        // Show the preview either way: validated (confirm to import) OR blocked (what to fix first).
+        setPreviewOpen(true);
       }
-      if (!payload.success) {
-        setError(payload.error ?? "Validation failed.");
+      if (!payload.success && !data) {
+        setError(payload.error ?? "Preview failed.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Validation failed.");
+      setError(caught instanceof Error ? caught.message : "Preview failed.");
     } finally {
       setIsValidating(false);
+    }
+  }
+
+  // Step 2: persist the upload the user just previewed. Reuses the kept Storage object for large files.
+  async function handleConfirmImport() {
+    if (!selectedFile || !selectedDistributorCode || result?.status !== "validated") return;
+
+    setIsCommitting(true);
+    setError(null);
+
+    try {
+      let response: Response;
+      if (pendingStoragePath) {
+        response = await fetch("/api/sales/monthly-import/commit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ storagePath: pendingStoragePath, distributorCode: selectedDistributorCode, period: selectedPeriod }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("distributorCode", selectedDistributorCode);
+        if (selectedPeriod) formData.append("period", selectedPeriod);
+        response = await fetch("/api/sales/monthly-import/commit", { body: formData, method: "POST" });
+      }
+      const payload = await readJsonResponse(response);
+      const data = payload.data ?? null;
+      if (payload.success && data?.batchId) {
+        setResult(data);
+        setPreviewOpen(false);
+        setPendingStoragePath(null);
+        await reloadBatches();
+        await reloadDashboard(data.period ?? null);
+        const periodLabel = data.period ?? "an undated period (check the sheet's dates)";
+        const distributorLabel = data.distributor?.name ?? selectedDistributorCode;
+        setActionMessage({
+          type: "success",
+          text: `Saved ${formatNumber(data.rowCount)} rows — ${formatCurrency(data.totals.totalValue)} for ${periodLabel} (${distributorLabel}). Dashboard updated.`,
+        });
+        setActiveTab("dashboard");
+      } else {
+        if (data) setResult(data);
+        setError(payload.error ?? "Import failed.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Import failed.");
+    } finally {
+      setIsCommitting(false);
+    }
+  }
+
+  // Cancel the preview: discard the kept Storage object (large files) so it doesn't linger.
+  function handleCancelPreview() {
+    if (isCommitting) return;
+    setPreviewOpen(false);
+    const path = pendingStoragePath;
+    setPendingStoragePath(null);
+    if (path) {
+      void fetch("/api/sales/monthly-import/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ storagePath: path }),
+      }).catch(() => {});
     }
   }
 
@@ -981,6 +1045,14 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+      {previewOpen && result ? (
+        <ImportPreviewModal
+          committing={isCommitting}
+          onCancel={handleCancelPreview}
+          onConfirm={() => void handleConfirmImport()}
+          result={result}
+        />
+      ) : null}
       <div className="space-y-7">
         <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
@@ -1207,11 +1279,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               <Button
                 className="h-11 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
                 disabled={!canValidate}
-                onClick={() => void handleValidate()}
+                onClick={() => void handlePreview()}
                 type="button"
               >
                 {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                Validate
+                Preview import
               </Button>
             </Card>
           </div>
