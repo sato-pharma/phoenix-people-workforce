@@ -157,9 +157,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     // EGD Branch (EG-BR) — a branch of EGD (parent EG): the hospital/transfer export. Different headers
     // from the regular EGD pharmacy file (ITEM_NAME_ENG / CARD_DATE / TO_COMPANY_ENTITY_* / VALUE / QTY).
+    // Product identity is the English NAME, not the code — the team maps EG-BR by the readable item name
+    // (codes are opaque here), so the unmapped list + AI-assist surface and key products by ITEM_NAME_ENG.
     distributorCode: "EG-BR",
     distributorName: "EGD Branch",
-    productColumns: ["ITEM_CODE", "ITEM_NAME_ENG"],
+    productColumns: ["ITEM_NAME_ENG"],
     qtyColumns: ["QTY"],
     valueColumns: ["VALUE"],
     valueSource: "recompute",
