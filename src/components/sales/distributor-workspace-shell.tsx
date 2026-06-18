@@ -1,0 +1,99 @@
+"use client";
+
+import { useMemo, useState, type ReactNode } from "react";
+import { Search, Store } from "lucide-react";
+
+import { Card } from "@/components/ui/card";
+import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
+import { cn } from "@/lib/utils";
+
+// ── D1: shared distributor-first shell ─────────────────────────────────────────────────────────
+// Reusable left-rail distributor navigator (searchable) + a content area for the selected
+// distributor. Used by both new pages (Mapping Database, Sales Upload) so the distributor-first
+// pattern lives in one place. `children` is a render function receiving the selected distributor.
+
+type Props = {
+  distributors: SalesDistributorEntry[];
+  children: (selected: SalesDistributorEntry) => ReactNode;
+  /** Only list weekly-applicable distributors (e.g. a weekly-only surface). */
+  weeklyOnly?: boolean;
+  /** Optional initial selected code. */
+  initialCode?: string;
+};
+
+export function DistributorWorkspaceShell({ distributors, children, weeklyOnly = false, initialCode }: Props) {
+  const list = useMemo(
+    () => distributors.filter((d) => (weeklyOnly ? d.weeklySupported : true)),
+    [distributors, weeklyOnly],
+  );
+  const [query, setQuery] = useState("");
+  const [selectedCode, setSelectedCode] = useState<string>(() => initialCode ?? list[0]?.code ?? "");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((d) => d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q));
+  }, [list, query]);
+
+  const selected = list.find((d) => d.code === selectedCode) ?? filtered[0] ?? list[0] ?? null;
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <Card className="h-fit overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white/95 p-0 shadow-[0_8px_22px_rgba(15,23,42,0.06)]">
+        <div className="border-b border-[#E2E8F0] p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+            <input
+              className="h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white pl-8 pr-2 text-sm outline-none focus:border-[#FDBA74]"
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search distributor"
+              value={query}
+            />
+          </div>
+        </div>
+        <div className="max-h-[70vh] overflow-auto p-2">
+          {filtered.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-[#64748B]">No distributors match.</p>
+          ) : (
+            filtered.map((d) => {
+              const active = selected?.code === d.code;
+              return (
+                <button
+                  key={d.code}
+                  className={cn(
+                    "mb-1 flex w-full items-center justify-between gap-2 rounded-[6px] px-3 py-2 text-left text-sm transition",
+                    active ? "bg-[#0B0B0B] text-white" : "text-[#0F172A] hover:bg-[#FFF7ED]",
+                  )}
+                  onClick={() => setSelectedCode(d.code)}
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-bold">{d.name}</span>
+                    <span className={cn("block font-mono text-[11px]", active ? "text-slate-300" : "text-[#94A3B8]")}>{d.code}</span>
+                  </span>
+                  {d.weeklySupported ? (
+                    <span className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em]",
+                      active ? "bg-white/15 text-white" : "bg-[#FFEAD5] text-[#C2410C]",
+                    )}>Weekly</span>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </Card>
+
+      <div className="min-w-0">
+        {selected ? (
+          children(selected)
+        ) : (
+          <Card className="flex items-center gap-3 rounded-2xl border border-[#D8E0EA] bg-white/95 p-6 text-sm text-[#64748B]">
+            <Store className="h-5 w-5 text-[#94A3B8]" />
+            No distributors available.
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
