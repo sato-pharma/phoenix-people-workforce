@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { aggregatePersistentUnmapped, type CoverageSnapshot, type NewCustomerDetail } from "../src/lib/sales/import-coverage.ts";
+import { aggregatePersistentUnmapped, applyNameBackfill, type CoverageSnapshot, type NewCustomerDetail, type PersistentUnmappedCustomer } from "../src/lib/sales/import-coverage.ts";
 
 // Minimal snapshot builder — only the fields the aggregator reads matter.
 function snap(
@@ -74,5 +74,25 @@ export function runImportCoverageTests() {
     ]);
     assert.equal(out.length, 2, "PS/C1 and IS/C1 are separate");
     assert.deepEqual(out.map((r) => r.distributorCode).sort(), ["IS", "PS"]);
+  }
+
+  // 6) Name backfill: blank names get filled from the import-rows map (case-insensitive key); rows
+  //    that already have a name are left untouched, and an absent match stays blank.
+  {
+    const items: PersistentUnmappedCustomer[] = [
+      { address: "", customerCode: "c1", customerName: "", distributorCode: "ps", importCount: 4 },
+      { address: "Existing Addr", customerCode: "C2", customerName: "Already Named", distributorCode: "PS", importCount: 3 },
+      { address: "", customerCode: "C3", customerName: "", distributorCode: "PS", importCount: 3 },
+    ];
+    const namesByKey = new Map<string, { address: string; name: string }>([
+      ["PS|C1", { address: "12 Tahrir St", name: "El Ezaby" }],
+      ["PS|C2", { address: "ignored", name: "Should Not Override" }],
+    ]);
+    const out = applyNameBackfill(items, namesByKey);
+    assert.equal(out[0].customerName, "El Ezaby", "blank name filled (case-insensitive key)");
+    assert.equal(out[0].address, "12 Tahrir St", "address filled too");
+    assert.equal(out[1].customerName, "Already Named", "existing name untouched");
+    assert.equal(out[1].address, "Existing Addr");
+    assert.equal(out[2].customerName, "", "no match → stays blank");
   }
 }
