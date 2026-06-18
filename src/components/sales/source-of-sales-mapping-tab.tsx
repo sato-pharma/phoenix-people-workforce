@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, Loader2, Plus, Search, Sparkles, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, Info, Loader2, Plus, Search, Sparkles, UploadCloud, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 
@@ -24,19 +24,32 @@ type Props = {
 };
 
 type BlockedRow = { reason: string; row?: number; rowNumber?: number; values?: string; key?: string };
-type ImportResult = { saved?: number; skipped?: number; inserted?: number; updated?: number; totalRead?: number; scannedRows?: number; invalid?: number; blockedRows?: BlockedRow[] };
-type ImportResponse = { success: boolean; result?: ImportResult; message?: string; error?: string };
+type InvalidEntry = { raw: string; type: string; reason: string };
+type ImportResult = { saved?: number; skipped?: number; inserted?: number; updated?: number; totalRead?: number; scannedRows?: number; invalid?: number; invalidEntries?: InvalidEntry[]; blockedRows?: BlockedRow[] };
+type ImportResponse = { success: boolean; result?: ImportResult; invalidEntries?: InvalidEntry[]; message?: string; error?: string };
 
+type HeaderValidationFailure = { label: string; expected: string[] };
 type DistinctUnknown = { count: number; raw: string; rawName: string; suggestionCode: string | null; suggestionLabel: string | null };
 type NormalizePreview = {
   distributorName: string;
   period: string | null;
-  summary: { brickResolved: number; fullyCoded: number; ignored: number; productResolved: number; totalRows: number };
+  summary: { brickResolved: number; fullyCoded: number; ignored: number; productResolved: number; totalRows: number; blankCustomerSkipped: number };
   unknownCustomers: DistinctUnknown[];
   unknownProducts: DistinctUnknown[];
   unknownTerritories: DistinctUnknown[];
+  blankCustomerSkipped: number;
+  blankCustomerErrors: number;
+  darkCount: number;
 };
-type PreviewResponse = { success: boolean; data?: NormalizePreview; error?: string };
+type PreviewResponse = {
+  success: boolean;
+  data?: NormalizePreview;
+  error?: string;
+  code?: string;
+  distributorName?: string;
+  missingGroups?: HeaderValidationFailure[];
+  fingerprintWarning?: { likelyCode: string; likelyName: string } | null;
+};
 type AiResponse = { success: boolean; data?: { suggestions: { raw: string; code: string }[] }; error?: string };
 
 const panelClassName = "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
@@ -321,6 +334,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const [customerCodes, setCustomerCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [codedSheetDetected, setCodedSheetDetected] = useState(false);
+  const [headerErrors, setHeaderErrors] = useState<HeaderValidationFailure[] | null>(null);
+  const [fingerprintWarning, setFingerprintWarning] = useState<{ likelyCode: string; likelyName: string } | null>(null);
+  const [saveInvalidEntries, setSaveInvalidEntries] = useState<InvalidEntry[] | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const [mappingsSaved, setMappingsSaved] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -330,14 +347,21 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
 
   async function analyze(file: File) {
     setBusy(true); setError(null); setMessage(null); setPreview(null);
+    setCodedSheetDetected(false); setHeaderErrors(null); setFingerprintWarning(null);
     setMappingsSaved(false); setImportMessage(null); setImportError(null); setImportResult(null);
+    setSaveInvalidEntries(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("distributorCode", distributorCode);
       const response = await fetch("/api/sales/monthly-import/missing", { body: formData, method: "POST" });
       const payload = await readJson<PreviewResponse>(response, { success: false });
-      if (payload.success && payload.data) {
+      if (payload.code === "coded_sheet_detected") {
+        setCodedSheetDetected(true);
+      } else if (payload.code === "header_validation_error") {
+        setHeaderErrors(payload.missingGroups ?? []);
+        setFingerprintWarning(payload.fingerprintWarning ?? null);
+      } else if (payload.success && payload.data) {
         setPreview(payload.data);
         setProductCodes(Object.fromEntries(payload.data.unknownProducts.map((u) => [u.raw, u.suggestionCode ?? ""])));
         setTerritoryCodes(Object.fromEntries(payload.data.unknownTerritories.map((u) => [u.raw, u.suggestionCode ?? ""])));
@@ -393,7 +417,11 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
         method: "POST",
       });
       const payload = await readJson<ImportResponse>(response, { success: false });
-      if (payload.success) { setMessage(payload.message ?? "Mappings saved."); setMappingsSaved(true); }
+      if (payload.success) {
+        setMessage(payload.message ?? "Mappings saved."); setMappingsSaved(true);
+        const entries = payload.invalidEntries ?? payload.result?.invalidEntries;
+        if (entries?.length) setSaveInvalidEntries(entries);
+      }
       else setError(payload.error ?? "Save failed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Save failed.");
@@ -430,6 +458,11 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const customersTotal = preview?.unknownCustomers.length ?? 0;
   const hasUnknowns = productsTotal > 0 || territoriesTotal > 0 || customersTotal > 0;
   const allReady = hasUnknowns && productsMapped === productsTotal && territoriesMapped === territoriesTotal && customersMapped === customersTotal;
+  const darkCount = preview?.darkCount ?? 0;
+  const blankCustomerErrors = preview?.blankCustomerErrors ?? 0;
+  const blankCustomerSkipped = preview?.blankCustomerSkipped ?? 0;
+  // "all mapped" is only truly safe when there are no dark exceptions and no blank-customer errors
+  const trulyAllMapped = !hasUnknowns && darkCount === 0 && blankCustomerErrors === 0;
 
   const fullyCodedPct = preview && preview.summary.totalRows > 0
     ? Math.round((preview.summary.fullyCoded / preview.summary.totalRows) * 100)
@@ -463,6 +496,35 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
         type="file"
       />
 
+      {codedSheetDetected ? (
+        <AdminCallout tone="neutral">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">This sheet has already been processed — use Import directly.</p>
+            <p className="mt-0.5 text-xs text-[#64748B]">The Analyzer is for raw distributor files only. Coded sheets (containing Phoenix product IDs) should go straight to the Import raw file button below.</p>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {headerErrors && headerErrors.length > 0 ? (
+        <AdminCallout tone="danger">
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <p className="text-sm font-semibold">Wrong or mismatched sheet — required columns not found.</p>
+            <ul className="list-disc pl-4 text-xs">
+              {headerErrors.map((g) => (
+                <li key={g.label}><span className="font-semibold">{g.label}</span>: expected one of <code className="rounded bg-black/10 px-1">{g.expected.join(", ")}</code></li>
+              ))}
+            </ul>
+            {fingerprintWarning ? (
+              <p className="mt-1 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-xs font-medium text-[#92400E]">
+                This sheet looks more like <span className="font-bold">{fingerprintWarning.likelyName}</span> ({fingerprintWarning.likelyCode}). Did you select the right distributor?
+              </p>
+            ) : null}
+          </div>
+        </AdminCallout>
+      ) : null}
+
       {preview ? (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 text-xs font-bold">
@@ -472,6 +534,23 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownTerritories.length} unknown areas</span>
             <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownCustomers.length} unknown customers</span>
           </div>
+
+          {blankCustomerErrors > 0 ? (
+            <AdminCallout tone="danger">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">{blankCustomerErrors} row{blankCustomerErrors === 1 ? "" : "s"} missing a required customer code.</p>
+                <p className="mt-0.5 text-xs">Every row in this distributor&apos;s sheet must have an entity code. These rows will block import — fix the raw sheet and re-upload.</p>
+              </div>
+            </AdminCallout>
+          ) : null}
+
+          {blankCustomerSkipped > 0 ? (
+            <AdminCallout tone="neutral">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-sm"><span className="font-semibold">{blankCustomerSkipped} row{blankCustomerSkipped === 1 ? "" : "s"} skipped</span> — no customer code or territory (blank footer rows). Not a blocker.</p>
+            </AdminCallout>
+          ) : null}
 
           {hasUnknowns ? (
             <div className="space-y-1.5">
@@ -554,7 +633,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             />
           ) : null}
 
-          {preview.unknownProducts.length > 0 || preview.unknownTerritories.length > 0 || preview.unknownCustomers.length > 0 ? (
+          {hasUnknowns ? (
             <Button
               className="h-10 w-fit gap-2 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
               disabled={saving}
@@ -564,18 +643,40 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save mappings
             </Button>
-          ) : (
+          ) : trulyAllMapped ? (
             <AdminCallout tone="success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <p>Every product, area, and customer in this sheet is already mapped — import it now below.</p>
             </AdminCallout>
-          )}
+          ) : darkCount > 0 ? (
+            <AdminCallout tone="warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Mappings complete — but {darkCount} row{darkCount === 1 ? "" : "s"} will be blocked at import.</p>
+                <p className="mt-0.5 text-xs">These rows have a blank customer code and territory — the sheet may have footer rows or a column-mapping issue. Re-analyze with the correct distributor file to investigate.</p>
+              </div>
+            </AdminCallout>
+          ) : null}
         </div>
       ) : null}
 
       <ResultBanner error={error} message={message} result={null} />
 
-      {(mappingsSaved || (preview !== null && !hasUnknowns)) && !importMessage ? (
+      {saveInvalidEntries && saveInvalidEntries.length > 0 ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <p className="text-sm font-semibold">{saveInvalidEntries.length} mapping{saveInvalidEntries.length === 1 ? "" : "s"} could not be saved.</p>
+            <ul className="space-y-0.5 text-xs">
+              {saveInvalidEntries.map((e, i) => (
+                <li key={i}><span className="font-semibold">{e.raw}</span> ({e.type}) — {e.reason}</li>
+              ))}
+            </ul>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {(mappingsSaved || (preview !== null && trulyAllMapped)) && !importMessage ? (
         <div className="rounded-2xl border border-[#E0F2FE] bg-[#F0F9FF] p-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 text-sm font-bold text-[#0369A1]">

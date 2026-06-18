@@ -35,12 +35,13 @@ export async function POST(request: Request) {
       actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
       entityId: "source_of_sales_product_aliases",
       entityType: "sales_import_batch",
-      newValues: { count: mappings.length, ...result, source: "mapping_save" },
+      newValues: { count: mappings.length, saved: result.saved, skipped: result.skipped, invalid: result.invalid, source: "mapping_save" },
       summary: `Mapping save — ${result.saved} saved from ${mappings.length} submitted (${result.skipped} skipped, ${result.invalid} invalid).`,
     });
     return NextResponse.json({
       success: true,
       result,
+      invalidEntries: result.invalidEntries,
       message: `${result.saved} mappings saved (${result.skipped} skipped, ${result.invalid} invalid).`,
     });
   } catch (error) {

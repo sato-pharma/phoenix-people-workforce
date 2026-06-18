@@ -30,7 +30,15 @@ export type DistinctUnknown = {
   suggestionLabel: string | null;
 };
 
-export type DistinctUnknowns = { customers: DistinctUnknown[]; products: DistinctUnknown[]; territories: DistinctUnknown[] };
+export type DistinctUnknowns = {
+  customers: DistinctUnknown[];
+  products: DistinctUnknown[];
+  territories: DistinctUnknown[];
+  // Exceptions with reason "blank_customer" — not actionable by mapping, surfaced for reporting.
+  blankCustomerErrors: number;
+  // Exceptions that block import but have no rawTerritory or rawCustomerCode (column-mismatch ghost).
+  darkCount: number;
+};
 
 function tokens(value: string): Set<string> {
   return new Set(normalizeAliasKey(value).split(" ").filter((t) => t.length >= 2));
@@ -82,15 +90,25 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
       }
     }
   }
+  // Dark exceptions: brick-reason exceptions with no territory AND no customer code — these block
+  // import but are invisible to the mapping UI (no actionable raw key). They indicate a column-name
+  // mismatch that Change 1 (header validation) should have caught; kept as a backstop counter.
+  const darkCount = exceptions.filter(
+    (e) => (e.reason === "brick" || e.reason === "both") && !e.rawTerritory && !e.rawCustomerCode
+  ).length;
+  // Blank-customer exceptions (EG-BR with missing entity code): not fixable by adding to the map.
+  const blankCustomerErrors = exceptions.filter((e) => e.reason === "blank_customer").length;
+
   const sorted = (m: Map<string, DistinctUnknown>) => [...m.values()].sort((a, b) => b.count - a.count);
-  return { customers: sorted(customerMap), products: sorted(productMap), territories: sorted(territoryMap) };
+  return { customers: sorted(customerMap), products: sorted(productMap), territories: sorted(territoryMap), darkCount, blankCustomerErrors };
 }
 
 // ── write path (insert-if-absent, validated against the masters) ──
 
 export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer" };
+export type InvalidEntry = { raw: string; type: string; reason: string };
 
-export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: number; skipped: number; invalid: number }> {
+export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[] }> {
   // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
   // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
   // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
@@ -110,16 +128,22 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
   const productRows: Record<string, unknown>[] = [];
   const territoryRows: Record<string, unknown>[] = [];
   const customerRows: Record<string, unknown>[] = [];
+  const invalidEntries: InvalidEntry[] = [];
   let skipped = 0;
   let invalid = 0;
   for (const mapping of mappings) {
     const raw = String(mapping.raw ?? "").trim();
     const code = normalizeCodeKey(mapping.code);
-    if (!raw || !code) { invalid += 1; continue; }
+    if (!raw || !code) {
+      invalid += 1;
+      invalidEntries.push({ raw: raw || "(empty)", type: mapping.type, reason: "Empty raw value or code" });
+      continue;
+    }
     if (mapping.type === "customer") {
       const dist = normalizeCodeKey(mapping.distributorCode);
       const brick = brickById.get(code);
-      if (!dist || !brick) { invalid += 1; continue; }
+      if (!dist) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: "Missing distributor code" }); continue; }
+      if (!brick) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: `Brick ID "${code}" not found in master` }); continue; }
       const ck = `${dist} ${normalizeCodeKey(raw)}`;
       if (haveCust.has(ck)) { skipped += 1; continue; }
       haveCust.add(ck);
@@ -127,20 +151,20 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
       continue;
     }
     const key = normalizeAliasKey(raw);
-    if (!key) { invalid += 1; continue; }
+    if (!key) { invalid += 1; invalidEntries.push({ raw, type: mapping.type, reason: "Raw value normalizes to empty string" }); continue; }
     const fromDistributor = distributorLabel(mapping.distributorCode);
     if (mapping.type === "product") {
       // Product aliases are PER-DISTRIBUTOR: the same raw code/name can mean different products for
       // different distributors, so a distributor is required and the dedup key is distributor-scoped.
       const dist = normalizeCodeKey(mapping.distributorCode);
-      if (!dist) { invalid += 1; continue; }
-      if (!productCodes.has(code)) { invalid += 1; continue; }
+      if (!dist) { invalid += 1; invalidEntries.push({ raw, type: "product", reason: "Missing distributor code" }); continue; }
+      if (!productCodes.has(code)) { invalid += 1; invalidEntries.push({ raw, type: "product", reason: `Product code "${code}" not found in master` }); continue; }
       const pk = `${dist} ${key}`;
       if (haveProd.has(pk)) { skipped += 1; continue; }
       haveProd.add(pk);
       productRows.push({ alias: raw, normalized_alias: key, distributor_code: dist, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
     } else {
-      if (!brickById.has(code)) { invalid += 1; continue; }
+      if (!brickById.has(code)) { invalid += 1; invalidEntries.push({ raw, type: "territory", reason: `Brick ID "${code}" not found in master` }); continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
       haveTerr.add(key);
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });
@@ -168,7 +192,7 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
   }
   // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
   skipped += productRows.length + territoryRows.length + customerRows.length - saved;
-  return { saved, skipped, invalid };
+  return { saved, skipped, invalid, invalidEntries };
 }
 
 // ── Excel bulk round-trip ──

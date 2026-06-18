@@ -104,7 +104,12 @@ async function main() {
   mapLine("discount", profile.discountColumns);
 
   // ── Run the real engine against the live masters/crosswalks ──
-  const { result, period, distributorName, products } = await normalizeUploadedFile(distributorCode, file);
+  const normalized = await normalizeUploadedFile(distributorCode, file);
+  if (normalized.status !== "ok") {
+    console.error(`\nERROR: ${normalized.status === "coded_sheet" ? "Coded sheet detected — run on a raw distributor file." : `Header validation failed: ${normalized.missingGroups.map((g) => g.label).join(", ")}`}`);
+    process.exit(1);
+  }
+  const { result, period, distributorName, products } = normalized;
   const preview = summarizePreview(distributorCode, distributorName, result, products);
   const s = result.summary;
 

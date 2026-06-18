@@ -26,7 +26,6 @@ const profile: DistributorProfile = {
   distributorName: "Ibn sina",
   productColumns: ["Item Code", "Item Name"],
   qtyColumns: ["Quantity"],
-  bonusColumns: ["Free Unit"],
   valueColumns: ["Net"],
   valueSource: "recompute",
   dateColumns: ["Date"],

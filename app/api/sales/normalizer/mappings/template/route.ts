@@ -24,7 +24,11 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const { result, products } = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await normalizeUploadedFile(distributorCode, file);
+    if (normalized.status !== "ok") {
+      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+    }
+    const { result, products } = normalized;
     const buffer = await buildUnmappedWorkbook(distinctUnknowns(result.exceptions, products));
     return new Response(new Uint8Array(buffer as ArrayBuffer), {
       headers: {

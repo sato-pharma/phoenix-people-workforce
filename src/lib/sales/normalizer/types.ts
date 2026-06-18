@@ -33,16 +33,26 @@ export type Crosswalks = {
 // How to read ONE distributor's raw sheet: which raw column holds what. Lists are fallbacks
 // (first present header wins). A code-defined registry seeds these; later they live in the DB.
 export type DistributorProfile = {
+  // Rows where is_bonus = 1 (or truthy) are free-goods deliveries — skip them from sales totals.
   bonusColumns?: string[];
+  // "skip" (default) — blank customer/territory row is quietly tracked but never blocks import.
+  // "error" — blank is a data error; the row goes to exceptions with reason "blank_customer".
+  blankCustomerBehavior?: "skip" | "error";
   customerCodeColumns?: string[];
   customerNameColumns?: string[];
   customerAddressColumns?: string[];
+  // When set, bypasses detectDayFirst() entirely. All Egyptian distributors use DD-MM-YYYY.
+  // ISO dates (YYYY-MM-*) and real Excel Date objects are unaffected regardless of this setting.
+  dateFormat?: "day-first" | "month-first";
   dateColumns?: string[];
   discountColumns?: string[];
   distributorCode: string;
   distributorName: string;
   // direct Phoenix brick-id column, if the sheet already carries one
   brickIdColumns?: string[];
+  // Columns that uniquely identify this distributor's export format.
+  // Used to detect wrong-distributor uploads via fingerprint scoring.
+  fingerprintColumns?: string[];
   productColumns: string[]; // item code and/or item name (tried in order)
   qtyColumns: string[];
   regionOnly?: boolean;
@@ -95,7 +105,9 @@ export type NormalizeException = {
   rawCustomerName: string;
   rawCustomerAddress: string;
   rawRowNumber: number;
-  reason: "product" | "brick" | "both";
+  // "blank_customer" = no customer code, territory, or brick ID at all; row is a data error
+  // (EG-BR) or an unresolvable summary row — NOT actionable by adding to the customer map.
+  reason: "product" | "brick" | "both" | "blank_customer";
 };
 
 // Reserved product code for "we don't sell this — neglect it". Rows whose item maps to this are
@@ -108,8 +120,12 @@ export type NormalizeResult = {
   distributorCode: string;
   exceptions: NormalizeException[];
   ignoredRows: NormalizeIgnoredRow[];
+  // Rows skipped because they had no customer code, territory, or brick ID at all.
+  // Non-blocking for most distributors (summary/total rows); hard error for EG-BR.
+  blankCustomerRows: NormalizeIgnoredRow[];
   summary: {
     brickResolved: number;
+    blankCustomerSkipped: number;
     fullyCoded: number;
     ignored: number;
     productResolved: number;

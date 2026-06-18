@@ -3,6 +3,13 @@ import ExcelJS from "exceljs";
 import { deriveHierarchy, normalizeCodeKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
+export type HeaderValidationFailure = { label: string; expected: string[] };
+export type HeaderValidationResult = {
+  valid: boolean;
+  missingGroups: HeaderValidationFailure[];
+  fingerprintWarning?: { likelyCode: string; likelyName: string };
+};
+
 // ── small self-contained parsers (kept local so the normalizer doesn't reach into the importer) ──
 
 function cellText(cell: ExcelJS.Cell | undefined): string {
@@ -129,6 +136,55 @@ export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorPr
   return fallback ?? { col: readRow(1), headerRow: 1 };
 }
 
+// Pre-flight header validation: confirm a sheet matches the selected distributor's profile,
+// and detect if another distributor's fingerprint columns score higher (wrong-distributor upload).
+export function validateSheetHeaders(
+  sheet: ExcelJS.Worksheet,
+  profile: DistributorProfile,
+  allProfiles: DistributorProfile[],
+): HeaderValidationResult {
+  const header = buildHeaderMap(sheet, profile);
+  const found = new Set(header.col.keys()); // already lowercase-trimmed by buildHeaderMap
+
+  const check = (label: string, cols: string[] | undefined): HeaderValidationFailure | null => {
+    if (!cols || cols.length === 0) return null;
+    if (cols.some((c) => found.has(c.trim().toLowerCase()))) return null;
+    return { label, expected: cols };
+  };
+  const locationCols = [
+    ...(profile.customerCodeColumns ?? []),
+    ...(profile.territoryColumns ?? []),
+    ...(profile.brickIdColumns ?? []),
+  ];
+  const missingGroups = [
+    check("Product",              profile.productColumns),
+    check("Quantity",             profile.qtyColumns),
+    check("Date",                 profile.dateColumns),
+    check("Customer / Territory", locationCols.length > 0 ? locationCols : undefined),
+  ].filter((g): g is HeaderValidationFailure => g !== null);
+
+  // Fingerprint scoring: find the profile whose signature columns best match the sheet.
+  // If another distributor scores higher than ours, warn the user.
+  const score = (p: DistributorProfile) =>
+    (p.fingerprintColumns ?? []).filter((c) => found.has(c.trim().toLowerCase())).length;
+  const myScore = score(profile);
+  let bestOther: DistributorProfile | null = null;
+  let bestScore = 0;
+  for (const p of allProfiles) {
+    if (p.distributorCode === profile.distributorCode) continue;
+    const s = score(p);
+    if (s > bestScore && s > myScore) { bestScore = s; bestOther = p; }
+  }
+
+  return {
+    valid: missingGroups.length === 0,
+    missingGroups,
+    fingerprintWarning: bestOther
+      ? { likelyCode: bestOther.distributorCode, likelyName: bestOther.distributorName }
+      : undefined,
+  };
+}
+
 function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
   for (const name of columns ?? []) {
     const c = map.col.get(name.trim().toLowerCase());
@@ -148,13 +204,20 @@ export function normalizeRows(
   maps: Crosswalks,
 ): NormalizeResult {
   const header = buildHeaderMap(sheet, profile);
-  const dayFirst = detectDayFirst(sheet, header, profile.dateColumns);
+  // Honour explicit per-distributor date format; only auto-detect when not set.
+  // All Egyptian distributors are DD-MM-YYYY so auto-detection is unnecessary and can mis-parse
+  // a month where every day-value is <= 12 (e.g. early-month data → month-first mis-read).
+  const dayFirst = profile.dateFormat === "day-first" ? true
+    : profile.dateFormat === "month-first" ? false
+    : detectDayFirst(sheet, header, profile.dateColumns);
   const coded: CodedRow[] = [];
   const exceptions: NormalizeException[] = [];
   let productResolved = 0;
   let brickResolved = 0;
   let ignored = 0;
   const ignoredRows: NormalizeIgnoredRow[] = [];
+  let blankCustomerSkipped = 0;
+  const blankCustomerRows: NormalizeIgnoredRow[] = [];
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
@@ -181,6 +244,17 @@ export function normalizeRows(
       continue;
     }
 
+    // Bonus/free-goods flag: skip rows marked as bonus deliveries (EP-S/EP-R: is_bonus = 1).
+    // These are free-goods shipments, not real sales — counting them inflates the numbers.
+    if (profile.bonusColumns?.length) {
+      const flag = firstValue(row, header, profile.bonusColumns);
+      if (flag && flag !== "0" && flag.toLowerCase() !== "false") {
+        ignored += 1;
+        ignoredRows.push({ rawProduct, rawProductName: productValues.slice(1).find(Boolean) ?? "", rawRowNumber: r, qty: 0 });
+        continue;
+      }
+    }
+
     const customerCode = firstValue(row, header, profile.customerCodeColumns);
     const customerKey = customerCode ? `${normalizeCodeKey(profile.distributorCode)} ${normalizeCodeKey(customerCode)}` : null;
     const territoryValues = (profile.territoryColumns ?? []).map((cName) => firstValue(row, header, [cName]));
@@ -192,6 +266,33 @@ export function normalizeRows(
     if (hierarchy) brickResolved += 1;
 
     if (!productCode || !hierarchy) {
+      // Blank-customer check: no location data at all (no code, territory, or brick ID).
+      // This is a summary/footer row for most distributors but a hard data error for EG-BR.
+      const hasAnyLocation = !!(customerCode || territoryValues.find(Boolean) || brickIdValues.find(Boolean));
+      if (!hierarchy && !hasAnyLocation) {
+        if (profile.blankCustomerBehavior === "error") {
+          exceptions.push({
+            rawProduct,
+            rawProductName: productValues.slice(1).find(Boolean) ?? "",
+            rawTerritory: "",
+            rawCustomerCode: "",
+            rawCustomerName: firstValue(row, header, profile.customerNameColumns),
+            rawCustomerAddress: firstValue(row, header, profile.customerAddressColumns),
+            rawRowNumber: r,
+            reason: "blank_customer",
+          });
+        } else {
+          blankCustomerSkipped += 1;
+          const skippedQty = parseNum(firstValue(row, header, profile.qtyColumns));
+          blankCustomerRows.push({
+            rawProduct,
+            rawProductName: productValues.slice(1).find(Boolean) ?? "",
+            rawRowNumber: r,
+            qty: Number.isFinite(skippedQty) ? skippedQty : 0,
+          });
+        }
+        continue;
+      }
       exceptions.push({
         rawProduct,
         rawProductName: productValues.slice(1).find(Boolean) ?? "",
@@ -243,7 +344,8 @@ export function normalizeRows(
     distributorCode: profile.distributorCode,
     exceptions,
     ignoredRows,
-    summary: { brickResolved, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored },
+    blankCustomerRows,
+    summary: { brickResolved, blankCustomerSkipped, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored + blankCustomerSkipped },
   };
 }
 
@@ -256,7 +358,7 @@ export async function normalizeRawWorkbook(
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
   if (!sheet) {
-    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], summary: { brickResolved: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0 } };
+    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0 } };
   }
   return normalizeRows(sheet, profile, maps);
 }

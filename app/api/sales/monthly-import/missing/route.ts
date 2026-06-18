@@ -39,7 +39,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
     }
 
-    const { result, distributorName, products } = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await normalizeUploadedFile(distributorCode, file);
+
+    if (normalized.status === "coded_sheet") {
+      // The sheet already has Phoenix-coded columns — it belongs in the Import section, not Analyze.
+      return NextResponse.json({
+        success: false,
+        code: "coded_sheet_detected",
+        distributorName: normalized.distributorName,
+        error: "This sheet has already been processed. Use the Import section directly — the Analyzer is for raw distributor files only.",
+      });
+    }
+
+    if (normalized.status === "header_error") {
+      return NextResponse.json({
+        success: false,
+        code: "header_validation_error",
+        distributorName: normalized.distributorName,
+        missingGroups: normalized.missingGroups,
+        fingerprintWarning: normalized.fingerprintWarning ?? null,
+        error: `Sheet is missing required columns: ${normalized.missingGroups.map((g) => g.label).join(", ")}.`,
+      }, { status: 422 });
+    }
+
+    const { result, distributorName, products } = normalized;
     return NextResponse.json({ success: true, data: summarizePreview(distributorCode, distributorName, result, products) });
   } catch (error) {
     if (isForbiddenError(error)) {
