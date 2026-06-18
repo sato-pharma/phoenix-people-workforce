@@ -7,6 +7,7 @@ import {
   Database,
   FileSpreadsheet,
   Filter,
+  Info,
   ListChecks,
   Loader2,
   Package,
@@ -690,16 +691,26 @@ function UploadedSheetsTable({
 
 function SourceOfSalesDashboardPanel({
   dashboard,
+  dashboardError,
   onPeriodChange,
   onRefresh,
   refreshing,
 }: {
   dashboard: SourceOfSalesDashboard | null;
+  dashboardError: string | null;
   onPeriodChange: (period: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
   if (!dashboard) {
+    if (!dashboardError) {
+      return (
+        <AdminCallout tone="neutral">
+          <Info className="mt-0.5 h-4 w-4" />
+          <p>No data for this period yet — upload and validate your first distributor sheet to see the dashboard.</p>
+        </AdminCallout>
+      );
+    }
     return (
       <AdminCallout tone="danger">
         <AlertTriangle className="mt-0.5 h-4 w-4" />
@@ -1246,6 +1257,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         {activeTab === "dashboard" ? (
           <SourceOfSalesDashboardPanel
             dashboard={dashboard}
+            dashboardError={dashboard === null ? (initialError ?? null) : null}
             onPeriodChange={(period) => void reloadDashboard(period)}
             onRefresh={() => void reloadDashboard(dashboard?.period)}
             refreshing={isRefreshingDashboard}

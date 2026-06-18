@@ -307,6 +307,7 @@ export function SourceOfSalesProductsTab({
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteLoadingCode, setDeleteLoadingCode] = useState<string | null>(null);
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
 
   const filteredProducts = useMemo(
@@ -345,8 +346,24 @@ export function SourceOfSalesProductsTab({
     setMessage(null);
   }
 
+  function validateProductForm(f: ProductFormState): string | null {
+    if (!f.productCode.trim()) return "Product Code is required.";
+    if (!f.productName.trim()) return "Product Name is required.";
+    if (!f.factoryPrice.trim() || isNaN(Number(f.factoryPrice))) return "Factory Price must be a valid number.";
+    if (!f.line.trim()) return "Line is required.";
+    if (!f.family.trim()) return "Family is required.";
+    if (!f.familyCode.trim()) return "Family Code is required.";
+    if (!f.source.trim()) return "Source is required.";
+    return null;
+  }
+
   async function saveProduct() {
     if (!modal) return;
+    const validationError = validateProductForm(form);
+    if (validationError) {
+      setMessage({ type: "error", text: validationError });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -387,8 +404,7 @@ export function SourceOfSalesProductsTab({
   }
 
   async function deleteProduct(product: SourceOfSalesProduct) {
-    if (!window.confirm(`Delete product "${product.productName}" (${product.productCode})?`)) return;
-
+    setDeleteConfirmCode(null);
     setDeleteLoadingCode(product.productCode);
     setMessage(null);
     try {
@@ -508,21 +524,43 @@ export function SourceOfSalesProductsTab({
                         {product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "-"}
                       </td>
                       <td className={tableCellClassName}>
-                        <div className="flex gap-2">
-                          <Button className="h-9 gap-1 px-3" onClick={() => openEditModal(product)} variant="secondary">
-                            <Edit3 className="h-3.5 w-3.5" />
-                            Edit
-                          </Button>
-                          <Button
-                            className="h-9 gap-1 px-3"
-                            disabled={deleting}
-                            onClick={() => void deleteProduct(product)}
-                            variant="destructive"
-                          >
-                            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                            Delete
-                          </Button>
-                        </div>
+                        {deleteConfirmCode === product.productCode ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-red-600">Delete this product?</span>
+                            <Button
+                              className="h-8 gap-1 px-3 text-xs"
+                              disabled={deleting}
+                              onClick={() => void deleteProduct(product)}
+                              variant="destructive"
+                            >
+                              {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                              Yes, delete
+                            </Button>
+                            <Button
+                              className="h-8 px-3 text-xs"
+                              onClick={() => setDeleteConfirmCode(null)}
+                              variant="secondary"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Button className="h-9 gap-1 px-3" onClick={() => openEditModal(product)} variant="secondary">
+                              <Edit3 className="h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              className="h-9 gap-1 px-3"
+                              disabled={deleting}
+                              onClick={() => setDeleteConfirmCode(product.productCode)}
+                              variant="destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete
+                            </Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

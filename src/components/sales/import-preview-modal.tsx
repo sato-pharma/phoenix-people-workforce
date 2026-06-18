@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Loader2, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -190,6 +190,22 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
 }
 
 export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on Escape (guard: don't close while a commit is in flight).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !committing) onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [committing, onCancel]);
+
+  // Move focus into the modal when it opens so Tab cycles within the portal content.
+  useEffect(() => {
+    containerRef.current?.focus();
+  }, []);
+
   if (typeof document === "undefined") return null;
 
   const diff = result.previewDiff;
@@ -200,12 +216,19 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
-      <div className="my-6 w-full max-w-2xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div
+        aria-labelledby="preview-modal-title"
+        aria-modal="true"
+        className="my-6 w-full max-w-2xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
+        ref={containerRef}
+        role="dialog"
+        tabIndex={-1}
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black tracking-tight text-slate-950">Review import</h2>
+              <h2 className="text-lg font-black tracking-tight text-slate-950" id="preview-modal-title">Review import</h2>
               <Badge variant={blocked ? "danger" : "success"}>{blocked ? "blocked" : "ready"}</Badge>
             </div>
             <p className="mt-1 text-sm text-[#64748B]">
