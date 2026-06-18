@@ -253,6 +253,11 @@ export function runEmployeePortalNavigationTests() {
   const contactHrSupportPageSource = readFileSync("app/employee-portals/contact-hr-support/page.tsx", "utf8");
   assert.match(
     contactHrSupportPageSource,
+    /if \(!access\.loginId && !access\.hrId\) \{[\s\S]*?redirect\("\/login"\);[\s\S]*?\}[\s\S]*?assertPermission\(access, "support_requests", "create"\)/,
+    "Contact HR Support page must redirect guests before asserting support request permissions",
+  );
+  assert.match(
+    contactHrSupportPageSource,
     /assertPermission\(access, "support_requests", "create"\)/,
     "Contact HR Support page must keep its support_requests create guard",
   );

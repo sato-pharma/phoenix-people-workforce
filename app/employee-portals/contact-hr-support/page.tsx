@@ -18,6 +18,9 @@ export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalContactHRSupportPage() {
   const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
