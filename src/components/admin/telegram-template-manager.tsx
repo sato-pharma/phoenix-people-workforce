@@ -6,6 +6,8 @@ import { AlertCircle, CheckCircle2, Eye, Save, Send, ToggleLeft, ToggleRight } f
 
 import type { TelegramTemplateView } from "@/lib/notifications/telegram-templates";
 import { insertTelegramPlaceholder } from "@/lib/notifications/telegram-template-placeholders";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   canUpdate: boolean;
@@ -426,7 +428,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                             {button.enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
                             {button.enabled ? "Enabled" : "Disabled"}
                           </button>
-                          <select
+                          <SearchableSelect
                             className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
                             disabled={!canUpdate}
                             onChange={(event) => {
@@ -442,7 +444,7 @@ export function TelegramTemplateManager({ canUpdate, initialTemplates }: Props) 
                             <option value="open_phoenix">Open Phoenix</option>
                             <option value="view_details">View Details</option>
                             <option value="custom">Custom</option>
-                          </select>
+                          </SearchableSelect>
                         </div>
                         <button
                           className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-50"

@@ -65,6 +65,8 @@ import type {
   SalaryRecord,
 } from "@/lib/payroll/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: PayrollDashboardData | null;
@@ -1982,7 +1984,7 @@ function ComparePayrollChart({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <SearchableSelect
             className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => {
               setCompareMode(event.target.value as GroupMode | "employee");
@@ -1995,8 +1997,8 @@ function ComparePayrollChart({
             <option value="area">Territories</option>
             <option value="jobTitle">Job titles</option>
             <option value="employee">Employees</option>
-          </select>
-          <select
+          </SearchableSelect>
+          <SearchableSelect
             className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => setMetric(event.target.value as typeof metric)}
             value={metric}
@@ -2005,8 +2007,8 @@ function ComparePayrollChart({
             <option value="gross">Gross</option>
             <option value="additions">Additions</option>
             <option value="deductions">Deductions</option>
-          </select>
-          <select
+          </SearchableSelect>
+          <SearchableSelect
             className="h-9 max-w-[190px] rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
             onChange={(event) => {
               const value = event.target.value;
@@ -2022,7 +2024,7 @@ function ComparePayrollChart({
                 {option.label}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </div>
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -2803,7 +2805,7 @@ function GenerateReadyPayrollSheet({
               <span className="mb-1.5 block text-xs font-medium text-text-secondary">
                 Month
               </span>
-              <select
+              <SearchableSelect
                 className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm text-text shadow-sm focus:outline-none"
                 onChange={(event) => onMonthChange(event.target.value)}
                 value={month}
@@ -2814,13 +2816,13 @@ function GenerateReadyPayrollSheet({
                     {item.label}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-text-secondary">
                 Year
               </span>
-              <select
+              <SearchableSelect
                 className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm text-text shadow-sm focus:outline-none"
                 onChange={(event) => onYearChange(event.target.value)}
                 value={year}
@@ -2831,7 +2833,7 @@ function GenerateReadyPayrollSheet({
                     {item}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
           </div>
 
@@ -4263,7 +4265,7 @@ export function PayrollDashboard({
                 placeholder="Search HR ID, employee, line, area, job title..."
                 value={salaryReportSearch}
               />
-              <select
+              <SearchableSelect
                 className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
                 onChange={(event) => {
                   setSalaryReportYear(Number(event.target.value));
@@ -4274,8 +4276,8 @@ export function PayrollDashboard({
                 {salaryReportAvailableYears.map((year) => (
                   <option key={year} value={year}>{year}</option>
                 ))}
-              </select>
-              <select
+              </SearchableSelect>
+              <SearchableSelect
                 className="h-10 rounded-lg border border-border bg-white px-3 text-sm text-text focus:outline-none"
                 onChange={(event) => setSalaryReportMonth(Number(event.target.value))}
                 value={salaryReportMonth ?? salaryReportBatch?.month ?? ""}
@@ -4285,7 +4287,7 @@ export function PayrollDashboard({
                     {payrollMonths.find((m) => m.value === String(month))?.label ?? month}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               <Button
                 onClick={() => {
                   setSalaryReportSearch("");

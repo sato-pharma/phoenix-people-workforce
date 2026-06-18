@@ -8,6 +8,8 @@ import type {
   WeeklyBranchRegionAdmin,
   WeeklyBranchRegionRow,
 } from "@/lib/sales/weekly/branch-region-map";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type DraftRow = { branchName: string; branchCode: string; columnIndex: string; regionCode: string; excluded: boolean };
 
@@ -188,7 +190,7 @@ export function WeeklyBranchMappingManager({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
         <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
-        <select
+        <SearchableSelect
           className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
           disabled={busy}
           value={distributor}
@@ -203,7 +205,7 @@ export function WeeklyBranchMappingManager({
               {option.name} ({option.code})
             </option>
           ))}
-        </select>
+        </SearchableSelect>
 
         {isPs && (
           <div className="flex items-center gap-1">
@@ -275,7 +277,7 @@ export function WeeklyBranchMappingManager({
           </Field>
         )}
         <Field label="Region">
-          <select
+          <SearchableSelect
             className="h-9 w-44 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-60"
             disabled={busy || draft.excluded}
             onChange={(event) => setDraft((prev) => ({ ...prev, regionCode: event.target.value }))}
@@ -287,7 +289,7 @@ export function WeeklyBranchMappingManager({
                 {region.regionName} ({region.regionCode})
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </Field>
         <label className="flex h-9 items-center gap-1 text-xs font-bold text-[#64748B]">
           <input
@@ -335,7 +337,7 @@ export function WeeklyBranchMappingManager({
                 <td className="px-3 py-2 text-[#64748B]">{row.rawBranch}</td>
                 {isStock && <td className="px-3 py-2 text-[#64748B]">{row.branchColumnIndex ?? "—"}</td>}
                 <td className="px-3 py-2">
-                  <select
+                  <SearchableSelect
                     className="h-8 w-44 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-50"
                     disabled={busy || row.excluded}
                     onChange={(event) => void saveRow(row, { regionCode: event.target.value })}
@@ -347,7 +349,7 @@ export function WeeklyBranchMappingManager({
                         {region.regionName} ({region.regionCode})
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </td>
                 <td className="px-3 py-2 text-center">
                   <input

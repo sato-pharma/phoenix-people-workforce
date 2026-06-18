@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // Client-only flag without setState-in-effect: false on the server/during
 // hydration, true on the client. Used to gate document.body portals.
@@ -515,7 +517,7 @@ function PlanPeriodControl({
         >
           Plan week
         </label>
-        <select
+        <SearchableSelect
           className={inputClass}
           disabled={disabled}
           id={`${idPrefix}-plan-week`}
@@ -530,7 +532,7 @@ function PlanPeriodControl({
               </option>
             );
           })}
-        </select>
+        </SearchableSelect>
       </div>
     );
   }
@@ -1489,7 +1491,7 @@ export function PlansWorkspace({
                                 <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
                                   {slotLabel(row)}
                                 </div>
-                                <select
+                                <SearchableSelect
                                   className={tableSelectClass}
                                   disabled={!canEdit}
                                   onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
@@ -1500,11 +1502,11 @@ export function PlansWorkspace({
                                       {option.label}
                                     </option>
                                   ))}
-                                </select>
+                                </SearchableSelect>
                               </td>
                               <td className="px-3 py-3">
                                 {rule.showTrainingFormat ? (
-                                  <select
+                                  <SearchableSelect
                                     className={tableSelectClass}
                                     disabled={!canEdit}
                                     onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
@@ -1516,9 +1518,9 @@ export function PlansWorkspace({
                                         {format}
                                       </option>
                                     ))}
-                                  </select>
+                                  </SearchableSelect>
                                 ) : rule.showRegion ? (
-                                  <select
+                                  <SearchableSelect
                                     className={tableSelectClass}
                                     disabled={!canEdit}
                                     onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
@@ -1530,14 +1532,14 @@ export function PlansWorkspace({
                                         {region}
                                       </option>
                                     ))}
-                                  </select>
+                                  </SearchableSelect>
                                 ) : (
                                   <DisabledFieldText>Not needed</DisabledFieldText>
                                 )}
                               </td>
                               <td className="px-3 py-3">
                                 {rule.showArea ? (
-                                  <select
+                                  <SearchableSelect
                                     className={tableSelectClass}
                                     disabled={!canEdit || !canonicalRegion(row.locationText)}
                                     onChange={(e) => updateRow(row.key, "area", e.target.value)}
@@ -1555,7 +1557,7 @@ export function PlansWorkspace({
                                         {area}
                                       </option>
                                     ))}
-                                  </select>
+                                  </SearchableSelect>
                                 ) : (
                                   <DisabledFieldText>Not needed</DisabledFieldText>
                                 )}
@@ -1960,7 +1962,7 @@ function RowEditSheet({
           </Field>
 
           <Field label="Activity Type">
-            <select
+            <SearchableSelect
               className={mobileField}
               disabled={!canEdit}
               onChange={(e) => onUpdate("activityType", e.target.value)}
@@ -1971,12 +1973,12 @@ function RowEditSheet({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </Field>
 
           {rule.showTrainingFormat ? (
             <Field label="Training Format">
-              <select
+              <SearchableSelect
                 className={mobileField}
                 disabled={!canEdit}
                 onChange={(e) => onUpdate("locationText", e.target.value)}
@@ -1988,11 +1990,11 @@ function RowEditSheet({
                     {format}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </Field>
           ) : rule.showRegion ? (
             <Field label="Region">
-              <select
+              <SearchableSelect
                 className={mobileField}
                 disabled={!canEdit}
                 onChange={(e) => onUpdate("locationText", e.target.value)}
@@ -2004,13 +2006,13 @@ function RowEditSheet({
                     {region}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </Field>
           ) : null}
 
           {rule.showArea ? (
             <Field label="Area">
-              <select
+              <SearchableSelect
                 className={mobileField}
                 disabled={!canEdit || !canonicalRegion(row.locationText)}
                 onChange={(e) => onUpdate("area", e.target.value)}
@@ -2028,7 +2030,7 @@ function RowEditSheet({
                     {area}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </Field>
           ) : null}
 

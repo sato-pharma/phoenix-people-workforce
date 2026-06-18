@@ -11,6 +11,8 @@ import {
   type SalaryValidationResult,
   ValidationSummary,
 } from "./validation-summary";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 function SalaryUploadErrorBanner({
   message,
@@ -119,7 +121,7 @@ export function SalaryUploadActions({
         ref={replaceFileInputRef}
         type="file"
       />
-      <select
+      <SearchableSelect
         className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
         onChange={(event) => onPayrollMonthChange(event.target.value)}
         value={payrollMonth}
@@ -130,8 +132,8 @@ export function SalaryUploadActions({
             {month.label}
           </option>
         ))}
-      </select>
-      <select
+      </SearchableSelect>
+      <SearchableSelect
         className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text focus:outline-none"
         onChange={(event) => onPayrollYearChange(event.target.value)}
         value={payrollYear}
@@ -142,7 +144,7 @@ export function SalaryUploadActions({
             {year}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
       {hasPayrollPeriod ? (
         <Link href={`/api/payroll/template?upload=1&month=${payrollMonth}&year=${payrollYear}`}>
           <Button variant="secondary">

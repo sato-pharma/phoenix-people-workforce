@@ -15,6 +15,8 @@ import type {
   AttendanceDeviceUserMappingDashboard,
   AttendanceDeviceUserMappingRow,
 } from "@/lib/attendance/device-user-mapping";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   agentIsRemotelyReachable: boolean;
@@ -130,7 +132,7 @@ function MappingRow({
       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{formatDate(row.latestPunchAt)}</td>
       <td className="whitespace-nowrap px-4 py-3">{statusBadge(row)}</td>
       <td className="min-w-[260px] px-4 py-3">
-        <select
+        <SearchableSelect
           className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
           disabled={!canUpdate || saving}
           value={employeeHrId}
@@ -146,7 +148,7 @@ function MappingRow({
               {employeeLabel(employee.hrId, employee.fullName)}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </td>
       <td className="min-w-[180px] px-4 py-3 text-sm text-slate-600">
         {row.employeeName ?? "Not assigned"}
@@ -478,7 +480,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
 
       <AdminTableShell
         action={(
-          <select
+          <SearchableSelect
             className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
@@ -487,7 +489,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
             <option value="unmapped">Unmapped</option>
             <option value="active">Mapped active</option>
             <option value="inactive">Inactive</option>
-          </select>
+          </SearchableSelect>
         )}
         description="Assign employees by HR_ID and choose whether each mapping is active for ingestion."
         title="Device Users"

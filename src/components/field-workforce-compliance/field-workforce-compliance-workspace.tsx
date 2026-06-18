@@ -49,6 +49,8 @@ import type {
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type PreviewResponse = {
   data?: FieldWorkforcePreviewResult;
@@ -355,7 +357,7 @@ function HierarchyFilters<T extends HierarchyItem>({
         const options = uniqueHierarchyOptions(items, key);
         if (options.length === 0) return null;
         return (
-          <select
+          <SearchableSelect
             className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             key={key}
             value={filters[key]}
@@ -366,7 +368,7 @@ function HierarchyFilters<T extends HierarchyItem>({
           >
             <option value="All">All {label}</option>
             {options.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          </SearchableSelect>
         );
       })}
     </div>
@@ -603,7 +605,7 @@ function EmployeePicker({
             onChange={(event) => onEmployeeSearchChange(event.target.value)}
           />
         </div>
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={selectedEmployee?.hrId ?? ""}
           onChange={(event) => onSelectEmployee(event.target.value)}
@@ -611,7 +613,7 @@ function EmployeePicker({
           {employees.map((employee) => (
             <option key={employee.hrId} value={employee.hrId}>{employee.employeeName} / {employee.hrId}</option>
           ))}
-        </select>
+        </SearchableSelect>
         <div className="grid grid-cols-2 gap-2">
           <Button
             className="gap-2"
@@ -788,25 +790,25 @@ function TeamLineFilters({
     <div className="grid gap-2 sm:grid-cols-2">
       <label className="block">
         <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Line</span>
-        <select
+        <SearchableSelect
           className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
           value={lineName}
           onChange={(event) => onChange({ lineName: event.target.value, teamName })}
         >
           <option value="All">All Lines</option>
           {lineOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+        </SearchableSelect>
       </label>
       <label className="block">
         <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Team</span>
-        <select
+        <SearchableSelect
           className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
           value={teamName}
           onChange={(event) => onChange({ lineName, teamName: event.target.value })}
         >
           <option value="All">All Teams</option>
           {teamOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+        </SearchableSelect>
       </label>
     </div>
   );
@@ -896,7 +898,7 @@ function ReviewQueue({
       title="Review Candidate Queue"
     >
       <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[180px_180px_minmax(0,1fr)_180px]">
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={severity}
           onChange={(event) => {
@@ -905,8 +907,8 @@ function ReviewQueue({
           }}
         >
           {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={status}
           onChange={(event) => {
@@ -915,7 +917,7 @@ function ReviewQueue({
           }}
         >
           {statusOptions.map((option) => <option key={option} value={option}>{option === "All" ? "All statuses" : statusMeaning(option)}</option>)}
-        </select>
+        </SearchableSelect>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
@@ -928,7 +930,7 @@ function ReviewQueue({
             }}
           />
         </div>
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={pageSize}
           onChange={(event) => {
@@ -937,7 +939,7 @@ function ReviewQueue({
           }}
         >
           {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
-        </select>
+        </SearchableSelect>
         <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 lg:col-span-2">
           <input
             checked={holidayOnly}
@@ -1084,7 +1086,7 @@ function MonthlySummaryTable({
             }}
           />
         </div>
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={pageSize}
           onChange={(event) => {
@@ -1093,7 +1095,7 @@ function MonthlySummaryTable({
           }}
         >
           {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
-        </select>
+        </SearchableSelect>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
         <span>Showing {visibleRows.length ? (safePage - 1) * pageSize + 1 : 0}-{Math.min(safePage * pageSize, filtered.length)} of {formatNumber(filtered.length)} employees</span>
@@ -1347,7 +1349,7 @@ function RecommendationRows({
             }}
           />
         </div>
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={severity}
           onChange={(event) => {
@@ -1356,8 +1358,8 @@ function RecommendationRows({
           }}
         >
           {severityOptions.map((option) => <option key={option} value={option}>{option} severity</option>)}
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={decisionStatus}
           onChange={(event) => {
@@ -1367,8 +1369,8 @@ function RecommendationRows({
         >
           <option value="All">All decisions</option>
           {decisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={pageSize}
           onChange={(event) => {
@@ -1377,7 +1379,7 @@ function RecommendationRows({
           }}
         >
           {pageSizeOptions.map((option) => <option key={option} value={option}>{option} rows</option>)}
-        </select>
+        </SearchableSelect>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
         <span>Showing {visibleRows.length ? (safePage - 1) * pageSize + 1 : 0}-{Math.min(safePage * pageSize, filtered.length)} of {formatNumber(filtered.length)} recommendations</span>
@@ -1432,7 +1434,7 @@ function RecommendationRows({
                   <td className="px-4 py-3">
                     <div className="space-y-2">
                       {decisionBadge(recommendation.decisionStatus)}
-                      <select
+                      <SearchableSelect
                         className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                         value={status}
                         onChange={(event) => setDraftStatuses((current) => ({
@@ -1441,11 +1443,11 @@ function RecommendationRows({
                         }))}
                       >
                         {rowDecisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
+                      </SearchableSelect>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <select
+                    <SearchableSelect
                       className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                       value={reason}
                       onChange={(event) => setDraftReasons((current) => ({
@@ -1455,7 +1457,7 @@ function RecommendationRows({
                     >
                       <option value="">{requiresReason ? "Choose reason" : "No reason needed"}</option>
                       {decisionReasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
+                    </SearchableSelect>
                     {requiresReason && !reason ? <p className="mt-1 text-xs font-semibold text-rose-600">Required for this decision.</p> : null}
                     {reason === "Other" && !note.trim() ? <p className="mt-1 text-xs font-semibold text-rose-600">Other requires HR note.</p> : null}
                   </td>
@@ -2320,7 +2322,7 @@ export function FieldWorkforceComplianceWorkspace({
             <div className="flex flex-wrap items-end gap-3 p-4">
               <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                 Month
-                <select
+                <SearchableSelect
                   className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
                   value={crmMonth}
                   onChange={(event) => setCrmMonth(Number(event.target.value))}
@@ -2328,11 +2330,11 @@ export function FieldWorkforceComplianceWorkspace({
                   {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
                     <option key={monthValue} value={monthValue}>{monthValue}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
               <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                 Year
-                <select
+                <SearchableSelect
                   className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
                   value={crmYear}
                   onChange={(event) => setCrmYear(Number(event.target.value))}
@@ -2340,7 +2342,7 @@ export function FieldWorkforceComplianceWorkspace({
                   {crmYearOptions.map((yearValue) => (
                     <option key={yearValue} value={yearValue}>{yearValue}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
               <Button
                 className="gap-2 rounded-xl font-black"

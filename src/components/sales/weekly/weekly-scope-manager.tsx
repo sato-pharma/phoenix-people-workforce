@@ -4,6 +4,8 @@ import { AlertTriangle, Check, Loader2, Pencil, Plus, Search, X } from "lucide-r
 import { useMemo, useState } from "react";
 
 import type { WeeklyProductScopeAdmin, WeeklyScopeAssignment } from "@/lib/sales/weekly/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export function WeeklyScopeManager({
   initial,
@@ -71,7 +73,7 @@ export function WeeklyScopeManager({
       {/* Add a person who has no scope yet */}
       <div className="flex flex-wrap items-center gap-2 border border-[#E2E8F0] bg-white p-3">
         <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Add product owner</span>
-        <select
+        <SearchableSelect
           className="h-9 min-w-[16rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
           disabled={busy}
           value=""
@@ -86,7 +88,7 @@ export function WeeklyScopeManager({
               {person.name} · {person.role} ({person.hrId})
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </div>
 
       {/* Current assignments */}

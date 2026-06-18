@@ -5,6 +5,8 @@ import { Clock, Download, LogIn, LogOut, RefreshCw, ScanLine } from "lucide-reac
 
 import { Badge } from "@/components/ui/badge";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -236,7 +238,7 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
           <div className="mt-4 flex items-end gap-3 border-t border-slate-100 pt-4">
             <div className="space-y-1.5">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
-              <select
+              <SearchableSelect
                 className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)] outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 onChange={(e) => handleCustomMonth(e.target.value)}
                 value={customMonth}
@@ -244,7 +246,7 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
                 {MONTH_OPTIONS.map(({ label, value }) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
             <p className="pb-2.5 text-xs font-semibold text-slate-400">
               Showing {data.dateFrom} → {data.dateTo}

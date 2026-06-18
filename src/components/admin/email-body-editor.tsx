@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export type EditorVariable = {
   label: string;
@@ -488,7 +490,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         }
       `}</style>
       <div className="flex flex-wrap items-center gap-1 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
-        <select
+        <SearchableSelect
           aria-label="Font"
           className="h-8 max-w-[110px] border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
           defaultValue="Arial"
@@ -502,8 +504,8 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           <option value="'Times New Roman'">Times New Roman</option>
           <option value="Verdana">Verdana</option>
           <option value="'Courier New'">Courier New</option>
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           aria-label="Font size"
           className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
           defaultValue="3"
@@ -517,8 +519,8 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           <option value="3">Normal</option>
           <option value="5">Large</option>
           <option value="7">Huge</option>
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           aria-label="Line spacing"
           className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
           defaultValue=""
@@ -536,8 +538,8 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           <option value="1.4">Compact</option>
           <option value="1.75">Normal</option>
           <option value="2.2">Wide</option>
-        </select>
-        <select
+        </SearchableSelect>
+        <SearchableSelect
           aria-label="Letter spacing"
           className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
           defaultValue=""
@@ -555,7 +557,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           <option value="normal">Normal</option>
           <option value="1px">Wide</option>
           <option value="2px">Wider</option>
-        </select>
+        </SearchableSelect>
         <button
           aria-label="Right-to-left paragraph (Arabic)"
           className="flex h-8 items-center justify-center border border-transparent px-1.5 text-xs font-black text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] hover:text-[#C2410C]"

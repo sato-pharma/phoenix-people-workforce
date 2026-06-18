@@ -39,6 +39,8 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { extractKnownPlace } from "@/lib/utils/places";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
 function relativeDaysFrom(iso: string): string {
@@ -1317,7 +1319,7 @@ export function PersonalExpenseWorkloadDashboard({
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="min-w-0">
             <span className={labelClass}>Status</span>
-            <select
+            <SearchableSelect
               aria-label="Filter by status"
               className={`${inputClass} mt-1.5`}
               onChange={(event) => setStatusFilter(event.target.value as (typeof statusOptions)[number])}
@@ -1328,11 +1330,11 @@ export function PersonalExpenseWorkloadDashboard({
                   {status}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="min-w-0">
             <span className={labelClass}>Request type</span>
-            <select
+            <SearchableSelect
               aria-label="Filter by request type"
               className={`${inputClass} mt-1.5`}
               onChange={(event) => setRequestTypeFilter(event.target.value)}
@@ -1343,11 +1345,11 @@ export function PersonalExpenseWorkloadDashboard({
                   {type}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="min-w-0">
             <span className={labelClass}>Transportation</span>
-            <select
+            <SearchableSelect
               aria-label="Filter by transportation type"
               className={`${inputClass} mt-1.5`}
               onChange={(event) => setTransportationFilter(event.target.value)}
@@ -1358,11 +1360,11 @@ export function PersonalExpenseWorkloadDashboard({
                   {type}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="min-w-0">
             <span className={labelClass}>Destination</span>
-            <select
+            <SearchableSelect
               aria-label="Filter by destination city"
               className={`${inputClass} mt-1.5`}
               onChange={(event) => setDestinationFilter(event.target.value)}
@@ -1373,7 +1375,7 @@ export function PersonalExpenseWorkloadDashboard({
                   {destination}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
         </div>
       </Card>
@@ -2084,7 +2086,7 @@ export function PersonalExpenseWorkloadDashboard({
               {/* Page size selector — useful past ~200 records */}
               <label className="flex items-center gap-1.5 text-[11px] text-slate-500 print:hidden">
                 <span>Rows</span>
-                <select
+                <SearchableSelect
                   aria-label="Rows per page"
                   className="h-7 border border-slate-300 bg-white px-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-orange-300"
                   onChange={(event) => {
@@ -2097,7 +2099,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
-                </select>
+                </SearchableSelect>
               </label>
               <div className="flex items-center gap-2">
                 <button

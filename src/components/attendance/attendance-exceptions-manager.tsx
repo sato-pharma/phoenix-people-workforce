@@ -12,6 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AttendanceException, AttendanceExceptionStatus } from "@/lib/attendance/exceptions";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type EmployeeOption = { fullName: string; hrId: string };
 
@@ -186,7 +188,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Employee</label>
-              <select
+              <SearchableSelect
                 className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
                 value={form.employeeHrId}
                 onChange={(e) => handleFormChange("employeeHrId", e.target.value)}
@@ -197,7 +199,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
                     {emp.fullName} ({emp.hrId})
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Date</label>
@@ -229,14 +231,14 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Status</label>
-              <select
+              <SearchableSelect
                 className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
                 value={form.status}
                 onChange={(e) => handleFormChange("status", e.target.value)}
               >
                 <option value="approved">Approved (suppress deduction immediately)</option>
                 <option value="pending">Pending (requires HR review)</option>
-              </select>
+              </SearchableSelect>
             </div>
           </div>
           {formError && <p className="text-xs text-red-600">{formError}</p>}

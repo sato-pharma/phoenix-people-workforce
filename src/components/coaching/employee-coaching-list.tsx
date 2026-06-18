@@ -39,6 +39,8 @@ import type {
   CoachingReportSummaryRow,
 } from "@/lib/coaching/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* ━━━━━━━━━━━━━━━━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
@@ -586,27 +588,27 @@ function PeriodFilterPanel({
           <div className="space-y-3">
             <label className="block">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Year</span>
-              <select className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, year: e.target.value })} value={filter.year}>
+              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, year: e.target.value })} value={filter.year}>
                 <option value="">All years</option>
                 {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Quarter</span>
-              <select className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, quarter: e.target.value })} value={filter.quarter}>
+              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, quarter: e.target.value })} value={filter.quarter}>
                 <option value="">All quarters</option>
                 <option value="1">Q1 (Jan–Mar)</option>
                 <option value="2">Q2 (Apr–Jun)</option>
                 <option value="3">Q3 (Jul–Sep)</option>
                 <option value="4">Q4 (Oct–Dec)</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Month</span>
-              <select className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, month: e.target.value })} value={filter.month}>
+              <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, month: e.target.value })} value={filter.month}>
                 <option value="">All months</option>
                 {monthNames.map((name, i) => <option key={name} value={String(i + 1)}>{name}</option>)}
-              </select>
+              </SearchableSelect>
             </label>
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">

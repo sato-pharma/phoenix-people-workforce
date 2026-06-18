@@ -49,6 +49,8 @@ import type {
   SalesProductPerformanceRow,
   SalesTrendPoint,
 } from "@/lib/sales/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* ─── Error Boundary ──────────────────────────────────────────────────── */
 
@@ -615,7 +617,7 @@ function FilterBar({
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Compare</label>
           <div className="relative">
-            <select
+            <SearchableSelect
               value={comparisonPeriod}
               onChange={(e) => onComparisonChange(e.target.value as ComparisonPeriod)}
               className="h-10 w-full appearance-none rounded border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
@@ -623,7 +625,7 @@ function FilterBar({
               <option value="none">No comparison</option>
               <option value="previous_month">Previous Month</option>
               <option value="previous_3_months">Previous 3 Months</option>
-            </select>
+            </SearchableSelect>
             <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
         </div>
@@ -632,7 +634,7 @@ function FilterBar({
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Family</label>
           <div className="relative">
-            <select
+            <SearchableSelect
               value={selectedFamily}
               onChange={(e) => onFamilyChange(e.target.value)}
               className="h-10 w-full appearance-none rounded border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
@@ -641,7 +643,7 @@ function FilterBar({
               {availableFamilies.map((family) => (
                 <option key={family} value={family}>{family}</option>
               ))}
-            </select>
+            </SearchableSelect>
             <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
         </div>
@@ -1162,7 +1164,7 @@ const ProductTable = memo(function ProductTable({
             {/* Mobile sort control */}
             <div className="mb-3 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Sort by</span>
-              <select
+              <SearchableSelect
                 value={sortConfig.key}
                 onChange={(e) => onSort(e.target.value)}
                 className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:border-orange-300 focus:outline-none"
@@ -1170,7 +1172,7 @@ const ProductTable = memo(function ProductTable({
                 {productTableColumns.map((col) => (
                   <option key={col.key} value={col.key}>{col.label}</option>
                 ))}
-              </select>
+              </SearchableSelect>
               <button
                 type="button"
                 onClick={() => onSort(sortConfig.key)}

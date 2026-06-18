@@ -50,6 +50,8 @@ import {
   missingEmployeeRecordSummary,
 } from "@/lib/employees/employee-record-health";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type EmployeeManagementProps = {
   initialData?: EmployeeDirectoryData | null;
@@ -393,7 +395,7 @@ function SelectField({
         </span>
       </div>
       <div className="relative">
-        <select
+        <SearchableSelect
           className={cn(
             "h-11 w-full rounded-2xl border bg-white/95 px-3 text-xs font-semibold shadow-sm transition-all duration-200",
             "appearance-none hover:shadow-md cursor-pointer whitespace-nowrap truncate pr-8",
@@ -413,7 +415,7 @@ function SelectField({
               {option.label}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
         <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
           <svg className={cn("h-4 w-4 transition-transform group-hover:translate-y-0.5", toneStyles.icon)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />

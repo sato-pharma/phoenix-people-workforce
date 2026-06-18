@@ -32,6 +32,8 @@ import type {
   WorkflowRegistryModule,
   WorkflowRegistryStatus,
 } from "@/lib/workflow-registry/service";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type WorkflowRegistryManagerProps = {
   canManage: boolean;
@@ -737,7 +739,7 @@ export function WorkflowRegistryManager({
                       </label>
                       <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                         Next box
-                        <select
+                        <SearchableSelect
                           className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
                           disabled={!canManage}
                           onChange={(event) => updateAction(index, { to: event.target.value })}
@@ -748,7 +750,7 @@ export function WorkflowRegistryManager({
                           ))}
                           <option value="unchanged">No status change</option>
                           <option value="deleted">Deleted</option>
-                        </select>
+                        </SearchableSelect>
                       </label>
                     </div>
 

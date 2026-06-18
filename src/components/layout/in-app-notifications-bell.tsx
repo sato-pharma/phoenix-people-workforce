@@ -6,6 +6,8 @@ import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type InAppNotificationView = {
   actionLabel?: string;
@@ -208,7 +210,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
               </span>
             ) : null}
             {moduleOptions.length > 1 ? (
-              <select
+              <SearchableSelect
                 className={cn(
                   "mt-2 block w-full rounded border px-2 py-1.5 text-xs font-semibold",
                   panelText.border,
@@ -223,7 +225,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                     {moduleName.replace(/_/g, " ")}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             ) : null}
           </div>
 

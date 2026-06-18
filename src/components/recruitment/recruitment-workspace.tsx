@@ -30,6 +30,8 @@ import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy"
 import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type ManagerOption = { hrId: string; fullName: string };
 
@@ -499,7 +501,7 @@ function ScreeningCard({
       {criteria.map((criterion) => (
         <label key={criterion.key} className="flex items-center justify-between gap-2 text-xs">
           <span className="text-slate-600">{criterion.label}</span>
-          <select
+          <SearchableSelect
             className={`${fieldClass} w-20`}
             value={scores[criterion.key] ?? ""}
             onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: e.target.value }))}
@@ -510,18 +512,18 @@ function ScreeningCard({
                 {n}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </label>
       ))}
       <textarea className={fieldClass} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      <select className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+      <SearchableSelect className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
         <option value="">Select outcome…</option>
         {outcomes.map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
       {reasonRequired ? (
         <textarea className={fieldClass} placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
       ) : null}
@@ -1252,7 +1254,7 @@ function RequisitionsTab({
       {canCreate ? (
         <AdminTableShell title="Open a requisition" description="Wrap an open vacancy and add the recruitment details.">
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-            <select
+            <SearchableSelect
               className={fieldClass}
               value={posSel}
               onChange={(e) => {
@@ -1267,8 +1269,8 @@ function RequisitionsTab({
                   {title}
                 </option>
               ))}
-            </select>
-            <select
+            </SearchableSelect>
+            <SearchableSelect
               className={fieldClass}
               value={lineSel}
               disabled={!posSel}
@@ -1283,33 +1285,33 @@ function RequisitionsTab({
                   {name}
                 </option>
               ))}
-            </select>
-            <select className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
+            </SearchableSelect>
+            <SearchableSelect className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
               <option value="">Vacant area…</option>
               {areaVacancies.map((vacancy) => (
                 <option key={vacancy.id} value={vacancy.id}>
                   {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
               Manager: {selectedVacancy ? selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—" : "—"}
             </div>
-            <select className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
+            <SearchableSelect className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
               <option value="">Recruitment owner…</option>
               {managers.map((manager) => (
                 <option key={manager.hrId} value={manager.hrId}>
                   {manager.fullName} ({manager.hrId})
                 </option>
               ))}
-            </select>
-            <select className={fieldClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
+            </SearchableSelect>
+            <SearchableSelect className={fieldClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
               {["low", "normal", "high", "urgent"].map((value) => (
                 <option key={value} value={value}>
                   {titleCase(value)} priority
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             <Input placeholder="Grade" value={grade} onChange={(e) => setGrade(e.target.value)} />
             <Input placeholder="Salary band min" type="number" value={bandMin} onChange={(e) => setBandMin(e.target.value)} />
             <Input placeholder="Salary band max" type="number" value={bandMax} onChange={(e) => setBandMax(e.target.value)} />
@@ -1614,7 +1616,7 @@ function CandidatesTab({
                         </Button>
                         {canManage ? (
                           <>
-                          <select
+                          <SearchableSelect
                             className={fieldClass}
                             value={startReq[candidate.id] ?? ""}
                             onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
@@ -1625,7 +1627,7 @@ function CandidatesTab({
                                 {requisition.jobTitle}
                               </option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                           <Button
                             disabled={pending || !startReq[candidate.id]}
                             onClick={() =>
@@ -1900,14 +1902,14 @@ function InterviewsSection({
                           />
                         </label>
                       ))}
-                      <select className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+                      <SearchableSelect className={fieldClass} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
                         <option value="">Outcome…</option>
                         {interviewOutcomes.map((value) => (
                           <option key={value} value={value}>
                             {titleCase(value)}
                           </option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                       <textarea className={fieldClass} placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
                       <div className="flex gap-2">
                         <Button disabled={busy} onClick={() => void saveRecord(interview)}>
@@ -1932,19 +1934,19 @@ function InterviewsSection({
 
       {canManage ? (
         <div className="space-y-1.5 pt-1">
-          <select className={fieldClass} value={type} onChange={(e) => setType(e.target.value as InterviewType)}>
+          <SearchableSelect className={fieldClass} value={type} onChange={(e) => setType(e.target.value as InterviewType)}>
             <option value="phone">Phone screen</option>
             <option value="hr">HR interview</option>
             <option value="hiring_manager">Hiring manager interview</option>
-          </select>
-          <select className={fieldClass} value={interviewerHrId} onChange={(e) => setInterviewerHrId(e.target.value)}>
+          </SearchableSelect>
+          <SearchableSelect className={fieldClass} value={interviewerHrId} onChange={(e) => setInterviewerHrId(e.target.value)}>
             <option value="">Interviewer…</option>
             {managers.map((manager) => (
               <option key={manager.hrId} value={manager.hrId}>
                 {manager.fullName} ({manager.hrId})
               </option>
             ))}
-          </select>
+          </SearchableSelect>
           <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
           <Input placeholder="Location (office / video)" value={location} onChange={(e) => setLocation(e.target.value)} />
           <Input placeholder="Meeting link" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />

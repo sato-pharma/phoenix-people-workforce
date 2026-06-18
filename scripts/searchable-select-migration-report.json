@@ -1,0 +1,2493 @@
+{
+  "migratedAt": "2026-06-18T10:53:38.297Z",
+  "totalFilesScanned": 225,
+  "totalSelects": 2,
+  "totalConverted": 222,
+  "totalSkipped": 2,
+  "files": [
+    {
+      "file": "src\\components\\action-center\\action-center-hub.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\activity\\activity-tracker.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\access-control-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 5,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\activity-control-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\admin-command-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\admin-design-system.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\admin-profile-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\audit-log-viewer.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\data-health-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\email-body-editor.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 4,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\email-notification-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\email-reply-composer.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\email-template-manager.tsx",
+      "totalSelects": 2,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 2,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": [
+        {
+          "line": 784,
+          "reason": "multiple"
+        },
+        {
+          "line": 785,
+          "reason": "multiple"
+        }
+      ]
+    },
+    {
+      "file": "src\\components\\admin\\monitoring-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\phoenix-admin-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\support-requests-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\system-cleanup-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\telegram-admin-control-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\telegram-template-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\admin\\workflow-registry-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\attendance-analytics-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\attendance-exceptions-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\attendance-policies-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\device-user-mapping-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\fingerprint-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\attendance\\monthly-attendance-summary.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\auth\\change-password-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\auth\\password-setup-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\auth\\premium-login-page.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\auth\\session-security-guard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\brand\\phoenix-logo.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cards\\chart-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cards\\insight-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cards\\kpi-bullet-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cards\\kpi-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cards\\status-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\executive-score.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\financial-mix.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\horizontal-bars.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\multi-layer-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\radar-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\safe-responsive-container.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\stacked-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\trend-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\charts\\waterfall-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-analytics-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-archived-list.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-import-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-report-detail.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-report-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\coaching-reports-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\employee-coaching-list.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\coaching\\employee-coaching-review.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\contracts\\contract-renewal.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 4,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\cv\\cv-database-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\deductions-governance\\deductions-governance-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 8,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\double-visit-analytics\\double-visit-analytics-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\attendance-overview.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\bottom-nav-customizer.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\company-calendar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\dashboard\\overview-kpi-cards.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\dashboard\\payroll-payslips-section.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\dashboard\\sales-performance-section.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\deductions-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-excuses-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-organogram-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-photo-editor.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-bottom-nav.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-dashboard-dynamic.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 7,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-effects.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-layout.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-loading-progress.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-route-loading.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-portal-server-shell.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\employee-probation-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 5,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\enterprise-shell.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\fingerprint-analytics.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\identity-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-approval-timeline.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-control-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-customer-database.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-request-decision-confirmation.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-request-drafts.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-request-inbox.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-roi-tracking-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\marketing-validation-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\medical-rep-expenses.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\nsm-team-expenses-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\personal-expense-workload-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 5,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\planning-calendar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\plans-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 9,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\private-calendar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 7,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\scope-badge.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\skeleton-templates.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employee-portal\\team-expenses-filters.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employees\\employee-management.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\employees\\employee-photo-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\field-workforce-compliance\\field-workforce-compliance-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 15,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\field-workforce-compliance\\field-workforce-route-map.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\field-workforce-compliance\\field-workforce-visits-view.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\hiring-documents\\hiring-documents-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 4,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\hr-calendar\\hr-calendar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 5,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\app-shell-loading.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\app-shell.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\command-palette.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\document-title-sync.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\in-app-notifications-bell.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\internal-messages-menu.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\page-container.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\route-transition-provider.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\sidebar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\theme-provider.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\theme-toggle.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\layout\\topbar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\notifications\\notification-settings-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\offers\\offer-action-confirmation.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\offers\\offer-lifecycle-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\admin-manager-expense-modal.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\approval-recommendation-badge.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\capture-location-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\eligibility-result-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-command\\expense-leaderboards.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-command\\expense-risk-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-command-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-command-tabs.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-heatmap-layer.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-breakdown-charts.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-detail-table.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-export-button.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-filter-bar.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-kpi-row.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-saved-views.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\expense-shared\\expense-trend-chart.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\fraud-flags-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\mobile-outstation-wizard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\offline-sync-banner.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\outstation-cost-breakdown.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\outstation-policy-admin.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\outstation-request-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\outstation-requests-admin.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\outstation-review-map.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\places-autocomplete-input.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\route-map-preview.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\territory-validation-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\ticket-upload-card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\outstation\\wizard-primitives.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\overview\\overview-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\expense-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\payroll-history.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\payroll-workflow-governance.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\salary-report-table.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\salary-upload-validation.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\shared.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\table-header-menu.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\dashboard\\validation-summary.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\expenses-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\payroll-dashboard-dynamic.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\payroll\\payroll-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 7,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\probation\\probation-tracker.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\recruitment\\public-application-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\recruitment\\recruitment-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 11,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\report-it\\report-it-admin-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\report-it\\report-it-employee-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\report-it\\report-it-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 8,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\reports\\organogram-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\reports\\resignations-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\reports\\vacancies-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\closing-matrix-table.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\customer-directory-filters.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\customer-directory-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\customer-mapping-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\database-mapping-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\database-validation-tab.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\distributor-profile-editor.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\import-preview-modal.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\missing-data-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\monthly-closing-filters.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\monthly-closing-portal-view.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\monthly-closing-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\monthly-sales-wizard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\normalizer-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\sales-dashboard.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\sales-import-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\sales-performance-page.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\sales-queue.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\sos-coverage-tab.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\source-of-sales-mapping-tab.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\source-of-sales-products-tab.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-branch-mapping-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-dashboard-view.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-mapping-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-missing-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-missing-products.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-product-mapping-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-scope-manager.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\sales\\weekly\\weekly-upload-workspace.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 3,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\badge.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\button.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\card.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\choice-group.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\count-up.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\export-xlsx-button.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\filter-chip.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\input.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\loading-state.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\motion.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\page-transition.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\premium-hero.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\premium-tooltip.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\route-error-state.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\searchable-select.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\section-header.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\status-badge.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\switch.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\ui\\workspace-error-boundary.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\vacation\\vacation-action-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\vacation\\vacation-control.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 2,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\vacation\\vacation-report.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 11,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\vacation\\vacation-request-form.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 4,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\workflow-control\\persistence-status-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\workflow-control\\workflow-control-center.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\workflow-control\\workflow-draft-editor.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\workflow-control\\workflow-map.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 0,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    },
+    {
+      "file": "src\\components\\workflow-control\\workflow-simulator-panel.tsx",
+      "totalSelects": 0,
+      "convertedSelects": 1,
+      "skipped": {
+        "multiple": 0,
+        "unsupportedChildren": 0,
+        "other": 0
+      },
+      "notes": []
+    }
+  ]
+}

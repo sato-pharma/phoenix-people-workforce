@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorOption } from "@/lib/sales/monthly-distributor-import";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   distributors: SalesDistributorOption[];
@@ -602,17 +604,20 @@ function MappingCombobox({
   onChange,
   options,
   placeholder,
+  disabled = false,
 }: {
   value: string;
   onChange: (code: string) => void;
   options: { code: string; name: string }[];
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   function openWithPos() {
+    if (disabled) return;
     if (inputRef.current) {
       const r = inputRef.current.getBoundingClientRect();
       setPos({ top: r.bottom + 2, left: r.left, width: r.width });
@@ -630,6 +635,7 @@ function MappingCombobox({
     <div className="relative">
       <input
         ref={inputRef}
+        disabled={disabled}
         className="h-9 w-full rounded-lg border border-[#E2E8F0] px-2 text-sm focus:border-[#FDBA74] focus:outline-none"
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { onChange(e.target.value); openWithPos(); }}
@@ -646,13 +652,25 @@ function MappingCombobox({
             <button
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
               key={o.code}
-              onMouseDown={() => { onChange(o.code); setOpen(false); }}
+              onMouseDown={() => {
+                if (disabled) return;
+                onChange(o.code);
+                setOpen(false);
+              }}
               type="button"
             >
               <span className="shrink-0 font-mono text-xs font-bold text-[#F97316]">{o.code}</span>
               <span className="truncate text-xs text-[#64748B]">{o.name}</span>
             </button>
           ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && pos && (
+        <div
+          className="z-9999 rounded-lg border border-[#E2E8F0] bg-white p-2 text-xs text-[#64748B] shadow-lg"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
+        >
+          No results
         </div>
       )}
     </div>
@@ -784,12 +802,15 @@ function ProductAddForm({ distributorCode, products }: { distributorCode: string
           <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => setAlias(event.target.value)} placeholder="distributor's item code or name" value={alias} />
         </Field>
         <Field label="Phoenix product">
-          <select className={cn(fieldInputClass, "w-64 bg-white font-semibold")} disabled={busy} onChange={(event) => setCode(event.target.value)} value={code}>
-            <option value="">Select…</option>
-            {products.map((product) => (
-              <option key={product.code} value={product.code}>{product.name} ({product.code})</option>
-            ))}
-          </select>
+          <div className="w-64">
+            <MappingCombobox
+              disabled={busy}
+              onChange={(value) => setCode(value)}
+              options={products.map((product) => ({ code: product.code, name: product.name }))}
+              placeholder="Search product code or name"
+              value={code}
+            />
+          </div>
         </Field>
         <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
@@ -844,12 +865,15 @@ function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: st
           <input className={cn(fieldInputClass, "w-48")} disabled={busy} onChange={(event) => setAddress(event.target.value)} value={address} />
         </Field>
         <Field label="Brick">
-          <select className={cn(fieldInputClass, "w-64 bg-white font-semibold")} disabled={busy} onChange={(event) => setBrickId(event.target.value)} value={brickId}>
-            <option value="">Select…</option>
-            {bricks.map((brick) => (
-              <option key={brick.id} value={brick.id}>{brick.name} ({brick.id})</option>
-            ))}
-          </select>
+          <div className="w-64">
+            <MappingCombobox
+              disabled={busy}
+              onChange={(value) => setBrickId(value)}
+              options={bricks.map((brick) => ({ code: brick.id, name: brick.name }))}
+              placeholder="Search brick code or name (ex: B10, Mont)"
+              value={brickId}
+            />
+          </div>
         </Field>
         <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
@@ -887,7 +911,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
 
       <Card className={cn(panelClassName, "flex flex-wrap items-center gap-3 p-4")}>
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
-        <select
+        <SearchableSelect
           className="h-10 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
           onChange={(event) => onDistributorChange(event.target.value)}
           value={distributorCode}
@@ -897,7 +921,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
               {distributor.name} / {distributor.code}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
         <span className="text-xs text-[#64748B]">Shared with the Uploaded Sheets tab and the tools below.</span>
       </Card>
 

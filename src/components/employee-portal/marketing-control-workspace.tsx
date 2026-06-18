@@ -15,6 +15,8 @@ import type {
   MarketingWorkflowApprovalScope,
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 function emptyWorkspace(): MarketingControlWorkspace {
   return {
@@ -52,13 +54,13 @@ function SelectField({
   value: string;
 }) {
   return (
-    <select
+    <SearchableSelect
       className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
       {children}
-    </select>
+    </SearchableSelect>
   );
 }
 

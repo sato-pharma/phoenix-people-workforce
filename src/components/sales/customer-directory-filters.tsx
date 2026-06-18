@@ -5,6 +5,8 @@ import { useMemo } from "react";
 
 import type { CustomerDirectoryFilterOptions } from "@/lib/sales/customer-directory";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export type CustomerDirectoryFilterState = {
   areaCodes: string[];
@@ -178,7 +180,7 @@ export function CustomerDirectoryFilters({
       />
       <div className="flex items-center gap-1">
         <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Period</span>
-        <select
+        <SearchableSelect
           aria-label="From period"
           className={periodSelect}
           onChange={(event) => onChange({ ...value, fromPeriod: event.target.value })}
@@ -188,9 +190,9 @@ export function CustomerDirectoryFilters({
           {options.periods.map((period) => (
             <option key={period} value={period}>{period}</option>
           ))}
-        </select>
+        </SearchableSelect>
         <span className="text-xs text-slate-400">to</span>
-        <select
+        <SearchableSelect
           aria-label="To period"
           className={periodSelect}
           onChange={(event) => onChange({ ...value, toPeriod: event.target.value })}
@@ -200,7 +202,7 @@ export function CustomerDirectoryFilters({
           {options.periods.map((period) => (
             <option key={period} value={period}>{period}</option>
           ))}
-        </select>
+        </SearchableSelect>
       </div>
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
