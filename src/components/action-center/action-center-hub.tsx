@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CheckCircle2, Inbox } from "lucide-react";
 
+import { AdminInsightChip, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
 import type {
   ActionHubData,
   ActionHubItem,
@@ -797,36 +799,36 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     : null;
 
   return (
-    <div
-      className="flex flex-col overflow-hidden -mx-3 -my-4 sm:-mx-4 sm:-my-5 lg:-mx-6 lg:-my-6 xl:-mx-8"
-      style={{ height: "calc(100dvh - 5rem)", minHeight: "400px" }}
-    >
+    <div className="space-y-5">
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
 
-      {/* Page header */}
-      <div className="shrink-0 border-b border-slate-800 bg-slate-900 px-4 py-3 sm:px-6">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400">Phoenix Workforce</p>
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-xl font-black text-white">Action Center</h1>
-          {allItems.length > 0 && (
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-xs font-black text-white">
-              {allItems.length}
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 text-xs text-slate-400">All pending approvals, reviews, and decisions in one place.</p>
-      </div>
+      <AdminPageHero
+        badges={(
+          <>
+            <AdminInsightChip>{stats.total} pending</AdminInsightChip>
+            <AdminInsightChip tone={stats.overdue > 0 ? "orange" : "slate"}>{stats.overdue} overdue</AdminInsightChip>
+            <AdminInsightChip tone={highPriorityCount > 0 ? "orange" : "slate"}>{highPriorityCount} urgent</AdminInsightChip>
+            <AdminInsightChip tone="slate">Avg {stats.avgAge}d age</AdminInsightChip>
+          </>
+        )}
+        description="Review approvals, escalations, and manager decisions from the admin workspace without switching into the employee portal experience."
+        eyebrow="Phoenix Workforce"
+        icon={<Inbox className="h-3.5 w-3.5" />}
+        title="Action Center"
+      />
 
       {allItems.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-12 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 ring-4 ring-emerald-100 text-3xl">✓</div>
+        <div className={`flex min-h-[420px] flex-col items-center justify-center gap-4 p-12 text-center ${adminPanelClassName}`}>
+          <div className="flex h-16 w-16 items-center justify-center border border-emerald-200 bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-9 w-9" />
+          </div>
           <div>
             <p className="text-lg font-black text-slate-900">All clear</p>
             <p className="mt-1 max-w-xs text-sm text-slate-500">No pending approvals or reviews. You&apos;re on top of everything.</p>
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
+        <div className={`flex min-h-[640px] flex-col overflow-hidden lg:h-[calc(100dvh-16rem)] lg:min-h-[560px] lg:flex-row ${adminPanelClassName}`}>
           {/* Left rail */}
           <div className="flex w-full flex-col border-b border-slate-200 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r max-h-[45vh] lg:max-h-none">
             {/* Super-admin view-as switcher */}
