@@ -115,10 +115,10 @@ export async function runSosNormalizerTests() {
   assert.equal(suggestProduct("zzz unrelated gibberish", products), null);
 
   const exceptions: NormalizeException[] = [
-    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NASR CITY", rawCustomerCode: "C1", rawCustomerName: "Pharma A", rawRowNumber: 2, reason: "product" },
-    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NADI", rawCustomerCode: "C2", rawCustomerName: "Pharma B", rawRowNumber: 3, reason: "product" },
-    { rawProduct: "", rawProductName: "", rawTerritory: "العصافرة قبلي", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawRowNumber: 4, reason: "brick" },
-    { rawProduct: "", rawProductName: "", rawTerritory: "Eskndrya", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawRowNumber: 5, reason: "brick" },
+    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NASR CITY", rawCustomerCode: "C1", rawCustomerName: "Pharma A", rawCustomerAddress: "", rawRowNumber: 2, reason: "product" },
+    { rawProduct: "583450", rawProductName: "TEBOFORTIN FORTE", rawTerritory: "NADI", rawCustomerCode: "C2", rawCustomerName: "Pharma B", rawCustomerAddress: "", rawRowNumber: 3, reason: "product" },
+    { rawProduct: "", rawProductName: "", rawTerritory: "العصافرة قبلي", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawCustomerAddress: "", rawRowNumber: 4, reason: "brick" },
+    { rawProduct: "", rawProductName: "", rawTerritory: "Eskndrya", rawCustomerCode: "C3", rawCustomerName: "Pharma C", rawCustomerAddress: "", rawRowNumber: 5, reason: "brick" },
   ];
   const du = distinctUnknowns(exceptions, products);
   assert.equal(du.products.length, 1); // 2 rows collapse to ONE distinct code

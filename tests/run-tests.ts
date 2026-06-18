@@ -77,6 +77,7 @@ import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shap
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
+import { runBrickSuggestionsTests } from "./brick-suggestions.test.ts";
 import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
@@ -285,6 +286,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("detect distributor", runDetectDistributorTests);
+await runTest("brick suggestions", runBrickSuggestionsTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
 await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
