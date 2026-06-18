@@ -89,6 +89,7 @@ function unmappedFromExceptions(exceptions: NormalizeException[]): UnmappedCusto
 }
 
 const MAX_SUGGESTIONS = 200;
+const MAX_UNMAPPED_DETAILS = 300;
 
 // Match unmapped customers to a brick via an already-mapped customer with the same name(+address),
 // across ALL distributors (cross-distributor carry-over). Loads the full customer map ONLY when there
@@ -198,8 +199,9 @@ export async function importSourceOfSalesFile(input: {
     };
     const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
     const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
-    const suggestions = await buildSuggestions(input.distributorCode, unmappedFromRows(parsedRows));
-    return { ...result, previewDiff, suggestions };
+    const unmappedCustomers = unmappedFromRows(parsedRows);
+    const suggestions = await buildSuggestions(input.distributorCode, unmappedCustomers);
+    return { ...result, previewDiff, suggestions, unmappedCustomers: unmappedCustomers.slice(0, MAX_UNMAPPED_DETAILS) };
   } catch (error) {
     if (!(error instanceof SalesWorkflowError) || error.code !== "unsupported_distributor_template") {
       throw error;
@@ -259,8 +261,9 @@ export async function importSourceOfSalesFile(input: {
       if (!input.dryRun) return blockedResult;
       const rows: ImportPreviewRow[] = normalizeResult.coded.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
       const previewDiff = await buildPreviewDiff(input.distributorCode, rows, blockedResult);
-      const suggestions = await buildSuggestions(input.distributorCode, unmappedFromExceptions(exceptions));
-      return { ...blockedResult, previewDiff, suggestions };
+      const unmappedCustomers = unmappedFromExceptions(exceptions);
+      const suggestions = await buildSuggestions(input.distributorCode, unmappedCustomers);
+      return { ...blockedResult, previewDiff, suggestions, unmappedCustomers: unmappedCustomers.slice(0, MAX_UNMAPPED_DETAILS) };
     }
 
     // dryRun validated normalizer path: parse the coded buffer for the validation result WITHOUT

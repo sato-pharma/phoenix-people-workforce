@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { BrickSuggestionView } from "@/lib/sales/brick-suggestions";
+import type { BrickSuggestionView, UnmappedCustomer } from "@/lib/sales/brick-suggestions";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
@@ -14,6 +14,7 @@ import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distr
 export type PreviewResult = DistributorSalesValidationResult & {
   previewDiff?: ImportPreviewDiff;
   suggestions?: BrickSuggestionView[];
+  unmappedCustomers?: UnmappedCustomer[];
 };
 
 type Props = {

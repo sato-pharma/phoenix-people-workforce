@@ -1,6 +1,8 @@
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+export type NewCustomerDetail = { address: string; code: string; name: string };
+
 export type CoverageSnapshot = {
   batchId: string;
   brickDriftCount: number;
@@ -12,12 +14,23 @@ export type CoverageSnapshot = {
   importableValue: number;
   mappedCustomers: number;
   newCustomerCodes: string[];
+  newCustomerDetails: NewCustomerDetail[];
   newCustomers: number;
   period: string | null;
   resolvedPct: number;
   totalRows: number;
   unmappedProducts: string[];
   unmappedProductsCount: number;
+};
+
+// A customer code that keeps showing up unmapped — surfaced with its name/address (when a recent
+// import captured them) so it can be bulk-mapped on the Coverage tab.
+export type PersistentUnmappedCustomer = {
+  address: string;
+  customerCode: string;
+  customerName: string;
+  distributorCode: string;
+  importCount: number;
 };
 
 export type DistributorCoverageRow = {
@@ -40,7 +53,7 @@ export type CoverageSummary = {
     committedAt: string;
     distributorCode: string;
   }[];
-  persistentUnmapped: string[]; // codes appearing as "new" in 3+ snapshots
+  persistentUnmapped: PersistentUnmappedCustomer[]; // codes appearing as "new" in 3+ snapshots
   totalImports: number;
 };
 
@@ -56,6 +69,13 @@ function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
     importableValue: Number(row.importable_value ?? 0),
     mappedCustomers: Number(row.mapped_customers ?? 0),
     newCustomerCodes: Array.isArray(row.new_customer_codes) ? row.new_customer_codes.map(String) : [],
+    newCustomerDetails: Array.isArray(row.new_customer_details)
+      ? (row.new_customer_details as Record<string, unknown>[]).map((d) => ({
+          address: String(d.address ?? ""),
+          code: String(d.code ?? ""),
+          name: String(d.name ?? ""),
+        }))
+      : [],
     newCustomers: Number(row.new_customers ?? 0),
     period: row.period ? String(row.period) : null,
     resolvedPct: Number(row.resolved_pct ?? 0),
@@ -65,13 +85,17 @@ function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
   };
 }
 
+const MAX_SNAPSHOT_DETAILS = 300;
+
 export async function saveCoverageSnapshot(input: {
   batchId: string;
+  details?: NewCustomerDetail[];
   diff: ImportPreviewDiff;
   distributorCode: string;
   period: string | null;
 }): Promise<void> {
   const supabase = getSupabaseAdmin();
+  const details = (input.details ?? []).slice(0, MAX_SNAPSHOT_DETAILS);
   const { error } = await supabase.from("sos_import_coverage_snapshots").insert({
     batch_id: input.batchId,
     brick_drift_count: input.diff.brickDriftCount,
@@ -81,6 +105,7 @@ export async function saveCoverageSnapshot(input: {
     importable_value: input.diff.importableValue,
     mapped_customers: input.diff.mappedCustomers,
     new_customer_codes: input.diff.newCustomerCodes,
+    new_customer_details: details.length > 0 ? details : null,
     new_customers: input.diff.newCustomers,
     period: input.period ?? null,
     resolved_pct: input.diff.resolvedRowsPct,
@@ -103,6 +128,55 @@ async function listCoverageSnapshots(opts?: { limit?: number }): Promise<Coverag
     .limit(opts?.limit ?? 500);
   if (error) throw error;
   return (data ?? []).map((row) => mapSnapshot(row as Record<string, unknown>));
+}
+
+const PERSISTENT_MIN_IMPORTS = 3;
+const PERSISTENT_CAP = 50;
+
+// Pure: customers (distributor + code) that appeared as "new"/unmapped in PERSISTENT_MIN_IMPORTS or
+// more distinct snapshots. Carries name/address from the latest snapshot that captured them (older
+// snapshots only stored codes — those fall back to a blank name). Counted once per snapshot.
+export function aggregatePersistentUnmapped(snapshots: CoverageSnapshot[]): PersistentUnmappedCustomer[] {
+  type Agg = { address: string; count: number; customerCode: string; customerName: string; distributorCode: string };
+  const byKey = new Map<string, Agg>();
+
+  // Snapshots arrive newest-first, so the FIRST detail we see for a key is the most recent name/address.
+  for (const s of snapshots) {
+    const dist = s.distributorCode;
+    const seen = new Set<string>(); // de-dupe within one snapshot → count snapshots, not rows
+    const bump = (rawCode: string, name: string, address: string) => {
+      const code = String(rawCode ?? "").trim();
+      if (!code) return;
+      const key = `${dist.toUpperCase()}|${code.toUpperCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (!existing.customerName && name) existing.customerName = name;
+        if (!existing.address && address) existing.address = address;
+      } else {
+        byKey.set(key, { address, count: 1, customerCode: code, customerName: name, distributorCode: dist });
+      }
+    };
+    if (s.newCustomerDetails.length > 0) {
+      for (const d of s.newCustomerDetails) bump(d.code, d.name, d.address);
+    } else {
+      for (const code of s.newCustomerCodes) bump(code, "", ""); // old snapshot — code only
+    }
+  }
+
+  return [...byKey.values()]
+    .filter((a) => a.count >= PERSISTENT_MIN_IMPORTS)
+    .sort((a, b) => b.count - a.count || a.customerCode.localeCompare(b.customerCode))
+    .slice(0, PERSISTENT_CAP)
+    .map((a) => ({
+      address: a.address,
+      customerCode: a.customerCode,
+      customerName: a.customerName,
+      distributorCode: a.distributorCode,
+      importCount: a.count,
+    }));
 }
 
 export async function getCoverageSummary(): Promise<CoverageSummary> {
@@ -142,22 +216,7 @@ export async function getCoverageSummary(): Promise<CoverageSummary> {
   const avgResolvedPct =
     Math.round((snapshots.reduce((sum, s) => sum + s.resolvedPct, 0) / snapshots.length) * 10) / 10;
 
-  // Persistent unmapped: customer codes appearing as "new" in 3+ different snapshots
-  const codeCount = new Map<string, number>();
-  for (const s of snapshots) {
-    const seen = new Set<string>();
-    for (const code of s.newCustomerCodes) {
-      const key = code.toUpperCase().trim();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      codeCount.set(key, (codeCount.get(key) ?? 0) + 1);
-    }
-  }
-  const persistentUnmapped = [...codeCount.entries()]
-    .filter(([, count]) => count >= 3)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 50)
-    .map(([code]) => code);
+  const persistentUnmapped = aggregatePersistentUnmapped(snapshots);
 
   const driftAlerts = snapshots
     .filter((s) => s.brickDriftCount > 0)
