@@ -15,6 +15,7 @@ import { useMemo, useRef, useState, useCallback } from "react";
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 import type { MonthlySalesRun, MonthlySalesStep } from "@/lib/sales/monthly-sales-run";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 type RunResponse = { success: boolean; data?: MonthlySalesRun; error?: string; code?: string };
 type ValidateResponse = { success: boolean; data?: DistributorSalesValidationResult; error?: string };
+type PreviewResponse = { success: boolean; data?: PreviewResult; error?: string };
 
 const OFFICE = "OFFICE";
 
@@ -47,7 +49,7 @@ export function MonthlySalesWizard() {
   const [activeCode, setActiveCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
-  const [preview, setPreview] = useState<DistributorSalesValidationResult | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const onFileChange = useCallback(() => {
@@ -79,24 +81,52 @@ export function MonthlySalesWizard() {
     } finally { setBusy(false); }
   }
 
-  async function uploadDistributor() {
+  // Step 1 — validate WITHOUT persisting, then render the preview. Mirrors the Office step and the
+  // Uploaded Sheets tab: nothing is written until the user reviews and confirms.
+  async function distributorPreview() {
     if (!activeStep || !fileRef.current?.files?.[0]) { setMessage({ type: "error", text: "Choose a file to upload." }); return; }
+    setBusy(true); setMessage(null); setPreview(null);
+    try {
+      const form = new FormData();
+      form.set("file", fileRef.current.files[0]);
+      form.set("distributorCode", activeStep.distributorCode);
+      form.set("period", period);
+      const res = await fetch("/api/sales/monthly-import/preview", { method: "POST", body: form });
+      const payload = await readJson<PreviewResponse>(res, { success: false });
+      if (payload.data) setPreview(payload.data);
+      if (!payload.data) {
+        setMessage({ type: "error", text: payload.error ?? "Preview failed." });
+      } else if (payload.data.status === "validated") {
+        setMessage({ type: "success", text: "Preview ready — review below, then confirm to import." });
+      } else {
+        setMessage({ type: "error", text: "Blocked — fix the rows listed below, then re-upload." });
+      }
+    } finally { setBusy(false); }
+  }
+
+  // Step 2 — persist the previewed upload, then record confirmation against the run with the batch id.
+  async function distributorConfirm() {
+    if (!activeStep || !fileRef.current?.files?.[0] || preview?.status !== "validated") return;
     setBusy(true); setMessage(null);
     try {
       const form = new FormData();
       form.set("file", fileRef.current.files[0]);
       form.set("distributorCode", activeStep.distributorCode);
       form.set("period", period);
-      const res = await fetch("/api/sales/monthly-import/validate", { method: "POST", body: form });
-      const payload = await readJson<ValidateResponse>(res, { success: false });
-      if (!payload.success || !payload.data) {
-        setMessage({ type: "error", text: payload.error ?? "Validation blocked. Fix the file and re-upload." });
+      // Carry the reviewed diff + unmapped details so a coverage snapshot is recorded on commit.
+      if (preview.previewDiff) form.set("previewDiff", JSON.stringify(preview.previewDiff));
+      if (preview.unmappedCustomers?.length) form.set("unmappedCustomers", JSON.stringify(preview.unmappedCustomers));
+      const res = await fetch("/api/sales/monthly-import/commit", { method: "POST", body: form });
+      const payload = await readJson<PreviewResponse>(res, { success: false });
+      if (!payload.success || !payload.data?.batchId) {
+        setMessage({ type: "error", text: payload.error ?? "Import failed." });
         return;
       }
-      // Validated + persisted — record confirmation against the run with the new batch id.
       await confirmStep(activeStep.distributorCode, payload.data.batchId ?? null);
-      setMessage({ type: "success", text: `${activeStep.distributorName} validated and confirmed.` });
-      if (fileRef.current) fileRef.current.value = ""; setSelectedFileName(null);
+      setPreview(null);
+      setMessage({ type: "success", text: `${activeStep.distributorName} imported and confirmed.` });
+      if (fileRef.current) fileRef.current.value = "";
+      setSelectedFileName(null);
     } finally { setBusy(false); }
   }
 
@@ -313,8 +343,11 @@ export function MonthlySalesWizard() {
                         </>
                       ) : (
                         <>
-                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !selectedFileName} onClick={() => void uploadDistributor()}>
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Upload &amp; confirm
+                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !selectedFileName} onClick={() => void distributorPreview()} variant="secondary">
+                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Preview
+                          </Button>
+                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !preview || preview.status !== "validated"} onClick={() => void distributorConfirm()}>
+                            <CheckCircle2 className="h-4 w-4" /> Confirm import
                           </Button>
                           <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void skipStep()} variant="secondary">
                             <SkipForward className="h-4 w-4" /> Skip with reason
@@ -388,6 +421,40 @@ export function MonthlySalesWizard() {
                     ) : null}
                     {preview.issues.length > 0 ? (
                       <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4" /><div><p className="font-bold">Unmapped office product names:</p><ul className="list-disc pl-5">{preview.issues.slice(0, 20).map((issue) => (<li key={`${issue.rowNumber}-${issue.value}`}>{issue.value}</li>))}</ul></div></AdminCallout>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* Distributor preview — review before persisting (nothing is written until Confirm import) */}
+                {!isOfficeStep && preview ? (
+                  <div className="flex flex-col gap-3">
+                    {preview.status === "validated" ? (
+                      <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4" /><p>Validation passed — review the totals, then confirm to import.</p></AdminCallout>
+                    ) : (
+                      <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4" /><p>{preview.failedRows} row(s) must be fixed before this sheet can import.</p></AdminCallout>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Importable</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.importableRows)}</p></div>
+                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Failed</p><p className={cn("text-sm font-bold", preview.failedRows > 0 ? "text-red-600" : "text-slate-800")}>{formatNumber(preview.failedRows)}</p></div>
+                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Total value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(preview.totals.totalValue)}</p></div>
+                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Period</p><p className="text-sm font-bold text-slate-800">{preview.period ?? "—"}</p></div>
+                    </div>
+                    {preview.issues.length > 0 ? (
+                      <div className="max-h-72 overflow-auto rounded-xl border border-[#D8E0EA]">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Row</th><th className="px-3 py-2 text-left font-black">Field</th><th className="px-3 py-2 text-left font-black">Value</th><th className="px-3 py-2 text-left font-black">Error</th></tr></thead>
+                          <tbody>
+                            {preview.issues.filter((issue) => issue.severity === "failure").slice(0, 50).map((issue, i) => (
+                              <tr key={`${issue.rowNumber}-${issue.field}-${i}`} className="border-t border-[#F1E4D8]">
+                                <td className="px-3 py-2 font-bold text-slate-800">{issue.rowNumber}</td>
+                                <td className="px-3 py-2 text-slate-600">{issue.field}</td>
+                                <td className="px-3 py-2 text-slate-600">{issue.value ?? "—"}</td>
+                                <td className="px-3 py-2 text-slate-600">{issue.message}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
