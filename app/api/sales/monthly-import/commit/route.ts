@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { removeSalesUploadObject, resolveSalesUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
 
@@ -33,6 +34,18 @@ export async function POST(request: Request) {
       uploadedBy,
     });
     const blocked = result.status === "blocked";
+
+    // Persist a coverage snapshot for every non-blocked commit so the Coverage tab can show trend data.
+    // The previewDiff is the one the user already reviewed in the modal (sent back in the JSON body).
+    // Non-fatal: a snapshot failure must never block a successful import.
+    if (!blocked && result.batchId && resolved.previewDiff) {
+      void saveCoverageSnapshot({
+        batchId: result.batchId,
+        diff: resolved.previewDiff,
+        distributorCode: resolved.distributorCode,
+        period: result.period ?? null,
+      });
+    }
 
     return NextResponse.json(
       {
