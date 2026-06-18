@@ -3,6 +3,7 @@ import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-pr
 import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   WEEKLY_DISTRIBUTORS,
   isWeeklyDistributorCode,
@@ -131,4 +132,79 @@ export const isWeeklyDistributor = isWeeklyDistributorCode;
 export async function getDistributorProfileSummary(code: string): Promise<DistributorProfileSummary | null> {
   const profile = await resolveDistributorProfile(code);
   return profile ? summarizeProfile(profile) : null;
+}
+
+// ── C6: distributor health + readiness (computed from existing tables; no new schema) ──
+export type DistributorHealth = {
+  distributorCode: string;
+  hasProfile: boolean;
+  customerMappings: number;
+  productAliases: number;
+  lastMonthlyPeriod: string | null;
+  lastMonthlyRows: number | null;
+  lastWeeklyWeek: string | null;
+};
+
+export type ReadinessBand = "Healthy" | "Attention" | "High-Risk";
+export type DistributorReadiness = { score: number; band: ReadinessBand };
+
+// Active-row count for one distributor; tolerant of a missing table (returns 0).
+async function activeCount(table: string, dist: string): Promise<number> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).eq("distributor_code", dist).eq("active", true);
+    return error ? 0 : (count ?? 0);
+  } catch { return 0; }
+}
+
+export async function getDistributorHealth(code: string): Promise<DistributorHealth> {
+  const dist = normalizeCodeKey(code);
+  const hasProfile = Boolean(rawProfileForDistributor(dist));
+  const supabase = getSupabaseAdmin();
+
+  const [customerMappings, productAliases] = await Promise.all([
+    activeCount("source_of_sales_customer_map", dist),
+    activeCount("source_of_sales_product_aliases", dist),
+  ]);
+
+  let lastMonthlyPeriod: string | null = null;
+  let lastMonthlyRows: number | null = null;
+  try {
+    const { data } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("period,total_rows,created_at")
+      .eq("distributor_code", dist)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) { lastMonthlyPeriod = (data as { period: string | null }).period ?? null; lastMonthlyRows = Number((data as { total_rows: number | null }).total_rows ?? 0) || null; }
+  } catch { /* tolerate */ }
+
+  let lastWeeklyWeek: string | null = null;
+  try {
+    const { data } = await supabase
+      .from("weekly_sales_batches")
+      .select("week_start,created_at")
+      .eq("distributor_code", dist)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) lastWeeklyWeek = (data as { week_start: string | null }).week_start ?? null;
+  } catch { /* tolerate */ }
+
+  return { distributorCode: dist, hasProfile, customerMappings, productAliases, lastMonthlyPeriod, lastMonthlyRows, lastWeeklyWeek };
+}
+
+export function readinessFromHealth(h: DistributorHealth): DistributorReadiness {
+  let score = 0;
+  if (h.hasProfile) score += 40;
+  if (h.customerMappings > 0) score += 30;
+  if (h.productAliases > 0) score += 15;
+  if (h.lastMonthlyPeriod || h.lastWeeklyWeek) score += 15;
+  const band: ReadinessBand = score >= 85 ? "Healthy" : score >= 55 ? "Attention" : "High-Risk";
+  return { score, band };
+}
+
+export async function getDistributorReadiness(code: string): Promise<DistributorReadiness> {
+  return readinessFromHealth(await getDistributorHealth(code));
 }

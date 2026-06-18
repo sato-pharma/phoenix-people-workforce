@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Search, UploadCloud, XCircle } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
@@ -85,6 +85,17 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [committed, setCommitted] = useState<CommitResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detected, setDetected] = useState<{ code: string; name: string; confidence: string } | null>(null);
+
+  async function detect(f: File) {
+    setDetected(null);
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const res = await fetch("/api/sales/monthly-import/detect", { method: "POST", body: fd });
+      const payload = await readJson<{ success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string } }>(res);
+      if (payload.data?.best) setDetected({ code: payload.data.best.distributorCode, name: payload.data.best.distributorName, confidence: payload.data.confidence });
+    } catch { /* detection is advisory only */ }
+  }
 
   const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
   const canImport = analysis?.success && unknowns === 0 && (!analysis.needsPeriod || /^\d{4}-\d{2}$/.test(period));
@@ -125,11 +136,17 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
         <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile} onClick={() => fileRef.current?.click()} type="button">
           <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
         </Button>
-        <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setAnalysis(null); setCommitted(null); } }} ref={fileRef} type="file" />
+        <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setAnalysis(null); setCommitted(null); void detect(f); } }} ref={fileRef} type="file" />
         <Button className="h-9 gap-2" disabled={!file || busy !== null || !hasProfile} onClick={() => void analyze()} type="button" variant="secondary">
           {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}Analyze
         </Button>
       </div>
+
+      {detected && detected.code !== distributorCode ? (
+        <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>This file looks like <b>{detected.name}</b> ({detected.code}), but you selected <b>{distributorCode}</b>. Pick the right distributor or you&apos;ll get unmapped rows.</span></AdminCallout>
+      ) : detected ? (
+        <p className="text-xs text-[#64748B]">Auto-detected <b className="text-[#0F172A]">{detected.name}</b> ({detected.code}) · confidence {detected.confidence} ✓</p>
+      ) : null}
 
       {error ? <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></AdminCallout> : null}
 
@@ -199,6 +216,44 @@ function WeeklyUpload({ distributorCode }: { distributorCode: string }) {
   );
 }
 
+type Health = { customerMappings: number; productAliases: number; lastMonthlyPeriod: string | null; lastWeeklyWeek: string | null };
+type Readiness = { score: number; band: "Healthy" | "Attention" | "High-Risk" };
+
+function HealthDashboard({ distributorCode }: { distributorCode: string }) {
+  const [health, setHealth] = useState<Health | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Defer the reset off the synchronous effect tick (avoids cascading-render lint).
+      await Promise.resolve();
+      if (cancelled) return;
+      setHealth(null); setReadiness(null);
+      try {
+        const res = await fetch(`/api/sales/distributors/health?distributor=${encodeURIComponent(distributorCode)}`);
+        const payload = await readJson<{ success: boolean; health?: Health; readiness?: Readiness }>(res);
+        if (cancelled || !payload.success) return;
+        setHealth(payload.health ?? null); setReadiness(payload.readiness ?? null);
+      } catch { /* health is advisory */ }
+    })();
+    return () => { cancelled = true; };
+  }, [distributorCode]);
+
+  if (!health) return null;
+  const bandTone = readiness?.band === "Healthy" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : readiness?.band === "Attention" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700";
+  const chip = (label: string, value: string) => <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-[#0F172A]">{label}: {value}</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {readiness ? <span className={cn("rounded-full border px-3 py-1 text-xs font-black", bandTone)}>{readiness.band} · {readiness.score}</span> : null}
+      {chip("Customers", health.customerMappings.toLocaleString())}
+      {chip("Products", health.productAliases.toLocaleString())}
+      {chip("Last monthly", health.lastMonthlyPeriod ?? "—")}
+      {health.lastWeeklyWeek ? chip("Last weekly", health.lastWeeklyWeek) : null}
+    </div>
+  );
+}
+
 function DistributorUpload({ selected, summary }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary }) {
   return (
     <div className="space-y-4">
@@ -212,6 +267,7 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
             <Download className="h-4 w-4" />Emergency template
           </a>
         </div>
+        <HealthDashboard distributorCode={selected.code} />
         <ProfileViewer summary={summary} />
       </Card>
 

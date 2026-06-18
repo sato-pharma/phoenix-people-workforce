@@ -2,7 +2,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
-import { dominantPeriod, recognizeDistributorWorkbook, summarizePreview, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, dominantPeriod, recognizeDistributorWorkbook, summarizePreview, type NormalizePreview } from "@/lib/sales/recognize";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export function buildReconciliation(result: NormalizeResult): ReconciliationRece
 const VALID_PERIOD = /^\d{4}-\d{2}$/;
 
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean }
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorName: string };
 
@@ -64,11 +64,11 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File):
   }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products);
   const reconciliation = buildReconciliation(rec.result);
-  return { status: "ok", preview, reconciliation, period: rec.period, needsPeriod: !rec.period };
+  return { status: "ok", preview, reconciliation, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION };
 }
 
 export type CommitResult =
-  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt }
+  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string }
   | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview };
 
 // Delete prior normalizer batches for the same (distributor, period) so re-uploading a month
@@ -128,5 +128,5 @@ export async function commitMonthlyUpload(input: {
     result: stamped,
     uploadedBy: input.uploadedBy,
   });
-  return { status: "imported", reconciliation, ...persisted };
+  return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, ...persisted };
 }
