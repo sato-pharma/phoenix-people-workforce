@@ -42,6 +42,28 @@ function ActualStatusBadge({ status }: { status: MarketingRoiTrackingRow["actual
   );
 }
 
+function AttributionBadge({ row }: { row: MarketingRoiTrackingRow }) {
+  const config = {
+    exact_customer: { className: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "Exact" },
+    brick_fallback: { className: "border-amber-200 bg-amber-50 text-amber-700", label: "Brick fallback" },
+    mixed: { className: "border-sky-200 bg-sky-50 text-sky-700", label: "Mixed" },
+    no_sales: { className: "border-slate-200 bg-slate-50 text-slate-500", label: "No sales" },
+  }[row.attributionQuality];
+
+  const title = row.hasSalesData
+    ? `${row.exactSalesRows} exact row(s), ${row.fallbackSalesRows} brick fallback row(s)`
+    : "No matched sales rows";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${config.className}`}
+      title={title}
+    >
+      {config.label}
+    </span>
+  );
+}
+
 function MetricCard({
   accent,
   icon: Icon,
@@ -169,7 +191,7 @@ export function MarketingRoiTrackingWorkspace() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] border-collapse text-left text-[13px]">
+            <table className="w-full min-w-[1220px] border-collapse text-left text-[13px]">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                 <tr>
                   <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
@@ -180,19 +202,20 @@ export function MarketingRoiTrackingWorkspace() {
                   <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected ROI</th>
                   <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual Sales</th>
                   <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
+                  <th className="border-r border-slate-100 px-3 py-2.5">Attribution</th>
                   <th className="px-3 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-[13px] font-medium text-slate-500" colSpan={9}>
+                    <td className="px-4 py-6 text-center text-[13px] font-medium text-slate-500" colSpan={10}>
                       <span className="inline-flex items-center gap-2"><LoadingSpinner /> Loading ROI tracking...</span>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center text-[13px] font-medium text-slate-500" colSpan={9}>
+                    <td className="px-4 py-6 text-center text-[13px] font-medium text-slate-500" colSpan={10}>
                       No approved requests to track yet.
                     </td>
                   </tr>
@@ -209,6 +232,7 @@ export function MarketingRoiTrackingWorkspace() {
                       <td className="border-r border-slate-100 px-3 py-2.5 text-right font-bold text-slate-900">
                         {row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}
                       </td>
+                      <td className="border-r border-slate-100 px-3 py-2.5"><AttributionBadge row={row} /></td>
                       <td className="px-3 py-2.5"><ActualStatusBadge status={row.actualRoiStatus} /></td>
                     </tr>
                   ))
