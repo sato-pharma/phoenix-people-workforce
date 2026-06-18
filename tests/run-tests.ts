@@ -74,6 +74,7 @@ import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.t
 import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runSosNormalizerTests } from "./sos-normalizer.test.ts";
 import { runSalesRecognizeTests } from "./sales-recognize.test.ts";
+import { runSalesDistributorRegistryTests } from "./sales-distributor-registry.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
@@ -287,6 +288,7 @@ await runTest("office allocation", runOfficeAllocationTests);
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos normalizer", runSosNormalizerTests);
 await runTest("sales recognize (single recognizer)", runSalesRecognizeTests);
+await runTest("sales distributor registry", runSalesDistributorRegistryTests);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
