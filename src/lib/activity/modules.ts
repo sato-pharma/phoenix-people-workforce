@@ -23,6 +23,7 @@ const MODULE_RULES: ModuleRule[] = [
   // ── Admin: command center & governance ────────────────────────────────────
   { prefix: "/admin/activity-control", key: "activity_control", label: "Activity Control" },
   { prefix: "/admin/sales-command", key: "sales_command", label: "Sales Command" },
+  { prefix: "/admin/sales-marketing-intelligence", key: "sales_marketing_intelligence", label: "Marketing ROI & Customer Intelligence" },
   { prefix: "/admin/data-health", key: "data_health", label: "Data Health" },
   { prefix: "/admin/system-cleanup", key: "system_cleanup", label: "System Cleanup" },
   { prefix: "/admin/monitoring", key: "monitoring", label: "Monitoring" },
