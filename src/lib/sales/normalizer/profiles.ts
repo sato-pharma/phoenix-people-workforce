@@ -140,7 +140,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | Column2/Column1 (always 0/1)
     // | "Attribute" (product NAME). Quantity lives in "Value" — NOT "Column2" (always 0). No per-row
-    // price column; value is recomputed from master. Brick resolves from customer code via mapping sheet.
+    // price column; value is recomputed from master. Brick/area resolved via "Area name A" territory
+    // alias (area_aliases table) — customer code crosswalk is a fallback if available.
     distributorCode: "CP",
     distributorName: "chimipharm",
     productColumns: ["Attribute", "Column1"],
@@ -150,6 +151,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateColumns: ["Date", "Invoice Date"],
     customerCodeColumns: ["Customer", "كود"],
     customerNameColumns: ["Customer Name", "العميل"],
+    territoryColumns: ["Area name A"],
     discountColumns: ["Discount%"],
   },
   {
