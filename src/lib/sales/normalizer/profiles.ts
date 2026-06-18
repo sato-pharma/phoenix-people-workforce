@@ -165,14 +165,14 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     // | "Attribute" (product NAME). Quantity lives in "Value" — NOT "Column2" (always 0). No per-row
     // price column; value is recomputed from master. Brick/area resolved via "Area name A" territory
     // alias (area_aliases table) — customer code crosswalk is a fallback if available.
+    // No per-row date column: Chimipharm pivots cover one period; period is supplied via periodOverride.
     distributorCode: "CP",
     distributorName: "chimipharm",
     productColumns: ["Attribute", "Column1"],
     qtyColumns: ["Value", "Column2", "Qty"],
     valueColumns: [],
     valueSource: "recompute",
-    dateColumns: ["Date", "Invoice Date"],
-    dateFormat: "day-first",
+    dateColumns: [],
     customerCodeColumns: ["Customer", "كود"],
     customerNameColumns: ["Customer Name", "العميل"],
     territoryColumns: ["Area name A"],
