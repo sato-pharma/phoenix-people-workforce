@@ -13,10 +13,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["Value"],
     valueSource: "recompute",
     dateColumns: ["Invoice Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Customer"],
     customerNameColumns: ["Customer Name"],
     customerAddressColumns: ["Customer Address"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Mat. Code", "Mat. Desc.", "Invoice Date"],
   },
   {
     distributorCode: "IS",
@@ -26,10 +28,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Client Code", "Main Customer Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Item Code", "Client Code", "Total Quantity"],
   },
   {
     distributorCode: "IS-S",
@@ -39,10 +43,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Item Code", "Client Code"],
   },
   {
     distributorCode: "SF",
@@ -52,9 +58,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
+    dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
   {
     distributorCode: "EG",
@@ -64,10 +72,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["TOTAL_VALUE_INVOICE"],
     valueSource: "recompute",
     dateColumns: ["INVOICE_DATE"],
+    dateFormat: "day-first",
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["ITEM_CODE", "QTY_INVOICE", "INVOICE_DATE"],
   },
   {
     distributorCode: "EP",
@@ -77,10 +87,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["LineValue"],
     valueSource: "recompute",
     dateColumns: ["Transdate"],
+    dateFormat: "day-first",
     customerCodeColumns: ["AccountSerial"],
     customerNameColumns: ["AccountName"],
     customerAddressColumns: ["Address"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["ProductSerial", "SalesOrReturnQty", "AccountSerial"],
   },
   {
     distributorCode: "EP-S",
@@ -90,10 +102,13 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: ["inv_date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
     discountColumns: ["Discount%"],
+    bonusColumns: ["is_bonus"],
+    fingerprintColumns: ["class_code", "cust_code", "inv_date", "is_bonus"],
   },
   {
     // EPDA "Bulk" (wholesale / جملة) branch — same raw EPDA layout as EP-S.
@@ -105,10 +120,13 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: ["inv_date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
     discountColumns: ["Discount%"],
+    bonusColumns: ["is_bonus"],
+    fingerprintColumns: ["class_code", "cust_code", "inv_date", "is_bonus"],
   },
   {
     distributorCode: "MC",
@@ -120,9 +138,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["الصافى"],
     valueSource: "recompute",
     dateColumns: ["تاريخ المستند"],
+    dateFormat: "day-first",
     customerCodeColumns: ["كود"],
     customerNameColumns: ["العميل"],
     discountColumns: ["خصم"],
+    fingerprintColumns: ["دالصنف", "تاريخ المستند", "الكمية"],
   },
   {
     distributorCode: "RM",
@@ -132,10 +152,13 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["صافى البيع"],
     valueSource: "recompute",
     dateColumns: ["تاريخ"],
+    // RM uses real Excel Date objects — dateFormat is a safety net for any text-date rows.
+    dateFormat: "day-first",
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
     discountColumns: ["خصم%"],
+    fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
     // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | Column2/Column1 (always 0/1)
@@ -149,16 +172,19 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: ["Date", "Invoice Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Customer", "كود"],
     customerNameColumns: ["Customer Name", "العميل"],
     territoryColumns: ["Area name A"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Area name A", "Attribute"],
   },
   {
     // EGD Branch (EG-BR) — a branch of EGD (parent EG): the hospital/transfer export. Different headers
     // from the regular EGD pharmacy file (ITEM_NAME_ENG / CARD_DATE / TO_COMPANY_ENTITY_* / VALUE / QTY).
     // Product identity is the English NAME, not the code — the team maps EG-BR by the readable item name
     // (codes are opaque here), so the unmapped list + AI-assist surface and key products by ITEM_NAME_ENG.
+    // Every row MUST have TO_COMPANY_ENTITY_CODE — a blank is a hard data error, not a summary row.
     distributorCode: "EG-BR",
     distributorName: "EGD Branch",
     productColumns: ["ITEM_NAME_ENG"],
@@ -166,9 +192,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["VALUE"],
     valueSource: "recompute",
     dateColumns: ["CARD_DATE"],
+    dateFormat: "day-first",
     customerCodeColumns: ["TO_COMPANY_ENTITY_CODE"],
     customerNameColumns: ["TO_COMPANY_ENTITY_NAME"],
     discountColumns: ["Discount%"],
+    blankCustomerBehavior: "error",
+    fingerprintColumns: ["TO_COMPANY_ENTITY_CODE", "CARD_DATE", "ITEM_NAME_ENG"],
   },
   {
     // Tender channels — each is its own distributor (kept separate from the regular pharmacy file).
@@ -180,10 +209,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Client Code", "Main Customer Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Item Code", "Main Customer Code", "Total Quantity"],
   },
   {
     // Overseas Tender: SAP-style export (Material / Ship-To / Delivery Date) — distinct from PS.
@@ -194,10 +225,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["Sales\\Returns Value"],
     valueSource: "recompute",
     dateColumns: ["Delivery Date"],
+    dateFormat: "day-first",
     customerCodeColumns: ["Ship-To"],
     customerNameColumns: ["Ship-to party", "Name"],
     customerAddressColumns: ["address"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["Material", "Ship-To", "Delivery Date"],
   },
   {
     // Ramco Tender: same raw Arabic layout as RM.
@@ -208,10 +241,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["صافى البيع"],
     valueSource: "recompute",
     dateColumns: ["تاريخ"],
+    dateFormat: "day-first",
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
     discountColumns: ["خصم%"],
+    fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
     // Sofico Tender: customer account from ORDERACCOUNT; brick resolved via customer mapping sheet.
@@ -222,9 +257,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
+    dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
   {
     // EGD Hospital (مركز تموين مستشفيات — hospital supply): EGD-style hospital/tender export.
@@ -235,10 +272,12 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     valueColumns: ["TOTAL_VALUE_INVOICE"],
     valueSource: "recompute",
     dateColumns: ["INVOICE_DATE"],
+    dateFormat: "day-first",
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
     discountColumns: ["Discount%"],
+    fingerprintColumns: ["ITEM_CODE", "QTY_INVOICE", "INVOICE_DATE"],
   },
 ];
 

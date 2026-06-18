@@ -25,7 +25,11 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const { result, period } = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await normalizeUploadedFile(distributorCode, file);
+    if (normalized.status !== "ok") {
+      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+    }
+    const { result, period } = normalized;
     const buffer = await buildCodedWorkbook(result);
     const fileName = `phoenix-coded-${slug(distributorCode)}-${slug(period)}.xlsx`;
 

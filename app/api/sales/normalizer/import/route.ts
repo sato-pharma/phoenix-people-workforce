@@ -21,7 +21,11 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const { result, distributorName } = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await normalizeUploadedFile(distributorCode, file);
+    if (normalized.status !== "ok") {
+      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+    }
+    const { result, distributorName } = normalized;
     if (result.coded.length === 0) {
       return NextResponse.json({ success: false, error: "Nothing to import — no rows could be coded. Map the exceptions first." }, { status: 400 });
     }

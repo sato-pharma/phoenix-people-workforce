@@ -4,7 +4,7 @@ import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { normalizeRawWorkbook } from "@/lib/sales/normalizer/engine";
+import { normalizeRows, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, saveMappings, type DistinctUnknown, type MappingInput, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -112,18 +112,61 @@ export type NormalizePreview = {
   unknownCustomers: DistinctUnknown[];
   unknownProducts: DistinctUnknown[];
   unknownTerritories: DistinctUnknown[];
+  // Change 3/4 additions — surfaced to the UI for actionable callouts
+  blankCustomerSkipped: number;
+  blankCustomerErrors: number;
+  darkCount: number;
 };
 
-export async function normalizeUploadedFile(distributorCode: string, file: File): Promise<{ result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }> {
+export type NormalizeFileResult =
+  | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }
+  | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
+  | { status: "coded_sheet"; distributorName: string };
+
+export async function normalizeUploadedFile(distributorCode: string, file: File): Promise<NormalizeFileResult> {
   const profile = await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
-  // Load the masters once and hand them to loadCrosswalks (which would otherwise reload them) — halves
-  // the reference round-trips per analyze.
+  // Load masters + file buffer in parallel; load crosswalks only after coded-sheet and header checks pass.
   const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) {
+    const maps = await loadCrosswalks(refs);
+    const result = normalizeRows(sheet as unknown as ExcelJS.Worksheet, profile, maps);
+    const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
+    return { status: "ok", result, period: null, distributorName: profile.distributorName, products };
+  }
+
+  // Change 6: coded-sheet detection.
+  // Phoenix-branded coded sheets carry "Product ID" and "Distrub ID" — raw distributor exports never do.
+  // Running a coded sheet through the normalizer produces garbage; redirect the user to direct import.
+  const codedIndicators = ["product id", "distrub id", "region id"];
+  let codedHits = 0;
+  for (let r = 1; r <= Math.min(sheet.rowCount, 5); r += 1) {
+    sheet.getRow(r).eachCell({ includeEmpty: false }, (cell) => {
+      const key = String(cell.value ?? "").trim().toLowerCase();
+      if (codedIndicators.includes(key)) codedHits += 1;
+    });
+    if (codedHits >= 2) return { status: "coded_sheet", distributorName: profile.distributorName };
+  }
+
+  // Change 1: per-distributor pre-flight header validation.
+  const headerValidation = validateSheetHeaders(sheet, profile, RAW_DISTRIBUTOR_PROFILES);
+  if (!headerValidation.valid) {
+    return {
+      status: "header_error",
+      distributorName: profile.distributorName,
+      missingGroups: headerValidation.missingGroups,
+      fingerprintWarning: headerValidation.fingerprintWarning,
+    };
+  }
+
   const maps = await loadCrosswalks(refs);
-  const result = await normalizeRawWorkbook(buffer, profile, maps);
+  const result = normalizeRows(sheet, profile, maps);
   const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-  return { result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products };
+  return { status: "ok", result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products };
 }
 
 export function summarizePreview(distributorCode: string, distributorName: string, result: NormalizeResult, products: ProductRef[]): NormalizePreview {
@@ -140,6 +183,9 @@ export function summarizePreview(distributorCode: string, distributorName: strin
     unknownCustomers: distinct.customers.slice(0, 500),
     unknownProducts: distinct.products.slice(0, 500),
     unknownTerritories: distinct.territories.slice(0, 500),
+    blankCustomerSkipped: result.summary.blankCustomerSkipped,
+    blankCustomerErrors: distinct.blankCustomerErrors,
+    darkCount: distinct.darkCount,
   };
 }
 
@@ -180,9 +226,11 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
 // one-click "Import (validated)" path so the coded sheet can be fed straight into the Source-of-Sales
 // validator without writing a temp file.
 export async function buildCodedBuffer(distributorCode: string, file: File): Promise<{ buffer: ExcelJS.Buffer; distributorName: string; period: string | null; result: NormalizeResult }> {
-  const { distributorName, period, result } = await normalizeUploadedFile(distributorCode, file);
-  const buffer = await buildCodedWorkbook(result);
-  return { buffer, distributorName, period, result };
+  const normalized = await normalizeUploadedFile(distributorCode, file);
+  if (normalized.status === "coded_sheet") throw new Error("This sheet has already been processed — use the direct import path instead.");
+  if (normalized.status === "header_error") throw new Error(`Header validation failed: ${normalized.missingGroups.map((g) => g.label).join(", ")} columns missing.`);
+  const buffer = await buildCodedWorkbook(normalized.result);
+  return { buffer, distributorName: normalized.distributorName, period: normalized.period, result: normalized.result };
 }
 
 // ── Direct import of coded rows (bypasses templates — rows are already coded + validated) ──
