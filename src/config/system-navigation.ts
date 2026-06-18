@@ -86,6 +86,7 @@ export const adminNavigationSections = [
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Marketing ROI & Customer Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
