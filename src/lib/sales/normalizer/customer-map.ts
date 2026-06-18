@@ -1,6 +1,7 @@
 import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -132,6 +133,7 @@ export async function deleteCustomerMapRow(input: {
     newValues: { distributor_code, customer_code, source: "customer_map_delete" },
     summary: `Customer map delete — ${distributor_code} / ${customer_code} (deactivated).`,
   });
+  await writeMappingAudit({ entityType: "customer_map", distributorCode: distributor_code, entityKey: customer_code, action: "delete", actor: input.actorLoginId });
 }
 
 // ── In-app import: download (export) → fix in Excel → re-upload to apply ──
@@ -414,5 +416,13 @@ export async function addCustomerMapRow(input: {
     entityType: "sales_import_batch",
     newValues: { ...result.payload, source: "customer_map_add" },
     summary: `Customer map add — ${String(result.payload.distributor_code)} / ${String(result.payload.customer_code)} -> ${String(result.payload.brick_id)}.`,
+  });
+  await writeMappingAudit({
+    entityType: "customer_map",
+    distributorCode: String(result.payload.distributor_code),
+    entityKey: String(result.payload.customer_code),
+    action: "edit",
+    after: { brick_id: result.payload.brick_id, area_code: result.payload.area_code, region_code: result.payload.region_code },
+    actor: input.actorLoginId,
   });
 }

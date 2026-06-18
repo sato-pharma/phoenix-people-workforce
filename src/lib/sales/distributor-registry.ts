@@ -208,3 +208,22 @@ export function readinessFromHealth(h: DistributorHealth): DistributorReadiness 
 export async function getDistributorReadiness(code: string): Promise<DistributorReadiness> {
   return readinessFromHealth(await getDistributorHealth(code));
 }
+
+// C4: certification status (display only — no import gate yet). Defaults to "Draft" when the table
+// is absent or the distributor has no row, so it is safe to read everywhere.
+export type CertificationStatus = "Draft" | "Testing" | "Certified" | "Production Ready";
+export async function getCertificationStatus(code: string): Promise<CertificationStatus> {
+  const dist = normalizeCodeKey(code);
+  if (!dist) return "Draft";
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("source_of_sales_distributor_certification")
+      .select("status")
+      .eq("distributor_code", dist)
+      .maybeSingle();
+    if (error || !data) return "Draft";
+    const status = String((data as { status: string }).status ?? "Draft");
+    return (["Draft", "Testing", "Certified", "Production Ready"].includes(status) ? status : "Draft") as CertificationStatus;
+  } catch { return "Draft"; }
+}

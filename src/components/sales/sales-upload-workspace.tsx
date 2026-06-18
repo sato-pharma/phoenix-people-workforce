@@ -222,6 +222,7 @@ type Readiness = { score: number; band: "Healthy" | "Attention" | "High-Risk" };
 function HealthDashboard({ distributorCode }: { distributorCode: string }) {
   const [health, setHealth] = useState<Health | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [certification, setCertification] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,12 +230,12 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
       // Defer the reset off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
       if (cancelled) return;
-      setHealth(null); setReadiness(null);
+      setHealth(null); setReadiness(null); setCertification(null);
       try {
         const res = await fetch(`/api/sales/distributors/health?distributor=${encodeURIComponent(distributorCode)}`);
-        const payload = await readJson<{ success: boolean; health?: Health; readiness?: Readiness }>(res);
+        const payload = await readJson<{ success: boolean; health?: Health; readiness?: Readiness; certification?: string }>(res);
         if (cancelled || !payload.success) return;
-        setHealth(payload.health ?? null); setReadiness(payload.readiness ?? null);
+        setHealth(payload.health ?? null); setReadiness(payload.readiness ?? null); setCertification(payload.certification ?? null);
       } catch { /* health is advisory */ }
     })();
     return () => { cancelled = true; };
@@ -246,6 +247,7 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {readiness ? <span className={cn("rounded-full border px-3 py-1 text-xs font-black", bandTone)}>{readiness.band} · {readiness.score}</span> : null}
+      {certification ? <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-[#475569]">Cert: {certification}</span> : null}
       {chip("Customers", health.customerMappings.toLocaleString())}
       {chip("Products", health.productAliases.toLocaleString())}
       {chip("Last monthly", health.lastMonthlyPeriod ?? "—")}

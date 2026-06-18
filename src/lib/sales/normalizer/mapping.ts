@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { systemIdentity } from "@/config/system-settings";
+import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -260,6 +261,7 @@ export async function upsertProductAlias(input: { actorLoginId: string; distribu
     newValues: { distributor_code: dist, normalized_alias: key, product_code: code, source: "product_alias_upsert" },
     summary: `Product alias upsert — ${dist} / ${raw} -> ${code}.`,
   });
+  await writeMappingAudit({ entityType: "product_alias", distributorCode: dist, entityKey: key, action: "edit", after: { alias: raw, product_code: code }, actor: input.actorLoginId });
 }
 
 export async function deleteProductAlias(input: { actorLoginId: string; distributorCode: string; normalizedAlias: string }): Promise<void> {
@@ -280,6 +282,7 @@ export async function deleteProductAlias(input: { actorLoginId: string; distribu
     newValues: { distributor_code: dist, normalized_alias: key, source: "product_alias_delete" },
     summary: `Product alias delete — ${dist} / ${key} (deactivated).`,
   });
+  await writeMappingAudit({ entityType: "product_alias", distributorCode: dist, entityKey: key, action: "delete", actor: input.actorLoginId });
 }
 
 export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: string; brickId: string }): Promise<void> {
@@ -303,6 +306,7 @@ export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: s
     newValues: { normalized_alias: key, target_code: code, source: "territory_alias_upsert" },
     summary: `Territory alias upsert — ${raw} -> ${code}.`,
   });
+  await writeMappingAudit({ entityType: "territory_alias", entityKey: key, action: "edit", after: { alias: raw, target_code: code }, actor: input.actorLoginId });
 }
 
 export async function deleteTerritoryAlias(input: { actorLoginId: string; normalizedAlias: string; targetCode: string }): Promise<void> {
@@ -324,6 +328,7 @@ export async function deleteTerritoryAlias(input: { actorLoginId: string; normal
     newValues: { normalized_alias: key, target_code: code, source: "territory_alias_delete" },
     summary: `Territory alias delete — ${key} -> ${code} (deactivated).`,
   });
+  await writeMappingAudit({ entityType: "territory_alias", entityKey: key, action: "delete", after: { target_code: code }, actor: input.actorLoginId });
 }
 
 // ── Excel bulk round-trip ──
