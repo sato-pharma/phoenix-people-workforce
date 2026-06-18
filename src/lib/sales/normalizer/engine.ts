@@ -198,6 +198,7 @@ export function normalizeRows(
         rawTerritory: territoryValues.find(Boolean) ?? "",
         rawCustomerCode: customerCode,
         rawCustomerName: firstValue(row, header, profile.customerNameColumns),
+        rawCustomerAddress: firstValue(row, header, profile.customerAddressColumns),
         rawRowNumber: r,
         reason: !productCode && !hierarchy ? "both" : !productCode ? "product" : "brick",
       });

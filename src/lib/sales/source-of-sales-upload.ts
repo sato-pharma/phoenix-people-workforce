@@ -1,3 +1,9 @@
+import {
+  buildBrickSuggestions,
+  type BrickSuggestionView,
+  type MappedCustomer,
+  type UnmappedCustomer,
+} from "@/lib/sales/brick-suggestions";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import {
   buildImportPreviewDiff,
@@ -8,6 +14,7 @@ import {
 import {
   createSourceOfSalesUpload,
   createSourceOfSalesUploadFromBuffer,
+  loadSalesReferenceData,
   type DistributorSalesAreaSummary,
   type DistributorSalesBrickSummary,
   type DistributorSalesLineSummary,
@@ -47,6 +54,66 @@ async function buildPreviewDiff(
     rows,
     totalRows: result.rowCount,
   });
+}
+
+// Distinct unmapped customers (no brick yet) from the coded rows — carry name+address so the
+// suggestion engine can match them to an already-mapped twin.
+function unmappedFromRows(rows: Array<{ brickId: string; clientAddress: string | null; clientCode: string | null; clientName: string | null }>): UnmappedCustomer[] {
+  const out: UnmappedCustomer[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const code = String(r.clientCode ?? "").trim();
+    if (!code || r.brickId) continue; // a row WITH a brick is already mapped
+    const key = code.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ address: String(r.clientAddress ?? ""), customerCode: code, customerName: String(r.clientName ?? "") });
+  }
+  return out;
+}
+
+// Distinct unmapped customers from the normalizer exceptions (brick/both reasons — not product-only).
+function unmappedFromExceptions(exceptions: NormalizeException[]): UnmappedCustomer[] {
+  const out: UnmappedCustomer[] = [];
+  const seen = new Set<string>();
+  for (const e of exceptions) {
+    if (e.reason === "product") continue; // brick is fine for these — only the product is unknown
+    const code = String(e.rawCustomerCode ?? "").trim();
+    if (!code) continue;
+    const key = code.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ address: String(e.rawCustomerAddress ?? ""), customerCode: code, customerName: String(e.rawCustomerName ?? "") });
+  }
+  return out;
+}
+
+const MAX_SUGGESTIONS = 200;
+
+// Match unmapped customers to a brick via an already-mapped customer with the same name(+address),
+// across ALL distributors (cross-distributor carry-over). Loads the full customer map ONLY when there
+// is something to match. The accepted mapping is written under the UPLOAD distributor.
+async function buildSuggestions(distributorCode: string, unmapped: UnmappedCustomer[]): Promise<BrickSuggestionView[]> {
+  if (unmapped.length === 0) return [];
+  const [mapRows, refs] = await Promise.all([
+    listCustomerMap(),
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+  ]);
+  const mapped: MappedCustomer[] = mapRows.map((r) => ({
+    address: r.address,
+    brickId: r.brickId,
+    customerCode: r.customerCode,
+    customerName: r.customerName,
+    distributorCode: r.distributorCode,
+  }));
+  const brickNameById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), b.brickName]));
+  return buildBrickSuggestions(unmapped, mapped)
+    .slice(0, MAX_SUGGESTIONS)
+    .map((s) => ({
+      ...s,
+      brickName: brickNameById.get(normalizeCodeKey(s.suggestedBrickId)) ?? s.suggestedBrickId,
+      distributorCode,
+    }));
 }
 
 // Per-row advisory for rows whose product is mapped to "ignore" (intentionally excluded).
@@ -131,7 +198,8 @@ export async function importSourceOfSalesFile(input: {
     };
     const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
     const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
-    return { ...result, previewDiff };
+    const suggestions = await buildSuggestions(input.distributorCode, unmappedFromRows(parsedRows));
+    return { ...result, previewDiff, suggestions };
   } catch (error) {
     if (!(error instanceof SalesWorkflowError) || error.code !== "unsupported_distributor_template") {
       throw error;
@@ -191,7 +259,8 @@ export async function importSourceOfSalesFile(input: {
       if (!input.dryRun) return blockedResult;
       const rows: ImportPreviewRow[] = normalizeResult.coded.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
       const previewDiff = await buildPreviewDiff(input.distributorCode, rows, blockedResult);
-      return { ...blockedResult, previewDiff };
+      const suggestions = await buildSuggestions(input.distributorCode, unmappedFromExceptions(exceptions));
+      return { ...blockedResult, previewDiff, suggestions };
     }
 
     // dryRun validated normalizer path: parse the coded buffer for the validation result WITHOUT
