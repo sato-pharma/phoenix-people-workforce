@@ -19,6 +19,13 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    settings: {
+      react: {
+        version: "19.2.4",
+      },
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
