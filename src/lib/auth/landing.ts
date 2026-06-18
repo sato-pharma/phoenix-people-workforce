@@ -7,8 +7,6 @@ const portalLandingRoleNames = new Set([
   "product manager",
   "group product manager",
   "training manager",
-  "marketing manager",
-  "finance manager",
   "manager",
 ]);
 
