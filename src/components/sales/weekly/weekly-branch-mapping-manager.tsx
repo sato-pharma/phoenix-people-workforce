@@ -18,13 +18,16 @@ const EMPTY_DRAFT: DraftRow = { branchName: "", branchCode: "", columnIndex: "",
 export function WeeklyBranchMappingManager({
   initial,
   initialError,
+  lockedDistributor,
 }: {
   initial: WeeklyBranchRegionAdmin | null;
   initialError: string | null;
+  /** Force a distributor and hide the internal selector (embedded in a distributor-scoped page). */
+  lockedDistributor?: string;
 }) {
   const [data, setData] = useState<WeeklyBranchRegionAdmin | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
-  const [distributor, setDistributor] = useState<string>(initial?.distributorCode ?? "IS");
+  const [distributor, setDistributor] = useState<string>(lockedDistributor || initial?.distributorCode || "IS");
   const [fileType, setFileType] = useState<WeeklyBranchFileType>("any");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -189,23 +192,27 @@ export function WeeklyBranchMappingManager({
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
-        <SearchableSelect
-          className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
-          disabled={busy}
-          value={distributor}
-          onChange={(event) => {
-            setDistributor(event.target.value);
-            setFileType("any");
-            setDraft(EMPTY_DRAFT);
-          }}
-        >
-          {data.distributors.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.name} ({option.code})
-            </option>
-          ))}
-        </SearchableSelect>
+        {lockedDistributor ? null : (
+          <>
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
+            <SearchableSelect
+              className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              disabled={busy}
+              value={distributor}
+              onChange={(event) => {
+                setDistributor(event.target.value);
+                setFileType("any");
+                setDraft(EMPTY_DRAFT);
+              }}
+            >
+              {data.distributors.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name} ({option.code})
+                </option>
+              ))}
+            </SearchableSelect>
+          </>
+        )}
 
         {isPs && (
           <div className="flex items-center gap-1">

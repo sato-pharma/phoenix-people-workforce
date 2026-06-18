@@ -6,6 +6,8 @@ import { Database, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
+import { WeeklyBranchMappingManager } from "@/components/sales/weekly/weekly-branch-mapping-manager";
+import { WeeklyProductMappingManager } from "@/components/sales/weekly/weekly-product-mapping-manager";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
@@ -233,6 +235,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 function DistributorMapping({ selected, products, bricks }: { selected: SalesDistributorEntry; products: { code: string; name: string }[]; bricks: { id: string; name: string }[] }) {
   const [cadence, setCadence] = useState<"monthly" | "weekly">("monthly");
   const [tab, setTab] = useState<MonthlyTab>("customers");
+  const [weeklyTab, setWeeklyTab] = useState<"products" | "branches">("products");
   const brickOptions = bricks.map((b) => ({ code: b.id, name: b.name }));
 
   return (
@@ -260,8 +263,18 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
           {tab === "territories" ? <AliasTab codeLabel="Brick ID" distributorCode={selected.code} kind="territory" options={brickOptions} /> : null}
         </div>
       ) : (
-        <div className="p-4">
-          <AdminCallout tone="neutral"><span>Weekly mapping (product aliases + branch→region) for {selected.name} is wired in the next phase (E2).</span></AdminCallout>
+        <div>
+          <div className="flex gap-1.5 border-b border-[#E2E8F0] px-4 py-2">
+            <TabButton active={weeklyTab === "products"} onClick={() => setWeeklyTab("products")}>Product Aliases</TabButton>
+            <TabButton active={weeklyTab === "branches"} onClick={() => setWeeklyTab("branches")}>Branch → Region</TabButton>
+          </div>
+          <div className="p-4">
+            {weeklyTab === "products" ? (
+              <WeeklyProductMappingManager initial={null} initialError={null} key={`p-${selected.code}`} lockedDistributor={selected.code} />
+            ) : (
+              <WeeklyBranchMappingManager initial={null} initialError={null} key={`b-${selected.code}`} lockedDistributor={selected.code} />
+            )}
+          </div>
         </div>
       )}
     </Card>
