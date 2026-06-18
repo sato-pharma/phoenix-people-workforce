@@ -182,11 +182,15 @@ export async function persistNormalizedBatch(input: {
   fileName: string;
   result: NormalizeResult;
   uploadedBy: string;
+  // Explicit period (the caller's single source of truth). When omitted, falls back to the dominant
+  // period (legacy callers). The new Sales Upload commit ALWAYS passes this so a user-picked period
+  // is honored and replace/insert target the same month.
+  period?: string;
 }): Promise<{ batchId: string; period: string | null; importedRows: number }> {
   const supabase = getSupabaseAdmin();
   const { coded } = input.result;
-  const period = dominantPeriod(coded);
-  // only rows in the dominant period are imported (one batch = one month, like the importer)
+  const period = input.period ?? dominantPeriod(coded);
+  // only rows in the chosen period are imported (one batch = one month, like the importer)
   const rows = coded.filter((r) => r.invoiceDate === period);
   const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);

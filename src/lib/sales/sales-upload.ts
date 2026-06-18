@@ -2,7 +2,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
-import { RECOGNITION_ENGINE_VERSION, dominantPeriod, recognizeDistributorWorkbook, summarizePreview, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizePreview } from "@/lib/sales/recognize";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -49,6 +49,24 @@ export function buildReconciliation(result: NormalizeResult): ReconciliationRece
 
 const VALID_PERIOD = /^\d{4}-\d{2}$/;
 
+// Pure decision: which single month does this upload belong to? Never silently drops a month.
+//  • a valid override → consolidate every row under it (date-less pivots + intentional consolidation)
+//  • exactly one period in the sheet → use it
+//  • no period at all → "missing" (caller asks for a period)
+//  • multiple periods, no override → "multi" (caller refuses rather than dropping minority rows)
+export type PeriodDecision =
+  | { kind: "ok"; period: string; consolidate: boolean }
+  | { kind: "missing" }
+  | { kind: "multi"; periods: string[] };
+
+export function resolveUploadPeriod(codedPeriods: (string | null | undefined)[], override: string): PeriodDecision {
+  if (VALID_PERIOD.test(override)) return { kind: "ok", period: override, consolidate: true };
+  const periods = [...new Set(codedPeriods.filter((p): p is string => Boolean(p)))].sort();
+  if (periods.length === 1) return { kind: "ok", period: periods[0], consolidate: false };
+  if (periods.length === 0) return { kind: "missing" };
+  return { kind: "multi", periods };
+}
+
 export type AnalyzeResult =
   | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
@@ -71,10 +89,12 @@ export type CommitResult =
   | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string }
   | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview };
 
-// Delete prior normalizer batches for the same (distributor, period) so re-uploading a month
-// REPLACES rather than double-counts. Scoped to template_key='normalizer' (this pipeline's batches)
-// and a validated YYYY-MM period, so it can never touch unrelated data.
-async function replaceExistingPeriod(distributorCode: string, period: string): Promise<void> {
+// Delete PRIOR normalizer batches for the same (distributor, period) — EXCEPT the just-inserted one —
+// so re-uploading a month replaces rather than double-counts. Runs AFTER the new batch is fully
+// written: if the insert fails nothing is deleted (old data stays intact, no loss), and a rare
+// post-insert delete failure self-heals on the next upload (never silent data loss). Scoped to
+// template_key='normalizer' + a validated YYYY-MM period, so it can never touch unrelated data.
+async function deleteOtherBatchesForPeriod(distributorCode: string, period: string, keepBatchId: string): Promise<void> {
   if (!VALID_PERIOD.test(period)) return;
   const supabase = getSupabaseAdmin();
   const dist = normalizeCodeKey(distributorCode);
@@ -85,7 +105,7 @@ async function replaceExistingPeriod(distributorCode: string, period: string): P
     .eq("period", period)
     .eq("template_key", "normalizer");
   if (existing.error) throw existing.error;
-  const ids = (existing.data ?? []).map((r) => String((r as { id: unknown }).id));
+  const ids = (existing.data ?? []).map((r) => String((r as { id: unknown }).id)).filter((id) => id !== keepBatchId);
   if (ids.length === 0) return;
   const rowsDel = await supabase.from("source_of_sales_import_rows").delete().in("batch_id", ids);
   if (rowsDel.error) throw rowsDel.error;
@@ -112,21 +132,32 @@ export async function commitMonthlyUpload(input: {
     return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products) };
   }
 
-  const override = String(input.periodOverride ?? "").trim();
-  const period = VALID_PERIOD.test(override) ? override : dominantPeriod(result.coded);
-  if (!period) {
+  const decision = resolveUploadPeriod(result.coded.map((r) => r.invoiceDate), String(input.periodOverride ?? "").trim());
+  if (decision.kind === "missing") {
     throw new SalesWorkflowError("missing_period", "This sheet has no date column — pick the period before importing.", 400);
   }
-  // Stamp the chosen period onto rows that carry no date (e.g. CP pivot) so they persist under it.
-  const stamped: NormalizeResult = { ...result, coded: result.coded.map((r) => (r.invoiceDate ? r : { ...r, invoiceDate: period })) };
+  if (decision.kind === "multi") {
+    throw new SalesWorkflowError(
+      "multi_period",
+      `This sheet spans ${decision.periods.length} months (${decision.periods.join(", ")}). Pick a period above to import them all under one month, or upload one month per file.`,
+      400,
+    );
+  }
+  const period = decision.period;
+  // Consolidate every row under the chosen month only when the user explicitly picked one.
+  const coded = decision.consolidate ? result.coded.map((r) => ({ ...r, invoiceDate: period })) : result.coded;
+  const stamped: NormalizeResult = { ...result, coded };
 
-  await replaceExistingPeriod(input.distributorCode, period);
+  // Insert the new batch FIRST (single source-of-truth period), THEN remove prior batches for the
+  // same month — so a failed insert never leaves the period empty (atomic-safe ordering).
   const persisted = await persistNormalizedBatch({
     distributorCode: input.distributorCode,
     distributorName: rec.distributorName,
     fileName: input.file.name,
     result: stamped,
     uploadedBy: input.uploadedBy,
+    period,
   });
+  await deleteOtherBatchesForPeriod(input.distributorCode, period, persisted.batchId);
   return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, ...persisted };
 }
