@@ -143,6 +143,18 @@ function exceptionToIssue(exc: NormalizeException): DistributorSalesValidationIs
     };
   }
   if (exc.reason === "brick") {
+    // When the distributor has no territory columns, the ONLY resolution path is the customer
+    // map. Point the user directly to "add one by field" and tell them exactly what to type —
+    // the territory label would send them to the wrong form field.
+    if (exc.rawCustomerCode && !exc.rawTerritory) {
+      return {
+        field: "Customer code",
+        message: `Customer code "${exc.rawCustomerCode}" has no brick assigned. In the Mapping tab → Customer / Brick Mapping → type "${exc.rawCustomerCode}" in the "Customer code" field → pick the brick → Add → re-upload.`,
+        rowNumber: exc.rawRowNumber,
+        severity: "failure",
+        value: exc.rawCustomerCode,
+      };
+    }
     return {
       field: "Territory",
       message: `"${rawArea}" is not mapped to a Phoenix brick/area. Open the Mapping tab → Analyze raw sheet → map it → Save → re-upload.`,
