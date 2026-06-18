@@ -1,5 +1,11 @@
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import {
+  buildImportPreviewDiff,
+  customerMapKey,
+  type ImportPreviewDiff,
+  type ImportPreviewRow,
+} from "@/lib/sales/import-preview";
+import {
   createSourceOfSalesUpload,
   createSourceOfSalesUploadFromBuffer,
   type DistributorSalesAreaSummary,
@@ -8,9 +14,52 @@ import {
   type DistributorSalesProductSummary,
   type DistributorSalesRegionSummary,
   type DistributorSalesValidationIssue,
+  type DistributorSalesValidationResult,
+  type ParsedDistributorRow,
 } from "@/lib/sales/monthly-distributor-import";
+import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
+import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { buildCodedBuffer } from "@/lib/sales/normalizer/service";
-import type { NormalizeException } from "@/lib/sales/normalizer/types";
+import type { NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
+
+// Stored map → composite-key brick lookup for the preview diff (mapping sheet = source of truth).
+async function loadExistingBrickByKey(distributorCode: string): Promise<Map<string, string>> {
+  const rows = await listCustomerMap({ distributorCode: normalizeCodeKey(distributorCode) });
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.brickId) continue;
+    map.set(customerMapKey(row.distributorCode, row.customerCode), row.brickId);
+  }
+  return map;
+}
+
+async function buildPreviewDiff(
+  distributorCode: string,
+  rows: ImportPreviewRow[],
+  result: { importableRows: number; issues: DistributorSalesValidationIssue[]; rowCount: number },
+): Promise<ImportPreviewDiff> {
+  const existingBrickByKey = await loadExistingBrickByKey(distributorCode);
+  return buildImportPreviewDiff({
+    distributorCode,
+    existingBrickByKey,
+    importableRows: result.importableRows,
+    issues: result.issues.map((i) => ({ field: i.field, value: i.value })),
+    rows,
+    totalRows: result.rowCount,
+  });
+}
+
+// Per-row advisory for rows whose product is mapped to "ignore" (intentionally excluded).
+function ignoredRowsAdvisory(normalizeResult: NormalizeResult): string | null {
+  const { ignoredRows } = normalizeResult;
+  if (ignoredRows.length === 0) return null;
+  const totalIgnoredQty = ignoredRows.reduce((sum, r) => sum + r.qty, 0);
+  return (
+    `${ignoredRows.length} row${ignoredRows.length === 1 ? "" : "s"} (${totalIgnoredQty} unit${totalIgnoredQty === 1 ? "" : "s"}) were skipped — ` +
+    `their products are mapped as "ignore" in the Mapping tab. ` +
+    `If this is unexpected, go to the Mapping tab → update those product mappings → Save → re-upload.`
+  );
+}
 
 function exceptionToIssue(exc: NormalizeException): DistributorSalesValidationIssue {
   const rawItem = exc.rawProductName || exc.rawProduct || "";
@@ -69,9 +118,20 @@ export async function importSourceOfSalesFile(input: {
   file: File;
   uploadedBy: string;
   periodOverride?: string;
+  // Preview (dry run): validate and summarize WITHOUT persisting; attaches `previewDiff`. Used by the
+  // mandatory preview step so nothing is written until the user confirms.
+  dryRun?: boolean;
 }) {
   try {
-    return await createSourceOfSalesUpload(input);
+    const codedResult = await createSourceOfSalesUpload(input);
+    if (!input.dryRun) return codedResult;
+    // dryRun coded path: createSourceOfSalesUpload returns the parsed result WITH parsedRows.
+    const { parsedRows, ...result } = codedResult as DistributorSalesValidationResult & {
+      parsedRows: ParsedDistributorRow[];
+    };
+    const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
+    const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
+    return { ...result, previewDiff };
   } catch (error) {
     if (!(error instanceof SalesWorkflowError) || error.code !== "unsupported_distributor_template") {
       throw error;
@@ -100,7 +160,7 @@ export async function importSourceOfSalesFile(input: {
       const totalValue = normalizeResult.coded.reduce((sum, r) => sum + r.value, 0);
       const rowCount = normalizeResult.summary.totalRows - normalizeResult.summary.ignored;
 
-      return {
+      const blockedResult = {
         advisories: [] as string[],
         batchId: null as string | null,
         blockingReasons: [
@@ -127,6 +187,31 @@ export async function importSourceOfSalesFile(input: {
         totals: { rowCount, totalQty, totalBonusQty, totalValue },
         warningRows: 0,
       };
+
+      if (!input.dryRun) return blockedResult;
+      const rows: ImportPreviewRow[] = normalizeResult.coded.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
+      const previewDiff = await buildPreviewDiff(input.distributorCode, rows, blockedResult);
+      return { ...blockedResult, previewDiff };
+    }
+
+    // dryRun validated normalizer path: parse the coded buffer for the validation result WITHOUT
+    // persisting, then attach the preview diff.
+    if (input.dryRun) {
+      const parsed = await createSourceOfSalesUploadFromBuffer({
+        buffer: coded.buffer as ArrayBuffer,
+        distributorCode: input.distributorCode,
+        fileName: input.file.name,
+        dryRun: true,
+        uploadedBy: input.uploadedBy,
+        periodOverride: input.periodOverride,
+      });
+      const { parsedRows, ...result } = parsed as DistributorSalesValidationResult & {
+        parsedRows: ParsedDistributorRow[];
+      };
+      const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
+      const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
+      const advisory = ignoredRowsAdvisory(normalizeResult);
+      return advisory ? { ...result, advisories: [...(result.advisories ?? []), advisory], previewDiff } : { ...result, previewDiff };
     }
 
     const persistResult = await createSourceOfSalesUploadFromBuffer({
@@ -140,14 +225,8 @@ export async function importSourceOfSalesFile(input: {
 
     // Surface ignored rows as an advisory so the user knows exactly how many units were excluded
     // and why — without blocking the import (the "ignore" mapping is intentional).
-    const { ignoredRows } = normalizeResult;
-    if (ignoredRows.length === 0) return persistResult;
-
-    const totalIgnoredQty = ignoredRows.reduce((sum, r) => sum + r.qty, 0);
-    const ignoredAdvisory =
-      `${ignoredRows.length} row${ignoredRows.length === 1 ? "" : "s"} (${totalIgnoredQty} unit${totalIgnoredQty === 1 ? "" : "s"}) were skipped — ` +
-      `their products are mapped as "ignore" in the Mapping tab. ` +
-      `If this is unexpected, go to the Mapping tab → update those product mappings → Save → re-upload.`;
-    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), ignoredAdvisory] };
+    const advisory = ignoredRowsAdvisory(normalizeResult);
+    if (!advisory) return persistResult;
+    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), advisory] };
   }
 }

@@ -2558,6 +2558,9 @@ export async function createSourceOfSalesUpload(input: {
   file: File;
   uploadedBy: string;
   periodOverride?: string;
+  // Dry run (preview): parse + validate but DO NOT persist. Returns the validation result WITH
+  // parsedRows attached (batchId/createdAt null) so the caller can build the import-preview diff.
+  dryRun?: boolean;
 }) {
   const references = await loadSalesReferenceData();
   const buffer = await input.file.arrayBuffer();
@@ -2568,6 +2571,9 @@ export async function createSourceOfSalesUpload(input: {
     references,
     periodOverride: input.periodOverride,
   });
+  if (input.dryRun) {
+    return { ...parsed, batchId: null as string | null, createdAt: null as string | null };
+  }
   return persistDistributorSalesUpload(parsed, input.uploadedBy);
 }
 
@@ -2582,6 +2588,9 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
   persistOnlyIfValidated?: boolean;
   uploadedBy: string;
   periodOverride?: string;
+  // Dry run (preview): parse + validate but DO NOT persist. Returns the validation result WITH
+  // parsedRows attached (batchId/createdAt null) so the caller can build the import-preview diff.
+  dryRun?: boolean;
 }) {
   const references = await loadSalesReferenceData();
   const parsed = await parseDistributorSalesWorkbookBuffer({
@@ -2591,6 +2600,10 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
     references,
     periodOverride: input.periodOverride,
   });
+  if (input.dryRun) {
+    // Preview: keep parsedRows so the caller can diff the customers; never persist.
+    return { ...parsed, batchId: null as string | null, createdAt: null as string | null };
+  }
   if (input.persistOnlyIfValidated && parsed.status !== "validated") {
     // Blocked: return the validation result WITHOUT persisting (fail-closed); drop parsedRows.
     const { parsedRows, ...result } = parsed;
