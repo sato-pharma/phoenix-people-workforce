@@ -1,21 +1,33 @@
 "use client";
 
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles, X } from "lucide-react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { BrickSuggestionView } from "@/lib/sales/brick-suggestions";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 
-export type PreviewResult = DistributorSalesValidationResult & { previewDiff?: ImportPreviewDiff };
+export type PreviewResult = DistributorSalesValidationResult & {
+  previewDiff?: ImportPreviewDiff;
+  suggestions?: BrickSuggestionView[];
+};
 
 type Props = {
   committing: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   result: PreviewResult;
+};
+
+type AcceptResponse = {
+  data?: { accepted: number; failed: number; results: { customerCode: string; error?: string; ok: boolean }[] };
+  error?: string;
+  message?: string;
+  success: boolean;
 };
 
 function StatCard({ label, tone = "neutral", value }: { label: string; tone?: "good" | "warn" | "bad" | "neutral"; value: string }) {
@@ -45,6 +57,131 @@ function ChipList({ items, more }: { items: string[]; more: number }) {
         </span>
       ))}
       {more > 0 ? <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 text-xs font-semibold text-[#64748B]">+{formatNumber(more)} more</span> : null}
+    </div>
+  );
+}
+
+// Smart brick suggestions — each row is a customer with no mapping yet, matched (by name, or
+// name+address) to an already-mapped twin (possibly another distributor). Accepting writes to the
+// mapping sheet via /accept-mappings; the user then re-runs Preview to see the customers resolve.
+function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[] }) {
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [busyAll, setBusyAll] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (suggestions.length === 0) return null;
+
+  const pendingHigh = suggestions.filter((s) => s.confidence === "high" && !accepted.has(s.customerCode));
+  const busy = busyAll || busyCode !== null;
+
+  async function accept(items: BrickSuggestionView[]) {
+    if (items.length === 0) return;
+    const mappings = items.map((s) => ({
+      address: s.address,
+      brickId: s.suggestedBrickId,
+      customerCode: s.customerCode,
+      customerName: s.customerName,
+      distributorCode: s.distributorCode,
+    }));
+    try {
+      const response = await fetch("/api/sales/monthly-import/accept-mappings", {
+        body: JSON.stringify({ mappings }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({ success: false }))) as AcceptResponse;
+      const okCodes = (payload.data?.results ?? []).filter((r) => r.ok).map((r) => r.customerCode);
+      if (okCodes.length > 0) setAccepted((prev) => new Set([...prev, ...okCodes]));
+      setMessage(payload.message ?? payload.error ?? "Done.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to add mappings.");
+    }
+  }
+
+  const acceptOne = (s: BrickSuggestionView) => {
+    setBusyCode(s.customerCode);
+    void accept([s]).finally(() => setBusyCode(null));
+  };
+  const acceptAllHigh = () => {
+    setBusyAll(true);
+    void accept(pendingHigh).finally(() => setBusyAll(false));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+          <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
+          Suggested mappings ({formatNumber(suggestions.length)})
+        </p>
+        {pendingHigh.length > 0 ? (
+          <Button
+            className="h-8 gap-1.5 rounded-lg bg-[#0B0B0B] text-xs font-black text-white hover:bg-[#F97316]"
+            disabled={busy}
+            onClick={acceptAllHigh}
+            type="button"
+          >
+            {busyAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Accept all high ({pendingHigh.length})
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-xs text-[#64748B]">
+        Matched to an already-mapped customer with the same name (or name + address). Accepting writes to the mapping sheet — re-run Preview to see them resolve.
+      </p>
+      <div className="overflow-hidden rounded-lg border border-[#E2E8F0]">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Suggested brick</th>
+              <th className="px-3 py-2">Match</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {suggestions.map((s) => {
+              const isAccepted = accepted.has(s.customerCode);
+              return (
+                <tr key={s.customerCode} className="border-t border-[#EEF2F7]">
+                  <td className="px-3 py-1.5">
+                    <span className="font-semibold text-[#0F172A]">{s.customerCode}</span>
+                    {s.customerName ? <span className="block max-w-[160px] truncate text-xs text-[#64748B]">{s.customerName}</span> : null}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <span className="font-medium text-[#0F172A]">{s.brickName}</span>
+                    <span className="block text-xs text-[#94A3B8]">from {s.sourceDistributorCode}</span>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <Badge variant={s.confidence === "high" ? "success" : "neutral"}>
+                      {s.confidence === "high" ? "name + address" : "name only"}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-1.5 text-right">
+                    {isAccepted ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Added
+                      </span>
+                    ) : (
+                      <Button
+                        className="h-7 rounded-md px-3 text-xs font-bold"
+                        disabled={busy}
+                        onClick={() => acceptOne(s)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {busyCode === s.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {message ? <p className="text-xs font-semibold text-emerald-700">{message}</p> : null}
     </div>
   );
 }
@@ -118,6 +255,8 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
               <ChipList items={diff.newCustomerCodes} more={newMore} />
             </div>
           ) : null}
+
+          <SuggestionsSection suggestions={result.suggestions ?? []} />
 
           {diff && diff.unmappedProductsCount > 0 ? (
             <div className="space-y-1.5">

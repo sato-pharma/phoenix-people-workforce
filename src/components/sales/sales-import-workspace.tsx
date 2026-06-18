@@ -790,6 +790,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [pendingStoragePath, setPendingStoragePath] = useState<string | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detection, setDetection] = useState<{ text: string; tone: "good" | "info" } | null>(null);
   const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
   const [isRefreshingBatches, setIsRefreshingBatches] = useState(false);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
@@ -890,6 +892,54 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
       setActionMessage({ type: "error", text: caught instanceof Error ? caught.message : "Delete failed." });
     } finally {
       setDeleteLoadingId(null);
+    }
+  }
+
+  // On file select: remember the file, then auto-detect the distributor from its header row so the
+  // user doesn't have to pick (and a wrong manual pick gets corrected). Detection is a convenience —
+  // any failure is silent and the manual dropdown still governs. Large files skip detection (they
+  // upload to Storage only at preview time); the preview's distributor advisory remains the safety net.
+  async function handleFileChosen(file: File | null) {
+    setSelectedFile(file);
+    setResult(null);
+    setError(null);
+    setDetection(null);
+    if (!file) return;
+
+    const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
+    if (file.size > LARGE_FILE_THRESHOLD) return;
+
+    setIsDetecting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/sales/monthly-import/detect", { body: formData, method: "POST" });
+      const payload = (await response.json().catch(() => ({ success: false }))) as {
+        success: boolean;
+        data?: {
+          ambiguous: boolean;
+          best: { distributorCode: string; distributorName: string } | null;
+          confidence: "high" | "low" | "none";
+          matches: { distributorCode: string; distributorName: string }[];
+        };
+      };
+      if (!payload.success || !payload.data) return;
+      const { best, confidence, matches } = payload.data;
+      if (best && confidence === "high" && distributors.some((d) => d.code === best.distributorCode)) {
+        if (best.distributorCode !== selectedDistributorCode) {
+          setSelectedDistributorCode(best.distributorCode);
+          setDetection({ text: `Auto-selected ${best.distributorName} (${best.distributorCode}) from the file's columns.`, tone: "good" });
+        } else {
+          setDetection({ text: `Confirmed ${best.distributorName} (${best.distributorCode}) from the file's columns.`, tone: "good" });
+        }
+      } else if (matches.length > 1) {
+        setDetection({ text: `Couldn't auto-detect — the columns match ${matches.length} distributors. Please confirm the distributor above.`, tone: "info" });
+      }
+      // confidence "none" → stay silent (unrecognized layout; the user picks manually).
+    } catch {
+      // Non-blocking: detection is a convenience only.
+    } finally {
+      setIsDetecting(false);
     }
   }
 
@@ -1212,7 +1262,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                   <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
                   <select
                     className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
-                    onChange={(event) => setSelectedDistributorCode(event.target.value)}
+                    onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); }}
                     value={selectedDistributorCode}
                   >
                     {distributors.map((distributor) => (
@@ -1261,14 +1311,26 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                 <input
                   accept=".xlsx,.xls"
                   className="hidden"
-                  onChange={(event) => {
-                    setSelectedFile(event.target.files?.[0] ?? null);
-                    setResult(null);
-                    setError(null);
-                  }}
+                  onChange={(event) => void handleFileChosen(event.target.files?.[0] ?? null)}
                   ref={fileInputRef}
                   type="file"
                 />
+                {isDetecting ? (
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Detecting distributor from the file…
+                  </p>
+                ) : detection ? (
+                  <p
+                    className={cn(
+                      "flex items-center gap-1.5 text-xs font-semibold",
+                      detection.tone === "good" ? "text-emerald-700" : "text-orange-700",
+                    )}
+                  >
+                    {detection.tone === "good" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                    {detection.text}
+                  </p>
+                ) : null}
               </div>
             </div>
             <Card className={cn(panelClassName, "flex flex-col justify-between gap-4 p-4")}>
