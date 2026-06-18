@@ -411,15 +411,19 @@ export type MarketingApprovedRequestRow = {
 };
 
 export type MarketingRoiTrackingStatus = "on_track" | "behind" | "no_data";
+export type MarketingRoiAttributionQuality = "exact_customer" | "brick_fallback" | "mixed" | "no_sales";
 
 export type MarketingRoiTrackingRow = {
   actualCoverageRatio: number;
   actualRoiStatus: MarketingRoiTrackingStatus;
   actualSalesUnits: number;
   actualSalesValue: number;
+  attributionQuality: MarketingRoiAttributionQuality;
   customerName: string;
   estimatedCost: number;
   expectedRoiValue: number;
+  exactSalesRows: number;
+  fallbackSalesRows: number;
   hasSalesData: boolean;
   id: string;
   line: string | null;

@@ -596,6 +596,19 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /stepProgressByRequestId/, "workspace must expose step progress for tracking");
   assert.match(serviceSource, /buildMarketingStepProgress/, "service must compute compact step progress");
 
+  // ROI actuals must prefer exact customer-code attribution and expose fallback quality.
+  const roiMigration = source("supabase/migrations/20260618090100_marketing_roi_exact_customer_attribution.sql");
+  const marketingTypesSource = source("src/lib/marketing-requests/types.ts");
+  const roiWorkspaceSource = source("src/components/employee-portal/marketing-roi-tracking-workspace.tsx");
+  assert.match(roiMigration, /r\.client_code/, "ROI actuals must match Source-of-Sales rows by exact client_code");
+  assert.match(roiMigration, /mpdc\.normalized_pharmacy_code/, "ROI actuals must use the request pharmacy distributor code as the customer key");
+  assert.match(roiMigration, /fallback_hits/, "ROI actuals must keep the brick fallback explicit");
+  assert.match(roiMigration, /exact_covered_keys/, "brick fallback must be suppressed when exact customer rows exist");
+  assert.match(roiMigration, /attribution_quality/, "ROI actuals must expose attribution quality");
+  assert.match(marketingTypesSource, /MarketingRoiAttributionQuality/, "ROI tracking type must model attribution quality");
+  assert.match(serviceSource, /attributionQuality/, "ROI tracking service must return attribution quality");
+  assert.match(roiWorkspaceSource, /AttributionBadge/, "ROI tracking UI must display attribution quality");
+
   // New API routes exist.
   assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");
   assert.match(source("app/api/marketing-requests/inbox/route.ts"), /getApproverPendingRequests/, "inbox route must call the service");
