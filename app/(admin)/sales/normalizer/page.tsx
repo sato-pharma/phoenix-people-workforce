@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { NormalizerWorkspace } from "@/components/sales/normalizer-workspace";
+import { NormalizerTabs } from "@/components/sales/normalizer-tabs";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -19,5 +19,5 @@ export default async function NormalizerPage() {
   }
   let references: MappingReferences = { bricks: [], products: [] };
   try { references = await listMappingReferences(); } catch { /* dropdowns degrade gracefully */ }
-  return <NormalizerWorkspace aiEnabled={hasAiKey()} distributors={listNormalizerDistributors()} references={references} />;
+  return <NormalizerTabs aiEnabled={hasAiKey()} distributors={listNormalizerDistributors()} references={references} />;
 }
