@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { CoverageSummary, DistributorCoverageRow, PersistentUnmappedCustomer } from "@/lib/sales/import-coverage";
 import { formatNumber } from "@/lib/sales/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -21,7 +22,7 @@ type CoverageResponse = {
 };
 
 type AcceptResponse = {
-  data?: { accepted: number; failed: number; results: { customerCode: string; error?: string; ok: boolean }[] };
+  data?: { accepted: number; failed: number; results: { customerCode: string; distributorCode: string; error?: string; ok: boolean }[] };
   error?: string;
   message?: string;
   success: boolean;
@@ -125,14 +126,13 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const keyOf = (r: PersistentUnmappedCustomer) => `${r.distributorCode}|${r.customerCode}`;
+  const keyOf = (r: PersistentUnmappedCustomer) => customerKey(r.distributorCode, r.customerCode);
   const pendingPicked = rows.filter((r) => picked[keyOf(r)] && !savedKeys.has(keyOf(r)));
 
   async function saveAll() {
     if (pendingPicked.length === 0) return;
     setSaving(true);
     setMessage(null);
-    const byCode = new Map(rows.map((r) => [r.customerCode, r]));
     const mappings = pendingPicked.map((r) => ({
       address: r.address,
       brickId: picked[keyOf(r)],
@@ -147,16 +147,18 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
         method: "POST",
       });
       const payload = (await response.json().catch(() => ({ success: false }))) as AcceptResponse;
-      const okCodes = (payload.data?.results ?? []).filter((r) => r.ok).map((r) => r.customerCode);
-      if (okCodes.length > 0) {
+      // Reconcile by the composite (distributorCode|customerCode) the server echoes back, so a
+      // customerCode shared across distributors never marks the wrong row as saved.
+      const okKeys = savedCustomerKeys(payload.data?.results ?? []);
+      if (okKeys.length > 0) {
         setSavedKeys((prev) => {
           const next = new Set(prev);
-          for (const code of okCodes) { const r = byCode.get(code); if (r) next.add(keyOf(r)); }
+          for (const key of okKeys) next.add(key);
           return next;
         });
       }
       setMessage(payload.message ?? payload.error ?? "Done.");
-      if (okCodes.length > 0) onSaved();
+      if (okKeys.length > 0) onSaved();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to save mappings.");
     } finally {

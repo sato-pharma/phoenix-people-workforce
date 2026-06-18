@@ -34,14 +34,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No mappings to accept.", success: false }, { status: 400 });
     }
 
-    const results: { customerCode: string; error?: string; ok: boolean }[] = [];
+    // Each result carries distributorCode so the client can reconcile by the composite
+    // (distributorCode|customerCode) identity — the same customerCode can appear under two distributors.
+    const results: { customerCode: string; distributorCode: string; error?: string; ok: boolean }[] = [];
     let accepted = 0;
     for (const mapping of mappings) {
       const distributorCode = String(mapping.distributorCode ?? "").trim();
       const customerCode = String(mapping.customerCode ?? "").trim();
       const brickId = String(mapping.brickId ?? "").trim();
       if (!distributorCode || !customerCode || !brickId) {
-        results.push({ customerCode, error: "Distributor, customer code, and brick are required.", ok: false });
+        results.push({ customerCode, distributorCode, error: "Distributor, customer code, and brick are required.", ok: false });
         continue;
       }
       try {
@@ -54,9 +56,9 @@ export async function POST(request: Request) {
           distributorCode,
         });
         accepted += 1;
-        results.push({ customerCode, ok: true });
+        results.push({ customerCode, distributorCode, ok: true });
       } catch (error) {
-        results.push({ customerCode, error: error instanceof Error ? error.message : "Failed to map this customer.", ok: false });
+        results.push({ customerCode, distributorCode, error: error instanceof Error ? error.message : "Failed to map this customer.", ok: false });
       }
     }
 
