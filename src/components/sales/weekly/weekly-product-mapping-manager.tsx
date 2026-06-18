@@ -14,13 +14,16 @@ const EMPTY_DRAFT: Draft = { alias: "", aliasKind: "code", productCode: "" };
 export function WeeklyProductMappingManager({
   initial,
   initialError,
+  initialDistributor,
 }: {
   initial: WeeklyProductAliasAdmin | null;
   initialError: string | null;
+  /** Pre-select a distributor (e.g. when arriving from the Missing Products "Add Alias" action). */
+  initialDistributor?: string;
 }) {
   const [data, setData] = useState<WeeklyProductAliasAdmin | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
-  const [distributor, setDistributor] = useState<string>(initial?.distributors[0]?.code ?? "IS");
+  const [distributor, setDistributor] = useState<string>(initialDistributor || initial?.distributors[0]?.code || "IS");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);

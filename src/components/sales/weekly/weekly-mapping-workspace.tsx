@@ -1,0 +1,125 @@
+"use client";
+
+import { AlertTriangle, Database, MapPin, Package, Tags, Tag } from "lucide-react";
+import { useState } from "react";
+
+import { AdminCallout } from "@/components/admin/admin-design-system";
+import { Button } from "@/components/ui/button";
+import type { WeeklyBranchRegionAdmin } from "@/lib/sales/weekly/branch-region-map";
+import type { WeeklyMappingAdmin } from "@/lib/sales/weekly/mapping";
+import type { WeeklyMissingAdmin } from "@/lib/sales/weekly/missing";
+import type { WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
+import type { WeeklyMissingProduct } from "@/lib/sales/weekly/types";
+import { cn } from "@/lib/utils";
+
+import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
+import { WeeklyMappingPanel } from "./weekly-mapping-panel";
+import { WeeklyMissingPanel } from "./weekly-missing-panel";
+import { WeeklyMissingProducts } from "./weekly-missing-products";
+import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
+
+export type WeeklyMappingTab = "branch" | "products" | "missing-products" | "missing-labels" | "mapping-workbook";
+
+type Props = {
+  initialTab?: WeeklyMappingTab;
+  /** Pre-select a distributor on the Products tab (carried from an "Add Alias" deep-link). */
+  initialProductsDistributor?: string;
+  branch: { initial: WeeklyBranchRegionAdmin | null; initialError: string | null };
+  products: { initial: WeeklyProductAliasAdmin | null; initialError: string | null };
+  missingProducts: { initial: WeeklyMissingProduct[]; initialError: string | null };
+  missingLabels: { data: WeeklyMissingAdmin | null; error: string | null };
+  mappingWorkbook: { data: WeeklyMappingAdmin | null; error: string | null };
+};
+
+const TABS: { key: WeeklyMappingTab; label: string; icon: typeof MapPin }[] = [
+  { key: "branch", label: "Branch → Region", icon: MapPin },
+  { key: "products", label: "Products", icon: Tags },
+  { key: "missing-products", label: "Missing Products", icon: Package },
+  { key: "missing-labels", label: "Missing Labels", icon: AlertTriangle },
+  { key: "mapping-workbook", label: "Mapping Workbook", icon: Database },
+];
+
+function PanelError({ message }: { message: string }) {
+  return (
+    <div className="p-4 sm:p-6">
+      <AdminCallout tone="danger">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>{message}</p>
+      </AdminCallout>
+    </div>
+  );
+}
+
+/**
+ * Single canonical surface for every Weekly Sales mapping/missing task. Replaces five standalone
+ * routes (branch-mapping, product-mapping, mapping, missing, missing-products) with one tabbed page,
+ * mirroring the Source-of-Sales import workspace pattern. Each tab renders its existing manager/panel
+ * unchanged; the three live data models are preserved.
+ */
+export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor, branch, products, missingProducts, missingLabels, mappingWorkbook }: Props) {
+  const [activeTab, setActiveTab] = useState<WeeklyMappingTab>(initialTab ?? "branch");
+  // When the user clicks "Add Alias" on the Missing Products tab we jump to Products for that
+  // distributor — the key forces a remount so the manager picks up the new initial distributor.
+  const [productsDistributor, setProductsDistributor] = useState<string | undefined>(initialProductsDistributor);
+
+  const goToProducts = (distributorCode: string) => {
+    setProductsDistributor(distributorCode);
+    setActiveTab("products");
+  };
+
+  return (
+    <div className="space-y-4 p-4 sm:p-6">
+      <header className="rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
+        <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+          <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+          Weekly Sales
+        </div>
+        <h1 className="flex items-center gap-2 text-xl font-black text-[#0F172A]">
+          <Tag className="h-5 w-5 text-[#F97316]" /> Weekly Mapping
+        </h1>
+        <p className="mt-1 text-sm font-medium text-[#64748B]">
+          Everything that teaches the weekly importer how each distributor&apos;s raw file maps to official
+          Phoenix codes — branch→region, product aliases, and the unresolved labels still to map — in one place.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-2 shadow-sm">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <Button
+              key={tab.key}
+              className={cn("gap-2 rounded-[6px] font-black", active ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+              onClick={() => setActiveTab(tab.key)}
+              type="button"
+              variant="secondary"
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+        {activeTab === "branch" ? (
+          <WeeklyBranchMappingManager initial={branch.initial} initialError={branch.initialError} />
+        ) : activeTab === "products" ? (
+          <WeeklyProductMappingManager
+            key={productsDistributor ?? "default"}
+            initial={products.initial}
+            initialError={products.initialError}
+            initialDistributor={productsDistributor}
+          />
+        ) : activeTab === "missing-products" ? (
+          <WeeklyMissingProducts initial={missingProducts.initial} initialError={missingProducts.initialError} onAddAlias={goToProducts} />
+        ) : activeTab === "missing-labels" ? (
+          missingLabels.data ? <WeeklyMissingPanel initialData={missingLabels.data} /> : <PanelError message={missingLabels.error ?? "Failed to load missing labels."} />
+        ) : (
+          mappingWorkbook.data ? <WeeklyMappingPanel initialData={mappingWorkbook.data} /> : <PanelError message={mappingWorkbook.error ?? "Failed to load the mapping workbook."} />
+        )}
+      </div>
+    </div>
+  );
+}
