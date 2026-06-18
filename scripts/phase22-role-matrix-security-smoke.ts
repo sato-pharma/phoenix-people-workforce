@@ -249,7 +249,16 @@ function verifyEmployeePortalSelfOnlyIsolation() {
 function verifyStaticEntryPoints() {
   const payrollPage = readFileSync("app/(admin)/payroll/page.tsx", "utf8");
   const salesPage = readFileSync("app/(admin)/sales/page.tsx", "utf8");
+  const expensesPage = readFileSync("app/(admin)/payroll/expenses/page.tsx", "utf8");
   const expensesDashboardPage = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
+  const expensesRoute = readFileSync("app/api/payroll/expenses/route.ts", "utf8");
+  const expensesAnalyzeRoute = readFileSync("app/api/payroll/expenses/analyze/route.ts", "utf8");
+  const expensesImportRoute = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
+  const expensesReportsRoute = readFileSync("app/api/payroll/expenses/reports/[id]/route.ts", "utf8");
+  const attendanceExceptionsPage = readFileSync("app/(admin)/attendance/exceptions/page.tsx", "utf8");
+  const attendanceExceptionRoute = readFileSync("app/api/attendance/exceptions/[id]/route.ts", "utf8");
+  const vacationActionCenterPage = readFileSync("app/leave-management/vacation-action-center/page.tsx", "utf8");
+  const marketingControlPage = readFileSync("app/(admin)/admin/marketing-requests/control/page.tsx", "utf8");
   const portalLayout = readFileSync("app/employee-portals/layout.tsx", "utf8");
   const portalService = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   const payrollRoute = readFileSync("app/api/payroll/upload/route.ts", "utf8");
@@ -282,7 +291,13 @@ function verifyStaticEntryPoints() {
   addCheck("Attendance setup pages use dedicated non-HR gate", /canAccessAttendanceSetup\(access, "read"\)/.test(attendancePoliciesPage) && /canAccessAttendanceSetup\(access, "read"\)/.test(attendanceDeviceMappingPage));
   addCheck("Attendance setup APIs use dedicated non-HR gate", /assertAttendanceSetupPermission\(access, "read"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "read"\)/.test(attendanceDeviceMappingRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendanceDeviceMappingRoute));
   addCheck("Admin sales page redirects employee-portal roles to portal sales", /resolveNavigationMode\(accessContext\) === "employee-portal"[\s\S]*redirect\("\/employee-portals\/sales"\)/.test(salesPage));
-  addCheck("Admin expenses dashboard redirects employee-portal roles", /resolveNavigationMode\(access\) === "employee-portal"[\s\S]*redirect\("\/employee-portals\/expenses"\)/.test(expensesDashboardPage));
+  addCheck("Payroll expenses admin page is system-administrator-only", /canAccessSystemAdministratorWorkspace\(access\)[\s\S]*redirect\("\/admin\/access"\)/.test(expensesPage));
+  addCheck("Admin expenses dashboard is system-administrator-only", /canAccessSystemAdministratorWorkspace\(access\)[\s\S]*redirect\("\/admin\/access"\)/.test(expensesDashboardPage));
+  addCheck("Attendance exceptions admin page is system-administrator-only", /canAccessSystemAdministratorWorkspace\(access\)[\s\S]*redirect\("\/admin\/access"\)/.test(attendanceExceptionsPage));
+  addCheck("Vacation Action Center page is system-administrator-only", /canAccessSystemAdministratorWorkspace\(access\)[\s\S]*redirect\("\/admin\/access"\)/.test(vacationActionCenterPage));
+  addCheck("Admin Marketing Control page is system-administrator-only", /assertMarketingAdminPageAccess\(\{ systemAdministratorOnly: true \}\)/.test(marketingControlPage));
+  addCheck("Payroll expenses API routes are system-administrator-only", [expensesRoute, expensesAnalyzeRoute, expensesImportRoute, expensesReportsRoute].every((source) => /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/.test(source)));
+  addCheck("Attendance exception review API is system-administrator-only", /assertSystemAdministratorWorkspaceAccess\(access,\s*"attendance exception administration"\)/.test(attendanceExceptionRoute));
   addCheck("Employee portal layout requires employee profile read permission", /assertPermission\(access, "employee_profile", "read"\)/.test(portalLayout));
   addCheck("Employee portal payroll fetch is current-HR-ID only", /getEmployeePortalPayrollDashboard\(currentHrId\)/.test(portalService));
   addCheck("Employee portal HR support submission uses sender permission", /assertPermission\(access, "support_requests", "create"\)/.test(contactHrSupportPage));

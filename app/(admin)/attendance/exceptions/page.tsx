@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AttendanceExceptionsManager } from "@/components/attendance/attendance-exceptions-manager";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -12,11 +12,9 @@ type EmployeeRow = { full_name: string | null; hr_id: string };
 
 export default async function AttendanceExceptionsPage() {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "attendance", "read"))) {
-    redirect("/employee-portals");
+  if (!canAccessSystemAdministratorWorkspace(access)) {
+    redirect("/admin/access");
   }
-
-  const canReview = await canAccess(access, "attendance", "update");
 
   const supabase = getSupabaseAdmin();
   const [exceptionsResult, employeesResult] = await Promise.allSettled([
@@ -37,7 +35,7 @@ export default async function AttendanceExceptionsPage() {
 
   return (
     <AttendanceExceptionsManager
-      canReview={canReview}
+      canReview={true}
       employees={employees}
       initialData={initialData}
       initialError={initialError}

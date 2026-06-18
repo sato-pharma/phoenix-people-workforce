@@ -772,7 +772,7 @@ async function runDirectAppRouteChecks(
     const fileName = `${phaseTag}_APP_SERVICE_SMOKE`;
     cleanup.expenseReportFileNames.push(fileName);
     cleanup.payrollExpenseTripIds.push(`${phaseTag}-EXPENSE`);
-    const result = await callRouteJson(routes.expenses.POST, financeCookie, "/api/payroll/expenses", {
+    const result = await callRouteJson(routes.expenses.POST, superAdminCookie, "/api/payroll/expenses", {
       fileName,
       records: [{
         allowance: 0,
@@ -783,7 +783,7 @@ async function runDirectAppRouteChecks(
         hr: "approved",
         hrApproved: true,
         hrComment: "PHASE27 approved",
-        hrId: users["Finance Manager"].hrId,
+        hrId: users["Super Admin"].hrId,
         hrNotes: "",
         km: 0,
         location: "PHASE27",
@@ -803,10 +803,21 @@ async function runDirectAppRouteChecks(
         tripType: "PHASE27",
       }],
     });
-    expectStatus(result.status, 200, "Finance expense approval save", result.body);
-    checks.push(pass("App service mutations", "Finance can save approved disposable expense through direct app route", "Finance Manager"));
+    expectStatus(result.status, 200, "Super Admin expense approval save", result.body);
+    checks.push(pass("App service mutations", "Super Admin can save approved disposable expense through direct app route", "Super Admin"));
   } catch (error) {
-    checks.push(fail("App service mutations", "Finance can save approved disposable expense through direct app route", error, "Finance Manager"));
+    checks.push(fail("App service mutations", "Super Admin can save approved disposable expense through direct app route", error, "Super Admin"));
+  }
+
+  try {
+    const result = await callRouteJson(routes.expenses.POST, financeCookie, "/api/payroll/expenses", {
+      fileName: `${phaseTag}_FINANCE_DENIED`,
+      records: [{ tripId: `${phaseTag}-FINANCE-DENIED` }],
+    });
+    expectStatus(result.status, 403, "Finance denied owner-only expense admin save", result.body);
+    checks.push(pass("App service guards", "Finance cannot save approved expense through owner-only direct app route", "Finance Manager"));
+  } catch (error) {
+    checks.push(fail("App service guards", "Finance cannot save approved expense through owner-only direct app route", error, "Finance Manager"));
   }
 
   try {

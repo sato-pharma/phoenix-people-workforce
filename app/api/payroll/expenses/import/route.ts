@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "import");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const body = await request.json();
     const fileName = String(body.fileName ?? "expenses-upload.xls");

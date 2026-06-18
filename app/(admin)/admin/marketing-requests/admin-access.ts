@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
-export async function assertMarketingAdminPageAccess(options?: { customerDatabase?: boolean }) {
+export async function assertMarketingAdminPageAccess(options?: { customerDatabase?: boolean; systemAdministratorOnly?: boolean }) {
   const access = await resolveAccessContextFromPage();
 
-  if (options?.customerDatabase) {
-    if (access.role !== "Super Admin") redirect("/admin/marketing-requests");
+  if (options?.customerDatabase || options?.systemAdministratorOnly) {
+    if (!canAccessSystemAdministratorWorkspace(access)) redirect("/admin/marketing-requests");
     return access;
   }
 

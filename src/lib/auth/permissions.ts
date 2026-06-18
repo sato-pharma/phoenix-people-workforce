@@ -190,6 +190,22 @@ export function isHrAuthorityRole(role: PhoenixRole): boolean {
   return hrAuthorityRoleSet.has(role);
 }
 
+export const systemAdministratorRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
+const systemAdministratorRoleSet = new Set<PhoenixRole>(systemAdministratorRoles);
+
+export function canAccessSystemAdministratorWorkspace(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return context.scope === "system" || systemAdministratorRoleSet.has(context.role);
+}
+
+export function assertSystemAdministratorWorkspaceAccess(
+  context: Pick<AccessContext, "role" | "scope">,
+  workspace = "system administrator workspace",
+) {
+  if (!canAccessSystemAdministratorWorkspace(context)) {
+    throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
+  }
+}
+
 function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResource): PermissionAction[] | null {
   switch (resource) {
     case "employees":

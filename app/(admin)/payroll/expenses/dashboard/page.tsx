@@ -1,5 +1,5 @@
 import { ExpensesDashboard } from "@/components/payroll/expenses-dashboard";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { getPayrollExpenseDashboardData } from "@/lib/payroll/expenses";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
@@ -9,14 +9,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PayrollExpensesDashboardPage() {
   const access = await resolveAccessContextFromPage();
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals/expenses");
+  if (!canAccessSystemAdministratorWorkspace(access)) {
+    redirect("/admin/access");
   }
   let dashboardData: PayrollExpenseDashboardData | null = null;
   let error: string | null = null;
 
   try {
-    await assertPermission(access, "expenses", "read");
     dashboardData = await getPayrollExpenseDashboardData(access);
   } catch (err) {
     error = err instanceof Error ? err.message : "Failed to load expenses dashboard.";

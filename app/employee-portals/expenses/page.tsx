@@ -8,6 +8,7 @@ import {
 import {
   assertPermission,
   canAccess,
+  canAccessSystemAdministratorWorkspace,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -21,6 +22,9 @@ export const dynamic = "force-dynamic";
 export default async function EmployeePortalExpensesPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
+    if (!canAccessSystemAdministratorWorkspace(access)) {
+      redirect("/admin/access");
+    }
     redirect("/payroll/expenses/dashboard");
   }
 

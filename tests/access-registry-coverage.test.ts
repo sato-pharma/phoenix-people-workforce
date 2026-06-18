@@ -35,7 +35,7 @@ function hasSessionGuard(source: string) {
 }
 
 function hasPermissionGuard(source: string) {
-  return /assertPermission\(|canAccess\(|require[A-Za-z]*Permission|assertCanExportProbation|requireWorkflowControlAdmin|requireRecruitmentAccess|handleSiRequest|resolveSiContext/.test(source);
+  return /assertPermission\(|assertSystemAdministratorWorkspaceAccess\(|canAccess\(|require[A-Za-z]*Permission|assertCanExportProbation|requireWorkflowControlAdmin|requireRecruitmentAccess|handleSiRequest|resolveSiContext/.test(source);
 }
 
 export function runAccessRegistryCoverageTests() {

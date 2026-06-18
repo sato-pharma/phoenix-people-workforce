@@ -34,7 +34,8 @@ export function runPhase27StagingAppServiceMutationSmokeTests() {
 
   assert.match(smoke, /HR can update disposable employee through direct app route/);
   assert.match(smoke, /Employee cannot update employee governance through direct app route/);
-  assert.match(smoke, /Finance can save approved disposable expense through direct app route/);
+  assert.match(smoke, /Super Admin can save approved disposable expense through direct app route/);
+  assert.match(smoke, /Finance cannot save approved expense through owner-only direct app route/);
   assert.match(smoke, /Employee cannot save approved expense through direct app route/);
   assert.match(smoke, /HR can run probation decision through direct app route/);
   assert.match(smoke, /Employee cannot run probation decision through direct app route/);

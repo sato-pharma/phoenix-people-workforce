@@ -140,6 +140,7 @@ export function runExpenseMetricsTests() {
 
   const dashboardPageSource = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
   assert.match(dashboardPageSource, /getPayrollExpenseDashboardData/);
+  assert.match(dashboardPageSource, /canAccessSystemAdministratorWorkspace\(access\)/);
   assert.doesNotMatch(dashboardPageSource, /listPayrollExpenses/);
   assert.doesNotMatch(dashboardPageSource, /getEmployeeDirectory/);
 
@@ -153,5 +154,6 @@ export function runExpenseMetricsTests() {
 
   const importRouteSource = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
   assert.match(importRouteSource, /importApprovedExpensesToPayroll/);
+  assert.match(importRouteSource, /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/);
   assert.doesNotMatch(importRouteSource, /listPayrollExpenses/);
 }

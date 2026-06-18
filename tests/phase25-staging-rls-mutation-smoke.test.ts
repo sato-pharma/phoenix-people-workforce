@@ -54,7 +54,7 @@ export function runPhase25StagingRlsMutationSmokeTests() {
   assert.match(vacationDecisionRoute, /decideVacationRequest\(access/);
   assert.match(vacationService, /assertPermission\(access, "leave", "approve"\)/);
   assert.match(expenseImportRoute, /resolveAccessContext\(request\)/);
-  assert.match(expenseImportRoute, /assertPermission\(access, "expenses", "import"\)/);
+  assert.match(expenseImportRoute, /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/);
   assert.match(employeesRoute, /resolveAccessContext\(request\)/);
   assert.match(employeesRoute, /assertPermission\(access, "employees", "update"\)/);
   assert.match(probationWorkflowRoute, /resolveAccessContext\(request\)/);

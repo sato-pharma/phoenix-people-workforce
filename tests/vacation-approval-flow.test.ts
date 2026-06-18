@@ -217,6 +217,7 @@ export function runVacationApprovalFlowTests() {
   assert.match(navSource, /\/leave-management\/vacation-action-center/, "nav exposes the Vacation Action Center");
   const acPage = readFileSync(new URL("../app/leave-management/vacation-action-center/page.tsx", import.meta.url), "utf8");
   assert.match(acPage, /getVacationActionCenterData/, "action center page loads action-center data");
+  assert.match(acPage, /canAccessSystemAdministratorWorkspace\(access\)/, "action center page is system-administrator-only");
   const acComponent = readFileSync(new URL("../src/components/vacation/vacation-action-center.tsx", import.meta.url), "utf8");
   assert.match(acComponent, /Acknowledge \/ Record by HR/, "HR action is acknowledgement/recording");
   assert.doesNotMatch(acComponent, /Final Approval/i, "Action Center must never label HR as 'Final Approval'");

@@ -73,6 +73,12 @@ export function runAttendanceSelfScopeTests() {
     /status:\s*\(status ===/,
     "exception create must NOT accept a client-supplied status",
   );
+  const exceptionReviewRoute = readFileSync("app/api/attendance/exceptions/[id]/route.ts", "utf8");
+  assert.match(
+    exceptionReviewRoute,
+    /assertSystemAdministratorWorkspaceAccess\(access,\s*"attendance exception administration"\)/,
+    "exception review/delete must be system-administrator-only",
+  );
 
   // 5. Deduction generation must enforce company/system scope and record the actor.
   const generateRoute = readFileSync("app/api/attendance/generate-deduction-candidates/route.ts", "utf8");
