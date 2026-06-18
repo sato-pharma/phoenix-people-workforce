@@ -11,6 +11,7 @@ import {
 } from "../src/lib/navigation/active-path.ts";
 import {
   adminNavigationSections,
+  employeePortalNavigationSections,
   type NavigationSection,
   type NavigationSectionItem,
 } from "../src/config/system-navigation.ts";
@@ -44,6 +45,11 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
 
 function adminHrefsFor(role: PhoenixRole): string[] {
   return getSections(adminNavigationSections, "admin", lookupForRole(role), role)
+    .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
+}
+
+function employeePortalHrefsFor(role: PhoenixRole): string[] {
+  return getSections(employeePortalNavigationSections, "employee-portal", lookupForRole(role), role)
     .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
 }
 
@@ -191,12 +197,19 @@ export function runNavigationActivePathTests() {
     "/hiring-documents",
     "/leave-management/vacation-control",
   ] as const;
+  const systemAdministratorOnlyHrefs = [
+    "/attendance/exceptions",
+    "/leave-management/vacation-action-center",
+    "/payroll/expenses/dashboard",
+    "/payroll/expenses",
+    "/admin/marketing-requests/control",
+  ] as const;
 
   const marketingManagerAdmin = adminHrefsFor("Marketing Manager");
   assert.equal(marketingManagerAdmin.includes("/admin/weekly-plans"), true, "A-9 / Marketing Manager keeps admin-shell weekly plans");
   assertExcludesAll(
     marketingManagerAdmin,
-    [...sensitiveHrHrefs, "/payroll"],
+    [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
     "A-9 / Marketing Manager must not see admin authority modules",
   );
 
@@ -207,22 +220,31 @@ export function runNavigationActivePathTests() {
     "Talent Acquisition must see HR-owned admin modules",
   );
   assertExcludesAll(talentAcquisitionAdmin, ["/employees", "/payroll"], "Talent Acquisition must not see non-owned company modules");
+  assertExcludesAll(talentAcquisitionAdmin, systemAdministratorOnlyHrefs, "Talent Acquisition must not see system-administrator-only modules");
 
   const financeAdmin = adminHrefsFor("Finance Manager");
   assertIncludesAll(financeAdmin, ["/payroll"], "Finance Manager must see payroll ownership");
-  assertExcludesAll(financeAdmin, sensitiveHrHrefs, "Finance Manager must not see HR-owned modules");
+  assertExcludesAll(financeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "Finance Manager must not see HR-owned or owner-only modules");
 
   const ceoAdmin = adminHrefsFor("CEO");
   assertIncludesAll(ceoAdmin, ["/payroll"], "CEO must keep read-only payroll reporting");
-  assertExcludesAll(ceoAdmin, sensitiveHrHrefs, "CEO must not see HR-owned modules");
+  assertExcludesAll(ceoAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "CEO must not see HR-owned or owner-only modules");
 
   const superAdminAuthorityNav = adminHrefsFor("Super Admin");
   assertIncludesAll(
     superAdminAuthorityNav,
-    [...sensitiveHrHrefs, "/payroll"],
+    [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
     "Super Admin must see full governance modules",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");
-  assertExcludesAll(employeeAdmin, [...sensitiveHrHrefs, "/payroll"], "Employee must not see admin-shell authority modules");
+  assertExcludesAll(employeeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"], "Employee must not see admin-shell authority modules");
+
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Finance Manager"] as const) {
+    assertExcludesAll(
+      employeePortalHrefsFor(role),
+      ["/leave-management/vacation-action-center"],
+      `${role} must not see the system-administrator-only Vacation Action Center in the employee portal`,
+    );
+  }
 }

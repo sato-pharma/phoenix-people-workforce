@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { analyzeExpenseWorkbook } from "@/lib/payroll/expense-import";
 import {
   isPayrollExpensesSchemaMissing,
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "approve");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const formData = await request.formData();
     const file = formData.get("file");

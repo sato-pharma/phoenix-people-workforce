@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { VacationActionCenter } from "@/components/vacation/vacation-action-center";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getVacationActionCenterData, vacationErrorMessage } from "@/lib/vacation/service";
 import type { VacationActionCenterData } from "@/lib/vacation/types";
@@ -14,8 +14,8 @@ export default async function VacationActionCenterPage({
   searchParams: Promise<{ requestId?: string }>;
 }) {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "leave", "read"))) {
-    redirect("/leave-management/vacation-request");
+  if (!canAccessSystemAdministratorWorkspace(access)) {
+    redirect("/admin/access");
   }
 
   const { requestId } = await searchParams;

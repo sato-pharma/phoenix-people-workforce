@@ -6,7 +6,7 @@ import {
   listPayrollExpenseReports,
   savePayrollExpenseApprovals,
 } from "@/lib/payroll/expenses";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "read");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
     const url = new URL(request.url);
     const rawMonth = url.searchParams.get("month");
     const rawYear = url.searchParams.get("year");
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "approve");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const body = await request.json();
     const fileName = String(body.fileName ?? "expenses-upload.xls");

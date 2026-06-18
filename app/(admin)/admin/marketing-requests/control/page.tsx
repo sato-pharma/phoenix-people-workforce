@@ -5,7 +5,7 @@ import { assertMarketingAdminPageAccess } from "../admin-access";
 export const dynamic = "force-dynamic";
 
 export default async function AdminMarketingControlPage() {
-  await assertMarketingAdminPageAccess();
+  await assertMarketingAdminPageAccess({ systemAdministratorOnly: true });
 
   return (
     <div className="space-y-6 p-6 sm:p-8">

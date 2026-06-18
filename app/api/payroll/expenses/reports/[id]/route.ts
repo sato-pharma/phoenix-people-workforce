@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { analyzeExpenseWorkbook } from "@/lib/payroll/expense-import";
 import {
   clearPayrollExpenseReportRows,
@@ -27,7 +27,7 @@ export async function DELETE(request: Request, { params }: Params) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "delete");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const { id } = await params;
 
@@ -73,7 +73,7 @@ export async function PUT(request: Request, { params }: Params) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "expenses", "approve");
+    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const { id } = await params;
     const formData = await request.formData();

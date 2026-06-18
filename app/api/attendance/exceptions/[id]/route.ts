@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteAttendanceException, reviewAttendanceException } from "@/lib/attendance/exceptions";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
 
@@ -25,7 +25,7 @@ export async function PATCH(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "attendance", "update");
+    assertSystemAdministratorWorkspaceAccess(access, "attendance exception administration");
 
     const { id: rawId } = await params;
     const id = Number(rawId);
@@ -56,7 +56,7 @@ export async function DELETE(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "attendance", "delete");
+    assertSystemAdministratorWorkspaceAccess(access, "attendance exception administration");
 
     const { id: rawId } = await params;
     const id = Number(rawId);
