@@ -21,7 +21,7 @@ export default async function EmployeePortalContactHRSupportPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
-  await assertPermission(access, "support_requests", "read");
+  await assertPermission(access, "support_requests", "create");
 
   let data = null;
   try {

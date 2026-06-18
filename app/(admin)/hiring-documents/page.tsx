@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { HiringDocumentsManager } from "@/components/hiring-documents/hiring-documents-manager";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, type AccessContext } from "@/lib/auth/permissions";
+import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   filterHiringDocumentsForAccess,
@@ -30,7 +30,7 @@ export default async function HiringDocumentsPage() {
     canAccess(access, "employee_documents", "update"),
   ]);
 
-  if (!canRead) {
+  if (!isHrAuthorityRole(access.role) || !canRead) {
     redirect("/employee-portals");
   }
 

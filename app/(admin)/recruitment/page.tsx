@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { RecruitmentWorkspace } from "@/components/recruitment/recruitment-workspace";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, type AccessContext } from "@/lib/auth/permissions";
+import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { listCandidates } from "@/lib/recruitment/candidates";
@@ -19,7 +19,7 @@ export type RecruitmentManagerOption = { hrId: string; fullName: string };
 
 export default async function RecruitmentPage() {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "recruitment", "read"))) {
+  if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     redirect("/employee-portals");
   }
 

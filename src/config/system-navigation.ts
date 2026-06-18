@@ -75,6 +75,9 @@ export type NavigationSection = {
   label: string;
 };
 
+const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
+const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager", "CEO"] as const satisfies readonly PhoenixRole[];
+
 export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   admin: "/admin/access",
   "employee-portal": "/employee-portals",
@@ -97,7 +100,7 @@ export const adminNavigationSections = [
     id: "people-management",
     items: [
       { href: "/admin/action-center", icon: Inbox, label: "Action Center", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
-      { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }] },
+      { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }], roles: ["Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
       { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
@@ -106,17 +109,17 @@ export const adminNavigationSections = [
       { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
-      { href: "/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
+      { href: "/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }], roles: hrAuthorityNavigationRoles },
     ],
     label: "People Management",
   },
   {
     id: "recruitment-hiring",
     items: [
-      { href: "/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
-      { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }] },
-      { href: "/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
+      { href: "/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }], roles: hrAuthorityNavigationRoles },
+      { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }], roles: hrAuthorityNavigationRoles },
+      { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }], roles: hrAuthorityNavigationRoles },
+      { href: "/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: hrAuthorityNavigationRoles },
     ],
     label: "Recruitment & Hiring",
   },
@@ -139,7 +142,7 @@ export const adminNavigationSections = [
     items: [
       { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
       { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
-      { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
+      { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }] },
     ],
     label: "Leave Management",
@@ -147,7 +150,7 @@ export const adminNavigationSections = [
   {
     id: "payroll",
     items: [
-      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], exact: true },
+      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, exact: true },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin"] },
     ],
     label: "Payroll Management",
@@ -261,7 +264,7 @@ export const employeePortalNavigationSections = [
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
       { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }], exact: true },
       { href: "/employee-portals/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/contact-hr-support", icon: LifeBuoy, label: "HR Support", permissions: [{ resource: "support_requests", action: "read" }] },
+      { href: "/employee-portals/contact-hr-support", icon: LifeBuoy, label: "HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
       { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Outstation Expenses", permissions: [{ resource: "expenses" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager", "Manager"] },
       { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Submit Expense", permissions: [{ resource: "outstation", action: "create" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
@@ -360,7 +363,7 @@ export const employeePortalNavigationSections = [
     items: [
       { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
       { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
-      { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
+      { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Finance Manager"] },
     ],
     label: "Leave Management",

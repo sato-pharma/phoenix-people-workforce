@@ -5,6 +5,7 @@ import {
   getSections,
   isActivePath,
   permissionAllowed,
+  type PermissionLookup,
   roleAllowed,
   roleNotExcluded,
 } from "../src/lib/navigation/active-path.ts";
@@ -13,6 +14,12 @@ import {
   type NavigationSection,
   type NavigationSectionItem,
 } from "../src/config/system-navigation.ts";
+import {
+  permissionActions,
+  permissionMatrix,
+  permissionResources,
+  type PhoenixRole,
+} from "../src/lib/auth/permissions.ts";
 
 // Minimal typed fixture builders — the matcher functions only read href/exact/
 // activeTab/permissions/roles/excludedRoles, so we synthesise items without real
@@ -22,6 +29,34 @@ function item(href: string, extra: Partial<NavigationSectionItem> = {}): Navigat
 }
 function section(id: string, items: NavigationSectionItem[]): NavigationSection {
   return { id, label: id, items } as unknown as NavigationSection;
+}
+
+function lookupForRole(role: PhoenixRole): PermissionLookup {
+  const rolePermissions = permissionMatrix[role];
+  const lookup: PermissionLookup = {};
+  for (const resource of permissionResources) {
+    for (const action of permissionActions) {
+      lookup[`${resource}:${action}`] = rolePermissions[resource]?.includes(action) ?? false;
+    }
+  }
+  return lookup;
+}
+
+function adminHrefsFor(role: PhoenixRole): string[] {
+  return getSections(adminNavigationSections, "admin", lookupForRole(role), role)
+    .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
+}
+
+function assertIncludesAll(actual: readonly string[], expected: readonly string[], message: string) {
+  for (const href of expected) {
+    assert.equal(actual.includes(href), true, `${message}: expected ${href}`);
+  }
+}
+
+function assertExcludesAll(actual: readonly string[], expected: readonly string[], message: string) {
+  for (const href of expected) {
+    assert.equal(actual.includes(href), false, `${message}: unexpected ${href}`);
+  }
 }
 
 export function runNavigationActivePathTests() {
@@ -146,4 +181,48 @@ export function runNavigationActivePathTests() {
     false,
     "CEO must not see the System Cleanup sidebar tab even if a permission lookup grants system_cleanup",
   );
+
+  const sensitiveHrHrefs = [
+    "/employees",
+    "/admin/support-requests",
+    "/recruitment",
+    "/cv-database",
+    "/offers",
+    "/hiring-documents",
+    "/leave-management/vacation-control",
+  ] as const;
+
+  const marketingManagerAdmin = adminHrefsFor("Marketing Manager");
+  assert.equal(marketingManagerAdmin.includes("/admin/weekly-plans"), true, "A-9 / Marketing Manager keeps admin-shell weekly plans");
+  assertExcludesAll(
+    marketingManagerAdmin,
+    [...sensitiveHrHrefs, "/payroll"],
+    "A-9 / Marketing Manager must not see admin authority modules",
+  );
+
+  const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
+  assertIncludesAll(
+    talentAcquisitionAdmin,
+    ["/admin/support-requests", "/recruitment", "/cv-database", "/offers", "/hiring-documents", "/leave-management/vacation-control"],
+    "Talent Acquisition must see HR-owned admin modules",
+  );
+  assertExcludesAll(talentAcquisitionAdmin, ["/employees", "/payroll"], "Talent Acquisition must not see non-owned company modules");
+
+  const financeAdmin = adminHrefsFor("Finance Manager");
+  assertIncludesAll(financeAdmin, ["/payroll"], "Finance Manager must see payroll ownership");
+  assertExcludesAll(financeAdmin, sensitiveHrHrefs, "Finance Manager must not see HR-owned modules");
+
+  const ceoAdmin = adminHrefsFor("CEO");
+  assertIncludesAll(ceoAdmin, ["/payroll"], "CEO must keep read-only payroll reporting");
+  assertExcludesAll(ceoAdmin, sensitiveHrHrefs, "CEO must not see HR-owned modules");
+
+  const superAdminAuthorityNav = adminHrefsFor("Super Admin");
+  assertIncludesAll(
+    superAdminAuthorityNav,
+    [...sensitiveHrHrefs, "/payroll"],
+    "Super Admin must see full governance modules",
+  );
+
+  const employeeAdmin = adminHrefsFor("Employee");
+  assertExcludesAll(employeeAdmin, [...sensitiveHrHrefs, "/payroll"], "Employee must not see admin-shell authority modules");
 }

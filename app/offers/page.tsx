@@ -2,7 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { OfferLifecycleDashboard } from "@/components/offers/offer-lifecycle-dashboard";
 import { redirect } from "next/navigation";
 
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getOfferDashboard,
@@ -26,7 +26,7 @@ function pageError(error: unknown) {
 
 export default async function OffersPage() {
   const access = await resolveAccessContextFromPage();
-  if (!await canAccess(access, "offers", "read")) {
+  if (!isHrAuthorityRole(access.role) || !await canAccess(access, "offers", "read")) {
     redirect("/employee-portals");
   }
   let initialData = null;

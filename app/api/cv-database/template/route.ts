@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateCvDatabaseTemplateWorkbook } from "@/lib/cv/cv-template";
 import { toApiError } from "@/lib/http/api-errors";
@@ -27,6 +27,9 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    if (!isHrAuthorityRole(access.role)) {
+      throw new Error(`Forbidden: ${access.role} cannot read cv_database.`);
+    }
     await assertPermission(access, "vacancies", "read");
 
     const workbook = await generateCvDatabaseTemplateWorkbook();
