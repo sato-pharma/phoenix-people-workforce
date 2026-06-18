@@ -13,6 +13,7 @@ export async function assertMarketingAdminPageAccess(options?: { customerDatabas
   if (
     access.role !== "SFE Manager" &&
     access.role !== "Super Admin" &&
+    access.role !== "Marketing Manager" &&
     access.role !== "Product Manager" &&
     access.role !== "Group Product Manager"
   ) {
