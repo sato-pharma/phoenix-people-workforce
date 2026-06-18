@@ -21,6 +21,16 @@ export function normalizeCodeKey(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+// Numeric-canonical key for leading-zero / number-vs-text drift. A code like "0001502731" (text)
+// and "1502731" (read back as a number by Excel) must resolve to each other. Returns the digits
+// with leading zeros stripped for a PURELY numeric code, else null (so alphanumeric codes such as
+// "TE001" or "B100-11" are never collapsed). Used only as an additive fallback after the exact key.
+export function numericCanonicalKey(value: unknown): string | null {
+  const code = normalizeCodeKey(value);
+  if (!/^\d+$/.test(code)) return null;
+  return code.replace(/^0+(?=\d)/, "");
+}
+
 // item code OR item name -> Phoenix product code. Tries a direct (global) product-code match first,
 // then this DISTRIBUTOR's alias table (by code then by normalized name). Product aliases are
 // per-distributor: the key is `${distributor} ${normalized alias}` (see crosswalks.loadCrosswalks).
@@ -31,6 +41,12 @@ export function resolveProduct(rawValues: (string | null | undefined)[], maps: C
     if (!text) continue;
     const code = normalizeCodeKey(text);
     if (maps.productByCode.has(code)) return code;
+    // Leading-zero / number-vs-text fallback for numeric product codes (exact miss only).
+    const canon = numericCanonicalKey(code);
+    if (canon) {
+      const byCanon = maps.productByCanonicalCode.get(canon);
+      if (byCanon) return byCanon;
+    }
     if (!dist) continue;
     const byCodeAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(code)}`);
     if (byCodeAlias) return byCodeAlias;
@@ -48,12 +64,13 @@ export type BrickResolution = { areaCode: string; brickId: string; regionCode: s
 //  3. a territory text (district/street/governorate) via the territory alias,
 //  4. an area text via the area alias (gives area+region, brick stays empty).
 export function resolveBrick(
-  input: { brickIdValues?: (string | null | undefined)[]; customerKey?: string | null; territoryValues?: (string | null | undefined)[] },
+  input: { brickIdValues?: (string | null | undefined)[]; customerKey?: string | null; customerCanonicalKey?: string | null; territoryValues?: (string | null | undefined)[] },
   maps: Crosswalks,
 ): BrickResolution {
-  // 1) customer -> brick
+  // 1) customer -> brick (exact key, then numeric-canonical fallback for leading-zero drift)
   if (input.customerKey) {
-    const brickId = maps.customerBrickByKey.get(input.customerKey);
+    const brickId = maps.customerBrickByKey.get(input.customerKey)
+      ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
     if (brickId && maps.brickById.has(brickId)) {
       const b = maps.brickById.get(brickId)!;
       return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };

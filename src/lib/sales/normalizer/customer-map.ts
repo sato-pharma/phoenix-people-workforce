@@ -1,6 +1,7 @@
 import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -53,6 +54,86 @@ export async function listCustomerMap(filter?: { distributorCode?: string }): Pr
     from += pageSize;
   }
   return rows;
+}
+
+// Clamp UI paging params into safe bounds (pure, unit-tested). Caps page size so a huge customer
+// map (21k+ rows for PS) can never be pulled into the browser in one request.
+export const CUSTOMER_MAP_PAGE_MAX = 200;
+export function clampPageParams(input: { limit?: number; offset?: number }): { limit: number; offset: number } {
+  const rawLimit = Number(input.limit);
+  const rawOffset = Number(input.offset);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), CUSTOMER_MAP_PAGE_MAX) : 50;
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+  return { limit, offset };
+}
+
+export type CustomerMapPage = { rows: CustomerMapRow[]; total: number; limit: number; offset: number };
+
+// Server-side paginated + searchable view for the Mapping Database UI. Search matches customer
+// code / name / address (case-insensitive). Distributor is required (the page is distributor-first).
+export async function listCustomerMapPage(input: {
+  distributorCode: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<CustomerMapPage> {
+  const supabase = getSupabaseAdmin();
+  const distributorCode = normalizeCodeKey(input.distributorCode);
+  const { limit, offset } = clampPageParams(input);
+  let query = supabase
+    .from("source_of_sales_customer_map")
+    .select("distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code", { count: "exact" })
+    .eq("active", true)
+    .eq("distributor_code", distributorCode);
+  const search = String(input.search ?? "").trim();
+  if (search) {
+    const safe = search.replace(/[%,]/g, " ");
+    query = query.or(`customer_code.ilike.%${safe}%,customer_name.ilike.%${safe}%,address.ilike.%${safe}%`);
+  }
+  const result = await query
+    .order("customer_code", { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (result.error) throw new SalesWorkflowError("customer_map_list_failed", result.error.message, 500);
+  const rows = ((result.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    address: String(r.address ?? ""),
+    areaCode: String(r.area_code ?? ""),
+    brickId: String(r.brick_id ?? ""),
+    customerCode: String(r.customer_code ?? ""),
+    customerName: String(r.customer_name ?? ""),
+    distributorCode: String(r.distributor_code ?? ""),
+    regionCode: String(r.region_code ?? ""),
+  }));
+  return { rows, total: result.count ?? rows.length, limit, offset };
+}
+
+// Soft-delete a single customer→brick mapping (active=false, audited + reversible). loadCrosswalks
+// and listCustomerMap both filter active=true, so the row immediately stops resolving everywhere.
+export async function deleteCustomerMapRow(input: {
+  actorLoginId: string;
+  distributorCode: string;
+  customerCode: string;
+}): Promise<void> {
+  const distributor_code = normalizeCodeKey(input.distributorCode);
+  const customer_code = String(input.customerCode ?? "").trim();
+  if (!distributor_code || !customer_code) {
+    throw new SalesWorkflowError("invalid_customer_map_row", "Distributor and customer code are required.", 400);
+  }
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("source_of_sales_customer_map")
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq("distributor_code", distributor_code)
+    .eq("customer_code", customer_code);
+  if (error) throw new SalesWorkflowError("persist_failed", error.message, 500);
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_customer_map",
+    entityType: "sales_import_batch",
+    newValues: { distributor_code, customer_code, source: "customer_map_delete" },
+    summary: `Customer map delete — ${distributor_code} / ${customer_code} (deactivated).`,
+  });
+  await writeMappingAudit({ entityType: "customer_map", distributorCode: distributor_code, entityKey: customer_code, action: "delete", actor: input.actorLoginId });
 }
 
 // ── In-app import: download (export) → fix in Excel → re-upload to apply ──
@@ -335,5 +416,13 @@ export async function addCustomerMapRow(input: {
     entityType: "sales_import_batch",
     newValues: { ...result.payload, source: "customer_map_add" },
     summary: `Customer map add — ${String(result.payload.distributor_code)} / ${String(result.payload.customer_code)} -> ${String(result.payload.brick_id)}.`,
+  });
+  await writeMappingAudit({
+    entityType: "customer_map",
+    distributorCode: String(result.payload.distributor_code),
+    entityKey: String(result.payload.customer_code),
+    action: "edit",
+    after: { brick_id: result.payload.brick_id, area_code: result.payload.area_code, region_code: result.payload.region_code },
+    actor: input.actorLoginId,
   });
 }

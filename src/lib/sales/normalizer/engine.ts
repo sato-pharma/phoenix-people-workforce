@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { deriveHierarchy, normalizeCodeKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
+import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
 export type HeaderValidationFailure = { label: string; expected: string[] };
@@ -256,10 +256,13 @@ export function normalizeRows(
     }
 
     const customerCode = firstValue(row, header, profile.customerCodeColumns);
-    const customerKey = customerCode ? `${normalizeCodeKey(profile.distributorCode)} ${normalizeCodeKey(customerCode)}` : null;
+    const distKey = normalizeCodeKey(profile.distributorCode);
+    const customerKey = customerCode ? `${distKey} ${normalizeCodeKey(customerCode)}` : null;
+    const customerCanon = customerCode ? numericCanonicalKey(customerCode) : null;
+    const customerCanonicalKey = customerCanon ? `${distKey} ${customerCanon}` : null;
     const territoryValues = (profile.territoryColumns ?? []).map((cName) => firstValue(row, header, [cName]));
     const brickIdValues = (profile.brickIdColumns ?? []).map((cName) => firstValue(row, header, [cName]));
-    const brick = resolveBrick({ brickIdValues, customerKey, territoryValues }, maps);
+    const brick = resolveBrick({ brickIdValues, customerKey, customerCanonicalKey, territoryValues }, maps);
     const hierarchy = deriveHierarchy(brick, maps);
 
     if (productCode) productResolved += 1;
