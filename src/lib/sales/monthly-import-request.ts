@@ -1,3 +1,4 @@
+import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
@@ -22,7 +23,7 @@ const SPREADSHEET_VALIDATION = {
 } as const;
 
 export type ResolvedSalesUpload =
-  | { ok: true; distributorCode: string; file: File; period: string; storagePath: string | null }
+  | { ok: true; distributorCode: string; file: File; period: string; previewDiff: ImportPreviewDiff | null; storagePath: string | null }
   | { ok: false; code?: string; error: string; status: number };
 
 export async function resolveSalesUploadRequest(request: Request): Promise<ResolvedSalesUpload> {
@@ -32,14 +33,18 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
   let storagePath: string | null = null;
   const contentType = request.headers.get("content-type") ?? "";
 
+  let previewDiff: ImportPreviewDiff | null = null;
+
   if (contentType.includes("application/json")) {
     const body = (await request.json().catch(() => ({}))) as {
       storagePath?: string;
       distributorCode?: string;
       period?: string;
+      previewDiff?: ImportPreviewDiff;
     };
     distributorCode = String(body?.distributorCode ?? "").trim();
     period = String(body?.period ?? "").trim();
+    previewDiff = body?.previewDiff ?? null;
     const path = String(body?.storagePath ?? "").trim();
     if (!path) return { error: "Uploaded file reference is missing.", ok: false, status: 400 };
     storagePath = path;
@@ -69,7 +74,7 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
     return { code: fileValidation.error, error: fileValidation.message, ok: false, status: fileValidation.status };
   }
 
-  return { distributorCode, file, ok: true, period, storagePath };
+  return { distributorCode, file, ok: true, period, previewDiff, storagePath };
 }
 
 /** Best-effort delete of a large-file storage object (no-op for the small-file path). */
