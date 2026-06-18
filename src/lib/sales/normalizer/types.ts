@@ -28,6 +28,14 @@ export type Crosswalks = {
   regionAliasByKey: Map<string, string>; // -> region code
   // customer crosswalk: `${distributor} ${customerCode}` -> brick id
   customerBrickByKey: Map<string, string>;
+  // ── Leading-zero / number-vs-text drift guards (additive fallbacks; never replace the exact maps) ──
+  // Numeric codes whose leading zeros / text-vs-number serialization differ between months would
+  // otherwise miss the exact key and re-surface as "unknown". These index the SAME rows under a
+  // numeric-canonical key (leading zeros stripped) so "0001502731" and "1502731" resolve to each
+  // other. Built collision-safe: if two distinct raw codes canonicalize to the same value the entry
+  // is dropped, so a fallback never mis-resolves.
+  customerBrickByCanonicalKey: Map<string, string>; // `${distributor} ${canonicalCustomerCode}` -> brick id
+  productByCanonicalCode: Map<string, string>; // canonicalProductCode -> Phoenix product code
 };
 
 // How to read ONE distributor's raw sheet: which raw column holds what. Lists are fallbacks

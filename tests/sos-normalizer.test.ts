@@ -19,6 +19,8 @@ const maps: Crosswalks = {
   areaAliasByKey: new Map(),
   regionAliasByKey: new Map(),
   customerBrickByKey: new Map([["IS C123", "B1"]]),
+  customerBrickByCanonicalKey: new Map(),
+  productByCanonicalCode: new Map(),
 };
 
 const profile: DistributorProfile = {
