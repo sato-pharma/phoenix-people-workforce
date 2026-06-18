@@ -131,12 +131,6 @@ export function SearchableSelect({
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    if (!isControlled && defaultValue === undefined && internalValue === "" && uncontrolledDefaultValue) {
-      setInternalValue(uncontrolledDefaultValue);
-    }
-  }, [isControlled, defaultValue, internalValue, uncontrolledDefaultValue]);
-
   const currentValue = React.useMemo(() => {
     if (isControlled) return String(value ?? "");
     return internalValue;
@@ -254,6 +248,7 @@ export function SearchableSelect({
       <input
         {...(rest as React.InputHTMLAttributes<HTMLInputElement>)}
         ref={inputRef}
+        role="combobox"
         aria-autocomplete="list"
         aria-controls={`${id ?? "searchable-select"}-options`}
         aria-expanded={open}
