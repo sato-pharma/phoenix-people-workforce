@@ -14,6 +14,7 @@ import {
   Search,
   Table2,
   Trash2,
+  TrendingUp,
   UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ImportPreviewModal, type PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
+import { SosCoverageTab } from "@/components/sales/sos-coverage-tab";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -766,7 +768,7 @@ function SourceOfSalesDashboardPanel({
   );
 }
 
-type SourceOfSalesTab = "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
+type SourceOfSalesTab = "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -982,7 +984,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         response = await fetch("/api/sales/monthly-import/commit", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ storagePath: pendingStoragePath, distributorCode: selectedDistributorCode, period: selectedPeriod }),
+          body: JSON.stringify({ storagePath: pendingStoragePath, distributorCode: selectedDistributorCode, period: selectedPeriod, previewDiff: result?.previewDiff ?? null }),
         });
       } else {
         const formData = new FormData();
@@ -1154,6 +1156,17 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           >
             <Package className="h-4 w-4" />
             Products Reference
+          </Button>
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "coverage" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("coverage")}
+            variant="secondary"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Coverage
           </Button>
         </div>
 
@@ -1386,6 +1399,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             products={mappingReferences.products}
             profiledDistributorCodes={profiledDistributorCodes}
           />
+        ) : activeTab === "coverage" ? (
+          <SosCoverageTab />
         ) : (
           <SourceOfSalesProductsTab
             initialProducts={initialProducts}
