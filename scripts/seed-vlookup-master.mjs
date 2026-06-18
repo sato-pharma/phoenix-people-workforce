@@ -18,7 +18,7 @@
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 
 // ── Config ──────────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,21 @@ const TAB_DISTRIBUTOR_MAP = {
   POS: "PS",
 };
 
+const PRODUCT_ALIAS_DISTRIBUTOR_MAP = {
+  "": "PS",
+  POS: "PS",
+  "IBN SINA": "IS",
+  "IBN-SINA": "IS",
+  IS: "IS",
+  EGD: "EG",
+  SOFICO: "SF",
+  RAMCO: "RM",
+  MEC: "MC",
+  "EP-B": "EP-R",
+  "EPDA BULK": "EP-R",
+  "EPDA SOUTH": "EP-S",
+};
+
 // ── Normalization helpers (mirrors src/lib/sales/normalizer/resolvers.ts) ──────
 
 function normalizeAliasKey(value) {
@@ -60,6 +75,23 @@ function normalizeAliasKey(value) {
 
 function normalizeCodeKey(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function productAliasDistributorCode(label) {
+  const normalized = normalizeCodeKey(label);
+  return PRODUCT_ALIAS_DISTRIBUTOR_MAP[normalized] ?? normalized;
+}
+
+function incrementCount(map, key) {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function formatCounts(map) {
+  if (map.size === 0) return "none";
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, count]) => `${key} x${count}`)
+    .join(", ");
 }
 
 function cellText(cell) {
@@ -78,8 +110,8 @@ function cellText(cell) {
 
 // ── Load env ───────────────────────────────────────────────────────────────────
 
-function loadEnv() {
-  const path = resolve(process.cwd(), ".env.local");
+function loadEnvFile(fileName) {
+  const path = resolve(process.cwd(), fileName);
   if (!existsSync(path)) return;
   for (const raw of readFileSync(path, "utf8").split(/\r?\n/)) {
     const line = raw.trim();
@@ -93,7 +125,8 @@ function loadEnv() {
   }
 }
 
-loadEnv();
+loadEnvFile(".env.local");
+loadEnvFile(".env.staging.rls.local");
 
 // ── Resolve Supabase connection ────────────────────────────────────────────────
 
@@ -110,11 +143,23 @@ function resolveConnection() {
   }
 
   // Staging: prefer STAGING_* env vars, fall back to detecting staging URL
-  const stagingUrl = process.env.STAGING_SUPABASE_URL ?? STAGING_URL;
-  const stagingKey = process.env.STAGING_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const stagingUrl =
+    process.env.STAGING_SUPABASE_URL ??
+    process.env.PHOENIX_NEW_STAGING_SUPABASE_URL ??
+    process.env.PHOENIX_STAGING_SUPABASE_URL ??
+    STAGING_URL;
+  const stagingKey =
+    process.env.STAGING_SERVICE_ROLE_KEY ??
+    process.env.PHOENIX_NEW_STAGING_SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.PHOENIX_STAGING_SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!stagingKey) {
-    console.error("ERROR: Missing service role key. Set STAGING_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY in .env.local");
+    console.error("ERROR: Missing staging service role key. Set STAGING_SERVICE_ROLE_KEY or PHOENIX_NEW_STAGING_SUPABASE_SERVICE_ROLE_KEY.");
+    process.exit(1);
+  }
+  if (!stagingUrl.includes(STAGING_REF)) {
+    console.error(`ERROR: Refusing non-production run because target URL is not staging ${STAGING_REF}.`);
     process.exit(1);
   }
 
@@ -159,6 +204,22 @@ async function upsertChunked(supabase, table, rows, onConflict, label, opts = {}
   return { inserted, errors };
 }
 
+async function fetchCodeSet(supabase, table, column) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(column)
+      .order(column, { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+  return new Set(rows.map((row) => normalizeCodeKey(row[column])));
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -174,9 +235,7 @@ async function main() {
   if (DRY_RUN) console.log("Mode: DRY-RUN (no DB writes)\n");
   else console.log("Mode: LIVE (will write to DB)\n");
 
-  const supabase = DRY_RUN
-    ? null
-    : createClient(conn.url, conn.key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const supabase = createClient(conn.url, conn.key, { auth: { persistSession: false, autoRefreshToken: false } });
 
   // ── Load workbook ────────────────────────────────────────────────────────────
   console.log("Reading Excel file...");
@@ -524,42 +583,69 @@ async function main() {
   const productsSheet = wb.getWorksheet("Products");
   // The Products tab has multiple rows per product_code — each row is a different distributor's
   // alias for that product (e.g. IS writes "ايفيرونك شراب 100 مل", EG writes "Ivyronc 100ml").
-  // All unique aliases should be kept. Only skip exact normalized-alias duplicates (same text,
-  // same product), which are true redundant rows. Different aliases for the same product code
-  // are valid and should ALL be inserted.
+  // All unique aliases should be kept per distributor. Skip rows that would violate
+  // product/distributor FKs and skip duplicate distributor + normalized alias pairs.
   const aliasRows = [];
-  const seenNormalizedAliases = new Set(); // (normalizedAlias + productCode) to catch true dupes
+  const skippedMissingProducts = new Map();
+  const skippedMissingDistributors = new Map();
+  const skippedDuplicateAliases = new Map();
+  const seenDistributorAliases = new Set();
 
   if (productsSheet) {
+    const [knownProductCodes, knownDistributorCodes] = await Promise.all([
+      fetchCodeSet(supabase, "source_of_sales_products", "product_code"),
+      fetchCodeSet(supabase, "source_of_sales_distributors", "distributor_code"),
+    ]);
+
     for (let r = 2; r <= productsSheet.rowCount; r++) {
       const row = productsSheet.getRow(r);
       const alias = cellText(row.getCell(1));
       const productCode = normalizeCodeKey(cellText(row.getCell(2)));
+      const sourceLabel = cellText(row.getCell(3));
+      const distributorCode = productAliasDistributorCode(sourceLabel);
 
       if (!alias || !productCode) continue;
       const normalizedAlias = normalizeAliasKey(alias);
       if (!normalizedAlias) continue;
 
-      // Skip only if this exact (normalizedAlias, productCode) pair already seen
-      const dupeKey = `${normalizedAlias}\x1F${productCode}`;
-      if (seenNormalizedAliases.has(dupeKey)) continue;
-      seenNormalizedAliases.add(dupeKey);
+      if (!knownProductCodes.has(productCode)) {
+        incrementCount(skippedMissingProducts, productCode);
+        continue;
+      }
+      if (!knownDistributorCodes.has(distributorCode)) {
+        incrementCount(skippedMissingDistributors, distributorCode || "<blank>");
+        continue;
+      }
+
+      const dupeKey = `${distributorCode}\x1F${normalizedAlias}`;
+      if (seenDistributorAliases.has(dupeKey)) {
+        incrementCount(skippedDuplicateAliases, `${distributorCode}:${normalizedAlias}`);
+        continue;
+      }
+      seenDistributorAliases.add(dupeKey);
 
       aliasRows.push({
         alias: alias,
         normalized_alias: normalizedAlias,
+        distributor_code: distributorCode,
         product_code: productCode,
-        source_labels: [],
+        source_labels: sourceLabel ? [sourceLabel] : [],
         source_row_numbers: [r],
         active: true,
         source_file: SOURCE_FILE,
         source_sheet: "Products",
       });
     }
-    console.log(`  Found ${aliasRows.length} product aliases (across all distributors)`);
-    // normalized_alias has a unique INDEX (not a named constraint), so PostgREST requires
+    console.log(`  Prepared ${aliasRows.length} product aliases (distributor-scoped)`);
+    console.log(`  Skipped missing product codes: ${formatCounts(skippedMissingProducts)}`);
+    console.log(`  Skipped missing distributor codes: ${formatCounts(skippedMissingDistributors)}`);
+    console.log(`  Skipped duplicate distributor aliases: ${formatCounts(skippedDuplicateAliases)}`);
+    // The current unique index is distributor_code + normalized_alias, so use that conflict target.
     // ignoreDuplicates — inserts new aliases, skips any already in the table.
-    await upsertChunked(mockSupabase, "source_of_sales_product_aliases", aliasRows, null, "ProductAliases", { ignoreDuplicates: true });
+    await upsertChunked(mockSupabase, "source_of_sales_product_aliases", aliasRows, null, "ProductAliases", {
+      conflictColumns: "distributor_code,normalized_alias",
+      ignoreDuplicates: true,
+    });
   } else {
     console.log("  Products sheet not found — skipping aliases");
   }
