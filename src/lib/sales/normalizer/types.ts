@@ -93,6 +93,7 @@ export type NormalizeException = {
   rawTerritory: string;
   rawCustomerCode: string;
   rawCustomerName: string;
+  rawCustomerAddress: string;
   rawRowNumber: number;
   reason: "product" | "brick" | "both";
 };
