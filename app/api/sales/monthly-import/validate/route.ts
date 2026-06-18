@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -84,6 +85,34 @@ export async function POST(request: Request) {
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy, periodOverride: period });
     const blocked = result.status === "blocked";
+
+    // Save a coverage snapshot for every successful persist so the Coverage tab stays populated
+    // regardless of which import path the user took. Non-fatal — never blocks the response.
+    if (!blocked && result.batchId) {
+      const r = result as Record<string, unknown>;
+      const totalRows = Number(r.totalRows ?? r.rowCount ?? 0);
+      const failedRows = Number(r.failedRows ?? 0);
+      const importableValue = Number((r.totals as Record<string, unknown> | undefined)?.totalValue ?? 0);
+      void saveCoverageSnapshot({
+        batchId: result.batchId,
+        distributorCode,
+        period: result.period ?? null,
+        diff: {
+          brickDriftCount: 0,
+          brickDriftSamples: [],
+          distinctCustomers: 0,
+          importableRows: totalRows - failedRows,
+          importableValue,
+          mappedCustomers: 0,
+          newCustomerCodes: [],
+          newCustomers: 0,
+          resolvedRowsPct: totalRows > 0 ? Math.round(1000 * (totalRows - failedRows) / totalRows) / 10 : 100,
+          totalRows,
+          unmappedProducts: [],
+          unmappedProductsCount: failedRows,
+        },
+      });
+    }
 
     return NextResponse.json(
       {
