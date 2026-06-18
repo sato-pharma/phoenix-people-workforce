@@ -127,7 +127,7 @@ export function SearchableSelect({
     if (firstEnabled) return firstEnabled.value;
     return options[0].value;
   }, [defaultValue, options]);
-  const [internalValue, setInternalValue] = React.useState<string>(uncontrolledDefaultValue);
+  const [internalValue, setInternalValue] = React.useState<string>(() => uncontrolledDefaultValue);
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
 
