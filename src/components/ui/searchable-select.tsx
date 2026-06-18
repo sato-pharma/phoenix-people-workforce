@@ -9,8 +9,12 @@ type SearchableSelectProps = Omit<React.ComponentPropsWithoutRef<"select">, "chi
   children?: React.ReactNode;
   maxResults?: number;
   noResultsText?: string;
+  placeholder?: string;
   onChange?: React.ChangeEventHandler<HTMLSelectElement>;
   onValueChange?: (value: string) => void;
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
+  onFocus?: React.FocusEventHandler<HTMLInputElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 };
 
 type ParsedOption = {
@@ -47,9 +51,8 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
     }
 
     if (!React.isValidElement(node)) return;
-    const elementType = typeof node.type === "string" ? node.type : "";
     const props = node.props ?? {};
-    if (elementType === "option") {
+    if (node.type === "option") {
       const rawValue = props.value ?? props.children ?? "";
       const value = String(rawValue);
       const label = toDisplayText(props.children);
@@ -65,7 +68,7 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
       return;
     }
 
-    if (elementType === "optgroup") {
+    if (node.type === "optgroup") {
       const childNodes = React.Children.toArray(props.children);
       for (const child of childNodes) {
         visit(child);
@@ -73,7 +76,7 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
       return;
     }
 
-    if (elementType === "React.Fragment" || elementType === React.Fragment) {
+    if (node.type === React.Fragment) {
       visit(props.children);
       return;
     }
@@ -201,7 +204,7 @@ export function SearchableSelect({
     inputRef.current?.focus();
   };
 
-  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleInputKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (event) => {
     if (event.key === "Escape") {
       closeDropdown();
       return;
@@ -233,7 +236,7 @@ export function SearchableSelect({
       return;
     }
 
-    onKeyDown?.(event as unknown as React.KeyboardEvent<HTMLInputElement>);
+    onKeyDown?.(event);
   };
 
   const baseInputClassName = "h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-medium text-[#0F172A] outline-none transition disabled:opacity-50";
@@ -241,7 +244,7 @@ export function SearchableSelect({
   return (
     <div className="relative" ref={wrapperRef}>
       <input
-        {...(rest as React.ComponentPropsWithoutRef<"input">)}
+        {...(rest as React.InputHTMLAttributes<HTMLInputElement>)}
         ref={inputRef}
         aria-autocomplete="list"
         aria-controls={`${id ?? "searchable-select"}-options`}
@@ -255,7 +258,7 @@ export function SearchableSelect({
         value={open ? query : selectedLabel || ""}
         onBlur={(event) => {
           closeDropdown();
-          onBlur?.(event as unknown as React.FocusEvent<HTMLInputElement>);
+          onBlur?.(event);
         }}
         onChange={(event) => {
           if (!open) openDropdown();
@@ -264,7 +267,7 @@ export function SearchableSelect({
         }}
         onFocus={(event) => {
           openDropdown();
-          onFocus?.(event as unknown as React.FocusEvent<HTMLInputElement>);
+          onFocus?.(event);
         }}
         onClick={() => openDropdown()}
         onKeyDown={handleInputKeyDown}
