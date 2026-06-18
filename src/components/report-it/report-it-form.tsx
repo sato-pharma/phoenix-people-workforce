@@ -21,6 +21,7 @@ import {
   type DurationUnit,
 } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -699,22 +700,51 @@ function Step4Additional({
 
 // ─── Confirmation screen ───────────────────────────────────────────────────────
 
-function ConfirmationScreen({ reportNumber, onReset, onViewReports }: { reportNumber: string; onReset: () => void; onViewReports?: () => void }) {
+type ReportItFormVariant = "employee" | "admin";
+
+type ReportItFormProps = {
+  onSubmitSuccess?: () => void;
+  variant?: ReportItFormVariant;
+};
+
+function ConfirmationScreen({
+  reportNumber,
+  onReset,
+  onViewReports,
+  variant = "employee",
+}: {
+  reportNumber: string;
+  onReset: () => void;
+  onViewReports?: () => void;
+  variant?: ReportItFormVariant;
+}) {
+  const isAdmin = variant === "admin";
+
   return (
-    <div className="mx-auto max-w-xl border border-slate-200 bg-white shadow-sm">
-      <div className="relative overflow-hidden bg-slate-900 px-6 py-9 text-center">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-orange-500/10 blur-2xl"
-        />
-        <div className="relative">
+    <div className={isAdmin ? `mx-auto max-w-xl overflow-hidden p-0 ${adminPanelClassName}` : "mx-auto max-w-xl border border-slate-200 bg-white shadow-sm"}>
+      {isAdmin ? (
+        <div className="border-b border-[#D8E0EA] bg-[#FCFDFE] px-6 py-7 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center border border-emerald-200 bg-emerald-50">
+            <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+          </div>
+          <p className="mt-5 text-[11px] font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
+          <h2 className="mt-1 text-2xl font-black text-slate-900">Report Submitted</h2>
+        </div>
+      ) : (
+        <div className="relative overflow-hidden bg-slate-900 px-6 py-9 text-center">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-orange-500/10 blur-2xl"
+          />
+          <div className="relative">
           <div className="mx-auto flex h-16 w-16 items-center justify-center bg-orange-600">
             <CheckCircle2 className="h-9 w-9 text-white" />
           </div>
           <p className="mt-5 text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
           <h2 className="mt-1 text-2xl font-black text-white">Report Submitted</h2>
+          </div>
         </div>
-      </div>
+      )}
       <div className="space-y-5 px-6 py-7 text-center">
         <p className="text-sm text-slate-600">
           Your adverse drug reaction report has been submitted to the pharmacovigilance team.
@@ -728,8 +758,8 @@ function ConfirmationScreen({ reportNumber, onReset, onViewReports }: { reportNu
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
           {onViewReports && (
-            <button type="button" className={btnDark} onClick={onViewReports}>
-              View My Reports
+            <button type="button" className={isAdmin ? btnOrange : btnDark} onClick={onViewReports}>
+              {isAdmin ? "View Reports" : "View My Reports"}
             </button>
           )}
           <button type="button" className={btnGhost} onClick={onReset}>
@@ -858,12 +888,13 @@ function MobileStepper({ step }: { step: number }) {
   );
 }
 
-export function ReportItForm({ onSubmitSuccess }: { onSubmitSuccess?: () => void } = {}) {
+export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportItFormProps = {}) {
   const [step, setStep] = useState(1);
   const [payload, setPayload] = useState<ReportItPayload>(initialPayload);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportNumber, setReportNumber] = useState<string | null>(null);
+  const isAdmin = variant === "admin";
 
   const handleNext = useCallback(() => {
     const err = validateStep(step, payload);
@@ -912,6 +943,7 @@ export function ReportItForm({ onSubmitSuccess }: { onSubmitSuccess?: () => void
     return (
       <ConfirmationScreen
         reportNumber={reportNumber}
+        variant={variant}
         onReset={() => {
           setPayload(initialPayload());
           setStep(1);
@@ -926,41 +958,66 @@ export function ReportItForm({ onSubmitSuccess }: { onSubmitSuccess?: () => void
   const pct = Math.round((step / STEPS.length) * 100);
 
   return (
-    <div className="border border-slate-200 bg-white shadow-sm">
-      {/* ── Premium dark hero ── */}
-      <div className="relative overflow-hidden bg-slate-900 px-5 py-6 sm:px-8 sm:py-7">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
-        />
-        <div className="relative flex items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
-            <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>
-            <p className="mt-2 max-w-xl text-sm text-slate-300">
-              Report an adverse drug reaction in a safe, confidential way. Fields marked
-              with <span className="font-bold text-orange-300">*</span> are required.
-            </p>
+    <div className={isAdmin ? `overflow-hidden p-0 ${adminPanelClassName}` : "border border-slate-200 bg-white shadow-sm"}>
+      {isAdmin ? (
+        <div className="border-b border-[#D8E0EA] bg-[#FCFDFE] px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Admin submission</p>
+              <h2 className="mt-1 text-lg font-black text-slate-900">Adverse Drug Reaction Report</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                File a pharmacovigilance report from the admin shell. Fields marked with <span className="font-bold text-orange-600">*</span> are required.
+              </p>
+            </div>
+            <span className="inline-flex w-fit items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-orange-700">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Confidential
+            </span>
           </div>
-          <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
-            <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
-            Confidential
-          </span>
-        </div>
-
-        {/* progress */}
-        <div className="relative mt-6">
-          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-400">
-            <span>Step {step} of {STEPS.length}</span>
-            <span className="text-orange-400">{pct}%</span>
-          </div>
-          <div className="mt-1.5 h-1.5 w-full bg-white/10">
-            <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-500">
+              <span>Step {step} of {STEPS.length}</span>
+              <span className="text-orange-600">{pct}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 w-full bg-slate-200">
+              <div className="h-full bg-orange-600 transition-all duration-300" style={{ width: `${pct}%` }} />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative overflow-hidden bg-slate-900 px-5 py-6 sm:px-8 sm:py-7">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
+          />
+          <div className="relative flex items-start gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+              <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>
+              <p className="mt-2 max-w-xl text-sm text-slate-300">
+                Report an adverse drug reaction in a safe, confidential way. Fields marked
+                with <span className="font-bold text-orange-300">*</span> are required.
+              </p>
+            </div>
+            <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
+              <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+              Confidential
+            </span>
+          </div>
 
-      {/* ── Two-column console ── */}
+          {/* progress */}
+          <div className="relative mt-6">
+            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-400">
+              <span>Step {step} of {STEPS.length}</span>
+              <span className="text-orange-400">{pct}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 w-full bg-white/10">
+              <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
         {/* Left rail — vertical stepper (desktop) */}
         <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">

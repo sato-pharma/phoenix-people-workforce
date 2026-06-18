@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { ShieldAlert } from "lucide-react";
 
+import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -20,10 +22,23 @@ export default async function AdminReportItNewPage() {
   await assertPermission(access, "report_it", "create");
 
   return (
-    <main className="p-4 sm:p-6">
+    <div className="space-y-5">
+      <AdminPageHero
+        badges={(
+          <>
+            <AdminInsightChip>Admin shell</AdminInsightChip>
+            <AdminInsightChip tone="slate">Confidential report intake</AdminInsightChip>
+          </>
+        )}
+        description="Submit an adverse drug reaction report from the admin workspace without switching into the employee portal experience."
+        eyebrow="Pharmacovigilance"
+        icon={<ShieldAlert className="h-3.5 w-3.5" />}
+        title="Report It"
+      />
+
       <div className="mx-auto max-w-6xl">
-        <ReportItForm />
+        <ReportItForm variant="admin" />
       </div>
-    </main>
+    </div>
   );
 }
