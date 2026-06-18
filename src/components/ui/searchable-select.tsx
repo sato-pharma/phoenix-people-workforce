@@ -12,9 +12,9 @@ type SearchableSelectProps = Omit<React.ComponentPropsWithoutRef<"select">, "chi
   placeholder?: string;
   onChange?: React.ChangeEventHandler<HTMLSelectElement>;
   onValueChange?: (value: string) => void;
-  onBlur?: React.FocusEventHandler<HTMLInputElement>;
-  onFocus?: React.FocusEventHandler<HTMLInputElement>;
-  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+  onBlur?: React.FocusEventHandler<HTMLInputElement | HTMLSelectElement>;
+  onFocus?: React.FocusEventHandler<HTMLInputElement | HTMLSelectElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement | HTMLSelectElement>;
 };
 
 type ParsedOption = {
@@ -51,7 +51,12 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
     }
 
     if (!React.isValidElement(node)) return;
-    const props = node.props ?? {};
+    const props = (node.props ?? {}) as {
+      value?: unknown;
+      children?: React.ReactNode;
+      selected?: unknown;
+      disabled?: unknown;
+    };
     if (node.type === "option") {
       const rawValue = props.value ?? props.children ?? "";
       const value = String(rawValue);
