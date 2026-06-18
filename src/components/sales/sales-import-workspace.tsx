@@ -1034,13 +1034,23 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         response = await fetch("/api/sales/monthly-import/commit", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ storagePath: pendingStoragePath, distributorCode: selectedDistributorCode, period: selectedPeriod, previewDiff: result?.previewDiff ?? null }),
+          body: JSON.stringify({
+            distributorCode: selectedDistributorCode,
+            period: selectedPeriod,
+            previewDiff: result?.previewDiff ?? null,
+            storagePath: pendingStoragePath,
+            unmappedCustomers: result?.unmappedCustomers ?? [],
+          }),
         });
       } else {
         const formData = new FormData();
         formData.append("file", selectedFile);
         formData.append("distributorCode", selectedDistributorCode);
         if (selectedPeriod) formData.append("period", selectedPeriod);
+        // Carry the reviewed diff + unmapped details so a coverage snapshot is recorded for small
+        // files too (not just large/Storage uploads).
+        if (result?.previewDiff) formData.append("previewDiff", JSON.stringify(result.previewDiff));
+        if (result?.unmappedCustomers?.length) formData.append("unmappedCustomers", JSON.stringify(result.unmappedCustomers));
         response = await fetch("/api/sales/monthly-import/commit", { body: formData, method: "POST" });
       }
       const payload = await readJsonResponse(response);
@@ -1462,7 +1472,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             profiledDistributorCodes={profiledDistributorCodes}
           />
         ) : activeTab === "coverage" ? (
-          <SosCoverageTab />
+          <SosCoverageTab bricks={mappingReferences.bricks} />
         ) : (
           <SourceOfSalesProductsTab
             initialProducts={initialProducts}

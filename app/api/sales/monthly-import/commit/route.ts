@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     if (!blocked && result.batchId && resolved.previewDiff) {
       void saveCoverageSnapshot({
         batchId: result.batchId,
+        details: resolved.unmappedCustomers.map((u) => ({ address: u.address, code: u.customerCode, name: u.customerName })),
         diff: resolved.previewDiff,
         distributorCode: resolved.distributorCode,
         period: result.period ?? null,
