@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { BrickSuggestionView, UnmappedCustomer } from "@/lib/sales/brick-suggestions";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
@@ -25,7 +26,7 @@ type Props = {
 };
 
 type AcceptResponse = {
-  data?: { accepted: number; failed: number; results: { customerCode: string; error?: string; ok: boolean }[] };
+  data?: { accepted: number; failed: number; results: { customerCode: string; distributorCode: string; error?: string; ok: boolean }[] };
   error?: string;
   message?: string;
   success: boolean;
@@ -73,7 +74,7 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
 
   if (suggestions.length === 0) return null;
 
-  const pendingHigh = suggestions.filter((s) => s.confidence === "high" && !accepted.has(s.customerCode));
+  const pendingHigh = suggestions.filter((s) => s.confidence === "high" && !accepted.has(customerKey(s.distributorCode, s.customerCode)));
   const busy = busyAll || busyCode !== null;
 
   async function accept(items: BrickSuggestionView[]) {
@@ -92,8 +93,8 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
         method: "POST",
       });
       const payload = (await response.json().catch(() => ({ success: false }))) as AcceptResponse;
-      const okCodes = (payload.data?.results ?? []).filter((r) => r.ok).map((r) => r.customerCode);
-      if (okCodes.length > 0) setAccepted((prev) => new Set([...prev, ...okCodes]));
+      const okKeys = savedCustomerKeys(payload.data?.results ?? []);
+      if (okKeys.length > 0) setAccepted((prev) => new Set([...prev, ...okKeys]));
       setMessage(payload.message ?? payload.error ?? "Done.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to add mappings.");
@@ -101,7 +102,7 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
   }
 
   const acceptOne = (s: BrickSuggestionView) => {
-    setBusyCode(s.customerCode);
+    setBusyCode(customerKey(s.distributorCode, s.customerCode));
     void accept([s]).finally(() => setBusyCode(null));
   };
   const acceptAllHigh = () => {
@@ -143,9 +144,10 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
           </thead>
           <tbody>
             {suggestions.map((s) => {
-              const isAccepted = accepted.has(s.customerCode);
+              const rowKey = customerKey(s.distributorCode, s.customerCode);
+              const isAccepted = accepted.has(rowKey);
               return (
-                <tr key={s.customerCode} className="border-t border-[#EEF2F7]">
+                <tr key={rowKey} className="border-t border-[#EEF2F7]">
                   <td className="px-3 py-1.5">
                     <span className="font-semibold text-[#0F172A]">{s.customerCode}</span>
                     {s.customerName ? <span className="block max-w-[160px] truncate text-xs text-[#64748B]">{s.customerName}</span> : null}
@@ -172,7 +174,7 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
                         type="button"
                         variant="secondary"
                       >
-                        {busyCode === s.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
+                        {busyCode === rowKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
                       </Button>
                     )}
                   </td>
