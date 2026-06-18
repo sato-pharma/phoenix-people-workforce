@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { DatabaseMappingWorkspace } from "@/components/sales/database-mapping-workspace";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
@@ -14,6 +15,11 @@ export default async function DatabaseMappingPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/sales");
+  }
+  // Master-data mutation surface — restrict to Super Admin / system, matching the other
+  // Source-of-Sales admin pages (Customer Directory, Customer Mapping, Normalizer).
+  if (accessContext.role !== "Super Admin" && accessContext.scope !== "system") {
+    redirect(resolveLandingPathForRole(accessContext.role));
   }
 
   const initialRows = MASTER_ORDER.reduce((accumulator, master) => {

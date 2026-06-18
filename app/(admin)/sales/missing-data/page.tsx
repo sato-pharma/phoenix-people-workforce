@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { MissingDataWorkspace } from "@/components/sales/missing-data-workspace";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadSalesReferenceGaps, type SalesReferenceGaps } from "@/lib/sales/reference-gaps";
@@ -13,6 +14,11 @@ export default async function MissingDataPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/sales");
+  }
+  // Read-only gap report, but restricted to Super Admin / system for consistency with the
+  // sibling Source-of-Sales admin pages (no sales-import role leakage).
+  if (accessContext.role !== "Super Admin" && accessContext.scope !== "system") {
+    redirect(resolveLandingPathForRole(accessContext.role));
   }
 
   let data: SalesReferenceGaps | null = null;
