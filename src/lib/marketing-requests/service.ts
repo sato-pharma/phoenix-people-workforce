@@ -44,6 +44,7 @@ import type {
   MarketingRequestFinanceRequirement,
   MarketingRequestApprovalStep,
   MarketingRequestType,
+  MarketingRoiAttributionQuality,
   MarketingRoiTrackingRow,
   MarketingRoiTrackingWorkspace,
   MarketingValidationInput,
@@ -2340,9 +2341,18 @@ function buildRoiWindowLabel(payDate: string | null, months: number): string | n
 type MarketingRoiActualDbRow = {
   actual_units: number | string | null;
   actual_value: number | string | null;
+  attribution_quality?: string | null;
+  exact_sales_rows?: number | string | null;
+  fallback_sales_rows?: number | string | null;
   request_id: string;
   sales_rows: number | string | null;
 };
+
+function parseMarketingRoiAttributionQuality(value: unknown): MarketingRoiAttributionQuality {
+  return value === "exact_customer" || value === "brick_fallback" || value === "mixed" || value === "no_sales"
+    ? value
+    : "no_sales";
+}
 
 /**
  * ROI Tracking workspace: every approved request that has a pay date, with its realized
@@ -2385,15 +2395,32 @@ export async function getMarketingRoiTrackingWorkspace(
   );
 
   const requestIds = requests.map((request) => request.id);
-  const actualsByRequestId = new Map<string, { salesRows: number; units: number; value: number }>();
+  const actualsByRequestId = new Map<string, {
+    attributionQuality: MarketingRoiAttributionQuality;
+    exactSalesRows: number;
+    fallbackSalesRows: number;
+    salesRows: number;
+    units: number;
+    value: number;
+  }>();
   if (requestIds.length > 0) {
     const actualsResult = await supabase.rpc("phx_marketing_request_roi_actuals", {
       p_request_ids: requestIds,
     });
     if (actualsResult.error) throw actualsResult.error;
     for (const row of (actualsResult.data ?? []) as MarketingRoiActualDbRow[]) {
+      const salesRows = toNumber(row.sales_rows);
+      const exactSalesRows = toNumber(row.exact_sales_rows);
+      const fallbackSalesRows = row.fallback_sales_rows == null && salesRows > 0
+        ? salesRows
+        : toNumber(row.fallback_sales_rows);
       actualsByRequestId.set(row.request_id, {
-        salesRows: toNumber(row.sales_rows),
+        attributionQuality: row.attribution_quality == null && salesRows > 0
+          ? "brick_fallback"
+          : parseMarketingRoiAttributionQuality(row.attribution_quality),
+        exactSalesRows,
+        fallbackSalesRows,
+        salesRows,
         units: toNumber(row.actual_units),
         value: toNumber(row.actual_value),
       });
@@ -2401,7 +2428,14 @@ export async function getMarketingRoiTrackingWorkspace(
   }
 
   const rows: MarketingRoiTrackingRow[] = requests.map((request) => {
-    const actuals = actualsByRequestId.get(request.id) ?? { salesRows: 0, units: 0, value: 0 };
+    const actuals = actualsByRequestId.get(request.id) ?? {
+      attributionQuality: "no_sales" as const,
+      exactSalesRows: 0,
+      fallbackSalesRows: 0,
+      salesRows: 0,
+      units: 0,
+      value: 0,
+    };
     const requester = employeesByHrId.get(normalizeHrId(request.requesterHrId));
     const customer = customersById.get(request.customerId);
     const actualSalesValue = roundMarketingMoney(actuals.value);
@@ -2421,9 +2455,12 @@ export async function getMarketingRoiTrackingWorkspace(
       actualRoiStatus,
       actualSalesUnits: actuals.units,
       actualSalesValue,
+      attributionQuality: actuals.attributionQuality,
       customerName: customer?.displayName ?? request.customerId,
       estimatedCost: request.estimatedCost,
       expectedRoiValue: request.expectedRoiValue,
+      exactSalesRows: actuals.exactSalesRows,
+      fallbackSalesRows: actuals.fallbackSalesRows,
       hasSalesData: actuals.salesRows > 0,
       id: request.id,
       line: requester?.lineName ?? null,
