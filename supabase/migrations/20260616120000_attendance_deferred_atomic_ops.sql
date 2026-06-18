@@ -184,3 +184,44 @@ $$;
 
 REVOKE ALL ON FUNCTION phx_finalize_monthly_deductions FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION phx_finalize_monthly_deductions TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- Double Visit status integrity.
+-- Folded into this canonical 20260616120000 migration because Supabase migration
+-- history is keyed by timestamp version and cannot represent multiple files with
+-- the same version.
+-- ---------------------------------------------------------------------------
+
+alter table public.double_visit_rows
+  drop constraint if exists double_visit_rows_status_check;
+
+alter table public.double_visit_rows
+  add constraint double_visit_rows_status_check
+    check (visited_employee_status in ('active_mapped', 'blank_hr_id', 'non_mr', 'vacant', 'resigned', 'unmapped'));
+
+-- ---------------------------------------------------------------------------
+-- Position vacancy status integrity.
+-- ---------------------------------------------------------------------------
+
+begin;
+
+update public.position_vacancies
+set status = 'cancelled'
+where status not in ('open', 'filled', 'cancelled');
+
+alter table public.position_vacancies
+  drop constraint if exists position_vacancies_status_check;
+
+alter table public.position_vacancies
+  add constraint position_vacancies_status_check
+  check (status in ('open', 'filled', 'cancelled'))
+  not valid;
+
+alter table public.position_vacancies
+  validate constraint position_vacancies_status_check;
+
+-- SAFE: folds the existing duplicate migration cleanup for an unused legacy
+-- notification log table already retired by application readers.
+drop table if exists public.notification_delivery_logs;
+
+commit;

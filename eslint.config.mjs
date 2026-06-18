@@ -43,6 +43,8 @@ const eslintConfig = defineConfig([
     ".codex-worktrees/**",
     ".vercel/**",
     // Generated output files — not part of the app source.
+    "coverage/**",
+    "output/**",
     "outputs/**",
     "templates/**",
   ]),

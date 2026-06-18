@@ -146,3 +146,24 @@ end;
 $$;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Source of Sales product alias scope.
+-- Folded into this canonical 20260617130000 migration because Supabase migration
+-- history is keyed by timestamp version and cannot represent multiple files with
+-- the same version.
+-- ---------------------------------------------------------------------------
+
+alter table public.source_of_sales_product_aliases
+  add column if not exists distributor_code text;
+
+update public.source_of_sales_product_aliases
+  set distributor_code = 'PS'
+  where distributor_code is null;
+
+drop index if exists source_of_sales_product_aliases_normalized_alias_key;
+create unique index if not exists source_of_sales_product_aliases_distributor_alias_key
+  on public.source_of_sales_product_aliases (distributor_code, normalized_alias);
+
+create index if not exists source_of_sales_product_aliases_distributor_idx
+  on public.source_of_sales_product_aliases (distributor_code);
