@@ -4,8 +4,6 @@ import { WeeklyMappingWorkspace, type WeeklyMappingTab } from "@/components/sale
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadWeeklyBranchRegionAdmin } from "@/lib/sales/weekly/branch-region-map";
-import { loadMappingAdmin } from "@/lib/sales/weekly/mapping";
-import { loadMissingAdmin } from "@/lib/sales/weekly/missing";
 import { loadWeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
 import { loadWeeklyMissingProducts } from "@/lib/sales/weekly/service";
 
@@ -13,7 +11,7 @@ export const dynamic = "force-dynamic";
 // The missing-products scan pages stored weekly rows — give it more than the default budget.
 export const maxDuration = 60;
 
-const TAB_KEYS: WeeklyMappingTab[] = ["branch", "products", "missing-products", "missing-labels", "mapping-workbook"];
+const TAB_KEYS: WeeklyMappingTab[] = ["branch", "products", "missing-products"];
 
 // Each tab loads independently so one failing data source degrades only its own tab, not the page.
 async function safeLoad<T>(fn: () => Promise<T>): Promise<{ data: T | null; error: string | null }> {
@@ -35,12 +33,10 @@ export default async function WeeklyMappingPage({ searchParams }: { searchParams
   const initialTab = TAB_KEYS.includes(sp?.tab as WeeklyMappingTab) ? (sp?.tab as WeeklyMappingTab) : undefined;
   const initialProductsDistributor = sp?.distributor?.trim() || undefined;
 
-  const [branch, products, missingProducts, missingLabels, mappingWorkbook] = await Promise.all([
+  const [branch, products, missingProducts] = await Promise.all([
     safeLoad(() => loadWeeklyBranchRegionAdmin("IS", "any")),
     safeLoad(() => loadWeeklyProductAliasAdmin("IS")),
     safeLoad(() => loadWeeklyMissingProducts()),
-    safeLoad(() => loadMissingAdmin()),
-    safeLoad(() => loadMappingAdmin()),
   ]);
 
   return (
@@ -50,8 +46,6 @@ export default async function WeeklyMappingPage({ searchParams }: { searchParams
       branch={{ initial: branch.data, initialError: branch.error }}
       products={{ initial: products.data, initialError: products.error }}
       missingProducts={{ initial: missingProducts.data ?? [], initialError: missingProducts.error }}
-      missingLabels={{ data: missingLabels.data, error: missingLabels.error }}
-      mappingWorkbook={{ data: mappingWorkbook.data, error: mappingWorkbook.error }}
     />
   );
 }
