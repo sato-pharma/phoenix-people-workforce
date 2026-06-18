@@ -1,3 +1,4 @@
+import type { UnmappedCustomer } from "@/lib/sales/brick-suggestions";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -23,7 +24,7 @@ const SPREADSHEET_VALIDATION = {
 } as const;
 
 export type ResolvedSalesUpload =
-  | { ok: true; distributorCode: string; file: File; period: string; previewDiff: ImportPreviewDiff | null; storagePath: string | null }
+  | { ok: true; distributorCode: string; file: File; period: string; previewDiff: ImportPreviewDiff | null; unmappedCustomers: UnmappedCustomer[]; storagePath: string | null }
   | { ok: false; code?: string; error: string; status: number };
 
 export async function resolveSalesUploadRequest(request: Request): Promise<ResolvedSalesUpload> {
@@ -34,6 +35,7 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
   const contentType = request.headers.get("content-type") ?? "";
 
   let previewDiff: ImportPreviewDiff | null = null;
+  let unmappedCustomers: UnmappedCustomer[] = [];
 
   if (contentType.includes("application/json")) {
     const body = (await request.json().catch(() => ({}))) as {
@@ -41,10 +43,12 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
       distributorCode?: string;
       period?: string;
       previewDiff?: ImportPreviewDiff;
+      unmappedCustomers?: UnmappedCustomer[];
     };
     distributorCode = String(body?.distributorCode ?? "").trim();
     period = String(body?.period ?? "").trim();
     previewDiff = body?.previewDiff ?? null;
+    unmappedCustomers = Array.isArray(body?.unmappedCustomers) ? body.unmappedCustomers : [];
     const path = String(body?.storagePath ?? "").trim();
     if (!path) return { error: "Uploaded file reference is missing.", ok: false, status: 400 };
     storagePath = path;
@@ -64,6 +68,19 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
     file = formFile instanceof File ? formFile : null;
     distributorCode = String(formData.get("distributorCode") ?? "").trim();
     period = String(formData.get("period") ?? "").trim();
+    // Small-file path also carries the reviewed diff + unmapped details (JSON strings) so a coverage
+    // snapshot is recorded for these imports too.
+    const rawDiff = formData.get("previewDiff");
+    if (typeof rawDiff === "string" && rawDiff) {
+      try { previewDiff = JSON.parse(rawDiff) as ImportPreviewDiff; } catch { previewDiff = null; }
+    }
+    const rawUnmapped = formData.get("unmappedCustomers");
+    if (typeof rawUnmapped === "string" && rawUnmapped) {
+      try {
+        const parsed = JSON.parse(rawUnmapped) as unknown;
+        unmappedCustomers = Array.isArray(parsed) ? (parsed as UnmappedCustomer[]) : [];
+      } catch { unmappedCustomers = []; }
+    }
   }
 
   if (!file) return { error: "Sales workbook file is required.", ok: false, status: 400 };
@@ -74,7 +91,7 @@ export async function resolveSalesUploadRequest(request: Request): Promise<Resol
     return { code: fileValidation.error, error: fileValidation.message, ok: false, status: fileValidation.status };
   }
 
-  return { distributorCode, file, ok: true, period, previewDiff, storagePath };
+  return { distributorCode, file, ok: true, period, previewDiff, unmappedCustomers, storagePath };
 }
 
 /** Best-effort delete of a large-file storage object (no-op for the small-file path). */
