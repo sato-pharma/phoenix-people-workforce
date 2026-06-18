@@ -12,7 +12,17 @@ function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-export function WeeklyMissingProducts({ initial, initialError }: { initial: WeeklyMissingProduct[]; initialError: string | null }) {
+export function WeeklyMissingProducts({
+  initial,
+  initialError,
+  onAddAlias,
+}: {
+  initial: WeeklyMissingProduct[];
+  initialError: string | null;
+  /** When provided (inside the Weekly Mapping workspace), "Add Alias" switches to the Products tab
+   *  for that distributor instead of navigating away. */
+  onAddAlias?: (distributorCode: string) => void;
+}) {
   const [data, setData] = useState<WeeklyMissingProduct[]>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
@@ -99,13 +109,24 @@ export function WeeklyMissingProducts({ initial, initialError }: { initial: Week
                       : `${row.earliestWeek ?? "—"} → ${row.latestWeek ?? "—"}`}
                   </td>
                   <td className="px-4 py-3">
-                    <a
-                      href={`/sales/weekly/product-mapping?distributor=${encodeURIComponent(row.distributorCode)}`}
-                      className="inline-flex items-center gap-1 rounded-[6px] bg-[#F97316] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#EA6C10]"
-                    >
-                      Add Alias
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+                    {onAddAlias ? (
+                      <button
+                        type="button"
+                        onClick={() => onAddAlias(row.distributorCode)}
+                        className="inline-flex items-center gap-1 rounded-[6px] bg-[#F97316] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#EA6C10]"
+                      >
+                        Add Alias
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    ) : (
+                      <a
+                        href={`/sales/weekly/mapping?tab=products&distributor=${encodeURIComponent(row.distributorCode)}`}
+                        className="inline-flex items-center gap-1 rounded-[6px] bg-[#F97316] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#EA6C10]"
+                      >
+                        Add Alias
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </td>
                 </tr>
               ))}
