@@ -22,6 +22,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { PhoenixHrEmailTone } from "@/lib/email/phoenix-hr-reply-template";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type RecipientChannel = "bccSelections" | "ccSelections" | "toSelections";
 type RecipientSelection =
@@ -504,7 +506,7 @@ export function EmailReplyComposer() {
                 placeholder="Subject"
                 value={form.subject}
               />
-              <select
+              <SearchableSelect
                 className="h-9 shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-2 text-xs font-black text-[#334155]"
                 onChange={(event) => void applyTemplate(event.target.value)}
                 value={form.templateKey}
@@ -513,7 +515,7 @@ export function EmailReplyComposer() {
                 {(options?.templates ?? []).map((template) => (
                   <option key={template.templateKey} value={template.templateKey}>{template.templateName}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 border-b border-[#E8EDF3] px-5 py-2 text-sm">

@@ -20,6 +20,8 @@ import type {
   OutstationExpenseRequest,
   PlacesPrediction,
 } from "@/lib/outstation/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Mode = "create" | "edit";
 
@@ -101,12 +103,12 @@ function SelectField({
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
-    <select
+    <SearchableSelect
       className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
       {...props}
     >
       {children}
-    </select>
+    </SearchableSelect>
   );
 }
 

@@ -25,6 +25,8 @@ import type {
   SystemCleanupSafetyState,
   SystemCleanupTarget,
 } from "@/lib/admin/system-cleanup";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type FilterState = {
   dateFrom: string;
@@ -270,7 +272,7 @@ export function SystemCleanupCenter({
             </label>
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Module
-              <select
+              <SearchableSelect
                 className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
                 onChange={(event) => setFilters((current) => ({ ...current, moduleKey: event.target.value as FilterState["moduleKey"] }))}
                 value={filters.moduleKey}
@@ -279,7 +281,7 @@ export function SystemCleanupCenter({
                 {(data?.modules ?? []).map((module) => (
                   <option key={module.key} value={module.key}>{module.label}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Status
@@ -292,7 +294,7 @@ export function SystemCleanupCenter({
             </label>
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               Safety
-              <select
+              <SearchableSelect
                 className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900"
                 onChange={(event) => setFilters((current) => ({ ...current, safetyState: event.target.value as FilterState["safetyState"] }))}
                 value={filters.safetyState}
@@ -301,7 +303,7 @@ export function SystemCleanupCenter({
                 <option value="safe">Safe</option>
                 <option value="payroll_locked">Payroll locked</option>
                 <option value="blocked">Blocked</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
               From

@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationCalculationResult } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type CapturedLocation = {
   capturedAccuracyMeters: number;
@@ -369,7 +371,7 @@ function SelectField({
       <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
         {label}
       </span>
-      <select
+      <SearchableSelect
         className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -379,7 +381,7 @@ function SelectField({
             {option.label}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

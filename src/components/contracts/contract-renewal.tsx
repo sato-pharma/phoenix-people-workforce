@@ -20,6 +20,8 @@ import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/lifecycle-risk/metrics";
 import type { ContractRenewalDashboardData } from "@/lib/contracts/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: ContractRenewalDashboardData | null;
@@ -305,7 +307,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         <div className="grid gap-2 p-3 xl:grid-cols-6">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               value={selectedMonth}
               onChange={(event) => setSelectedMonth(Number(event.target.value))}
@@ -315,11 +317,11 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   {month.label}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Year</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               value={selectedYear}
               onChange={(event) => setSelectedYear(Number(event.target.value))}
@@ -329,7 +331,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   {currentYear + offset}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="relative block">
             <span className="sr-only">Search renewals</span>
@@ -343,7 +345,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               value={lineFilter}
               onChange={(event) => setLineFilter(event.target.value)}
@@ -354,11 +356,11 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   {line}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Area</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
@@ -369,7 +371,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   {area}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
         </div>
       </AdminTableShell>

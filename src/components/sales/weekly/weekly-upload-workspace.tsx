@@ -4,6 +4,8 @@ import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload,
 import { useMemo, useState } from "react";
 
 import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult } from "@/lib/sales/weekly/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -150,7 +152,7 @@ export function WeeklyUploadWorkspace({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
               disabled={busy}
               onChange={(event) => {
@@ -166,7 +168,7 @@ export function WeeklyUploadWorkspace({
                   {distributor.name} ({distributor.code})
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           {isPS ? (
@@ -241,7 +243,7 @@ export function WeeklyUploadWorkspace({
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#64748B]">Recent weekly uploads</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <select
+            <SearchableSelect
               aria-label="Filter by distributor"
               className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
               onChange={(event) => setFilterDistributor(event.target.value)}
@@ -253,8 +255,8 @@ export function WeeklyUploadWorkspace({
                   {name}
                 </option>
               ))}
-            </select>
-            <select
+            </SearchableSelect>
+            <SearchableSelect
               aria-label="Filter by period"
               className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
               onChange={(event) => setFilterPeriod(event.target.value)}
@@ -266,7 +268,7 @@ export function WeeklyUploadWorkspace({
                   {period}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             {filtersActive && (
               <button
                 className="inline-flex items-center gap-1 rounded-[6px] border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#64748B] transition hover:bg-[#F8FAFC]"

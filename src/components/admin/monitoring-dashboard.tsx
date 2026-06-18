@@ -11,6 +11,8 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/operations/events";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 function formatActivityTimestamp(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Unknown time";
@@ -341,7 +343,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                   type="text"
                 />
               </label>
-              <select
+              <SearchableSelect
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                 defaultValue={activityTypeFilter}
                 name="type"
@@ -352,15 +354,15 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                     {type}
                   </option>
                 ))}
-              </select>
-              <select
+              </SearchableSelect>
+              <SearchableSelect
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                 defaultValue={activitySort}
                 name="sort"
               >
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
-              </select>
+              </SearchableSelect>
               <label className="relative inline-flex h-10 min-w-[120px] items-center rounded-xl border border-slate-200 bg-white pr-3 text-sm font-medium text-slate-700">
                 <span className="px-2 text-xs text-slate-500">Page size</span>
                 <input

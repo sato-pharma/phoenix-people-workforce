@@ -10,6 +10,8 @@ import { PageContainer } from "@/components/layout/page-container";
 import type { VacationControlData, VacationWeeklyOffMode, VacationWeeklyOffPolicyRecord } from "@/lib/vacation/types";
 import { VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type VacationControlProps = {
   initialData: VacationControlData | null;
@@ -128,7 +130,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                   {dayFields.map((field) => (
                     <label className="grid gap-1.5" key={field.key}>
                       <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{field.label}</span>
-                      <select
+                      <SearchableSelect
                         className="h-11 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold"
                         value={draft[field.key]}
                         onChange={(event) => updateDraft(policy.jobTitle, field.key, event.target.value as VacationWeeklyOffMode)}
@@ -136,7 +138,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                         {VACATION_WEEKLY_OFF_MODES.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     </label>
                   ))}
                 </div>
@@ -184,7 +186,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                     </td>
                     {dayFields.map((field) => (
                       <td className="px-4 py-4" key={field.key}>
-                        <select
+                        <SearchableSelect
                           className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm font-semibold"
                           value={draft[field.key]}
                           onChange={(event) => updateDraft(policy.jobTitle, field.key, event.target.value as VacationWeeklyOffMode)}
@@ -192,7 +194,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                           {VACATION_WEEKLY_OFF_MODES.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                       </td>
                     ))}
                     <td className="px-4 py-4">

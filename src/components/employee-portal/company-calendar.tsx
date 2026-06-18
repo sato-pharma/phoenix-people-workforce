@@ -12,6 +12,8 @@ import {
   type CompanyCalendarEventInput,
 } from "@/lib/calendar/logic";
 import type { CompanyCalendarWorkspace } from "@/lib/calendar/service";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const emptySubscribe = () => () => {};
 
@@ -422,7 +424,7 @@ export function CompanyCalendar({
                   </Field>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Category">
-                      <select
+                      <SearchableSelect
                         className={inputCls}
                         onChange={(e) => setEditor({ ...editor, category: e.target.value as CalendarEventCategory })}
                         value={editor.category}
@@ -432,18 +434,18 @@ export function CompanyCalendar({
                             {category}
                           </option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     </Field>
                     <Field label="Audience">
                       {canPublishCompanyWide ? (
-                        <select
+                        <SearchableSelect
                           className={inputCls}
                           onChange={(e) => setEditor({ ...editor, scope: e.target.value as "company" | "line" })}
                           value={editor.scope}
                         >
                           <option value="company">Whole company</option>
                           <option value="line">My team / line</option>
-                        </select>
+                        </SearchableSelect>
                       ) : (
                         <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
                           {viewerLineName ? `Team: ${viewerLineName}` : "Your team line"}

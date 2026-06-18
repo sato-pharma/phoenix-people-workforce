@@ -6,6 +6,8 @@ import { useRef, useState } from "react";
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type DistributorOption = { code: string; name: string };
 type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
@@ -261,9 +263,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
-              <select className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); setPreview(null); }} value={distributorCode}>
+              <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); setPreview(null); }} value={distributorCode}>
                 {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>

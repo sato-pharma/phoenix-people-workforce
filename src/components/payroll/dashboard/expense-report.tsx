@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 
 import { panelClassName, payrollMonths } from "./shared";
 import { TableHeaderMenu } from "./table-header-menu";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 function formatEGP(value: number) {
   return formatCurrencyValue(value);
@@ -765,7 +767,7 @@ export function ExpenseReport({
               <p className="text-sm font-semibold text-[#0F172A]">Import to Payroll</p>
               <p className="text-xs text-[#64748B]">Saved HR/admin approved rows with HR ID only.</p>
             </div>
-            <select
+            <SearchableSelect
               className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
               onChange={(event) => setImportMonth(event.target.value)}
               value={importMonth}
@@ -775,8 +777,8 @@ export function ExpenseReport({
                   {month.label}
                 </option>
               ))}
-            </select>
-            <select
+            </SearchableSelect>
+            <SearchableSelect
               className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
               onChange={(event) => setImportYear(event.target.value)}
               value={importYear}
@@ -786,7 +788,7 @@ export function ExpenseReport({
                   {year}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             <Button disabled={!analysis || importingToPayroll || validation.invalidRows > 0} onClick={importToPayroll}>
               {importingToPayroll ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -52,6 +52,8 @@ import type {
   MarketingRequest,
   MarketingRequestType,
 } from "@/lib/marketing-requests/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Types ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -439,14 +441,14 @@ function SelectField({
   value: string;
 }) {
   return (
-    <select
+    <SearchableSelect
       className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
       {children}
-    </select>
+    </SearchableSelect>
   );
 }
 

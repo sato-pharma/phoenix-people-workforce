@@ -22,6 +22,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type ActiveTab = "submit" | "input";
 type ExpenseStatusFilter = "all" | "submitted" | "approved" | "declined";
@@ -592,7 +594,7 @@ export function MedicalRepExpensesWorkspace({
               <label className="relative block min-w-0">
                 <span className="sr-only">Status filter</span>
                 <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select
+                <SearchableSelect
                   className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                   onChange={(event) => setStatusFilter(event.target.value as ExpenseStatusFilter)}
                   value={statusFilter}
@@ -601,13 +603,13 @@ export function MedicalRepExpensesWorkspace({
                   <option value="submitted">Submitted</option>
                   <option value="approved">Approved</option>
                   <option value="declined">Declined</option>
-                </select>
+                </SearchableSelect>
               </label>
 
               <label className="relative block min-w-0">
                 <span className="sr-only">Order rows</span>
                 <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select
+                <SearchableSelect
                   className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                   onChange={(event) => setOrderBy(event.target.value as ExpenseOrder)}
                   value={orderBy}
@@ -617,7 +619,7 @@ export function MedicalRepExpensesWorkspace({
                   <option value="highest_total">Highest total</option>
                   <option value="lowest_total">Lowest total</option>
                   <option value="destination">Destination A-Z</option>
-                </select>
+                </SearchableSelect>
               </label>
             </div>
           </div>

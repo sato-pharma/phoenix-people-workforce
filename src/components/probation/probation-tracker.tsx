@@ -36,6 +36,8 @@ import {
 } from "@/lib/lifecycle-risk/metrics";
 import type { ProbationRow, ProbationWorkflowAction, TrafficStatus } from "@/lib/probation/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   capabilities?: ProbationTrackerCapabilities;
@@ -180,7 +182,7 @@ function SelectFilter({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
         {label}
       </span>
-      <select
+      <SearchableSelect
         className={selectClassName}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -191,7 +193,7 @@ function SelectFilter({
             {option}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }
@@ -208,7 +210,7 @@ function ZoneSelect({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
         Zone
       </span>
-      <select
+      <SearchableSelect
         className={selectClassName}
         onChange={(event) => onChange(event.target.value as TrafficStatus | "all")}
         value={value}
@@ -217,7 +219,7 @@ function ZoneSelect({
         <option value="safe">Safe</option>
         <option value="warning">Warning</option>
         <option value="critical">Critical</option>
-      </select>
+      </SearchableSelect>
     </label>
   );
 }
@@ -234,7 +236,7 @@ function SortSelect({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
         Sort
       </span>
-      <select
+      <SearchableSelect
         className={selectClassName}
         onChange={(event) => onChange(event.target.value as SortKey)}
         value={value}
@@ -245,7 +247,7 @@ function SortSelect({
         <option value="hire-desc">Hire date descending</option>
         <option value="name-asc">Name A-Z</option>
         <option value="name-desc">Name Z-A</option>
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

@@ -26,6 +26,8 @@ import { Card } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { SalesHistoryRow } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: SalesHistoryRow[] | null;
@@ -413,7 +415,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
             <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Line</span>
-                <select
+                <SearchableSelect
                   className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setLine(event.target.value)}
                   value={line}
@@ -421,7 +423,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
                   {lineOptions.map((option) => (
                     <option key={option} value={option}>{option}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
               <div className="space-y-2">
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>

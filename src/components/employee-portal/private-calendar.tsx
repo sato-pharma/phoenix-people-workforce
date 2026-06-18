@@ -30,6 +30,8 @@ import {
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const allValue = "__all__";
@@ -576,7 +578,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!workspace.access.canSelectEmployee || isPending}
               onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
@@ -584,13 +586,13 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
             >
               <option value="employee">Employee</option>
               <option value="team">Team</option>
-            </select>
+            </SearchableSelect>
           </label>
 
           {!isTeamView ? (
             <label className="block">
               <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
-              <select
+              <SearchableSelect
                 className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!workspace.access.canSelectEmployee || isPending}
                 onChange={(event) => changeEmployee(event.target.value)}
@@ -601,12 +603,12 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                     {employeeOptionLabel(employee)}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
           ) : (
             <label className="block">
               <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
-              <select
+              <SearchableSelect
                 className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
                 onChange={(event) => setEmployeeFilter(event.target.value)}
                 value={employeeFilter}
@@ -617,37 +619,37 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
                     {employee.fullName} ({employee.hrId})
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
           )}
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setLineFilter(event.target.value)}
               value={lineFilter}
             >
               <option value={allValue}>All lines</option>
               {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setDepartmentFilter(event.target.value)}
               value={departmentFilter}
             >
               <option value={allValue}>All departments</option>
               {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setSourceFilter(event.target.value)}
               value={sourceFilter}
@@ -656,7 +658,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               {privateCalendarSources.map((source) => (
                 <option key={source} value={source}>{privateCalendarSourceLabels[source]}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           <div className="flex flex-wrap gap-2">
@@ -687,7 +689,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
         <div className="grid gap-4 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setStatusFilter(event.target.value)}
               value={statusFilter}
@@ -696,7 +698,7 @@ export function PrivateCalendar({ initialWorkspace }: { initialWorkspace: Privat
               {statusOptions.map((status) => (
                 <option key={status} value={status}>{status}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
         </div>
       </section>

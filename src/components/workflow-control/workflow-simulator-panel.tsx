@@ -5,6 +5,8 @@ import { AlertTriangle, Play } from "lucide-react";
 
 import type { WorkflowSubflow } from "@/lib/workflow-control/definitions";
 import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-control/simulator";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const inputClass =
   "w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#F97316]";
@@ -60,7 +62,7 @@ export function WorkflowSimulatorPanel({
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className={labelClass}>Subflow</span>
-          <select
+          <SearchableSelect
             className={inputClass}
             value={subflowKey}
             onChange={(e) => {
@@ -73,7 +75,7 @@ export function WorkflowSimulatorPanel({
                 {subflow.name}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </label>
         <label className="block">
           <span className={labelClass}>Employee HR_ID</span>

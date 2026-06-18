@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 
 import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type DsmOption = {
   hrId: string;
@@ -117,7 +119,7 @@ export function TeamExpensesFilters({
         >
           DSM
         </label>
-        <select
+        <SearchableSelect
           className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
           id="team-expenses-dsm"
           onChange={(event) => setDsm(event.target.value)}
@@ -129,7 +131,7 @@ export function TeamExpensesFilters({
               {item.name}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </div>
 
       {!hideRequestType ? (
@@ -140,7 +142,7 @@ export function TeamExpensesFilters({
           >
             Request Type
           </label>
-          <select
+          <SearchableSelect
             className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]"
             id="team-expenses-request-type"
             onChange={(event) => setRequestType(event.target.value)}
@@ -152,7 +154,7 @@ export function TeamExpensesFilters({
                 {item}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </div>
       ) : null}
 

@@ -23,6 +23,8 @@ import {
   formatAttendanceWorkingWeekdays,
   type AttendanceWorkingWeekday,
 } from "@/lib/attendance/work-schedule";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-100/60 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
@@ -534,11 +536,11 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                 </label>
                 <label className="space-y-1.5">
                   <span className={labelClassName}>Target Type</span>
-                  <select className={fieldClassName} value={form.targetType} onChange={(event) => setForm({ ...form, targetType: event.target.value as AttendancePolicyTargetType, targetValue: "" })}>
+                  <SearchableSelect className={fieldClassName} value={form.targetType} onChange={(event) => setForm({ ...form, targetType: event.target.value as AttendancePolicyTargetType, targetValue: "" })}>
                     <option value="default">Default</option>
                     <option value="job_title">Job Title</option>
                     <option value="employee_hr_id">Employee HR_ID</option>
-                  </select>
+                  </SearchableSelect>
                 </label>
                 {form.targetType === "job_title" ? (
                   <label className="space-y-1.5 md:col-span-2 xl:col-span-3">
@@ -552,12 +554,12 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                 {form.targetType === "employee_hr_id" ? (
                   <label className="space-y-1.5 md:col-span-2 xl:col-span-3">
                     <span className={labelClassName}>Employee HR_ID</span>
-                    <select className={fieldClassName} value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })}>
+                    <SearchableSelect className={fieldClassName} value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })}>
                       <option value="">Select employee</option>
                       {targetOptions.employees.map((employee) => (
                         <option key={employee.hrId} value={employee.hrId}>{employee.hrId} - {employee.fullName}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </label>
                 ) : null}
                 <label className="space-y-1.5">
@@ -720,13 +722,13 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                     <label className="space-y-1.5">
                       <span className={labelClassName}>Event</span>
-                      <select className={fieldClassName} value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
+                      <SearchableSelect className={fieldClassName} value={rule.eventType} onChange={(event) => updateRule(index, { eventType: event.target.value as AttendancePolicyEventType })}>
                         <option value="late">Late</option>
                         <option value="early_leave">Early leave</option>
                         <option value="single_punch">Single punch</option>
                         <option value="absence">Absence</option>
                         <option value="exception">Exception</option>
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClassName}>From min</span>
