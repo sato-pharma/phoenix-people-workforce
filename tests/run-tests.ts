@@ -78,6 +78,7 @@ import { runSalesDistributorRegistryTests } from "./sales-distributor-registry.t
 import { runSalesProfilesTests } from "./sales-profiles.test.ts";
 import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
+import { runSalesUploadReconcileTests } from "./sales-upload-reconcile.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
@@ -297,6 +298,7 @@ await runTest("sales distributor registry", runSalesDistributorRegistryTests);
 await runTest("sales profiles invariants", runSalesProfilesTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
+await runTest("sales upload reconciliation", runSalesUploadReconcileTests);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
