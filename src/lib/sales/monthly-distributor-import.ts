@@ -110,6 +110,20 @@ export type DistributorSalesBrickSummary = DistributorSalesTotal & {
   regionName: string;
 };
 
+// Cross-tab row: one entry per (brick × product) — only populated for the Office channel preview.
+export type DistributorSalesBrickProductRow = {
+  areaCode: string;
+  areaName: string;
+  brickId: string;
+  brickName: string;
+  productCode: string;
+  productName: string;
+  qty: number;
+  regionCode: string;
+  regionName: string;
+  value: number;
+};
+
 export type DistributorSalesProductSummary = DistributorSalesTotal & {
   officialLine: string;
   productCode: string;
@@ -124,6 +138,8 @@ export type DistributorSalesValidationResult = {
   blockingReasons: string[];
   byArea: DistributorSalesAreaSummary[];
   byBrick: DistributorSalesBrickSummary[];
+  /** Only populated for the Office channel — brick × product cross-tab. */
+  byBrickProduct?: DistributorSalesBrickProductRow[];
   byLine: DistributorSalesLineSummary[];
   byProduct: DistributorSalesProductSummary[];
   byRegion: DistributorSalesRegionSummary[];

@@ -1,6 +1,7 @@
 import {
   persistDistributorSalesUpload,
   summarizeRows,
+  type DistributorSalesBrickProductRow,
   type DistributorSalesValidationIssue,
   type DistributorSalesValidationResult,
   type ParsedDistributorRow,
@@ -242,12 +243,36 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
     );
   }
 
+  // Brick × product cross-tab — one entry per (brick, product) pair so the preview can show a
+  // per-brick-per-product breakdown instead of only aggregate region totals.
+  const byBrickProduct: DistributorSalesBrickProductRow[] = parsedRows
+    .map((r) => ({
+      areaCode: r.areaCode,
+      areaName: r.areaName,
+      brickId: r.brickId,
+      brickName: r.brickName,
+      productCode: r.productCode,
+      productName: r.productName,
+      qty: Math.round(r.qty * 1e4) / 1e4,
+      regionCode: r.regionCode,
+      regionName: r.regionName,
+      value: Math.round(r.value * 1e4) / 1e4,
+    }))
+    .sort(
+      (a, b) =>
+        a.regionCode.localeCompare(b.regionCode) ||
+        a.areaCode.localeCompare(b.areaCode) ||
+        a.brickId.localeCompare(b.brickId) ||
+        a.productCode.localeCompare(b.productCode),
+    );
+
   return {
     ...baseResult,
     advisories,
     blockingReasons: [],
     byArea: summary.byArea,
     byBrick: summary.byBrick,
+    byBrickProduct,
     byLine: summary.byLine,
     byProduct: summary.byProduct,
     byRegion: summary.byRegion,

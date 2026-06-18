@@ -343,7 +343,34 @@ export function MonthlySalesWizard() {
                         <div><p className="text-xs font-black uppercase text-slate-500">Bricks touched</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.byBrick.length)}</p></div>
                       </div>
                     ) : null}
-                    {preview.byRegion.length > 0 ? (
+                    {preview.byBrickProduct && preview.byBrickProduct.length > 0 ? (
+                      <div className="max-h-96 overflow-auto rounded-xl border border-[#D8E0EA]">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-[#0B0B0B] text-white">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-black">Region</th>
+                              <th className="px-3 py-2 text-left font-black">Area</th>
+                              <th className="px-3 py-2 text-left font-black">Brick</th>
+                              <th className="px-3 py-2 text-left font-black">Product</th>
+                              <th className="px-3 py-2 text-right font-black">Units</th>
+                              <th className="px-3 py-2 text-right font-black">Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {preview.byBrickProduct.map((row, i) => (
+                              <tr key={`${row.brickId}-${row.productCode}-${i}`} className="border-t border-[#F1E4D8]">
+                                <td className="px-3 py-2 text-slate-500">{row.regionName || row.regionCode || "—"}</td>
+                                <td className="px-3 py-2 text-slate-500">{row.areaName || row.areaCode || "—"}</td>
+                                <td className="px-3 py-2 font-bold text-slate-800">{row.brickName || row.brickId || "NATIONAL"}</td>
+                                <td className="px-3 py-2 text-slate-700">{row.productName}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.qty)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(row.value)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : preview.byRegion.length > 0 ? (
                       <div className="overflow-hidden rounded-xl border border-[#D8E0EA]">
                         <table className="w-full text-sm">
                           <thead className="bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Region</th><th className="px-3 py-2 text-right font-black">Units</th><th className="px-3 py-2 text-right font-black">Value</th></tr></thead>
