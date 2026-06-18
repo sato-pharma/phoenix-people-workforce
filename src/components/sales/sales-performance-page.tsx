@@ -296,14 +296,18 @@ function SalesPerformancePage({ data, isLoading }: SalesPerformancePageProps) {
         previous3Sales += previous3[i].sales || 0;
         previous3Target += previous3[i].target || 0;
       }
+      // Compare the latest month against the AVERAGE of the previous 3 months (like-for-like) —
+      // comparing one month against the 3-month SUM made the delta structurally ~ -200%.
+      const months = previous3.length || 1;
+      const avgSales = previous3Sales / months;
+      const avgTarget = previous3Target / months;
       previous = {
-        period: "Previous 3 Months",
-        sales: previous3Sales,
-        target: previous3Target,
-        achievementRate: 0,
+        period: "Avg of Previous 3 Months",
+        sales: avgSales,
+        target: avgTarget,
+        achievementRate: avgTarget > 0 ? avgSales / avgTarget : 0,
         linkedEmployees: 0,
       };
-      previous.achievementRate = previous.target > 0 ? previous.sales / previous.target : 0;
     }
     if (!previous) return null;
     return {

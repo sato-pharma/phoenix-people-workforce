@@ -83,9 +83,15 @@ function periodRangeLabel(periods: string[]) {
   return `${compactPeriod(periods[0])} - ${compactPeriod(periods[periods.length - 1])}`;
 }
 
-function deltaPercent(current: number, previous: number) {
-  if (!previous) return current ? 1 : 0;
+// Fractional change vs the previous value, or null when there is no prior baseline (previous === 0).
+// Returning null lets callers render "—" instead of a misleading "+100%" for a brand-new period.
+function deltaPercent(current: number, previous: number): number | null {
+  if (!previous) return null;
   return (current - previous) / previous;
+}
+
+function formatDeltaPercent(delta: number | null): string {
+  return delta === null ? "—" : formatPercent(delta);
 }
 
 function uniqueSorted(rows: AnyRow[], key: string) {
@@ -950,7 +956,7 @@ function SalesDashboardContent({
   const topLine = view.lineRows.length > 0 ? view.lineRows.reduce((max: AnyRow, row: AnyRow) => valueAsNumber(row.sales) > valueAsNumber(max.sales) ? row : max) : null;
   const underperformingTerritories = view.territoryRows.filter((row: AnyRow) => valueAsNumber(row.achievementRate) < 0.8).length;
   const topRep = repRankingRows.length > 0 ? repRankingRows[0] : null;
-  const growthTrend = salesDelta >= 0 ? "positive" : "negative";
+  const growthTrend = salesDelta === null ? "flat" : salesDelta >= 0 ? "positive" : "negative";
   const ownershipSummary = (summary.salesOwnership ?? {}) as Record<string, { records?: number; salesValue?: number }>;
   const nonAssignableSales = ownershipSummary.non_assignable_territory_sales ?? { records: 0, salesValue: 0 };
   const vacantTerritorySales = ownershipSummary.vacant_territory_sales ?? { records: 0, salesValue: 0 };
@@ -1026,21 +1032,6 @@ function SalesDashboardContent({
         </div>
       </div>
 
-      {/* Analytics Navigation */}
-      <div className="sticky top-0 z-40 rounded-2xl border border-[#E2E8F0] bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {["Overview", "Trends", "Rankings", "Territories", "Products", "Intelligence"].map((nav) => (
-            <button
-              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600 transition-all duration-160 ease-out hover:bg-slate-100 hover:text-slate-900 active:scale-95"
-              key={nav}
-              type="button"
-            >
-              {nav}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Executive Summary Intelligence */}
       {hasData && (
         <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-gradient-to-r from-slate-50 to-white p-5 shadow-sm">
@@ -1055,7 +1046,7 @@ function SalesDashboardContent({
                 <div className="flex items-center gap-2 rounded-lg border border-emerald-200/60 bg-emerald-50/50 px-3 py-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   <span className="text-xs font-semibold text-emerald-700">
-                    {growthTrend === "positive" ? "Sales trending upward" : "Sales trending downward"}
+                    {growthTrend === "positive" ? "Sales trending upward" : growthTrend === "negative" ? "Sales trending downward" : "No prior period to compare"}
                   </span>
                 </div>
                 {topLine && (
@@ -1234,10 +1225,10 @@ function SalesDashboardContent({
 
       {/* KPI Cards - Featured */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard icon={BarChart3} label="Sales" value={formatCurrency(summary.totalApprovedSales)} sub={`${formatNumber(summary.approvedRecords)} rows read`} trend={salesDelta >= 0 ? "up" : "down"} />
+        <MetricCard icon={BarChart3} label="Sales" value={formatCurrency(summary.totalApprovedSales)} sub={`${formatNumber(summary.approvedRecords)} rows read`} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
         <MetricCard icon={Target} label="Target" value={formatCurrency(summary.totalApprovedTarget)} sub={`${formatPercent(summary.achievementRate)} achievement`} tone={summary.achievementRate >= 1 ? "success" : summary.achievementRate >= 0.8 ? "warning" : "danger"} trend={summary.achievementRate >= 0.8 ? "up" : "down"} />
         <MetricCard icon={Boxes} label="Units Sold" value={formatNumber(summary.unitsSold)} sub={`${formatNumber(summary.activeProducts)} active products`} trend="neutral" />
-        <MetricCard icon={TrendingUp} label="Achievement" value={formatPercent(summary.achievementRate)} sub={`${formatPercent(salesDelta)} vs previous`} tone={summary.achievementRate >= 0.8 ? "success" : "danger"} trend={salesDelta >= 0 ? "up" : "down"} />
+        <MetricCard icon={TrendingUp} label="Achievement" value={formatPercent(summary.achievementRate)} sub={`${formatDeltaPercent(salesDelta)} sales vs previous`} tone={summary.achievementRate >= 0.8 ? "success" : "danger"} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
         <MetricCard
           icon={Link2}
           label="DSM Linkage"
