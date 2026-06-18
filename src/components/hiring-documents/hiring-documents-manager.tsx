@@ -32,6 +32,8 @@ import type {
   HiringDocumentsDashboardData,
   HiringDocumentStatus,
 } from "@/lib/hiring-documents/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   canManage: boolean;
@@ -485,34 +487,34 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </label>
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
-                  <select className={selectClassName} onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
+                  <SearchableSelect className={selectClassName} onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
                     <option value={allValue}>All lines</option>
                     {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Employee Status</span>
-                  <select className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
+                  <SearchableSelect className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
                     <option value={allValue}>All statuses</option>
                     {statusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </label>
               </div>
               {advancedOpen ? (
                 <div className="grid gap-3 border-t border-[#E2E8F0] bg-white/80 p-4 lg:grid-cols-3">
                   <label className="block">
                     <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager</span>
-                    <select className={selectClassName} onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
+                    <SearchableSelect className={selectClassName} onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
                       <option value={allValue}>All managers</option>
                       {managerOptions.map((manager) => <option key={manager} value={manager}>{manager}</option>)}
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Job Title</span>
-                    <select className={selectClassName} onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
+                    <SearchableSelect className={selectClassName} onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
                       <option value={allValue}>All job titles</option>
                       {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">

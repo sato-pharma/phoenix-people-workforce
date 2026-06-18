@@ -15,6 +15,8 @@ import type {
   ProbationWorkflowAction,
   TrafficStatus,
 } from "@/lib/probation/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -431,7 +433,7 @@ export function EmployeeProbationDashboard({
           {/* Line */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Line</span>
-            <select
+            <SearchableSelect
               className={inputClassName}
               onChange={(e) => setLineFilter(e.target.value)}
               value={lineFilter}
@@ -440,13 +442,13 @@ export function EmployeeProbationDashboard({
               {filterOptions.lines.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           {/* Area */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Area</span>
-            <select
+            <SearchableSelect
               className={inputClassName}
               onChange={(e) => setAreaFilter(e.target.value)}
               value={areaFilter}
@@ -455,13 +457,13 @@ export function EmployeeProbationDashboard({
               {filterOptions.areas.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           {/* Job Title */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Job Title</span>
-            <select
+            <SearchableSelect
               className={inputClassName}
               onChange={(e) => setJobFilter(e.target.value)}
               value={jobFilter}
@@ -470,13 +472,13 @@ export function EmployeeProbationDashboard({
               {filterOptions.jobs.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           {/* Zone */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Zone</span>
-            <select
+            <SearchableSelect
               className={inputClassName}
               onChange={(e) => setTrafficFilter(e.target.value as "all" | TrafficStatus)}
               value={trafficFilter}
@@ -485,13 +487,13 @@ export function EmployeeProbationDashboard({
               <option value="safe">Safe</option>
               <option value="warning">Warning</option>
               <option value="critical">Critical</option>
-            </select>
+            </SearchableSelect>
           </label>
 
           {/* Sort */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Sort</span>
-            <select
+            <SearchableSelect
               aria-label="Sort probation records"
               className={inputClassName}
               onChange={(e) => setSortBy(e.target.value as SortKey)}
@@ -503,7 +505,7 @@ export function EmployeeProbationDashboard({
               <option value="hire-desc">Hire date descending</option>
               <option value="name-asc">Name A-Z</option>
               <option value="name-desc">Name Z-A</option>
-            </select>
+            </SearchableSelect>
           </label>
         </div>
 

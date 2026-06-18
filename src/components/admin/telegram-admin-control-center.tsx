@@ -11,6 +11,8 @@ import type {
   TelegramPilotHealth,
 } from "@/lib/notifications/telegram-admin";
 import type { TelegramModulePolicy } from "@/lib/notifications/telegram-governance";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type TelegramAdminData = {
   auditLogs: TelegramAdminAuditLog[];
@@ -459,7 +461,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
             <h2 className="text-lg font-black text-slate-950">Connections</h2>
             <p className="text-sm text-slate-600">Connected, pending, disabled, and failed Telegram user links.</p>
           </div>
-          <select
+          <SearchableSelect
             className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 sm:w-48"
             onChange={(event) => setStatusFilter(event.target.value)}
             value={statusFilter}
@@ -469,7 +471,7 @@ export function TelegramAdminControlCenter({ canUpdate, initialData }: Props) {
             <option value="pending">Pending</option>
             <option value="disabled">Disabled</option>
             <option value="failed">Failed</option>
-          </select>
+          </SearchableSelect>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">

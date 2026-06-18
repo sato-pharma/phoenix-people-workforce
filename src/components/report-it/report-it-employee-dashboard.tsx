@@ -5,6 +5,8 @@ import { AlertTriangle, ChevronDown, ChevronUp, ClipboardList, Plus, RefreshCw, 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import type { ReportItReportRow } from "@/lib/report-it/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // ─── Premium design language (square corners, slate-900/orange) ──────────────
 
@@ -453,7 +455,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
                 </div>
                 <div>
                   <label className={microLabel}>Seriousness</label>
-                  <select
+                  <SearchableSelect
                     value={filters.isSerious}
                     onChange={(e) => setFilters((f) => ({ ...f, isSerious: e.target.value }))}
                     className={selectClass}
@@ -461,7 +463,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
                     <option value="">All</option>
                     <option value="true">Serious only</option>
                     <option value="false">Non-serious only</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div>
                   <label className={microLabel}>Department</label>

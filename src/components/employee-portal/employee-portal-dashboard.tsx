@@ -63,6 +63,8 @@ import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export { PayrollPayslipsSection } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 export { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
@@ -2619,7 +2621,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
             <label className="block">
               <span className={`mb-1.5 block ${labelClass}`}>Category</span>
-              <select
+              <SearchableSelect
                 aria-label="Support category"
                 className={inputClass}
                 onChange={(e) => handleCategoryChange(e.target.value)}
@@ -2631,7 +2633,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <option value="System Issue">System Issue</option>
                 <option value="HR Request">HR Request</option>
                 <option value="Other">Other</option>
-              </select>
+              </SearchableSelect>
             </label>
 
             {/* Conditional sub-category - only when "HR Request" is selected */}
@@ -2640,7 +2642,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <span className={`mb-1.5 block ${labelClass}`}>
                   HR Request type
                 </span>
-                <select
+                <SearchableSelect
                   aria-label="HR request subcategory"
                   className={inputClass}
                   onChange={(e) => setSubcategory(e.target.value)}
@@ -2653,7 +2655,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       {opt}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
             )}
 
@@ -3017,7 +3019,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
         <div className="grid grid-cols-2 gap-3 xs:grid-cols-3 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">View By</label>
-            <select
+            <SearchableSelect
               className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={viewBy}
               onChange={(e) => setViewBy(e.target.value)}
@@ -3025,11 +3027,11 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               <option value="Employee">Employee</option>
               <option value="Role">Role</option>
               <option value="Territory">Territory</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Employee</label>
-            <select
+            <SearchableSelect
               className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedEmployee}
               onChange={(e) => setSelectedEmployee(e.target.value)}
@@ -3038,11 +3040,11 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               {workload?.availableEmployees.map((emp) => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Role</label>
-            <select
+            <SearchableSelect
               className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
@@ -3050,11 +3052,11 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               <option value="All">All Roles</option>
               <option value="AM">AM</option>
               <option value="PM">PM</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Territory</label>
-            <select
+            <SearchableSelect
               className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={selectedTerritory}
               onChange={(e) => setSelectedTerritory(e.target.value)}
@@ -3063,11 +3065,11 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               {workload?.availableTerritories.map((loc) => (
                 <option key={loc} value={loc}>{loc}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Trip Type</label>
-            <select
+            <SearchableSelect
               className="h-9 rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300"
               value={tripType}
               onChange={(e) => setTripType(e.target.value)}
@@ -3076,7 +3078,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               <option value="Travel">Travel</option>
               <option value="Return">Return</option>
               <option value="Meeting">Meeting</option>
-            </select>
+            </SearchableSelect>
           </div>
         </div>
       </Card>

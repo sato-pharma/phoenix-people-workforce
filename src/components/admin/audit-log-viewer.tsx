@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, Download, Loader2, Search, X } from "lucide-
 import { useState } from "react";
 
 import type { AuditLogFilter, AuditLogPage } from "@/lib/admin/audit";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const ENTITY_TYPES = [
   "all",
@@ -150,7 +152,7 @@ export function AuditLogViewer({
               value={draftFilters.action ?? ""}
             />
           </div>
-          <select
+          <SearchableSelect
             className="h-10 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/30"
             onChange={(e) => setDraftFilters((f) => ({ ...f, entityType: e.target.value === "all" ? null : e.target.value }))}
             value={draftFilters.entityType ?? "all"}
@@ -158,7 +160,7 @@ export function AuditLogViewer({
             {ENTITY_TYPES.map((t) => (
               <option key={t} value={t}>{t === "all" ? "All entity types" : t}</option>
             ))}
-          </select>
+          </SearchableSelect>
           <input
             className="h-10 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/30"
             onChange={(e) => setDraftFilters((f) => ({ ...f, dateFrom: e.target.value || null }))}

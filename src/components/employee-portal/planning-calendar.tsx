@@ -22,6 +22,8 @@ import type {
   PlanningCalendarPlanItem,
   PlanningCalendarWorkspace,
 } from "@/lib/weekly-planning/calendar";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const allValue = "__all__";
@@ -288,7 +290,7 @@ export function PlanningCalendar({
           </label>
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
               onChange={(event) => setActivityFilter(event.target.value)}
               value={activityFilter}
@@ -299,11 +301,11 @@ export function PlanningCalendar({
                   {activity}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
               onChange={(event) => setRegionFilter(event.target.value)}
               value={regionFilter}
@@ -314,7 +316,7 @@ export function PlanningCalendar({
                   {region}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <button
             className={`inline-flex h-10 items-center justify-center gap-2 border px-3 text-sm font-black ${

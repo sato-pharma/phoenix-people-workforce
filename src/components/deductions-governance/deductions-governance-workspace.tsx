@@ -45,6 +45,8 @@ import type {
   DeductionSourceGroup,
 } from "@/lib/deductions-governance/service";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type WorkspaceTab =
   | "overview"
@@ -318,7 +320,7 @@ function InboxFiltersBar({
   return (
     <div className="grid gap-3 border-b border-slate-100 p-4 lg:grid-cols-[160px_180px_180px_180px_minmax(0,1fr)_140px]">
       {availableMonthKeys.length > 0 ? (
-        <select
+        <SearchableSelect
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={filters.monthKey ?? ""}
           onChange={(event) => onChange({ ...filters, monthKey: event.target.value || undefined })}
@@ -327,7 +329,7 @@ function InboxFiltersBar({
           {availableMonthKeys.map((mk) => (
             <option key={mk} value={mk}>{mk}</option>
           ))}
-        </select>
+        </SearchableSelect>
       ) : (
         <input
           className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
@@ -336,7 +338,7 @@ function InboxFiltersBar({
           onChange={(event) => onChange({ ...filters, monthKey: event.target.value || undefined })}
         />
       )}
-      <select
+      <SearchableSelect
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={filters.sourceModule ?? ""}
         onChange={(event) =>
@@ -354,8 +356,8 @@ function InboxFiltersBar({
             {source}
           </option>
         ))}
-      </select>
-      <select
+      </SearchableSelect>
+      <SearchableSelect
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={filters.deductionType ?? ""}
         onChange={(event) =>
@@ -373,8 +375,8 @@ function InboxFiltersBar({
             {type}
           </option>
         ))}
-      </select>
-      <select
+      </SearchableSelect>
+      <SearchableSelect
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={filters.decisionStatus ?? ""}
         onChange={(event) =>
@@ -392,7 +394,7 @@ function InboxFiltersBar({
             {status}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
       <input
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         placeholder="Search employee name or HR_ID"
@@ -402,7 +404,7 @@ function InboxFiltersBar({
         }
       />
       <div className="flex items-center gap-2">
-        <select
+        <SearchableSelect
           className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={pageSize}
           onChange={(event) => onPageSizeChange(Number(event.target.value))}
@@ -412,7 +414,7 @@ function InboxFiltersBar({
               {size} rows
             </option>
           ))}
-        </select>
+        </SearchableSelect>
         <Button
           className="gap-2"
           disabled={isLoading}
@@ -424,7 +426,7 @@ function InboxFiltersBar({
           Refresh
         </Button>
       </div>
-      <select
+      <SearchableSelect
         className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={filters.severity ?? ""}
         onChange={(event) =>
@@ -442,7 +444,7 @@ function InboxFiltersBar({
             {severity}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </div>
   );
 }
@@ -581,7 +583,7 @@ function DecisionControls({
 
   return (
     <div className="min-w-[260px] space-y-2">
-      <select
+      <SearchableSelect
         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         value={status}
         onChange={(event) => setStatus(event.target.value as DeductionDecisionStatus)}
@@ -591,7 +593,7 @@ function DecisionControls({
             {item}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
       {status === "Approved for Payroll" ? (
         <div className="grid grid-cols-[1fr_1fr] gap-2">
           <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
@@ -616,7 +618,7 @@ function DecisionControls({
         </div>
       ) : null}
       {status !== "Pending" ? (
-        <select
+        <SearchableSelect
           className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
           value={reason}
           onChange={(event) => setReason(event.target.value as DeductionDecisionReason)}
@@ -626,7 +628,7 @@ function DecisionControls({
               {item}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       ) : null}
       <input
         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"

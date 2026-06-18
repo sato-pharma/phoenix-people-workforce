@@ -5,6 +5,8 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
 import type { ReportItKpis } from "@/lib/report-it/service";
 import type { ReportItReportRow } from "@/lib/report-it/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // ─── Premium primitives (square corners, slate + orange) ─────────────────────
 
@@ -290,7 +292,7 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
             </div>
             <div>
               <label className={microLabel}>Seriousness</label>
-              <select
+              <SearchableSelect
                 value={filters.isSerious}
                 onChange={(e) => setFilters((f) => ({ ...f, isSerious: e.target.value }))}
                 className={selectClass}
@@ -298,7 +300,7 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
                 <option value="">All</option>
                 <option value="true">Serious only</option>
                 <option value="false">Non-serious only</option>
-              </select>
+              </SearchableSelect>
             </div>
             <div>
               <label className={microLabel}>Department</label>

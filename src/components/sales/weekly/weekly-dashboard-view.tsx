@@ -26,6 +26,8 @@ import type {
   WeeklyDelta,
   WeeklyRanked,
 } from "@/lib/sales/weekly/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -385,13 +387,13 @@ function Select({
   return (
     <label className="block h-[58px] rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-1.5 shadow-sm transition focus-within:border-[#FDBA74] hover:border-[#FDBA74]">
       <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</span>
-      <select
+      <SearchableSelect
         className="mt-1 h-8 w-full bg-transparent text-sm font-black text-[#0F172A] outline-none"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
         {children}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

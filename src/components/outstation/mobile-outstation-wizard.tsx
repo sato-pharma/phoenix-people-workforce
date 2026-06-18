@@ -36,6 +36,8 @@ import type {
   OutstationTransportationType,
 } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type MedicalTripOption = {
   hrId: string;
@@ -1384,7 +1386,7 @@ export function MobileOutstationWizard({
           ) : null}
 
           <Field label="Transportation Type">
-            <select
+            <SearchableSelect
               className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
               onChange={(event) =>
                 handleTransportationTypeChange(event.target.value as OutstationTransportationType)
@@ -1395,11 +1397,11 @@ export function MobileOutstationWizard({
               <option value="train">Train</option>
               <option value="bus">Bus</option>
               <option value="other">Other</option>
-            </select>
+            </SearchableSelect>
           </Field>
 
           <Field label="Medical Representative">
-            <select
+            <SearchableSelect
               className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
               disabled={medicalTripOptions.length === 0}
               onChange={(event) => setMedicalTripHrId(event.target.value)}
@@ -1415,7 +1417,7 @@ export function MobileOutstationWizard({
                   {formatEmployeeDisplayName(option.name)}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </Field>
 
           {transportationType === "car" ? (

@@ -9,6 +9,8 @@ import {
   type SupportRequestRow,
   type SupportRequestStatus,
 } from "@/lib/support-requests/service";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type StatusFilter = SupportRequestStatus | "all";
 
@@ -146,7 +148,7 @@ export function SupportRequestsWorkspace({
                 {canManage ? (
                   <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
                     <span className="hidden sm:inline">Status</span>
-                    <select
+                    <SearchableSelect
                       aria-label={`Status for ${item.subject}`}
                       className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
                       disabled={savingId === item.id}
@@ -158,7 +160,7 @@ export function SupportRequestsWorkspace({
                           {status}
                         </option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </label>
                 ) : null}
               </div>

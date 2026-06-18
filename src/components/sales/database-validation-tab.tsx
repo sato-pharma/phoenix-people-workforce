@@ -7,6 +7,8 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type CustomerRow = {
   address: string;
@@ -107,10 +109,10 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
     <div className="space-y-6">
       <AdminTableShell
         action={(
-          <select className={filterSelect} onChange={(e) => setHeaderFilter(e.target.value)} value={headerFilter}>
+          <SearchableSelect className={filterSelect} onChange={(e) => setHeaderFilter(e.target.value)} value={headerFilter}>
             <option value="ALL">All distributors</option>
             {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
-          </select>
+          </SearchableSelect>
         )}
         description="For each distributor, which raw column in their sheet feeds each Phoenix header. Area & Region are derived from the Brick; Distrub ID is the distributor's own code."
         title="Distributor → Phoenix header mapping"
@@ -142,10 +144,10 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
       <AdminTableShell
         action={(
           <div className="flex items-center gap-2">
-            <select className={filterSelect} onChange={(e) => setCustFilter(e.target.value)} value={custFilter}>
+            <SearchableSelect className={filterSelect} onChange={(e) => setCustFilter(e.target.value)} value={custFilter}>
               <option value="ALL">All distributors</option>
               {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
-            </select>
+            </SearchableSelect>
             <Button className="gap-2" disabled={exporting || loadingCust || customers.length === 0} onClick={() => void exportCustomers()} variant="secondary">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Export
             </Button>

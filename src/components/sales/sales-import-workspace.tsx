@@ -53,6 +53,8 @@ import type {
 } from "@/lib/sales/monthly-distributor-import";
 import type { MappingReferences } from "@/lib/sales/normalizer/service";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   distributors: SalesDistributorOption[];
@@ -568,7 +570,7 @@ function UploadedSheetsTable({
             </span>
             <label className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#64748B]">Distributor</span>
-              <select
+              <SearchableSelect
                 className="h-9 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                 onChange={(event) => setDistributorFilter(event.target.value)}
                 value={distributorFilter}
@@ -579,7 +581,7 @@ function UploadedSheetsTable({
                     {option.name} / {option.code}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             {periodOptions.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
@@ -711,7 +713,7 @@ function SourceOfSalesDashboardPanel({
       <AdminTableShell
         action={(
           <div className="flex flex-col gap-2 sm:flex-row">
-            <select
+            <SearchableSelect
               className="h-10 rounded-xl border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#0F172A] outline-none"
               disabled={dashboard.availablePeriods.length === 0 || refreshing}
               onChange={(event) => onPeriodChange(event.target.value)}
@@ -722,7 +724,7 @@ function SourceOfSalesDashboardPanel({
               ) : dashboard.availablePeriods.map((period) => (
                 <option key={period} value={period}>{period}</option>
               ))}
-            </select>
+            </SearchableSelect>
             <Button className="gap-2" disabled={refreshing} onClick={onRefresh} variant="secondary">
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
@@ -1270,7 +1272,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               <div className="space-y-3">
                 <label className="block space-y-1.5">
                   <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
-                  <select
+                  <SearchableSelect
                     className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                     onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); }}
                     value={selectedDistributorCode}
@@ -1280,7 +1282,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                         {distributor.name} / {distributor.code}
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block space-y-1.5">
                   <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">

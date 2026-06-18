@@ -44,6 +44,8 @@ import type {
   CoachingScoreItemAverageScore,
 } from "@/lib/coaching/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type FilterOption = {
   label: string;
@@ -271,7 +273,7 @@ function SelectField({
   return (
     <label className="block">
       <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</span>
-      <select
+      <SearchableSelect
         className="mt-2 h-10 w-full rounded-xl border border-[#CBD5E1] bg-white px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20"
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -282,7 +284,7 @@ function SelectField({
             {option.label}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

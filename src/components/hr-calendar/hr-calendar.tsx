@@ -31,6 +31,8 @@ import {
 import type { HrCalendarEmployee, HrCalendarEvent, HrCalendarEventType } from "@/lib/hr-calendar/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: HrCalendarEmployee[] | null;
@@ -335,7 +337,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
         <div className="grid gap-3 p-4 xl:grid-cols-6">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedMonth(Number(event.target.value))}
               value={selectedMonth}
@@ -345,12 +347,12 @@ export function HrCalendar({ initialData, initialError }: Props) {
                   {month.label}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Year</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedYear(Number(event.target.value))}
               value={selectedYear}
@@ -363,7 +365,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                   {year}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="relative block">
@@ -379,7 +381,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Event Type</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               onChange={(event) =>
                 setEventTypeFilter(
@@ -392,12 +394,12 @@ export function HrCalendar({ initialData, initialError }: Props) {
               <option value="new_hire">New hires</option>
               <option value="anniversary">Anniversaries</option>
               <option value="birthday">Birthdays</option>
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               onChange={(event) => setLineFilter(event.target.value)}
               value={lineFilter}
@@ -408,12 +410,12 @@ export function HrCalendar({ initialData, initialError }: Props) {
                   {line}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Area</span>
-            <select
+            <SearchableSelect
               className={selectClassName}
               onChange={(event) => setAreaFilter(event.target.value)}
               value={areaFilter}
@@ -424,7 +426,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                   {area}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
         </div>
       </AdminTableShell>

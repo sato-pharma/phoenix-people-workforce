@@ -17,6 +17,8 @@ import type {
   FingerprintReportData,
   FingerprintReportRow,
 } from "@/lib/attendance/fingerprint-report";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type DecisionState = "pending" | "deduct" | "exempt";
 
@@ -258,7 +260,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           </label>
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Status</span>
-            <select
+            <SearchableSelect
               className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
@@ -269,7 +271,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
               <option value="Early leave">Early leave</option>
               <option value="Short day">Short day</option>
               <option value="Single punch">Single punch</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Deduction</span>

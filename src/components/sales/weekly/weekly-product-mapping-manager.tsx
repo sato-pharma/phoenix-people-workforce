@@ -4,6 +4,8 @@ import { AlertTriangle, Download, Loader2, Plus, Trash2, Upload } from "lucide-r
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { WeeklyAliasKind, WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Draft = { alias: string; aliasKind: WeeklyAliasKind; productCode: string };
 
@@ -161,7 +163,7 @@ export function WeeklyProductMappingManager({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
         <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
-        <select
+        <SearchableSelect
           className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
           disabled={busy}
           value={distributor}
@@ -175,7 +177,7 @@ export function WeeklyProductMappingManager({
               {option.name} ({option.code})
             </option>
           ))}
-        </select>
+        </SearchableSelect>
         <div className="ml-auto flex items-center gap-2">
           <a
             className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
@@ -207,7 +209,7 @@ export function WeeklyProductMappingManager({
           />
         </Field>
         <Field label="Kind">
-          <select
+          <SearchableSelect
             className="h-9 w-28 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, aliasKind: event.target.value === "name" ? "name" : "code" }))}
@@ -215,10 +217,10 @@ export function WeeklyProductMappingManager({
           >
             <option value="code">Code</option>
             <option value="name">Name</option>
-          </select>
+          </SearchableSelect>
         </Field>
         <Field label="Master product">
-          <select
+          <SearchableSelect
             className="h-9 w-72 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, productCode: event.target.value }))}
@@ -230,7 +232,7 @@ export function WeeklyProductMappingManager({
                 {product.name} ({product.code}){product.priced && product.lined ? "" : " ⚠"}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </Field>
         <button
           className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"

@@ -36,6 +36,8 @@ import type {
 import { offerTemplates } from "@/lib/offers/templates";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 type Props = {
   initialData?: OfferDashboardData | null;
   initialError?: string | null;
@@ -221,7 +223,7 @@ function SelectField({
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">{label}</span>
-      <select
+      <SearchableSelect
         className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm text-text shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:bg-slate-50 disabled:text-slate-400"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -233,7 +235,7 @@ function SelectField({
             {option.label}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }
@@ -684,7 +686,7 @@ export function OfferLifecycleDashboard({
             placeholder="Search offers"
             value={search}
           />
-          <select
+          <SearchableSelect
             className="h-9 rounded-xl border border-[#DDE6F1] bg-white px-3 text-sm text-text"
             onChange={(event) => setStatusFilter(event.target.value as OfferStatus | "all")}
             value={statusFilter}
@@ -692,7 +694,7 @@ export function OfferLifecycleDashboard({
             {["all", "sent", "accepted", "hired", "rejected", "expired", "withdrawn", "cancelled", "voided"].map((status) => (
               <option key={status} value={status}>{statusLabel(status as OfferStatus)}</option>
             ))}
-          </select>
+          </SearchableSelect>
           <Button className="h-9 gap-2 rounded-xl px-3 text-xs" onClick={exportCsv} type="button" variant="secondary">
             <Copy className="h-3.5 w-3.5" />
             Export
