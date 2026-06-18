@@ -51,6 +51,9 @@ export function MonthlySalesWizard() {
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // Captured at preview time so Confirm always uses the file that was actually reviewed,
+  // even if the user accidentally triggers the file picker again between Preview and Confirm.
+  const previewFileRef = useRef<File | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const onFileChange = useCallback(() => {
     setSelectedFileName(fileRef.current?.files?.[0]?.name ?? null);
@@ -93,7 +96,10 @@ export function MonthlySalesWizard() {
       form.set("period", period);
       const res = await fetch("/api/sales/monthly-import/preview", { method: "POST", body: form });
       const payload = await readJson<PreviewResponse>(res, { success: false });
-      if (payload.data) setPreview(payload.data);
+      if (payload.data) {
+        setPreview(payload.data);
+        previewFileRef.current = fileRef.current?.files?.[0] ?? null;
+      }
       if (!payload.data) {
         setMessage({ type: "error", text: payload.error ?? "Preview failed." });
       } else if (payload.data.status === "validated") {
@@ -105,12 +111,14 @@ export function MonthlySalesWizard() {
   }
 
   // Step 2 — persist the previewed upload, then record confirmation against the run with the batch id.
+  // Uses previewFileRef (captured at preview time) rather than re-reading fileRef.current.files[0],
+  // so a stale file picker state between Preview and Confirm cannot commit the wrong file.
   async function distributorConfirm() {
-    if (!activeStep || !fileRef.current?.files?.[0] || preview?.status !== "validated") return;
+    if (!activeStep || !previewFileRef.current || preview?.status !== "validated") return;
     setBusy(true); setMessage(null);
     try {
       const form = new FormData();
-      form.set("file", fileRef.current.files[0]);
+      form.set("file", previewFileRef.current);
       form.set("distributorCode", activeStep.distributorCode);
       form.set("period", period);
       // Carry the reviewed diff + unmapped details so a coverage snapshot is recorded on commit.
@@ -123,6 +131,7 @@ export function MonthlySalesWizard() {
         return;
       }
       await confirmStep(activeStep.distributorCode, payload.data.batchId ?? null);
+      previewFileRef.current = null;
       setPreview(null);
       setMessage({ type: "success", text: `${activeStep.distributorName} imported and confirmed.` });
       if (fileRef.current) fileRef.current.value = "";

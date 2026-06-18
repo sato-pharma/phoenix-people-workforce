@@ -4,6 +4,8 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, Info, Loader2
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 
+import { ImportPreviewModal, type PreviewResult } from "@/components/sales/import-preview-modal";
+
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,6 +29,8 @@ type BlockedRow = { reason: string; row?: number; rowNumber?: number; values?: s
 type InvalidEntry = { raw: string; type: string; reason: string };
 type ImportResult = { saved?: number; skipped?: number; inserted?: number; updated?: number; totalRead?: number; scannedRows?: number; invalid?: number; invalidEntries?: InvalidEntry[]; blockedRows?: BlockedRow[] };
 type ImportResponse = { success: boolean; result?: ImportResult; invalidEntries?: InvalidEntry[]; message?: string; error?: string };
+type SosPreviewResponse = { success: boolean; data?: PreviewResult; error?: string };
+type SosCommitResponse = { success: boolean; data?: { batchId?: string; period?: string; rowCount?: number }; error?: string };
 
 type HeaderValidationFailure = { label: string; expected: string[] };
 type DistinctUnknown = { count: number; raw: string; rawName: string; suggestionCode: string | null; suggestionLabel: string | null };
@@ -344,6 +348,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const importPreviewFileRef = useRef<File | null>(null);
+  const [importPreviewResult, setImportPreviewResult] = useState<PreviewResult | null>(null);
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [importCommitting, setImportCommitting] = useState(false);
 
   async function analyze(file: File) {
     setBusy(true); setError(null); setMessage(null); setPreview(null);
@@ -430,23 +438,55 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
     }
   }
 
-  async function handleImportNow(file: File) {
+  async function handlePreviewFile(file: File) {
     setImporting(true); setImportResult(null); setImportMessage(null); setImportError(null);
+    setImportPreviewResult(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("distributorCode", distributorCode);
       if (preview?.period) formData.append("period", preview.period);
-      const response = await fetch("/api/sales/monthly-import/validate", { body: formData, method: "POST" });
-      const payload = await readJson<ImportResponse>(response, { success: false });
-      setImportResult(payload.result ?? null);
-      if (payload.success) setImportMessage(payload.message ?? "Import complete.");
-      else setImportError(payload.error ?? "Import failed.");
+      const response = await fetch("/api/sales/monthly-import/preview", { body: formData, method: "POST" });
+      const payload = await readJson<SosPreviewResponse>(response, { success: false });
+      if (payload.success && payload.data) {
+        importPreviewFileRef.current = file;
+        setImportPreviewResult(payload.data);
+        setImportPreviewOpen(true);
+      } else {
+        setImportError(payload.error ?? "Preview failed.");
+      }
+    } catch (caught) {
+      setImportError(caught instanceof Error ? caught.message : "Preview failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleCommitImport() {
+    if (!importPreviewFileRef.current || !importPreviewResult || importPreviewResult.status !== "validated") return;
+    setImportCommitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", importPreviewFileRef.current);
+      formData.append("distributorCode", distributorCode);
+      if (preview?.period) formData.append("period", preview.period);
+      if (importPreviewResult.previewDiff) formData.append("previewDiff", JSON.stringify(importPreviewResult.previewDiff));
+      if (importPreviewResult.unmappedCustomers?.length) formData.append("unmappedCustomers", JSON.stringify(importPreviewResult.unmappedCustomers));
+      const response = await fetch("/api/sales/monthly-import/commit", { body: formData, method: "POST" });
+      const payload = await readJson<SosCommitResponse>(response, { success: false });
+      if (payload.success) {
+        setImportPreviewOpen(false);
+        importPreviewFileRef.current = null;
+        setImportPreviewResult(null);
+        setImportMessage(payload.data?.rowCount !== undefined ? `Import complete — ${payload.data.rowCount} rows saved.` : "Import complete.");
+        if (importRef.current) importRef.current.value = "";
+      } else {
+        setImportError(payload.error ?? "Import failed.");
+      }
     } catch (caught) {
       setImportError(caught instanceof Error ? caught.message : "Import failed.");
     } finally {
-      setImporting(false);
-      if (importRef.current) importRef.current.value = "";
+      setImportCommitting(false);
     }
   }
 
@@ -687,7 +727,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
               {importing ? "Importing…" : "Import raw file"}
             </Button>
-            <input accept=".xlsx" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImportNow(file); }} ref={importRef} type="file" />
+            <input accept=".xlsx" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handlePreviewFile(file); }} ref={importRef} type="file" />
           </div>
           <p className="mt-2 text-xs text-[#64748B]">Upload the same raw file you just analyzed — it will be imported with your saved mappings applied.</p>
         </div>
@@ -695,6 +735,20 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
 
       {importMessage || importError || (importResult?.blockedRows?.length ?? 0) > 0 ? (
         <ResultBanner error={importError} message={importMessage} result={importResult} />
+      ) : null}
+
+      {importPreviewOpen && importPreviewResult ? (
+        <ImportPreviewModal
+          committing={importCommitting}
+          onCancel={() => {
+            setImportPreviewOpen(false);
+            importPreviewFileRef.current = null;
+            setImportPreviewResult(null);
+            if (importRef.current) importRef.current.value = "";
+          }}
+          onConfirm={() => void handleCommitImport()}
+          result={importPreviewResult}
+        />
       ) : null}
     </Card>
   );
