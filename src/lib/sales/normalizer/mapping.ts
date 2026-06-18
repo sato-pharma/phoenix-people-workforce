@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
@@ -193,6 +194,136 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
   // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
   skipped += productRows.length + territoryRows.length + customerRows.length - saved;
   return { saved, skipped, invalid, invalidEntries };
+}
+
+// ── Single-row mapping CRUD (Mapping Database page) ──
+// Edit overwrites the existing alias→code mapping; delete soft-deactivates (active=false) so the
+// row immediately stops resolving in loadCrosswalks but stays recoverable. All mutations audited.
+
+export type ProductAliasRow = { alias: string; normalizedAlias: string; productCode: string };
+export type TerritoryAliasRow = { alias: string; normalizedAlias: string; targetType: string; targetCode: string };
+
+export async function listProductAliases(distributorCode: string): Promise<ProductAliasRow[]> {
+  const supabase = getSupabaseAdmin();
+  const dist = normalizeCodeKey(distributorCode);
+  const { data, error } = await supabase
+    .from("source_of_sales_product_aliases")
+    .select("alias,normalized_alias,product_code")
+    .eq("active", true)
+    .eq("distributor_code", dist)
+    .order("alias", { ascending: true });
+  if (error) throw new Error(`Failed to list product aliases: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    alias: String((r as Record<string, unknown>).alias ?? ""),
+    normalizedAlias: String((r as Record<string, unknown>).normalized_alias ?? ""),
+    productCode: String((r as Record<string, unknown>).product_code ?? ""),
+  }));
+}
+
+export async function listTerritoryAliases(): Promise<TerritoryAliasRow[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_territory_aliases")
+    .select("alias,normalized_alias,target_type,target_code")
+    .eq("active", true)
+    .order("alias", { ascending: true });
+  if (error) throw new Error(`Failed to list territory aliases: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    alias: String((r as Record<string, unknown>).alias ?? ""),
+    normalizedAlias: String((r as Record<string, unknown>).normalized_alias ?? ""),
+    targetType: String((r as Record<string, unknown>).target_type ?? ""),
+    targetCode: String((r as Record<string, unknown>).target_code ?? ""),
+  }));
+}
+
+export async function upsertProductAlias(input: { actorLoginId: string; distributorCode: string; raw: string; productCode: string }): Promise<void> {
+  const dist = normalizeCodeKey(input.distributorCode);
+  const raw = String(input.raw ?? "").trim();
+  const code = normalizeCodeKey(input.productCode);
+  const key = normalizeAliasKey(raw);
+  if (!dist) throw new Error("Distributor code is required.");
+  if (!raw || !key) throw new Error("Alias is required.");
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
+  productCodes.add(IGNORE_PRODUCT_CODE);
+  if (!productCodes.has(code)) throw new Error(`Product code "${code}" not found in master.`);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("source_of_sales_product_aliases").upsert(
+    { alias: raw, normalized_alias: key, distributor_code: dist, product_code: code, active: true, source_file: "mapping-database" },
+    { onConflict: "distributor_code,normalized_alias" },
+  );
+  if (error) throw new Error(`Failed to save product alias: ${error.message}`);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_product_aliases",
+    entityType: "sales_import_batch",
+    newValues: { distributor_code: dist, normalized_alias: key, product_code: code, source: "product_alias_upsert" },
+    summary: `Product alias upsert — ${dist} / ${raw} -> ${code}.`,
+  });
+}
+
+export async function deleteProductAlias(input: { actorLoginId: string; distributorCode: string; normalizedAlias: string }): Promise<void> {
+  const dist = normalizeCodeKey(input.distributorCode);
+  const key = String(input.normalizedAlias ?? "").trim();
+  if (!dist || !key) throw new Error("Distributor and alias are required.");
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("source_of_sales_product_aliases")
+    .update({ active: false })
+    .eq("distributor_code", dist)
+    .eq("normalized_alias", key);
+  if (error) throw new Error(`Failed to delete product alias: ${error.message}`);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_product_aliases",
+    entityType: "sales_import_batch",
+    newValues: { distributor_code: dist, normalized_alias: key, source: "product_alias_delete" },
+    summary: `Product alias delete — ${dist} / ${key} (deactivated).`,
+  });
+}
+
+export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: string; brickId: string }): Promise<void> {
+  const raw = String(input.raw ?? "").trim();
+  const code = normalizeCodeKey(input.brickId);
+  const key = normalizeAliasKey(raw);
+  if (!raw || !key) throw new Error("Territory text is required.");
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
+  if (!brickIds.has(code)) throw new Error(`Brick ID "${code}" not found in master.`);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("source_of_sales_territory_aliases").upsert(
+    { alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "mapping-database" },
+    { onConflict: "normalized_alias,target_type,target_code" },
+  );
+  if (error) throw new Error(`Failed to save territory alias: ${error.message}`);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_territory_aliases",
+    entityType: "sales_import_batch",
+    newValues: { normalized_alias: key, target_code: code, source: "territory_alias_upsert" },
+    summary: `Territory alias upsert — ${raw} -> ${code}.`,
+  });
+}
+
+export async function deleteTerritoryAlias(input: { actorLoginId: string; normalizedAlias: string; targetCode: string }): Promise<void> {
+  const key = String(input.normalizedAlias ?? "").trim();
+  const code = normalizeCodeKey(input.targetCode);
+  if (!key || !code) throw new Error("Territory alias and target are required.");
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("source_of_sales_territory_aliases")
+    .update({ active: false })
+    .eq("normalized_alias", key)
+    .eq("target_type", "brick")
+    .eq("target_code", code);
+  if (error) throw new Error(`Failed to delete territory alias: ${error.message}`);
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: "source_of_sales_territory_aliases",
+    entityType: "sales_import_batch",
+    newValues: { normalized_alias: key, target_code: code, source: "territory_alias_delete" },
+    summary: `Territory alias delete — ${key} -> ${code} (deactivated).`,
+  });
 }
 
 // ── Excel bulk round-trip ──
