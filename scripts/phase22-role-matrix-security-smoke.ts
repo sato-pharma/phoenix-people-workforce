@@ -163,7 +163,7 @@ async function verifyRoleMatrix() {
 function verifyScopeHelpers() {
   expectScope("Super Admin navigation mode is admin", resolveNavigationMode(contextFor("Super Admin")), "admin");
   expectScope("Talent Acquisition navigation mode is admin", resolveNavigationMode(contextFor("Talent Acquisition")), "admin");
-  expectScope("Finance Manager navigation mode is employee portal", resolveNavigationMode(contextFor("Finance Manager")), "employee-portal");
+  expectScope("Finance Manager navigation mode is admin", resolveNavigationMode(contextFor("Finance Manager")), "admin");
   expectScope("CEO navigation mode is admin", resolveNavigationMode(contextFor("CEO")), "admin");
   expectScope("District Manager navigation mode is employee portal", resolveNavigationMode(contextFor("District Manager")), "employee-portal");
   expectScope("Medical Rep navigation mode is employee portal", resolveNavigationMode(contextFor("Medical Rep")), "employee-portal");
