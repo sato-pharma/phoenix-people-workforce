@@ -5,12 +5,23 @@ import { useEffect, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import type { CoverageSummary, DistributorCoverageRow } from "@/lib/sales/import-coverage";
+import type { CoverageSummary, DistributorCoverageRow, PersistentUnmappedCustomer } from "@/lib/sales/import-coverage";
 import { formatNumber } from "@/lib/sales/format";
+
+type BrickOption = { id: string; name: string };
+
+type Props = { bricks: BrickOption[] };
 
 type CoverageResponse = {
   data?: CoverageSummary;
   error?: string;
+  success: boolean;
+};
+
+type AcceptResponse = {
+  data?: { accepted: number; failed: number; results: { customerCode: string; error?: string; ok: boolean }[] };
+  error?: string;
+  message?: string;
   success: boolean;
 };
 
@@ -104,7 +115,120 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
   );
 }
 
-export function SosCoverageTab() {
+// Bulk-map the recurring offenders: assign each persistent-unmapped customer a brick and save them all
+// to the mapping sheet in one shot (reuses the audited /accept-mappings endpoint from Step 3b).
+function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSaved: () => void; rows: PersistentUnmappedCustomer[] }) {
+  const [picked, setPicked] = useState<Record<string, string>>({}); // key → brickId
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const keyOf = (r: PersistentUnmappedCustomer) => `${r.distributorCode}|${r.customerCode}`;
+  const pendingPicked = rows.filter((r) => picked[keyOf(r)] && !savedKeys.has(keyOf(r)));
+
+  async function saveAll() {
+    if (pendingPicked.length === 0) return;
+    setSaving(true);
+    setMessage(null);
+    const byCode = new Map(rows.map((r) => [r.customerCode, r]));
+    const mappings = pendingPicked.map((r) => ({
+      address: r.address,
+      brickId: picked[keyOf(r)],
+      customerCode: r.customerCode,
+      customerName: r.customerName,
+      distributorCode: r.distributorCode,
+    }));
+    try {
+      const response = await fetch("/api/sales/monthly-import/accept-mappings", {
+        body: JSON.stringify({ mappings }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({ success: false }))) as AcceptResponse;
+      const okCodes = (payload.data?.results ?? []).filter((r) => r.ok).map((r) => r.customerCode);
+      if (okCodes.length > 0) {
+        setSavedKeys((prev) => {
+          const next = new Set(prev);
+          for (const code of okCodes) { const r = byCode.get(code); if (r) next.add(keyOf(r)); }
+          return next;
+        });
+      }
+      setMessage(payload.message ?? payload.error ?? "Done.");
+      if (okCodes.length > 0) onSaved();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to save mappings.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-[#64748B]">
+          Pick a brick for each recurring customer and save them all to the mapping sheet at once.
+          {bricks.length === 0 ? " (Brick list unavailable.)" : ""}
+        </p>
+        <Button
+          className="h-9 gap-1.5 rounded-lg bg-[#0B0B0B] text-xs font-black text-white hover:bg-[#F97316]"
+          disabled={saving || pendingPicked.length === 0}
+          onClick={() => void saveAll()}
+          type="button"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          Save all selected ({pendingPicked.length})
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#020617] text-left">
+              {["Customer", "Distributor", "Imports", "Assign brick"].map((h) => (
+                <th key={h} className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B] first:text-white">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const key = keyOf(r);
+              const isSaved = savedKeys.has(key);
+              return (
+                <tr key={key} className="border-t border-[#EEF2F7]">
+                  <td className="px-4 py-2">
+                    <span className="font-semibold text-[#0F172A]">{r.customerCode}</span>
+                    {r.customerName ? <span className="block max-w-[220px] truncate text-xs text-[#64748B]">{r.customerName}</span> : <span className="block text-xs italic text-[#94A3B8]">name not captured</span>}
+                  </td>
+                  <td className="px-4 py-2 text-[#64748B]">{r.distributorCode}</td>
+                  <td className="px-4 py-2 tabular-nums text-[#64748B]">{formatNumber(r.importCount)}</td>
+                  <td className="px-4 py-2">
+                    {isSaved ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Mapped</span>
+                    ) : (
+                      <select
+                        className="h-9 w-full max-w-[280px] rounded-lg border border-[#D8E0EA] bg-[#F8FAFC] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                        disabled={saving || bricks.length === 0}
+                        onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
+                        value={picked[key] ?? ""}
+                      >
+                        <option value="">Select a brick…</option>
+                        {bricks.map((b) => (
+                          <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {message ? <p className="text-xs font-semibold text-emerald-700">{message}</p> : null}
+    </div>
+  );
+}
+
+export function SosCoverageTab({ bricks }: Props) {
   const [summary, setSummary] = useState<CoverageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -199,19 +323,14 @@ export function SosCoverageTab() {
 
           {summary!.persistentUnmapped.length > 0 ? (
             <AdminTableShell
-              description="Customer codes that appeared as unmapped in 3 or more imports. Map these in the Mapping tab to improve coverage."
-              title="Persistent unmapped customers"
+              description="Customers that appeared unmapped in 3 or more imports. Assign each a brick and save them all to the mapping sheet at once."
+              title="Persistent unmapped customers — bulk map"
             >
-              <div className="flex flex-wrap gap-1.5 p-5">
-                {summary!.persistentUnmapped.map((code) => (
-                  <span
-                    key={code}
-                    className="rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-800"
-                  >
-                    {code}
-                  </span>
-                ))}
-              </div>
+              <BulkMapTable
+                bricks={bricks}
+                onSaved={() => setRefreshKey((k) => k + 1)}
+                rows={summary!.persistentUnmapped}
+              />
             </AdminTableShell>
           ) : (
             <AdminTableShell description="No customer code has appeared as unmapped in 3+ imports." title="Persistent unmapped customers">
