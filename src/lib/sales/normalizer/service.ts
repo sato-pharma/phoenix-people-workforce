@@ -7,7 +7,7 @@ import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping"
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
-import { dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
@@ -209,6 +209,10 @@ export async function persistNormalizedBatch(input: {
       total_qty: Number(totalQty.toFixed(6)),
       total_bonus_qty: Number(totalBonus.toFixed(6)),
       total_value: Number(totalValue.toFixed(6)),
+      // C3 reconciliation breakdown + C5 lineage (coded = importable_rows, blocked = failed_rows).
+      rows_ignored: input.result.summary.ignored,
+      rows_blank: input.result.summary.blankCustomerSkipped,
+      recognition_engine_version: RECOGNITION_ENGINE_VERSION,
       blocking_reasons: [],
       uploaded_by: input.uploadedBy,
     })
