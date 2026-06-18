@@ -179,6 +179,47 @@ export function aggregatePersistentUnmapped(snapshots: CoverageSnapshot[]): Pers
     }));
 }
 
+// Pure: fill blank names/addresses on the persistent list from a `${DIST}|${CODE}` → name/address map
+// (built from the import-rows table). A customer that already has a name is left untouched.
+export function applyNameBackfill(
+  items: PersistentUnmappedCustomer[],
+  namesByKey: Map<string, { address: string; name: string }>,
+): PersistentUnmappedCustomer[] {
+  return items.map((item) => {
+    if (item.customerName) return item;
+    const hit = namesByKey.get(`${item.distributorCode.toUpperCase()}|${item.customerCode.toUpperCase()}`);
+    if (!hit?.name) return item;
+    return { ...item, address: item.address || hit.address, customerName: hit.name };
+  });
+}
+
+// Recover names for persistent-unmapped customers that have none (e.g. snapshots taken before names
+// were captured) from source_of_sales_import_rows — the authoritative (distributor, code) → name
+// source. Best-effort + bounded (the persistent list is capped at PERSISTENT_CAP).
+async function backfillNamesFromImportRows(items: PersistentUnmappedCustomer[]): Promise<PersistentUnmappedCustomer[]> {
+  const needing = items.filter((i) => !i.customerName);
+  if (needing.length === 0) return items;
+
+  const codes = [...new Set(needing.map((i) => i.customerCode))];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_import_rows")
+    .select("distributor_code,client_code,client_name,client_address")
+    .in("client_code", codes)
+    .not("client_name", "is", null)
+    .limit(5000);
+  if (error || !data) return items;
+
+  const namesByKey = new Map<string, { address: string; name: string }>();
+  for (const row of data as Record<string, unknown>[]) {
+    const name = String(row.client_name ?? "").trim();
+    if (!name) continue;
+    const key = `${String(row.distributor_code ?? "").toUpperCase()}|${String(row.client_code ?? "").toUpperCase()}`;
+    if (!namesByKey.has(key)) namesByKey.set(key, { address: String(row.client_address ?? "").trim(), name });
+  }
+  return applyNameBackfill(items, namesByKey);
+}
+
 export async function getCoverageSummary(): Promise<CoverageSummary> {
   const snapshots = await listCoverageSnapshots({ limit: 500 });
 
@@ -216,7 +257,7 @@ export async function getCoverageSummary(): Promise<CoverageSummary> {
   const avgResolvedPct =
     Math.round((snapshots.reduce((sum, s) => sum + s.resolvedPct, 0) / snapshots.length) * 10) / 10;
 
-  const persistentUnmapped = aggregatePersistentUnmapped(snapshots);
+  const persistentUnmapped = await backfillNamesFromImportRows(aggregatePersistentUnmapped(snapshots));
 
   const driftAlerts = snapshots
     .filter((s) => s.brickDriftCount > 0)
