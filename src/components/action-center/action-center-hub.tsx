@@ -15,6 +15,8 @@ import type {
   ResignationDetail,
 } from "@/components/action-center/types";
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
 const SNOOZE_KEY = "phoenix-action-snooze:v1";
@@ -833,7 +835,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 {viewAsLoading ? (
                   <p className="text-[11px] text-slate-400">Loading queue…</p>
                 ) : (
-                  <select
+                  <SearchableSelect
                     value={viewAsHrId ?? ""}
                     onChange={(e) => {
                       setViewAsHrId(e.target.value || null);
@@ -846,7 +848,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                     {managers.map((m) => (
                       <option key={m.hrId} value={m.hrId}>{m.name} ({m.hrId})</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 )}
                 {viewAsHrId && (
                   <p className="mt-0.5 text-[10px] text-orange-600 font-bold">Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue</p>
@@ -1106,7 +1108,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                           <div className="space-y-3">
                             {/* Template rejection reasons */}
                             {REJECTION_TEMPLATES[selected.module].length > 0 && (
-                              <select
+                              <SearchableSelect
                                 defaultValue=""
                                 disabled={busy}
                                 onChange={(e) => {
@@ -1123,7 +1125,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     {t.label}
                                   </option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             )}
 
                             <textarea

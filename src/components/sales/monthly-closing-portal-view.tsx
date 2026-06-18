@@ -8,6 +8,8 @@ import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
 import { formatCurrency, formatNumber, periodLabel } from "@/lib/sales/format";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import type { PortalClosingTrendPoint } from "@/lib/sales/monthly-closing-portal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   awaitingPublish: boolean;
@@ -164,7 +166,7 @@ export function MonthlyClosingPortalView({
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1 sm:w-40">
           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Year</span>
-          <select
+          <SearchableSelect
             className={selectClassName}
             disabled={isPending}
             onChange={(event) => onYearChange(Number(event.target.value))}
@@ -173,11 +175,11 @@ export function MonthlyClosingPortalView({
             {years.map((year) => (
               <option key={year} value={year}>{year}</option>
             ))}
-          </select>
+          </SearchableSelect>
         </label>
         <label className="flex flex-col gap-1 sm:w-48">
           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
-          <select
+          <SearchableSelect
             className={selectClassName}
             disabled={isPending}
             onChange={(event) => navigateTo(event.target.value)}
@@ -189,7 +191,7 @@ export function MonthlyClosingPortalView({
                 <option key={period} value={period}>{periodLabel(parts.year, parts.month)}</option>
               );
             })}
-          </select>
+          </SearchableSelect>
         </label>
         {isPending ? (
           <span className="flex items-center gap-2 pb-3 text-xs font-semibold text-slate-400">

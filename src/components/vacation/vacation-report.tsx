@@ -51,6 +51,8 @@ import type {
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -1592,55 +1594,55 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               </label>
               <label className="space-y-1.5">
                 <span className={labelClass}>Status</span>
-                <select className={selectClass} value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+                <SearchableSelect className={selectClass} value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
                   <option value="all">All statuses</option>
                   {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                </SearchableSelect>
               </label>
               <label className="space-y-1.5">
                 <span className={labelClass}>Payment</span>
-                <select className={selectClass} value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
+                <SearchableSelect className={selectClass} value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
                   <option value="all">All payment</option>
                   {VACATION_PAYMENT_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                </SearchableSelect>
               </label>
               <label className="space-y-1.5">
                 <span className={labelClass}>Type</span>
-                <select className={selectClass} value={filters.vacationType} onChange={(event) => updateFilter("vacationType", event.target.value)}>
+                <SearchableSelect className={selectClass} value={filters.vacationType} onChange={(event) => updateFilter("vacationType", event.target.value)}>
                   <option value="all">All types</option>
                   {VACATION_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                </SearchableSelect>
               </label>
             </>
           ) : null}
 
           <label className="space-y-1.5">
             <span className={labelClass}>Employee</span>
-            <select className={selectClass} value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
+            <SearchableSelect className={selectClass} value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
               <option value="">All employees</option>
               {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="space-y-1.5">
             <span className={labelClass}>Manager</span>
-            <select className={selectClass} value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
+            <SearchableSelect className={selectClass} value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
               <option value="">All managers</option>
               {(options?.managers ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="space-y-1.5">
             <span className={labelClass}>Department</span>
-            <select className={selectClass} value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
+            <SearchableSelect className={selectClass} value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
               <option value="">All departments</option>
               {(options?.departments ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="space-y-1.5">
             <span className={labelClass}>Line</span>
-            <select className={selectClass} value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
+            <SearchableSelect className={selectClass} value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
               <option value="">All lines</option>
               {(options?.lines ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
 
           {showRequestsTab ? (
@@ -1963,28 +1965,28 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   <div className="mt-4 grid gap-3 rounded-sm border border-orange-100 bg-orange-50/40 p-3 xs:grid-cols-2 xl:grid-cols-4">
                     <label className="space-y-1.5 xs:col-span-2">
                       <span className={labelClass}>Employee</span>
-                      <select className={selectClass} value={adminForm.employeeHrId} onChange={(event) => updateAdminForm("employeeHrId", event.target.value)}>
+                      <SearchableSelect className={selectClass} value={adminForm.employeeHrId} onChange={(event) => updateAdminForm("employeeHrId", event.target.value)}>
                         <option value="">Select employee</option>
                         {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>Type</span>
-                      <select className={selectClass} value={adminForm.vacationType} onChange={(event) => updateAdminForm("vacationType", event.target.value)}>
+                      <SearchableSelect className={selectClass} value={adminForm.vacationType} onChange={(event) => updateAdminForm("vacationType", event.target.value)}>
                         {(adminMode === "add" ? addVacationTypeOptions : editVacationTypeOptions).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>Status</span>
-                      <select className={selectClass} value={adminForm.status} onChange={(event) => updateAdminForm("status", event.target.value)}>
+                      <SearchableSelect className={selectClass} value={adminForm.status} onChange={(event) => updateAdminForm("status", event.target.value)}>
                         {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>Day part</span>
-                      <select className={selectClass} value={adminForm.dayPart} onChange={(event) => updateAdminForm("dayPart", event.target.value)}>
+                      <SearchableSelect className={selectClass} value={adminForm.dayPart} onChange={(event) => updateAdminForm("dayPart", event.target.value)}>
                         {VACATION_DAY_PARTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClass}>From</span>

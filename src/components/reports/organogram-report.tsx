@@ -39,6 +39,8 @@ import {
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type OrganogramRow = VacancyReportData["organogramRows"][number];
 type MemberNode = {
@@ -114,7 +116,7 @@ function SelectFilter({
       <span className="mb-1.5 block text-xs font-medium text-text-secondary">
         {label}
       </span>
-      <select
+      <SearchableSelect
         className={selectClassName}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -125,7 +127,7 @@ function SelectFilter({
             {option}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

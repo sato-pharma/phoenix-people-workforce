@@ -4,6 +4,8 @@ import { AlertTriangle, CheckCircle2, Download, Loader2, Upload } from "lucide-r
 import { useRef, useState } from "react";
 
 import type { WeeklyMappingAdmin, WeeklyMappingRow } from "@/lib/sales/weekly/mapping";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export function WeeklyMappingPanel({ initialData }: { initialData: WeeklyMappingAdmin }) {
   const [data, setData] = useState(initialData);
@@ -81,7 +83,7 @@ export function WeeklyMappingPanel({ initialData }: { initialData: WeeklyMapping
         <div className="flex flex-wrap items-end gap-3">
           <label className="block w-72 max-w-full">
             <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Distributor</span>
-            <select
+            <SearchableSelect
               className="h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] shadow-sm outline-none transition focus:border-[#FDBA74] disabled:opacity-60"
               disabled={loading || uploading}
               onChange={(e) => loadDistributor(e.target.value)}
@@ -92,7 +94,7 @@ export function WeeklyMappingPanel({ initialData }: { initialData: WeeklyMapping
                   {d.name}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           {loading && (
             <span className="inline-flex items-center gap-2 pb-2 text-xs font-semibold text-[#94A3B8]">

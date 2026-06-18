@@ -35,6 +35,8 @@ import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type AdminAction = "approve" | "delete" | "reject";
 
@@ -901,7 +903,7 @@ export function OutstationRequestsAdmin({
 
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</span>
-              <select
+              <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setEligibility(event.target.value)}
                 value={eligibility}
@@ -910,12 +912,12 @@ export function OutstationRequestsAdmin({
                 <option value="eligible">Eligible</option>
                 <option value="not_eligible">Not Eligible</option>
                 <option value="needs_review">Needs Review</option>
-              </select>
+              </SearchableSelect>
             </label>
 
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Role</span>
-              <select
+              <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setRole(event.target.value)}
                 value={role}
@@ -926,12 +928,12 @@ export function OutstationRequestsAdmin({
                     {item}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
 
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Month</span>
-              <select
+              <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setMonth(event.target.value)}
                 value={month}
@@ -942,7 +944,7 @@ export function OutstationRequestsAdmin({
                     {formatMonthLabel(key)}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
           </div>
         </AdminTableShell>

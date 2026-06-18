@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Bell, CheckCircle2, Link2, Mail, Send, Smartphone, Unplug } from "lucide-react";
 
 import { useHydrated } from "@/hooks/use-hydrated";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type NotificationSettings = {
   preferences: {
@@ -223,7 +225,7 @@ export function NotificationSettingsPanel() {
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <label className="min-w-0 text-sm font-semibold text-slate-700">
           Preferred channel
-          <select
+          <SearchableSelect
             className="mt-1 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
             disabled={controlsDisabled}
             onChange={(event) => savePreferences({ ...preferences, preferredChannel: event.target.value as NotificationSettings["preferences"]["preferredChannel"] })}
@@ -232,7 +234,7 @@ export function NotificationSettingsPanel() {
             <option value="email">Email</option>
             <option value="in_app">In-app</option>
             <option value="telegram">Telegram</option>
-          </select>
+          </SearchableSelect>
         </label>
         <label className="min-w-0 text-sm font-semibold text-slate-700">
           Quiet hours start

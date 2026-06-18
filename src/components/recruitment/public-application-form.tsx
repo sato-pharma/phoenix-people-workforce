@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type ChangeEvent, type FormEvent } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const sources = [
   "LinkedIn",
@@ -144,13 +146,13 @@ export function PublicApplicationForm({ title, token }: { title: string; token: 
         </label>
         <label className="text-sm text-slate-700">
           How did you hear about us?
-          <select className={field} value={form.source} onChange={set("source")}>
+          <SearchableSelect className={field} value={form.source} onChange={set("source")}>
             {sources.map((source) => (
               <option key={source} value={source}>
                 {source}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </label>
         <label className="sm:col-span-2 text-sm text-slate-700">
           CV link (Google Drive / Dropbox URL)

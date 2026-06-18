@@ -36,6 +36,8 @@ import type {
   ResignationWorkflowAction,
 } from "@/lib/resignations/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: ResignationDashboardData | null;
@@ -169,14 +171,14 @@ function SelectFilter({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
         {label}
       </span>
-      <select className={adminSelectClassName} onChange={(event) => onChange(event.target.value)} value={value}>
+      <SearchableSelect className={adminSelectClassName} onChange={(event) => onChange(event.target.value)} value={value}>
         <option value={allValue}>{`All ${label}`}</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }
@@ -193,7 +195,7 @@ function SortSelect({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
         Sort
       </span>
-      <select className={adminSelectClassName} onChange={(event) => onChange(event.target.value as SortKey)} value={value}>
+      <SearchableSelect className={adminSelectClassName} onChange={(event) => onChange(event.target.value as SortKey)} value={value}>
         <option value="effective-asc">Effective date asc</option>
         <option value="effective-desc">Effective date desc</option>
         <option value="submitted-asc">Submitted date asc</option>
@@ -202,7 +204,7 @@ function SortSelect({
         <option value="employee-desc">Employee Z-A</option>
         <option value="status-asc">Status A-Z</option>
         <option value="status-desc">Status Z-A</option>
-      </select>
+      </SearchableSelect>
     </label>
   );
 }
@@ -752,7 +754,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
               Employee
             </span>
-            <select
+            <SearchableSelect
               className={adminSelectClassName}
               onChange={(event) => updateForm("employeeHrId", event.target.value)}
               value={form.employeeHrId}
@@ -763,7 +765,7 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                   {employee.label}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">

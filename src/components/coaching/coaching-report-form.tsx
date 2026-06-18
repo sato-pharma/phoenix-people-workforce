@@ -38,6 +38,8 @@ import type {
   CoachingScoreInput,
 } from "@/lib/coaching/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type CoachingEmployeeOption = {
   areaName: string | null;
@@ -356,7 +358,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
             <div className={`${adminSoftPanelClassName} p-4`}>
               <label className="block">
                 <FieldLabel required>Medical Rep</FieldLabel>
-                <select
+                <SearchableSelect
                   className="h-12 w-full rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setSelectedHrId(event.target.value)}
                   value={selectedHrId}
@@ -367,7 +369,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                       {formatEmployeeDisplayName(employee.fullName)} - {employee.hrId}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <DetailPill label="HR ID" value={selectedEmployee?.hrId} />

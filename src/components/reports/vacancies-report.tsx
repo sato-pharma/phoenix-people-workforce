@@ -30,6 +30,8 @@ import { formatDateOnly } from "@/lib/date-only";
 import { publicVacancyLabel } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type VacanciesReportProps = {
   initialError?: string | null;
@@ -170,7 +172,7 @@ function SelectFilter({
       <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
         {label}
       </span>
-      <select
+      <SearchableSelect
         className="h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -181,7 +183,7 @@ function SelectFilter({
             {option}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

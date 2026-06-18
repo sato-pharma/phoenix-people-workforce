@@ -21,6 +21,8 @@ import {
   filterMonthlyClosingMatrix,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   canPublish?: boolean;
@@ -202,7 +204,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
-              <select
+              <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availableLines.length === 0}
                 onChange={(event) => void reload(event.target.value, selectedPeriod)}
@@ -215,11 +217,11 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
                     <option key={line} value={line}>{line}</option>
                   ))
                 )}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
-              <select
+              <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availablePeriods.length === 0}
                 onChange={(event) => void reload(selectedLine, event.target.value)}
@@ -232,7 +234,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
                     <option key={period} value={period}>{period}</option>
                   ))
                 )}
-              </select>
+              </SearchableSelect>
             </label>
             <Button
               className="gap-2"

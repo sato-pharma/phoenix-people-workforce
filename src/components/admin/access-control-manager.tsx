@@ -51,6 +51,8 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type EmployeeOption = {
   hrId: string;
@@ -1075,7 +1077,7 @@ export function AccessControlManager({
                 <div className="space-y-4">
                   <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Organization</div>
                   <div className="grid gap-3">
-                    <select
+                    <SearchableSelect
                       aria-label="Phoenix role"
                       className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
                       disabled={!canManageUsers}
@@ -1087,9 +1089,9 @@ export function AccessControlManager({
                           {role}
                         </option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <select
+                      <SearchableSelect
                         aria-label="Phoenix line"
                         className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
                         disabled={!canManageUsers}
@@ -1101,7 +1103,7 @@ export function AccessControlManager({
                             {line}
                           </option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                       <Input
                         aria-label="Manager HR ID"
                         className="h-9 rounded-lg border-slate-200 bg-white px-3 text-sm font-medium transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
@@ -1119,7 +1121,7 @@ export function AccessControlManager({
                 <div className="space-y-4">
                   <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Access scope</div>
                   <div className="grid gap-3">
-                    <select
+                    <SearchableSelect
                       aria-label="Sales scope override"
                       className="h-9 w-full rounded-lg border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
                       disabled={!canManageUsers}
@@ -1134,7 +1136,7 @@ export function AccessControlManager({
                           {scope}
                         </option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                     <div className="rounded-lg border border-orange-200/80 bg-gradient-to-r from-orange-50/50 to-white p-3 text-sm text-orange-800 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
                       <div className="flex items-center gap-2 font-medium">
                         <LockKeyhole className="h-4 w-4" />
@@ -1228,7 +1230,7 @@ export function AccessControlManager({
                       value={query}
                     />
                   </div>
-                  <select
+                  <SearchableSelect
                     className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
                     onChange={(e) => {
                       setRoleFilter(e.target.value);
@@ -1242,8 +1244,8 @@ export function AccessControlManager({
                         {role}
                       </option>
                     ))}
-                  </select>
-                  <select
+                  </SearchableSelect>
+                  <SearchableSelect
                     className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
                     onChange={(e) => {
                       setLineFilter(e.target.value);
@@ -1257,7 +1259,7 @@ export function AccessControlManager({
                         {line}
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 

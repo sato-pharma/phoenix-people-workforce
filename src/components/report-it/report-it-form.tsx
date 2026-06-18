@@ -20,6 +20,8 @@ import {
   type AgeUnit,
   type DurationUnit,
 } from "@/lib/report-it/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -154,7 +156,7 @@ function DateFields({
           className={`${fieldClass} basis-16 shrink-0`}
           maxLength={2}
         />
-        <select
+        <SearchableSelect
           value={value.month}
           onChange={(e) => onChange({ ...value, month: e.target.value })}
           className={`${selectClass} min-w-0 flex-1`}
@@ -163,7 +165,7 @@ function DateFields({
           {MONTHS.map((m, i) => (
             <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
           ))}
-        </select>
+        </SearchableSelect>
         <input
           placeholder="YYYY"
           value={value.year}
@@ -195,14 +197,14 @@ function DurationFields({
         onChange={(e) => onValueChange(e.target.value)}
         className={`${fieldClass} basis-28 shrink-0`}
       />
-      <select
+      <SearchableSelect
         value={unitValue}
         onChange={(e) => onUnitChange(e.target.value)}
         className={`${selectClass} min-w-0 flex-1`}
       >
         <option value="">Unit</option>
         {DURATION_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-      </select>
+      </SearchableSelect>
     </div>
   );
 }
@@ -263,7 +265,7 @@ function Step1PatientInfo({
         </div>
         <div>
           <FieldLabel>Sex</FieldLabel>
-          <select
+          <SearchableSelect
             value={payload.patientSex}
             onChange={(e) => {
               const v = e.target.value as "Male" | "Female" | "Unknown" | "";
@@ -277,7 +279,7 @@ function Step1PatientInfo({
           >
             <option value="">Select sex</option>
             {["Male", "Female", "Unknown"].map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          </SearchableSelect>
         </div>
         <div>
           <FieldLabel>Weight (kg)</FieldLabel>
@@ -313,14 +315,14 @@ function Step1PatientInfo({
               type="number"
               className={`${fieldClass} basis-28 shrink-0`}
             />
-            <select
+            <SearchableSelect
               value={payload.ageUnit}
               onChange={(e) => set({ ageUnit: e.target.value as AgeUnit | "" })}
               className={`${selectClass} min-w-0 flex-1`}
             >
               <option value="">Unit</option>
               {AGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+            </SearchableSelect>
           </div>
         </div>
       </div>
@@ -397,18 +399,18 @@ function ReactionBlockCard({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel>Outcome of reaction</FieldLabel>
-            <select
+            <SearchableSelect
               value={reaction.outcome}
               onChange={(e) => set({ outcome: e.target.value as ReactionOutcome | "" })}
               className={selectClass}
             >
               <option value="">Select outcome</option>
               {REACTION_OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <FieldLabel>Is this reaction serious?</FieldLabel>
-            <select
+            <SearchableSelect
               value={reaction.isSerious}
               onChange={(e) => {
                 const v = e.target.value as "Yes" | "No" | "";
@@ -422,7 +424,7 @@ function ReactionBlockCard({
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 
@@ -552,25 +554,25 @@ function MedicineBlockCard({
           </div>
           <div>
             <FieldLabel>Route of administration</FieldLabel>
-            <select
+            <SearchableSelect
               value={medicine.adminRoute}
               onChange={(e) => set({ adminRoute: e.target.value as AdminRoute | "" })}
               className={selectClass}
             >
               <option value="">Select route</option>
               {ADMIN_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <FieldLabel>Action taken with medicine</FieldLabel>
-            <select
+            <SearchableSelect
               value={medicine.actionTaken}
               onChange={(e) => set({ actionTaken: e.target.value as MedicineActionTaken | "" })}
               className={selectClass}
             >
               <option value="">Select action</option>
               {MEDICINE_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 

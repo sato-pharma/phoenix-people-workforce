@@ -14,6 +14,8 @@ import type {
   ExpenseDatePreset,
   ExpenseSource,
 } from "@/components/outstation/expense-shared/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const PRESETS: ExpenseDatePreset[] = ["all", "today", "7d", "30d", "90d", "month", "custom"];
 
@@ -36,14 +38,14 @@ function FilterSelect({
   return (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</span>
-      <select className={selectClass} value={value} onChange={(event) => onChange(event.target.value || null)}>
+      <SearchableSelect className={selectClass} value={value} onChange={(event) => onChange(event.target.value || null)}>
         <option value="">{allLabel}</option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

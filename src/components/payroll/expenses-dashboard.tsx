@@ -31,6 +31,8 @@ import type {
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 const panelClassName =
   "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
@@ -206,7 +208,7 @@ function SelectFilter({
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
-      <select
+      <SearchableSelect
         className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#FED7AA]"
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -217,7 +219,7 @@ function SelectFilter({
             {option}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
     </label>
   );
 }

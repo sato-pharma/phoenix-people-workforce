@@ -43,6 +43,8 @@ import type {
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -661,7 +663,7 @@ function VacationDatePicker({
           className="absolute z-30 mt-1 w-full min-w-[300px] rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
         >
           <div className="grid grid-cols-2 gap-1.5">
-            <select
+            <SearchableSelect
               className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
               value={visibleMonth}
               onChange={(event) =>
@@ -675,8 +677,8 @@ function VacationDatePicker({
                   {new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(Date.UTC(2026, monthValue - 1, 1)))}
                 </option>
               ))}
-            </select>
-            <select
+            </SearchableSelect>
+            <SearchableSelect
               className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
               value={visibleYear}
               onChange={(event) =>
@@ -688,7 +690,7 @@ function VacationDatePicker({
               {yearOptions.map((yearValue) => (
                 <option key={yearValue} value={yearValue}>{yearValue}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
@@ -994,7 +996,7 @@ function NationalEgyptianVacationPanel() {
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
 
-        <select
+        <SearchableSelect
           aria-label="National holidays month"
           className="h-8 flex-1 min-w-[100px] rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
           value={month}
@@ -1005,9 +1007,9 @@ function NationalEgyptianVacationPanel() {
               {new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(Date.UTC(2026, monthValue - 1, 1)))}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
 
-        <select
+        <SearchableSelect
           aria-label="National holidays year"
           className="h-8 w-[80px] shrink-0 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
           value={year}
@@ -1016,7 +1018,7 @@ function NationalEgyptianVacationPanel() {
           {yearOptions.map((yearValue) => (
             <option key={yearValue} value={yearValue}>{yearValue}</option>
           ))}
-        </select>
+        </SearchableSelect>
 
         <button
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"

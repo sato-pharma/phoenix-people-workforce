@@ -30,6 +30,8 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format"
 import { buildSalesDashboardView } from "@/lib/sales/metrics";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type Props = {
   initialData: SalesDashboardData | null;
@@ -650,7 +652,7 @@ function FilterSelect({
     <label className="block">
       <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <div className="relative">
-        <select
+        <SearchableSelect
           className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-9 text-sm font-medium text-slate-700 outline-none transition-all duration-160 ease-out focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
           onChange={(event) => onChange(event.target.value)}
           value={value}
@@ -661,7 +663,7 @@ function FilterSelect({
               {option}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
         <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-slate-400 transition-transform duration-160 ease-out" />
       </div>
     </label>

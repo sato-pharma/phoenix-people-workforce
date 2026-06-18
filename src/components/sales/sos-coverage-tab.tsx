@@ -7,6 +7,8 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import type { CoverageSummary, DistributorCoverageRow, PersistentUnmappedCustomer } from "@/lib/sales/import-coverage";
 import { formatNumber } from "@/lib/sales/format";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 type BrickOption = { id: string; name: string };
 
@@ -204,7 +206,7 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
                     {isSaved ? (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Mapped</span>
                     ) : (
-                      <select
+                      <SearchableSelect
                         className="h-9 w-full max-w-[280px] rounded-lg border border-[#D8E0EA] bg-[#F8FAFC] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         disabled={saving || bricks.length === 0}
                         onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
@@ -214,7 +216,7 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
                         {bricks.map((b) => (
                           <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     )}
                   </td>
                 </tr>

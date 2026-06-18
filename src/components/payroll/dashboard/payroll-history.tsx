@@ -19,6 +19,8 @@ import {
   statusBadge,
 } from "./shared";
 import { TableHeaderMenu } from "./table-header-menu";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
 
 export function PayrollHistory({
   activeBatchId,
@@ -123,7 +125,7 @@ export function PayrollHistory({
           placeholder="Filter uploaded files by period, file, status..."
           value={fileSearch}
         />
-        <select
+        <SearchableSelect
           className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
           onChange={(event) => setFileSort(event.target.value)}
           value={fileSort}
@@ -134,7 +136,7 @@ export function PayrollHistory({
           <option value="uploaded-asc">Uploaded oldest</option>
           <option value="status">Status A-Z</option>
           <option value="file">File A-Z</option>
-        </select>
+        </SearchableSelect>
       </div>
       <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
         <div className="overflow-x-auto">
