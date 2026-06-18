@@ -316,6 +316,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const [preview, setPreview] = useState<NormalizePreview | null>(null);
   const [productCodes, setProductCodes] = useState<Record<string, string>>({});
   const [territoryCodes, setTerritoryCodes] = useState<Record<string, string>>({});
+  const [customerCodes, setCustomerCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
@@ -338,6 +339,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
         setPreview(payload.data);
         setProductCodes(Object.fromEntries(payload.data.unknownProducts.map((u) => [u.raw, u.suggestionCode ?? ""])));
         setTerritoryCodes(Object.fromEntries(payload.data.unknownTerritories.map((u) => [u.raw, u.suggestionCode ?? ""])));
+        setCustomerCodes(Object.fromEntries(payload.data.unknownCustomers.map((u) => [u.raw, ""])));
       } else {
         setError(payload.error ?? "Analysis failed.");
       }
@@ -376,9 +378,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   }
 
   async function save() {
-    const mappings: { type: "product" | "territory"; raw: string; code: string }[] = [];
+    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string }[] = [];
     for (const [raw, code] of Object.entries(productCodes)) if (code.trim()) mappings.push({ type: "product", raw, code: code.trim() });
     for (const [raw, code] of Object.entries(territoryCodes)) if (code.trim()) mappings.push({ type: "territory", raw, code: code.trim() });
+    for (const [raw, code] of Object.entries(customerCodes)) if (code.trim()) mappings.push({ type: "customer", raw, code: code.trim() });
     if (mappings.length === 0) { setError("Fill at least one Phoenix code before saving."); return; }
     setSaving(true); setError(null); setMessage(null);
     try {
@@ -421,8 +424,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   const productsTotal = preview?.unknownProducts.length ?? 0;
   const territoriesMapped = Object.values(territoryCodes).filter(Boolean).length;
   const territoriesTotal = preview?.unknownTerritories.length ?? 0;
-  const hasUnknowns = productsTotal > 0 || territoriesTotal > 0;
-  const allReady = hasUnknowns && productsMapped === productsTotal && territoriesMapped === territoriesTotal;
+  const customersMapped = Object.values(customerCodes).filter(Boolean).length;
+  const customersTotal = preview?.unknownCustomers.length ?? 0;
+  const hasUnknowns = productsTotal > 0 || territoriesTotal > 0 || customersTotal > 0;
+  const allReady = hasUnknowns && productsMapped === productsTotal && territoriesMapped === territoriesTotal && customersMapped === customersTotal;
 
   const fullyCodedPct = preview && preview.summary.totalRows > 0
     ? Math.round((preview.summary.fullyCoded / preview.summary.totalRows) * 100)
@@ -463,9 +468,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.summary.totalRows} rows</span>
             <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownProducts.length} unknown products</span>
             <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownTerritories.length} unknown areas</span>
-            {preview.unknownCustomers.length > 0 ? (
-              <span className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-3 py-1 text-[#92400E]">{preview.unknownCustomers.length} customers need a brick (use the Customer / Brick template)</span>
-            ) : null}
+            <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownCustomers.length} unknown customers</span>
           </div>
 
           {hasUnknowns ? (
@@ -488,6 +491,15 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
                   <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-[#F97316]")}>{territoriesMapped}/{territoriesTotal}</span>
                 </div>
               ) : null}
+              {customersTotal > 0 ? (
+                <div className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Customers</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
+                    <div className={cn("h-full rounded-full transition-all duration-300", customersMapped === customersTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: customersTotal > 0 ? `${Math.round((customersMapped / customersTotal) * 100)}%` : "0%" }} />
+                  </div>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", customersMapped === customersTotal ? "text-emerald-600" : "text-[#F97316]")}>{customersMapped}/{customersTotal}</span>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -496,7 +508,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex flex-1 items-center justify-between gap-3">
                 <p className="text-sm font-semibold">
-                  {[productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "", territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : ""].filter(Boolean).join(" + ")} ready — save now
+                  {[productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "", territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : "", customersMapped > 0 ? `${customersMapped} customer${customersMapped === 1 ? "" : "s"}` : ""].filter(Boolean).join(" + ")} ready — save now
                 </p>
                 <Button className="h-8 shrink-0 gap-1.5 rounded-xl bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={saving} onClick={() => void save()} type="button">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -530,7 +542,17 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             />
           ) : null}
 
-          {preview.unknownProducts.length > 0 || preview.unknownTerritories.length > 0 ? (
+          {preview.unknownCustomers.length > 0 ? (
+            <UnknownTable
+              codes={customerCodes}
+              kind="customer"
+              onChange={(raw, code) => setCustomerCodes((prev) => ({ ...prev, [raw]: code }))}
+              options={bricks.map((b) => ({ code: b.id, name: b.name }))}
+              rows={preview.unknownCustomers}
+            />
+          ) : null}
+
+          {preview.unknownProducts.length > 0 || preview.unknownTerritories.length > 0 || preview.unknownCustomers.length > 0 ? (
             <Button
               className="h-10 w-fit gap-2 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
               disabled={saving}
@@ -543,7 +565,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
           ) : (
             <AdminCallout tone="success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Every product and area in this sheet is already mapped — import it now below.</p>
+              <p>Every product, area, and customer in this sheet is already mapped — import it now below.</p>
             </AdminCallout>
           )}
         </div>
@@ -648,33 +670,38 @@ function UnknownTable({
 }: {
   rows: DistinctUnknown[];
   codes: Record<string, string>;
-  kind: "product" | "territory";
+  kind: "product" | "territory" | "customer";
   options: { code: string; name: string }[];
-  busyAi: boolean;
-  onAi: () => void;
+  busyAi?: boolean;
+  onAi?: () => void;
   onChange: (raw: string, code: string) => void;
 }) {
+  const label = kind === "product" ? "products" : kind === "territory" ? "areas" : "customers";
+  const rawLabel = kind === "product" ? "item" : kind === "territory" ? "area" : "customer code";
+  const codeLabel = kind === "product" ? "Product ID" : "Brick ID";
   return (
     <div className="rounded-2xl border border-[#E2E8F0]">
       <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-2.5">
         <div className="flex items-center gap-2">
           <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-            Unknown {kind === "product" ? "products" : "areas"} ({rows.length})
+            Unknown {label} ({rows.length})
           </p>
           {busyAi ? <span className="animate-pulse text-xs font-bold text-[#F97316]">AI working…</span> : null}
         </div>
-        <Button className="h-8 gap-2" disabled={busyAi} onClick={onAi} type="button" variant="secondary">
-          {busyAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          AI suggest
-        </Button>
+        {onAi ? (
+          <Button className="h-8 gap-2" disabled={busyAi} onClick={onAi} type="button" variant="secondary">
+            {busyAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            AI suggest
+          </Button>
+        ) : null}
       </div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-[#020617] text-left text-[11px] font-black uppercase tracking-[0.12em] text-white">
             <tr>
-              <th className="px-4 py-2">Raw {kind === "product" ? "item" : "area"}</th>
+              <th className="px-4 py-2">Raw {rawLabel}</th>
               <th className="px-4 py-2 text-right">Rows</th>
-              <th className="px-4 py-2">Phoenix {kind === "product" ? "Product ID" : "Brick ID"}</th>
+              <th className="px-4 py-2">Phoenix {codeLabel}</th>
             </tr>
           </thead>
           <tbody>
