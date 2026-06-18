@@ -10,7 +10,7 @@ import {
   SkipForward,
   UploadCloud,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useCallback } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,10 @@ export function MonthlySalesWizard() {
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
   const [preview, setPreview] = useState<DistributorSalesValidationResult | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const onFileChange = useCallback(() => {
+    setSelectedFileName(fileRef.current?.files?.[0]?.name ?? null);
+  }, []);
 
   const activeStep = useMemo(() => {
     if (!run) return null;
@@ -92,7 +96,7 @@ export function MonthlySalesWizard() {
       // Validated + persisted — record confirmation against the run with the new batch id.
       await confirmStep(activeStep.distributorCode, payload.data.batchId ?? null);
       setMessage({ type: "success", text: `${activeStep.distributorName} validated and confirmed.` });
-      if (fileRef.current) fileRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = ""; setSelectedFileName(null);
     } finally { setBusy(false); }
   }
 
@@ -150,7 +154,7 @@ export function MonthlySalesWizard() {
       setPreview(payload.data);
       if (mode === "commit") {
         setMessage({ type: "success", text: "Office allocation saved." });
-        if (fileRef.current) fileRef.current.value = "";
+        if (fileRef.current) fileRef.current.value = ""; setSelectedFileName(null);
         await refreshRun();
       } else {
         setMessage({ type: "success", text: "Preview ready — review the allocation, then confirm." });
@@ -287,11 +291,20 @@ export function MonthlySalesWizard() {
 
                 {!run.locked ? (
                   <div className="flex flex-col gap-3">
-                    <input ref={fileRef} type="file" accept=".xls,.xlsx" className="text-sm" />
+                    {/* File picker — must select before any action button works */}
+                    <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-[#D8E0EA] bg-slate-50 px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50">
+                      <UploadCloud className="h-5 w-5 shrink-0 text-slate-400" />
+                      <span className="flex-1 text-sm">
+                        {selectedFileName
+                          ? <span className="font-bold text-slate-800">{selectedFileName}</span>
+                          : <span className="text-slate-500">Click here to choose the Excel file (.xlsx)</span>}
+                      </span>
+                      <input ref={fileRef} type="file" accept=".xls,.xlsx" className="sr-only" onChange={onFileChange} />
+                    </label>
                     <div className="flex flex-wrap gap-2">
                       {isOfficeStep ? (
                         <>
-                          <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void officeAction("preview")} variant="secondary">
+                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !selectedFileName} onClick={() => void officeAction("preview")} variant="secondary">
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Preview allocation
                           </Button>
                           <Button className="gap-2 rounded-xl font-black" disabled={busy || !preview || preview.status !== "validated"} onClick={() => void officeAction("commit")}>
@@ -300,7 +313,7 @@ export function MonthlySalesWizard() {
                         </>
                       ) : (
                         <>
-                          <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void uploadDistributor()}>
+                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !selectedFileName} onClick={() => void uploadDistributor()}>
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Upload &amp; confirm
                           </Button>
                           <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void skipStep()} variant="secondary">
