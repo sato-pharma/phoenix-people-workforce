@@ -15,15 +15,18 @@ export function WeeklyProductMappingManager({
   initial,
   initialError,
   initialDistributor,
+  lockedDistributor,
 }: {
   initial: WeeklyProductAliasAdmin | null;
   initialError: string | null;
   /** Pre-select a distributor (e.g. when arriving from the Missing Products "Add Alias" action). */
   initialDistributor?: string;
+  /** Force a distributor and hide the internal selector (embedded in a distributor-scoped page). */
+  lockedDistributor?: string;
 }) {
   const [data, setData] = useState<WeeklyProductAliasAdmin | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
-  const [distributor, setDistributor] = useState<string>(initialDistributor || initial?.distributors[0]?.code || "IS");
+  const [distributor, setDistributor] = useState<string>(lockedDistributor || initialDistributor || initial?.distributors[0]?.code || "IS");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -165,22 +168,26 @@ export function WeeklyProductMappingManager({
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
-        <SearchableSelect
-          className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
-          disabled={busy}
-          value={distributor}
-          onChange={(event) => {
-            setDistributor(event.target.value);
-            setDraft(EMPTY_DRAFT);
-          }}
-        >
-          {data.distributors.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.name} ({option.code})
-            </option>
-          ))}
-        </SearchableSelect>
+        {lockedDistributor ? null : (
+          <>
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
+            <SearchableSelect
+              className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              disabled={busy}
+              value={distributor}
+              onChange={(event) => {
+                setDistributor(event.target.value);
+                setDraft(EMPTY_DRAFT);
+              }}
+            >
+              {data.distributors.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name} ({option.code})
+                </option>
+              ))}
+            </SearchableSelect>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <a
             className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"

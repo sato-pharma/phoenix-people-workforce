@@ -1,5 +1,5 @@
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import { normalizeAliasKey, normalizeCodeKey, numericCanonicalKey } from "@/lib/sales/normalizer/resolvers";
 import type { Crosswalks } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -52,6 +52,17 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
   const productByCode = new Map(refs.products.map((p) => [normalizeCodeKey(p.productCode), {
     productCode: normalizeCodeKey(p.productCode), productName: p.productName, factoryPrice: p.factoryPrice, line: p.line,
   }]));
+  // Numeric-canonical product index (collision-safe): only for purely-numeric product codes.
+  const productByCanonicalCode = new Map<string, string>();
+  const productCanonConflict = new Set<string>();
+  for (const p of refs.products) {
+    const code = normalizeCodeKey(p.productCode);
+    const canon = numericCanonicalKey(code);
+    if (!canon || productCanonConflict.has(canon)) continue;
+    const existing = productByCanonicalCode.get(canon);
+    if (existing === undefined) productByCanonicalCode.set(canon, code);
+    else if (existing !== code) { productByCanonicalCode.delete(canon); productCanonConflict.add(canon); }
+  }
 
   // Per-distributor: key by `${distributor} ${normalized alias}` so each distributor's raw codes/names
   // resolve only for that distributor (resolveProduct builds the same composite key).
@@ -77,11 +88,22 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     if (key) regionAliasByKey.set(key, normalizeCodeKey(row.region_code));
   }
   const customerBrickByKey = new Map<string, string>();
+  // Numeric-canonical customer index (collision-safe): tolerates leading-zero / number-vs-text drift.
+  const customerBrickByCanonicalKey = new Map<string, string>();
+  const customerCanonConflict = new Set<string>();
   for (const row of custMap) {
-    const key = `${normalizeCodeKey(row.distributor_code)} ${normalizeCodeKey(row.customer_code)}`;
+    const dist = normalizeCodeKey(row.distributor_code);
     const brick = normalizeCodeKey(row.brick_id);
-    if (brick) customerBrickByKey.set(key, brick);
+    if (!brick) continue;
+    customerBrickByKey.set(`${dist} ${normalizeCodeKey(row.customer_code)}`, brick);
+    const canon = numericCanonicalKey(row.customer_code);
+    if (!canon) continue;
+    const ckey = `${dist} ${canon}`;
+    if (customerCanonConflict.has(ckey)) continue;
+    const existing = customerBrickByCanonicalKey.get(ckey);
+    if (existing === undefined) customerBrickByCanonicalKey.set(ckey, brick);
+    else if (existing !== brick) { customerBrickByCanonicalKey.delete(ckey); customerCanonConflict.add(ckey); }
   }
 
-  return { areaAliasByKey, areaByCode, brickById, customerBrickByKey, productAliasByKey, productByCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  return { areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }

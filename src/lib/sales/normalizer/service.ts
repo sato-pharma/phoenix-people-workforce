@@ -2,14 +2,18 @@ import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { normalizeRows, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
-import { distinctUnknowns, saveMappings, type DistinctUnknown, type MappingInput, type ProductRef } from "@/lib/sales/normalizer/mapping";
+import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
+import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+// Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
+// here so existing import sites (`@/lib/sales/normalizer/service`) keep working unchanged.
+export { normalizeUploadedFile, summarizePreview };
+export type { NormalizeFileResult, NormalizePreview };
 
 export type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
@@ -89,104 +93,6 @@ export type NormalizerDistributorOption = { code: string; name: string };
 export function listNormalizerDistributors(): NormalizerDistributorOption[] {
   return RAW_DISTRIBUTOR_PROFILES.map((p) => ({ code: p.distributorCode, name: p.distributorName }))
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-// Most-frequent invoice period among coded rows (the batch period).
-function dominantPeriod(rows: CodedRow[]): string | null {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    if (row.invoiceDate) counts.set(row.invoiceDate, (counts.get(row.invoiceDate) ?? 0) + 1);
-  }
-  let best: string | null = null; let bestN = 0;
-  for (const [period, n] of counts) { if (n > bestN) { best = period; bestN = n; } }
-  return best;
-}
-
-export type NormalizePreview = {
-  distributorCode: string;
-  distributorName: string;
-  period: string | null;
-  periods: { period: string; rows: number }[];
-  sampleCoded: CodedRow[];
-  summary: NormalizeResult["summary"];
-  unknownCustomers: DistinctUnknown[];
-  unknownProducts: DistinctUnknown[];
-  unknownTerritories: DistinctUnknown[];
-  // Change 3/4 additions — surfaced to the UI for actionable callouts
-  blankCustomerSkipped: number;
-  blankCustomerErrors: number;
-  darkCount: number;
-};
-
-export type NormalizeFileResult =
-  | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }
-  | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
-  | { status: "coded_sheet"; distributorName: string };
-
-export async function normalizeUploadedFile(distributorCode: string, file: File): Promise<NormalizeFileResult> {
-  const profile = await resolveDistributorProfile(distributorCode);
-  if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
-  // Load masters + file buffer in parallel; load crosswalks only after coded-sheet and header checks pass.
-  const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  const sheet = workbook.worksheets[0];
-  if (!sheet) {
-    const maps = await loadCrosswalks(refs);
-    const result = normalizeRows(sheet as unknown as ExcelJS.Worksheet, profile, maps);
-    const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-    return { status: "ok", result, period: null, distributorName: profile.distributorName, products };
-  }
-
-  // Change 6: coded-sheet detection.
-  // Phoenix-branded coded sheets carry "Product ID" and "Distrub ID" — raw distributor exports never do.
-  // Running a coded sheet through the normalizer produces garbage; redirect the user to direct import.
-  const codedIndicators = ["product id", "distrub id", "region id"];
-  let codedHits = 0;
-  for (let r = 1; r <= Math.min(sheet.rowCount, 5); r += 1) {
-    sheet.getRow(r).eachCell({ includeEmpty: false }, (cell) => {
-      const key = String(cell.value ?? "").trim().toLowerCase();
-      if (codedIndicators.includes(key)) codedHits += 1;
-    });
-    if (codedHits >= 2) return { status: "coded_sheet", distributorName: profile.distributorName };
-  }
-
-  // Change 1: per-distributor pre-flight header validation.
-  const headerValidation = validateSheetHeaders(sheet, profile, RAW_DISTRIBUTOR_PROFILES);
-  if (!headerValidation.valid) {
-    return {
-      status: "header_error",
-      distributorName: profile.distributorName,
-      missingGroups: headerValidation.missingGroups,
-      fingerprintWarning: headerValidation.fingerprintWarning,
-    };
-  }
-
-  const maps = await loadCrosswalks(refs);
-  const result = normalizeRows(sheet, profile, maps);
-  const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-  return { status: "ok", result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products };
-}
-
-export function summarizePreview(distributorCode: string, distributorName: string, result: NormalizeResult, products: ProductRef[]): NormalizePreview {
-  const periodCounts = new Map<string, number>();
-  result.coded.forEach((r) => { if (r.invoiceDate) periodCounts.set(r.invoiceDate, (periodCounts.get(r.invoiceDate) ?? 0) + 1); });
-  const distinct = distinctUnknowns(result.exceptions, products);
-  return {
-    distributorCode,
-    distributorName,
-    period: dominantPeriod(result.coded),
-    periods: [...periodCounts.entries()].map(([period, rows]) => ({ period, rows })).sort((a, b) => a.period.localeCompare(b.period)),
-    sampleCoded: result.coded.slice(0, 50),
-    summary: result.summary,
-    unknownCustomers: distinct.customers.slice(0, 500),
-    unknownProducts: distinct.products.slice(0, 500),
-    unknownTerritories: distinct.territories.slice(0, 500),
-    blankCustomerSkipped: result.summary.blankCustomerSkipped,
-    blankCustomerErrors: distinct.blankCustomerErrors,
-    darkCount: distinct.darkCount,
-  };
 }
 
 // ── Coded XLSX (the format the user produces by hand today; Phoenix-branded) ──
@@ -276,11 +182,15 @@ export async function persistNormalizedBatch(input: {
   fileName: string;
   result: NormalizeResult;
   uploadedBy: string;
+  // Explicit period (the caller's single source of truth). When omitted, falls back to the dominant
+  // period (legacy callers). The new Sales Upload commit ALWAYS passes this so a user-picked period
+  // is honored and replace/insert target the same month.
+  period?: string;
 }): Promise<{ batchId: string; period: string | null; importedRows: number }> {
   const supabase = getSupabaseAdmin();
   const { coded } = input.result;
-  const period = dominantPeriod(coded);
-  // only rows in the dominant period are imported (one batch = one month, like the importer)
+  const period = input.period ?? dominantPeriod(coded);
+  // only rows in the chosen period are imported (one batch = one month, like the importer)
   const rows = coded.filter((r) => r.invoiceDate === period);
   const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
@@ -303,6 +213,10 @@ export async function persistNormalizedBatch(input: {
       total_qty: Number(totalQty.toFixed(6)),
       total_bonus_qty: Number(totalBonus.toFixed(6)),
       total_value: Number(totalValue.toFixed(6)),
+      // C3 reconciliation breakdown + C5 lineage (coded = importable_rows, blocked = failed_rows).
+      rows_ignored: input.result.summary.ignored,
+      rows_blank: input.result.summary.blankCustomerSkipped,
+      recognition_engine_version: RECOGNITION_ENGINE_VERSION,
       blocking_reasons: [],
       uploaded_by: input.uploadedBy,
     })
