@@ -22,7 +22,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
-  BriefcaseBusiness,
   Calculator,
   CalendarClock,
   CalendarDays,

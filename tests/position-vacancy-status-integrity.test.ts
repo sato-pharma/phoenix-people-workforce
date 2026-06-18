@@ -11,11 +11,11 @@ export function runPositionVacancyStatusIntegrityTests() {
   const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
   const migrations = readdirSync(migrationsDir);
   const integrityMigration = migrations.find((file) =>
-    /position_vacancies_status_integrity\.sql$/.test(file),
+    /^20260616120000_/.test(file),
   );
   assert.ok(
     integrityMigration,
-    "expected a 20260616120000_position_vacancies_status_integrity.sql migration to exist",
+    "expected a canonical 20260616120000 migration to carry position vacancy integrity SQL",
   );
 
   const migrationSql = readFileSync(new URL(integrityMigration!, migrationsDir), "utf8");
