@@ -598,15 +598,18 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /stepProgressByRequestId/, "workspace must expose step progress for tracking");
   assert.match(serviceSource, /buildMarketingStepProgress/, "service must compute compact step progress");
 
-  // ROI actuals must prefer exact customer-code attribution and expose fallback quality.
-  const roiMigration = source("supabase/migrations/20260618090100_marketing_roi_exact_customer_attribution.sql");
+  // ROI actuals must match by exact CUSTOMER CODE ONLY — the brick/geography fallback was removed
+  // (owner directive). This guards the live behaviour, so it reads the latest migration that defines it.
+  const roiMigration = source("supabase/migrations/20260620140000_marketing_roi_customer_code_only.sql");
   const marketingTypesSource = source("src/lib/marketing-requests/types.ts");
   const roiWorkspaceSource = source("src/components/employee-portal/marketing-roi-tracking-workspace.tsx");
   assert.match(roiMigration, /r\.client_code/, "ROI actuals must match Source-of-Sales rows by exact client_code");
   assert.match(roiMigration, /mpdc\.normalized_pharmacy_code/, "ROI actuals must use the request pharmacy distributor code as the customer key");
-  assert.match(roiMigration, /fallback_hits/, "ROI actuals must keep the brick fallback explicit");
-  assert.match(roiMigration, /exact_covered_keys/, "brick fallback must be suppressed when exact customer rows exist");
+  assert.doesNotMatch(roiMigration, /fallback_hits/, "ROI actuals must NOT match sales by brick fallback (customer-code-only)");
+  assert.doesNotMatch(roiMigration, /fallback_bricks/, "ROI actuals must NOT build brick fallback candidates");
+  assert.doesNotMatch(roiMigration, /exact_covered_keys/, "no brick fallback means no exact-covered-keys suppression CTE");
   assert.match(roiMigration, /attribution_quality/, "ROI actuals must expose attribution quality");
+  assert.match(roiMigration, /'exact_customer'/, "attribution quality must still surface exact_customer");
   assert.match(marketingTypesSource, /MarketingRoiAttributionQuality/, "ROI tracking type must model attribution quality");
   assert.match(serviceSource, /attributionQuality/, "ROI tracking service must return attribution quality");
   assert.match(roiWorkspaceSource, /AttributionBadge/, "ROI tracking UI must display attribution quality");
