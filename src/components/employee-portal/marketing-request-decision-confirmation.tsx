@@ -15,8 +15,10 @@ function decisionLabel(decision: MarketingRequestDecision) {
 }
 
 export function MarketingRequestDecisionConfirmation({
+  detailsHref = "/employee-portals/marketing-requests",
   summary,
 }: {
+  detailsHref?: string;
   summary: MarketingRequestDecisionSummary;
 }) {
   const [comment, setComment] = useState("");
@@ -125,7 +127,7 @@ export function MarketingRequestDecisionConfirmation({
               {isPending ? "Submitting..." : `${actionLabel} in Phoenix`}
             </button>
           )}
-          <Link className="border border-slate-300 px-4 py-2 text-sm font-black text-slate-700" href="/employee-portals/marketing-requests">
+          <Link className="border border-slate-300 px-4 py-2 text-sm font-black text-slate-700" href={detailsHref}>
             View details
           </Link>
         </div>

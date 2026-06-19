@@ -37,7 +37,7 @@ import type { EmployeePlan, EmployeePlanItemInput, EmployeePlansWorkspace } from
 
 type PlansWorkspaceProps = {
   access: AccessContext;
-  basePath?: "/admin/weekly-plans" | "/employee-portals/plans";
+  basePath?: "/admin/weekly-plans" | "/employee-portals/plans" | "/workspace/plans";
   initialWorkspace: EmployeePlansWorkspace;
   selectedPlanId?: string | null;
 };
@@ -592,8 +592,12 @@ export function PlansWorkspace({
 
   // The global portal bottom nav (≈56px + safe area) only exists on the employee
   // portal surface, not the admin review page. Offset the action bar accordingly.
-  const onAdminSurface = basePath === "/admin/weekly-plans";
-  const calendarHref = onAdminSurface ? "/admin/weekly-plans/calendar" : "/employee-portals/plans/calendar";
+  const onAdminSurface = basePath === "/admin/weekly-plans" || basePath === "/workspace/plans";
+  const calendarHref = basePath === "/admin/weekly-plans"
+    ? "/admin/weekly-plans/calendar"
+    : basePath === "/workspace/plans"
+      ? "/workspace/plans/calendar"
+      : "/employee-portals/plans/calendar";
   const actionBarBottom = onAdminSurface
     ? "env(safe-area-inset-bottom)"
     : "calc(56px + env(safe-area-inset-bottom))";

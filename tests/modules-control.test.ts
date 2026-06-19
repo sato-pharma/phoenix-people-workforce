@@ -53,6 +53,39 @@ export function runModulesControlTests() {
   assert.deepEqual(modulesControl?.roles, ["Super Admin"]);
   assert.deepEqual(modulesControl?.permissions, [{ action: "read", resource: "module_control" }]);
 
+  const workspaceHrefs = [
+    "/workspace",
+    "/workspace/incentive",
+    "/workspace/plans",
+    "/workspace/plans/calendar",
+    "/workspace/private-calendar",
+    "/workspace/payslips",
+    "/workspace/deductions",
+    "/workspace/fingerprint-report",
+    "/workspace/marketing-requests/validation",
+    "/workspace/marketing-requests",
+    "/workspace/marketing-requests/inbox",
+    "/workspace/marketing-requests/roi-tracking",
+    "/workspace/leave-management/vacation-request",
+    "/workspace/leave-management/vacation-report",
+    "/workspace/vacancies",
+    "/workspace/probation",
+    "/workspace/organogram",
+    "/workspace/expense-dashboard",
+    "/workspace/submit-expense",
+    "/workspace/contact-hr-support",
+  ];
+  for (const href of workspaceHrefs) {
+    const workspaceModule = catalog.find((module) => module.href === href && module.navigationMode === "admin");
+    assert.ok(workspaceModule, `${href} must exist in the Admin Sidebar catalog`);
+    assert.ok(workspaceModule.moduleId.startsWith("admin.workspace."), `${href} must use explicit admin.workspace moduleId`);
+  }
+  assert.equal(
+    catalog.some((module) => module.href.startsWith("/workspace") && module.navigationMode === "employee-portal"),
+    false,
+    "workspace modules must not be added to the Employee Portal Sidebar catalog",
+  );
+
   assert.equal(permissionResources.includes("module_control"), true, "module_control permission resource is registered");
   assert.ok(permissionMatrix["Super Admin"].module_control?.includes("read"), "Super Admin can read Modules Control");
   assert.ok(permissionMatrix["Super Admin"].module_control?.includes("update"), "Super Admin can update Modules Control");
@@ -90,6 +123,43 @@ export function runModulesControlTests() {
       targetType: "user",
     }),
   );
+
+  const hossam = person({
+    hrId: "A-9",
+    loginId: "A-9",
+    name: "Hossam Reda",
+    positionTitle: "Marketing Manager",
+    role: "Marketing Manager",
+  });
+  const workspacePlans = catalog.find((module) => module.moduleId === "admin.workspace.weekly_monthly_plan");
+  assert.ok(workspacePlans, "workspace weekly/monthly plan module exists");
+  assert.doesNotThrow(() =>
+    validateModuleAssignmentList({
+      catalog,
+      matrix: permissionMatrix,
+      moduleIds: [workspacePlans!.moduleId],
+      navigationMode: "admin",
+      people: [hossam],
+      targetKey: "a-9",
+      targetType: "user",
+    }),
+    "A-9 Marketing Manager can receive allowed workspace modules",
+  );
+  for (const blockedModuleId of ["admin.workspace.organogram", "admin.workspace.vacancies", "admin.workspace.probation_tracker"]) {
+    assert.throws(
+      () => validateModuleAssignmentList({
+        catalog,
+        matrix: permissionMatrix,
+        moduleIds: [blockedModuleId],
+        navigationMode: "admin",
+        people: [hossam],
+        targetKey: "a-9",
+        targetType: "user",
+      }),
+      /Blocked: A-9 is Marketing Manager\..*requires/,
+      `${blockedModuleId} must stay blocked for A-9 without backend permission`,
+    );
+  }
 
   assert.throws(
     () => validateModuleAssignmentList({
@@ -133,6 +203,10 @@ export function runModulesControlTests() {
   assert.ok(
     accessRegistry.some((entry) => entry.pattern === "/admin/modules-control" && entry.surface === "page"),
     "Modules Control page is registered",
+  );
+  assert.ok(
+    accessRegistry.some((entry) => entry.pattern === "/workspace/**" && entry.surface === "page"),
+    "Admin-shell employee workspace routes are registered",
   );
 
   const migration = readFileSync("supabase/migrations/20260619000713_modules_control_sidebar_assignments.sql", "utf8");

@@ -43,7 +43,13 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import type { NavigationMode, PermissionAction, PermissionResource, PhoenixRole } from "@/lib/auth/permissions";
+import {
+  adminShellEmployeeRoles,
+  type NavigationMode,
+  type PermissionAction,
+  type PermissionResource,
+  type PhoenixRole,
+} from "@/lib/auth/permissions";
 
 export type NavigationPermission = {
   action?: PermissionAction;
@@ -137,6 +143,62 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
     ],
     label: "Command Center",
+  },
+  {
+    id: "workspace-my-workspace",
+    items: [
+      { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/deductions", icon: ReceiptText, label: "Deductions", moduleId: "admin.workspace.deductions", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "My Workspace",
+  },
+  {
+    id: "workspace-marketing-requests",
+    items: [
+      { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
+      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager"], exact: true },
+      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager"] },
+      { href: "/workspace/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.workspace.roi_tracking", roles: ["SFE Manager", "Marketing Manager"] },
+    ],
+    label: "Marketing Requests",
+  },
+  {
+    id: "workspace-leave-management",
+    items: [
+      { href: "/workspace/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", moduleId: "admin.workspace.vacation_request", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", moduleId: "admin.workspace.vacation_report", permissions: [{ resource: "leave", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Leave Management",
+  },
+  {
+    id: "workspace-team-operations",
+    items: [
+      { href: "/workspace/vacancies", icon: BriefcaseBusiness, label: "Vacancies", moduleId: "admin.workspace.vacancies", permissions: [{ resource: "vacancies", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/probation", icon: Hourglass, label: "Probation Tracker", moduleId: "admin.workspace.probation_tracker", permissions: [{ resource: "probation", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/organogram", icon: Network, label: "Organogram", moduleId: "admin.workspace.organogram", permissions: [{ resource: "organogram", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Team Operations",
+  },
+  {
+    id: "workspace-expenses",
+    items: [
+      { href: "/workspace/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", moduleId: "admin.workspace.expense_dashboard", permissions: [{ resource: "expenses", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/submit-expense", icon: PlusCircle, label: "Submit Expense", moduleId: "admin.workspace.submit_expense", permissions: [{ resource: "outstation", action: "create" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Expenses",
+  },
+  {
+    id: "workspace-support",
+    items: [
+      { href: "/workspace/contact-hr-support", icon: LifeBuoy, label: "Request Support", moduleId: "admin.workspace.request_support", permissions: [{ resource: "support_requests", action: "create" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Support",
   },
   {
     id: "people-management",

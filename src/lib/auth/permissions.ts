@@ -183,6 +183,18 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Manager",
 ]);
 
+export const adminShellEmployeeRoles = [
+  "SFE Manager",
+  "Marketing Manager",
+  "Finance Manager",
+  "Talent Acquisition",
+] as const satisfies readonly PhoenixRole[];
+const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
+
+export function isAdminShellEmployeeRole(role: PhoenixRole): boolean {
+  return adminShellEmployeeRoleSet.has(role);
+}
+
 export const hrAuthorityRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
 const hrAuthorityRoleSet = new Set<PhoenixRole>(hrAuthorityRoles);
 const hrSupportStaffActions: PermissionAction[] = ["read", "create", "update", "export"];
