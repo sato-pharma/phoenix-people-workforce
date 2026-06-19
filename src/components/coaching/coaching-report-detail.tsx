@@ -277,7 +277,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
       <Card className={cn(adminPanelClassName, "p-5 sm:p-6")}>
         <AdminSectionHeader
           title="20 field excellence points"
-          description="Five coaching parameters with fixed score items, each rated from 1 to 5."
+          description="Five coaching parameters with fixed score items, each rated from 0 to 5."
           action={<Target className="h-5 w-5 text-[#F97316]" />}
         />
 
@@ -317,7 +317,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
                             <p className="mt-1 text-xs font-semibold text-[#64748B]">Point {item.displayOrder}</p>
                           </div>
                           <span className="inline-flex h-9 min-w-12 items-center justify-center rounded-md bg-[#FFF7ED] px-3 text-sm font-black text-[#EA580C] ring-1 ring-[#FED7AA]">
-                            {score ?? "-"} / 6
+                            {score ?? "-"} / 5
                           </span>
                         </div>
                         <ScoreItemNotes score={scoreRow} />

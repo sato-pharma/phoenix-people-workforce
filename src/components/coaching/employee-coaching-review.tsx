@@ -156,7 +156,7 @@ function zoneClassName(zone: string | null | undefined) {
   return zoneClassNames[zone as CoachingPerformanceZone];
 }
 
-/** Color-grading for individual score items (1-5 scale). */
+/** Color-grading for individual score items (0-5 scale). */
 function scoreColorClass(score: number | null | undefined): string {
   const s = Number(score ?? 0);
   if (s >= 5) return "border-sky-200 bg-sky-50 text-sky-700 ring-sky-100";
@@ -279,7 +279,7 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
 }
 
 function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
-  const distribution = [5, 4, 3, 2, 1].map((s) => ({
+  const distribution = [5, 4, 3, 2, 1, 0].map((s) => ({
     count: scores.filter((item) => item.score === s).length,
     score: s,
   }));
@@ -531,7 +531,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
               20 field excellence points
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Each scoring item is rated from 1 to 5 across five coaching parameters.
+              Each scoring item is rated from 0 to 5 across five coaching parameters.
             </p>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded bg-orange-50 text-orange-600">
@@ -579,7 +579,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                             "inline-flex h-8 min-w-12 items-center justify-center rounded px-3 text-sm font-bold ring-1",
                             scoreColorClass(score),
                           )}>
-                            {score ?? "-"} / 6
+                            {score ?? "-"} / 5
                           </span>
                         </div>
                         <ScoreItemNotes score={scoreRow} />

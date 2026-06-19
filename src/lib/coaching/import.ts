@@ -34,7 +34,7 @@ import {
  * Importer for the historical "Field Coaching Report" Excel template.
  *
  * The template uses a two-row header (row 1 = category, row 2 = sub-item) and one
- * data row per medical rep. Each of the 20 scoring items is scored 1-5 and is read
+ * data row per medical rep. Each of the 20 scoring items is scored 0-5 and is read
  * verbatim — no rescaling. Rows whose HR-ID resolves to an active employee become
  * real coaching reports; rows with no/unresolved HR-ID (resignations) are archived
  * so the coach's written effort is preserved.

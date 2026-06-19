@@ -27,7 +27,7 @@ export default async function CoachingImportPage() {
           <div className="flex flex-wrap gap-2">
             <AdminInsightChip>Coaching</AdminInsightChip>
             <AdminInsightChip tone="orange">Historical Import</AdminInsightChip>
-            <AdminInsightChip tone="slate">Scores entered as-is (1–5)</AdminInsightChip>
+            <AdminInsightChip tone="slate">Scores entered as-is (0–5)</AdminInsightChip>
           </div>
         }
         description="Upload past Field Coaching Report workbooks to backfill the coaching history. Matched reps become submitted reports; resigned reps are archived so the coach's effort is preserved."

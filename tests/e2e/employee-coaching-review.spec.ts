@@ -123,8 +123,8 @@ test.describe("Employee Coaching Report Review", () => {
   });
 
   test("score distribution shows legend entries", async ({ page }) => {
-    // Legend shows entries like "6/6: 2" or "5/6: 7"
-    const legend = page.getByText(/\d\/6: \d/).first();
+    // Legend shows entries like "0/5: 2" or "5/5: 7"
+    const legend = page.getByText(/\d\/5: \d/).first();
     await expect(legend).toBeVisible();
   });
 
@@ -155,8 +155,8 @@ test.describe("Employee Coaching Report Review", () => {
   });
 
   test("score items show score badges", async ({ page }) => {
-    // Score badges like "3 / 6", "6 / 6", etc.
-    const scoreBadge = page.getByText(/^\d \/ 6$/).first();
+    // Score badges like "0 / 5", "5 / 5", etc.
+    const scoreBadge = page.getByText(/^\d \/ 5$/).first();
     await expect(scoreBadge).toBeVisible();
   });
 

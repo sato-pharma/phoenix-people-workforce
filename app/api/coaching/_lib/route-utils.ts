@@ -7,7 +7,7 @@ import {
   type AccessContext,
   type PermissionAction,
 } from "@/lib/auth/permissions";
-import { coachingScoreItems } from "@/lib/coaching/constants";
+import { coachingMaxItemScore, coachingMinItemScore, coachingScoreItems } from "@/lib/coaching/constants";
 import type {
   CoachingPerformanceZone,
   CoachingReportFilters,
@@ -130,10 +130,10 @@ function optionalScoreInput(payload: Record<string, unknown>) {
       ? (rawScore as { score?: unknown }).score
       : rawScore;
     const score = Number(scoreValue);
-    if (!Number.isInteger(score) || score < 1 || score > 5) {
+    if (!Number.isInteger(score) || score < coachingMinItemScore || score > coachingMaxItemScore) {
       throw new CoachingApiError(
         "validation_error",
-        `Invalid coaching score for "${item.key}". Score must be an integer from 1 to 5.`,
+        `Invalid coaching score for "${item.key}". Score must be an integer from ${coachingMinItemScore} to ${coachingMaxItemScore}.`,
         400,
       );
     }
@@ -264,7 +264,7 @@ export function jsonError(error: unknown, fallbackMessage: string) {
     lower.includes("invalid") ||
     lower.includes("missing") ||
     lower.includes("exactly 20") ||
-    lower.includes("from 1 to 5")
+    lower.includes("from 0 to 5")
   ) {
     return NextResponse.json({ error: "validation_error", message }, { status: 400 });
   }

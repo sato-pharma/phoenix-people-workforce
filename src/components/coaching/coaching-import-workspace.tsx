@@ -107,7 +107,7 @@ export function CoachingImportWorkspace() {
     <div className="space-y-6">
       <Card className={cn(adminPanelClassName, "p-0 overflow-hidden")}>
         <AdminSectionHeader
-          description="Upload a Field Coaching Report workbook (.xlsx). Scores are read exactly as written (1–5). Reps with no/unknown HR-ID are treated as resigned and archived separately."
+          description="Upload a Field Coaching Report workbook (.xlsx). Scores are read exactly as written (0–5). Reps with no/unknown HR-ID are treated as resigned and archived separately."
           title="Upload coaching workbook"
         />
         <div className="p-5 sm:p-6">
