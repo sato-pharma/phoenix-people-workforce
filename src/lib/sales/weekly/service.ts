@@ -65,6 +65,8 @@ export async function importWeeklySalesFile(input: {
   uploadedBy: string;
   /** explicit period (YYYY-MM-DD) for undated / multi-dated files */
   periodDate?: string | null;
+  /** when true, parse + validate but never persist — used by the validate-only step */
+  dryRun?: boolean;
 }): Promise<WeeklySalesValidationResult> {
   const rawCode = (input.distributorCode ?? "").trim();
   if (!rawCode) throw new SalesWorkflowError("invalid_request", "Pick a distributor before uploading.", 400);
@@ -117,7 +119,8 @@ export async function importWeeklySalesFile(input: {
   }
 
   // Only persist a clean (validated) batch; blocked files are returned for the user to fix.
-  if (parsed.result.status === "validated") {
+  // dryRun=true skips persistence so the validate step can show tables without storing anything.
+  if (!input.dryRun && parsed.result.status === "validated") {
     const { batchId, createdAt } = await persistWeeklyUpload(parsed.rows, parsed.result, input.uploadedBy);
     return { ...parsed.result, batchId, createdAt };
   }

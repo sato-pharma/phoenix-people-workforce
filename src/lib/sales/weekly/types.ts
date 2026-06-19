@@ -91,6 +91,61 @@ export type WeeklySalesValidationResult = {
   issues: WeeklyValidationIssue[];
 };
 
+// ── Pre-upload verification (AI column check) ─────────────────────────────────────────────────────
+// Produced by /api/sales/weekly/verify BEFORE upload. Reads only the uploaded file's HEADER ROW
+// (never sales numbers) and compares it against the per-distributor column contract. Advisory only —
+// it never persists and the server /validate step remains the real validation boundary.
+
+export type WeeklyVerifyColumnStatus = "match" | "drift" | "uncertain" | "empty";
+
+export type WeeklyVerifyColumn = {
+  /** which file/sheet this column belongs to ("sales" | "stock" | "returns" | "combined") */
+  sheetRole: string;
+  /** the actual sheet name found in the file */
+  sheetName: string;
+  field: string;
+  label: string;
+  /** 1-based column the engine reads */
+  columnIndex: number;
+  /** what the header at that column usually reads */
+  expectedHeaderHint: string;
+  /** the header text actually sitting at that column in the uploaded file */
+  observedHeader: string;
+  status: WeeklyVerifyColumnStatus;
+  /** plain-English note (AI or deterministic) */
+  note: string;
+  /** true for key columns (product/branch/measure) where drift blocks a clean "pass" */
+  critical: boolean;
+};
+
+export type WeeklyVerifyMatrix = {
+  sheetRole: string;
+  sheetName: string;
+  kind: "branch-headers" | "location-columns";
+  firstColumn: number;
+  /** how many branch/location columns were detected in the uploaded file */
+  detectedCount: number;
+  /** first few detected headers, for the operator to eyeball */
+  sampleHeaders: string[];
+  note: string;
+};
+
+export type WeeklyVerifyResult = {
+  distributor: WeeklyDistributorOption;
+  /** "pass" = columns line up; "drift" = at least one key column doesn't match what's expected */
+  verdict: "pass" | "drift";
+  /** false when no AI key is set or the AI call failed — the deterministic column plan still shows */
+  aiUsed: boolean;
+  /** plain-English summary from the AI, or a fallback message when AI is unavailable */
+  aiNote: string | null;
+  /** the files/sheets that were read */
+  files: { role: string; fileName: string; sheetName: string }[];
+  columns: WeeklyVerifyColumn[];
+  matrices: WeeklyVerifyMatrix[];
+  /** structural warnings (sheet not found, empty header cell, etc.) */
+  warnings: string[];
+};
+
 // Upload-history list item (weekly_sales_batches).
 export type WeeklyBatch = {
   id: string;

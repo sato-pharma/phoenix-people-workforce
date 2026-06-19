@@ -3,9 +3,12 @@ import { redirect } from "next/navigation";
 
 import { AdminProfileForm } from "@/components/admin/admin-profile-form";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
+import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -43,9 +46,33 @@ export default async function AdminProfilePage() {
     loadError = error instanceof Error ? error.message : "Unknown error occurred";
   }
 
+  let uploadedPhoto: string | null = null;
+  if (profile?.hrId) {
+    uploadedPhoto = await uploadedEmployeePhotoUrl(profile.hrId).catch(() => null);
+  }
+  const staticPhoto = profile?.hrId ? employeeProfileImageForHrId(profile.hrId) : null;
+  const currentPhotoUrl = uploadedPhoto ?? staticPhoto;
+  const photoInitials = (profile?.name ?? profile?.loginId ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p.charAt(0))
+    .join("")
+    .toUpperCase();
+
   return (
     profile ? (
       <div className="space-y-6">
+        {profile.hrId && (
+          <div className="px-4 sm:px-6 lg:px-8">
+            <EmployeePhotoEditor
+              currentPhotoUrl={currentPhotoUrl}
+              fullName={profile.name ?? profile.loginId}
+              hasUploadedPhoto={Boolean(uploadedPhoto)}
+              initials={photoInitials}
+            />
+          </div>
+        )}
         <AdminProfileForm profile={profile} />
         <div className="px-4 sm:px-6 lg:px-8">
           <ChangePasswordForm />

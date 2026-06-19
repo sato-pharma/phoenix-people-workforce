@@ -120,6 +120,8 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(workspaceSource, /\/admin\/weekly-plans\/calendar/, "admin planning must link to the shared planning calendar");
   assert.match(workspaceSource, /sameLineBookingWarning/, "editor must show non-blocking same-line Medical Rep warnings");
   assert.match(workspaceSource, /<CalendarDays className=/, "calendar navigation must use the calendar icon action");
+  assert.match(workspaceSource, /workspace\.hasMorePlans/, "plans workspace must expose capped-results metadata in the UI");
+  assert.match(workspaceSource, /Showing the latest \{workspace\.loadedPlanCount\}/, "plans workspace must warn when plan results are capped");
   assert.match(workspaceSource, /nextWeeklyPlanStart/, "new weekly plans must default to the next selectable planning week");
   assert.match(workspaceSource, /Plan week/, "weekly editor must expose a clear Plan week selector");
   assert.match(workspaceSource, /weeklyPlanWeekOptions/, "weekly editor must provide explicit week choices instead of only an anchor date");
@@ -181,6 +183,9 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(adminPlanningCalendarPageSource, /getSharedPlanningCalendarWorkspace/);
   assert.match(planningCalendarRouteSource, /getSharedPlanningCalendarWorkspace/);
   assert.match(conflictRouteSource, /getSameLinePlanBookings/);
+  assert.match(sharedCalendarServiceSource, /CALENDAR_HEADER_LIMIT \+ 1/, "shared calendar must fetch one extra header row for hasMoreHeaders");
+  assert.match(sharedCalendarServiceSource, /CALENDAR_ITEM_LIMIT \+ 1/, "shared calendar must fetch one extra item row for hasMoreItems");
+  assert.match(planningCalendarUiSource, /workspace\.hasMoreHeaders \|\| workspace\.hasMoreItems/, "planning calendar must warn when results are capped");
   assert.doesNotMatch(planningCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_360px\]/, "planning calendar must not narrow the month grid with a right-side detail rail");
   assert.match(planningCalendarUiSource, /PlanningCalendarDetailsTable/, "selected planning day details must render in the polished details table");
   assert.match(planningCalendarUiSource, /"Date", "Employee", "Activity", "Region \/ Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning", "Notes"/, "planning details table must expose the full visible activity columns");
@@ -268,7 +273,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
     assert.ok(fnStart >= 0, `${fn} must be exported from service.ts`);
     const fnBody = serviceSource.slice(fnStart, fnStart + 3000);
     const callsRpcDirectly = fnBody.includes('rpc("phx_weekly_plan_');
-    const callsRpcWrapper = /rpc(?:Submit|Decide|Acknowledge|Cancel)Plan\(/.test(fnBody);
+    const callsRpcWrapper = /rpc(?:Replace|Decide|Acknowledge|Cancel)Plan(?:Items)?\(/.test(fnBody);
     assert.ok(
       callsRpcDirectly || callsRpcWrapper,
       `${fn} must call supabase.rpc("phx_weekly_plan_…") or a rpc*Plan wrapper — bare multi-step writes regressed`,

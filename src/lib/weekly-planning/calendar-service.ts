@@ -21,6 +21,9 @@ import {
   type SameLinePlanBooking,
 } from "@/lib/weekly-planning/calendar";
 
+const CALENDAR_HEADER_LIMIT = 1000;
+const CALENDAR_ITEM_LIMIT = 5000;
+
 type PlanCalendarHeaderRow = {
   employee_hr_id: string;
   employee_job_title: string | null;
@@ -96,7 +99,11 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
 
 async function loadSubmittedPlanItems(start: string, end: string): Promise<{
   directoryByHrId: Map<string, EmployeeDirectoryRow>;
+  hasMoreHeaders: boolean;
+  hasMoreItems: boolean;
   items: PlanningCalendarPlanItem[];
+  loadedHeaderCount: number;
+  loadedItemCount: number;
 }> {
   const supabase = getSupabaseAdmin();
   const [directoryRows, headersResult] = await Promise.all([
@@ -108,17 +115,28 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       .lte("period_start_date", end)
       .gte("period_end_date", start)
       .order("period_start_date", { ascending: true })
-      .limit(1000),
+      .limit(CALENDAR_HEADER_LIMIT + 1),
   ]);
   if (headersResult.error) throw headersResult.error;
 
-  const headers = (headersResult.data ?? []) as PlanCalendarHeaderRow[];
+  const loadedHeaders = (headersResult.data ?? []) as PlanCalendarHeaderRow[];
+  const hasMoreHeaders = loadedHeaders.length > CALENDAR_HEADER_LIMIT;
+  const headers = loadedHeaders.slice(0, CALENDAR_HEADER_LIMIT);
   const headerById = new Map(headers.map((header) => [header.id, header]));
   const planIds = headers.map((header) => header.id);
   const directoryByHrId = new Map(directoryRows.map((row) => [normalizeHrId(row.hrId), row]));
-  if (planIds.length === 0) return { directoryByHrId, items: [] };
+  if (planIds.length === 0) {
+    return {
+      directoryByHrId,
+      hasMoreHeaders,
+      hasMoreItems: false,
+      items: [],
+      loadedHeaderCount: headers.length,
+      loadedItemCount: 0,
+    };
+  }
 
-  const { data: rows, error } = await supabase
+  const { data: rawRows, error } = await supabase
     .from("employee_plan_items")
     .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,double_visit_medical_rep_hr_id,double_visit_medical_rep_name,notes,sort_order")
     .in("plan_id", planIds)
@@ -126,10 +144,14 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     .lte("activity_date", end)
     .order("activity_date", { ascending: true })
     .order("sort_order", { ascending: true })
-    .limit(5000);
+    .limit(CALENDAR_ITEM_LIMIT + 1);
   if (error) throw error;
 
-  const items = ((rows ?? []) as PlanCalendarItemRow[]).flatMap((row) => {
+  const loadedRows = (rawRows ?? []) as PlanCalendarItemRow[];
+  const hasMoreItems = loadedRows.length > CALENDAR_ITEM_LIMIT;
+  const rows = loadedRows.slice(0, CALENDAR_ITEM_LIMIT);
+
+  const items = rows.flatMap((row) => {
     const header = headerById.get(row.plan_id);
     if (!header) return [];
     const employee = directoryByHrId.get(normalizeHrId(header.employee_hr_id));
@@ -167,7 +189,14 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     return [item];
   });
 
-  return { directoryByHrId, items };
+  return {
+    directoryByHrId,
+    hasMoreHeaders,
+    hasMoreItems,
+    items,
+    loadedHeaderCount: headers.length,
+    loadedItemCount: rows.length,
+  };
 }
 
 export async function getSharedPlanningCalendarWorkspace(
@@ -180,7 +209,14 @@ export async function getSharedPlanningCalendarWorkspace(
   const viewerHrId = normalizeHrId(access.hrId);
 
   try {
-    const [{ directoryByHrId, items: rawPlanItems }, holidays] = await Promise.all([
+    const [{
+      directoryByHrId,
+      hasMoreHeaders,
+      hasMoreItems,
+      items: rawPlanItems,
+      loadedHeaderCount,
+      loadedItemCount,
+    }, holidays] = await Promise.all([
       loadSubmittedPlanItems(start, end),
       loadHolidayItems(year, month, start, end),
     ]);
@@ -190,7 +226,13 @@ export async function getSharedPlanningCalendarWorkspace(
     const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
     return {
       conflicts,
+      hasMoreHeaders,
+      hasMoreItems,
+      headerLimit: CALENDAR_HEADER_LIMIT,
       items: [...holidays, ...planItems].sort((left, right) => `${left.startDate}-${left.title}`.localeCompare(`${right.startDate}-${right.title}`)),
+      itemLimit: CALENDAR_ITEM_LIMIT,
+      loadedHeaderCount,
+      loadedItemCount,
       month,
       schemaReady: true,
       summary: {
@@ -208,7 +250,13 @@ export async function getSharedPlanningCalendarWorkspace(
     const holidays = await loadHolidayItems(year, month, start, end);
     return {
       conflicts: [],
+      hasMoreHeaders: false,
+      hasMoreItems: false,
+      headerLimit: CALENDAR_HEADER_LIMIT,
       items: holidays,
+      itemLimit: CALENDAR_ITEM_LIMIT,
+      loadedHeaderCount: 0,
+      loadedItemCount: 0,
       month,
       schemaReady: false,
       summary: {
