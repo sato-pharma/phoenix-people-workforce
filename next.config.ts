@@ -54,14 +54,13 @@ const securityHeaders = [
     : []),
 ];
 
-const nextConfig = {
+const nextConfig: NextConfig = {
   experimental: {
     // Tree-shake large barrel imports so only the icons/charts/primitives a
     // component actually uses land in its client chunk (these are imported
     // across 100+ client components).
     optimizePackageImports: ["lucide-react", "recharts", "radix-ui"],
   },
-  telemetry: false,
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",
@@ -76,7 +75,7 @@ const nextConfig = {
       },
     ];
   },
-} as NextConfig & { telemetry: false };
+};
 
 export default withSentryConfig(nextConfig, {
   // For all available options, see:
@@ -84,12 +83,13 @@ export default withSentryConfig(nextConfig, {
 
   authToken: process.env.SENTRY_AUTH_TOKEN,
 
-  org: process.env.SENTRY_ORG,
+  org: process.env.SENTRY_ORG ?? "sato-pharma",
 
-  project: process.env.SENTRY_PROJECT,
+  project: process.env.SENTRY_PROJECT ?? "phoenix",
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
+  telemetry: false,
 
   // For all available options, see:
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
@@ -97,6 +97,7 @@ export default withSentryConfig(nextConfig, {
   // Upload a larger set of source maps for prettier stack traces (increases build time)
   sourcemaps: {
     deleteSourcemapsAfterUpload: true,
+    disable: !process.env.SENTRY_AUTH_TOKEN,
   },
   widenClientFileUpload: true,
 
