@@ -128,8 +128,8 @@ export function runEmployeePortalNavigationTests() {
   );
   assert.equal(
     resolveLandingPathForRole("SFE Manager"),
-    "/admin/marketing-requests",
-    "SFE Manager should land in the admin marketing request shell",
+    "/workspace/marketing-requests",
+    "SFE Manager should land in its de-duplicated /workspace marketing home",
   );
 
   // --- Marketing Requests and Contact HR Support both graduated to full modules ------
