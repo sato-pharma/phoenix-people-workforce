@@ -10,6 +10,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -659,6 +660,28 @@ function employeeRowByHrId(rows: EmployeeDirectoryRow[]) {
       .map((row) => [normalizeHrId(row.hrId), row] as const)
       .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
   );
+}
+
+/**
+ * Resolve any HR_ID dialect to the exact `employees.hr_id` value (its real stored
+ * casing) so it satisfies the case-sensitive `employees(hr_id)` foreign keys on the
+ * marketing approval tables (`assigned_hr_id`, `decision_by_hr_id`).
+ *
+ * `normalizeHrId()` lower-cases for COMPARISON, which is the wrong dialect to STORE
+ * into an employees FK: the employee master is upper-cased, so writing "a-9" against
+ * a parent row of "A-9" raised a foreign-key violation and aborted every submit /
+ * decision. We map the lower-cased key back to the directory row's raw `hrId`; when
+ * the directory row is unavailable we fall back to the canonical upper-cased form
+ * (the employee master is upper-cased, so this matches for every real employee).
+ */
+export function resolveStoredEmployeeHrId(
+  value: string | null | undefined,
+  byHrId?: Map<string, EmployeeDirectoryRow>,
+): string | null {
+  const key = normalizeHrId(value);
+  if (!key) return null;
+  const stored = byHrId?.get(key)?.hrId;
+  return (stored ? String(stored) : null) ?? canonicalHrIdForDisplay(value);
 }
 
 function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {
@@ -1496,7 +1519,8 @@ async function createMarketingApprovalSteps(params: {
     throw validationError("Marketing workflow has no active required approval steps.", "marketing_workflow_missing");
   }
 
-  const requesterRow = employeeRowByHrId(params.employeeRows).get(normalizeHrId(params.request.requesterHrId) ?? "");
+  const byHrId = employeeRowByHrId(params.employeeRows);
+  const requesterRow = byHrId.get(normalizeHrId(params.request.requesterHrId) ?? "");
   const rows: Array<Record<string, unknown>> = [];
   let sequence = 0;
   const pushRow = (input: {
@@ -1506,10 +1530,22 @@ async function createMarketingApprovalSteps(params: {
     step: MarketingWorkflowStep;
     stepName: string;
   }) => {
+    // Store the approver against the employee master's real casing — the
+    // `assigned_hr_id` FK to employees(hr_id) is case-sensitive. A gating approver that
+    // is not a current employee is a hard configuration error (fail loudly, before the
+    // generic FK violation); a non-employee CC reviewer is advisory, so silently skip it.
+    const storedHrId = resolveStoredEmployeeHrId(input.assignedHrId, byHrId);
+    if (!storedHrId) {
+      if (input.isCc) return;
+      throw validationError(
+        `The approver for the "${input.stepName}" step is not a current employee. Ask an administrator to assign an active employee to the ${input.assignedRole} role before submitting this marketing request.`,
+        "marketing_approver_not_employee",
+      );
+    }
     sequence += 1;
     rows.push({
       allow_reject: input.step.allowReject,
-      assigned_hr_id: input.assignedHrId,
+      assigned_hr_id: storedHrId,
       assigned_role: input.assignedRole,
       decision_labels: input.step.decisionLabels,
       is_cc: input.isCc,
@@ -1998,6 +2034,9 @@ export async function decideMarketingRequestWorkflow(
   const actorHrId = requireMarketingDecisionActor(access);
   const supabase = getSupabaseAdmin();
   const employeeRows = await loadEmployeeDirectoryRows();
+  // Every employees(hr_id) FK column written below (decision_by_hr_id, updated_by_hr_id) is
+  // case-sensitive — store the decider's real employee casing, resolved once for the whole flow.
+  const storedActorHrId = resolveStoredEmployeeHrId(actorHrId, employeeRowByHrId(employeeRows)) ?? actorHrId;
   let request = await loadMarketingRequestById(supabase, requestId);
   const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
   const currentStep = steps.find((step) => step.status === "current") ?? null;
@@ -2016,7 +2055,7 @@ export async function decideMarketingRequestWorkflow(
     .from("marketing_request_approval_steps")
     .update({
       decision_at: decidedAt,
-      decision_by_hr_id: actorHrId,
+      decision_by_hr_id: storedActorHrId,
       decision_note: comment || null,
       status: terminalStepStatus,
       updated_at: decidedAt,
@@ -2042,7 +2081,7 @@ export async function decideMarketingRequestWorkflow(
         returned_step_sequence: decision === "return" ? currentStep.sequence : null,
         status: nextStatus,
         updated_at: decidedAt,
-        updated_by_hr_id: actorHrId,
+        updated_by_hr_id: storedActorHrId,
       })
       .eq("id", request.id)
       .select("*")
@@ -2126,7 +2165,7 @@ export async function decideMarketingRequestWorkflow(
       executed_at: isExecution ? decidedAt : null,
       status: finalStatus,
       updated_at: decidedAt,
-      updated_by_hr_id: actorHrId,
+      updated_by_hr_id: storedActorHrId,
     })
     .eq("id", request.id)
     .select("*")
@@ -3820,18 +3859,21 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const supabase = getSupabaseAdmin();
 
   // Gating steps the actor must decide, and CC steps the actor may comment on (non-blocking).
+  // `assigned_hr_id` is stored in the employee master's real casing, while the session id is
+  // lower-cased — match every HR_ID dialect so the inbox is not silently empty for an approver.
+  const actorHrKeys = hrIdLookupKeys(actorHrId);
   const [gatingResult, ccResult] = await Promise.all([
     supabase
       .from("marketing_request_approval_steps")
       .select("*")
       .eq("status", "current")
       .eq("is_cc", false)
-      .eq("assigned_hr_id", actorHrId),
+      .in("assigned_hr_id", actorHrKeys),
     supabase
       .from("marketing_request_approval_steps")
       .select("*")
       .eq("is_cc", true)
-      .eq("assigned_hr_id", actorHrId),
+      .in("assigned_hr_id", actorHrKeys),
   ]);
   if (gatingResult.error) throw gatingResult.error;
   if (ccResult.error) throw ccResult.error;
@@ -3961,7 +4003,9 @@ export async function postMarketingAdvisoryComment(
     .from("marketing_request_approval_steps")
     .update({
       decision_at: nowIso,
-      decision_by_hr_id: actorHrId,
+      // employees(hr_id) FK is case-sensitive. The CC step's assigned_hr_id is already stored in
+      // the employee master's real casing (it satisfied the same FK at creation), so reuse it.
+      decision_by_hr_id: ccStep.assignedHrId ?? resolveStoredEmployeeHrId(actorHrId) ?? actorHrId,
       decision_note: text,
       updated_at: nowIso,
     })
@@ -4141,6 +4185,8 @@ export async function uploadMarketingFinanceEvidence(params: {
   });
 
   const actorHrId = assertMarketingActor(params.access);
+  // finance_reviewer_hr_id / *_uploaded_by_hr_id all FK to employees(hr_id) (case-sensitive).
+  const storedActorHrId = resolveStoredEmployeeHrId(actorHrId, employeeRowByHrId(employeeRows)) ?? actorHrId;
   const originalFileName = sanitizeStorageSegment(params.file.name, `${params.evidenceType}-evidence`);
   const storagePath = [
     sanitizeStorageSegment(requestId, "request"),
@@ -4159,11 +4205,11 @@ export async function uploadMarketingFinanceEvidence(params: {
   const now = new Date().toISOString();
   const patch = params.evidenceType === "money_transfer_proof"
     ? {
-      finance_reviewer_hr_id: actorHrId,
+      finance_reviewer_hr_id: storedActorHrId,
       money_transfer_proof_original_file_name: params.file.name,
       money_transfer_proof_storage_path: storagePath,
       money_transfer_proof_uploaded_at: now,
-      money_transfer_proof_uploaded_by_hr_id: actorHrId,
+      money_transfer_proof_uploaded_by_hr_id: storedActorHrId,
       reviewed_at: now,
       updated_at: now,
     }
@@ -4172,8 +4218,8 @@ export async function uploadMarketingFinanceEvidence(params: {
       invoice_required: true,
       invoice_status: "submitted",
       invoice_storage_path: storagePath,
+      invoice_uploaded_by_hr_id: storedActorHrId,
       invoice_uploaded_at: now,
-      invoice_uploaded_by_hr_id: actorHrId,
       updated_at: now,
     };
 
