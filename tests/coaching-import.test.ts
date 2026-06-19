@@ -32,7 +32,7 @@ function buildWorkbook() {
   sheet.getCell("A3").value = "Eman.Ahmed ( Helwan-Maadi / E )";
   sheet.getCell("B3").value = "B-104";
   sheet.getCell("C3").value = "16/02/2026";
-  setScores(3, 4, { D: 3, F: 5, S: 2, AE: 1 });
+  setScores(3, 4, { D: 0, F: 5, S: 2, AE: 1 });
   sheet.getCell("AG3").value = 80;
   sheet.getCell("AH3").value = "Adapt message to customer style";
   sheet.getCell("AI3").value = "Strong business planning";
@@ -91,7 +91,7 @@ export async function runCoachingImportTests() {
   assert.equal(eman.claimedHrId, "B-104");
   assert.equal(eman.coachingDate, "2026-02-16");
   assert.equal(Object.keys(eman.scores).length, 20);
-  assert.equal(eman.scores.medical_patient_knowledge, 3); // D
+  assert.equal(eman.scores.medical_patient_knowledge, 0); // D
   assert.equal(eman.scores.product_knowledge, 4); // E
   assert.equal(eman.scores.competitor_knowledge, 5); // F
   assert.equal(eman.scores.customer_adaptation_relationship, 2); // S

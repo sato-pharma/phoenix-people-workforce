@@ -46,7 +46,7 @@ function normalizeScore(value: unknown, key: CoachingScoreItemKey) {
   const rawScore = rawScoreValue(value);
   const score = Number(rawScore);
   if (!Number.isInteger(score) || score < coachingMinItemScore || score > coachingMaxItemScore) {
-    throw new Error(`Invalid coaching score for "${key}". Score must be an integer from 1 to 5.`);
+    throw new Error(`Invalid coaching score for "${key}". Score must be an integer from ${coachingMinItemScore} to ${coachingMaxItemScore}.`);
   }
   return score;
 }

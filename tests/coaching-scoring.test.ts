@@ -24,7 +24,7 @@ function scoresWith(defaultScore: number, overrides: Partial<Record<CoachingScor
 export function runCoachingScoringTests() {
   assert.equal(coachingScoreItems.length, coachingScoreItemCount);
   assert.equal(coachingMaxScore, coachingScoreItemCount * coachingMaxItemScore);
-  assert.equal(coachingMinItemScore, 1);
+  assert.equal(coachingMinItemScore, 0);
   assert.equal(coachingMaxItemScore, 5);
 
   assert.deepEqual(
@@ -54,17 +54,18 @@ export function runCoachingScoringTests() {
   );
 
   assert.throws(() => calculateCoachingScore({}), /Missing coaching score/);
-  assert.throws(
-    () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 0 }),
-    /from 1 to 5/,
-  );
+  const zeroScore = calculateCoachingScore(scoresWith(0));
+  assert.equal(zeroScore.actualScore, 0);
+  assert.equal(zeroScore.finalScorePercent, 0);
+  assert.equal(zeroScore.performanceZone, "critical_red");
+
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 7 }),
-    /from 1 to 5/,
+    /from 0 to 5/,
   );
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), product_knowledge: 4.5 }),
-    /from 1 to 5/,
+    /from 0 to 5/,
   );
   assert.throws(
     () => calculateCoachingScore({ ...scoresWith(4), unknown_score: 4 } as CoachingScoreInput),

@@ -92,6 +92,7 @@ const categoryLetters: Record<CoachingParameterKey, string> = {
 };
 
 const ratingMeanings = [
+  { label: "No Score", value: "0" },
   { label: "Below Expectations", value: "1" },
   { label: "Needs Improvement", value: "2" },
   { label: "Within Average", value: "3" },
@@ -399,11 +400,11 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
 
         <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
           <AdminSectionHeader
-            description="Rate every field observation from 1 to 5. The score panel updates when all 20 items are complete."
+            description="Rate every field observation from 0 to 5. The score panel updates when all 20 items are complete."
             title="Structured Scoring"
           />
           <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 sm:px-5">
-            <div className="grid gap-2 md:grid-cols-5">
+            <div className="grid gap-2 md:grid-cols-6">
               {ratingMeanings.map((meaning) => (
                 <div className="rounded-md border border-[#E2E8F0] bg-white px-3 py-2" key={meaning.value}>
                   <p className="text-xs font-black text-[#0F172A]">{meaning.value}</p>
@@ -436,8 +437,8 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                             Point {item.displayOrder} of {coachingScoreItems.length}
                           </p>
                         </div>
-                        <div className="grid grid-cols-5 gap-1.5">
-                          {[1, 2, 3, 4, 5].map((rating) => {
+                        <div className="grid grid-cols-6 gap-1.5">
+                          {[0, 1, 2, 3, 4, 5].map((rating) => {
                             const selected = scores[item.key] === rating;
                             return (
                               <button
