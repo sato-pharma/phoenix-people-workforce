@@ -289,6 +289,16 @@ const adminNavigationSectionSeeds = [
     label: "Sales Operations",
   },
   {
+    id: "sales-operations-new",
+    items: [
+      { href: "/sales-operations", icon: ChartNoAxesColumnIncreasing, label: "Sales Ops Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/sales-operations/upload", icon: FileUp, label: "Sales Ops Upload", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales-operations/mapping", icon: Tags, label: "Sales Ops Mapping", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales-operations/diagnostics", icon: Stethoscope, label: "Sales Ops Diagnostics", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Sales Operations · New",
+  },
+  {
     id: "old-sales-queue",
     items: [
       { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },

@@ -84,6 +84,10 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/sales/customer-directory", key: "customer_directory", label: "Customer Directory" },
   { prefix: "/sales/customer-mapping", key: "customer_mapping", label: "Customer Mapping" },
   { prefix: "/sales/queue", key: "monthly_sales", label: "Monthly Sales" },
+  { prefix: "/sales-operations/mapping", key: "sales_ops_mapping", label: "Sales Ops Mapping" },
+  { prefix: "/sales-operations/upload", key: "sales_ops_upload", label: "Sales Ops Upload" },
+  { prefix: "/sales-operations/diagnostics", key: "sales_ops_diagnostics", label: "Sales Ops Diagnostics" },
+  { prefix: "/sales-operations", key: "sales_operations", label: "Sales Operations" },
   { prefix: "/sales", key: "sales", label: "Sales Dashboard" },
 
   // ── Coaching ──────────────────────────────────────────────────────────────
