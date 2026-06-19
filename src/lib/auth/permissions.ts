@@ -86,6 +86,7 @@ export type PermissionResource =
   | "admin"
   | "user_admin"
   | "permission_admin"
+  | "module_control"
   | "support_requests"
   | "recruitment"
   | "candidates"
@@ -117,6 +118,7 @@ export const permissionResources: PermissionResource[] = [
   "communication",
   "user_admin",
   "permission_admin",
+  "module_control",
   "workflow_registry",
   "employee_documents",
   "employee_profile",
@@ -210,6 +212,8 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
   switch (resource) {
     case "employees":
       return role === "Super Admin" ? allActions : [];
+    case "module_control":
+      return role === "Super Admin" ? allActions : [];
     case "employee_documents":
     case "recruitment":
     case "candidates":
@@ -282,6 +286,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: allActions,
     resignations: allActions,
     permission_admin: allActions,
+    module_control: allActions,
     workflow_registry: allActions,
     sales: allActions,
     weekly_sales: allActions,

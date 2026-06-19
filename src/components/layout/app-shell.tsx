@@ -19,6 +19,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import type { PermissionLookup } from "@/components/layout/sidebar";
+import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 
 export async function AppShell({
   accessContext,
@@ -49,6 +50,10 @@ export async function AppShell({
         roleLabel: access.role,
       };
   const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
+  const effectiveModuleIds = await getEffectiveSidebarModuleIds(access, resolvedNavigationMode).catch((error) => {
+    console.error("[modules-control] effective sidebar lookup failed", error);
+    return null;
+  });
 
   const permissionLookup: PermissionLookup = {};
   for (const resource of permissionResources) {
@@ -68,15 +73,22 @@ export async function AppShell({
         <DocumentTitleSync mode={resolvedNavigationMode} />
         <CommandPalette
           currentRole={access.role}
+          effectiveModuleIds={effectiveModuleIds}
           navigationMode={resolvedNavigationMode}
           permissionLookup={permissionLookup}
         />
         <div className="flex min-h-screen">
-          <Sidebar currentRole={access.role} navigationMode={resolvedNavigationMode} permissionLookup={permissionLookup} />
+          <Sidebar
+            currentRole={access.role}
+            effectiveModuleIds={effectiveModuleIds}
+            navigationMode={resolvedNavigationMode}
+            permissionLookup={permissionLookup}
+          />
           <div className="flex min-w-0 flex-1 flex-col">
             {showTopbar && (
               <Topbar
                 currentRole={access.role}
+                effectiveModuleIds={effectiveModuleIds}
                 navigationMode={resolvedNavigationMode}
                 permissionLookup={permissionLookup}
                 scope={access.scope}
