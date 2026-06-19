@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     const file = form.get("file");
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
     const periodOverride = String(form.get("period") ?? "").trim();
+    const acknowledgeWarnings = String(form.get("acknowledgeWarnings") ?? "").trim() === "true";
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy });
+    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, acknowledgeWarnings });
     if (result.status === "blocked") {
       return NextResponse.json({
         success: false,
@@ -41,7 +42,20 @@ export async function POST(request: Request) {
         error: `${result.reconciliation.rowsBlocked} row(s) could not be imported — map them in Mapping Database, then re-upload.`,
       });
     }
-    return NextResponse.json({ success: true, batchId: result.batchId, period: result.period, importedRows: result.importedRows, reconciliation: result.reconciliation, message: `Imported ${result.importedRows} rows for ${result.period}.` });
+    if (result.status === "blocked_validation") {
+      const blocker = result.validation.errorCount > 0
+        ? `${result.validation.errorCount} validation error(s) must be fixed before importing.`
+        : `${result.validation.warningCount} validation warning(s) need to be reviewed and acknowledged before importing.`;
+      return NextResponse.json({
+        success: false,
+        code: "blocked_validation",
+        reconciliation: result.reconciliation,
+        data: result.preview,
+        validation: result.validation,
+        error: blocker,
+      });
+    }
+    return NextResponse.json({ success: true, batchId: result.batchId, period: result.period, importedRows: result.importedRows, reconciliation: result.reconciliation, validation: result.validation, message: `Imported ${result.importedRows} rows for ${result.period}.` });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     if (error instanceof SalesWorkflowError) return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });

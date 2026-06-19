@@ -218,6 +218,7 @@ export function normalizeRows(
   const ignoredRows: NormalizeIgnoredRow[] = [];
   let blankCustomerSkipped = 0;
   const blankCustomerRows: NormalizeIgnoredRow[] = [];
+  let scannedDataRows = 0;
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
@@ -225,6 +226,9 @@ export function normalizeRows(
     let any = false;
     row.eachCell({ includeEmpty: false }, () => { any = true; });
     if (!any) continue;
+    // Count every non-empty data row exactly once, before it is routed to a bucket — the independent
+    // physical tally the validator reconciles against (no-silent-loss guard).
+    scannedDataRows += 1;
 
     const rawProduct = profile.productColumns.map((cName) => firstValue(row, header, [cName])).find(Boolean) ?? "";
     const productValues = profile.productColumns.map((cName) => firstValue(row, header, [cName]));
@@ -348,7 +352,7 @@ export function normalizeRows(
     exceptions,
     ignoredRows,
     blankCustomerRows,
-    summary: { brickResolved, blankCustomerSkipped, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored + blankCustomerSkipped },
+    summary: { brickResolved, blankCustomerSkipped, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored + blankCustomerSkipped, scannedDataRows },
   };
 }
 
@@ -361,7 +365,7 @@ export async function normalizeRawWorkbook(
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
   if (!sheet) {
-    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0 } };
+    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0, scannedDataRows: 0 } };
   }
   return normalizeRows(sheet, profile, maps);
 }

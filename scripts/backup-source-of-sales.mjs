@@ -64,14 +64,18 @@ const TABLES = [
 async function fetchAll(table, pk) {
   const rows = [];
   const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+  let lastPk = null;
+  for (;;) {
+    let query = supabase
       .from(table)
       .select("*")
       .order(pk, { ascending: true })
-      .range(from, from + pageSize - 1);
+      .limit(pageSize);
+    if (lastPk !== null) query = query.gt(pk, lastPk);
+    const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
     rows.push(...(data ?? []));
+    if (data && data.length > 0) lastPk = data[data.length - 1][pk];
     if (!data || data.length < pageSize) break;
   }
   return rows;
