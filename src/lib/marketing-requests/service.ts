@@ -133,6 +133,19 @@ type MarketingRequestApprovalStepDbRow = {
 
 export type MarketingRequestDecision = "approve" | "reject" | "return";
 
+export type MarketingDecisionChainStep = {
+  approverName: string;
+  isCurrent: boolean;
+  status: MarketingRequestApprovalStep["status"];
+  stepName: string;
+};
+
+export type MarketingDecisionProductLine = {
+  name: string;
+  quantity: number;
+  value: number;
+};
+
 export type MarketingRequestDecisionSummary = {
   allowReject: boolean;
   assignedApproverHrId: string;
@@ -147,6 +160,17 @@ export type MarketingRequestDecisionSummary = {
   requestType: string;
   status: MarketingRequest["status"];
   stepKind: MarketingStepKind | null;
+  // ── Rich request context so the approver decides in place (no click-through needed) ──
+  chain: MarketingDecisionChainStep[];
+  customerName: string | null;
+  estimatedCost: number;
+  expectedRoiValue: number;
+  lineName: string | null;
+  pharmacyCount: number;
+  products: MarketingDecisionProductLine[];
+  requiredRoiValue: number;
+  roiDurationMonths: number;
+  roiWindow: string | null;
 };
 
 type MarketingControlSettingDbRow = {
@@ -1662,9 +1686,32 @@ async function notifyMarketingWorkflow(params: {
   const existingParticipants = Array.isArray(params.metadata?.workflowParticipantHrIds)
     ? (params.metadata.workflowParticipantHrIds as string[])
     : [];
+
+  // Premium HTML card for the email's {{planTable}} token (products + financials + return reason).
+  const supabase = getSupabaseAdmin();
+  const productsResult = await supabase
+    .from("marketing_request_products")
+    .select("*")
+    .eq("request_id", params.request.id);
+  const products = ((productsResult.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct);
+  const emailCard = buildMarketingEmailCard({
+    currentStepName:
+      cleanText(params.metadata?.currentStepName as string | null | undefined) ??
+      cleanText(params.metadata?.approvalStep as string | null | undefined),
+    noteHeading: params.eventType === "request_rejected" ? "Rejected" : "Returned",
+    products,
+    request: params.request,
+    returnNote: cleanText(params.metadata?.returnNote as string | null | undefined),
+    returnedByName: cleanText(params.metadata?.returnedByName as string | null | undefined),
+  });
+
   await createSystemNotification({
     actionUrl: marketingActionUrl(params.request.id),
     actorId: params.actorHrId,
+    email: {
+      planTableHtml: emailCard.html,
+      planTableText: emailCard.text,
+    },
     eventType: params.eventType,
     message: params.message,
     metadata: {
@@ -1954,6 +2001,112 @@ function assertMarketingStepAssignedToActor(step: MarketingRequestApprovalStep, 
   }
 }
 
+function marketingEgp(value: unknown): string {
+  return `EGP ${Math.round(toNumber(value)).toLocaleString("en-US")}`;
+}
+
+function escapeMarketingHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Pre-rendered premium HTML card for the marketing email's {{planTable}} raw-HTML token.
+ * MUST be table-based with whitelisted inline styles only — the email sanitizer drops
+ * `div`, `border-radius`, `box-shadow`, gradients and `margin` (see src/lib/email/email-safety.ts).
+ * The dark-slate/orange shell + "Open in Phoenix" CTA are supplied by renderPhoenixEmailHtml.
+ */
+export function buildMarketingEmailCard(params: {
+  currentStepName?: string | null;
+  noteHeading?: string | null;
+  products: MarketingRequestProduct[];
+  request: MarketingRequest;
+  returnNote?: string | null;
+  returnedByName?: string | null;
+}): { html: string; text: string } {
+  const { request } = params;
+  const wrap = (inner: string) =>
+    `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">${inner}</table>`;
+  const headCell = "background-color:#0f172a;color:#ffffff;border:1px solid #0f172a;padding:8px 10px;font-size:12px;text-align:left";
+  const headCellR = `${headCell};text-align:right`;
+  const cell = "border:1px solid #fce7cf;padding:8px 10px;font-size:13px;text-align:left;color:#0f172a";
+  const cellR = `${cell};text-align:right`;
+  const tileLabel = "color:#64748b;font-size:11px;text-align:left";
+  const tileValue = "color:#0f172a;font-size:18px;font-weight:600;text-align:left";
+  const sections: string[] = [];
+  const textLines: string[] = [];
+
+  const returnNote = cleanText(params.returnNote);
+  if (returnNote) {
+    const by = cleanText(params.returnedByName);
+    const heading = cleanText(params.noteHeading) ?? "Returned";
+    sections.push(
+      wrap(
+        `<tr><td style="background-color:#fff7ed;border:1px solid #fed7aa;padding:12px 14px">` +
+          `<span style="color:#9a3412;font-size:12px;font-weight:600">${escapeMarketingHtml(heading)}${by ? ` by ${escapeMarketingHtml(by)}` : ""} · reason</span><br />` +
+          `<span style="color:#7c2d12;font-size:14px;line-height:1.5">${escapeMarketingHtml(returnNote)}</span>` +
+          `</td></tr>`,
+      ),
+    );
+    textLines.push(`${heading}${by ? ` by ${by}` : ""} — reason: ${returnNote}`, "");
+  }
+
+  const tile = (label: string, value: string, accent: boolean) =>
+    `<td width="50%" style="background-color:${accent ? "#fff7ed" : "#f8fafc"};border:1px solid ${accent ? "#fed7aa" : "#e2e8f0"};padding:12px 14px;width:50%">` +
+    `<span style="${accent ? "color:#9a3412;font-size:11px;text-align:left" : tileLabel}">${escapeMarketingHtml(label)}</span><br />` +
+    `<span style="${accent ? "color:#9a3412;font-size:18px;font-weight:600;text-align:left" : tileValue}">${escapeMarketingHtml(value)}</span></td>`;
+  const roiWindow = buildRoiWindowLabel(request.payDate, request.roiDurationMonths) ?? "—";
+  const requiredRoiLabel = `Required ROI${request.roiDurationMonths ? ` · ${request.roiDurationMonths} mo` : ""}`;
+  sections.push(
+    wrap(
+      `<tr>${tile("Estimated cost", marketingEgp(request.estimatedCost), false)}${tile(requiredRoiLabel, marketingEgp(request.requiredRoiValue), true)}</tr>` +
+        `<tr>${tile("Pay date", request.payDate ?? "—", false)}${tile("ROI window", roiWindow, false)}</tr>`,
+    ),
+  );
+  textLines.push(
+    `Estimated cost: ${marketingEgp(request.estimatedCost)}`,
+    `${requiredRoiLabel}: ${marketingEgp(request.requiredRoiValue)}`,
+    `Pay date: ${request.payDate ?? "—"} · ROI window: ${roiWindow}`,
+    "",
+  );
+
+  if (params.products.length > 0) {
+    const rows = params.products
+      .map(
+        (product) =>
+          `<tr><td style="${cell}">${escapeMarketingHtml(product.productNameSnapshot)}</td>` +
+          `<td style="${cellR}">${Math.round(product.forecastQuantity).toLocaleString("en-US")}</td>` +
+          `<td style="${cellR}">${marketingEgp(product.expectedValue)}</td></tr>`,
+      )
+      .join("");
+    sections.push(
+      wrap(
+        `<thead><tr><th style="${headCell}">Product</th><th style="${headCellR}">Qty</th><th style="${headCellR}">Value</th></tr></thead><tbody>${rows}</tbody>`,
+      ),
+    );
+    textLines.push("Products:");
+    for (const product of params.products) {
+      textLines.push(`- ${product.productNameSnapshot} | ${Math.round(product.forecastQuantity)} | ${marketingEgp(product.expectedValue)}`);
+    }
+    textLines.push("");
+  }
+
+  const currentStepName = cleanText(params.currentStepName);
+  if (currentStepName) {
+    sections.push(
+      wrap(
+        `<tr><td style="padding:10px 0 0;font-size:13px;color:#475569">Currently with: <strong style="color:#0f172a">${escapeMarketingHtml(currentStepName)}</strong></td></tr>`,
+      ),
+    );
+    textLines.push(`Currently with: ${currentStepName}`);
+  }
+
+  return { html: sections.join(""), text: textLines.join("\n").trim() };
+}
+
 async function auditMarketingDecision(input: {
   actorHrId: string;
   decision: MarketingRequestDecision;
@@ -1997,6 +2150,38 @@ export async function getMarketingRequestDecisionSummary(
     throw conflictError("This marketing request is no longer pending approval.");
   }
 
+  // Rich request context so the approver can decide in place (products, financials, the chain).
+  const [productsResult, pharmaciesResult, customerResult, requestTypeName] = await Promise.all([
+    supabase.from("marketing_request_products").select("*").eq("request_id", cleanRequestId),
+    supabase.from("marketing_request_pharmacies").select("id").eq("request_id", cleanRequestId),
+    request.customerId
+      ? supabase.from("marketing_customers").select("display_name").eq("id", request.customerId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    loadMarketingRequestTypeName(supabase, request.requestTypeId),
+  ]);
+  if (productsResult.error) throw productsResult.error;
+  if (pharmaciesResult.error) throw pharmaciesResult.error;
+
+  const products: MarketingDecisionProductLine[] = ((productsResult.data ?? []) as MarketingRequestProductDbRow[])
+    .map(mapProduct)
+    .map((product) => ({
+      name: product.productNameSnapshot,
+      quantity: product.forecastQuantity,
+      value: product.expectedValue,
+    }));
+  const pharmacyCount = ((pharmaciesResult.data ?? []) as Array<{ id: string }>).length;
+  const customerName = cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name);
+  const requester = employeeRowByHrId(employeeRows).get(normalizeHrId(request.requesterHrId) ?? "");
+  const chain: MarketingDecisionChainStep[] = steps
+    .filter((step) => !step.isCc)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((step) => ({
+      approverName: employeeNameByHrId(employeeRows, step.assignedHrId),
+      isCurrent: step.status === "current",
+      status: step.status,
+      stepName: step.stepName,
+    }));
+
   return {
     allowReject: currentStep.allowReject,
     assignedApproverHrId: currentStep.assignedHrId ?? "",
@@ -2009,8 +2194,18 @@ export async function getMarketingRequestDecisionSummary(
     requestId: request.id,
     requesterHrId: request.requesterHrId,
     requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
-    requestType: await loadMarketingRequestTypeName(supabase, request.requestTypeId),
+    requestType: requestTypeName,
     status: request.status,
+    chain,
+    customerName: customerName ?? null,
+    estimatedCost: request.estimatedCost,
+    expectedRoiValue: request.expectedRoiValue,
+    lineName: requester?.lineName ?? null,
+    pharmacyCount,
+    products,
+    requiredRoiValue: request.requiredRoiValue,
+    roiDurationMonths: request.roiDurationMonths,
+    roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
   };
 }
 
@@ -2103,6 +2298,8 @@ export async function decideMarketingRequestWorkflow(
         decision,
         decisionAt: decidedAt,
         decisionByHrId: actorHrId,
+        returnNote: comment,
+        returnedByName: employeeNameByHrId(employeeRows, actorHrId),
         ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
       },
       priority: "high",
@@ -3676,9 +3873,18 @@ export async function createMarketingRequestDraft(
         title: "Marketing request assigned",
       });
     }
+    const submittedCard = buildMarketingEmailCard({
+      currentStepName: currentStep?.stepName ?? null,
+      products: draftDetail.products,
+      request,
+    });
     await createSystemNotification({
       actionUrl: marketingActionUrl(request.id),
       actorId: request.requesterHrId,
+      email: {
+        planTableHtml: submittedCard.html,
+        planTableText: submittedCard.text,
+      },
       eventType: "request_submitted",
       message: `${request.requestCode} was submitted by ${request.requesterHrId}.`,
       metadata: {
