@@ -5,6 +5,7 @@ import { createAccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   buildMarketingApprovedRequestRows,
+  buildMarketingDraftProductScope,
   buildMarketingManagerChain,
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
@@ -619,4 +620,55 @@ export async function runMarketingRequestServiceTests() {
   for (const token of ["step_kind", "chain_target_role", "cc_roles", "terminal_status", "allow_reject", "manager_chain", "sfe_validation", "marketing_review", "ceo_approval", "finance_execution"]) {
     assert.match(chainMigration, new RegExp(token), `chain reshape migration must define ${token}`);
   }
+
+  /* ---------------------------------------------------------------------- */
+  /* Drafts workspace resilience: requester-not-found must not 400 the page  */
+  /* ---------------------------------------------------------------------- */
+
+  // The drafts workspace must degrade gracefully (non-throwing requester lookup +
+  // scoped creation affordance) instead of hard-failing for legitimate reviewers.
+  assert.match(serviceSource, /function tryFindRequester/, "workspace must use a non-throwing requester lookup");
+  assert.match(serviceSource, /buildMarketingDraftProductScope/, "workspace must compute draft scope without hard-failing");
+
+  const draftScopeProducts = [
+    { active: true, factory_price: 6, id: 1, line: "Anti infective", line_id: 7, product_name: "Saginko" },
+    { active: true, factory_price: 14, id: 2, line: "Anti infective", line_id: 7, product_name: "Royafloxacin" },
+    { active: true, factory_price: 9, id: 3, line: "Cardio", line_id: 8, product_name: "Cardiox" },
+  ];
+
+  // 1) Resolved requester (restricted role) -> line-scoped products + creation scope.
+  const repScope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "MR001", role: "Medical Rep" }),
+    productRows: draftScopeProducts,
+    requester,
+  });
+  assert.equal(repScope.canCreateDraft, true, "a resolved requester can create drafts");
+  assert.deepEqual(repScope.products.map((product) => product.id), [1, 2], "products must be scoped to the requester line");
+  assert.equal(repScope.requesterLineId, 7, "resolved requester keeps its line id");
+  assert.equal(repScope.requesterLineName, "Anti infective", "resolved requester keeps its line name");
+
+  // 2) Company-wide reviewer who is NOT a directory requester -> read-only, no throw.
+  //    This is the bug fix: previously this path raised `requester_not_found` (HTTP 400)
+  //    and blocked the entire workspace for valid Marketing Manager reviewers.
+  const reviewerScope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "A-9", role: "Marketing Manager" }),
+    productRows: draftScopeProducts,
+    requester: null,
+  });
+  assert.equal(reviewerScope.canCreateDraft, false, "a non-requester reviewer cannot create drafts");
+  assert.equal(reviewerScope.products.length, 0, "a non-requester reviewer has no creation product scope");
+  assert.equal(reviewerScope.requesterLineId, null, "a non-requester reviewer has no requester line id");
+  assert.equal(reviewerScope.requesterLineName, null, "a non-requester reviewer has no requester line name");
+
+  // 3) Unrestricted oversight role (SFE Manager) -> every product line, creation allowed
+  //    even without a directory requester row.
+  const sfeScope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "SFE001", role: "SFE Manager" }),
+    productRows: draftScopeProducts,
+    requester: null,
+  });
+  assert.equal(sfeScope.canCreateDraft, true, "an unrestricted oversight role can create drafts");
+  assert.equal(sfeScope.products.length, 3, "an unrestricted oversight role sees every product line");
+  assert.equal(sfeScope.requesterLineName, "All product lines", "unrestricted scope labels all product lines");
+  assert.equal(sfeScope.requesterLineId, null, "unrestricted scope without a requester has no line id");
 }

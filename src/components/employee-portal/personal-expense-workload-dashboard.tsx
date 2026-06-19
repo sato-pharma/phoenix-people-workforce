@@ -600,10 +600,12 @@ export function PersonalExpenseWorkloadDashboard({
   adminKeyCards,
   data,
   showHero = true,
+  submitExpenseHref = "/employee-portals/submit-expense",
 }: {
   adminKeyCards?: WorkloadAdminKeyCards | null;
   data: MedicalRepPortalData;
   showHero?: boolean;
+  submitExpenseHref?: string;
 }) {
   /* -------- data normalization (UNCHANGED LOGIC) -------- */
   const rows: ExpenseRow[] = useMemo(() => {
@@ -1169,7 +1171,7 @@ export function PersonalExpenseWorkloadDashboard({
       {/* ---- Submit CTA ---- */}
       <Link
         className={`group flex items-center justify-between gap-4 rounded border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-4 transition-all hover:border-orange-300 hover:shadow-md print:hidden ${cardShadow}`}
-        href="/employee-portals/submit-expense"
+        href={submitExpenseHref}
       >
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-orange-100 text-orange-600">

@@ -43,8 +43,8 @@ function formatDate(value: string | null) {
   });
 }
 
-function decisionHref(requestId: string, decision: "approve" | "reject" | "return") {
-  return `/employee-portals/marketing-requests/decision/${requestId}?decision=${decision}`;
+function decisionHref(basePath: string, requestId: string, decision: "approve" | "reject" | "return") {
+  return `${basePath}/${requestId}?decision=${decision}`;
 }
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -69,7 +69,7 @@ function RowSkeleton() {
 /* --------- Row card --------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function InboxRowCard({ row }: { row: MarketingApproverInboxRow }) {
+function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row: MarketingApproverInboxRow }) {
   return (
     <Card className="rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
@@ -118,21 +118,21 @@ function InboxRowCard({ row }: { row: MarketingApproverInboxRow }) {
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
         <Link
           className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-emerald-600 px-4 text-[12px] font-bold text-white shadow-sm transition hover:bg-emerald-700"
-          href={decisionHref(row.id, "approve")}
+          href={decisionHref(decisionBasePath, row.id, "approve")}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           {row.decisionLabels.approve}
         </Link>
         <Link
           className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-[12px] font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
-          href={decisionHref(row.id, "return")}
+          href={decisionHref(decisionBasePath, row.id, "return")}
         >
           <Undo2 className="h-3.5 w-3.5" />
           {row.decisionLabels.return}
         </Link>
         <Link
           className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-[12px] font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
-          href={decisionHref(row.id, "reject")}
+          href={decisionHref(decisionBasePath, row.id, "reject")}
         >
           <XCircle className="h-3.5 w-3.5" />
           {row.decisionLabels.reject}
@@ -146,7 +146,7 @@ function InboxRowCard({ row }: { row: MarketingApproverInboxRow }) {
 /* --------- Main ------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function MarketingRequestInboxInner() {
+function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: string }) {
   const [rows, setRows] = useState<MarketingApproverInboxRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +247,7 @@ function MarketingRequestInboxInner() {
       ) : (
         <div className="space-y-3">
           {rows.map((row) => (
-            <InboxRowCard key={row.id} row={row} />
+          <InboxRowCard decisionBasePath={decisionBasePath} key={row.id} row={row} />
           ))}
         </div>
       )}
@@ -259,10 +259,14 @@ function MarketingRequestInboxInner() {
 /* --------- Exported wrapper with error boundary --------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-export function MarketingRequestInbox() {
+export function MarketingRequestInbox({
+  decisionBasePath = "/employee-portals/marketing-requests/decision",
+}: {
+  decisionBasePath?: string;
+}) {
   return (
     <WorkspaceErrorBoundary fallbackTitle="Marketing approval inbox error">
-      <MarketingRequestInboxInner />
+      <MarketingRequestInboxInner decisionBasePath={decisionBasePath} />
     </WorkspaceErrorBoundary>
   );
 }

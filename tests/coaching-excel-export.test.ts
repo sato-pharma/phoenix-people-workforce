@@ -115,6 +115,7 @@ export async function runCoachingExcelExportTests() {
   assert.equal(coachingZoneLabel("critical_red"), "Red Zone / Below Expectations");
   assert.equal(coachingZoneLabel("red_zone"), "Red Zone / Below Expectations");
   assert.equal(coachingStatusLabel("reviewed_by_employee"), "Reviewed by Employee");
+  assert.equal(coachingScoreMeaning(0), "No Score");
   assert.equal(coachingScoreMeaning(1), "Below Expectations");
   assert.equal(coachingScoreMeaning(5), "Exceeds Expectations");
 

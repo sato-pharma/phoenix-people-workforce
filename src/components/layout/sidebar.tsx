@@ -340,11 +340,13 @@ function SidebarNav({
   mode = "admin",
   onNavigate,
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
+  effectiveModuleIds,
   currentRole,
   rail = false,
   scrollable = true,
 }: {
   currentRole?: PhoenixRole;
+  effectiveModuleIds?: readonly string[] | null;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
@@ -355,8 +357,8 @@ function SidebarNav({
 }) {
   const isAdmin = mode === "admin";
   const sections = useMemo(
-    () => getSections(getNavigationSections(mode), mode, permissionLookup, currentRole),
-    [currentRole, mode, permissionLookup],
+    () => getSections(getNavigationSections(mode), mode, permissionLookup, currentRole, effectiveModuleIds),
+    [currentRole, effectiveModuleIds, mode, permissionLookup],
   );
   const pathname = usePathname();
   const navInstanceId = useId();
@@ -806,9 +808,11 @@ function useSidebarRail(mode: NavigationMode) {
 export function Sidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
+  effectiveModuleIds,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
+  effectiveModuleIds?: readonly string[] | null;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
@@ -846,7 +850,13 @@ export function Sidebar({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <SidebarBrand mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
-        <SidebarNav currentRole={currentRole} mode={navigationMode} permissionLookup={permissionLookup} rail={railActive} />
+        <SidebarNav
+          currentRole={currentRole}
+          effectiveModuleIds={effectiveModuleIds}
+          mode={navigationMode}
+          permissionLookup={permissionLookup}
+          rail={railActive}
+        />
         <SidebarFooter mode={navigationMode} />
       </div>
     </aside>
@@ -859,9 +869,11 @@ export function MobileSidebar({
   open,
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
+  effectiveModuleIds,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
+  effectiveModuleIds?: readonly string[] | null;
   onClose: () => void;
   open: boolean;
   navigationMode?: NavigationMode;
@@ -911,7 +923,14 @@ export function MobileSidebar({
             </button>
           </div>
           <SidebarIntro mode={navigationMode} />
-          <SidebarNav currentRole={currentRole} mode={navigationMode} onNavigate={onClose} permissionLookup={permissionLookup} rail={false} />
+          <SidebarNav
+            currentRole={currentRole}
+            effectiveModuleIds={effectiveModuleIds}
+            mode={navigationMode}
+            onNavigate={onClose}
+            permissionLookup={permissionLookup}
+            rail={false}
+          />
           <SidebarFooter mode={navigationMode} />
         </div>
       </aside>

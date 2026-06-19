@@ -40,7 +40,6 @@ export const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
 const PRODUCT_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Product Manager",
   "Group Product Manager",
-  "Marketing Manager",
 ]);
 
 /** Sales-field roles scoped to their own line/region via the shared monthly sales scope. */
@@ -147,8 +146,12 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
     return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes };
   }
 
-  // 6. SFE Manager without a curated list keeps full access (minus the confidential Lacto Basic).
-  if (ctx.role === "SFE Manager") return { tier: "full", canViewRestricted: false };
+  // 6. Company-wide commercial oversight (SFE Manager + Marketing Manager) without a curated list
+  // keeps full access minus the confidential Lacto Basic. An explicit product-scope assignment in
+  // step 3 still narrows either of them, which is the correct opt-in override.
+  if (ctx.role === "SFE Manager" || ctx.role === "Marketing Manager") {
+    return { tier: "full", canViewRestricted: false };
+  }
 
   return { tier: "none" };
 }

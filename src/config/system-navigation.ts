@@ -43,7 +43,13 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import type { NavigationMode, PermissionAction, PermissionResource, PhoenixRole } from "@/lib/auth/permissions";
+import {
+  adminShellEmployeeRoles,
+  type NavigationMode,
+  type PermissionAction,
+  type PermissionResource,
+  type PhoenixRole,
+} from "@/lib/auth/permissions";
 
 export type NavigationPermission = {
   action?: PermissionAction;
@@ -54,6 +60,7 @@ export type NavigationSectionItem = {
   href: `/${string}`;
   icon: LucideIcon;
   label: string;
+  moduleId: string;
   excludedRoles?: readonly PhoenixRole[];
   roles?: readonly PhoenixRole[];
   permissions?: readonly NavigationPermission[];
@@ -76,6 +83,44 @@ export type NavigationSection = {
   label: string;
 };
 
+type NavigationSectionItemSeed = Omit<NavigationSectionItem, "moduleId"> & {
+  moduleId?: string;
+};
+
+type NavigationSectionSeed = Omit<NavigationSection, "items"> & {
+  items: readonly NavigationSectionItemSeed[];
+};
+
+function moduleIdPart(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
+function defaultModuleId(mode: NavigationMode, section: NavigationSectionSeed, item: NavigationSectionItemSeed) {
+  const prefix = mode === "employee-portal" ? "portal" : "admin";
+  const labelPart = moduleIdPart(item.label);
+  const hrefPart = moduleIdPart(item.href);
+  const tabPart = item.activeTab ? `_${moduleIdPart(item.activeTab)}` : "";
+  return `${prefix}.${moduleIdPart(section.id)}.${labelPart}.${hrefPart}${tabPart}`;
+}
+
+function withModuleIds(
+  mode: NavigationMode,
+  sections: readonly NavigationSectionSeed[],
+): readonly NavigationSection[] {
+  return sections.map((section) => ({
+    ...section,
+    items: section.items.map((item) => ({
+      ...item,
+      moduleId: item.moduleId ?? defaultModuleId(mode, section, item),
+    })),
+  }));
+}
+
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
 const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager", "CEO"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
@@ -85,7 +130,7 @@ export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   "employee-portal": "/employee-portals",
 };
 
-export const adminNavigationSections = [
+const adminNavigationSectionSeeds = [
   {
     id: "command-center",
     items: [
@@ -100,6 +145,62 @@ export const adminNavigationSections = [
     label: "Command Center",
   },
   {
+    id: "workspace-my-workspace",
+    items: [
+      { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/deductions", icon: ReceiptText, label: "Deductions", moduleId: "admin.workspace.deductions", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "My Workspace",
+  },
+  {
+    id: "workspace-marketing-requests",
+    items: [
+      { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
+      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager"], exact: true },
+      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager"] },
+      { href: "/workspace/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.workspace.roi_tracking", roles: ["SFE Manager", "Marketing Manager"] },
+    ],
+    label: "Marketing Requests",
+  },
+  {
+    id: "workspace-leave-management",
+    items: [
+      { href: "/workspace/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", moduleId: "admin.workspace.vacation_request", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", moduleId: "admin.workspace.vacation_report", permissions: [{ resource: "leave", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Leave Management",
+  },
+  {
+    id: "workspace-team-operations",
+    items: [
+      { href: "/workspace/vacancies", icon: BriefcaseBusiness, label: "Vacancies", moduleId: "admin.workspace.vacancies", permissions: [{ resource: "vacancies", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/probation", icon: Hourglass, label: "Probation Tracker", moduleId: "admin.workspace.probation_tracker", permissions: [{ resource: "probation", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/organogram", icon: Network, label: "Organogram", moduleId: "admin.workspace.organogram", permissions: [{ resource: "organogram", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Team Operations",
+  },
+  {
+    id: "workspace-expenses",
+    items: [
+      { href: "/workspace/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", moduleId: "admin.workspace.expense_dashboard", permissions: [{ resource: "expenses", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/submit-expense", icon: PlusCircle, label: "Submit Expense", moduleId: "admin.workspace.submit_expense", permissions: [{ resource: "outstation", action: "create" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Expenses",
+  },
+  {
+    id: "workspace-support",
+    items: [
+      { href: "/workspace/contact-hr-support", icon: LifeBuoy, label: "Request Support", moduleId: "admin.workspace.request_support", permissions: [{ resource: "support_requests", action: "create" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Support",
+  },
+  {
     id: "people-management",
     items: [
       { href: "/admin/action-center", icon: Inbox, label: "Action Center", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
@@ -109,7 +210,10 @@ export const adminNavigationSections = [
       { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
-      { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }] },
+      // Org-wide plans review for Super Admin + CEO. Admin-shell employee roles (SFE/Marketing/
+      // Finance/Talent Acquisition) use the identical /workspace/plans home instead — listing them
+      // here too produced a duplicate "Weekly / Monthly Plan(s)" sidebar entry.
+      { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["Super Admin", "CEO"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
       { href: "/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }], roles: hrAuthorityNavigationRoles },
@@ -143,8 +247,12 @@ export const adminNavigationSections = [
   {
     id: "leave-management",
     items: [
-      { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
-      { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+      // Self-service vacation request/report for Super Admin + CEO. Admin-shell employee roles
+      // (SFE/Marketing/Finance/Talent Acquisition) use the identical /workspace/leave-management
+      // home instead, so listing them here too produced duplicate sidebar entries. HR controls
+      // below (vacation-control / action-center) keep their own role gating.
+      { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }], roles: ["Super Admin", "CEO"] },
+      { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }], roles: ["Super Admin", "CEO"] },
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
     ],
@@ -220,12 +328,15 @@ export const adminNavigationSections = [
   {
     id: "marketing-requests",
     items: [
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
+      // SFE Manager + Marketing Manager are intentionally NOT here: they use the de-duplicated
+      // /workspace/marketing-requests home (see the "workspace-marketing-requests" group). This
+      // org-wide admin module stays for District Manager + Super Admin only.
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "Super Admin"] },
     ],
     label: "Marketing Requests",
   },
@@ -233,6 +344,7 @@ export const adminNavigationSections = [
     id: "access-communication",
     items: [
       { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
+      { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
       { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
       { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
       { href: "/admin/notifications/telegram", icon: Send, label: "Telegram", permissions: [{ resource: "communication" }] },
@@ -249,9 +361,9 @@ export const adminNavigationSections = [
     ],
     label: "Pharmacovigilance",
   },
-] as const satisfies readonly NavigationSection[];
+] as const satisfies readonly NavigationSectionSeed[];
 
-export const employeePortalNavigationSections = [
+const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-portal",
     items: [
@@ -259,7 +371,7 @@ export const employeePortalNavigationSections = [
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }], exact: true },
       { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
+      { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Manager"] },
@@ -389,7 +501,10 @@ export const employeePortalNavigationSections = [
     ],
     label: "Pharmacovigilance",
   },
-] as const satisfies readonly NavigationSection[];
+] as const satisfies readonly NavigationSectionSeed[];
+
+export const adminNavigationSections = withModuleIds("admin", adminNavigationSectionSeeds);
+export const employeePortalNavigationSections = withModuleIds("employee-portal", employeePortalNavigationSectionSeeds);
 
 export function getNavigationSections(mode: NavigationMode): readonly NavigationSection[] {
   return mode === "employee-portal" ? employeePortalNavigationSections : adminNavigationSections;

@@ -61,6 +61,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
+  canCreateDraft: boolean;
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
   inApproval: MarketingRequest[];
@@ -230,6 +231,9 @@ function shortProductName(name: string, maxLen = 28): string {
 function emptyPayload(): DraftWorkspacePayload {
   return {
     approvedRequests: [],
+    // Default to true so the create form stays visible during the initial load; the
+    // server's explicit value applies once the workspace is fetched.
+    canCreateDraft: true,
     customers: [],
     drafts: [],
     inApproval: [],
@@ -706,6 +710,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
       setWorkspace({
         approvedRequests: payload.approvedRequests ?? [],
+        canCreateDraft: payload.canCreateDraft ?? true,
         customers: payload.customers ?? [],
         drafts: payload.drafts ?? [],
         inApproval: payload.inApproval ?? [],
@@ -2482,15 +2487,19 @@ function MarketingRequestDraftWorkspaceInner() {
       </div>
 
       {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
-      {!isLoading &&
+      {!isLoading && !workspace.canCreateDraft ? (
+        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
+          You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
+        </div>
+      ) : !isLoading &&
         (workspace.customers.length === 0 ||
-          workspace.products.length === 0) && (
-          <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
-            {workspace.customers.length === 0
-              ? "No active marketing customers available. Customer creation is coming next."
-              : "No active marketing products available. Run the reference-data seed."}
-          </div>
-        )}
+          workspace.products.length === 0) ? (
+        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
+          {workspace.customers.length === 0
+            ? "No active marketing customers available. Customer creation is coming next."
+            : "No active marketing products available. Run the reference-data seed."}
+        </div>
+      ) : null}
     </div>
   );
 }
