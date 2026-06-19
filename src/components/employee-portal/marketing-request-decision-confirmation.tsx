@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import type {
@@ -8,10 +8,27 @@ import type {
   MarketingRequestDecisionSummary,
 } from "@/lib/marketing-requests/service";
 
-function decisionLabel(decision: MarketingRequestDecision) {
+function fallbackLabel(decision: MarketingRequestDecision) {
   if (decision === "approve") return "Approve";
   if (decision === "reject") return "Reject";
-  return "Return";
+  return "Return for edit";
+}
+
+function egp(value: number) {
+  return `EGP ${Math.round(Number.isFinite(value) ? value : 0).toLocaleString("en-US")}`;
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+function stepStateClasses(step: { isCurrent: boolean; status: string }) {
+  if (step.isCurrent) return "bg-orange-500 text-white";
+  if (step.status === "approved") return "bg-slate-900 text-white";
+  if (step.status === "rejected" || step.status === "returned") return "bg-rose-100 text-rose-700";
+  return "bg-slate-100 text-slate-500";
 }
 
 export function MarketingRequestDecisionConfirmation({
@@ -21,20 +38,27 @@ export function MarketingRequestDecisionConfirmation({
   detailsHref?: string;
   summary: MarketingRequestDecisionSummary;
 }) {
+  const [activeDecision, setActiveDecision] = useState<MarketingRequestDecision>(summary.decision);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
-  const needsReason = summary.decision === "reject" || summary.decision === "return";
-  const actionLabel = summary.decisionLabels?.[summary.decision] ?? decisionLabel(summary.decision);
-  const rejectBlocked = summary.decision === "reject" && summary.allowReject === false;
 
-  async function submitDecision() {
+  const needsReason = activeDecision === "reject" || activeDecision === "return";
+  const labelFor = (decision: MarketingRequestDecision) =>
+    summary.decisionLabels?.[decision] ?? fallbackLabel(decision);
+  const totalValue = useMemo(
+    () => summary.products.reduce((sum, product) => sum + (product.value || 0), 0),
+    [summary.products],
+  );
+
+  async function submitDecision(decision: MarketingRequestDecision) {
     setError(null);
     setSuccess(null);
+    setActiveDecision(decision);
     const decisionComment = comment.trim();
-    if (needsReason && !decisionComment) {
-      setError(`${actionLabel} reason is required.`);
+    if ((decision === "reject" || decision === "return") && !decisionComment) {
+      setError(`${labelFor(decision)} note is required.`);
       return;
     }
 
@@ -42,8 +66,8 @@ export function MarketingRequestDecisionConfirmation({
     try {
       const response = await fetch(`/api/marketing-requests/${encodeURIComponent(summary.requestId)}/decision`, {
         body: JSON.stringify({
-          comment: needsReason ? decisionComment : null,
-          decision: summary.decision,
+          comment: decision === "approve" ? null : decisionComment,
+          decision,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -52,7 +76,9 @@ export function MarketingRequestDecisionConfirmation({
       if (!response.ok) {
         throw new Error(typeof payload.message === "string" ? payload.message : "Marketing request decision failed.");
       }
-      setSuccess(`Marketing request ${summary.decision === "approve" ? "approved" : summary.decision === "reject" ? "rejected" : "returned"} successfully.`);
+      setSuccess(
+        `Marketing request ${decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned for edit"} successfully.`,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Marketing request decision failed.");
     } finally {
@@ -60,76 +86,157 @@ export function MarketingRequestDecisionConfirmation({
     }
   }
 
-  return (
-    <section className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-4 py-10">
-      <div className="border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Phoenix Marketing Workflow</p>
-        <h1 className="mt-2 text-2xl font-black text-slate-950">{actionLabel} marketing request</h1>
-        <p className="mt-2 text-sm font-medium text-slate-600">
-          Confirm inside Phoenix. Telegram and email only opened this page and cannot record decisions directly.
-        </p>
+  const decided = Boolean(success);
 
-        <div className="mt-6 grid gap-3 border-y border-slate-200 py-5 text-sm sm:grid-cols-2">
-          <div>
-            <p className="text-xs font-bold uppercase text-slate-500">Request</p>
-            <p className="mt-1 font-bold text-slate-950">{summary.requestCode}</p>
-            <p className="text-slate-500">{summary.requestType}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase text-slate-500">Requester</p>
-            <p className="mt-1 font-bold text-slate-950">{summary.requesterName}</p>
-            <p className="text-slate-500">{summary.requesterHrId}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase text-slate-500">Current step</p>
-            <p className="mt-1 font-bold text-slate-950">{summary.currentStepName}</p>
-            <p className="text-slate-500">Assigned to {summary.assignedApproverHrId}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase text-slate-500">Status</p>
-            <p className="mt-1 font-bold text-slate-950">{summary.status.replace(/_/g, " ")}</p>
-            <p className="text-slate-500">Pay date {summary.payDate}</p>
-          </div>
+  return (
+    <section className="mx-auto w-full max-w-3xl px-4 py-8">
+      <div className="border border-slate-200 bg-white">
+        <div className="bg-slate-950 px-6 py-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-400">Marketing · action required</p>
+          <h1 className="mt-1 text-xl font-semibold text-white">Review marketing request</h1>
         </div>
 
-        {needsReason ? (
-          <label className="mt-5 block">
-            <span className="text-sm font-bold text-slate-800">{actionLabel} reason</span>
+        <div className="px-6 py-5">
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
+            <div className="flex h-11 w-11 items-center justify-center bg-orange-50 text-sm font-semibold text-orange-700">
+              {initials(summary.requesterName)}
+            </div>
+            <div className="flex-1">
+              <p className="text-[15px] font-medium text-slate-950">{summary.requesterName}</p>
+              <p className="text-xs text-slate-500">
+                {summary.requesterHrId}
+                {summary.lineName ? ` · ${summary.lineName} line` : ""}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-xs text-slate-700">{summary.requestCode}</p>
+              <span className="mt-1 inline-block bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                Pending your approval
+              </span>
+            </div>
+          </div>
+
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>
+          {summary.products.length > 0 ? (
+            <table className="mt-2 w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-950 text-white">
+                  <th className="px-3 py-2 text-left font-medium">Product</th>
+                  <th className="px-3 py-2 text-right font-medium">Qty</th>
+                  <th className="px-3 py-2 text-right font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.products.map((product, index) => (
+                  <tr key={`${product.name}-${index}`} className="border-b border-orange-100">
+                    <td className="px-3 py-2 text-slate-950">{product.name}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{product.quantity}</td>
+                    <td className="px-3 py-2 text-right text-slate-950">{egp(product.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">No products listed on this request.</p>
+          )}
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Estimated cost</p>
+              <p className="text-base font-medium text-slate-950">{egp(summary.estimatedCost)}</p>
+            </div>
+            <div className="bg-orange-50 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-orange-700">
+                Required ROI{summary.roiDurationMonths ? ` · ${summary.roiDurationMonths} mo` : ""}
+              </p>
+              <p className="text-base font-medium text-orange-800">{egp(summary.requiredRoiValue)}</p>
+            </div>
+            <div className="bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
+              <p className="truncate text-[13px] font-medium text-slate-950">{summary.customerName ?? "—"}</p>
+            </div>
+            <div className="bg-slate-50 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
+              <p className="text-[13px] font-medium text-slate-950">{summary.payDate}</p>
+            </div>
+          </div>
+
+          {summary.chain.length > 0 ? (
+            <>
+              <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Approval progress</p>
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                {summary.chain.map((step, index) => (
+                  <span key={`${step.stepName}-${index}`} className="flex items-center gap-1">
+                    <span className={`px-2.5 py-1 text-[11px] font-medium ${stepStateClasses(step)}`}>
+                      {step.stepName}
+                      {step.isCurrent ? " · you" : ""}
+                    </span>
+                    {index < summary.chain.length - 1 ? <span className="text-slate-300">›</span> : null}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          <div className="mt-6 border-t border-slate-200 pt-4">
+            <p className="text-sm font-medium text-slate-950">Your decision</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Confirm inside Phoenix. Total requested value {egp(totalValue || summary.estimatedCost)}.
+            </p>
+
             <textarea
-              className="mt-2 min-h-28 w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
-              disabled={isPending || Boolean(success)}
+              className="mt-3 min-h-24 w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+              disabled={isPending || decided}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="Write the reason that will be saved in Phoenix audit history."
+              placeholder="Add a note — required to return or reject (saved to audit history)…"
               value={comment}
             />
-          </label>
-        ) : null}
 
-        {error ? <p className="mt-4 border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</p> : null}
-        {success ? <p className="mt-4 border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-700">{success}</p> : null}
+            {error ? (
+              <p className="mt-3 border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-700">{error}</p>
+            ) : null}
+            {success ? (
+              <p className="mt-3 border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">{success}</p>
+            ) : null}
 
-        {rejectBlocked ? (
-          <p className="mt-6 border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-700">
-            This step cannot reject the request. Use Return with a note to send it back for changes.
-          </p>
-        ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                className="bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={isPending || decided}
+                onClick={() => void submitDecision("approve")}
+                type="button"
+              >
+                {isPending && activeDecision === "approve" ? "Submitting…" : labelFor("approve")}
+              </button>
+              <button
+                className="border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-50"
+                disabled={isPending || decided}
+                onClick={() => void submitDecision("return")}
+                type="button"
+              >
+                {isPending && activeDecision === "return" ? "Submitting…" : labelFor("return")}
+              </button>
+              {summary.allowReject ? (
+                <button
+                  className="border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50"
+                  disabled={isPending || decided}
+                  onClick={() => void submitDecision("reject")}
+                  type="button"
+                >
+                  {isPending && activeDecision === "reject" ? "Submitting…" : labelFor("reject")}
+                </button>
+              ) : null}
+              <Link className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700" href={detailsHref}>
+                Open full request
+              </Link>
+            </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          {rejectBlocked ? null : (
-            <button
-              className={summary.decision === "approve"
-                ? "bg-emerald-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-                : "bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50"}
-              disabled={isPending || Boolean(success)}
-              onClick={() => void submitDecision()}
-              type="button"
-            >
-              {isPending ? "Submitting..." : `${actionLabel} in Phoenix`}
-            </button>
-          )}
-          <Link className="border border-slate-300 px-4 py-2 text-sm font-black text-slate-700" href={detailsHref}>
-            View details
-          </Link>
+            {needsReason ? (
+              <p className="mt-3 text-[11px] text-slate-500">
+                Returning sends it back to {summary.requesterName} to edit and resubmit — earlier approvals are kept.
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>
