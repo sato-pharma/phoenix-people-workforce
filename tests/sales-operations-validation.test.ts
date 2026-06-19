@@ -131,18 +131,26 @@ export async function runSalesOperationsValidationTests() {
   const spike = validateSalesOpsUpload(makeResult({ coded: [row({ value: 100000 })] }), ctx({ priorPeriodTotals: { period: "2026-03", totalValue: 5000, totalQty: 500 } }));
   assert.equal(f(spike, "value_spike_vs_prior")?.severity, "warning");
 
+  // ── geography_brick_missing: fires for an area-only row, suppressed by regionOnly (CP channel) ──
+  const areaOnlyRow = row({ brickId: "", areaCode: "A1", regionCode: "CA" });
+  const bricklessWarn = validateSalesOpsUpload(makeResult({ coded: [areaOnlyRow] }), ctx());
+  assert.equal(f(bricklessWarn, "geography_brick_missing")?.severity, "warning", "area-only row warns by default");
+  const bricklessOk = validateSalesOpsUpload(makeResult({ coded: [areaOnlyRow] }), ctx({ regionOnly: true }));
+  assert.equal(f(bricklessOk, "geography_brick_missing"), undefined, "regionOnly (CP) suppresses the brick-less warning");
+
   // ── Office gating: row-count reconcile + duplicate + brick-less are skipped; residual fires ──
   const officeResidual = validateSalesOpsUpload(
     makeResult({ coded: [row({ regionCode: "NATIONAL", brickId: "", areaCode: "" })], scannedDataRows: 1 }),
-    ctx({ hasDateColumn: false, isOfficeAllocation: true, officeResidualUnits: 5 }),
+    ctx({ hasDateColumn: false, isOfficeAllocation: true, officeNationalUnits: 5 }),
   );
   assert.equal(f(officeResidual, "office_allocation_residual")?.severity, "warning");
-  // one pivot row → many slices must NOT trip rows_read_mismatch for Office
+  // one pivot row → many slices must NOT trip rows_read_mismatch for Office — even WITHOUT the ctx
+  // flag (defensive gate derives Office from the coded rows' distributorCode).
   const officeSlices = validateSalesOpsUpload(
-    makeResult({ coded: [row({ rawRowNumber: 2 }), row({ rawRowNumber: 2 }), row({ rawRowNumber: 2 })], scannedDataRows: 1 }),
-    ctx({ hasDateColumn: false, isOfficeAllocation: true }),
+    makeResult({ coded: [row({ rawRowNumber: 2, distributorCode: "Office" }), row({ rawRowNumber: 2, distributorCode: "Office" }), row({ rawRowNumber: 2, distributorCode: "Office" })], scannedDataRows: 1 }),
+    ctx({ hasDateColumn: false }),
   );
-  assert.equal(f(officeSlices, "rows_read_mismatch"), undefined, "office: one pivot row → many slices is expected");
+  assert.equal(f(officeSlices, "rows_read_mismatch"), undefined, "office: one pivot row → many slices is expected (defensive gate)");
   assert.equal(f(officeSlices, "duplicate_rows"), undefined, "office: same-product slices are not duplicates");
   assert.equal(officeSlices.ok, true);
 

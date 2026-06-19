@@ -36,6 +36,7 @@ export const DISTRIBUTOR_TEMPLATES: DistributorTemplate[] = [
     productNameHeaders: ["Attribute"],
     qtyHeaders: ["Value"],
     fingerprintHeaders: ["Area name A", "Attribute"],
+    regionOnly: true, // "Area name A" resolves to an AREA, so CP rows have no brick by design
     hasDateColumn: false,
   },
   {

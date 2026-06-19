@@ -69,6 +69,11 @@ export type DistributorTemplate = {
   // Columns that fingerprint this distributor's file (wrong-file detection on upload).
   fingerprintHeaders?: string[];
 
+  // True when this distributor resolves to AREA/region only (no brick) BY DESIGN — e.g. ChemiPharm
+  // maps the brick/area NAME ("Area name A") to an area, so coded rows legitimately have no brick.
+  // Suppresses the "resolved to region/area only" warning for this channel.
+  regionOnly?: boolean;
+
   // True when the file carries a per-row date column; false channels take the period from the picker.
   hasDateColumn: boolean;
 };

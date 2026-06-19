@@ -142,8 +142,10 @@ export type ComputeOfficeAllocationInput = {
 export type OfficeAllocationResult = NormalizeResult & {
   // Products whose units could not be placed on a brick and went to the NATIONAL bucket.
   nationalProducts: string[];
-  // Σ(mapped input units) − Σ(allocated units). Should be ~0; surfaced as office_allocation_residual.
-  residualUnits: number;
+  // Office units that could not be placed on a brick (landed in the NATIONAL bucket). The total
+  // allocation always reconciles to the input (largest-remainder), so this — not a Σ residual — is
+  // the meaningful "incomplete contribution base" signal surfaced as office_allocation_residual.
+  nationalUnits: number;
 };
 
 // Allocate the Office pivot into coded rows. Product is resolved NAME-first (Office has no code column);
@@ -171,8 +173,7 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Of
   const nationalProducts: string[] = [];
   let productResolved = 0;
   let brickResolved = 0;
-  let mappedUnits = 0;
-  let allocatedUnits = 0;
+  let nationalUnits = 0;
 
   for (const pivot of input.pivotRows) {
     const match = resolveProduct([pivot.productName], [], input.maps, distributorCode);
@@ -191,14 +192,15 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Of
     productResolved += 1;
     const product = input.maps.productByCode.get(match.productCode);
     const factoryPrice = product?.factoryPrice ?? 0;
-    if (pivot.units > 0) mappedUnits += pivot.units;
 
     const slices = allocateProduct(pivot.units, regionByProduct.get(match.productCode) ?? [], brickByProduct.get(match.productCode) ?? []);
     let sentNational = false;
     for (const slice of slices) {
-      allocatedUnits += slice.units;
       const isNational = slice.regionCode === NATIONAL || !slice.brickId;
-      if (isNational) sentNational = true;
+      if (isNational) {
+        sentNational = true;
+        nationalUnits += slice.units;
+      }
       const brick = isNational ? undefined : input.maps.brickById.get(slice.brickId);
       if (!isNational && brick) brickResolved += 1;
       coded.push({
@@ -241,6 +243,6 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Of
       exceptions: exceptions.length,
     },
     nationalProducts: [...new Set(nationalProducts)],
-    residualUnits: round6(mappedUnits - allocatedUnits),
+    nationalUnits: round6(nationalUnits),
   };
 }

@@ -41,10 +41,11 @@ export type SalesOpsRecognizeResult =
       result: NormalizeResult;
       period: string | null;
       hasDateColumn: boolean;
+      regionOnly: boolean;
       brickLookup: DistributorTemplate["brickLookup"];
       // Office-only advisory fields
       nationalProducts?: string[];
-      residualUnits?: number;
+      nationalUnits?: number;
     }
   | { status: "header_error"; distributorCode: string; distributorName: string; missingGroups: HeaderGroup[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorCode: string; distributorName: string };
@@ -179,9 +180,10 @@ export function recognizeGrid(input: RecognizeGridInput): SalesOpsRecognizeResul
       result: office,
       period: input.period ?? null,
       hasDateColumn: false,
+      regionOnly: Boolean(template.regionOnly),
       brickLookup: template.brickLookup,
       nationalProducts: office.nationalProducts,
-      residualUnits: office.residualUnits,
+      nationalUnits: office.nationalUnits,
     };
   }
 
@@ -193,7 +195,7 @@ export function recognizeGrid(input: RecognizeGridInput): SalesOpsRecognizeResul
 
   const result = normalizeSheet({ rows, template, maps, period: input.period ?? "" });
   const period = template.hasDateColumn ? dominantPeriodFrom(result.coded) : (input.period ?? null);
-  return { status: "ok", ...base, result, period, hasDateColumn: template.hasDateColumn, brickLookup: template.brickLookup };
+  return { status: "ok", ...base, result, period, hasDateColumn: template.hasDateColumn, regionOnly: Boolean(template.regionOnly), brickLookup: template.brickLookup };
 }
 
 // Async wrapper: resolve the template, load masters + crosswalks + the workbook, then dispatch.

@@ -70,7 +70,7 @@ export async function runSalesOperationsOfficeTests() {
   assert.equal(res.exceptions.length, 0);
   const totalUnits = res.coded.reduce((a, r) => a + r.qty, 0);
   assert.equal(Math.round(totalUnits * 1e6) / 1e6, 100, "Σ allocated units == office units (no drift)");
-  assert.equal(res.residualUnits, 0, "residual is zero");
+  assert.equal(res.nationalUnits, 0, "fully placed on bricks → no NATIONAL units");
   const byBrick = Object.fromEntries(res.coded.map((r) => [r.brickId, r.qty]));
   assert.equal(byBrick["B1"], 45, "CA(60) × B1 share 30/40 = 45");
   assert.equal(byBrick["B2"], 15, "CA(60) × B2 share 10/40 = 15");
@@ -95,6 +95,7 @@ export async function runSalesOperationsOfficeTests() {
   assert.equal(natRes.coded[0].qty, 30);
   assert.equal(natRes.coded[0].value, 600, "30 × 20 factory price");
   assert.deepEqual(natRes.nationalProducts, ["Augmentin"]);
+  assert.equal(natRes.nationalUnits, 30, "unplaceable units are reported as NATIONAL units (residual check is live)");
 
   // ── unmapped office product name → exception (blocks upstream), nothing coded ───────────────
   const unmapped = computeOfficeAllocation({

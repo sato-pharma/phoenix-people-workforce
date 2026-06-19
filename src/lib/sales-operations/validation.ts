@@ -1,3 +1,4 @@
+import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales-operations/office";
 import type { NormalizeResult } from "@/lib/sales-operations/types";
 
 // ── Strict post-analyze validation (Sales Operations) ──────────────────────────────────────────
@@ -42,7 +43,7 @@ export type PriorPeriodTotals = { period: string; totalValue: number; totalQty: 
 export type SalesOpsValidationContext = {
   hasDateColumn: boolean; // false → period from the picker; skip date checks
   isOfficeAllocation?: boolean; // true → Office: skip row-count/fractional/brick-less checks
-  officeResidualUnits?: number; // Σ(input units) − Σ(allocated units); should be ~0
+  officeNationalUnits?: number; // Office units placed in the NATIONAL bucket (no brick placement)
   officeNationalProducts?: string[]; // products that fell to the NATIONAL bucket
   regionOnly?: boolean; // true → region/area-only resolution is expected, not a gap
   currentPeriod?: string; // "YYYY-MM" of today
@@ -85,7 +86,11 @@ export function validateSalesOpsUpload(result: NormalizeResult, ctx: SalesOpsVal
   const findings: ValidationFinding[] = [];
   const coded = result.coded;
   const s = result.summary;
-  const isOffice = Boolean(ctx.isOfficeAllocation);
+  // Office gate is caller-supplied, but derive it defensively from the coded data too so a forgotten
+  // ctx flag can never falsely BLOCK a valid Office upload (one pivot row → many slices).
+  const isOffice = Boolean(ctx.isOfficeAllocation)
+    || result.distributorCode === OFFICE_DISTRIBUTOR_CODE
+    || coded.some((r) => r.distributorCode === OFFICE_DISTRIBUTOR_CODE);
   const add = (f: ValidationFinding) => findings.push(f);
 
   // ── Structural integrity: no-silent-loss reconcile (row strategies only) ───────────────────────
@@ -491,16 +496,16 @@ export function validateSalesOpsUpload(result: NormalizeResult, ctx: SalesOpsVal
     }
   }
 
-  // ── Office allocation residual (no silently-dropped office volume) ─────────────────────────────
-  if (isOffice && typeof ctx.officeResidualUnits === "number" && Math.abs(ctx.officeResidualUnits) > 1e-6) {
+  // ── Office allocation residual: units that could not be placed on a brick (fell to NATIONAL) ────
+  if (isOffice && typeof ctx.officeNationalUnits === "number" && Math.abs(ctx.officeNationalUnits) > 1e-6) {
     add({
       code: "office_allocation_residual",
       severity: "warning",
-      title: "Office units not fully allocated",
-      detail: `${Math.abs(ctx.officeResidualUnits).toLocaleString()} office unit(s) were not allocated to any brick or the National bucket — the contribution base may be incomplete.`,
+      title: "Office units not placed on a brick",
+      detail: `${Math.abs(ctx.officeNationalUnits).toLocaleString()} office unit(s) could not be placed on a brick and went to the National bucket — the contribution base (other channels' sales) may be incomplete for this period.`,
       count: 1,
       sampleRows: [],
-      fixHint: "Confirm other channels' sales for this period are imported (they provide the allocation shares).",
+      fixHint: "Confirm other channels' sales for this period are imported first (they provide the allocation shares).",
     });
   }
 
