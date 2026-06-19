@@ -133,6 +133,21 @@ export type EmailTemplateContext = {
   summary?: string | null;
   vacationBalance?: string | null;
   vacationType?: string | null;
+  // ── Marketing-request fields (editable tokens for the marketing_request template) ──
+  currentStep?: string | null;
+  customerName?: string | null;
+  estimatedCost?: string | null;
+  payDate?: string | null;
+  /** Pre-rendered HTML product rows for marketing emails; sanitized, not escaped, in bodyHtml. */
+  productsTable?: string | null;
+  productsTableText?: string | null;
+  requestCode?: string | null;
+  requesterName?: string | null;
+  requiredRoi?: string | null;
+  /** Pre-rendered HTML return-reason callout (empty unless returned/rejected); raw in bodyHtml. */
+  returnCallout?: string | null;
+  returnCalloutText?: string | null;
+  roiWindow?: string | null;
 };
 
 export type EmailTemplateDefinition = {
@@ -348,6 +363,18 @@ const placeholderHints = [
   "vacationType",
   // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
   "planTable",
+  // Marketing-request editable tokens. Scalars fill per request; productsTable + returnCallout
+  // are pre-rendered HTML blocks (raw in bodyHtml, empty/text projection elsewhere).
+  "estimatedCost",
+  "requiredRoi",
+  "roiWindow",
+  "payDate",
+  "customerName",
+  "currentStep",
+  "requestCode",
+  "requesterName",
+  "productsTable",
+  "returnCallout",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
@@ -405,8 +432,19 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Contract Renewal",
   },
   marketing_request: {
-    bodyHtml: "<p>{{summary}}</p>{{planTable}}",
-    bodyText: "{{summary}}\n\n{{planTable}}",
+    bodyHtml:
+      "<p>{{summary}}</p>" +
+      "{{returnCallout}}" +
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">' +
+      '<tr><td width="50%" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px;width:50%"><span style="color:#64748b;font-size:11px">Estimated cost</span><br /><span style="color:#0f172a;font-size:18px;font-weight:600">{{estimatedCost}}</span></td>' +
+      '<td width="50%" style="background-color:#fff7ed;border:1px solid #fed7aa;padding:12px 14px;width:50%"><span style="color:#9a3412;font-size:11px">Required ROI</span><br /><span style="color:#9a3412;font-size:18px;font-weight:600">{{requiredRoi}}</span></td></tr>' +
+      '<tr><td style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px"><span style="color:#64748b;font-size:11px">Customer</span><br /><span style="color:#0f172a;font-size:14px;font-weight:600">{{customerName}}</span></td>' +
+      '<td style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px"><span style="color:#64748b;font-size:11px">Pay date</span><br /><span style="color:#0f172a;font-size:14px;font-weight:600">{{payDate}}</span></td></tr>' +
+      "</table>" +
+      "{{productsTable}}" +
+      '<p style="font-size:13px;color:#475569">Currently with: <strong style="color:#0f172a">{{currentStep}}</strong> · ROI window {{roiWindow}}</p>',
+    bodyText:
+      "{{summary}}\n\n{{returnCallout}}Estimated cost: {{estimatedCost}}\nRequired ROI: {{requiredRoi}}\nCustomer: {{customerName}} · Pay date: {{payDate}}\n\n{{productsTable}}\n\nCurrently with: {{currentStep}} · ROI window {{roiWindow}}",
     closingText: "Open Phoenix Workforce to review the marketing request and take the next action.",
     description: "Marketing request workflow updates: submission, assignment, approvals, returns, completion, and SLA reminders.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -777,7 +815,7 @@ function escapeHtml(value: unknown) {
  * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
  * the security authority. In text fields these tokens resolve to their text projection.
  */
-const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable"]);
+const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout"]);
 
 function interpolate(
   template: string,
@@ -1752,6 +1790,19 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     summary: text(input.summary),
     vacationBalance: text(input.vacationBalance),
     vacationType: text(input.vacationType),
+    // Marketing-request tokens.
+    currentStep: text(input.currentStep),
+    customerName: text(input.customerName),
+    estimatedCost: text(input.estimatedCost),
+    payDate: text(input.payDate),
+    productsTable: text(input.productsTable),
+    productsTableText: text(input.productsTableText),
+    requestCode: text(input.requestCode),
+    requesterName: text(input.requesterName),
+    requiredRoi: text(input.requiredRoi),
+    returnCallout: text(input.returnCallout),
+    returnCalloutText: text(input.returnCalloutText),
+    roiWindow: text(input.roiWindow),
   };
 }
 
@@ -1781,8 +1832,13 @@ export function renderEmailTemplate(
   // {{planTable}} is a body-only block: the plain body gets its text projection, while
   // single-line fields (subject, greeting, closing, preview) resolve it to "" so a
   // misplaced token can never dump multi-line employee text into a header-like field.
-  const bodyTextVariables = { ...variables, planTable: variables.planTableText };
-  const inlineVariables = { ...variables, planTable: "" };
+  const bodyTextVariables = {
+    ...variables,
+    planTable: variables.planTableText,
+    productsTable: variables.productsTableText,
+    returnCallout: variables.returnCalloutText,
+  };
+  const inlineVariables = { ...variables, planTable: "", productsTable: "", returnCallout: "" };
   const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
   const greeting = interpolate(template.greeting, inlineVariables, false);
   const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true, htmlBlockTokens));
@@ -1822,6 +1878,35 @@ export function renderEmailTemplate(
 
 function samplePlanTableContext(): Partial<EmailTemplateContext> {
   return buildSamplePlanTable();
+}
+
+// Admin previews have no real request — populate the marketing tokens with demo values so the
+// /admin/email-templates preview shows what the marketing_request template renders as.
+function sampleMarketingContext(): Partial<EmailTemplateContext> {
+  const cell = "border:1px solid #fce7cf;padding:8px 10px;font-size:13px;text-align:left;color:#0f172a";
+  const cellR = `${cell};text-align:right`;
+  const head = "background-color:#0f172a;color:#ffffff;border:1px solid #0f172a;padding:8px 10px;font-size:12px;text-align:left";
+  const headR = `${head};text-align:right`;
+  const rows: Array<[string, string, string]> = [
+    ["Pediacare Drops 15ml", "120", "EGP 1,800"],
+    ["Pediacare Syrup 100ml", "60", "EGP 900"],
+  ];
+  return {
+    currentStep: "Marketing Review",
+    customerName: "El Ezaby — Nasr City",
+    estimatedCost: "EGP 3,000",
+    payDate: "2026-07-01",
+    productsTable:
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">' +
+      `<thead><tr><th style="${head}">Product</th><th style="${headR}">Qty</th><th style="${headR}">Value</th></tr></thead>` +
+      `<tbody>${rows.map((row) => `<tr><td style="${cell}">${row[0]}</td><td style="${cellR}">${row[1]}</td><td style="${cellR}">${row[2]}</td></tr>`).join("")}</tbody></table>`,
+    productsTableText: rows.map((row) => `- ${row.join(" | ")}`).join("\n"),
+    requestCode: "MKT-REQ-SAMPLE",
+    requiredRoi: "EGP 30,000",
+    returnCallout: "",
+    returnCalloutText: "",
+    roiWindow: "Jul – Aug 2026",
+  };
 }
 
 function buildSamplePlanTable(): { planTable: string; planTableText: string } {
@@ -1867,9 +1952,12 @@ export async function previewTemplate(templateKey: string, input: {
   // Admin previews have no real plan submission - substitute a small demo table so a
   // weekly_plans template shows what {{planTable}} actually renders as. Real sends pass
   // a real table (or "" - the token then disappears).
-  const context = templateKey === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS && !text(input.context?.planTable).includes("<table")
-    ? { ...input.context, ...samplePlanTableContext() }
-    : input.context;
+  let context = input.context;
+  if (templateKey === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS && !text(input.context?.planTable).includes("<table")) {
+    context = { ...input.context, ...samplePlanTableContext() };
+  } else if (templateKey === EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST && !text(input.context?.productsTable).includes("<table")) {
+    context = { ...sampleMarketingContext(), ...input.context };
+  }
   const rendered = renderEmailTemplate(draft, context, recipients);
   return {
     html: rendered.html,
