@@ -1,4 +1,4 @@
-import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
@@ -186,12 +186,13 @@ export type CommitResult =
   | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview }
   | { status: "blocked_validation"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; validation: ValidationReport };
 
-// Delete PRIOR normalizer batches for the same (distributor, period) — EXCEPT the just-inserted one —
-// so re-uploading a month replaces rather than double-counts. Runs AFTER the new batch is fully
-// written: if the insert fails nothing is deleted (old data stays intact, no loss), and a rare
-// post-insert delete failure self-heals on the next upload (never silent data loss). Scoped to
-// template_key='normalizer' + a validated YYYY-MM period, so it can never touch unrelated data.
-async function deleteOtherBatchesForPeriod(distributorCode: string, period: string, keepBatchId: string): Promise<void> {
+// Delete PRIOR normalizer batches for the same (distributor, period) so re-uploading a month replaces
+// rather than double-counts. Called BEFORE inserting the replacement (delete-then-insert) so two
+// validated batches for one month never coexist — the DB partial unique index
+// (source_of_sales_one_validated_batch_per_period) is the hard backstop if anything still races past
+// this. Pass keepBatchId to spare a specific batch; omit it to clear all prior batches for the month.
+// Scoped to template_key='normalizer' + a validated YYYY-MM period, so it can never touch unrelated data.
+async function deleteOtherBatchesForPeriod(distributorCode: string, period: string, keepBatchId?: string): Promise<void> {
   if (!VALID_PERIOD.test(period)) return;
   const supabase = getSupabaseAdmin();
   const dist = normalizeCodeKey(distributorCode);
@@ -256,16 +257,34 @@ export async function commitMonthlyUpload(input: {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }
 
-  // Insert the new batch FIRST (single source-of-truth period), THEN remove prior batches for the
-  // same month — so a failed insert never leaves the period empty (atomic-safe ordering).
-  const persisted = await persistNormalizedBatch({
-    distributorCode: input.distributorCode,
-    distributorName: rec.distributorName,
-    fileName: input.file.name,
-    result: stamped,
-    uploadedBy: input.uploadedBy,
-    period,
-  });
-  await deleteOtherBatchesForPeriod(input.distributorCode, period, persisted.batchId);
+  // Replace-not-double-count: remove any prior validated batch for this (distributor, month) BEFORE
+  // inserting the replacement. This keeps two validated batches for one month from ever coexisting
+  // (the old insert-then-delete ordering could leave both during a race → ROI/dashboard double-count).
+  // The DB partial unique index (source_of_sales_one_validated_batch_per_period) is the hard backstop:
+  // if a duplicate still races past this delete (or a same-month batch from another template exists),
+  // the insert fails fast with 23505, which we surface as a clear "already imported" 409 rather than
+  // silently double-counting. The upload already passed strict validation above, so an insert failure
+  // here is a rare DB error; the month self-heals on the next re-upload.
+  await deleteOtherBatchesForPeriod(input.distributorCode, period);
+  let persisted: Awaited<ReturnType<typeof persistNormalizedBatch>>;
+  try {
+    persisted = await persistNormalizedBatch({
+      distributorCode: input.distributorCode,
+      distributorName: rec.distributorName,
+      fileName: input.file.name,
+      result: stamped,
+      uploadedBy: input.uploadedBy,
+      period,
+    });
+  } catch (error) {
+    if (isPostgresUniqueViolation(error)) {
+      throw new SalesWorkflowError(
+        "duplicate_sales_batch",
+        `A validated ${rec.distributorName} sheet for ${period} is already imported. Delete it first, then re-upload — this keeps the month from being double-counted.`,
+        409,
+      );
+    }
+    throw error;
+  }
   return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, validation, ...persisted };
 }
