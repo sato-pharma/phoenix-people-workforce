@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
-import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
+import { listTerritoryAliases, saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -299,6 +299,100 @@ export async function buildSosCustomerBrickTemplate(distributorCode: string): Pr
   headerStyle(reference, NAVY);
 
   return workbook.xlsx.writeBuffer() as unknown as ArrayBuffer;
+}
+
+// ── Territory / Brick Alias template (GLOBAL — not per-distributor) ──
+
+export async function buildSosTerritoryMappingTemplate(): Promise<ArrayBuffer> {
+  const [existing, refs] = await Promise.all([
+    listTerritoryAliases(),
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+  ]);
+
+  const brickIndex = new Map<string, string>();
+  for (const b of refs.bricks ?? []) brickIndex.set(normalizeCodeKey(b.brickId), b.brickName);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Territory Mapping");
+  sheet.columns = [
+    { header: "ALIAS", key: "alias", width: 50 },
+    { header: "BRICK_ID", key: "brickId", width: 16 },
+    { header: "BRICK_NAME", key: "brickName", width: 38 },
+  ];
+  for (const row of existing) {
+    sheet.addRow({ alias: row.alias, brickId: row.targetCode, brickName: brickIndex.get(normalizeCodeKey(row.targetCode)) ?? row.targetCode });
+  }
+  if (existing.length === 0) {
+    sheet.addRow({ alias: "paste the raw territory / area text here", brickId: "MASTER_BRICK_ID", brickName: "(filled automatically)" });
+  }
+  headerStyle(sheet, ORANGE);
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  const reference = workbook.addWorksheet("Master Bricks");
+  reference.columns = [
+    { header: "BRICK_ID", key: "brickId", width: 14 },
+    { header: "BRICK_NAME", key: "brickName", width: 34 },
+    { header: "AREA", key: "area", width: 28 },
+    { header: "REGION", key: "region", width: 24 },
+  ];
+  for (const brick of [...(refs.bricks ?? [])].sort((a, b) => a.brickId.localeCompare(b.brickId))) {
+    reference.addRow({ brickId: brick.brickId, brickName: brick.brickName, area: brick.areaName, region: brick.regionName });
+  }
+  headerStyle(reference, NAVY);
+
+  return workbook.xlsx.writeBuffer() as unknown as ArrayBuffer;
+}
+
+export async function importSosTerritoryMappingWorkbook(input: { file: File; actorId: string | null }): Promise<SosMappingImportResult> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load((await input.file.arrayBuffer()) as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.getWorksheet("Territory Mapping") ?? workbook.worksheets[0];
+  if (!sheet) throw new SalesWorkflowError("invalid_mapping_template", "The workbook has no sheets.", 400);
+
+  const aliasCol = headerIndex(sheet, ["ALIAS", "Alias", "Raw", "Territory"]);
+  const brickCol = headerIndex(sheet, ["BRICK_ID", "BRICK ID", "Brick ID", "BrickId"]);
+  if (!aliasCol || !brickCol) {
+    throw new SalesWorkflowError("invalid_mapping_template", "Use the downloaded Territory Mapping template — ALIAS and BRICK_ID columns are required.", 400);
+  }
+
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const validBricks = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
+
+  const blockedRows: SosMappingImportResult["blockedRows"] = [];
+  const seen = new Set<string>();
+  const mappings: MappingInput[] = [];
+  let skipped = 0;
+
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const alias = cellString(row, aliasCol);
+    const brickRaw = cellString(row, brickCol);
+    if (!alias && !brickRaw) { skipped += 1; continue; }
+    if (!alias) { blockedRows.push({ rowNumber, reason: "Alias is required.", values: brickRaw }); continue; }
+    const brickKey = normalizeCodeKey(brickRaw);
+    if (!brickKey || !validBricks.has(brickKey)) {
+      blockedRows.push({ rowNumber, reason: `Brick ID "${brickRaw || "(blank)"}" is not in the master bricks table.`, values: alias });
+      continue;
+    }
+    const normalizedAlias = normalizeAliasKey(alias);
+    if (!normalizedAlias) { blockedRows.push({ rowNumber, reason: "Alias could not be normalized.", values: alias }); continue; }
+    if (seen.has(normalizedAlias)) { skipped += 1; continue; }
+    seen.add(normalizedAlias);
+    mappings.push({ type: "territory", raw: alias, code: brickRaw.trim() });
+  }
+
+  const result = await saveMappings(mappings);
+  await writeAuditLog({
+    actorLoginId: input.actorId ?? "system",
+    entityId: "source_of_sales_territory_aliases",
+    entityType: "sales_import_batch",
+    newValues: { blocked: blockedRows.length, saved: result.saved, skipped: skipped + result.skipped, source: "territory_mapping_import" },
+    summary: `Territory mapping import — ${result.saved} saved, ${skipped + result.skipped} skipped, ${blockedRows.length} blocked.`,
+  });
+  return { saved: result.saved, skipped: skipped + result.skipped, blockedRows };
 }
 
 export const SOS_MAPPING_XLSX_CONTENT_TYPE = XLSX_CONTENT_TYPE;

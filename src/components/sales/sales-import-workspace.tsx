@@ -4,15 +4,18 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Clock,
   Database,
   FileSpreadsheet,
   Filter,
   Info,
   ListChecks,
   Loader2,
+  Lock,
   Package,
   RefreshCw,
   Search,
+  ShieldCheck,
   Table2,
   Trash2,
   TrendingUp,
@@ -29,7 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ImportPreviewModal, type PreviewResult } from "@/components/sales/import-preview-modal";
+import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
 import { SosCoverageTab } from "@/components/sales/sos-coverage-tab";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
@@ -781,6 +784,107 @@ function SourceOfSalesDashboardPanel({
   );
 }
 
+function StepCircle({ number, done, active }: { active?: boolean; done?: boolean; number: number }) {
+  return (
+    <div
+      className={cn(
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black",
+        done ? "bg-emerald-500 text-white" : active ? "bg-[#0B0B0B] text-white" : "bg-[#E2E8F0] text-[#64748B]",
+      )}
+    >
+      {done ? <CheckCircle2 className="h-4 w-4" /> : number}
+    </div>
+  );
+}
+
+function UploadStatusPanel({
+  batches,
+  distributors,
+  onSelectDistributor,
+}: {
+  batches: SourceOfSalesUploadBatch[];
+  distributors: SalesDistributorOption[];
+  onSelectDistributor: (code: string) => void;
+}) {
+  const periodOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const batch of batches) if (batch.period) set.add(batch.period);
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [batches]);
+
+  const [selectedPeriod, setSelectedPeriod] = useState(() => periodOptions[0] ?? "");
+
+  const validatedCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const batch of batches) {
+      if (batch.status === "validated" && batch.period === selectedPeriod && batch.distributorCode) {
+        codes.add(batch.distributorCode);
+      }
+    }
+    return codes;
+  }, [batches, selectedPeriod]);
+
+  const validatedCount = distributors.filter((d) => validatedCodes.has(d.code)).length;
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Upload Status</p>
+          <p className="mt-0.5 text-sm font-semibold text-[#0F172A]">
+            {periodOptions.length === 0
+              ? "No uploads yet"
+              : `${validatedCount} of ${distributors.length} distributors validated`}
+            {selectedPeriod ? ` — ${selectedPeriod}` : ""}
+          </p>
+        </div>
+        {periodOptions.length > 0 ? (
+          <SearchableSelect
+            className="h-9 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+            onChange={(e) => setSelectedPeriod(e.target.value)}
+            value={selectedPeriod}
+          >
+            {periodOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+          </SearchableSelect>
+        ) : null}
+      </div>
+      <div className="p-5">
+        {distributors.length === 0 ? (
+          <p className="text-sm text-[#64748B]">No distributors configured.</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {distributors.map((d) => {
+              const done = validatedCodes.has(d.code);
+              return (
+                <button
+                  className={cn(
+                    "flex items-center gap-3 rounded-2xl border p-3 text-left transition",
+                    done
+                      ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
+                      : "border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#F97316]/40 hover:bg-[#FFF7ED]/60",
+                  )}
+                  key={d.code}
+                  onClick={() => { if (!done) onSelectDistributor(d.code); }}
+                  title={done ? `${d.name} validated for ${selectedPeriod}` : `Click to select ${d.name} for upload`}
+                  type="button"
+                >
+                  {done
+                    ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                    : <Clock className="h-4 w-4 shrink-0 text-[#94A3B8]" />}
+                  <div className="min-w-0">
+                    <p className={cn("truncate text-xs font-black", done ? "text-emerald-800" : "text-[#0F172A]")}>{d.name}</p>
+                    <p className={cn("text-[11px] font-semibold", done ? "text-emerald-600" : "text-[#64748B]")}>{d.code} · {done ? "Validated ✓" : "Pending"}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type SourceOfSalesTab = "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
@@ -800,7 +904,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [isValidating, setIsValidating] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [pendingStoragePath, setPendingStoragePath] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -811,8 +914,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
 
   const selectedDistributor = distributors.find((distributor) => distributor.code === selectedDistributorCode) ?? defaultDistributor;
-  const canValidate = Boolean(selectedDistributorCode && selectedFile && !isValidating && !initialError);
-
   async function readJsonResponse(response: Response): Promise<ValidationResponse> {
     const text = await response.text();
     if (!text) return { success: response.ok, error: response.ok ? undefined : response.statusText };
@@ -917,6 +1018,15 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
     setResult(null);
     setError(null);
     setDetection(null);
+    const stale = pendingStoragePath;
+    setPendingStoragePath(null);
+    if (stale) {
+      void fetch("/api/sales/monthly-import/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ storagePath: stale }),
+      }).catch(() => {});
+    }
     if (!file) return;
 
     const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
@@ -1020,10 +1130,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
       const data = payload.data ?? null;
       setResult(data);
       setPendingStoragePath(storagePath);
-      if (data) {
-        // Show the preview either way: validated (confirm to import) OR blocked (what to fix first).
-        setPreviewOpen(true);
-      }
       if (!payload.success && !data) {
         setError(payload.error ?? "Preview failed.");
       }
@@ -1070,7 +1176,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
       const data = payload.data ?? null;
       if (payload.success && data?.batchId) {
         setResult(data);
-        setPreviewOpen(false);
         setPendingStoragePath(null);
         await reloadBatches();
         await reloadDashboard(data.period ?? null);
@@ -1092,21 +1197,6 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
     }
   }
 
-  // Cancel the preview: discard the kept Storage object (large files) so it doesn't linger.
-  function handleCancelPreview() {
-    if (isCommitting) return;
-    setPreviewOpen(false);
-    const path = pendingStoragePath;
-    setPendingStoragePath(null);
-    if (path) {
-      void fetch("/api/sales/monthly-import/cancel", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storagePath: path }),
-      }).catch(() => {});
-    }
-  }
-
   if (initialError) {
     return (
       <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
@@ -1118,16 +1208,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
     );
   }
 
+  const stepVerified = Boolean(selectedFile && selectedDistributorCode);
+  const stepValidated = result?.status === "validated";
+
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
-      {previewOpen && result ? (
-        <ImportPreviewModal
-          committing={isCommitting}
-          onCancel={handleCancelPreview}
-          onConfirm={() => void handleConfirmImport()}
-          result={result}
-        />
-      ) : null}
       <div className="space-y-7">
         <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
@@ -1206,7 +1291,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             variant="secondary"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            Uploaded Sheets
+            Upload &amp; Status
           </Button>
           <Button
             className={cn(
@@ -1266,215 +1351,232 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <MonthlySalesWizard />
         ) : activeTab === "sheets" ? (
           <>
-        <AdminTableShell
-          description="Select the distributor, attach the monthly workbook, then run validation."
-          title="Validate Monthly Sheet"
-        >
-          <div className="px-5 pt-5">
-            <AdminCallout tone="neutral">
-              <FileSpreadsheet className="mt-0.5 h-4 w-4" />
-              <div>
-                <p className="font-semibold">Upload the distributor&apos;s raw export — as-is.</p>
-                <p className="text-sm">Pick the <b>correct distributor</b> and attach its <b>raw export</b> (no need to add coded columns by hand). Set up the product and customer mappings once on the <b>Mapping</b> tab; products, bricks, area, and region resolve automatically, and any unmapped rows show up in “Rows to Fix.” Coded sheets are still accepted.</p>
-              </div>
-            </AdminCallout>
-          </div>
-          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-              <div className="space-y-3">
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
-                  <SearchableSelect
-                    className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
-                    onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); }}
-                    value={selectedDistributorCode}
-                  >
-                    {distributors.map((distributor) => (
-                      <option key={distributor.code} value={distributor.code}>
-                        {distributor.name} / {distributor.code}
-                      </option>
-                    ))}
-                  </SearchableSelect>
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
-                    Period <span className="font-medium normal-case tracking-normal text-[#94A3B8]">— only if the sheet has no date</span>
-                  </span>
-                  <input
-                    className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
-                    onChange={(event) => setSelectedPeriod(event.target.value)}
-                    type="month"
-                    value={selectedPeriod}
-                  />
-                </label>
-              </div>
-              <div className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
-                <button
-                  className="flex min-h-[132px] w-full items-center justify-between gap-4 rounded-[24px] border border-dashed border-[#CBD5E1] bg-white px-4 py-5 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#F97316] hover:bg-[#FFF7ED]/50"
-                  onClick={() => fileInputRef.current?.click()}
-                  type="button"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] text-[#F97316] shadow-[0_12px_24px_rgba(249,115,22,0.12)]">
-                      <FileSpreadsheet className="h-5 w-5" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-base font-semibold text-[#0F172A]">
-                        {selectedFile?.name ?? "Choose monthly distributor sheet"}
-                      </span>
-                      <span className="mt-1 block text-xs leading-5 text-[#64748B]">
-                        {selectedFile
-                          ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB selected`
-                          : "Any distributor's raw export or raw + coded sheet is accepted (.xlsx / .xls)."}
-                      </span>
-                    </span>
-                  </span>
-                  <UploadCloud className="h-4 w-4 shrink-0 text-[#64748B]" />
-                </button>
-                <input
-                  accept=".xlsx,.xls"
-                  className="hidden"
-                  onChange={(event) => void handleFileChosen(event.target.files?.[0] ?? null)}
-                  ref={fileInputRef}
-                  type="file"
-                />
-                {isDetecting ? (
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Detecting distributor from the file…
-                  </p>
-                ) : detection ? (
-                  <p
-                    className={cn(
-                      "flex items-center gap-1.5 text-xs font-semibold",
-                      detection.tone === "good" ? "text-emerald-700" : "text-orange-700",
-                    )}
-                  >
-                    {detection.tone === "good" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                    {detection.text}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <Card className={cn(panelClassName, "flex flex-col justify-between gap-4 p-4")}>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Status</p>
-                  {result ? (
-                    <Badge variant={result.status === "validated" ? "success" : "danger"}>
-                      {result.status}
-                    </Badge>
-                  ) : (
-                    <Badge variant="neutral">Ready</Badge>
-                  )}
+            {/* Upload Status: shows which distributors have validated for the selected period */}
+            <UploadStatusPanel
+              batches={batches}
+              distributors={distributors}
+              onSelectDistributor={(code) => { setSelectedDistributorCode(code); setResult(null); setError(null); setDetection(null); }}
+            />
+
+            {/* 3-Step Upload Wizard */}
+            <div className="overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+              <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+                <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
+                  <UploadCloud className="h-3 w-3 text-orange-600" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
                 </div>
-                <p className="text-sm leading-6 text-[#64748B]">
-                  {result
-                    ? `${result.rowCount} rows read from ${result.sheetName}.`
-                    : "Uploaded sheets are saved in the new Source of Sales module and can be deleted below."}
-                </p>
+                <p className="mt-1 text-xs text-[#64748B]">Pick the distributor, attach its raw export, validate, then confirm — three steps, no surprises.</p>
               </div>
-              <Button
-                className="h-11 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
-                disabled={!canValidate}
-                onClick={() => void handlePreview()}
-                type="button"
-              >
-                {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                Preview import
-              </Button>
-            </Card>
-          </div>
-        </AdminTableShell>
 
-        <UploadedSheetsTable
-          batches={batches}
-          deleteLoadingId={deleteLoadingId}
-          onDelete={(batchId) => void handleDeleteBatch(batchId)}
-          onRefresh={() => void reloadBatches()}
-          refreshing={isRefreshingBatches}
-        />
+              {/* Step 1 — Verify file & distributor */}
+              <div className="border-b border-[#E2E8F0] p-6">
+                <div className="mb-5 flex items-center gap-3">
+                  <StepCircle active={!stepVerified} done={stepVerified} number={1} />
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Verify File &amp; Distributor</span>
+                  {stepVerified && !result && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-500" />}
+                </div>
+                <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
+                  <div className="space-y-3">
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
+                      <SearchableSelect
+                        className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                        onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); setResult(null); }}
+                        value={selectedDistributorCode}
+                      >
+                        {distributors.map((distributor) => (
+                          <option key={distributor.code} value={distributor.code}>
+                            {distributor.name} / {distributor.code}
+                          </option>
+                        ))}
+                      </SearchableSelect>
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
+                        Period <span className="font-medium normal-case tracking-normal text-[#94A3B8]">— only if the sheet has no date</span>
+                      </span>
+                      <input
+                        className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                        onChange={(event) => setSelectedPeriod(event.target.value)}
+                        type="month"
+                        value={selectedPeriod}
+                      />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
+                    <button
+                      className="flex min-h-[120px] w-full items-center justify-between gap-4 rounded-[24px] border border-dashed border-[#CBD5E1] bg-white px-4 py-5 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#F97316] hover:bg-[#FFF7ED]/50"
+                      onClick={() => fileInputRef.current?.click()}
+                      type="button"
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span className={cn(
+                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border shadow-[0_8px_20px_rgba(249,115,22,0.10)]",
+                          selectedFile ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-[#FED7AA] bg-[#FFF7ED] text-[#F97316]",
+                        )}>
+                          {selectedFile ? <CheckCircle2 className="h-5 w-5" /> : <FileSpreadsheet className="h-5 w-5" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-[#0F172A]">
+                            {selectedFile?.name ?? "Choose monthly distributor sheet"}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-[#64748B]">
+                            {selectedFile
+                              ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB — click to change`
+                              : "Any distributor's raw export (.xlsx / .xls) — no coding needed."}
+                          </span>
+                        </span>
+                      </span>
+                      <UploadCloud className="h-4 w-4 shrink-0 text-[#94A3B8]" />
+                    </button>
+                    <input
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={(event) => void handleFileChosen(event.target.files?.[0] ?? null)}
+                      ref={fileInputRef}
+                      type="file"
+                    />
+                    {isDetecting ? (
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Detecting distributor from the file…
+                      </p>
+                    ) : detection ? (
+                      <p className={cn(
+                        "flex items-center gap-1.5 text-xs font-semibold",
+                        detection.tone === "good" ? "text-emerald-700" : "text-orange-700",
+                      )}>
+                        {detection.tone === "good" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                        {detection.text}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
 
-        <StatusBanner error={error} result={result} />
+              {/* Step 2 — Validate */}
+              <div className={cn("border-b border-[#E2E8F0] p-6", !stepVerified && "opacity-50")}>
+                <div className="mb-4 flex items-center gap-3">
+                  <StepCircle active={stepVerified && !result} done={Boolean(result)} number={2} />
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Validate — Per Product · Per Region · Per Brick</span>
+                </div>
+                {!stepVerified ? (
+                  <p className="flex items-center gap-2 text-xs text-[#64748B]">
+                    <Lock className="h-3.5 w-3.5" />
+                    Complete Step 1 — pick a distributor and attach a file.
+                  </p>
+                ) : (
+                  <Button
+                    className="h-11 gap-2 bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
+                    disabled={isValidating}
+                    onClick={() => void handlePreview()}
+                    type="button"
+                  >
+                    {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    {result ? "Re-validate" : "Validate"}
+                  </Button>
+                )}
+              </div>
 
-        {result?.blockingReasons && result.blockingReasons.length > 0 ? (
-          <AdminCallout tone="danger">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
-            <div>
-              <p className="font-semibold">Why the upload stopped</p>
-              <div className="mt-2 space-y-2 text-sm">
-                {result.blockingReasons.map((reason, index) => (
-                  <p key={`${reason}:${index}`}>{reason}</p>
-                ))}
+              {/* Step 3 — Confirm (only unlocks after validation passes) */}
+              <div className={cn("p-6", !stepValidated && "opacity-50")}>
+                <div className="mb-4 flex items-center gap-3">
+                  <StepCircle active={stepValidated} number={3} />
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Confirm &amp; Save</span>
+                </div>
+                {!stepValidated ? (
+                  <p className="flex items-center gap-2 text-xs text-[#64748B]">
+                    <Lock className="h-3.5 w-3.5" />
+                    {result ? "Validation blocked — fix the rows above before importing." : "Complete Step 2 — run validation first."}
+                  </p>
+                ) : (
+                  <Button
+                    className="h-11 gap-2 bg-[#F97316] font-black text-white shadow-[0_8px_20px_rgba(249,115,22,0.25)] transition hover:bg-[#EA580C]"
+                    disabled={isCommitting}
+                    onClick={() => void handleConfirmImport()}
+                    type="button"
+                  >
+                    {isCommitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                    Confirm &amp; Upload
+                  </Button>
+                )}
               </div>
             </div>
-          </AdminCallout>
-        ) : null}
 
-        {result?.advisories && result.advisories.length > 0 ? (
-          <AdminCallout tone="neutral">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
-            <div>
-              <p className="font-semibold">Heads up — please double-check</p>
-              <div className="mt-2 space-y-2 text-sm">
-                {result.advisories.map((advisory, index) => (
-                  <p key={`${advisory}:${index}`}>{advisory}</p>
-                ))}
+            {/* Inline validation results — appear after Step 2 runs */}
+            {result ? (
+              <div className="space-y-4">
+                <StatusBanner error={error} result={result} />
+
+                {result.blockingReasons && result.blockingReasons.length > 0 ? (
+                  <AdminCallout tone="danger">
+                    <AlertTriangle className="mt-0.5 h-4 w-4" />
+                    <div>
+                      <p className="font-semibold">Why validation blocked</p>
+                      <div className="mt-2 space-y-2 text-sm">
+                        {result.blockingReasons.map((reason, index) => (
+                          <p key={`${reason}:${index}`}>{reason}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </AdminCallout>
+                ) : null}
+
+                {result.advisories && result.advisories.length > 0 ? (
+                  <AdminCallout tone="neutral">
+                    <AlertTriangle className="mt-0.5 h-4 w-4" />
+                    <div>
+                      <p className="font-semibold">Heads up — please double-check</p>
+                      <div className="mt-2 space-y-2 text-sm">
+                        {result.advisories.map((advisory, index) => (
+                          <p key={`${advisory}:${index}`}>{advisory}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </AdminCallout>
+                ) : null}
+
+                <AdminTableShell description="Summary totals from the uploaded workbook." title="Validation Totals">
+                  <div className="p-4 md:p-5">
+                    <TotalsGrid result={result} />
+                  </div>
+                </AdminTableShell>
+
+                <AdminTableShell description="Qty, bonus quantity, and value grouped by product." title="By Product">
+                  <ProductTable rows={result.byProduct} />
+                </AdminTableShell>
+
+                <AdminTableShell description="Qty, bonus quantity, and value grouped by region." title="By Region">
+                  <RegionTable rows={result.byRegion} />
+                </AdminTableShell>
+
+                <AdminTableShell description="Qty, bonus quantity, and value grouped by brick with full hierarchy." title="By Brick">
+                  <BrickTable rows={result.byBrick} />
+                </AdminTableShell>
+
+                <AdminTableShell description="Qty, bonus quantity, and value grouped by official product line." title="By Line">
+                  <LineTable rows={result.byLine} />
+                </AdminTableShell>
+
+                <AdminTableShell description="Qty, bonus quantity, and value grouped by area and its parent region." title="By Area">
+                  <AreaTable rows={result.byArea} />
+                </AdminTableShell>
+
+                <IssueTable issues={result.issues} />
               </div>
-            </div>
-          </AdminCallout>
-        ) : null}
+            ) : error ? (
+              <StatusBanner error={error} result={null} />
+            ) : null}
 
-        {result ? (
-          <>
-            <AdminTableShell
-              description="Totals from the uploaded workbook."
-              title="Validation Totals"
-            >
-              <div className="p-4 md:p-5">
-                <TotalsGrid result={result} />
-              </div>
-            </AdminTableShell>
-
-            <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by official product line."
-              title="By Line"
-            >
-              <LineTable rows={result.byLine} />
-            </AdminTableShell>
-
-            <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by region."
-              title="By Region"
-            >
-              <RegionTable rows={result.byRegion} />
-            </AdminTableShell>
-
-            <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by area and its parent region."
-              title="By Area"
-            >
-              <AreaTable rows={result.byArea} />
-            </AdminTableShell>
-
-            <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by product."
-              title="By Product"
-            >
-              <ProductTable rows={result.byProduct} />
-            </AdminTableShell>
-
-            <AdminTableShell
-              description="Qty, bonus quantity, and value grouped by brick with full hierarchy."
-              title="By Brick"
-            >
-              <BrickTable rows={result.byBrick} />
-            </AdminTableShell>
-
-            <IssueTable issues={result.issues} />
-          </>
-        ) : null}
+            {/* History of all uploaded batches */}
+            <UploadedSheetsTable
+              batches={batches}
+              deleteLoadingId={deleteLoadingId}
+              onDelete={(batchId) => void handleDeleteBatch(batchId)}
+              onRefresh={() => void reloadBatches()}
+              refreshing={isRefreshingBatches}
+            />
           </>
         ) : activeTab === "mapping" ? (
           <SourceOfSalesMappingTab

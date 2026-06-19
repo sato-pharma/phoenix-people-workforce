@@ -1055,9 +1055,12 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
           <p className="font-semibold">Map once, then upload the raw sheet as-is — no coded columns to add by hand.</p>
           <p className="text-sm">
             Set up the product and customer mappings below (the AI assist and &ldquo;learn from a coded file&rdquo; do most of
-            the work). Then upload each distributor&apos;s <b>raw export</b> on the <b>Uploaded Sheets</b> tab — no coded
+            the work). Then upload each distributor&apos;s <b>raw export</b> on the <b>Upload &amp; Status</b> tab — no coded
             columns to add by hand. Anything still unmapped appears in{" "}
             <Link className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</Link>.
+          </p>
+          <p className="text-sm">
+            Territory mapping is also available below — map raw area names to Brick IDs globally (applies to all distributors).
           </p>
         </div>
       </AdminCallout>
@@ -1077,7 +1080,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
             </option>
           ))}
         </SearchableSelect>
-        <span className="text-xs text-[#64748B]">Shared with the Uploaded Sheets tab and the tools below.</span>
+        <span className="text-xs text-[#64748B]">Shared with the Upload &amp; Status tab and the tools below.</span>
       </Card>
 
       <TemplateCard
@@ -1101,6 +1104,15 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
       >
         <CustomerBrickAddForm bricks={bricks} distributorCode={distributorCode} />
       </TemplateCard>
+
+      <TemplateCard
+        description="Map raw territory / area text (as it appears in distributor sheets) to a Phoenix Brick ID. This mapping is global — it applies to all distributors. Download the template to see every alias already saved and the full Master Bricks reference, fill in any new rows, then re-upload."
+        templateHref="/api/sales/monthly-import/territory-mapping/template"
+        templateLabel="Download Territory Mapping template"
+        title="Territory Mapping (global — all distributors)"
+        uploadFields={{}}
+        uploadUrl="/api/sales/monthly-import/territory-mapping"
+      />
 
       <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
 
