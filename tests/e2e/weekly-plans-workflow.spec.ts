@@ -16,6 +16,7 @@ import { test, expect, type Page } from "@playwright/test";
  * Requirements:
  *   - NODE_ENV=development  (dev-auth is disabled in production)
  *   - Local dev server running on port 3000
+ *   - Local/staging test data only. Never point this mutating workflow at production.
  *
  * Run:
  *   npx playwright test tests/e2e/weekly-plans-workflow.spec.ts
@@ -24,11 +25,13 @@ import { test, expect, type Page } from "@playwright/test";
 const BASE = "http://localhost:3000";
 
 // Path-only constants for dev-auth `next` param (normalizeNextPath requires a leading "/")
-const PORTAL_PLANS_PATH = "/employee-portals/plans";
+const EMPLOYEE_PLANS_PATH = "/employee-portals/plans";
+const MANAGER_PLANS_PATH = "/workspace/plans";
 const ADMIN_PLANS_PATH = "/admin/weekly-plans";
 
 // Full URLs for page.goto() after auth is established
-const PORTAL_PLANS = `${BASE}${PORTAL_PLANS_PATH}`;
+const EMPLOYEE_PLANS = `${BASE}${EMPLOYEE_PLANS_PATH}`;
+const MANAGER_PLANS = `${BASE}${MANAGER_PLANS_PATH}`;
 const ADMIN_PLANS = `${BASE}${ADMIN_PLANS_PATH}`;
 
 // Monday 7 July 2026 — well outside the current period so no period-lock conflict.
@@ -94,6 +97,7 @@ async function apiPatch(
 async function devAuthAvailable(page: Page) {
   const res = await page.request.get(
     `${BASE}/api/dev-auth?role=Super+Admin&hrId=B-10&next=/`,
+    { maxRedirects: 0 },
   );
   // dev-auth redirects → 200 in dev; returns 404 JSON in prod
   return res.status() !== 404;
@@ -143,7 +147,7 @@ test.describe("Weekly Plans – full approval workflow", () => {
     const available = await devAuthAvailable(page);
     if (!available) return;
 
-    await devAuth(page, "Group Product Manager", "A-8", PORTAL_PLANS_PATH);
+    await devAuth(page, "Group Product Manager", "A-8", EMPLOYEE_PLANS_PATH);
     await page.waitForURL(/employee-portals\/plans/, { timeout: 15_000 });
 
     type PlanRow = { id: string; periodStartDate: string; periodEndDate: string; status: string };
@@ -187,7 +191,7 @@ test.describe("Weekly Plans – full approval workflow", () => {
 
     // ── Step 1: Employee (A-8) submits the weekly plan ───────────────────────
     await test.step("A-8 submits weekly plan for week of 7 Jul 2026", async () => {
-      await devAuth(page, "Group Product Manager", "A-8", PORTAL_PLANS_PATH);
+      await devAuth(page, "Group Product Manager", "A-8", EMPLOYEE_PLANS_PATH);
       await expect(page).toHaveURL(/employee-portals\/plans/, { timeout: 15_000 });
 
       const result = await apiPost(page, "/api/weekly-plans", {
@@ -204,14 +208,14 @@ test.describe("Weekly Plans – full approval workflow", () => {
       expect(planId, "Plan ID must be returned").toBeTruthy();
 
       // UI: navigate to the plan and verify submitted badge
-      await page.goto(`${PORTAL_PLANS}?plan=${planId}`);
+      await page.goto(`${EMPLOYEE_PLANS}?plan=${planId}`);
       await expect(page.getByText(/submitted/i).first()).toBeVisible({ timeout: 10_000 });
     });
 
     // ── Step 2: Manager (A-9) returns plan for edit ──────────────────────────
     await test.step("A-9 returns plan to employee with feedback comment", async () => {
-      await devAuth(page, "Marketing Manager", "A-9", PORTAL_PLANS_PATH);
-      await expect(page).toHaveURL(/employee-portals\/plans/, { timeout: 15_000 });
+      await devAuth(page, "Marketing Manager", "A-9", MANAGER_PLANS_PATH);
+      await expect(page).toHaveURL(/workspace\/plans/, { timeout: 15_000 });
 
       const result = await apiPost(page, `/api/weekly-plans/${planId}/decision`, {
         action: "manager_return",
@@ -222,13 +226,13 @@ test.describe("Weekly Plans – full approval workflow", () => {
       expect(result.data.status).toBe("manager_returned");
 
       // UI: manager sees the plan in returned state
-      await page.goto(`${PORTAL_PLANS}?plan=${planId}`);
+      await page.goto(`${MANAGER_PLANS}?plan=${planId}`);
       await expect(page.getByText(/returned/i).first()).toBeVisible({ timeout: 10_000 });
     });
 
     // ── Step 3: Employee (A-8) addresses feedback and resubmits ─────────────
     await test.step("A-8 revises plan and resubmits", async () => {
-      await devAuth(page, "Group Product Manager", "A-8", PORTAL_PLANS_PATH);
+      await devAuth(page, "Group Product Manager", "A-8", EMPLOYEE_PLANS_PATH);
       await expect(page).toHaveURL(/employee-portals\/plans/, { timeout: 15_000 });
 
       const result = await apiPatch(page, `/api/weekly-plans/${planId}`, {
@@ -240,14 +244,14 @@ test.describe("Weekly Plans – full approval workflow", () => {
       expect(result.data.status).toBe("submitted");
 
       // UI: employee sees submitted badge again
-      await page.goto(`${PORTAL_PLANS}?plan=${planId}`);
+      await page.goto(`${EMPLOYEE_PLANS}?plan=${planId}`);
       await expect(page.getByText(/submitted/i).first()).toBeVisible({ timeout: 10_000 });
     });
 
     // ── Step 4: Manager (A-9) approves the revised plan ─────────────────────
     await test.step("A-9 approves the resubmitted plan", async () => {
-      await devAuth(page, "Marketing Manager", "A-9", PORTAL_PLANS_PATH);
-      await expect(page).toHaveURL(/employee-portals\/plans/, { timeout: 15_000 });
+      await devAuth(page, "Marketing Manager", "A-9", MANAGER_PLANS_PATH);
+      await expect(page).toHaveURL(/workspace\/plans/, { timeout: 15_000 });
 
       const result = await apiPost(page, `/api/weekly-plans/${planId}/decision`, {
         action: "manager_approve",
@@ -257,7 +261,7 @@ test.describe("Weekly Plans – full approval workflow", () => {
       expect(result.data.status).toBe("manager_approved");
 
       // UI: manager sees the plan as manager-approved
-      await page.goto(`${PORTAL_PLANS}?plan=${planId}`);
+      await page.goto(`${MANAGER_PLANS}?plan=${planId}`);
       await expect(page.getByText(/manager approved/i).first()).toBeVisible({ timeout: 10_000 });
     });
 

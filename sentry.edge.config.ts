@@ -1,32 +1,20 @@
-// Sentry initialization for the Edge runtime (proxy.ts middleware, edge routes).
-// Loaded from instrumentation.ts when NEXT_RUNTIME === "edge".
-// Inert until a DSN is provided.
+// This file configures the initialization of Sentry for edge features (middleware, edge routes, and so on).
+// The config you add here will be used whenever one of the edge features is loaded.
+// Note that this config is unrelated to the Vercel Edge Runtime and is also required when running locally.
+// https://docs.sentry.io/platforms/javascript/guides/nextjs/
+
 import * as Sentry from "@sentry/nextjs";
 
-import {
-  parseSentrySampleRate,
-  resolveSentryEnvironment,
-  resolveSentryRelease,
-  scrubSentryBreadcrumb,
-  scrubSentryErrorEvent,
-  scrubSentryTransactionEvent,
-  sentryIgnoredErrors,
-} from "@/lib/observability/sentry";
-
-const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
-
 Sentry.init({
-  dsn,
-  beforeBreadcrumb: scrubSentryBreadcrumb,
-  beforeSend: scrubSentryErrorEvent,
-  beforeSendTransaction: scrubSentryTransactionEvent,
-  enabled: Boolean(dsn),
-  environment: resolveSentryEnvironment(),
-  ignoreErrors: sentryIgnoredErrors,
-  maxBreadcrumbs: 30,
-  normalizeDepth: 3,
-  release: resolveSentryRelease(),
-  sampleRate: parseSentrySampleRate(process.env.SENTRY_ERROR_SAMPLE_RATE, 1),
-  tracesSampleRate: parseSentrySampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.02),
-  sendDefaultPii: false,
+  dsn: "https://03c41aaa992666bfc5e9e7cfbdd23ef7@o4511591680114688.ingest.de.sentry.io/4511591811055696",
+
+  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
+  tracesSampleRate: 1,
+
+  // Enable logs to be sent to Sentry
+  enableLogs: true,
+
+  // Enable sending user PII (Personally Identifiable Information)
+  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
+  sendDefaultPii: true,
 });

@@ -5,115 +5,153 @@ function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-/**
- * Migration 20260617090000_weekly_plans_atomic_rpcs.sql introduced four
- * SECURITY DEFINER functions that bundle every weekly-plan state transition
- * into a single atomic write with an optimistic-lock check against the
- * employee_plan_headers.revision column. This test pins:
- *   - the migration exists,
- *   - the four RPCs are defined with SECURITY DEFINER,
- *   - each RPC SELECTs the header FOR UPDATE,
- *   - each RPC raises the typed `weekly_plan_revision_conflict` error code
- *     on a revision mismatch,
- *   - service.ts no longer issues the bare multi-step writes the audit
- *     flagged (UPDATE header THEN INSERT decision-without-RPC, etc.),
- *   - service.ts calls each RPC via supabase.rpc("phx_weekly_plan_…").
- *
- * Pattern mirrors tests/position-vacancy-status-integrity.test.ts.
- */
 export function runWeeklyPlansRpcContractTests() {
   const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
   const migrations = readdirSync(migrationsDir);
   const atomicMigration = migrations.find((file) => /weekly_plans_atomic_rpcs\.sql$/.test(file));
+  const itemMigration = migrations.find((file) => /weekly_plans_atomic_item_replace\.sql$/.test(file));
   assert.ok(
     atomicMigration,
-    "expected a weekly_plans_atomic_rpcs.sql migration to exist (PR 1 of the 10/10 plan)",
+    "expected a weekly_plans_atomic_rpcs.sql migration to exist",
+  );
+  assert.ok(
+    itemMigration,
+    "expected a weekly_plans_atomic_item_replace.sql migration to exist",
   );
 
   const sql = readFileSync(new URL(atomicMigration!, migrationsDir), "utf8");
+  const itemSql = readFileSync(new URL(itemMigration!, migrationsDir), "utf8");
 
-  // ── Each RPC is defined SECURITY DEFINER ───────────────────────────────────
   for (const rpc of [
     "phx_weekly_plan_submit",
     "phx_weekly_plan_decide",
     "phx_weekly_plan_acknowledge",
     "phx_weekly_plan_cancel",
   ]) {
-    const definitionPattern = new RegExp(
-      `create or replace function public\\.${rpc}[\\s\\S]*?security definer`,
-      "i",
-    );
-    assert.match(sql, definitionPattern, `${rpc} must be defined SECURITY DEFINER`);
-
-    const grantPattern = new RegExp(`grant execute on function public\\.${rpc}[^;]*to service_role`, "i");
-    assert.match(sql, grantPattern, `${rpc} must be GRANTed to service_role only`);
-
-    // Supabase's default privileges silently grant EXECUTE to authenticated +
-    // anon at create time, so REVOKE FROM PUBLIC alone is not enough — all
-    // three must be stripped to leave service_role (and the postgres owner)
-    // as the only callers. This test pins that pattern.
-    const revokePattern = new RegExp(
-      `revoke execute on function public\\.${rpc}[^;]*from public,\\s*authenticated,\\s*anon`,
-      "i",
+    assert.match(
+      sql,
+      new RegExp(`create or replace function public\\.${rpc}[\\s\\S]*?security definer`, "i"),
+      `${rpc} must be defined SECURITY DEFINER`,
     );
     assert.match(
       sql,
-      revokePattern,
-      `${rpc} must REVOKE EXECUTE from public, authenticated, anon (Supabase defaults grant authenticated+anon at create time)`,
+      new RegExp(`grant execute on function public\\.${rpc}[^;]*to service_role`, "i"),
+      `${rpc} must be GRANTed to service_role only`,
+    );
+    assert.match(
+      sql,
+      new RegExp(`revoke execute on function public\\.${rpc}[^;]*from public,\\s*authenticated,\\s*anon`, "i"),
+      `${rpc} must REVOKE EXECUTE from public, authenticated, anon`,
     );
   }
 
-  // ── Optimistic-lock pattern: SELECT FOR UPDATE + revision-conflict raise ──
-  const forUpdateCount = (sql.match(/for update/gi) ?? []).length;
   assert.ok(
-    forUpdateCount >= 4,
-    `expected at least 4 SELECT FOR UPDATE clauses (one per RPC); found ${forUpdateCount}`,
+    (sql.match(/for update/gi) ?? []).length >= 4,
+    "state-transition RPCs must lock employee_plan_headers with SELECT FOR UPDATE",
   );
-
-  const conflictCount = (sql.match(/weekly_plan_revision_conflict/g) ?? []).length;
   assert.ok(
-    conflictCount >= 4,
-    `expected each RPC to raise weekly_plan_revision_conflict; found ${conflictCount} mentions`,
+    (sql.match(/weekly_plan_revision_conflict/g) ?? []).length >= 4,
+    "state-transition RPCs must raise weekly_plan_revision_conflict",
   );
-
-  // ── State-machine guard helper exists + mirrors plan-v1.ts transitions ──
   assert.match(
     sql,
     /create or replace function public\.phx_weekly_plan_next_status/i,
-    "phx_weekly_plan_next_status helper must exist to mirror plan-v1.ts transitions in SQL",
-  );
-  assert.match(
-    sql,
-    /weekly_plan_invalid_transition/,
-    "next-status helper must raise weekly_plan_invalid_transition on forbidden actions",
+    "phx_weekly_plan_next_status helper must mirror plan-v1.ts transitions in SQL",
   );
 
-  // ── service.ts calls each RPC via supabase.rpc(…) ─────────────────────────
+  assert.match(
+    itemSql,
+    /create or replace function public\.phx_weekly_plan_replace_items[\s\S]*?security definer/i,
+    "phx_weekly_plan_replace_items must be defined SECURITY DEFINER",
+  );
+  assert.match(
+    itemSql,
+    /for update/i,
+    "phx_weekly_plan_replace_items must lock the header row",
+  );
+  assert.match(
+    itemSql,
+    /weekly_plan_revision_conflict/,
+    "phx_weekly_plan_replace_items must raise weekly_plan_revision_conflict",
+  );
+  assert.match(
+    itemSql,
+    /weekly_plan_invalid_transition/,
+    "phx_weekly_plan_replace_items must raise weekly_plan_invalid_transition",
+  );
+  assert.match(
+    itemSql,
+    /weekly_plan_not_found/,
+    "phx_weekly_plan_replace_items must raise weekly_plan_not_found",
+  );
+  assert.match(
+    itemSql,
+    /delete from public\.employee_plan_items[\s\S]*?where plan_id = p_plan_id/i,
+    "phx_weekly_plan_replace_items must delete items inside the RPC transaction",
+  );
+  assert.match(
+    itemSql,
+    /insert into public\.employee_plan_items/i,
+    "phx_weekly_plan_replace_items must insert items inside the RPC transaction",
+  );
+  assert.match(
+    itemSql,
+    /item_activity_date < header_period_start or item_activity_date > header_period_end/i,
+    "phx_weekly_plan_replace_items must reject dates outside the plan period",
+  );
+  assert.match(
+    itemSql,
+    /public\.phx_weekly_plan_next_status\(current_status,\s*'submit',\s*true\)/i,
+    "phx_weekly_plan_replace_items must optionally submit through the SQL state machine",
+  );
+  assert.match(
+    itemSql,
+    /revoke execute on function public\.phx_weekly_plan_replace_items[^;]*from public,\s*authenticated,\s*anon/i,
+    "phx_weekly_plan_replace_items must REVOKE EXECUTE from public, authenticated, anon",
+  );
+  assert.match(
+    itemSql,
+    /grant execute on function public\.phx_weekly_plan_replace_items[^;]*to service_role/i,
+    "phx_weekly_plan_replace_items must be GRANTed to service_role only",
+  );
+
   const serviceSource = source("src/lib/weekly-planning/service.ts");
   for (const rpc of [
-    "phx_weekly_plan_submit",
+    "phx_weekly_plan_replace_items",
     "phx_weekly_plan_decide",
     "phx_weekly_plan_acknowledge",
+    "phx_weekly_plan_cancel",
   ]) {
-    const callPattern = new RegExp(`rpc\\("${rpc}"`);
-    assert.match(serviceSource, callPattern, `service.ts must call ${rpc} via supabase.rpc()`);
+    assert.match(
+      serviceSource,
+      new RegExp(`rpc\\("${rpc}"`),
+      `service.ts must call ${rpc} via supabase.rpc()`,
+    );
   }
-
-  // ── Error class wired through to route handlers ───────────────────────────
-  assert.match(
+  assert.doesNotMatch(
     serviceSource,
-    /export class WeeklyPlanRpcError extends Error/,
-    "WeeklyPlanRpcError must be exported so route handlers can map it to HTTP 409",
+    /async function replacePlanItems/,
+    "service.ts must not do service-side item delete/insert outside the RPC",
   );
   assert.match(
     serviceSource,
-    /weekly_plan_revision_conflict/,
-    "service.ts must recognise the weekly_plan_revision_conflict prefix from the RPC",
+    /async function rpcReplacePlanItems/,
+    "service.ts must expose an internal rpcReplacePlanItems wrapper",
   );
   assert.match(
     serviceSource,
-    /weekly_plan_invalid_transition/,
-    "service.ts must recognise the weekly_plan_invalid_transition prefix from the RPC",
+    /rpc\("phx_weekly_plan_replace_items"[\s\S]*?p_submit: input\.submit/,
+    "rpcReplacePlanItems must pass the submit flag into the SQL transaction",
+  );
+  assert.match(
+    serviceSource,
+    /assertItemDateInPeriod/,
+    "service.ts must validate item dates before calling the RPC",
+  );
+  assert.match(
+    serviceSource,
+    /activityDate < periodStartDate \|\| activityDate > periodEndDate/,
+    "service.ts must reject item dates outside the plan period",
   );
 
   for (const route of [
@@ -126,26 +164,13 @@ export function runWeeklyPlansRpcContractTests() {
     assert.match(
       routeSource,
       /isWeeklyPlanRpcError/,
-      `${route} must import isWeeklyPlanRpcError and surface conflict/not-found as 409/404`,
+      `${route} must surface weekly-plan RPC errors as typed HTTP responses`,
     );
   }
 
-  // ── Service no longer issues the bare-update path the audit flagged ───────
-  // decideEmployeePlan: previously did `.from("employee_plan_headers").update(patch).eq("id", planId)`
-  // followed by a separate recordDecision insert. Both moved into the RPC.
   assert.doesNotMatch(
     serviceSource,
     /from\("employee_plan_headers"\)\.update\(patch\)/,
-    "decideEmployeePlan must no longer write the header outside the phx_weekly_plan_decide RPC",
-  );
-
-  // ── Items writer (replacePlanItems) intentionally stays outside the RPC ──
-  // because it only runs while the plan is in an editable status (draft /
-  // *_returned) — no decision can land then, so the brief delete-then-insert
-  // window is safe. Confirm the helper still exists and is still called.
-  assert.match(
-    serviceSource,
-    /async function replacePlanItems/,
-    "replacePlanItems must still exist (items writer stays outside the RPC by design)",
+    "decideEmployeePlan must not write the header outside the phx_weekly_plan_decide RPC",
   );
 }

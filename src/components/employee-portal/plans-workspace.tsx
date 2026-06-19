@@ -950,6 +950,15 @@ export function PlansWorkspace({
     </div>
   ) : null;
 
+  const cappedResultsBanner = workspace.hasMorePlans ? (
+    <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        Showing the latest {workspace.loadedPlanCount} of at least {workspace.planLimit} plans. Older records may be hidden; use export or narrow the review period before making audit decisions.
+      </span>
+    </div>
+  ) : null;
+
   const messageBanner = message ? (
     <div className="border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
       {message}
@@ -961,6 +970,7 @@ export function PlansWorkspace({
       {/* ===================== MOBILE (< md) ===================== */}
       <div className="space-y-4 pb-28 md:hidden">
         {schemaBanner}
+        {cappedResultsBanner}
 
         {/* Compact header */}
         <div className="border border-slate-200 bg-white p-4 shadow-sm">
@@ -1194,6 +1204,7 @@ export function PlansWorkspace({
       {/* ===================== DESKTOP / TABLET (>= md) ===================== */}
       <div className="hidden min-w-0 space-y-5 md:block">
         {schemaBanner}
+        {cappedResultsBanner}
 
         {/* Context tiles */}
         <div className="grid gap-3 sm:grid-cols-2">
