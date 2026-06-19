@@ -258,8 +258,8 @@ export async function runMarketingRequestServiceTests() {
   assert.equal(prepared.requestRow.line_id, 7);
   assert.equal(prepared.requestRow.area_id, 40);
   assert.equal(prepared.requestRow.expected_roi_value, 10000);
-  // Required ROI scales with duration: 1000 cost × 10 × 6 months = 60,000, so the 10,000 forecast is under target.
-  assert.equal(prepared.requestRow.roi_status, "under_target");
+  // Required ROI is flat: 1000 cost × 10 = 10,000; expected is 10,000 so it exactly covers.
+  assert.equal(prepared.requestRow.roi_status, "covers_required");
   assert.equal(prepared.productRows[0].factory_price_snapshot, 6);
   assert.equal(prepared.productRows[0].forecast_quantity, 500);
   assert.equal(prepared.productRows[0].value_share, 0.3);
