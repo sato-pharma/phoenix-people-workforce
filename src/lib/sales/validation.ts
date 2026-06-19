@@ -98,19 +98,25 @@ function requireSheetValue(
   }
 }
 
-export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string, rowNumber: number) {
+export function parseSalesRow(
+  row: Record<string, unknown>,
+  fallbackLine: string,
+  rowNumber: number,
+  options?: { skipFactoryPrice?: boolean }
+) {
   const validationNotes: string[] = [];
-  [
+  const requiredFields: readonly (readonly string[])[] = [
     salesColumnAliases.territory,
     salesColumnAliases.salesType,
     salesColumnAliases.family,
     salesColumnAliases.product,
-    salesColumnAliases.factoryPrice,
     salesColumnAliases.month,
     salesColumnAliases.year,
     salesColumnAliases.salesUnits,
     salesColumnAliases.salesValue,
-  ].forEach((aliases) => requireSheetValue(row, aliases, rowNumber, validationNotes));
+    ...(options?.skipFactoryPrice ? [] : [salesColumnAliases.factoryPrice]),
+  ];
+  requiredFields.forEach((aliases) => requireSheetValue(row, aliases, rowNumber, validationNotes));
 
   const rawTargetUnits = firstValue(row, salesColumnAliases.targetUnits);
   const rawTargetValue = firstValue(row, salesColumnAliases.targetValue);
@@ -185,9 +191,11 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
   }
   if (record.product === "Unknown") validationNotes.push("WARN: Product is missing in this sales row.");
   if (record.family === "Unknown") validationNotes.push("WARN: Family is missing in this sales row.");
-  if (!Number.isFinite(record.factoryPrice) || record.factoryPrice <= 0) validationNotes.push("WARN: Factory Price is missing or zero in this sales row.");
+  if (!options?.skipFactoryPrice && (!Number.isFinite(record.factoryPrice) || record.factoryPrice <= 0)) {
+    validationNotes.push("WARN: Factory Price is missing or zero in this sales row.");
+  }
 
-  if (Number.isFinite(record.salesUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
+  if (!options?.skipFactoryPrice && Number.isFinite(record.salesUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
     const expectedSalesValue = record.salesUnits * record.factoryPrice;
     if (hasMaterialValueGap(record.salesValue, expectedSalesValue)) {
       validationNotes.push(
@@ -201,7 +209,7 @@ export function parseSalesRow(row: Record<string, unknown>, fallbackLine: string
     }
   }
 
-  if (Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
+  if (!options?.skipFactoryPrice && Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
     const expectedTargetValue = record.targetUnits * record.factoryPrice;
     if (Number.isFinite(sheetTargetValue) && targetValueHasValue && hasMaterialValueGap(sheetTargetValue, expectedTargetValue)) {
       validationNotes.push(
