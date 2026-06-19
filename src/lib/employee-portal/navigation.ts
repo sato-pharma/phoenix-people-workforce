@@ -194,7 +194,7 @@ export function resolveEmployeePortalNavVisibility(
     "Regional Manager",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  const baseShowIncentiveTab = !isTrainingManager;
+  const baseShowIncentiveTab = !isTrainingManager && resolvedRole !== "Marketing Manager";
 
   return {
     showDashboardTab: !isTrainingManager,

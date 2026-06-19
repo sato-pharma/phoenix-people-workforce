@@ -29,6 +29,13 @@ export type PrivateCalendarEmployeeOption = {
   managerName: string | null;
 };
 
+export type PrivateCalendarReportDetails = {
+  checkIn: string | null;
+  checkOut: string | null;
+  scheduledTime: string | null;
+  workingHours: string | null;
+};
+
 export type PrivateCalendarItem = {
   approvalImpact: string | null;
   description: string | null;
@@ -42,6 +49,7 @@ export type PrivateCalendarItem = {
   exceptionFlags: string[];
   id: string;
   managerName: string | null;
+  reportDetails?: PrivateCalendarReportDetails | null;
   severity: PrivateCalendarSeverity;
   source: PrivateCalendarSource;
   sourceLabel: string;
@@ -274,10 +282,14 @@ function attendanceExceptionFlags(row: PrivateCalendarAttendanceRow) {
 export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttendanceRow): PrivateCalendarItem {
   const firstPunch = cleanText(row.actualFirstPunch);
   const lastPunch = cleanText(row.actualLastPunch);
+  const scheduledStart = cleanText(row.scheduledStart);
+  const scheduledEnd = cleanText(row.scheduledEnd);
+  const scheduledTime = scheduledStart || scheduledEnd ? [scheduledStart, scheduledEnd].filter(Boolean).join(" - ") : null;
+  const workingHours = nullableText(row.timeLong);
   const time = firstPunch && lastPunch ? `${firstPunch} - ${lastPunch}` : firstPunch || lastPunch || null;
   const detailLines = [
-    row.scheduledStart || row.scheduledEnd ? `Schedule: ${[row.scheduledStart, row.scheduledEnd].filter(Boolean).join(" - ")}` : null,
-    row.timeLong ? `Working hours: ${row.timeLong}` : null,
+    scheduledTime ? `Schedule: ${scheduledTime}` : null,
+    workingHours ? `Working hours: ${workingHours}` : null,
     row.lateMinutes ? `Late: ${row.lateMinutes} min` : null,
     row.earlyLeaveMinutes ? `Early leave: ${row.earlyLeaveMinutes} min` : null,
     row.deductionDays ? `Deduction days: ${row.deductionDays}` : null,
@@ -296,6 +308,12 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
     exceptionFlags: attendanceExceptionFlags(row),
     id: `attendance-${privateCalendarHrIdKey(row.employeeHrId)}-${row.dateIso}`,
     managerName: null,
+    reportDetails: {
+      checkIn: firstPunch || null,
+      checkOut: lastPunch || null,
+      scheduledTime,
+      workingHours,
+    },
     severity: attendanceSeverity(row.status, row.hasException),
     source: "attendance",
     sourceLabel: "Imported fingerprint punches",

@@ -220,6 +220,7 @@ export function runNavigationActivePathTests() {
       "/admin/marketing-requests",
       "/admin/marketing-requests/inbox",
       "/admin/marketing-requests/roi-tracking",
+      "/workspace/incentive",
       "/leave-management/vacation-request",
       "/leave-management/vacation-report",
       ...sensitiveHrHrefs,
@@ -251,6 +252,12 @@ export function runNavigationActivePathTests() {
     superAdminAuthorityNav,
     [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
     "Super Admin must see full governance modules",
+  );
+  assertIncludesAll(superAdminAuthorityNav, ["/sales"], "Sales Dashboard must stay visible in sales navigation");
+  assertExcludesAll(
+    superAdminAuthorityNav,
+    ["/sales/import", "/sales/queue"],
+    "Source of Sales and Sales Queue routes must be hidden from visible sidebar navigation",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");
