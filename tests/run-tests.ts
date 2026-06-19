@@ -212,6 +212,7 @@ import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guar
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
+import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -437,3 +438,4 @@ await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests)
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
+await runTest("world room realtime session", runWorldRoomRealtimeTests);
