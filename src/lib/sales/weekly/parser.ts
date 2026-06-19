@@ -509,19 +509,27 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
     return { observations, sheetDates, sheetName: "Overseas", blockingReasons };
   }
 
-  // ── SALES matrix: header row 1; Mat. Code col3 / Mat. Desc col4; outlet columns 5..118;
-  //    Total Qty col119; Bonus col120; Total Val col121. Each outlet cell = that outlet's NET qty.
+  // ── SALES matrix: header row 1; Mat. Code col3 / Mat. Desc col4; outlet columns 5..N-1;
+  //    Total Qty at col N (detected dynamically — column count varies by month/file version).
   const salesSheet = findSheet(salesWb, { name: "Data", includes: "Data" }) ?? salesWb.worksheets[0];
   if (salesSheet) {
     names.push(`Sales:${salesSheet.name}`);
     const header = salesSheet.getRow(1);
+    // Detect outlet range by scanning for the "Total Qty" summary header instead of hard-coding 118/119.
+    let lastOutletCol = 118;
+    let totalQtyCol = 119;
+    for (let col = 5; col <= 200; col += 1) {
+      const hdr = cellText(at(header, col));
+      if (!hdr) break;
+      if (/total\s*qty/i.test(hdr)) { totalQtyCol = col; lastOutletCol = col - 1; break; }
+    }
     for (let r = 2; r <= salesSheet.rowCount; r += 1) {
       const row = salesSheet.getRow(r);
       const itemCode = cellText(at(row, 3));
       const itemName = cellText(at(row, 4));
       if (!itemCode && !itemName) continue;
       let outletSum = 0;
-      for (let col = 5; col <= 118; col += 1) {
+      for (let col = 5; col <= lastOutletCol; col += 1) {
         const outletHeader = cellText(at(header, col));
         if (!outletHeader) continue;
         const qty = cellNumber(at(row, col)); // PS NET qty (keep negatives)
@@ -538,8 +546,8 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
           qty,
         });
       }
-      // Trust Total Qty (col119): reconcile any difference into one unallocated row.
-      const totalQty = cellNumber(at(row, 119));
+      // Trust Total Qty: reconcile any difference into one unallocated row.
+      const totalQty = cellNumber(at(row, totalQtyCol));
       const diff = Number((totalQty - outletSum).toFixed(6));
       if (diff !== 0) {
         observations.push({
@@ -557,15 +565,21 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
     }
   }
 
-  // ── STOCK matrix: header row 1; Mat. Code col3 / Mat. Desc col4; LOCATION columns 7..85 keyed by
-  //    COLUMN INDEX. Resolve region by byColumnIndex; verify uploaded header == stored headerRaw.
+  // ── STOCK matrix: header row 1; Mat. Code col3 / Mat. Desc col4; LOCATION columns 7..N keyed by
+  //    COLUMN INDEX (detected dynamically — column count varies by month/file version).
   const stockSheet = findSheet(stockWb, { name: "Data", includes: "Data" }) ?? stockWb.worksheets[0];
   if (stockSheet) {
     names.push(`Stock:${stockSheet.name}`);
     const header = stockSheet.getRow(1);
+    // Detect last location column dynamically instead of hard-coding 85.
+    let lastLocationCol = 85;
+    for (let col = 7; col <= 200; col += 1) {
+      if (!cellText(at(header, col))) break;
+      lastLocationCol = col;
+    }
     // Header drift check up front (independent of any data row).
     for (const [colIndex, entry] of ctx.branchMapIndex.byColumnIndex) {
-      if (colIndex < 7 || colIndex > 85) continue;
+      if (colIndex < 7 || colIndex > lastLocationCol) continue;
       const uploaded = cellText(at(header, colIndex));
       if (uploaded && entry.headerRaw && normalizeKey(uploaded) !== normalizeKey(entry.headerRaw)) {
         blockingReasons.push(
@@ -578,7 +592,7 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
       const itemCode = cellText(at(row, 3));
       const itemName = cellText(at(row, 4));
       if (!itemCode && !itemName) continue;
-      for (let col = 7; col <= 85; col += 1) {
+      for (let col = 7; col <= lastLocationCol; col += 1) {
         const locHeader = cellText(at(header, col));
         if (!locHeader) continue;
         const qty = cellNumber(at(row, col));

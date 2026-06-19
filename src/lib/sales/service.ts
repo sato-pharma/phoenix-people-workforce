@@ -1258,7 +1258,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
       employee_crm_id: record.employeeCrmId ?? null,
       employee_lookup_key: record.employeeLookupKey ?? null,
       employee_name: record.employeeName ?? null,
-      manager_hr_id: record.managerHrId ?? null,
+      manager_hr_id: payload.batch.schemaType === "flat_sheet" ? null : (record.managerHrId ?? null),
       line: record.line,
       territory: record.territory,
       sales_type: record.salesType,
