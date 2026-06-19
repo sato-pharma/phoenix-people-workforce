@@ -21,6 +21,9 @@ export type Crosswalks = {
   areaByCode: Map<string, { areaCode: string; areaName: string; regionCode: string; regionName: string }>;
   regionByCode: Map<string, { regionCode: string; regionName: string }>;
   productByCode: Map<string, { productCode: string; productName: string; factoryPrice: number; line: string }>;
+  // Master product-NAME index (normalized name -> Phoenix code), collision-safe. Drives NAME-FIRST
+  // product resolution. Optional so hand-built test fixtures stay valid; loadCrosswalks always sets it.
+  productByName?: Map<string, string>;
   // aliases (the learned translations)
   productAliasByKey: Map<string, string>; // normalized alias/name/code -> Phoenix product code
   territoryAliasByKey: Map<string, { targetType: string; targetCode: string }>; // -> brick/area/block code
@@ -61,7 +64,12 @@ export type DistributorProfile = {
   // Columns that uniquely identify this distributor's export format.
   // Used to detect wrong-distributor uploads via fingerprint scoring.
   fingerprintColumns?: string[];
-  productColumns: string[]; // item code and/or item name (tried in order)
+  productColumns: string[]; // legacy merged list (item code and/or name) — kept for existing consumers
+  // Name-first split + strict conformance. productNameColumns is the PRIMARY product lookup (owner
+  // rule: resolve by NAME); productCodeColumns is the fallback. The strict header validator requires
+  // the product NAME column. When set, these are the canonical (Headers-Mapping) headers.
+  productNameColumns?: string[];
+  productCodeColumns?: string[];
   qtyColumns: string[];
   regionOnly?: boolean;
   // territory text columns (district / area / street / governorate) used to resolve the brick

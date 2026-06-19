@@ -1,13 +1,25 @@
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 
-// Code-defined raw-distributor profiles (Phase 1). Each profile says which raw column holds what,
-// for the distributor's own untouched export. Brick/territory is resolved ONLY via the customer
-// mapping sheet (customerCode → mapping → brick ID). No territory-text or direct-brick-ID fallback.
+// Code-defined raw-distributor profiles. Each profile says which raw column holds what, for the
+// distributor's own untouched export. Headers are ALIGNED to the unified Headers Mapping sheet — the
+// REQUIRED fields (brick-lookup key, product NAME, qty, and date where the channel is dated) use the
+// single CANONICAL header from that sheet, so strict validation rejects any renamed/missing required
+// column ("no deviation"). productNameColumns/productCodeColumns drive name-first resolution; the
+// legacy productColumns mirror = [...code, ...name] (kept for other consumers).
+//
+// NOTE for owner: a few headers were realigned to the Headers Mapping and drifted aliases on REQUIRED
+// fields were dropped (so a deviating sheet is rejected). Confirm the real exports use these exact
+// headers — notably MEC date = "شهر" (was "تاريخ المستند"); SF/SF-T qty="qty" (dropped "SOLDQTY") and
+// product name="ITEMNAME" (dropped "OLDITEM"); IS/IS-S/IS-T qty="Quantity" (dropped "Total Quantity")
+// and customer="Client Code" (dropped "Main Customer Code"); PS-T product name="Item Description"
+// (dropped "Material"/"Short Description"); CP is brick-name-keyed (no customer code).
 
 export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     distributorCode: "PS",
     distributorName: "overseas",
+    productCodeColumns: ["Mat. Code"],
+    productNameColumns: ["Mat. Desc."],
     productColumns: ["Mat. Code", "Mat. Desc."],
     qtyColumns: ["Qty"],
     valueColumns: ["Value"],
@@ -23,23 +35,27 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     distributorCode: "IS",
     distributorName: "Ibn sina",
+    productCodeColumns: ["Item Code"],
+    productNameColumns: ["Item Name"],
     productColumns: ["Item Code", "Item Name"],
-    qtyColumns: ["Quantity", "Total Quantity"],
+    qtyColumns: ["Quantity"],
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
     dateFormat: "day-first",
-    customerCodeColumns: ["Client Code", "Main Customer Code"],
+    customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
     discountColumns: ["Discount%"],
-    fingerprintColumns: ["Item Code", "Client Code", "Total Quantity"],
+    fingerprintColumns: ["Item Code", "Client Code", "Quantity"],
   },
   {
     distributorCode: "IS-S",
     distributorName: "Ibn Sina-Sato",
+    productCodeColumns: ["Item Code"],
+    productNameColumns: ["Item Name"],
     productColumns: ["Item Code", "Item Name"],
-    qtyColumns: ["Quantity", "Total Quantity"],
+    qtyColumns: ["Quantity"],
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
@@ -53,20 +69,24 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     distributorCode: "SF",
     distributorName: "sofico",
-    productColumns: ["ITEMIDE", "OLDITEM", "ITEMNAME"],
-    qtyColumns: ["qty", "SOLDQTY"],
+    productCodeColumns: ["ITEMIDE"],
+    productNameColumns: ["ITEMNAME"],
+    productColumns: ["ITEMIDE", "ITEMNAME"],
+    qtyColumns: ["qty"],
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
     dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
-    customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
+    customerNameColumns: ["CUSTOMERNAME0013"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
   {
     distributorCode: "EG",
     distributorName: "EGD",
+    productCodeColumns: ["ITEM_CODE"],
+    productNameColumns: ["ITEM_NAME"],
     productColumns: ["ITEM_CODE", "ITEM_NAME"],
     qtyColumns: ["QTY_INVOICE"],
     valueColumns: ["TOTAL_VALUE_INVOICE"],
@@ -82,6 +102,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     distributorCode: "EP",
     distributorName: "epda",
+    productCodeColumns: ["ProductSerial"],
+    productNameColumns: ["ProductName"],
     productColumns: ["ProductSerial", "ProductName"],
     qtyColumns: ["SalesOrReturnQty"],
     valueColumns: ["LineValue"],
@@ -95,8 +117,11 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ProductSerial", "SalesOrReturnQty", "AccountSerial"],
   },
   {
+    // EPDA Pharmacies — not in the unified Headers Mapping; keeps its own single canonical headers.
     distributorCode: "EP-S",
     distributorName: "EPDA Pharmacies",
+    productCodeColumns: ["class_code"],
+    productNameColumns: ["class_name"],
     productColumns: ["class_code", "class_name"],
     qtyColumns: ["qnt"],
     valueColumns: [],
@@ -112,9 +137,10 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   },
   {
     // EPDA "Bulk" (wholesale / جملة) branch — same raw EPDA layout as EP-S.
-    // Brick resolves from cust_code via the customer mapping sheet.
     distributorCode: "EP-R",
     distributorName: "EPDA Bulk",
+    productCodeColumns: ["class_code"],
+    productNameColumns: ["class_name"],
     productColumns: ["class_code", "class_name"],
     qtyColumns: ["qnt"],
     valueColumns: [],
@@ -131,22 +157,25 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     distributorCode: "MC",
     distributorName: "mec",
-    // MEC's real export labels the item-code column "دالصنف" (not the older "كود الصنف"); keep both
-    // so either header resolves the product code, with the Arabic name as the final fallback.
-    productColumns: ["كود الصنف", "دالصنف", "إسم الصنف"],
+    // Headers Mapping: item code = "دالصنف", item name = "إسم الصنف", date = "شهر".
+    productCodeColumns: ["دالصنف"],
+    productNameColumns: ["إسم الصنف"],
+    productColumns: ["دالصنف", "إسم الصنف"],
     qtyColumns: ["الكمية"],
     valueColumns: ["الصافى"],
     valueSource: "recompute",
-    dateColumns: ["تاريخ المستند"],
+    dateColumns: ["شهر"],
     dateFormat: "day-first",
     customerCodeColumns: ["كود"],
     customerNameColumns: ["العميل"],
     discountColumns: ["خصم"],
-    fingerprintColumns: ["دالصنف", "تاريخ المستند", "الكمية"],
+    fingerprintColumns: ["دالصنف", "شهر", "الكمية"],
   },
   {
     distributorCode: "RM",
     distributorName: "ramco",
+    productCodeColumns: ["ك.صنف"],
+    productNameColumns: ["صنف"],
     productColumns: ["ك.صنف", "صنف"],
     qtyColumns: ["صافى كمية"],
     valueColumns: ["صافى البيع"],
@@ -161,37 +190,29 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
-    // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | "Column2" | "Column1" |
-    // "Attribute" (product NAME). The ONLY real data columns are "Area name A" (geography), "Value"
-    // (quantity) and "Attribute" (product name). "Column1"/"Column2" are junk pivot constants (always
-    // 1/0) and are deliberately NOT mapped — Column1 is not a product code and Column2 is not a
-    // quantity, so listing them would risk coding a constant as product/qty. No per-row price column;
-    // value is recomputed from the master price. Brick/area is resolved via the "Area name A"
-    // territory alias (area_aliases table) — the customer-code crosswalk stays as a fallback for any
-    // future CP file that carries a customer column. No per-row date column: Chimipharm pivots cover
-    // one period; the period is supplied via the upload screen's period picker (periodOverride).
+    // ChemiPharm pivot: brick keyed by the AREA NAME ("Area name A"), product NAME = "Attribute",
+    // units = "Value". No customer code and no date column (period comes from the upload picker).
     distributorCode: "CP",
     distributorName: "chimipharm",
+    productCodeColumns: [],
+    productNameColumns: ["Attribute"],
     productColumns: ["Attribute"],
     qtyColumns: ["Value"],
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: [],
-    customerCodeColumns: ["Customer", "كود"],
-    customerNameColumns: ["Customer Name", "العميل"],
     territoryColumns: ["Area name A"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Area name A", "Attribute"],
   },
   {
-    // EGD Branch (EG-BR) — a branch of EGD (parent EG): the hospital/transfer export. Different headers
-    // from the regular EGD pharmacy file (ITEM_NAME_ENG / CARD_DATE / TO_COMPANY_ENTITY_* / VALUE / QTY).
-    // Product identity is the English NAME, not the code — the team maps EG-BR by the readable item name
-    // (codes are opaque here), so the unmapped list + AI-assist surface and key products by ITEM_NAME_ENG.
+    // EGD Branch (hospital/transfer export). Product identity is the English NAME; code kept as fallback.
     // Every row MUST have TO_COMPANY_ENTITY_CODE — a blank is a hard data error, not a summary row.
     distributorCode: "EG-BR",
     distributorName: "EGD Branch",
-    productColumns: ["ITEM_NAME_ENG"],
+    productCodeColumns: ["ITEM_CODE"],
+    productNameColumns: ["ITEM_NAME_ENG"],
+    productColumns: ["ITEM_CODE", "ITEM_NAME_ENG"],
     qtyColumns: ["QTY"],
     valueColumns: ["VALUE"],
     valueSource: "recompute",
@@ -204,42 +225,47 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["TO_COMPANY_ENTITY_CODE", "CARD_DATE", "ITEM_NAME_ENG"],
   },
   {
-    // Tender channels — each is its own distributor (kept separate from the regular pharmacy file).
     // Ibn Sina Tender: same raw layout as IS.
     distributorCode: "IS-T",
     distributorName: "Ibn Sina Tender",
+    productCodeColumns: ["Item Code"],
+    productNameColumns: ["Item Name"],
     productColumns: ["Item Code", "Item Name"],
-    qtyColumns: ["Quantity", "Total Quantity"],
+    qtyColumns: ["Quantity"],
     valueColumns: ["Net"],
     valueSource: "recompute",
     dateColumns: ["Date"],
     dateFormat: "day-first",
-    customerCodeColumns: ["Client Code", "Main Customer Code"],
+    customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
     discountColumns: ["Discount%"],
-    fingerprintColumns: ["Item Code", "Main Customer Code", "Total Quantity"],
+    fingerprintColumns: ["Item Code", "Client Code", "Quantity"],
   },
   {
-    // Overseas Tender: SAP-style export (Material / Ship-To / Delivery Date) — distinct from PS.
+    // Overseas Tender: SAP-style export. Headers Mapping: product NAME = "Item Description" (no code col).
     distributorCode: "PS-T",
     distributorName: "Overseas Tender",
-    productColumns: ["Material", "Short Description", "Item Description"],
+    productCodeColumns: [],
+    productNameColumns: ["Item Description"],
+    productColumns: ["Item Description"],
     qtyColumns: ["Sales\\Returns Qty"],
     valueColumns: ["Sales\\Returns Value"],
     valueSource: "recompute",
     dateColumns: ["Delivery Date"],
     dateFormat: "day-first",
     customerCodeColumns: ["Ship-To"],
-    customerNameColumns: ["Ship-to party", "Name"],
+    customerNameColumns: ["Ship-to party"],
     customerAddressColumns: ["address"],
     discountColumns: ["Discount%"],
-    fingerprintColumns: ["Material", "Ship-To", "Delivery Date"],
+    fingerprintColumns: ["Item Description", "Ship-To", "Delivery Date"],
   },
   {
     // Ramco Tender: same raw Arabic layout as RM.
     distributorCode: "RM-T",
     distributorName: "Ramco Tender",
+    productCodeColumns: ["ك.صنف"],
+    productNameColumns: ["صنف"],
     productColumns: ["ك.صنف", "صنف"],
     qtyColumns: ["صافى كمية"],
     valueColumns: ["صافى البيع"],
@@ -253,24 +279,28 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
-    // Sofico Tender: customer account from ORDERACCOUNT; brick resolved via customer mapping sheet.
+    // Sofico Tender: same raw layout as SF.
     distributorCode: "SF-T",
     distributorName: "Sofico Tender",
-    productColumns: ["ITEMIDE", "OLDITEM", "ITEMNAME"],
-    qtyColumns: ["qty", "SOLDQTY"],
+    productCodeColumns: ["ITEMIDE"],
+    productNameColumns: ["ITEMNAME"],
+    productColumns: ["ITEMIDE", "ITEMNAME"],
+    qtyColumns: ["qty"],
     valueColumns: ["TOTALVALUE"],
     valueSource: "recompute",
     dateColumns: ["BILLINGDATE"],
     dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
-    customerNameColumns: ["CUSTOMERNAME", "CUSTOMERNAME0013"],
+    customerNameColumns: ["CUSTOMERNAME0013"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
   {
-    // EGD Hospital (مركز تموين مستشفيات — hospital supply): EGD-style hospital/tender export.
+    // EGD Hospital (مركز تموين مستشفيات): EGD-style hospital/tender export.
     distributorCode: "EG-HOS",
     distributorName: "EGD Hospital",
+    productCodeColumns: ["ITEM_CODE"],
+    productNameColumns: ["ITEM_NAME"],
     productColumns: ["ITEM_CODE", "ITEM_NAME"],
     qtyColumns: ["QTY_INVOICE"],
     valueColumns: ["TOTAL_VALUE_INVOICE"],
