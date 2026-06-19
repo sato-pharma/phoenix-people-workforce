@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 
+import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
 import {
   MarketingApprovalTimeline,
   MarketingProgressStrip,
@@ -2416,7 +2417,26 @@ function MarketingRequestDraftWorkspaceInner() {
                             Loading timeline...
                           </div>
                         ) : detail ? (
-                          <MarketingApprovalTimeline steps={detail.steps} />
+                          <>
+                            <MarketingApprovalTimeline steps={detail.steps} />
+                            {detail.viewerCanComment ? (
+                              <div className="mt-3 rounded-sm border border-sky-200 bg-sky-50/40 px-3 py-3">
+                                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700">
+                                  Add your comment
+                                </p>
+                                <MarketingAdvisoryCommentBox
+                                  onPosted={() =>
+                                    setDetailCache((current) => {
+                                      const next = { ...current };
+                                      delete next[detail.request.id];
+                                      return next;
+                                    })
+                                  }
+                                  requestId={detail.request.id}
+                                />
+                              </div>
+                            ) : null}
+                          </>
                         ) : (
                           <p className="px-1 py-2 text-[11px] font-medium text-slate-400">
                             Timeline unavailable.
