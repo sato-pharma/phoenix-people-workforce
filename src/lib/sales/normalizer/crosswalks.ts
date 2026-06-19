@@ -64,6 +64,20 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     else if (existing !== code) { productByCanonicalCode.delete(canon); productCanonConflict.add(canon); }
   }
 
+  // Master product-NAME index (collision-safe): normalized product name -> Phoenix code. Name-first
+  // resolution checks this BEFORE any code lookup. If two products share a normalized name the entry
+  // is DROPPED so a name can never mis-map to the wrong product.
+  const productByName = new Map<string, string>();
+  const productNameConflict = new Set<string>();
+  for (const p of refs.products) {
+    const key = normalizeAliasKey(p.productName);
+    const code = normalizeCodeKey(p.productCode);
+    if (!key || !code || productNameConflict.has(key)) continue;
+    const existing = productByName.get(key);
+    if (existing === undefined) productByName.set(key, code);
+    else if (existing !== code) { productByName.delete(key); productNameConflict.add(key); }
+  }
+
   // Per-distributor: key by `${distributor} ${normalized alias}` so each distributor's raw codes/names
   // resolve only for that distributor (resolveProduct builds the same composite key).
   const productAliasByKey = new Map<string, string>();
@@ -105,5 +119,5 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     else if (existing !== brick) { customerBrickByCanonicalKey.delete(ckey); customerCanonConflict.add(ckey); }
   }
 
-  return { areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  return { areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }

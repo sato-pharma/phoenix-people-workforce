@@ -31,27 +31,41 @@ export function numericCanonicalKey(value: unknown): string | null {
   return code.replace(/^0+(?=\d)/, "");
 }
 
-// item code OR item name -> Phoenix product code. Tries a direct (global) product-code match first,
-// then this DISTRIBUTOR's alias table (by code then by normalized name). Product aliases are
-// per-distributor: the key is `${distributor} ${normalized alias}` (see crosswalks.loadCrosswalks).
+// item name / code -> Phoenix product code. NAME-FIRST (owner rule): pass 1 tries every value as a
+// product NAME (master productByName index, then this distributor's learned name aliases); pass 2
+// falls back to CODE (exact, numeric-canonical, then per-distributor code alias). Two passes so the
+// name always wins over a colliding code regardless of the order values are supplied. Product aliases
+// are per-distributor: the key is `${distributor} ${normalized alias}` (see crosswalks.loadCrosswalks).
 export function resolveProduct(rawValues: (string | null | undefined)[], maps: Crosswalks, distributorCode = ""): string | null {
   const dist = normalizeCodeKey(distributorCode);
+  // Pass 1 — NAME-FIRST
+  for (const raw of rawValues) {
+    const text = String(raw ?? "").trim();
+    if (!text) continue;
+    const nameKey = normalizeAliasKey(text);
+    if (!nameKey) continue;
+    const byName = maps.productByName?.get(nameKey);
+    if (byName) return byName;
+    if (dist) {
+      const byNameAlias = maps.productAliasByKey.get(`${dist} ${nameKey}`);
+      if (byNameAlias) return byNameAlias;
+    }
+  }
+  // Pass 2 — CODE fallback
   for (const raw of rawValues) {
     const text = String(raw ?? "").trim();
     if (!text) continue;
     const code = normalizeCodeKey(text);
     if (maps.productByCode.has(code)) return code;
-    // Leading-zero / number-vs-text fallback for numeric product codes (exact miss only).
     const canon = numericCanonicalKey(code);
     if (canon) {
       const byCanon = maps.productByCanonicalCode.get(canon);
       if (byCanon) return byCanon;
     }
-    if (!dist) continue;
-    const byCodeAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(code)}`);
-    if (byCodeAlias) return byCodeAlias;
-    const byNameAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(text)}`);
-    if (byNameAlias) return byNameAlias;
+    if (dist) {
+      const byCodeAlias = maps.productAliasByKey.get(`${dist} ${normalizeAliasKey(code)}`);
+      if (byCodeAlias) return byCodeAlias;
+    }
   }
   return null;
 }

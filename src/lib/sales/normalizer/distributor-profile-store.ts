@@ -115,6 +115,8 @@ function rowToProfile(code: string, row: Record<string, unknown>): DistributorPr
   return {
     distributorCode: code,
     distributorName: rawProfileForDistributor(code)?.distributorName ?? code,
+    productCodeColumns: arr(row.product_code_columns),
+    productNameColumns: arr(row.product_name_columns),
     productColumns: [...arr(row.product_code_columns), ...arr(row.product_name_columns)],
     qtyColumns: arr(row.qty_columns),
     bonusColumns: arr(row.bonus_columns),
