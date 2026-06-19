@@ -15,8 +15,8 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 export const workspaceMarketingRoles = [
   "SFE Manager",
   "Marketing Manager",
-  // Finance Execution of marketing requests runs from the workspace shell. The Financial Advisor
-  // owns that step; Finance Manager is kept as the resolution fallback, so both reach the inbox.
+  // Finance Execution of marketing requests runs from the workspace shell. Financial Advisor is the
+  // designated executor. Finance Manager is included so they can monitor requests as observers.
   "Finance Manager",
   "Financial Advisor",
 ] as const satisfies readonly PhoenixRole[];

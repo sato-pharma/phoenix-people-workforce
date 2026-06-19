@@ -1298,7 +1298,7 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     requesterHrId: row.requester_hr_id,
     requestTypeId: Number(row.request_type_id),
     requiredRoiValue: toNumber(
-      row.required_roi_value ?? toNumber(row.estimated_cost) * 10 * Math.max(1, Math.floor(Number(row.roi_duration_months)) || 1),
+      row.required_roi_value ?? toNumber(row.estimated_cost) * 10,
     ),
     roiCoverageRatio: toNumber(row.roi_coverage_ratio),
     roiDurationMonths: Number(row.roi_duration_months),
@@ -1412,17 +1412,6 @@ async function workflowStepApproverHrId(params: {
     roleName,
     supabase: params.supabase,
   });
-  if (primary) return primary;
-  // Finance Execution resilience: the Financial Advisor owns this step, but until that account is
-  // created fall back to Finance Manager so the chain never hard-stalls on submit.
-  if (params.step.stepKind === "finance" && roleName !== "Finance Manager") {
-    return roleApproverHrId({
-      employeeRows: params.employeeRows,
-      request: params.request,
-      roleName: "Finance Manager",
-      supabase: params.supabase,
-    });
-  }
   return primary;
 }
 

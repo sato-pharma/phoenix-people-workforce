@@ -11,12 +11,10 @@ export function runMarketingRoiTests() {
   assert.equal(calculateRequiredMarketingRoi(1000), 10000);
   assert.equal(calculateRequiredMarketingRoi(-1000), 0);
 
-  // Required ROI scales with the campaign duration: estimated_cost × 10 × months (min 1).
-  assert.equal(calculateRequiredMarketingRoi(1000, 3), 30000);
-  assert.equal(calculateRequiredMarketingRoi(1000, 0), 10000, "duration floors to a minimum of 1 month");
-  assert.equal(calculateRequiredMarketingRoi(1000, 2.9), 20000, "fractional months floor");
+  // Required ROI is flat: estimated_cost × 10. Campaign duration has no effect on the target.
+  assert.equal(calculateRequiredMarketingRoi(1000), 10000);
 
-  // The same forecast that covers a 1-month target can fall short once the duration stretches it.
+  // A forecast that covers the flat target is "covers_required" regardless of duration.
   const oneMonth = calculateMarketingRoiPreview({
     durationMonths: 1,
     estimatedCost: 1000,
@@ -29,16 +27,16 @@ export function runMarketingRoiTests() {
     estimatedCost: 1000,
     products: [{ factoryPrice: 10, productName: "P", quantity: 1500 }],
   });
-  assert.equal(threeMonth.requiredRoiValue, 30000);
+  assert.equal(threeMonth.requiredRoiValue, 10000);
   assert.equal(threeMonth.expectedRoiValue, 15000);
-  assert.equal(threeMonth.roiCoverageRatio, 0.5);
-  assert.equal(threeMonth.roiStatus, "under_target");
+  assert.equal(threeMonth.roiCoverageRatio, 1.5);
+  assert.equal(threeMonth.roiStatus, "covers_required");
   assert.equal(
-    resolveMarketingRoiStatus({ durationMonths: 3, estimatedCost: 1000, expectedRoiValue: 35000 }),
+    resolveMarketingRoiStatus({ estimatedCost: 1000, expectedRoiValue: 10000 }),
     "covers_required",
   );
   assert.equal(
-    resolveMarketingRoiStatus({ durationMonths: 3, estimatedCost: 1000, expectedRoiValue: 25000 }),
+    resolveMarketingRoiStatus({ estimatedCost: 1000, expectedRoiValue: 9999 }),
     "under_target",
   );
 
