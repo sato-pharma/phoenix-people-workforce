@@ -62,6 +62,7 @@ function relativeDaysFrom(iso: string): string {
 
 type ExpenseRow = {
   hrId: string;
+  ownerName: string;
   tripId: string;
   date: string;
   toDate: string;
@@ -106,6 +107,7 @@ const statusOptions = [
 
 type SortField =
   | "date"
+  | "ownerName"
   | "tripId"
   | "toDate"
   | "requestType"
@@ -613,6 +615,7 @@ export function PersonalExpenseWorkloadDashboard({
 
     return source.map((expense) => ({
       hrId: normalizeString(expense.hrId),
+      ownerName: normalizeString(expense.specialist || expense.hrId || "Employee"),
       tripId: normalizeString(expense.tripId),
       date: normalizeString(expense.date),
       toDate: normalizeString(expense.toDate),
@@ -738,7 +741,7 @@ export function PersonalExpenseWorkloadDashboard({
       if (destinationFilter !== "All" && trip.destinationCity !== destinationFilter) return false;
       if (lowerSearch) {
         const searchable =
-          `${trip.tripId} ${trip.requestType} ${trip.from} ${trip.fromCity} ${trip.to} ${trip.toCity} ${trip.status} ${trip.transportationType} ${trip.description} ${trip.hrNotes} ${trip.destinationCity}`.toLowerCase();
+          `${trip.ownerName} ${trip.hrId} ${trip.tripId} ${trip.requestType} ${trip.from} ${trip.fromCity} ${trip.to} ${trip.toCity} ${trip.status} ${trip.transportationType} ${trip.description} ${trip.hrNotes} ${trip.destinationCity}`.toLowerCase();
         if (!searchable.includes(lowerSearch)) return false;
       }
       return true;
@@ -787,6 +790,7 @@ export function PersonalExpenseWorkloadDashboard({
         left[
           searchSortField as
             | "tripId"
+            | "ownerName"
             | "requestType"
             | "fromCity"
             | "toCity"
@@ -815,6 +819,8 @@ export function PersonalExpenseWorkloadDashboard({
   const totalExpenses = filteredTrips.reduce((total, item) => total + item.total, 0);
   const totalKm = filteredTrips.reduce((total, item) => total + item.km, 0);
   const averageCostPerTrip = totalTrips > 0 ? totalExpenses / totalTrips : 0;
+  const scopeEmployeeCount = new Set(filteredTrips.map((trip) => trip.hrId || trip.ownerName).filter(Boolean)).size;
+  const scopeEmployeeLabel = `${scopeEmployeeCount.toLocaleString()} visible employee${scopeEmployeeCount === 1 ? "" : "s"}`;
 
   const now = new Date();
   const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -1084,6 +1090,8 @@ export function PersonalExpenseWorkloadDashboard({
       const { buildPhoenixTableWorkbook } = await import("@/lib/export/table-workbook");
       const columns = [
         { key: "tripId", label: "Trip ID" },
+        { key: "ownerName", label: "Employee" },
+        { key: "hrId", label: "HR ID" },
         { key: "date", label: "Date" },
         { key: "toDate", label: "To Date" },
         { key: "requestType", label: "Type" },
@@ -1101,6 +1109,8 @@ export function PersonalExpenseWorkloadDashboard({
       ];
       const exportRows = sortedTrips.map((trip) => ({
         tripId: trip.tripId || "",
+        ownerName: trip.ownerName || "",
+        hrId: trip.hrId || "",
         date: trip.date ? formatDate(trip.date) : "",
         toDate: trip.toDate ? formatDate(trip.toDate) : "",
         requestType: trip.requestType || "",
@@ -1116,11 +1126,10 @@ export function PersonalExpenseWorkloadDashboard({
         description: trip.description || "",
         hrNotes: trip.hrNotes || "",
       }));
-      const employeeName = data.employee?.fullName ?? "Employee";
       const buffer = await buildPhoenixTableWorkbook({
-        title: "My Expense Report",
-        subtitle: `${employeeName} · ${exportRows.length} trips · exported ${new Date().toLocaleString("en-GB")}`,
-        sheetName: "My Expenses",
+        title: "Visible Expense Scope Report",
+        subtitle: `${scopeEmployeeLabel} - ${exportRows.length} trips - exported ${new Date().toLocaleString("en-GB")}`,
+        sheetName: "Expense Scope",
         columns,
         rows: exportRows,
       });
@@ -1130,7 +1139,7 @@ export function PersonalExpenseWorkloadDashboard({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `my-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.download = `expense-scope-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1163,7 +1172,7 @@ export function PersonalExpenseWorkloadDashboard({
           </p>
           <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Expense Dashboard</h1>
           <p className="mt-1.5 max-w-2xl text-sm text-slate-300">
-            Track your personal trips, expenses, approvals, and workload from one clean view.
+            Track trips, expenses, approvals, and workload across your visible expense scope.
           </p>
         </section>
       )}
@@ -1195,19 +1204,19 @@ export function PersonalExpenseWorkloadDashboard({
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-3 xl:grid-cols-5">
           <StatCard
             accent="border-l-emerald-400"
-            helper={approvedSpend > 0 ? `${formatMoney(approvedSpend)} confirmed by HR` : "Sum of Total for this period"}
-            label="Total Expenses"
+            helper={approvedSpend > 0 ? `${formatMoney(approvedSpend)} confirmed by HR` : "Sum of visible Total for this period"}
+            label="Visible Expenses"
             value={formatMoney(totalExpenses)}
           />
           <StatCard
             accent="border-l-sky-400"
-            helper={pendingCount > 0 ? `${pendingCount} pending · ${filteredTrips.length} total` : `${filteredTrips.length} filtered records`}
-            label="Total Trips"
+            helper={pendingCount > 0 ? `${pendingCount} pending - ${scopeEmployeeLabel}` : scopeEmployeeLabel}
+            label="Visible Trips"
             value={totalTrips.toLocaleString()}
           />
           <StatCard
             accent="border-l-orange-400"
-            helper="Total expenses / total trips"
+            helper="Visible expenses / visible trips"
             label="Avg Cost per Trip"
             value={formatMoney(averageCostPerTrip)}
           />
@@ -1835,10 +1844,11 @@ export function PersonalExpenseWorkloadDashboard({
         <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
           {/* Desktop / wide tablet table */}
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1100px] w-full text-left text-sm">
+            <table className="min-w-[1220px] w-full text-left text-sm">
               <thead className="bg-slate-900">
                 <tr>
                   <th className={cellPaddingClass}>{header("tripId", "TripID")}</th>
+                  <th className={cellPaddingClass}>{header("ownerName", "Employee")}</th>
                   <th className={cellPaddingClass}>{header("date", "Date")}</th>
                   <th className={cellPaddingClass}>{header("requestType", "Type")}</th>
                   <th className={cellPaddingClass}>{header("fromCity", "From")}</th>
@@ -1853,7 +1863,7 @@ export function PersonalExpenseWorkloadDashboard({
               <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={10}>
+                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={11}>
                       No trips match your filters.
                     </td>
                   </tr>
@@ -1870,6 +1880,10 @@ export function PersonalExpenseWorkloadDashboard({
                         >
                           <td className={`whitespace-nowrap font-mono text-[11px] font-semibold text-slate-600 ${cellPaddingClass}`}>
                             {trip.tripId || "N/A"}
+                          </td>
+                          <td className={`max-w-[180px] whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                            <span className="block truncate">{trip.ownerName || "Employee"}</span>
+                            <span className="block truncate font-mono text-[10px] font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
                           </td>
                           <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
@@ -1903,7 +1917,7 @@ export function PersonalExpenseWorkloadDashboard({
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td className="border-b border-slate-200 p-0" colSpan={10}>
+                            <td className="border-b border-slate-200 p-0" colSpan={11}>
                               <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
                                 <div className="grid gap-4 text-[12px] sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
@@ -1985,7 +1999,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <tr className="bg-slate-50">
                   <td
                     className={`${cellPaddingClass} text-[10px] font-bold uppercase tracking-wider text-slate-500`}
-                    colSpan={5}
+                    colSpan={6}
                   >
                     {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}
                   </td>
@@ -2022,8 +2036,11 @@ export function PersonalExpenseWorkloadDashboard({
                           <p className="truncate font-mono text-[11px] font-bold text-slate-600">
                             {trip.tripId || "N/A"}
                           </p>
+                          <p className="mt-0.5 truncate text-[12px] font-bold text-slate-800">
+                            {trip.ownerName || "Employee"}
+                          </p>
                           <p className="mt-0.5 text-[11px] text-slate-500">
-                            {formatDate(trip.date)}
+                            {trip.hrId ? `${trip.hrId} - ` : ""}{formatDate(trip.date)}
                             {trip.toDate ? ` → ${formatDate(trip.toDate)}` : ""}
                           </p>
                         </div>

@@ -308,7 +308,7 @@ export async function WorkspacePrivateCalendarPage() {
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Private Calendar"
     >
-      {workspace ? <PrivateCalendar initialWorkspace={workspace} /> : (
+      {workspace ? <PrivateCalendar initialWorkspace={workspace} surface="workspace" /> : (
         <WorkspaceUnavailable message="We could not load the private calendar right now." title="Private Calendar Unavailable" />
       )}
     </WorkspaceFrame>
@@ -658,7 +658,7 @@ export async function WorkspaceExpenseDashboardPage() {
   }
   return (
     <WorkspaceFrame
-      description="Review workload, trip volume, and outstation expense movement in the admin shell."
+      description="Review workload, trip volume, and outstation expense movement for you and your visible expense scope."
       icon={<ReceiptText className="h-3.5 w-3.5" />}
       title="Expense Dashboard"
     >
