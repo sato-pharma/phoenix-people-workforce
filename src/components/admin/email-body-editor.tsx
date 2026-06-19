@@ -141,6 +141,20 @@ export function editorHtmlToStoredHtml(rootEl: HTMLElement): string {
     while (div.firstChild) paragraph.appendChild(div.firstChild);
     div.replaceWith(paragraph);
   }
+  // Convert heading tags to styled paragraphs so they survive server sanitization.
+  // The server sanitizer discards h1–h6 AND their content (disallowedTagsMode:discard);
+  // converting them here keeps the content visible after save.
+  const headingSizes: Record<string, string> = { h1: "20px", h2: "18px", h3: "16px", h4: "14px", h5: "13px", h6: "12px" };
+  for (const [tag, size] of Object.entries(headingSizes)) {
+    for (const heading of Array.from(clone.querySelectorAll(tag))) {
+      const paragraph = doc.createElement("p");
+      const existing = heading.getAttribute("style") ?? "";
+      const base = `font-size: ${size}; font-weight: bold`;
+      paragraph.setAttribute("style", existing ? `${base}; ${existing}` : base);
+      while (heading.firstChild) paragraph.appendChild(heading.firstChild);
+      heading.replaceWith(paragraph);
+    }
+  }
   // Canvas-only CSS (branded links, table borders) must be inlined at save time - email
   // clients only see inline styles, so without this the sent email silently loses what
   // the canvas showed.
