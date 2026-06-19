@@ -10,6 +10,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
+import type { EmailTemplateContext } from "@/lib/email-templates/service";
 import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -1676,17 +1677,20 @@ async function notifyMarketingWorkflow(params: {
     ? (params.metadata.workflowParticipantHrIds as string[])
     : [];
 
-  // Premium HTML card for the email's {{planTable}} token (products + financials + return reason).
+  // Editable-template token values for the email (products table, financials, return reason).
   const supabase = getSupabaseAdmin();
-  const productsResult = await supabase
-    .from("marketing_request_products")
-    .select("*")
-    .eq("request_id", params.request.id);
+  const [productsResult, customerResult] = await Promise.all([
+    supabase.from("marketing_request_products").select("*").eq("request_id", params.request.id),
+    params.request.customerId
+      ? supabase.from("marketing_customers").select("display_name").eq("id", params.request.customerId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
   const products = ((productsResult.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct);
-  const emailCard = buildMarketingEmailCard({
+  const emailContext = buildMarketingEmailContext({
     currentStepName:
       cleanText(params.metadata?.currentStepName as string | null | undefined) ??
       cleanText(params.metadata?.approvalStep as string | null | undefined),
+    customerName: cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name),
     noteHeading: params.eventType === "request_rejected" ? "Rejected" : "Returned",
     products,
     request: params.request,
@@ -1698,8 +1702,7 @@ async function notifyMarketingWorkflow(params: {
     actionUrl: marketingActionUrl(params.request.id),
     actorId: params.actorHrId,
     email: {
-      planTableHtml: emailCard.html,
-      planTableText: emailCard.text,
+      templateContext: emailContext,
     },
     eventType: params.eventType,
     message: params.message,
@@ -2003,65 +2006,29 @@ function escapeMarketingHtml(value: string): string {
 }
 
 /**
- * Pre-rendered premium HTML card for the marketing email's {{planTable}} raw-HTML token.
- * MUST be table-based with whitelisted inline styles only — the email sanitizer drops
- * `div`, `border-radius`, `box-shadow`, gradients and `margin` (see src/lib/email/email-safety.ts).
- * The dark-slate/orange shell + "Open in Phoenix" CTA are supplied by renderPhoenixEmailHtml.
+ * Editable-template token values for a marketing email. The premium layout lives in the
+ * /admin/email-templates `marketing_request` body using these tokens; this only supplies the
+ * VALUES. `productsTable` and `returnCallout` are pre-rendered HTML blocks (the only parts that
+ * can't be hand-typed) — table-based with whitelisted inline styles only, since the email
+ * sanitizer drops `div`, `border-radius`, `box-shadow` and `margin` (src/lib/email/email-safety.ts).
  */
-export function buildMarketingEmailCard(params: {
+export function buildMarketingEmailContext(params: {
   currentStepName?: string | null;
+  customerName?: string | null;
   noteHeading?: string | null;
   products: MarketingRequestProduct[];
   request: MarketingRequest;
   returnNote?: string | null;
   returnedByName?: string | null;
-}): { html: string; text: string } {
+}): Partial<EmailTemplateContext> {
   const { request } = params;
-  const wrap = (inner: string) =>
-    `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">${inner}</table>`;
   const headCell = "background-color:#0f172a;color:#ffffff;border:1px solid #0f172a;padding:8px 10px;font-size:12px;text-align:left";
   const headCellR = `${headCell};text-align:right`;
   const cell = "border:1px solid #fce7cf;padding:8px 10px;font-size:13px;text-align:left;color:#0f172a";
   const cellR = `${cell};text-align:right`;
-  const tileLabel = "color:#64748b;font-size:11px;text-align:left";
-  const tileValue = "color:#0f172a;font-size:18px;font-weight:600;text-align:left";
-  const sections: string[] = [];
-  const textLines: string[] = [];
 
-  const returnNote = cleanText(params.returnNote);
-  if (returnNote) {
-    const by = cleanText(params.returnedByName);
-    const heading = cleanText(params.noteHeading) ?? "Returned";
-    sections.push(
-      wrap(
-        `<tr><td style="background-color:#fff7ed;border:1px solid #fed7aa;padding:12px 14px">` +
-          `<span style="color:#9a3412;font-size:12px;font-weight:600">${escapeMarketingHtml(heading)}${by ? ` by ${escapeMarketingHtml(by)}` : ""} · reason</span><br />` +
-          `<span style="color:#7c2d12;font-size:14px;line-height:1.5">${escapeMarketingHtml(returnNote)}</span>` +
-          `</td></tr>`,
-      ),
-    );
-    textLines.push(`${heading}${by ? ` by ${by}` : ""} — reason: ${returnNote}`, "");
-  }
-
-  const tile = (label: string, value: string, accent: boolean) =>
-    `<td width="50%" style="background-color:${accent ? "#fff7ed" : "#f8fafc"};border:1px solid ${accent ? "#fed7aa" : "#e2e8f0"};padding:12px 14px;width:50%">` +
-    `<span style="${accent ? "color:#9a3412;font-size:11px;text-align:left" : tileLabel}">${escapeMarketingHtml(label)}</span><br />` +
-    `<span style="${accent ? "color:#9a3412;font-size:18px;font-weight:600;text-align:left" : tileValue}">${escapeMarketingHtml(value)}</span></td>`;
-  const roiWindow = buildRoiWindowLabel(request.payDate, request.roiDurationMonths) ?? "—";
-  const requiredRoiLabel = `Required ROI${request.roiDurationMonths ? ` · ${request.roiDurationMonths} mo` : ""}`;
-  sections.push(
-    wrap(
-      `<tr>${tile("Estimated cost", marketingEgp(request.estimatedCost), false)}${tile(requiredRoiLabel, marketingEgp(request.requiredRoiValue), true)}</tr>` +
-        `<tr>${tile("Pay date", request.payDate ?? "—", false)}${tile("ROI window", roiWindow, false)}</tr>`,
-    ),
-  );
-  textLines.push(
-    `Estimated cost: ${marketingEgp(request.estimatedCost)}`,
-    `${requiredRoiLabel}: ${marketingEgp(request.requiredRoiValue)}`,
-    `Pay date: ${request.payDate ?? "—"} · ROI window: ${roiWindow}`,
-    "",
-  );
-
+  let productsTable = "";
+  let productsTableText = "";
   if (params.products.length > 0) {
     const rows = params.products
       .map(
@@ -2071,29 +2038,43 @@ export function buildMarketingEmailCard(params: {
           `<td style="${cellR}">${marketingEgp(product.expectedValue)}</td></tr>`,
       )
       .join("");
-    sections.push(
-      wrap(
-        `<thead><tr><th style="${headCell}">Product</th><th style="${headCellR}">Qty</th><th style="${headCellR}">Value</th></tr></thead><tbody>${rows}</tbody>`,
-      ),
-    );
-    textLines.push("Products:");
-    for (const product of params.products) {
-      textLines.push(`- ${product.productNameSnapshot} | ${Math.round(product.forecastQuantity)} | ${marketingEgp(product.expectedValue)}`);
-    }
-    textLines.push("");
+    productsTable =
+      `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">` +
+      `<thead><tr><th style="${headCell}">Product</th><th style="${headCellR}">Qty</th><th style="${headCellR}">Value</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table>`;
+    productsTableText = params.products
+      .map((product) => `- ${product.productNameSnapshot} | ${Math.round(product.forecastQuantity)} | ${marketingEgp(product.expectedValue)}`)
+      .join("\n");
   }
 
-  const currentStepName = cleanText(params.currentStepName);
-  if (currentStepName) {
-    sections.push(
-      wrap(
-        `<tr><td style="padding:10px 0 0;font-size:13px;color:#475569">Currently with: <strong style="color:#0f172a">${escapeMarketingHtml(currentStepName)}</strong></td></tr>`,
-      ),
-    );
-    textLines.push(`Currently with: ${currentStepName}`);
+  let returnCallout = "";
+  let returnCalloutText = "";
+  const returnNote = cleanText(params.returnNote);
+  if (returnNote) {
+    const heading = cleanText(params.noteHeading) ?? "Returned";
+    const by = cleanText(params.returnedByName);
+    returnCallout =
+      `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">` +
+      `<tr><td style="background-color:#fff7ed;border:1px solid #fed7aa;padding:12px 14px">` +
+      `<span style="color:#9a3412;font-size:12px;font-weight:600">${escapeMarketingHtml(heading)}${by ? ` by ${escapeMarketingHtml(by)}` : ""} · reason</span><br />` +
+      `<span style="color:#7c2d12;font-size:14px;line-height:1.5">${escapeMarketingHtml(returnNote)}</span>` +
+      `</td></tr></table>`;
+    returnCalloutText = `${heading}${by ? ` by ${by}` : ""} — reason: ${returnNote}\n\n`;
   }
 
-  return { html: sections.join(""), text: textLines.join("\n").trim() };
+  return {
+    currentStep: cleanText(params.currentStepName) ?? "—",
+    customerName: cleanText(params.customerName) ?? "—",
+    estimatedCost: marketingEgp(request.estimatedCost),
+    payDate: request.payDate ?? "—",
+    productsTable,
+    productsTableText,
+    requestCode: request.requestCode,
+    requiredRoi: marketingEgp(request.requiredRoiValue),
+    returnCallout,
+    returnCalloutText,
+    roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths) ?? "—",
+  };
 }
 
 async function auditMarketingDecision(input: {
@@ -3862,8 +3843,9 @@ export async function createMarketingRequestDraft(
         title: "Marketing request assigned",
       });
     }
-    const submittedCard = buildMarketingEmailCard({
+    const submittedContext = buildMarketingEmailContext({
       currentStepName: currentStep?.stepName ?? null,
+      customerName: cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name),
       products: draftDetail.products,
       request,
     });
@@ -3875,8 +3857,7 @@ export async function createMarketingRequestDraft(
         metrics: [
           { label: "Employee", value: `${requesterDisplayName} (${request.requesterHrId})` },
         ],
-        planTableHtml: submittedCard.html,
-        planTableText: submittedCard.text,
+        templateContext: submittedContext,
       },
       eventType: "request_submitted",
       message: `${request.requestCode} was submitted by ${requesterDisplayName}.`,
