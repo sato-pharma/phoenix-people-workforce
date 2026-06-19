@@ -1254,7 +1254,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
     const recordInserts = linked.map((record) => ({
       batch_id: payload.batch.id,
       row_number: record.rowNumber,
-      employee_hr_id: record.employeeHrId ?? null,
+      employee_hr_id: record.linkStatus === "linked" ? (record.employeeHrId ?? null) : null,
       employee_crm_id: record.employeeCrmId ?? null,
       employee_lookup_key: record.employeeLookupKey ?? null,
       employee_name: record.employeeName ?? null,
