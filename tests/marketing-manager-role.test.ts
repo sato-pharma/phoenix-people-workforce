@@ -80,11 +80,10 @@ export async function runMarketingManagerRoleTests() {
   const marketingService = source("src/lib/marketing-requests/service.ts");
   // 1. Company-wide marketing record visibility includes Marketing Manager (fixes the workspace,
   //    Customer Validation, ROI Tracking, and "see what I approved" blind spot). Anchored on the
-  //    Finance Manager + Marketing Manager + SFE Manager triplet, which only appears in this
-  //    company-visibility branch.
+  //    Marketing Manager + SFE Manager pair, which only appears in this company-visibility branch.
   assert.match(
     marketingService,
-    /access\.role === "Finance Manager" \|\|\s*access\.role === "Marketing Manager" \|\|\s*access\.role === "SFE Manager"/,
+    /access\.role === "Marketing Manager" \|\|\s*access\.role === "SFE Manager"/,
     "canSeeMarketingHierarchyRecord must grant Marketing Manager company-wide visibility",
   );
   // 2. Company-wide singleton approver resolution is deterministic (never null-stalls on 2+ seats).
