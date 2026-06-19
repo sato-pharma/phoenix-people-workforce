@@ -26,7 +26,7 @@ The project should keep only two active Vercel deployments:
 | Purpose | Branch | URL |
 | --- | --- | --- |
 | Production | `main` | https://phoenix-workforce.vercel.app |
-| Working preview | `codex/work-from-production` | https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app |
+| Working preview | `codex/work-from-production` | https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app |
 
 Old Vercel deployments were intentionally removed to reduce confusion. The working preview URL above is the stable branch alias; the underlying deployment-specific URL changes after each branch push. Do not delete the active production deployment or the latest active preview deployment unless explicitly replacing them with newer deployments for the same purpose.
 
