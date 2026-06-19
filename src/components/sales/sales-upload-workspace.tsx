@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Search, UploadCloud, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, Info, Loader2, Search, ShieldCheck, UploadCloud, XCircle } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
@@ -18,8 +18,11 @@ type Props = {
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: unknown[]; unknownTerritories: unknown[]; unknownCustomers: unknown[]; period: string | null };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; needsPeriod?: boolean; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null };
-type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; data?: Preview; code?: string };
+type Severity = "error" | "warning" | "info";
+type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; fixHint?: string };
+type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null };
+type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
 
 const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
 
@@ -77,6 +80,59 @@ function ReceiptChips({ r }: { r: Reconciliation }) {
   );
 }
 
+const SEVERITY_STYLE: Record<Severity, { row: string; icon: typeof Info; iconClass: string; label: string }> = {
+  error: { row: "border-l-rose-500 bg-rose-50/60", icon: XCircle, iconClass: "text-rose-600", label: "Error" },
+  warning: { row: "border-l-amber-500 bg-amber-50/60", icon: AlertTriangle, iconClass: "text-amber-600", label: "Warning" },
+  info: { row: "border-l-slate-300 bg-slate-50/60", icon: Info, iconClass: "text-slate-500", label: "Info" },
+};
+
+// Strict validation report shown after Analyze. Errors block import outright; warnings block until the
+// user ticks the acknowledge box; info is advisory. The same findings are re-checked server-side at
+// commit, so this panel mirrors the gate exactly.
+function ValidationPanel({ report, acknowledged, onAcknowledge }: { report: ValidationReport; acknowledged: boolean; onAcknowledge: (v: boolean) => void }) {
+  const order: Severity[] = ["error", "warning", "info"];
+  const sorted = [...report.findings].sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
+  const headline = report.errorCount > 0
+    ? { tone: "border-rose-200 bg-rose-50 text-rose-700", text: `${report.errorCount} error(s) must be fixed before importing.` }
+    : report.warningCount > 0
+      ? { tone: "border-amber-200 bg-amber-50 text-amber-800", text: `${report.warningCount} warning(s) — review and acknowledge to import.` }
+      : { tone: "border-emerald-200 bg-emerald-50 text-emerald-700", text: "Strict validation passed — no errors or warnings." };
+  return (
+    <div className="space-y-2 rounded-xl border border-[#E2E8F0] p-3">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-[#0F172A]" />
+        <span className="text-xs font-black uppercase tracking-[0.12em] text-[#64748B]">Strict validation</span>
+        <span className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-bold", headline.tone)}>{headline.text}</span>
+      </div>
+      <ul className="space-y-1.5">
+        {sorted.map((f) => {
+          const st = SEVERITY_STYLE[f.severity];
+          const Icon = st.icon;
+          return (
+            <li className={cn("rounded-r-md border border-[#EEF2F7] border-l-4 px-3 py-2", st.row)} key={f.code}>
+              <div className="flex items-start gap-2">
+                <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", st.iconClass)} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-[#0F172A]">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-[#64748B]">×{f.count.toLocaleString()}</span> : null}</p>
+                  <p className="text-xs text-[#475569]">{f.detail}</p>
+                  {f.fixHint ? <p className="mt-0.5 text-xs italic text-[#64748B]">{f.fixHint}</p> : null}
+                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-[#94A3B8]">rows: {f.sampleRows.join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {report.errorCount === 0 && report.warningCount > 0 ? (
+        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm font-semibold text-amber-900">
+          <input checked={acknowledged} className="h-4 w-4 accent-[#F97316]" onChange={(e) => onAcknowledge(e.target.checked)} type="checkbox" />
+          I have reviewed the {report.warningCount} warning(s) above and want to import anyway.
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
 function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distributorCode: string; hasProfile: boolean; hasDateColumn: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -86,6 +142,15 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
   const [committed, setCommitted] = useState<CommitResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detected, setDetected] = useState<{ code: string; name: string; confidence: string } | null>(null);
+  const [ackWarnings, setAckWarnings] = useState(false);
+
+  // The validation report is period-specific, so changing the period invalidates a prior analysis.
+  function changePeriod(value: string) {
+    setPeriod(value);
+    setAnalysis(null);
+    setCommitted(null);
+    setAckWarnings(false);
+  }
 
   async function detect(f: File) {
     setDetected(null);
@@ -98,13 +163,16 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
   }
 
   const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
-  const canImport = analysis?.success && unknowns === 0 && (!analysis.needsPeriod || /^\d{4}-\d{2}$/.test(period));
+  const validation = analysis?.validation ?? null;
+  // Strict gate: errors always block; warnings block until acknowledged.
+  const validationBlocks = validation ? (!validation.ok || (validation.warningCount > 0 && !ackWarnings)) : false;
+  const canImport = Boolean(analysis?.success) && unknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
 
   async function analyze() {
     if (!file) { setError("Choose a file first."); return; }
-    setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null);
+    setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null); setAckWarnings(false);
     try {
-      const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode);
+      const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
       const res = await fetch("/api/sales/sales-upload/analyze", { method: "POST", body: fd });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
@@ -118,6 +186,7 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
     setBusy("commit"); setError(null);
     try {
       const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
+      if (ackWarnings) fd.append("acknowledgeWarnings", "true");
       const res = await fetch("/api/sales/sales-upload/commit", { method: "POST", body: fd });
       const payload = await readJson<CommitResponse>(res);
       setCommitted(payload);
@@ -131,7 +200,7 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-          <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => setPeriod(e.target.value)} type="month" value={period} />
+          <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => changePeriod(e.target.value)} type="month" value={period} />
         </label>
         <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile} onClick={() => fileRef.current?.click()} type="button">
           <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
@@ -167,9 +236,13 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
             </div></AdminCallout>
           ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
             <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to import.</span></AdminCallout>
-          ) : (
-            <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>Everything is recognized — ready to import.</span></AdminCallout>
-          )}
+          ) : null}
+
+          {validation ? <ValidationPanel acknowledged={ackWarnings} onAcknowledge={setAckWarnings} report={validation} /> : null}
+
+          {unknowns === 0 && canImport ? (
+            <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{validation && validation.warningCount > 0 ? "Warnings acknowledged — ready to import." : "Everything checks out — ready to import."}</span></AdminCallout>
+          ) : null}
           <Button className="h-9 gap-2 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={!canImport || busy !== null} onClick={() => void commit()} type="button">
             {busy === "commit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Import
           </Button>

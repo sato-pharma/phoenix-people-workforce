@@ -2,7 +2,8 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
-import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { validateNormalizedUpload, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -20,8 +21,11 @@ export type ReconciliationReceipt = {
   totalValue: number;
 };
 
-// Pure: every input row is accounted for. Asserts read == coded + ignored + blank + blocked so a
-// row can never silently vanish (a mismatch is a hard error, not a quiet pass).
+// Pure: builds the bucket-accounting receipt shown to the user. NOTE: the read == coded + ignored +
+// blank + blocked assert here is a consistency check on summary.totalRows, which the engine DEFINES as
+// exactly that sum — so it can never catch a "row scanned but never bucketed" bug. The real
+// no-silent-loss guard is the independent physical counter (summary.scannedDataRows) checked in
+// validateNormalizedUpload (rows_read_mismatch), which always runs before persist. Keep both.
 export function buildReconciliation(result: NormalizeResult): ReconciliationReceipt {
   const s = result.summary;
   const rowsBlocked = result.exceptions.length;
@@ -67,14 +71,95 @@ export function resolveUploadPeriod(codedPeriods: (string | null | undefined)[],
   return { kind: "multi", periods };
 }
 
+// Pure: produce the exact result that will be PERSISTED for a decision. When the user consolidates a
+// file under one chosen period, every row's invoiceDate is rewritten to that period — which can turn
+// rows that had distinct source months into true duplicates. Validation MUST run on this consolidated
+// result (not the raw one) so the duplicate/period checks see what actually gets imported.
+export function applyPeriodConsolidation(result: NormalizeResult, decision: PeriodDecision): NormalizeResult {
+  if (decision.kind !== "ok" || !decision.consolidate) return result;
+  return { ...result, coded: result.coded.map((r) => ({ ...r, invoiceDate: decision.period })) };
+}
+
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string }
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorName: string };
 
-// Dry-run: recognize + summarize, persist NOTHING. Backs the Sales Upload "Analyze" step and the
-// Diagnostics Center.
-export async function analyzeMonthlyUpload(distributorCode: string, file: File): Promise<AnalyzeResult> {
+// Current calendar month as YYYY-MM (server clock). Used by the temporal validations. Date is safe
+// here — this is server code (the validator itself stays pure; the month is part of its context).
+function currentPeriodUtc(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// Periods already imported for this distributor (normalizer batches only — the set the replace logic
+// in deleteOtherBatchesForPeriod actually operates on). Best-effort: a read failure returns [].
+async function listExistingBatchPeriods(distributorCode: string): Promise<string[]> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const dist = normalizeCodeKey(distributorCode);
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("period")
+      .eq("distributor_code", dist)
+      .eq("template_key", "normalizer");
+    if (error) return [];
+    return [...new Set((data ?? []).map((r) => String((r as { period: unknown }).period ?? "")).filter((p) => VALID_PERIOD.test(p)))];
+  } catch {
+    return [];
+  }
+}
+
+// Totals of the most recent EARLIER normalizer batch (period < the upload period) for this
+// distributor — the baseline the period-over-period anomaly checks compare against. Best-effort.
+async function getPriorPeriodTotals(distributorCode: string, resolvedPeriod: string | null): Promise<{ period: string; totalValue: number; totalQty: number } | null> {
+  if (!resolvedPeriod || !VALID_PERIOD.test(resolvedPeriod)) return null;
+  try {
+    const supabase = getSupabaseAdmin();
+    const dist = normalizeCodeKey(distributorCode);
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("period,total_value,total_qty")
+      .eq("distributor_code", dist)
+      .eq("template_key", "normalizer")
+      .lt("period", resolvedPeriod)
+      .order("period", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { period: string | null; total_value: number | null; total_qty: number | null };
+    if (!row.period) return null;
+    return { period: row.period, totalValue: Number(row.total_value ?? 0), totalQty: Number(row.total_qty ?? 0) };
+  } catch {
+    return null;
+  }
+}
+
+// Assemble the (async) validation context, then run the pure strict validator over the result that
+// WILL be persisted (already consolidated when the user picked a period). The SAME path runs at
+// analyze and commit so the report can never differ between them.
+async function runStrictValidation(distributorCode: string, rec: Extract<NormalizeFileResult, { status: "ok" }>, resultToValidate: NormalizeResult, resolvedPeriod: string | null): Promise<ValidationReport> {
+  const [existingBatchPeriods, priorPeriodTotals] = await Promise.all([
+    listExistingBatchPeriods(distributorCode),
+    getPriorPeriodTotals(distributorCode, resolvedPeriod),
+  ]);
+  const ctx: ValidationContext = {
+    valueSource: rec.valueSource,
+    hasDateColumn: rec.hasDateColumn,
+    regionOnly: rec.regionOnly,
+    priceByProductCode: rec.priceByCode,
+    currentPeriod: currentPeriodUtc(),
+    resolvedPeriod,
+    existingBatchPeriods,
+    priorPeriodTotals,
+  };
+  return validateNormalizedUpload(resultToValidate, ctx);
+}
+
+// Dry-run: recognize + summarize + strictly validate, persist NOTHING. Backs the Sales Upload
+// "Analyze" step and the Diagnostics Center. The optional period mirrors what the user will commit
+// with, so the analyze report matches the commit gate exactly.
+export async function analyzeMonthlyUpload(distributorCode: string, file: File, periodOverride = ""): Promise<AnalyzeResult> {
   const rec = await recognizeDistributorWorkbook(distributorCode, file);
   if (rec.status === "coded_sheet") return { status: "coded_sheet", distributorName: rec.distributorName };
   if (rec.status === "header_error") {
@@ -82,12 +167,18 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File):
   }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products);
   const reconciliation = buildReconciliation(rec.result);
-  return { status: "ok", preview, reconciliation, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION };
+  const decision = resolveUploadPeriod(rec.result.coded.map((r) => r.invoiceDate), String(periodOverride ?? "").trim());
+  const resolvedPeriod = decision.kind === "ok" ? decision.period : null;
+  // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
+  // matches the commit gate exactly — including duplicates that only appear after consolidation.
+  const validation = await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod);
+  return { status: "ok", preview, reconciliation, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
 
 export type CommitResult =
-  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string }
-  | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview };
+  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string; validation: ValidationReport }
+  | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview }
+  | { status: "blocked_validation"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; validation: ValidationReport };
 
 // Delete PRIOR normalizer batches for the same (distributor, period) — EXCEPT the just-inserted one —
 // so re-uploading a month replaces rather than double-counts. Runs AFTER the new batch is fully
@@ -113,12 +204,14 @@ async function deleteOtherBatchesForPeriod(distributorCode: string, period: stri
   if (batchDel.error) throw batchDel.error;
 }
 
-// Persist a raw upload. Blocks (persists nothing) if any row is unmapped — never a partial import.
+// Persist a raw upload. Blocks (persists nothing) if any row is unmapped, if strict validation finds
+// an error, or if there are warnings the caller has not acknowledged — never a partial import.
 export async function commitMonthlyUpload(input: {
   distributorCode: string;
   file: File;
   periodOverride?: string;
   uploadedBy: string;
+  acknowledgeWarnings?: boolean;
 }): Promise<CommitResult> {
   const rec = await recognizeDistributorWorkbook(input.distributorCode, input.file);
   if (rec.status === "coded_sheet") throw new SalesWorkflowError("coded_sheet", "This sheet is already coded — upload the raw distributor export instead.", 400);
@@ -144,9 +237,18 @@ export async function commitMonthlyUpload(input: {
     );
   }
   const period = decision.period;
-  // Consolidate every row under the chosen month only when the user explicitly picked one.
-  const coded = decision.consolidate ? result.coded.map((r) => ({ ...r, invoiceDate: period })) : result.coded;
-  const stamped: NormalizeResult = { ...result, coded };
+
+  // Consolidate every row under the chosen month only when the user explicitly picked one. Build this
+  // BEFORE validation so the strict checks run on exactly what gets persisted (consolidation can turn
+  // distinct-month rows into true duplicates).
+  const stamped: NormalizeResult = applyPeriodConsolidation(result, decision);
+
+  // Strict server-side re-validation with the FINAL resolved period (never trust the client). Errors
+  // always block; warnings block unless the caller explicitly acknowledged them (the strict gate).
+  const validation = await runStrictValidation(input.distributorCode, rec, stamped, period);
+  if (!validation.ok || (validation.warningCount > 0 && !input.acknowledgeWarnings)) {
+    return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
+  }
 
   // Insert the new batch FIRST (single source-of-truth period), THEN remove prior batches for the
   // same month — so a failed insert never leaves the period empty (atomic-safe ordering).
@@ -159,5 +261,5 @@ export async function commitMonthlyUpload(input: {
     period,
   });
   await deleteOtherBatchesForPeriod(input.distributorCode, period, persisted.batchId);
-  return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, ...persisted };
+  return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, validation, ...persisted };
 }
