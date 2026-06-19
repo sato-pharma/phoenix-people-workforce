@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
 // Same engine + validator both stages (server-enforced); nothing persists with unmapped rows, errors,
 // or unacknowledged warnings. In diagnosticsOnly mode the Import action is hidden (analyze only).
 
-type Distributor = { code: string; name: string };
+type Distributor = { code: string; name: string; hasDateColumn: boolean };
 
 type Finding = { code: string; severity: "error" | "warning" | "info"; title: string; detail: string; count: number; fixHint?: string };
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsExcluded: number; rowsBlankKey: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type Preview = { period: string | null; summary: { fullyCoded: number; exceptions: number }; unknownProducts: { value: string; count: number }[]; unknownBricks: { value: string; count: number }[]; blockedCount: number };
 
-type AnalyzeOk = { kind: "ok"; preview: Preview; reconciliation: Reconciliation; validation: ValidationReport; period: string | null; needsPeriod: boolean };
+type AnalyzeOk = { kind: "ok"; preview: Preview; reconciliation: Reconciliation; validation: ValidationReport; period: string | null; needsPeriod: boolean; hasDateColumn: boolean };
 type AnalyzeBad = { kind: "header_error"; missingGroups: string[]; fingerprintWarning?: { likelyCode: string; likelyName: string } } | { kind: "coded_sheet" } | { kind: "error"; message: string };
 type AnalyzeState = AnalyzeOk | AnalyzeBad;
 
@@ -25,6 +25,9 @@ const SEV_STYLE: Record<Finding["severity"], string> = {
   warning: "border-[#FED7AA] bg-[#FFF7ED] text-[#9A3412]",
   info: "border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]",
 };
+
+// A period is one calendar month (YYYY-MM). The <input type="month"> control emits exactly this.
+const PERIOD_RE = /^\d{4}-\d{2}$/;
 
 export function SalesOpsUploadWorkspace({ distributors, diagnosticsOnly = false }: { distributors: Distributor[]; diagnosticsOnly?: boolean }) {
   const [distributorCode, setDistributorCode] = React.useState(distributors[0]?.code ?? "");
@@ -52,7 +55,7 @@ export function SalesOpsUploadWorkspace({ distributors, diagnosticsOnly = false 
       if (body?.code === "coded_sheet_detected") setState({ kind: "coded_sheet" });
       else if (body?.code === "header_validation_error") setState({ kind: "header_error", missingGroups: body.missingGroups ?? [], fingerprintWarning: body.fingerprintWarning ?? undefined });
       else if (!body?.success) setState({ kind: "error", message: body?.error ?? "Analyze failed." });
-      else setState({ kind: "ok", preview: body.data, reconciliation: body.reconciliation, validation: body.validation, period: body.period, needsPeriod: body.needsPeriod });
+      else setState({ kind: "ok", preview: body.data, reconciliation: body.reconciliation, validation: body.validation, period: body.period, needsPeriod: body.needsPeriod, hasDateColumn: body.hasDateColumn ?? true });
     } catch (e) {
       setState({ kind: "error", message: e instanceof Error ? e.message : "Analyze failed." });
     } finally {
@@ -83,13 +86,32 @@ export function SalesOpsUploadWorkspace({ distributors, diagnosticsOnly = false 
   const ok = state?.kind === "ok" ? state : null;
   const canImport = !diagnosticsOnly && ok && ok.validation.errorCount === 0 && ok.preview.blockedCount === 0 && (ok.validation.warningCount === 0 || acknowledge) && !ok.needsPeriod;
 
+  // Distributors with a date column → the period is auto-detected from the sheet (the picker only
+  // overrides). Date-less channels (e.g. CP / ChemiPharm, Office) carry no date, so the month picker
+  // is required. Default unknown distributors to "has date" (least intrusive).
+  const selectedDistributor = distributors.find((d) => d.code === distributorCode);
+  const selectedHasDate = selectedDistributor?.hasDateColumn ?? true;
+  const selectedName = selectedDistributor?.name ?? distributorCode;
+  // The month that will actually be imported: a valid manual pick overrides the detected period.
+  const effectivePeriod = PERIOD_RE.test(period) ? period : ok?.period ?? null;
+
   return (
     <div className="space-y-4">
       {/* Controls */}
       <div className="flex flex-wrap items-end gap-3 border border-[#D8E0EA] bg-white p-3">
         <label className="flex flex-col gap-1 text-xs font-semibold text-[#475569]">
           Distributor
-          <select className="h-9 min-w-[12rem] border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A]" value={distributorCode} onChange={(e) => setDistributorCode(e.target.value)}>
+          <select
+            className="h-9 min-w-[12rem] border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A]"
+            value={distributorCode}
+            onChange={(e) => {
+              // Switching distributors invalidates any prior analysis and the picked month.
+              setDistributorCode(e.target.value);
+              setPeriod("");
+              setState(null);
+              setCommitted(null);
+            }}
+          >
             {distributors.map((d) => (
               <option key={d.code} value={d.code}>{d.code} · {d.name}</option>
             ))}
@@ -100,13 +122,42 @@ export function SalesOpsUploadWorkspace({ distributors, diagnosticsOnly = false 
           <input type="file" accept=".xlsx" className="text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-[#475569]">
-          Period (YYYY-MM){ok?.needsPeriod ? <span className="text-[#B91C1C]"> required</span> : ""}
-          <input className="h-9 w-32 border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A]" placeholder="2026-04" value={period} onChange={(e) => setPeriod(e.target.value)} />
+          <span>
+            Period (month)
+            {selectedHasDate
+              ? <span className="font-normal text-[#94A3B8]"> · auto-detected (optional override)</span>
+              : <span className="text-[#B91C1C]"> · required (no date in sheet)</span>}
+          </span>
+          <input
+            type="month"
+            className="h-9 w-40 border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A]"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+          />
         </label>
-        <button type="button" disabled={!file || !distributorCode || analyzing} onClick={analyze} className="inline-flex h-9 items-center gap-1 bg-[#020617] px-4 text-sm font-bold text-white disabled:opacity-50">
+        <button type="button" disabled={!file || !distributorCode || (!selectedHasDate && !PERIOD_RE.test(period)) || analyzing} onClick={analyze} className="inline-flex h-9 items-center gap-1 bg-[#020617] px-4 text-sm font-bold text-white disabled:opacity-50">
           {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Analyze
         </button>
       </div>
+
+      {/* Period guidance — auto-detect for dated channels, required month pick for date-less ones (CP). */}
+      {!selectedHasDate && !ok ? (
+        <div className="border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs text-[#475569]">
+          <strong className="text-[#0F172A]">{selectedName}</strong> has no date column in its sheet — pick the month above before you analyze.
+        </div>
+      ) : null}
+      {ok ? (
+        <div className="border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs text-[#475569]">
+          {ok.hasDateColumn ? (
+            <>Date auto-detected from the sheet → period <strong className="text-[#0F172A]">{ok.period ?? "—"}</strong>
+              {PERIOD_RE.test(period) && period !== ok.period ? <> · manual override <strong className="text-[#0F172A]">{period}</strong></> : null}</>
+          ) : ok.needsPeriod ? (
+            <span className="text-[#B91C1C]">No date in this sheet — pick the month above, then Analyze again to import.</span>
+          ) : (
+            <>No date column · importing under picked month <strong className="text-[#0F172A]">{effectivePeriod ?? "—"}</strong></>
+          )}
+        </div>
+      ) : null}
 
       {committed ? (
         <div className="flex items-center gap-2 border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-sm text-[#15803D]">
@@ -173,7 +224,7 @@ export function SalesOpsUploadWorkspace({ distributors, diagnosticsOnly = false 
                 <span className="text-sm text-[#15803D]">Ready to import.</span>
               )}
               <button type="button" disabled={!canImport || committing} onClick={commit} className="inline-flex h-9 items-center gap-1 bg-[#F97316] px-4 text-sm font-bold text-white disabled:opacity-50">
-                {committing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Import (replace {ok.period ?? period})
+                {committing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Import (replace {effectivePeriod ?? "—"})
               </button>
             </div>
           ) : null}
