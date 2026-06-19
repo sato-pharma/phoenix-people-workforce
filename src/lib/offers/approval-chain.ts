@@ -46,7 +46,7 @@ export type ApprovalStepRow = {
 // Pure: required approvers for an offer. HR Manager (Super Admin role) is always
 // required. The requisition's hiring manager (Department Head) is added when present.
 // CEO is added when net salary exceeds the per-position cap.
-// Finance Manager IS a required approver (step 2 in the chain). Sequence is for display order only.
+// Finance Manager is NOT an approver — Financial Advisor only executes already-approved requests.
 //
 // Governance: the "HR Manager" approval is reserved for Super Admin (Admin-HR) and the
 // HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role. The retired
@@ -58,7 +58,6 @@ export function computeRequiredApprovers(input: {
 }): RequiredApprover[] {
   const steps: Array<Omit<RequiredApprover, "sequence">> = [
     { kind: "role", role: "Super Admin", hrId: null, required: true, label: "HR Manager" },
-    { kind: "role", role: "Finance Manager", hrId: null, required: true, label: "Finance" },
   ];
 
   if (normalizeHrId(input.hiringManagerHrId)) {
