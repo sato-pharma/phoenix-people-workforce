@@ -373,7 +373,7 @@ function routeMatchesPattern(route: string, pattern: string) {
 export function findAccessRegistryEntry(route: string, method?: HttpMethod) {
   const matches = accessRegistry.filter((entry) => {
     if (entry.surface !== "api") return false;
-    if (method && !entry.methods.includes(method)) return false;
+    if (method && !(entry.methods as readonly HttpMethod[]).includes(method)) return false;
     return routeMatchesPattern(route, entry.pattern);
   });
   return matches.sort((left, right) => right.pattern.length - left.pattern.length)[0] ?? null;
