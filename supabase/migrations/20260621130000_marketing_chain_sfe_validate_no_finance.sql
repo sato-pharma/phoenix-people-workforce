@@ -22,6 +22,15 @@ SET
 WHERE assigned_role = 'SFE Manager'
   AND step_kind = 'role';
 
+UPDATE marketing_request_approval_steps
+SET
+  allow_reject = false,
+  allow_return = false,
+  updated_at = now()
+WHERE assigned_role = 'SFE Manager'
+  AND step_code = 'sfe_validation'
+  AND COALESCE(step_kind, 'role') = 'role';
+
 -- Deactivate Finance step — Finance Manager is not an approver.
 UPDATE marketing_workflow_steps
 SET active = false

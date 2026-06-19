@@ -12,6 +12,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { listMasterRows } from "@/lib/sales/master-data/list";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
@@ -148,12 +149,15 @@ function addSheet(workbook: ExcelJS.Workbook, spec: SheetSpec): void {
   });
 }
 
-export async function buildMasterWorkbookBuffer(): Promise<ArrayBuffer> {
+export async function buildMasterWorkbookBuffer(
+  options?: { includeRestricted?: boolean },
+): Promise<ArrayBuffer> {
+  const includeRestricted = options?.includeRestricted ?? false;
   const supabase = getSupabaseAdmin();
 
   const [
-    regions, areas, blocks, bricks, products,
-    productAliases, territoryAliases, customerMap, importRows, batches, aliasDist,
+    regions, areas, blocks, bricks, productsAll,
+    productAliasesAll, territoryAliases, customerMap, importRowsAll, batches, aliasDist,
   ] = await Promise.all([
     listMasterRows("regions"),
     listMasterRows("areas"),
@@ -172,6 +176,19 @@ export async function buildMasterWorkbookBuffer(): Promise<ArrayBuffer> {
     selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period"),
     buildAliasDistributorMaps(supabase),
   ]);
+
+  // Confidential products (LA003 / LA004) are included only for CEO / Super Admin. Filtering the
+  // catalogue, aliases and raw import rows here keeps every downstream sheet (Raw_Sales,
+  // Normalized_Sales, Exceptions, the four summaries and the Dashboard counts) consistent.
+  const products = includeRestricted
+    ? productsAll
+    : productsAll.filter((p) => !isRestrictedProductCode(str(p.product_code)));
+  const productAliases = includeRestricted
+    ? productAliasesAll
+    : productAliasesAll.filter((a) => !isRestrictedProductCode(str(a.product_code)));
+  const importRows = includeRestricted
+    ? importRowsAll
+    : importRowsAll.filter((r) => !isRestrictedProductCode(str(r.product_code)));
 
   // lookups
   const brickName = new Map(bricks.map((b) => [str(b.brick_id), str(b.brick_name)]));

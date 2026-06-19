@@ -167,6 +167,7 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /eventType:\s*"request_assigned"/, "marketing workflow must notify the assigned approver");
   assert.match(serviceSource, /assertMarketingStepAssignedToActor/, "marketing decisions must require the assigned approver");
   assert.match(serviceSource, /assignedHrId !== normalizeHrId\(actorHrId\)/, "wrong approver must be blocked");
+  assert.match(serviceSource, /allow_return:\s*input\.step\.allowReturn/, "approval-step snapshots must preserve allow_return governance");
   assert.match(serviceSource, /marketingTelegramButtons/, "marketing Telegram buttons must be generated centrally");
   assert.doesNotMatch(serviceSource, /sendTelegramNotification|api\.telegram\.org/, "marketing module must never call Telegram directly");
   assert.match(policySource, /"marketing_requests\.request_assigned":[\s\S]*channels:\s*\["in_app",\s*"email",\s*"telegram"\]/, "request_assigned must use in-app, email, and Telegram");
@@ -624,6 +625,12 @@ export async function runMarketingRequestServiceTests() {
   for (const token of ["step_kind", "chain_target_role", "cc_roles", "terminal_status", "allow_reject", "manager_chain", "sfe_validation", "marketing_review", "ceo_approval", "finance_execution"]) {
     assert.match(chainMigration, new RegExp(token), `chain reshape migration must define ${token}`);
   }
+  const sfeValidateMigration = source("supabase/migrations/20260621130000_marketing_chain_sfe_validate_no_finance.sql");
+  assert.match(
+    sfeValidateMigration,
+    /UPDATE marketing_request_approval_steps[\s\S]*allow_return = false[\s\S]*assigned_role = 'SFE Manager'[\s\S]*step_code = 'sfe_validation'/,
+    "SFE validate-only migration must repair existing approval-step allow_return snapshots",
+  );
 
   /* ---------------------------------------------------------------------- */
   /* Drafts workspace resilience: requester-not-found must not 400 the page  */

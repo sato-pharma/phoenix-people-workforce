@@ -31,3 +31,18 @@ export function normalizeKey(value: unknown): string {
 export function normalizeAlias(value: unknown, kind: "code" | "name"): string {
   return kind === "code" ? normalizeCode(value) : normalizeKey(value);
 }
+
+/**
+ * Soft/fuzzy normalization on top of normalizeKey — tolerates the kind of weekly header drift
+ * PS (Overseas) distributors exhibit: trailing digit suffixes ("Mansoura2"), trailing _ك variants,
+ * and parenthetical qualifiers ("(New)", "(2)"). Applied AFTER normalizeKey so Arabic folding is
+ * still performed first. Used as a last-resort fallback when the exact normalizeKey lookup fails.
+ */
+export function normalizeSoft(value: unknown): string {
+  return normalizeKey(value)
+    .replace(/[_\s]*ك$/, "")         // strip trailing _ك (with optional leading _ or spaces)
+    .replace(/\s*\(.*?\)\s*/g, " ")  // strip parenthetical qualifiers, e.g. "(New)" "(2)"
+    .replace(/\s*\d+\s*$/, "")       // strip trailing digit suffix, e.g. "Mansoura2" → "Mansoura"
+    .replace(/\s+/g, " ")
+    .trim();
+}

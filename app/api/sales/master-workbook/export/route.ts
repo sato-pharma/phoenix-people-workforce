@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
+import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { buildMasterWorkbookBuffer } from "@/lib/sales/master-workbook";
 
 export const runtime = "nodejs";
@@ -16,7 +17,10 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "export");
 
-    const buffer = await buildMasterWorkbookBuffer();
+    // Confidential products (LA003 / LA004) are included in the export only for CEO / Super Admin.
+    const buffer = await buildMasterWorkbookBuffer({
+      includeRestricted: canViewRestrictedProducts(access.role),
+    });
     const stamp = new Date().toISOString().slice(0, 10);
     const fileName = `phoenix-master-workbook-${stamp}.xlsx`;
     return new NextResponse(buffer as unknown as BodyInit, {

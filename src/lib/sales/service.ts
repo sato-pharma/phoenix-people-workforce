@@ -10,6 +10,11 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
+  canViewRestrictedProducts,
+  restrictedProductNameSet,
+  stripRestrictedRowsByName,
+} from "@/lib/sales/access-scope";
+import {
   isActiveSalesImportBatch,
   salesAchievementRate,
   selectCurrentSalesRecords,
@@ -939,6 +944,16 @@ export async function getSalesDashboard(
     linkConfidence: Number(row.link_confidence ?? 0),
   }));
   records = await filterSalesRecordsForAccess(records, accessContext);
+
+  // Confidential products (LA003 / LA004 — "Lacto Basic 1 & 2") are visible only to CEO /
+  // Super Admin. The legacy pipeline keys products by NAME, so strip by name HERE — before any
+  // aggregation — so every downstream total, KPI, chart, table, filter list, transactions feed
+  // and recent-batch row is automatically clean. A missing accessContext fails closed.
+  const canSeeRestrictedProducts = accessContext ? canViewRestrictedProducts(accessContext.role) : false;
+  if (!canSeeRestrictedProducts) {
+    const restrictedNames = await restrictedProductNameSet();
+    records = stripRestrictedRowsByName(records, restrictedNames, (record) => record.product, true);
+  }
 
   const approvedRecords = selectCurrentSalesRecords(records, recordBatches);
 

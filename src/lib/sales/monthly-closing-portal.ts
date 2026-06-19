@@ -158,6 +158,43 @@ export function scopeMatrixToProducts(
   };
 }
 
+/**
+ * Drop the confidential product columns (LA003 / LA004) from a closing matrix, recomputing every
+ * row total / subtotal / grand total from the surviving columns. Always applied in the portal:
+ * no portal role (DM / RM / NSM / PM / GPM) may ever see these products. Territory roles get
+ * `productCodes = null` and so skip `scopeMatrixToProducts`, which is why this guard is needed.
+ * Pure — no IO.
+ */
+export function stripRestrictedColumns(matrix: MonthlyClosingMatrix): MonthlyClosingMatrix {
+  const keep: number[] = [];
+  matrix.columns.forEach((column, index) => {
+    if (!isRestrictedProductCode(column.productCode)) keep.push(index);
+  });
+  if (keep.length === matrix.columns.length) return matrix;
+
+  const pick = (cells: MonthlyClosingCell[]) =>
+    keep.map((index) => cells[index]).filter((cell): cell is MonthlyClosingCell => Boolean(cell));
+  const scopeSubtotal = <T extends { cells: MonthlyClosingCell[]; rowTotal: MonthlyClosingCell }>(
+    row: T,
+  ): T => {
+    const cells = pick(row.cells);
+    return { ...row, cells, rowTotal: sumCells(cells) };
+  };
+
+  return {
+    ...matrix,
+    columns: keep.map((index) => matrix.columns[index]),
+    regions: matrix.regions.map((region) => ({
+      ...region,
+      areas: region.areas.map(scopeSubtotal),
+      subtotal: scopeSubtotal(region.subtotal),
+    })),
+    grandTotal: scopeSubtotal(matrix.grandTotal),
+    directNational: matrix.directNational ? scopeSubtotal(matrix.directNational) : matrix.directNational,
+    companyTotal: matrix.companyTotal ? scopeSubtotal(matrix.companyTotal) : matrix.companyTotal,
+  };
+}
+
 export type PortalClosingResult = {
   matrix: MonthlyClosingMatrix | null;
   line: string | null;
@@ -203,7 +240,10 @@ export async function loadPortalMonthlyClosing(input: {
     availableLines: [scope.line],
     availablePeriods: publishedPeriods,
   };
-  const matrix = scope.productCodes ? scopeMatrixToProducts(locked, scope.productCodes) : locked;
+  // Always strip confidential products first; territory roles (productCodes === null) would
+  // otherwise see the raw matrix including LA003 / LA004.
+  const safe = stripRestrictedColumns(locked);
+  const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
 
   return {
     matrix,
@@ -239,7 +279,8 @@ export async function loadPortalClosingTrend(input: {
   const points = await Promise.all(
     periods.map(async (period) => {
       const raw = await loadMonthlyClosing({ line: scope.line as string, period });
-      const matrix = scope.productCodes ? scopeMatrixToProducts(raw, scope.productCodes) : raw;
+      const safe = stripRestrictedColumns(raw);
+      const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),

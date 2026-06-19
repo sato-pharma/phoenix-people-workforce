@@ -136,6 +136,9 @@ export function runRecruitmentReadinessTests() {
   const approvalStepsMigration = read("supabase/migrations/20260605093724_20260606090500_offer_approval_steps.sql");
   assert.match(approvalStepsMigration, /create table if not exists public\.offer_approval_steps/);
   assert.match(approvalStepsMigration, /revoke all on public\.offer_approval_steps from anon, authenticated/);
+  const approvalReturnMigration = read("supabase/migrations/20260619172818_widen_offer_approval_decision_returned.sql");
+  assert.match(approvalReturnMigration, /DROP CONSTRAINT IF EXISTS offer_approval_steps_decision_check/);
+  assert.match(approvalReturnMigration, /'returned'/, "offer approval decision check must allow returned");
   const offersRegistry = read("supabase/migrations/20260605093807_20260606091000_offers_registry_pipeline.sql");
   for (const action of [
     "offer_submit_approval", "offer_chain_approve", "offer_chain_reject", "offer_generate", "offer_send", "offer_candidate_negotiate", "offer_renegotiate_prepare",
