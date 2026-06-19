@@ -4,11 +4,19 @@ import {
   type CoachingParameterKey,
   type CoachingScoreItemKey,
 } from "./constants.ts";
+import { canonicalHrIdKey } from "../hr-id.ts";
+import type { EmployeeDirectoryRow } from "../employees/employee-directory.ts";
+import { resolveJobFunctionRole } from "../employees/job-function.ts";
 import type {
   CoachingQuarterlySummaryRow,
   CoachingReportSummaryRow,
   CoachingParameterDistributionRow,
   CoachingScoreAnalytics,
+  CoachingTrainingManagerAreaComparisonRow,
+  CoachingTrainingManagerComparison,
+  CoachingTrainingManagerComparisonBucket,
+  CoachingTrainingManagerComparisonRow,
+  CoachingTrainingManagerHireYearComparisonRow,
 } from "./types.ts";
 
 export type CoachingScoreAnalyticsInputRow = {
@@ -26,6 +34,19 @@ type ScoreBucket = {
   reports: Set<string>;
   scoreCount: number;
   totalScore: number;
+};
+
+export type CoachingTrainingManagerComparisonFilters = {
+  areaId?: number | string | null;
+  lineId?: number | string | null;
+  medicalRepHrId?: string | null;
+  teamId?: number | string | null;
+};
+
+type TrainingManagerComparisonInput = {
+  employees: EmployeeDirectoryRow[];
+  filters?: CoachingTrainingManagerComparisonFilters;
+  reports: CoachingReportSummaryRow[];
 };
 
 function round(value: number, fractionDigits = 2) {
@@ -53,6 +74,181 @@ export type CoachingReportAnalyticsSummary = {
 function averageValues(values: number[]) {
   if (values.length === 0) return 0;
   return round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function scoreAverageOrNull(values: number[]) {
+  if (values.length === 0) return null;
+  return round(values.reduce((sum, value) => sum + value, 0) / values.length, 1);
+}
+
+function percent(part: number, total: number) {
+  return total > 0 ? round((part / total) * 100, 1) : 0;
+}
+
+function sortedLabels(left: string, right: string) {
+  return left.localeCompare(right, "en", { sensitivity: "base" });
+}
+
+function matchesIdFilter(employeeId: number | null, filterValue: number | string | null | undefined) {
+  const raw = String(filterValue ?? "").trim();
+  if (!raw) return true;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) && employeeId === numeric;
+}
+
+function isActiveMedicalRep(employee: EmployeeDirectoryRow) {
+  const status = String(employee.employmentStatus ?? "active").trim().toLowerCase();
+  const isActive = status === "" || status === "active" || status === "on_leave";
+  if (!isActive || employee.organogramVisible === false) return false;
+  return (
+    resolveJobFunctionRole(employee.positionTitle) === "Medical Rep" ||
+    resolveJobFunctionRole(employee.jobTitle) === "Medical Rep"
+  );
+}
+
+function employeeMatchesComparisonFilters(
+  employee: EmployeeDirectoryRow,
+  filters: CoachingTrainingManagerComparisonFilters,
+) {
+  const medicalRepFilter = canonicalHrIdKey(filters.medicalRepHrId);
+  return (
+    matchesIdFilter(employee.areaId, filters.areaId) &&
+    matchesIdFilter(employee.lineId, filters.lineId) &&
+    matchesIdFilter(employee.teamId, filters.teamId) &&
+    (!medicalRepFilter || canonicalHrIdKey(employee.hrId) === medicalRepFilter)
+  );
+}
+
+function hireYearLabel(hireDate: string | null) {
+  if (!hireDate) return { hireYear: null, label: "No hire date" };
+  const year = Number(hireDate.slice(0, 4));
+  if (!Number.isInteger(year) || year < 1900) return { hireYear: null, label: "No hire date" };
+  return { hireYear: year, label: String(year) };
+}
+
+function bucketCounts(rows: CoachingTrainingManagerComparisonRow[]): CoachingTrainingManagerComparisonBucket {
+  const coachedCount = rows.filter((row) => row.status === "coached").length;
+  const totalReps = rows.length;
+  return {
+    coachedCount,
+    coachedRate: percent(coachedCount, totalReps),
+    label: "",
+    totalReps,
+    uncoachedCount: totalReps - coachedCount,
+  };
+}
+
+function buildAreaBreakdown(
+  rows: CoachingTrainingManagerComparisonRow[],
+): CoachingTrainingManagerAreaComparisonRow[] {
+  const buckets = new Map<string, CoachingTrainingManagerComparisonRow[]>();
+  for (const row of rows) {
+    const key = row.areaId === null ? "none" : String(row.areaId);
+    buckets.set(key, [...(buckets.get(key) ?? []), row]);
+  }
+  return [...buckets.values()]
+    .map((bucketRows) => {
+      const first = bucketRows[0];
+      const counts = bucketCounts(bucketRows);
+      const label = first.areaName || "Not assigned";
+      return {
+        ...counts,
+        areaId: first.areaId,
+        areaName: first.areaName,
+        label,
+      };
+    })
+    .sort((left, right) => right.totalReps - left.totalReps || sortedLabels(left.label, right.label));
+}
+
+function buildHireYearBreakdown(
+  rows: CoachingTrainingManagerComparisonRow[],
+): CoachingTrainingManagerHireYearComparisonRow[] {
+  const buckets = new Map<string, CoachingTrainingManagerComparisonRow[]>();
+  for (const row of rows) {
+    const { hireYear } = hireYearLabel(row.hireDate);
+    const key = hireYear === null ? "none" : String(hireYear);
+    buckets.set(key, [...(buckets.get(key) ?? []), row]);
+  }
+  return [...buckets.values()]
+    .map((bucketRows) => {
+      const { hireYear, label } = hireYearLabel(bucketRows[0]?.hireDate ?? null);
+      return {
+        ...bucketCounts(bucketRows),
+        hireYear,
+        label,
+      };
+    })
+    .sort((left, right) => {
+      if (left.hireYear === null && right.hireYear !== null) return 1;
+      if (left.hireYear !== null && right.hireYear === null) return -1;
+      return (left.hireYear ?? 0) - (right.hireYear ?? 0);
+    });
+}
+
+export function buildTrainingManagerCoachingComparison({
+  employees,
+  filters = {},
+  reports,
+}: TrainingManagerComparisonInput): CoachingTrainingManagerComparison {
+  const completedReportsByRep = new Map<string, CoachingReportSummaryRow[]>();
+  for (const report of reports.filter((row) => completedReportStatuses.has(row.status))) {
+    const key = canonicalHrIdKey(report.medicalRepHrId);
+    if (!key) continue;
+    completedReportsByRep.set(key, [...(completedReportsByRep.get(key) ?? []), report]);
+  }
+
+  const rows = employees
+    .filter(isActiveMedicalRep)
+    .filter((employee) => employeeMatchesComparisonFilters(employee, filters))
+    .map((employee): CoachingTrainingManagerComparisonRow => {
+      const hrIdKey = canonicalHrIdKey(employee.hrId);
+      const employeeReports = hrIdKey ? completedReportsByRep.get(hrIdKey) ?? [] : [];
+      const orderedReports = [...employeeReports].sort((left, right) => left.coachingDate.localeCompare(right.coachingDate));
+      const latestReport = orderedReports[orderedReports.length - 1] ?? null;
+      const scores = orderedReports.map((report) => report.finalScorePercent).filter(Number.isFinite);
+      const coachNames = [...new Set(orderedReports.map((report) => report.coachName || report.coachHrId).filter(Boolean))];
+
+      return {
+        areaId: employee.areaId,
+        areaName: employee.areaName,
+        averageScore: scoreAverageOrNull(scores),
+        coachNames,
+        coachingCount: orderedReports.length,
+        firstCoachingDate: orderedReports[0]?.coachingDate ?? null,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        latestCoachName: latestReport ? latestReport.coachName || latestReport.coachHrId : null,
+        latestCoachingDate: latestReport?.coachingDate ?? null,
+        lineId: employee.lineId,
+        lineName: employee.lineName,
+        medicalRepName: employee.fullName || employee.hrId,
+        status: orderedReports.length > 0 ? "coached" : "not_coached",
+        teamId: employee.teamId,
+        teamName: employee.teamName,
+      };
+    })
+    .sort((left, right) => {
+      if (left.status !== right.status) return left.status === "not_coached" ? -1 : 1;
+      return (
+        sortedLabels(left.areaName || "Not assigned", right.areaName || "Not assigned") ||
+        String(left.hireDate ?? "9999-99-99").localeCompare(String(right.hireDate ?? "9999-99-99")) ||
+        sortedLabels(left.medicalRepName, right.medicalRepName)
+      );
+    });
+
+  const coachedCount = rows.filter((row) => row.status === "coached").length;
+  const totalMedicalReps = rows.length;
+
+  return {
+    areaBreakdown: buildAreaBreakdown(rows),
+    coachedCount,
+    coachedRate: percent(coachedCount, totalMedicalReps),
+    hireYearBreakdown: buildHireYearBreakdown(rows),
+    rows,
+    totalMedicalReps,
+    uncoachedCount: totalMedicalReps - coachedCount,
+  };
 }
 
 export function buildCoachingReportAnalytics(
