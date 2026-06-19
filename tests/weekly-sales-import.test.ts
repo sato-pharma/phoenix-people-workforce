@@ -688,6 +688,34 @@ export async function runWeeklySalesImportTests() {
     });
     assert.equal(headerDrift.ok, true);
     if (headerDrift.ok) assert.equal(headerDrift.result.status, "blocked", "PS stock header drift blocks the batch");
+
+    // PERMANENT FIX: PS stock mapped BY NAME (no column-index entry) must still resolve. Column
+    // positions are fragile — silently lost on a name-only re-import and shifted whenever the export
+    // reorders columns — so the engine falls back to matching the location header name.
+    const stockByName = await parseWeeklyWorkbookBuffer({
+      salesBuffer: await psSalesWorkbook(),
+      stockBuffer: await psStockWorkbook(), // col7 location header = "Cairo Warehouse"
+      distributorCode: "PS",
+      distributorName: "Overseas",
+      fileName: "PS.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branchIndex({
+        branches: [
+          { key: "Retail Cairo  _ك", fileType: "sales", region: "CA" },
+          { key: "Super KA Delta_ك", fileType: "sales", region: "D1" },
+          { key: "Cairo Warehouse", fileType: "stock", region: "CA" }, // stock by NAME, no column index
+        ],
+      }),
+      periodDate: "2026-06-06",
+    });
+    assert.equal(stockByName.ok, true);
+    if (stockByName.ok) {
+      assert.equal(stockByName.result.status, "validated", "PS stock resolves by NAME when no column-index mapping exists");
+      const stockRow = stockByName.rows.find((row) => row.stockQty === 40);
+      assert.ok(stockRow, "PS name-mapped stock row present");
+      assert.equal(stockRow?.regionCode, "CA", "PS stock region resolved via name fallback");
+    }
   }
 
   // ════════════ STRICT validation classes ════════════

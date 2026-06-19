@@ -762,22 +762,35 @@ function resolveRegion(obs: WeeklyObservation, branchMapIndex: WeeklyBranchRegio
     return { regionCode: "", regionName: "", excluded: false, failure: null };
   }
 
-  // PS stock column-index path.
+  // PS stock path. Prefer the column-index mapping (it disambiguates genuinely duplicated location
+  // headers); if this column has NO column-index mapping, fall back to matching the location header
+  // BY NAME (stock|name, then any|name). Column positions are fragile — they are silently lost on a
+  // name-only re-import and shift whenever the distributor reorders the export's columns — whereas the
+  // location name is stable and, for PS, resolves to a single region. This stops stock from
+  // re-breaking every time the mapping is rebuilt by name instead of by column index.
   if (obs.posColumnIndex != null) {
     const entry = branchMapIndex.byColumnIndex.get(obs.posColumnIndex);
-    if (!entry) {
-      return {
-        regionCode: "",
-        regionName: "",
-        excluded: false,
-        failure: {
-          field: "regionCode",
-          message: `PS stock column ${obs.posColumnIndex} ("${obs.posColumnHeaderRaw ?? obs.rawBranchName}") is not mapped to a master region. Map it, then re-upload.`,
-        },
-      };
+    if (entry) {
+      if (entry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
+      return { regionCode: entry.regionCode, regionName: entry.regionName, excluded: false, failure: null };
     }
-    if (entry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
-    return { regionCode: entry.regionCode, regionName: entry.regionName, excluded: false, failure: null };
+    const stockName = normalizeKey(obs.posColumnHeaderRaw ?? obs.rawBranchCode ?? obs.rawBranchName);
+    const byName = stockName
+      ? branchMapIndex.byBranch.get(`stock|${stockName}`) ?? branchMapIndex.byBranch.get(`any|${stockName}`)
+      : undefined;
+    if (byName) {
+      if (byName.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
+      return { regionCode: byName.regionCode, regionName: byName.regionName, excluded: false, failure: null };
+    }
+    return {
+      regionCode: "",
+      regionName: "",
+      excluded: false,
+      failure: {
+        field: "regionCode",
+        message: `PS stock column ${obs.posColumnIndex} ("${obs.posColumnHeaderRaw ?? obs.rawBranchName}") is not mapped to a master region (by column or by name). Map it, then re-upload.`,
+      },
+    };
   }
 
   // Stock-only rows with no branch (e.g. a grand-total fallback) → allow without a region, never block.
