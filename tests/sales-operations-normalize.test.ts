@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { buildProductByName } from "../src/lib/sales-operations/crosswalks.ts";
 import { getDistributorTemplate } from "../src/lib/sales-operations/dictionary.ts";
 import {
   deriveHierarchy,
@@ -163,4 +164,13 @@ export async function runSalesOperationsNormalizeTests() {
   // dictionary sanity: all 16 sheet rows present; EG HOS resolvable by either spelling.
   assert.equal(getDistributorTemplate("EG HOS")?.code, "EG-HOS");
   assert.equal(getDistributorTemplate("eg-hos")?.code, "EG-HOS");
+
+  // ── crosswalks: master product-NAME index is collision-safe ──────────────────────────────
+  const byName = buildProductByName([
+    { factoryPrice: 10, family: "Analgesics", familyCode: "AN", line: "OTC", productCode: "1001", productName: "Panadol", source: "" },
+    { factoryPrice: 20, family: "Antibiotics", familyCode: "AB", line: "Rx", productCode: "2002", productName: "Augmentin", source: "" },
+    { factoryPrice: 30, family: "Antibiotics", familyCode: "AB", line: "Rx", productCode: "3003", productName: "Augmentin", source: "" }, // duplicate name
+  ]);
+  assert.equal(byName.get(normalizeAliasKey("Panadol")), "1001", "unique product name indexes to its code");
+  assert.equal(byName.has(normalizeAliasKey("Augmentin")), false, "duplicate product name dropped (never mis-maps)");
 }
