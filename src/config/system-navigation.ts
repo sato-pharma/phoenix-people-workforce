@@ -54,6 +54,7 @@ export type NavigationSectionItem = {
   href: `/${string}`;
   icon: LucideIcon;
   label: string;
+  moduleId: string;
   excludedRoles?: readonly PhoenixRole[];
   roles?: readonly PhoenixRole[];
   permissions?: readonly NavigationPermission[];
@@ -76,6 +77,44 @@ export type NavigationSection = {
   label: string;
 };
 
+type NavigationSectionItemSeed = Omit<NavigationSectionItem, "moduleId"> & {
+  moduleId?: string;
+};
+
+type NavigationSectionSeed = Omit<NavigationSection, "items"> & {
+  items: readonly NavigationSectionItemSeed[];
+};
+
+function moduleIdPart(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
+function defaultModuleId(mode: NavigationMode, section: NavigationSectionSeed, item: NavigationSectionItemSeed) {
+  const prefix = mode === "employee-portal" ? "portal" : "admin";
+  const labelPart = moduleIdPart(item.label);
+  const hrefPart = moduleIdPart(item.href);
+  const tabPart = item.activeTab ? `_${moduleIdPart(item.activeTab)}` : "";
+  return `${prefix}.${moduleIdPart(section.id)}.${labelPart}.${hrefPart}${tabPart}`;
+}
+
+function withModuleIds(
+  mode: NavigationMode,
+  sections: readonly NavigationSectionSeed[],
+): readonly NavigationSection[] {
+  return sections.map((section) => ({
+    ...section,
+    items: section.items.map((item) => ({
+      ...item,
+      moduleId: item.moduleId ?? defaultModuleId(mode, section, item),
+    })),
+  }));
+}
+
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
 const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager", "CEO"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
@@ -85,7 +124,7 @@ export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   "employee-portal": "/employee-portals",
 };
 
-export const adminNavigationSections = [
+const adminNavigationSectionSeeds = [
   {
     id: "command-center",
     items: [
@@ -233,6 +272,7 @@ export const adminNavigationSections = [
     id: "access-communication",
     items: [
       { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
+      { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
       { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
       { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
       { href: "/admin/notifications/telegram", icon: Send, label: "Telegram", permissions: [{ resource: "communication" }] },
@@ -249,9 +289,9 @@ export const adminNavigationSections = [
     ],
     label: "Pharmacovigilance",
   },
-] as const satisfies readonly NavigationSection[];
+] as const satisfies readonly NavigationSectionSeed[];
 
-export const employeePortalNavigationSections = [
+const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-portal",
     items: [
@@ -389,7 +429,10 @@ export const employeePortalNavigationSections = [
     ],
     label: "Pharmacovigilance",
   },
-] as const satisfies readonly NavigationSection[];
+] as const satisfies readonly NavigationSectionSeed[];
+
+export const adminNavigationSections = withModuleIds("admin", adminNavigationSectionSeeds);
+export const employeePortalNavigationSections = withModuleIds("employee-portal", employeePortalNavigationSectionSeeds);
 
 export function getNavigationSections(mode: NavigationMode): readonly NavigationSection[] {
   return mode === "employee-portal" ? employeePortalNavigationSections : adminNavigationSections;
