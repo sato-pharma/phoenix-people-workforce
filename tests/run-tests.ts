@@ -205,6 +205,7 @@ import { runSalesOperationsNormalizeTests } from "./sales-operations-normalize.t
 import { runSalesOperationsOfficeTests } from "./sales-operations-office.test.ts";
 import { runSalesOperationsRecognizeTests } from "./sales-operations-recognize.test.ts";
 import { runSalesOperationsValidationTests } from "./sales-operations-validation.test.ts";
+import { runSalesOperationsUploadTests } from "./sales-operations-upload.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -423,3 +424,4 @@ await runTest("sales-operations normalizer (name-first, value, brick-by-strategy
 await runTest("sales-operations office allocator (two-step contribution, NATIONAL fallback)", runSalesOperationsOfficeTests);
 await runTest("sales-operations recognizer (coded-sheet, header, fingerprint, dispatch)", runSalesOperationsRecognizeTests);
 await runTest("sales-operations validation (ported + adapted checks)", runSalesOperationsValidationTests);
+await runTest("sales-operations upload (period, consolidation, reconcile, context wiring)", runSalesOperationsUploadTests);
