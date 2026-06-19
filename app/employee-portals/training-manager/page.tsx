@@ -128,15 +128,23 @@ export default async function TrainingManagerCoachingDashboardPage() {
 
   let payload: CoachingAnalyticsPayload | null = null;
   let reports: CoachingReportSummaryRow[] = [];
+  let optionReports: CoachingReportSummaryRow[] = [];
+  let optionQuarterlySummary: CoachingQuarterlySummaryRow[] = [];
   let visibleQuarterlySummary: CoachingQuarterlySummaryRow[] = [];
   let employees: EmployeeDirectoryRow[] = [];
+  const currentYear = new Date().getFullYear();
+  const initialReportFilters = { year: currentYear };
   try {
-    const [resolvedReports, quarterlySummary, resolvedEmployees] = await Promise.all([
+    const [resolvedReports, quarterlySummary, resolvedOptionReports, resolvedOptionQuarterlySummary, resolvedEmployees] = await Promise.all([
+      getCoachingReports(initialReportFilters, access),
+      getCoachingQuarterlySummary(initialReportFilters, access),
       getCoachingReports({}, access),
       getCoachingQuarterlySummary({}, access),
       getEmployeeDirectoryRows(),
     ]);
     reports = resolvedReports;
+    optionReports = resolvedOptionReports;
+    optionQuarterlySummary = resolvedOptionQuarterlySummary;
     employees = resolvedEmployees;
     visibleQuarterlySummary = filterCoachingQuarterlySummaryByReports(quarterlySummary, reports, true);
     const scoreAnalytics = await getCoachingScoreAnalyticsForReports(reports);
@@ -202,7 +210,8 @@ export default async function TrainingManagerCoachingDashboardPage() {
       <CoachingAnalyticsDashboard
         canCreate={canCreate}
         createHref={createCoachingReportHref}
-        filterOptions={buildFilterOptions(reports, visibleQuarterlySummary, employees)}
+        filterOptions={buildFilterOptions(optionReports, optionQuarterlySummary, employees)}
+        initialFilters={{ year: String(currentYear) }}
         initialData={payload}
       />
     </div>
