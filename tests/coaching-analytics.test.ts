@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   buildCoachingReportAnalytics,
   buildCoachingScoreAnalytics,
+  buildTrainingManagerCoachingComparison,
   filterCoachingQuarterlySummaryByReports,
   type CoachingScoreAnalyticsInputRow,
 } from "../src/lib/coaching/analytics.ts";
@@ -12,6 +13,7 @@ import {
   coachingScoreItems,
   type CoachingParameterKey,
 } from "../src/lib/coaching/constants.ts";
+import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { CoachingQuarterlySummaryRow, CoachingReportSummaryRow } from "../src/lib/coaching/types.ts";
 
 function rowsForReport(
@@ -57,6 +59,25 @@ function report(overrides: Partial<CoachingReportSummaryRow>): CoachingReportSum
     updatedAt: "2026-05-01T00:00:00.000Z",
     ...overrides,
   };
+}
+
+function employee(overrides: Partial<EmployeeDirectoryRow>): EmployeeDirectoryRow {
+  return {
+    areaId: null,
+    areaName: null,
+    employmentStatus: "active",
+    fullName: "Medical Rep",
+    hireDate: null,
+    hrId: "MR-1",
+    jobTitle: "Medical Representative",
+    lineId: null,
+    lineName: null,
+    organogramVisible: true,
+    positionTitle: null,
+    teamId: null,
+    teamName: null,
+    ...overrides,
+  } as EmployeeDirectoryRow;
 }
 
 export function runCoachingAnalyticsTests() {
@@ -131,8 +152,49 @@ export function runCoachingAnalyticsTests() {
     2,
   );
 
+  const comparison = buildTrainingManagerCoachingComparison({
+    employees: [
+      employee({ areaId: 1, areaName: "Cairo East", fullName: "Rep One", hireDate: "2026-01-10", hrId: "MR-1", lineId: 10, lineName: "Line A", teamId: 100, teamName: "Team A" }),
+      employee({ areaId: 1, areaName: "Cairo East", fullName: "Rep Two", hireDate: "2025-08-20", hrId: "MR-2", lineId: 10, lineName: "Line A", positionTitle: "Medical Representative", teamId: 100, teamName: "Team A" }),
+      employee({ areaId: 2, areaName: "Alex", fullName: "Rep Three", hireDate: "2024-03-05", hrId: "MR-3", lineId: 20, lineName: "Line B" }),
+      employee({ areaId: 1, areaName: "Cairo East", fullName: "DSM One", hrId: "DSM-1", jobTitle: "District Sales Manager" }),
+      employee({ areaId: 1, areaName: "Cairo East", employmentStatus: "resigned", fullName: "Inactive Rep", hrId: "MR-4" }),
+    ],
+    filters: { areaId: 1 },
+    reports: [
+      report({ coachingDate: "2026-02-01", finalScorePercent: 70, medicalRepHrId: "MR-1", reportId: "mr-1-old", status: "submitted" }),
+      report({ coachingDate: "2026-04-01", finalScorePercent: 90, medicalRepHrId: "MR-1", reportId: "mr-1-new", status: "locked" }),
+      report({ coachingDate: "2026-05-01", finalScorePercent: 95, medicalRepHrId: "MR-2", reportId: "mr-2-draft", status: "draft" }),
+      report({ coachingDate: "2026-06-01", finalScorePercent: 88, medicalRepHrId: "MR-3", reportId: "mr-3-outside-area", status: "submitted" }),
+    ],
+  });
+
+  assert.equal(comparison.totalMedicalReps, 2);
+  assert.equal(comparison.coachedCount, 1);
+  assert.equal(comparison.uncoachedCount, 1);
+  assert.equal(comparison.coachedRate, 50);
+  assert.deepEqual(
+    comparison.rows.map((row) => [row.hrId, row.status, row.hireDate, row.areaName, row.coachingCount, row.averageScore]),
+    [
+      ["MR-2", "not_coached", "2025-08-20", "Cairo East", 0, null],
+      ["MR-1", "coached", "2026-01-10", "Cairo East", 2, 80],
+    ],
+  );
+  assert.deepEqual(
+    comparison.areaBreakdown.map((row) => [row.areaName, row.totalReps, row.coachedCount, row.uncoachedCount, row.coachedRate]),
+    [["Cairo East", 2, 1, 1, 50]],
+  );
+  assert.deepEqual(
+    comparison.hireYearBreakdown.map((row) => [row.hireYear, row.totalReps, row.coachedCount, row.uncoachedCount]),
+    [
+      [2025, 1, 0, 1],
+      [2026, 1, 1, 0],
+    ],
+  );
+
   const routeSource = readFileSync("app/api/coaching/analytics/route.ts", "utf8");
   assert.match(routeSource, /buildCoachingReportAnalytics/);
+  assert.match(routeSource, /buildTrainingManagerCoachingComparison/);
   assert.match(routeSource, /filterCoachingQuarterlySummaryByReports/);
   assert.doesNotMatch(routeSource, /function buildAnalytics/);
 

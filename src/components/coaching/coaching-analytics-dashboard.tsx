@@ -19,6 +19,8 @@ import {
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -42,6 +44,7 @@ import type {
   CoachingQuarterlySummaryRow,
   CoachingReportSummaryRow,
   CoachingScoreItemAverageScore,
+  CoachingTrainingManagerComparison,
 } from "@/lib/coaching/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -77,6 +80,7 @@ export type CoachingAnalyticsPayload = {
   reports: CoachingReportSummaryRow[];
   scoreItemAverageScores: CoachingScoreItemAverageScore[];
   strongestParameterDistribution: CoachingParameterDistributionRow[];
+  trainingManagerComparison: CoachingTrainingManagerComparison;
 };
 
 type CoachingAnalyticsDashboardProps = {
@@ -502,6 +506,210 @@ function buildParameterDistributionData(rows: CoachingParameterDistributionRow[]
   }));
 }
 
+function buildTrainingManagerCoverageSplit(comparison: CoachingTrainingManagerComparison) {
+  return [
+    { color: "#10B981", key: "coached", label: "Coached", value: comparison.coachedCount },
+    { color: "#F97316", key: "not_coached", label: "Not coached", value: comparison.uncoachedCount },
+  ].filter((row) => row.value > 0);
+}
+
+function coverageStatusLabel(status: "coached" | "not_coached") {
+  return status === "coached" ? "Coached" : "Not coached";
+}
+
+function coverageStatusClassName(status: "coached" | "not_coached") {
+  return status === "coached"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : "border-orange-200 bg-orange-50 text-orange-700";
+}
+
+function scoreOrDash(value: number | null) {
+  return value === null ? "Not scored" : formatPercent(value);
+}
+
+function CoverageRateBar({ rate }: { rate: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-2 w-full min-w-[72px] bg-[#EEF2F7]">
+        <div className="h-full bg-[#10B981]" style={{ width: `${Math.min(100, Math.max(0, rate))}%` }} />
+      </div>
+      <span className="w-12 shrink-0 text-right text-xs font-black tabular-nums text-[#0F172A]">{formatPercent(rate)}</span>
+    </div>
+  );
+}
+
+function CoverageStackedChart({
+  data,
+  emptyMessage,
+}: {
+  data: { coachedCount: number; label: string; uncoachedCount: number }[];
+  emptyMessage: string;
+}) {
+  if (data.length === 0) return <EmptyChart message={emptyMessage} />;
+  return (
+    <SafeResponsiveContainer className="h-full">
+      <BarChart data={data} margin={{ bottom: 0, left: -18, right: 14, top: 12 }}>
+        <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 8" vertical={false} />
+        <XAxis
+          axisLine={false}
+          dataKey="label"
+          interval={0}
+          tick={{ fill: CHART_AXIS, fontSize: 10, fontWeight: 700 }}
+          tickFormatter={(value) => {
+            const label = String(value);
+            return label.length > 12 ? `${label.slice(0, 11)}...` : label;
+          }}
+          tickLine={false}
+          tickMargin={8}
+        />
+        <YAxis allowDecimals={false} axisLine={false} tick={{ fill: CHART_AXIS, fontSize: 10, fontWeight: 600 }} tickLine={false} width={42} />
+        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.04)" }} />
+        <Bar dataKey="coachedCount" fill="#10B981" name="Coached" stackId="coverage" />
+        <Bar dataKey="uncoachedCount" fill="#F97316" name="Not coached" stackId="coverage" />
+      </BarChart>
+    </SafeResponsiveContainer>
+  );
+}
+
+function TrainingManagerComparisonSection({ comparison }: { comparison: CoachingTrainingManagerComparison }) {
+  const coverageSplit = buildTrainingManagerCoverageSplit(comparison);
+  const topAreaChartRows = comparison.areaBreakdown.slice(0, 10);
+  const hireYearChartRows = comparison.hireYearBreakdown;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard helper="Active Medical Reps matching the current filters." icon={<UsersRound className="h-5 w-5" />} label="Medical Reps in Scope" value={formatNumber(comparison.totalMedicalReps)} />
+        <KpiCard helper="Medical Reps with at least one completed coaching report." icon={<CheckCircle2 className="h-5 w-5" />} label="Coached by Training Manager" value={formatNumber(comparison.coachedCount)} />
+        <KpiCard helper="Medical Reps with no completed coaching report in this scope." icon={<Filter className="h-5 w-5" />} label="Not Coached" value={formatNumber(comparison.uncoachedCount)} />
+        <KpiCard helper="Share of Medical Reps covered by completed coaching." icon={<TrendingUp className="h-5 w-5" />} label="Coverage Rate" value={formatPercent(comparison.coachedRate)} />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-3">
+        <ChartPanel description="Medical Rep coverage split for the current analytics scope." title="Training Manager Coverage">
+          {coverageSplit.length ? (
+            <DonutChart caption="medical reps" items={coverageSplit} />
+          ) : <EmptyChart message="No active Medical Reps are available for this scope." />}
+        </ChartPanel>
+        <ChartPanel description="Coached vs not coached Medical Reps by area." title="Coverage by Area">
+          <CoverageStackedChart data={topAreaChartRows} emptyMessage="No area coverage data available." />
+        </ChartPanel>
+        <ChartPanel description="Coached vs not coached Medical Reps grouped by hiring year." title="Coverage by Hiring Year">
+          <CoverageStackedChart data={hireYearChartRows} emptyMessage="No hiring-year coverage data available." />
+        </ChartPanel>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.6fr]">
+        <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+          <AdminSectionHeader
+            title="Area Coverage"
+            description="Training Manager coaching coverage by Medical Rep area."
+            action={<BarChart3 className="h-5 w-5 text-[#F97316]" />}
+          />
+          <div className="max-h-[520px] overflow-auto">
+            <table className="w-full border-collapse text-left">
+              <thead className="sticky top-0 bg-white text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B] shadow-[0_1px_0_#E2E8F0]">
+                <tr>
+                  <th className="px-4 py-3">Area</th>
+                  <th className="px-3 py-3 text-center">Total</th>
+                  <th className="px-3 py-3 text-center">Coached</th>
+                  <th className="px-3 py-3 text-center">Not</th>
+                  <th className="px-4 py-3">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparison.areaBreakdown.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={5}>
+                      No area coverage rows are available.
+                    </td>
+                  </tr>
+                ) : comparison.areaBreakdown.map((row) => (
+                  <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.areaId ?? "none"}-${row.label}`}>
+                    <td className="px-4 py-3.5 font-black text-[#0F172A]">{row.areaName || "Not assigned"}</td>
+                    <td className="px-3 py-3.5 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.totalReps)}</td>
+                    <td className="px-3 py-3.5 text-center font-black tabular-nums text-emerald-700">{formatNumber(row.coachedCount)}</td>
+                    <td className="px-3 py-3.5 text-center font-black tabular-nums text-orange-700">{formatNumber(row.uncoachedCount)}</td>
+                    <td className="px-4 py-3.5"><CoverageRateBar rate={row.coachedRate} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+          <AdminSectionHeader
+            title="Medical Rep Coaching Comparison"
+            description="Hiring dates and areas for reps coached by Training Manager compared with reps not coached yet."
+            action={<UsersRound className="h-5 w-5 text-[#F97316]" />}
+          />
+          <div className="max-h-[520px] overflow-auto">
+            <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "7%" }} />
+              </colgroup>
+              <thead className="sticky top-0 bg-white text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B] shadow-[0_1px_0_#E2E8F0]">
+                <tr>
+                  <th className="px-4 py-3">Medical Rep</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Hiring Date</th>
+                  <th className="px-3 py-3">Area</th>
+                  <th className="px-3 py-3">Line / Team</th>
+                  <th className="px-3 py-3 text-center">Sessions</th>
+                  <th className="px-3 py-3 text-center">Avg</th>
+                  <th className="px-3 py-3">Latest</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparison.rows.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={8}>
+                      No Medical Rep comparison rows are available for the current filters.
+                    </td>
+                  </tr>
+                ) : comparison.rows.map((row) => (
+                  <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.hrId}>
+                    <td className="px-4 py-3.5">
+                      <div className="min-w-0">
+                        <p className="truncate font-black text-[#0F172A]" title={row.medicalRepName}>{row.medicalRepName}</p>
+                        <p className="truncate font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5">
+                      <span className={cn("inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-black", coverageStatusClassName(row.status))}>
+                        {coverageStatusLabel(row.status)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3.5 whitespace-nowrap text-[13px] font-semibold text-[#475569]">{formatDate(row.hireDate)}</td>
+                    <td className="px-3 py-3.5">
+                      <p className="truncate font-semibold text-[#0F172A]" title={row.areaName || "Not assigned"}>{row.areaName || "Not assigned"}</p>
+                    </td>
+                    <td className="px-3 py-3.5">
+                      <p className="truncate font-semibold text-[#0F172A]" title={row.lineName || "Not assigned"}>{row.lineName || "Not assigned"}</p>
+                      <p className="truncate text-[11px] font-bold text-[#94A3B8]" title={row.teamName || "No team"}>{row.teamName || "No team"}</p>
+                    </td>
+                    <td className="px-3 py-3.5 text-center font-black tabular-nums text-[#0F172A]">{formatNumber(row.coachingCount)}</td>
+                    <td className="px-3 py-3.5 text-center font-black tabular-nums text-[#0F172A]">{scoreOrDash(row.averageScore)}</td>
+                    <td className="px-3 py-3.5 whitespace-nowrap text-[13px] text-[#475569]">{formatDate(row.latestCoachingDate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // One row per medical rep, aggregated across that rep's FULL coaching history
 // (not per quarter). Improvement is the rep's first-ever score vs. their latest
 // score, so reps coached more than once — even across different quarters — show a
@@ -666,6 +874,8 @@ export function CoachingAnalyticsDashboard({
           </div>
         </div>
       </Card>
+
+      <TrainingManagerComparisonSection comparison={data.trainingManagerComparison} />
 
       {data.reports.length === 0 ? (
         <Card className={cn(adminPanelClassName, "p-6")}>
