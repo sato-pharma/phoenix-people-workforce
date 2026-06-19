@@ -431,7 +431,10 @@ export type MarketingApproverInboxRow = {
 };
 
 export type MarketingApproverInboxWorkspace = {
+  /** Requests awaiting the actor's gating decision (approve / return / reject). */
   rows: MarketingApproverInboxRow[];
+  /** Requests where the actor is a CC reviewer and may post a non-blocking comment. */
+  advisoryRows: MarketingApproverInboxRow[];
 };
 
 export type PreparedMarketingRequestDraft = {
@@ -569,6 +572,7 @@ export const marketingCreatorRoles = new Set<AccessContext["role"]>([
 const companyMarketingRoles = new Set<AccessContext["role"]>([
   "CEO",
   "Finance Manager",
+  "Financial Advisor",
   "Marketing Manager",
   "SFE Manager",
   "Super Admin",
@@ -710,6 +714,7 @@ function canSeeMarketingHierarchyRecord(
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     access.role === "Finance Manager" ||
+    access.role === "Financial Advisor" ||
     access.role === "Marketing Manager" ||
     access.role === "SFE Manager"
   ) {
@@ -1315,13 +1320,21 @@ async function roleApproverHrId(params: {
     .filter((hrId): hrId is string => Boolean(hrId));
 
   if (candidates.length === 0) return null;
-  if (role === "CEO" || role === "Finance Manager" || role === "SFE Manager" || role === "Marketing Manager") {
-    // Company-wide singleton roles. Prefer an unambiguous line/area match; otherwise fall back
-    // DETERMINISTICALLY (lowest canonical HR_ID) instead of returning null. Returning null here
-    // previously stalled EVERY submission company-wide whenever two seats existed for a role that
-    // carries no line scope (e.g. a second Marketing Manager) — a legitimate rep's request would
-    // be rejected. Any active holder of these roles can perform the review, so a stable pick is
-    // safe; a genuinely empty roster (0 candidates) still fails loudly above.
+  if (
+    role === "CEO" ||
+    role === "Finance Manager" ||
+    role === "Financial Advisor" ||
+    role === "SFE Manager" ||
+    role === "Marketing Manager" ||
+    role === "Group Product Manager"
+  ) {
+    // Reviewer roles resolved per request. Prefer an unambiguous line/area match (so a Pedia request
+    // routes to the Pedia Group Product Manager, an Anti-Inf request to the Anti-Inf Marketing
+    // Manager, etc.); otherwise fall back DETERMINISTICALLY (lowest canonical HR_ID) instead of
+    // returning null. Returning null previously stalled EVERY submission whenever two seats existed
+    // for a company-wide role (e.g. a second Marketing Manager). Any active holder of these roles can
+    // perform the review, so a stable pick is safe; a genuinely empty roster (0 candidates) still
+    // fails loudly above.
     const scoped = candidates.filter((hrId) => employeeMatchesMarketingRequestScope(employeesByHrId.get(hrId), params.request));
     if (scoped.length === 1) return scoped[0];
     if (scoped.length > 1) return [...scoped].sort()[0];
@@ -1336,14 +1349,29 @@ async function workflowStepApproverHrId(params: {
   request: MarketingRequest;
   step: MarketingWorkflowStep;
   supabase: SupabaseClient;
+  /** Override the resolved role (used by per-line review routing) — defaults to the step's role. */
+  roleNameOverride?: string;
 }) {
   if (params.step.approvalScope === "direct_manager") return normalizeHrId(params.request.managerHrId);
-  return roleApproverHrId({
+  const roleName = params.roleNameOverride ?? params.step.assignedRole;
+  const primary = await roleApproverHrId({
     employeeRows: params.employeeRows,
     request: params.request,
-    roleName: params.step.assignedRole,
+    roleName,
     supabase: params.supabase,
   });
+  if (primary) return primary;
+  // Finance Execution resilience: the Financial Advisor owns this step, but until that account is
+  // created fall back to Finance Manager so the chain never hard-stalls on submit.
+  if (params.step.stepKind === "finance" && roleName !== "Finance Manager") {
+    return roleApproverHrId({
+      employeeRows: params.employeeRows,
+      request: params.request,
+      roleName: "Finance Manager",
+      supabase: params.supabase,
+    });
+  }
+  return primary;
 }
 
 async function loadActiveMarketingWorkflowSteps(supabase: SupabaseClient) {
@@ -1354,6 +1382,33 @@ async function loadActiveMarketingWorkflowSteps(supabase: SupabaseClient) {
     .order("sequence", { ascending: true });
   if (error) throw error;
   return ((data ?? []) as MarketingWorkflowStepDbRow[]).map(mapWorkflowStep);
+}
+
+/**
+ * Per-line override for the post-SFE "Marketing Review" reviewer. Returns `{ reviewerRole, ccRoles }`
+ * for the request's line, or null when the line has no routing row (→ keep the default Marketing
+ * Manager reviewer + template CC). Requests are single-line, so a single row resolves the reviewer.
+ */
+async function loadMarketingReviewRoutingByLine(
+  supabase: SupabaseClient,
+  lineId: number | null,
+): Promise<{ ccRoles: string[]; reviewerRole: string } | null> {
+  if (lineId === null || lineId === undefined) return null;
+  const { data, error } = await supabase
+    .from("marketing_review_routing")
+    .select("reviewer_role, cc_roles")
+    .eq("active", true)
+    .eq("line_id", lineId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as { cc_roles?: string[] | null; reviewer_role?: string | null };
+  const reviewerRole = cleanText(row.reviewer_role);
+  if (!reviewerRole) return null;
+  const ccRoles = (row.cc_roles ?? [])
+    .map((value) => cleanText(value))
+    .filter((value): value is string => Boolean(value));
+  return { ccRoles, reviewerRole };
 }
 
 function marketingChainStepName(roleName: string) {
@@ -1483,30 +1538,44 @@ async function createMarketingApprovalSteps(params: {
       continue;
     }
 
+    // Per-line review routing: the post-SFE "Marketing Review" reviewer (and which line PM/GPM are
+    // CC'd to comment) is chosen by the request's line. Unmapped lines keep the default Marketing
+    // Manager reviewer + the template CC roles. Every other step is unchanged.
+    let effectiveRole = step.assignedRole;
+    let effectiveCcRoles = step.ccRoles;
+    if (step.stepCode === "marketing_review") {
+      const routing = await loadMarketingReviewRoutingByLine(params.supabase, params.request.lineId ?? null);
+      if (routing) {
+        effectiveRole = routing.reviewerRole;
+        effectiveCcRoles = routing.ccRoles;
+      }
+    }
+
     const assignedHrId = await workflowStepApproverHrId({
       employeeRows: params.employeeRows,
       request: params.request,
+      roleNameOverride: effectiveRole,
       step,
       supabase: params.supabase,
     });
     if (!assignedHrId) {
       throw validationError(
-        `No active ${step.assignedRole} is configured to handle the "${step.stepName}" step. Ask an administrator to assign an active ${step.assignedRole} before submitting this marketing request.`,
+        `No active ${effectiveRole} is configured to handle the "${step.stepName}" step. Ask an administrator to assign an active ${effectiveRole} before submitting this marketing request.`,
         "marketing_approver_not_resolved",
       );
     }
-    pushRow({ assignedHrId, assignedRole: step.assignedRole, isCc: false, step, stepName: step.stepName });
+    pushRow({ assignedHrId, assignedRole: effectiveRole, isCc: false, step, stepName: step.stepName });
 
-    if (step.ccRoles.length > 0) {
+    if (effectiveCcRoles.length > 0) {
       const ccHrIds = await resolveLineCcHrIds({
-        ccRoles: step.ccRoles,
+        ccRoles: effectiveCcRoles,
         employeeRows: params.employeeRows,
         request: params.request,
         supabase: params.supabase,
       });
       for (const ccHrId of ccHrIds) {
         if (ccHrId === assignedHrId) continue;
-        pushRow({ assignedHrId: ccHrId, assignedRole: step.assignedRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
+        pushRow({ assignedHrId: ccHrId, assignedRole: effectiveRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
       }
     }
   }
@@ -3745,17 +3814,45 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const actorHrId = requireMarketingDecisionActor(access);
   const supabase = getSupabaseAdmin();
 
-  const stepsResult = await supabase
-    .from("marketing_request_approval_steps")
-    .select("*")
-    .eq("status", "current")
-    .eq("is_cc", false)
-    .eq("assigned_hr_id", actorHrId);
-  if (stepsResult.error) throw stepsResult.error;
-  const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
-  if (steps.length === 0) return { rows: [] };
+  // Gating steps the actor must decide, and CC steps the actor may comment on (non-blocking).
+  const [gatingResult, ccResult] = await Promise.all([
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .eq("status", "current")
+      .eq("is_cc", false)
+      .eq("assigned_hr_id", actorHrId),
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .eq("is_cc", true)
+      .eq("assigned_hr_id", actorHrId),
+  ]);
+  if (gatingResult.error) throw gatingResult.error;
+  if (ccResult.error) throw ccResult.error;
+  const gatingSteps = ((gatingResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+  const ccSteps = ((ccResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+  if (gatingSteps.length === 0 && ccSteps.length === 0) return { advisoryRows: [], rows: [] };
 
-  const requestIds = Array.from(new Set(steps.map((step) => step.requestId)));
+  // A CC reviewer may comment only while the gating step it is attached to is the current one.
+  const ccRequestIds = Array.from(new Set(ccSteps.map((step) => step.requestId)));
+  const currentStepCodeByRequest = new Map<string, string>();
+  if (ccRequestIds.length > 0) {
+    const currentResult = await supabase
+      .from("marketing_request_approval_steps")
+      .select("request_id, step_code")
+      .in("request_id", ccRequestIds)
+      .eq("status", "current")
+      .eq("is_cc", false);
+    if (currentResult.error) throw currentResult.error;
+    for (const row of (currentResult.data ?? []) as Array<{ request_id: string; step_code: string }>) {
+      currentStepCodeByRequest.set(row.request_id, row.step_code);
+    }
+  }
+  const activeCcSteps = ccSteps.filter((step) => currentStepCodeByRequest.get(step.requestId) === step.stepCode);
+
+  const requestIds = Array.from(new Set([...gatingSteps, ...activeCcSteps].map((step) => step.requestId)));
+  if (requestIds.length === 0) return { advisoryRows: [], rows: [] };
   const [requestsResult, employeeRows] = await Promise.all([
     supabase.from("marketing_requests").select("*").in("id", requestIds).eq("status", "pending_approval"),
     loadEmployeeDirectoryRows(),
@@ -3784,28 +3881,104 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
+  const buildRow = (step: MarketingRequestApprovalStep, request: MarketingRequest): MarketingApproverInboxRow => ({
+    currentStepName: step.stepName,
+    customerName: customerNameById.get(request.customerId) ?? request.customerId,
+    decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),
+    estimatedCost: request.estimatedCost,
+    id: request.id,
+    payDate: request.payDate,
+    requestCode: request.requestCode,
+    requesterHrId: request.requesterHrId,
+    requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+    requestType: typeNameById.get(request.requestTypeId) ?? "Marketing request",
+    status: request.status,
+    stepSequence: step.sequence,
+    submittedAt: request.submittedAt,
+  });
+
   const rows: MarketingApproverInboxRow[] = [];
-  for (const step of steps) {
+  for (const step of gatingSteps) {
     const request = requestById.get(step.requestId);
-    if (!request) continue;
-    rows.push({
-      currentStepName: step.stepName,
-      customerName: customerNameById.get(request.customerId) ?? request.customerId,
-      decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),
-      estimatedCost: request.estimatedCost,
-      id: request.id,
-      payDate: request.payDate,
-      requestCode: request.requestCode,
-      requesterHrId: request.requesterHrId,
-      requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
-      requestType: typeNameById.get(request.requestTypeId) ?? "Marketing request",
-      status: request.status,
-      stepSequence: step.sequence,
-      submittedAt: request.submittedAt,
-    });
+    if (request) rows.push(buildRow(step, request));
   }
-  rows.sort((left, right) => (left.submittedAt ?? "").localeCompare(right.submittedAt ?? ""));
-  return { rows };
+  const advisoryRows: MarketingApproverInboxRow[] = [];
+  for (const step of activeCcSteps) {
+    const request = requestById.get(step.requestId);
+    if (request) advisoryRows.push(buildRow(step, request));
+  }
+  const bySubmittedAt = (left: MarketingApproverInboxRow, right: MarketingApproverInboxRow) =>
+    (left.submittedAt ?? "").localeCompare(right.submittedAt ?? "");
+  rows.sort(bySubmittedAt);
+  advisoryRows.sort(bySubmittedAt);
+  return { advisoryRows, rows };
+}
+
+/**
+ * Non-blocking advisory comment from a CC reviewer (e.g. the line Product Manager on an Anti Inf
+ * request). Records the comment on the actor's CC step while the gating step it is attached to is
+ * current. NEVER changes the request status or advances the chain.
+ */
+export async function postMarketingAdvisoryComment(
+  access: AccessContext,
+  requestId: string,
+  comment: string,
+): Promise<{ requestId: string }> {
+  const actorHrId = requireMarketingDecisionActor(access);
+  const cleanRequestId = cleanText(requestId);
+  if (!cleanRequestId) throw validationError("Marketing request ID is required.");
+  const text = cleanText(comment);
+  if (!text) throw validationError("A comment is required.", "comment_required");
+
+  const supabase = getSupabaseAdmin();
+  const stepsResult = await supabase
+    .from("marketing_request_approval_steps")
+    .select("*")
+    .eq("request_id", cleanRequestId);
+  if (stepsResult.error) throw stepsResult.error;
+  const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+
+  const currentGating = steps.find((step) => step.status === "current" && !step.isCc) ?? null;
+  const ccStep = currentGating
+    ? steps.find(
+        (step) =>
+          step.isCc &&
+          step.stepCode === currentGating.stepCode &&
+          normalizeHrId(step.assignedHrId) === normalizeHrId(actorHrId),
+      ) ?? null
+    : null;
+  if (!ccStep) {
+    throw forbiddenError("Forbidden: you are not an active reviewer who can comment on this request.");
+  }
+
+  const nowIso = new Date().toISOString();
+  const update = await supabase
+    .from("marketing_request_approval_steps")
+    .update({
+      decision_at: nowIso,
+      decision_by_hr_id: actorHrId,
+      decision_note: text,
+      updated_at: nowIso,
+    })
+    .eq("id", ccStep.id)
+    .eq("is_cc", true)
+    .select("*")
+    .single();
+  if (update.error) throw update.error;
+
+  await writeAuditLog({
+    actorLoginId: actorHrId,
+    entityId: cleanRequestId,
+    entityType: "marketing_request",
+    newValues: {
+      source: "marketing_request_advisory_comment",
+      stepCode: ccStep.stepCode,
+      stepId: ccStep.id,
+    },
+    summary: `Advisory comment posted on ${cleanRequestId}`,
+  });
+
+  return { requestId: cleanRequestId };
 }
 
 /**
@@ -3883,7 +4056,13 @@ function assertMarketingFinanceEvidenceAccess(params: {
   if (params.access.scope === "system") return;
 
   if (params.evidenceType === "money_transfer_proof") {
-    if (params.access.role === "Finance Manager" || params.access.role === "Super Admin") return;
+    if (
+      params.access.role === "Finance Manager" ||
+      params.access.role === "Financial Advisor" ||
+      params.access.role === "Super Admin"
+    ) {
+      return;
+    }
     throw forbiddenError("Forbidden: only Finance and Super Admin can upload money transfer proof.");
   }
 
