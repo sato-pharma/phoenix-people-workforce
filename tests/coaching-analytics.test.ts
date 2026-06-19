@@ -185,12 +185,15 @@ export function runCoachingAnalyticsTests() {
     [["Cairo East", 2, 1, 1, 50]],
   );
   assert.deepEqual(
-    comparison.hireYearBreakdown.map((row) => [row.hireYear, row.totalReps, row.coachedCount, row.uncoachedCount]),
+    comparison.coachingMonthBreakdown
+      .map((row) => [row.coachingMonth, row.label, row.totalReps, row.coachedCount, row.uncoachedCount]),
     [
-      [2025, 1, 0, 1],
-      [2026, 1, 1, 0],
+      [2, "Feb", 2, 1, 1],
+      [4, "Apr", 2, 1, 1],
     ],
   );
+  assert.equal(comparison.coachingMonthBreakdown.length, 2);
+  assert.equal(comparison.coachingMonthBreakdown.some((row) => row.coachingMonth === 5), false);
 
   const routeSource = readFileSync("app/api/coaching/analytics/route.ts", "utf8");
   assert.match(routeSource, /buildCoachingReportAnalytics/);
@@ -199,9 +202,31 @@ export function runCoachingAnalyticsTests() {
   assert.doesNotMatch(routeSource, /function buildAnalytics/);
 
   const adminAnalyticsPageSource = readFileSync("app/(admin)/coaching/analytics/page.tsx", "utf8");
+  const dashboardSource = readFileSync("src/components/coaching/coaching-analytics-dashboard.tsx", "utf8");
   const portalTrainingManagerSource = readFileSync("app/employee-portals/training-manager/page.tsx", "utf8");
   assert.match(adminAnalyticsPageSource, /buildCoachingReportAnalytics/);
   assert.match(portalTrainingManagerSource, /buildCoachingReportAnalytics/);
   assert.doesNotMatch(adminAnalyticsPageSource, /function buildAnalytics/);
   assert.doesNotMatch(portalTrainingManagerSource, /function buildAnalytics/);
+  assert.match(adminAnalyticsPageSource, /initialReportFilters = \{ year: currentYear \}/);
+  assert.match(adminAnalyticsPageSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
+  assert.match(portalTrainingManagerSource, /initialReportFilters = \{ year: currentYear \}/);
+  assert.match(portalTrainingManagerSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
+  assert.match(dashboardSource, /Coverage by Coaching Month/);
+  assert.match(dashboardSource, /coachingMonthBreakdown/);
+  assert.doesNotMatch(dashboardSource, /Coverage by Hiring Year/);
+  assert.doesNotMatch(dashboardSource, /hireYearBreakdown/);
+  assert.match(dashboardSource, /label="Total Reports"/);
+  assert.match(dashboardSource, /label="Completed Reports"/);
+  assert.match(dashboardSource, /title="Per-Rep Coaching Report"/);
+  assert.match(dashboardSource, /href=\{`\/coaching\/\$\{row\.latestReportId\}`\}/);
+  assert.match(dashboardSource, /HeaderFilterInput/);
+
+  const comparisonSectionStart = dashboardSource.indexOf('title="Medical Rep Coaching Comparison"');
+  const comparisonSectionEnd = dashboardSource.indexOf('title="Per-Rep Coaching Report"');
+  const comparisonSection = dashboardSource.slice(comparisonSectionStart, comparisonSectionEnd);
+  assert.ok(comparisonSectionStart > 0 && comparisonSectionEnd > comparisonSectionStart);
+  assert.doesNotMatch(comparisonSection, />Sessions</);
+  assert.doesNotMatch(comparisonSection, />Avg</);
+  assert.doesNotMatch(comparisonSection, />Latest</);
 }

@@ -13,10 +13,10 @@ import type {
   CoachingParameterDistributionRow,
   CoachingScoreAnalytics,
   CoachingTrainingManagerAreaComparisonRow,
+  CoachingTrainingManagerCoachingMonthComparisonRow,
   CoachingTrainingManagerComparison,
   CoachingTrainingManagerComparisonBucket,
   CoachingTrainingManagerComparisonRow,
-  CoachingTrainingManagerHireYearComparisonRow,
 } from "./types.ts";
 
 export type CoachingScoreAnalyticsInputRow = {
@@ -59,6 +59,7 @@ function average(total: number, count: number) {
 }
 
 const completedReportStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
+const coachingMonthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
 export type CoachingReportAnalyticsSummary = {
   averageScore: number;
@@ -119,13 +120,6 @@ function employeeMatchesComparisonFilters(
   );
 }
 
-function hireYearLabel(hireDate: string | null) {
-  if (!hireDate) return { hireYear: null, label: "No hire date" };
-  const year = Number(hireDate.slice(0, 4));
-  if (!Number.isInteger(year) || year < 1900) return { hireYear: null, label: "No hire date" };
-  return { hireYear: year, label: String(year) };
-}
-
 function bucketCounts(rows: CoachingTrainingManagerComparisonRow[]): CoachingTrainingManagerComparisonBucket {
   const coachedCount = rows.filter((row) => row.status === "coached").length;
   const totalReps = rows.length;
@@ -161,29 +155,50 @@ function buildAreaBreakdown(
     .sort((left, right) => right.totalReps - left.totalReps || sortedLabels(left.label, right.label));
 }
 
-function buildHireYearBreakdown(
+function coachingMonthFromReport(report: CoachingReportSummaryRow) {
+  const parsedMonth = Number(report.coachingDate.slice(5, 7));
+  if (Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12) return parsedMonth;
+  return Number.isInteger(report.coachingMonth) && report.coachingMonth >= 1 && report.coachingMonth <= 12
+    ? report.coachingMonth
+    : null;
+}
+
+function buildCoachingMonthBreakdown(
   rows: CoachingTrainingManagerComparisonRow[],
-): CoachingTrainingManagerHireYearComparisonRow[] {
-  const buckets = new Map<string, CoachingTrainingManagerComparisonRow[]>();
-  for (const row of rows) {
-    const { hireYear } = hireYearLabel(row.hireDate);
-    const key = hireYear === null ? "none" : String(hireYear);
-    buckets.set(key, [...(buckets.get(key) ?? []), row]);
+  completedReportsByRep: Map<string, CoachingReportSummaryRow[]>,
+): CoachingTrainingManagerCoachingMonthComparisonRow[] {
+  const eligibleRepKeys = rows.reduce<string[]>((keys, row) => {
+    const key = canonicalHrIdKey(row.hrId);
+    if (key) keys.push(key);
+    return keys;
+  }, []);
+  const coachedRepKeysByMonth = new Map<number, Set<string>>();
+
+  for (const repKey of eligibleRepKeys) {
+    for (const report of completedReportsByRep.get(repKey) ?? []) {
+      const month = coachingMonthFromReport(report);
+      if (month === null) continue;
+      const repKeys = coachedRepKeysByMonth.get(month) ?? new Set<string>();
+      repKeys.add(repKey);
+      coachedRepKeysByMonth.set(month, repKeys);
+    }
   }
-  return [...buckets.values()]
-    .map((bucketRows) => {
-      const { hireYear, label } = hireYearLabel(bucketRows[0]?.hireDate ?? null);
+
+  const totalReps = rows.length;
+  return coachingMonthLabels
+    .map((label, index) => {
+      const coachingMonth = index + 1;
+      const coachedCount = coachedRepKeysByMonth.get(coachingMonth)?.size ?? 0;
       return {
-        ...bucketCounts(bucketRows),
-        hireYear,
+        coachedCount,
+        coachedRate: percent(coachedCount, totalReps),
+        coachingMonth,
         label,
+        totalReps,
+        uncoachedCount: Math.max(totalReps - coachedCount, 0),
       };
     })
-    .sort((left, right) => {
-      if (left.hireYear === null && right.hireYear !== null) return 1;
-      if (left.hireYear !== null && right.hireYear === null) return -1;
-      return (left.hireYear ?? 0) - (right.hireYear ?? 0);
-    });
+    .filter((row) => row.coachedCount > 0);
 }
 
 export function buildTrainingManagerCoachingComparison({
@@ -244,7 +259,7 @@ export function buildTrainingManagerCoachingComparison({
     areaBreakdown: buildAreaBreakdown(rows),
     coachedCount,
     coachedRate: percent(coachedCount, totalMedicalReps),
-    hireYearBreakdown: buildHireYearBreakdown(rows),
+    coachingMonthBreakdown: buildCoachingMonthBreakdown(rows, completedReportsByRep),
     rows,
     totalMedicalReps,
     uncoachedCount: totalMedicalReps - coachedCount,
