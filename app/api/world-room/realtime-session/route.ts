@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   createWorldRoomRealtimeSessionRequest,
+  extractWorldRoomRealtimeClientSecret,
   resolveWorldRoomSafetyIdentifier,
   worldRoomRealtimeModel,
   worldRoomRealtimeVoice,
@@ -10,13 +11,6 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-type OpenAIClientSecretPayload = {
-  client_secret?: {
-    expires_at?: number;
-    value?: string;
-  };
-};
 
 function getErrorMessage(payload: unknown) {
   if (!payload || typeof payload !== "object") return null;
@@ -82,9 +76,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const data = payload as OpenAIClientSecretPayload;
-  const value = data.client_secret?.value;
-  if (!value) {
+  const clientSecret = extractWorldRoomRealtimeClientSecret(payload);
+  if (!clientSecret) {
     return NextResponse.json(
       {
         error: "openai_realtime_session_malformed",
@@ -98,8 +91,8 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(
     {
       clientSecret: {
-        expiresAt: data.client_secret?.expires_at ?? null,
-        value,
+        expiresAt: clientSecret.expiresAt,
+        value: clientSecret.value,
       },
       model: worldRoomRealtimeModel,
       success: true,

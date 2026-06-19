@@ -79,6 +79,41 @@ export function createWorldRoomRealtimeSessionRequest(): WorldRoomRealtimeSessio
   };
 }
 
+export type WorldRoomRealtimeClientSecret = {
+  expiresAt: number | null;
+  value: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function readClientSecret(value: unknown): WorldRoomRealtimeClientSecret | null {
+  const record = asRecord(value);
+  const secret = typeof record?.value === "string" ? record.value.trim() : "";
+  if (!secret) return null;
+
+  const expiresAt = typeof record?.expires_at === "number" ? record.expires_at : null;
+  return {
+    expiresAt,
+    value: secret,
+  };
+}
+
+export function extractWorldRoomRealtimeClientSecret(payload: unknown): WorldRoomRealtimeClientSecret | null {
+  const directSecret = readClientSecret(payload);
+  if (directSecret) return directSecret;
+
+  const record = asRecord(payload);
+  if (!record) return null;
+
+  const nestedSecret = readClientSecret(record.client_secret);
+  if (nestedSecret) return nestedSecret;
+
+  const session = asRecord(record.session);
+  return readClientSecret(session?.client_secret);
+}
+
 export function resolveWorldRoomSafetyIdentifier() {
   const configured = process.env.OPENAI_REALTIME_SAFETY_IDENTIFIER?.trim();
   return configured ? configured.slice(0, 128) : null;
