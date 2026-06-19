@@ -1,9 +1,15 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Lock, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { WeeklyBatch, WeeklyDistributorOption, WeeklySalesValidationResult } from "@/lib/sales/weekly/types";
+import type {
+  WeeklyBatch,
+  WeeklyDistributorOption,
+  WeeklySalesValidationResult,
+  WeeklyVerifyColumnStatus,
+  WeeklyVerifyResult,
+} from "@/lib/sales/weekly/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -31,6 +37,11 @@ export function WeeklyUploadWorkspace({
   const [error, setError] = useState<string | null>(initialError);
   const [result, setResult] = useState<WeeklySalesValidationResult | null>(null);
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
+  // Step 1 — verification gate. The Upload button stays locked until `verified` is true.
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<WeeklyVerifyResult | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
   // Recent-uploads table filters (client-side; all batches are already loaded).
   const [filterDistributor, setFilterDistributor] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("");
@@ -78,10 +89,50 @@ export function WeeklyUploadWorkspace({
     }
   }
 
+  // Any change to the distributor, files, or period invalidates a prior verification — a stale
+  // "verified" must never carry over to a different file.
+  function clearVerification() {
+    setVerified(false);
+    setVerifyResult(null);
+    setVerifyError(null);
+  }
+
   function resetFiles() {
     setFile(null);
     setSalesFile(null);
     setStockFile(null);
+    clearVerification();
+  }
+
+  async function handleVerify() {
+    if (!filesReady) {
+      setVerifyError(
+        isPS ? "Pick Overseas and both matrix files (sales + stock) first." : "Pick a distributor and a file first.",
+      );
+      return;
+    }
+    setVerifying(true);
+    setVerifyError(null);
+    setVerifyResult(null);
+    setVerified(false);
+    try {
+      const form = new FormData();
+      form.set("distributorCode", distributorCode);
+      if (isPS) {
+        form.set("salesFile", salesFile as File);
+        form.set("stockFile", stockFile as File);
+      } else {
+        form.set("file", file as File);
+      }
+      const response = await fetch("/api/sales/weekly/verify", { method: "POST", body: form });
+      const payload = (await response.json()) as { success?: boolean; data?: WeeklyVerifyResult; error?: string };
+      if (payload?.data) setVerifyResult(payload.data);
+      if (!payload?.success) setVerifyError(payload?.error ?? "Verification failed.");
+    } catch (caught) {
+      setVerifyError(caught instanceof Error ? caught.message : "Verification failed.");
+    } finally {
+      setVerifying(false);
+    }
   }
 
   async function handleUpload() {
@@ -175,17 +226,17 @@ export function WeeklyUploadWorkspace({
             <>
               <label className="block">
                 <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS sales matrix (.xlsx)</span>
-                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setSalesFile(event.target.files?.[0] ?? null)} type="file" />
+                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => { setSalesFile(event.target.files?.[0] ?? null); clearVerification(); }} type="file" />
               </label>
               <label className="block">
                 <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS stock matrix (.xlsx)</span>
-                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setStockFile(event.target.files?.[0] ?? null)} type="file" />
+                <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => { setStockFile(event.target.files?.[0] ?? null); clearVerification(); }} type="file" />
               </label>
             </>
           ) : (
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Weekly file (.xlsx)</span>
-              <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" />
+              <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(event) => { setFile(event.target.files?.[0] ?? null); clearVerification(); }} type="file" />
             </label>
           )}
         </div>
@@ -210,22 +261,72 @@ export function WeeklyUploadWorkspace({
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
-            disabled={busy || !canSubmit}
-            onClick={handleUpload}
-            type="button"
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {busy ? "Validating…" : "Validate & Upload"}
-          </button>
-          {isPS && (salesFile || stockFile) && (
-            <span className="truncate text-xs font-medium text-[#64748B]">
-              {[salesFile?.name, stockFile?.name].filter(Boolean).join(" + ")}
-            </span>
+        {/* Step 1 — AI verification gate. Upload stays locked until the operator confirms this. */}
+        <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">1</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Verify the file</span>
+            {verified && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
+                <ShieldCheck className="h-3.5 w-3.5" /> Verified
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs font-medium text-[#64748B]">
+            AI reads the file&apos;s column headers and shows which data it will take from which column. Review it, then confirm
+            to unlock upload. Only the column titles are sent — never your sales numbers.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60"
+              disabled={busy || verifying || !filesReady}
+              onClick={handleVerify}
+              type="button"
+            >
+              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#F97316]" />}
+              {verifying ? "Analyzing…" : verifyResult ? "Re-run verification" : "Run AI verification"}
+            </button>
+            {!filesReady && <span className="text-xs font-medium text-[#94A3B8]">Pick the file(s) above first.</span>}
+          </div>
+
+          {verifyError && (
+            <div className="mt-3 flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{verifyError}</span>
+            </div>
           )}
-          {!isPS && file && <span className="truncate text-xs font-medium text-[#64748B]">{file.name}</span>}
+
+          {verifyResult && <VerifyPanel result={verifyResult} verified={verified} onConfirm={() => setVerified(true)} />}
+        </div>
+
+        {/* Step 2 — Upload (greyed out and locked until verification is confirmed). */}
+        <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">2</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Upload &amp; validate</span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-[#CBD5E1] disabled:text-white disabled:hover:bg-[#CBD5E1]"
+              disabled={busy || !canSubmit || !verified}
+              onClick={handleUpload}
+              type="button"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : !verified ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+              {busy ? "Validating…" : "Validate & Upload"}
+            </button>
+            {!verified && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#94A3B8]">
+                <Lock className="h-3.5 w-3.5" /> Complete verification above to unlock.
+              </span>
+            )}
+            {isPS && (salesFile || stockFile) && (
+              <span className="truncate text-xs font-medium text-[#64748B]">
+                {[salesFile?.name, stockFile?.name].filter(Boolean).join(" + ")}
+              </span>
+            )}
+            {!isPS && file && <span className="truncate text-xs font-medium text-[#64748B]">{file.name}</span>}
+          </div>
         </div>
       </div>
 
@@ -481,6 +582,158 @@ function ResultPanel({ result }: { result: WeeklySalesValidationResult }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: string }) {
+  const map: Record<WeeklyVerifyColumnStatus, { label: string; cls: string }> = {
+    match: { label: "Match", cls: "bg-emerald-50 text-emerald-700" },
+    drift: { label: "Drift", cls: "bg-rose-50 text-rose-700" },
+    uncertain: { label: "Check", cls: "bg-slate-100 text-slate-600" },
+    empty: { label: "Empty", cls: "bg-rose-50 text-rose-700" },
+  };
+  const pill = map[status] ?? map.uncertain;
+  return (
+    <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${pill.cls}`} title={note || undefined}>
+      {pill.label}
+    </span>
+  );
+}
+
+function VerifyPanel({
+  result,
+  verified,
+  onConfirm,
+}: {
+  result: WeeklyVerifyResult;
+  verified: boolean;
+  onConfirm: () => void;
+}) {
+  const drift = result.verdict === "drift";
+  return (
+    <div className={`mt-3 ${card}`}>
+      <div
+        className={`flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black ${
+          drift ? "text-amber-700" : "text-emerald-700"
+        }`}
+      >
+        {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        {drift ? "Possible column drift — review carefully" : "Columns look consistent"}
+        <span
+          className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-[11px] font-bold ${
+            result.aiUsed ? "bg-[#FFF7ED] text-[#9A3412]" : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
+        </span>
+      </div>
+
+      {result.aiNote && (
+        <p className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-xs font-semibold text-[#334155]">{result.aiNote}</p>
+      )}
+
+      {result.files.length > 0 && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-[#E2E8F0] px-4 py-2 text-xs text-[#64748B]">
+          {result.files.map((entry) => (
+            <span key={`${entry.role}-${entry.fileName}`}>
+              <span className="font-black uppercase tracking-wide text-[#94A3B8]">{entry.role}</span> · {entry.fileName} → sheet
+              &quot;{entry.sheetName}&quot;
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className={darkHead}>
+            <tr>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">File</th>
+              <th className="px-3 py-2 text-center">Col</th>
+              <th className="px-3 py-2">Found in your file</th>
+              <th className="px-3 py-2">Expected</th>
+              <th className="px-3 py-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.columns.map((column, index) => (
+              <tr className="border-t border-[#FFE8D6]" key={`${column.sheetRole}-${column.field}-${index}`}>
+                <td className="px-3 py-1.5 font-bold text-[#0F172A]">
+                  {column.label}
+                  {column.critical && <span className="ml-1 text-[#F97316]">*</span>}
+                </td>
+                <td className="px-3 py-1.5 text-[#64748B]">{column.sheetRole}</td>
+                <td className="px-3 py-1.5 text-center tabular-nums text-[#334155]">{column.columnIndex}</td>
+                <td className="px-3 py-1.5 text-[#0F172A]">
+                  {column.observedHeader || <span className="text-rose-600">— empty —</span>}
+                </td>
+                <td className="px-3 py-1.5 text-[#94A3B8]">{column.expectedHeaderHint}</td>
+                <td className="px-3 py-1.5">
+                  <StatusPill note={column.note} status={column.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {result.matrices.length > 0 && (
+        <div className="space-y-2 border-t border-[#E2E8F0] px-4 py-3">
+          {result.matrices.map((matrix, index) => (
+            <div className="text-xs" key={`${matrix.sheetRole}-${index}`}>
+              <div className="font-black text-[#0F172A]">
+                {matrix.kind === "branch-headers" ? "Branches / outlets (as column headers)" : "Storage locations (one per column)"} —{" "}
+                {matrix.detectedCount} detected from column {matrix.firstColumn}
+              </div>
+              <div className="mt-0.5 text-[#64748B]">{matrix.note}</div>
+              {matrix.sampleHeaders.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {matrix.sampleHeaders.map((header, headerIndex) => (
+                    <span className="rounded bg-[#F1F5F9] px-1.5 py-0.5 font-medium text-[#334155]" key={headerIndex}>
+                      {header}
+                    </span>
+                  ))}
+                  {matrix.detectedCount > matrix.sampleHeaders.length && (
+                    <span className="px-1 py-0.5 text-[#94A3B8]">+{matrix.detectedCount - matrix.sampleHeaders.length} more</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {result.warnings.length > 0 && (
+        <ul className="list-disc space-y-1 border-t border-[#E2E8F0] bg-amber-50 px-8 py-3 text-xs font-semibold text-amber-800">
+          {result.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] px-4 py-3">
+        {verified ? (
+          <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-700">
+            <ShieldCheck className="h-4 w-4" /> Verified — upload is unlocked below.
+          </span>
+        ) : (
+          <>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
+              onClick={onConfirm}
+              type="button"
+            >
+              <ShieldCheck className="h-4 w-4" /> Confirm — this looks correct
+            </button>
+            <span className="text-xs font-medium text-[#94A3B8]">
+              {drift
+                ? "Drift was flagged — only confirm if you know the layout is right."
+                : "Confirm to unlock the upload step."}
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
