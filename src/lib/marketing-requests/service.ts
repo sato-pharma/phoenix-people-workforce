@@ -1157,6 +1157,7 @@ export function prepareMarketingRequestDraft(params: {
     };
   });
   const roiPreview = calculateMarketingRoiPreview({
+    durationMonths: normalized.roiDurationMonths,
     estimatedCost: normalized.estimatedCost,
     products: roiProducts,
   });
@@ -1247,7 +1248,9 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     requestDate: row.request_date,
     requesterHrId: row.requester_hr_id,
     requestTypeId: Number(row.request_type_id),
-    requiredRoiValue: toNumber(row.required_roi_value ?? toNumber(row.estimated_cost) * 10),
+    requiredRoiValue: toNumber(
+      row.required_roi_value ?? toNumber(row.estimated_cost) * 10 * Math.max(1, Math.floor(Number(row.roi_duration_months)) || 1),
+    ),
     roiCoverageRatio: toNumber(row.roi_coverage_ratio),
     roiDurationMonths: Number(row.roi_duration_months),
     roiStatus: row.roi_status,
