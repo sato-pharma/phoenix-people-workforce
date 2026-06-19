@@ -8,8 +8,8 @@ function cpHeadersMimicRawLayout() {
   const cp = {
     distributorCode: "CP",
     distributorName: "chimipharm",
-    productColumns: ["Attribute", "Column1"],
-    qtyColumns: ["Value", "Column2", "Qty"],
+    productColumns: ["Attribute"],
+    qtyColumns: ["Value"],
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: [],
@@ -18,9 +18,10 @@ function cpHeadersMimicRawLayout() {
     territoryColumns: ["Area name A"],
     discountColumns: ["Discount%"],
   } as unknown as DistributorProfile;
+  // Junk pivot constants Column1/Column2 are intentionally NOT in the CP profile, so the emergency
+  // template mirrors the real CP file: product NAME, quantity, customer, territory, discount.
   assert.deepEqual(rawTemplateHeaders(cp), [
     "Attribute",
-    "Column1",
     "Value",
     "Customer",
     "Customer Name",

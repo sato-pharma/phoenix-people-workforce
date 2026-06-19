@@ -6,6 +6,7 @@ import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-pr
 import { normalizeRows, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
+import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 
 // ── The Sales recognition spine ──────────────────────────────────────────────────────────────
@@ -47,9 +48,17 @@ export type NormalizePreview = {
 };
 
 export type NormalizeFileResult =
-  | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[] }
+  | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; hasDateColumn: boolean; regionOnly: boolean }
   | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorName: string };
+
+// Phoenix product code -> master factory price, keyed the same way the engine keys productByCode,
+// so the post-analyze validator can sanity-check per-unit prices without re-loading the masters.
+function buildPriceMap(products: { productCode: string; factoryPrice: number }[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const p of products) map.set(normalizeCodeKey(p.productCode), Number(p.factoryPrice) || 0);
+  return map;
+}
 
 // Recognize + normalize a raw distributor workbook WITHOUT persisting anything. Resolves the
 // distributor profile, detects an already-coded sheet, validates the headers, then normalizes every
@@ -69,7 +78,7 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
     const maps = await loadCrosswalks(refs);
     const result = normalizeRows(sheet as unknown as ExcelJS.Worksheet, profile, maps);
     const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-    return { status: "ok", result, period: null, distributorName: profile.distributorName, products };
+    return { status: "ok", result, period: null, distributorName: profile.distributorName, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
   }
 
   // Coded-sheet detection: Phoenix-branded coded sheets carry "Product ID" / "Distrub ID" — raw
@@ -98,7 +107,7 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
   const maps = await loadCrosswalks(refs);
   const result = normalizeRows(sheet, profile, maps);
   const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-  return { status: "ok", result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products };
+  return { status: "ok", result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
 }
 
 // Backwards-compatible alias for the canonical recognizer (kept for existing call sites).

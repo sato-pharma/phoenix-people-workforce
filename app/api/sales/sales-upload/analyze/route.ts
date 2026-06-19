@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("file");
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
+    const periodOverride = String(form.get("period") ?? "").trim();
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
@@ -28,14 +29,14 @@ export async function POST(request: Request) {
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
-    const result = await analyzeMonthlyUpload(distributorCode, file);
+    const result = await analyzeMonthlyUpload(distributorCode, file, periodOverride);
     if (result.status === "coded_sheet") {
       return NextResponse.json({ success: false, code: "coded_sheet_detected", distributorName: result.distributorName, error: "This sheet is already coded — upload the raw distributor export." });
     }
     if (result.status === "header_error") {
       return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, error: `Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
     }
-    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, needsPeriod: result.needsPeriod });
+    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, needsPeriod: result.needsPeriod, validation: result.validation });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });
