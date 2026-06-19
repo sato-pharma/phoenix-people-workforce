@@ -658,11 +658,14 @@ export async function loadWeeklyDashboard(filters?: {
 
 // ── product-scope administration ─────────────────────────────────────────────────────────────
 
-const PRODUCT_SCOPE_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
+// Roles offered as "assignable to a curated product list" in the admin view. Marketing Manager is
+// intentionally excluded: it now defaults to full company-wide weekly access (see weekly/access.ts),
+// so it should not be nudged toward a narrowing assignment. An explicit assignment still overrides.
+const PRODUCT_SCOPE_ROLES = new Set(["Product Manager", "Group Product Manager"]);
 
 /**
  * Assemble the product-scope admin view: the product master, every current assignment (resolved
- * to a display name + role), and the eligible people (PM/GPM/Marketing Manager) without a scope yet.
+ * to a display name + role), and the eligible people (PM/GPM) without a scope yet.
  */
 export async function loadWeeklyProductScopeAdmin(): Promise<WeeklyProductScopeAdmin> {
   const [references, directory, assignmentsByHrId] = await Promise.all([

@@ -1,5 +1,8 @@
 import { forbiddenError } from "@/lib/http/api-errors";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { normalizeLineKey, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   SalesMarketingAttributionQuality,
@@ -355,11 +358,86 @@ export function parseSalesMarketingDashboardFilters(input: {
   };
 }
 
+function normalizeIdentity(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Lines this viewer may see in the marketing ROI dashboard.
+ *  - `null`  → unrestricted (company-wide: CEO / SFE / Marketing Manager / Super Admin / system).
+ *  - Set     → bounded to the viewer's own line. Empty set = fail closed (no line resolved).
+ *
+ * Line-bounded roles (Product / Group Product / National Sales Manager) must NOT see other lines'
+ * marketing ROI, customer impact, or summary totals — previously the RPC was called with the
+ * caller's filters only, so any of them saw COMPANY-WIDE data. We return the line as BOTH the raw
+ * org `lines.name` (which the RPC matches against `request_line`) AND the bridged Source-of-Sales
+ * official line (which it matches against product line labels), so either match path is covered.
+ */
+async function resolveDashboardLineScope(access: AccessContext): Promise<Set<string> | null> {
+  const scope = await resolveSalesAccessScope(access);
+  if (scope.canViewAllSales) return null;
+
+  const tokens = new Set<string>();
+  for (const officialLine of scope.allowedLineNames ?? []) tokens.add(officialLine);
+
+  const hrId = resolveEmployeeIdentityId(access);
+  if (hrId) {
+    const directory = await getEmployeeDirectory();
+    const viewer = directory.employees.find(
+      (employee) => normalizeIdentity(employee.hrId) === normalizeIdentity(hrId),
+    );
+    const rawLine = viewer?.lineName?.trim();
+    if (rawLine) tokens.add(rawLine);
+  }
+  return tokens;
+}
+
+/**
+ * Resolve the effective `p_lines` passed to the RPC: company-wide viewers keep their own filter
+ * choices; line-bounded viewers are hard-limited to their line (intersected with any line they
+ * picked). An unresolved line fails closed to a sentinel that matches nothing.
+ */
+function mergeLineFilter(userLines: string[], allowed: Set<string> | null): string[] {
+  if (!allowed) return userLines;
+  if (allowed.size === 0) return [" __no_line__"];
+  const allowedKeys = new Set([...allowed].map(normalizeLineKey));
+  if (userLines.length === 0) return [...allowed];
+  const narrowed = userLines.filter((line) => allowedKeys.has(normalizeLineKey(line)));
+  return narrowed.length > 0 ? narrowed : [...allowed];
+}
+
+/**
+ * Scope the line dropdown to the viewer's allowed lines and restore the user's own selected lines
+ * for display. The dashboard DATA (summary + every breakdown) is already scoped inside the RPC via
+ * the injected `p_lines`, so rows and totals stay consistent — we never post-filter rows here.
+ */
+function applyDashboardLineScope(
+  snapshot: SalesMarketingDashboardSnapshot,
+  userLines: string[],
+  allowed: Set<string> | null,
+): SalesMarketingDashboardSnapshot {
+  if (!allowed) return snapshot;
+  const allowedKeys = new Set([...allowed].map(normalizeLineKey));
+  const inScope = (option: SalesMarketingFilterOption) =>
+    allowedKeys.has(normalizeLineKey(option.value)) || allowedKeys.has(normalizeLineKey(option.label));
+  return {
+    ...snapshot,
+    filters: {
+      ...snapshot.filters,
+      lines: snapshot.filters.lines.filter(inScope),
+      selected: { ...snapshot.filters.selected, lines: userLines },
+    },
+  };
+}
+
 export async function getSalesMarketingDashboardSnapshot(
   access: AccessContext,
   filters: SalesMarketingDashboardFilters = defaultFilters,
 ): Promise<SalesMarketingDashboardSnapshot> {
   assertSalesMarketingIntelligenceAccess(access);
+
+  const lineScope = await resolveDashboardLineScope(access);
+  const effectiveLines = mergeLineFilter(filters.lines, lineScope);
 
   const supabase = getSupabaseAdmin({ requestTimeoutMs: 50000 });
   const result = await supabase.rpc("phx_marketing_roi_customer_dashboard", {
@@ -368,7 +446,7 @@ export async function getSalesMarketingDashboardSnapshot(
     p_distributor_codes: filters.distributors,
     p_from_month: filters.fromMonth || null,
     p_limit: filters.limit,
-    p_lines: filters.lines,
+    p_lines: effectiveLines,
     p_product_codes: filters.products,
     p_regions: filters.regions,
     p_roi_statuses: filters.roiStatuses,
@@ -379,5 +457,5 @@ export async function getSalesMarketingDashboardSnapshot(
     throw result.error;
   }
 
-  return normalizeDashboardSnapshot(result.data);
+  return applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
 }

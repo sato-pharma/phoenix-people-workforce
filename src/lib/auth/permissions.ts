@@ -565,22 +565,25 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
+  // Marketing Manager = company-wide MARKETING + COMMERCIAL oversight. It owns the Marketing
+  // Review approval step and needs full visibility of marketing requests, sales, and ROI — but
+  // deliberately holds NO field-management tools (coaching, double_visit_analytics, organogram,
+  // vacancies, probation, team) and NO HR authority (employees/employee_documents/offers/
+  // recruitment/candidates are denied by the hard boundary anyway). Only grants that survive the
+  // hard boundary are declared here, so this matrix reads as the role's true effective access.
   "Marketing Manager": {
     attendance: ["read"],
     overview: [],
-    employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
-    employees: ["read"],
     expenses: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
-    offers: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
+    sales: ["read", "export"],
     weekly_sales: ["read", "export"],
-    support_requests: ["read", "create"],
+    support_requests: ["create"],
     weekly_plans: ["read", "create", "update", "approve"],
-    recruitment: ["read", "update"],
     report_it: ["read", "create"],
   },
   Manager: {
@@ -958,9 +961,13 @@ export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScop
     case "Product Manager":
     case "Group Product Manager":
       return "LINE";
+    case "Marketing Manager":
     case "SFE Manager":
     case "CEO":
     case "Super Admin":
+      // Company-wide commercial oversight. Marketing Manager sees all lines for monthly sales
+      // and the Marketing ROI dashboard (which scopes via resolveSalesAccessScope); restricted
+      // products stay hidden because canViewRestrictedProducts(role) is false for it.
       return "COMPANY";
     default:
       return "NONE";

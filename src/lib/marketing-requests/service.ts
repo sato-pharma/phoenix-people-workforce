@@ -697,7 +697,18 @@ function canSeeMarketingHierarchyRecord(
   },
   employeeRows: EmployeeDirectoryRow[],
 ) {
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "CEO" || access.role === "Finance Manager" || access.role === "SFE Manager") {
+  // Company-wide marketing oversight roles see every marketing record. This set MUST stay in
+  // sync with `companyMarketingRoles` above — the Marketing Manager is a mandatory company-wide
+  // approval step (Marketing Review), so it has to see the request queue, customer validation,
+  // ROI tracking, and the requests it has already approved, not just its own subtree.
+  if (
+    access.scope === "system" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO" ||
+    access.role === "Finance Manager" ||
+    access.role === "Marketing Manager" ||
+    access.role === "SFE Manager"
+  ) {
     return true;
   }
 
@@ -1253,10 +1264,17 @@ async function roleApproverHrId(params: {
 
   if (candidates.length === 0) return null;
   if (role === "CEO" || role === "Finance Manager" || role === "SFE Manager" || role === "Marketing Manager") {
+    // Company-wide singleton roles. Prefer an unambiguous line/area match; otherwise fall back
+    // DETERMINISTICALLY (lowest canonical HR_ID) instead of returning null. Returning null here
+    // previously stalled EVERY submission company-wide whenever two seats existed for a role that
+    // carries no line scope (e.g. a second Marketing Manager) — a legitimate rep's request would
+    // be rejected. Any active holder of these roles can perform the review, so a stable pick is
+    // safe; a genuinely empty roster (0 candidates) still fails loudly above.
     const scoped = candidates.filter((hrId) => employeeMatchesMarketingRequestScope(employeesByHrId.get(hrId), params.request));
     if (scoped.length === 1) return scoped[0];
+    if (scoped.length > 1) return [...scoped].sort()[0];
     if (candidates.length === 1) return candidates[0];
-    return null;
+    return [...candidates].sort()[0];
   }
   return candidates.length === 1 ? candidates[0] : null;
 }
@@ -1420,7 +1438,10 @@ async function createMarketingApprovalSteps(params: {
       supabase: params.supabase,
     });
     if (!assignedHrId) {
-      throw validationError(`Marketing workflow approver for ${step.stepName} could not be resolved exactly.`, "marketing_approver_not_resolved");
+      throw validationError(
+        `No active ${step.assignedRole} is configured to handle the "${step.stepName}" step. Ask an administrator to assign an active ${step.assignedRole} before submitting this marketing request.`,
+        "marketing_approver_not_resolved",
+      );
     }
     pushRow({ assignedHrId, assignedRole: step.assignedRole, isCc: false, step, stepName: step.stepName });
 
