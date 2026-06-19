@@ -27,41 +27,33 @@ export function roundMarketingRatio(value: number) {
   return round(numberValue(value), 6);
 }
 
-/** Campaign length in whole months, floored to a minimum of 1 (mirrors the DB column default). */
-export function marketingRoiDurationMonths(value: unknown) {
-  return Math.max(1, Math.floor(nonNegativeNumber(value)) || 1);
-}
-
-export function calculateRequiredMarketingRoi(estimatedCost: unknown, durationMonths: unknown = 1) {
-  return roundMarketingMoney(
-    nonNegativeNumber(estimatedCost) * marketingRoiMultiplier * marketingRoiDurationMonths(durationMonths),
-  );
+// Required ROI = estimated_cost × 10 (flat, campaign duration has no effect on the target).
+export function calculateRequiredMarketingRoi(estimatedCost: unknown) {
+  return roundMarketingMoney(nonNegativeNumber(estimatedCost) * marketingRoiMultiplier);
 }
 
 export function resolveMarketingRoiStatus(params: {
-  durationMonths?: unknown;
+  durationMonths?: unknown; // accepted for call-site compatibility; not used in the formula
   estimatedCost: unknown;
   expectedRoiValue: unknown;
 }): MarketingRoiStatus {
   const estimatedCost = nonNegativeNumber(params.estimatedCost);
   const expectedRoiValue = nonNegativeNumber(params.expectedRoiValue);
-  const months = marketingRoiDurationMonths(params.durationMonths);
 
   if (estimatedCost === 0 && expectedRoiValue === 0) return "not_calculated";
   if (estimatedCost === 0 && expectedRoiValue > 0) return "covers_required";
 
-  return expectedRoiValue >= estimatedCost * marketingRoiMultiplier * months
+  return expectedRoiValue >= estimatedCost * marketingRoiMultiplier
     ? "covers_required"
     : "under_target";
 }
 
 export function calculateMarketingRoiPreview(params: {
-  durationMonths?: unknown;
+  durationMonths?: unknown; // accepted for call-site compatibility; not used in the formula
   estimatedCost: unknown;
   products: MarketingRoiInputProduct[];
 }): MarketingRoiPreview {
   const estimatedCost = nonNegativeNumber(params.estimatedCost);
-  const months = marketingRoiDurationMonths(params.durationMonths);
   const products = params.products.map((product) => {
     const factoryPrice = nonNegativeNumber(product.factoryPrice);
     const quantity = nonNegativeNumber(product.quantity);
@@ -78,17 +70,13 @@ export function calculateMarketingRoiPreview(params: {
   const expectedRoiValue = roundMarketingMoney(
     products.reduce((total, product) => total + product.expectedValue, 0),
   );
-  const requiredRoiValue = calculateRequiredMarketingRoi(estimatedCost, months);
+  const requiredRoiValue = calculateRequiredMarketingRoi(estimatedCost);
   const roiCoverageRatio = requiredRoiValue > 0
     ? roundMarketingRatio(expectedRoiValue / requiredRoiValue)
     : expectedRoiValue > 0
       ? 1
       : 0;
-  const roiStatus = resolveMarketingRoiStatus({
-    durationMonths: months,
-    estimatedCost,
-    expectedRoiValue,
-  });
+  const roiStatus = resolveMarketingRoiStatus({ estimatedCost, expectedRoiValue });
 
   return {
     expectedRoiValue,

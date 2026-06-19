@@ -65,10 +65,10 @@ export async function runMarketingReviewRoutingTests() {
   // ── Reviewer roles resolve deterministically (Pedia GPM + finance Financial Advisor) ─────────
   assert.match(service, /role === "Group Product Manager"/, "Group Product Manager resolves as a line-scoped reviewer");
   assert.match(service, /role === "Financial Advisor"/, "Financial Advisor resolves as a reviewer");
-  assert.match(
+  assert.doesNotMatch(
     service,
     /stepKind === "finance"[\s\S]{0,200}roleName: "Finance Manager"/,
-    "the finance step falls back to Finance Manager until a Financial Advisor exists",
+    "the finance step no longer falls back to Finance Manager — Financial Advisor is the direct executor",
   );
 
   // ── Non-blocking advisory comment ───────────────────────────────────────────────────────────
