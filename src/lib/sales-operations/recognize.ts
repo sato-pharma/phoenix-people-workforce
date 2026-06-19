@@ -11,7 +11,8 @@
 import ExcelJS from "exceljs";
 
 import { loadSalesOperationsCrosswalks } from "@/lib/sales-operations/crosswalks";
-import { getDistributorTemplate, listDistributorTemplates } from "@/lib/sales-operations/dictionary";
+import { listDistributorTemplates } from "@/lib/sales-operations/dictionary";
+import { resolveSalesOpsTemplate } from "@/lib/sales-operations/profile-store";
 import {
   cellText,
   detectHeaderRow,
@@ -205,7 +206,7 @@ export async function recognizeSalesOpsWorkbook(
   file: File,
   opts?: { period?: string; loadOfficeShares?: (period: string) => Promise<{ regionShare: OfficeRegionShare[]; brickShare: OfficeBrickShare[] }> },
 ): Promise<SalesOpsRecognizeResult> {
-  const template = getDistributorTemplate(distributorCode);
+  const template = await resolveSalesOpsTemplate(distributorCode); // DB-first, code dictionary fallback
   if (!template) throw new Error(`No Sales Operations template for distributor ${distributorCode}.`);
 
   const [maps, buffer] = await Promise.all([loadSalesOperationsCrosswalks(), file.arrayBuffer()]);
