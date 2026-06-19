@@ -636,6 +636,8 @@ function MarketingRequestDraftWorkspaceInner() {
     null,
   );
   const [resubmitRequestCode, setResubmitRequestCode] = useState<string>("");
+  const [resubmitReturnReason, setResubmitReturnReason] = useState<string | null>(null);
+  const [resubmitReturnedBy, setResubmitReturnedBy] = useState<string | null>(null);
   const [detailCache, setDetailCache] = useState<
     Record<string, MarketingRequestDetail>
   >({});
@@ -985,6 +987,12 @@ function MarketingRequestDraftWorkspaceInner() {
         : [{ key: "line-1", productId: "", quantity: "" }],
     );
 
+    const returnedStep = [...detail.steps]
+      .reverse()
+      .find((step) => step.status === "returned" && Boolean(step.decisionNote));
+    setResubmitReturnReason(detail.progress?.returnReason ?? returnedStep?.decisionNote ?? null);
+    setResubmitReturnedBy(returnedStep?.decisionByName ?? null);
+
     setResubmitRequestId(request.id);
     setResubmitRequestCode(detail.request.requestCode);
     setActiveView("create");
@@ -993,6 +1001,8 @@ function MarketingRequestDraftWorkspaceInner() {
   function cancelResubmit() {
     setResubmitRequestId(null);
     setResubmitRequestCode("");
+    setResubmitReturnReason(null);
+    setResubmitReturnedBy(null);
     resetForm();
   }
 
@@ -1366,25 +1376,35 @@ function MarketingRequestDraftWorkspaceInner() {
       >
         {/* ------ Resubmit banner --------------------------------------------------------------------------------------------------------------------------- */}
         {resubmitRequestId ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-semibold text-amber-900">
-            <span className="flex min-w-0 items-center gap-2">
-              <Pencil className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 break-words">
-                Editing returned request{" "}
-                <span className="font-mono font-black">
-                  {resubmitRequestCode}
-                </span>{" "}
-                — resubmitting will resume at the step that returned it.
+          <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-amber-900">
+              <span className="flex min-w-0 items-center gap-2">
+                <Pencil className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 break-words">
+                  Editing returned request{" "}
+                  <span className="font-mono font-black">
+                    {resubmitRequestCode}
+                  </span>{" "}
+                  — resubmitting will resume at the step that returned it.
+                </span>
               </span>
-            </span>
-            <button
-              className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
-              onClick={cancelResubmit}
-              type="button"
-            >
-              <X className="h-3 w-3" />
-              Cancel resubmit
-            </button>
+              <button
+                className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
+                onClick={cancelResubmit}
+                type="button"
+              >
+                <X className="h-3 w-3" />
+                Cancel resubmit
+              </button>
+            </div>
+            {resubmitReturnReason ? (
+              <div className="mt-2 border-l-4 border-amber-500 bg-white/70 px-3 py-2 text-[12px] text-amber-900">
+                <span className="font-bold">
+                  Returned{resubmitReturnedBy ? ` by ${resubmitReturnedBy}` : ""} — reason:
+                </span>{" "}
+                <span className="break-words">{resubmitReturnReason}</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
