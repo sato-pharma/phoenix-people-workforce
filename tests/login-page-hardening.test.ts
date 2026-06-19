@@ -58,7 +58,10 @@ export function runLoginPageHardeningTests() {
   assert.match(sentryHelper, /delete sanitized\.data/);
   assert.match(sentryHelper, /breadcrumb\.category === "console"/);
   assert.match(nextConfig, /telemetry:\s*false/);
+  assert.match(nextConfig, /const nextConfig:\s*NextConfig\s*=/);
+  assert.match(nextConfig, /authToken:\s*process\.env\.SENTRY_AUTH_TOKEN/);
   assert.match(nextConfig, /deleteSourcemapsAfterUpload:\s*true/);
+  assert.match(nextConfig, /disable:\s*!process\.env\.SENTRY_AUTH_TOKEN/);
   assert.match(nextConfig, /removeDebugLogging:\s*true/);
   assert.match(nextConfig, /worker-src 'self' blob:/);
   assert.doesNotMatch(nextConfig, /disableLogger:\s*true/);

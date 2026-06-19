@@ -2,6 +2,7 @@ import {
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
+  systemAccessContext,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -1319,98 +1320,17 @@ async function resolveOutstationApprovalRecipients(
   return [...recipients.values()];
 }
 
-// Submit → "approval needed" to the direct manager + HR (in-app + email + Telegram).
-async function notifyOutstationSubmitted(input: {
-  employee: EmployeeDirectoryRow;
-  request: OutstationExpenseRequest;
-}) {
-  try {
-    const directory = await getEmployeeDirectory();
-    const recipients = await resolveOutstationApprovalRecipients(directory, input.employee);
-    if (recipients.length === 0) return;
-    const r = input.request;
-    const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
-    const kind = r.expenseType === "traveling" ? "outstation travel expense" : "expense";
-    const destination = text(r.toLabel) || "destination";
-    const primaryRecipient = recipients.find((recipient) => recipient.role === "direct_manager") ?? recipients[0];
-    const primaryKey = normalizeHrIdForAccess(primaryRecipient.hrId);
-    const primaryEmail = pickDeliverableEmail(primaryRecipient.email);
-    const ccEmails = Array.from(new Set(
-      recipients
-        .filter((recipient) => normalizeHrIdForAccess(recipient.hrId) !== primaryKey)
-        .map((recipient) => pickDeliverableEmail(recipient.email))
-        .filter((email): email is string => Boolean(email)),
-    ));
-    const reviewUrl = outstationActionCenterUrl(r.id);
-    await Promise.allSettled(
-      recipients.map((recipient) =>
-        createSystemNotification({
-          actionUrl: reviewUrl,
-          category: "general",
-          channels: normalizeHrIdForAccess(recipient.hrId) === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
-          ...(normalizeHrIdForAccess(recipient.hrId) === primaryKey
-            ? {
-                email: {
-                  cc: ccEmails,
-                  ctaHref: reviewUrl,
-                  ctaLabel: "Review in Action Center",
-                  metrics: [
-                    { label: "Employee", value: r.employeeName },
-                    { label: "Amount", value: amount },
-                    { label: "Destination", value: destination },
-                    { label: "Trip start", value: r.tripStartDate },
-                    { label: "Trip end", value: r.tripEndDate },
-                  ],
-                  recipients: primaryEmail ? [primaryEmail] : undefined,
-                },
-              }
-            : {}),
-          eventType: "request_submitted",
-          message: `${r.employeeName} submitted an ${kind} for ${amount} (${r.tripStartDate} to ${r.tripEndDate}, ${destination}). Review is pending your decision.`,
-          metadata: {
-            actionUrl: reviewUrl,
-            amount,
-            approvalStep: recipient.role,
-            destination,
-            employeeHrId: r.employeeHrId,
-            employeeName: r.employeeName,
-            idempotencyKey: `outstation:${r.id}:request_submitted:${recipient.hrId}`,
-            recipientHrId: recipient.hrId,
-            recipientName: recipient.name,
-            requestId: String(r.id),
-            requestType: kind,
-            requestUrl: reviewUrl,
-            status: "Pending your approval",
-            tripEndDate: r.tripEndDate,
-            tripStartDate: r.tripStartDate,
-          },
-          module: "outstation",
-          priority: "high",
-          recipientHrId: recipient.hrId,
-          recordId: String(r.id),
-          subjectHrId: r.employeeHrId,
-          telegram: { buttons: [{ label: "Review in Action Center", url: reviewUrl }] },
-          title: `${r.employeeName} submitted an ${kind}`,
-        }),
-      ),
-    );
-  } catch (error) {
-    console.error("[outstation] submit notification dispatch failed (non-blocking)", error);
-  }
-}
-
-// Approve/Reject → outcome to the submitting employee (reason included on reject).
+// Rejection notification to the submitting employee. This is the ONLY email sent for
+// outstation/expenses — HR Manager rejects violations; approvals are silent (auto-approve).
 async function notifyOutstationDecision(input: {
   comment?: string | null;
-  decision: "approve" | "reject";
+  decision: "reject";
   request: OutstationExpenseRequest;
 }) {
   try {
     const r = input.request;
-    const approved = input.decision === "approve";
     const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
     const reason = text(input.comment);
-    const reasonSuffix = !approved && reason ? ` Reason: ${reason}` : "";
     await Promise.allSettled([
       createSystemNotification({
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
@@ -1425,21 +1345,19 @@ async function notifyOutstationDecision(input: {
             { label: "Trip end", value: r.tripEndDate },
           ],
         },
-        eventType: approved ? "request_approved" : "request_rejected",
-        message: approved
-          ? `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was approved.`
-          : `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was rejected.${reasonSuffix}`,
+        eventType: "request_rejected",
+        message: `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was rejected. Reason: ${reason}`,
         metadata: {
           actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
           amount,
           decision: input.decision,
           employeeHrId: r.employeeHrId,
           employeeName: r.employeeName,
-          idempotencyKey: `outstation:${r.id}:${approved ? "request_approved" : "request_rejected"}:${r.employeeHrId.toUpperCase()}`,
+          idempotencyKey: `outstation:${r.id}:request_rejected:${r.employeeHrId.toUpperCase()}`,
+          rejectionReason: reason,
           requestId: String(r.id),
           requestUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
-          status: approved ? "Approved" : "Rejected",
-          ...(approved ? {} : { rejectionReason: reason }),
+          status: "Rejected",
         },
         module: "outstation",
         priority: "normal",
@@ -1447,7 +1365,7 @@ async function notifyOutstationDecision(input: {
         recordId: String(r.id),
         subjectHrId: r.employeeHrId,
         telegram: { buttons: [{ label: "Open Phoenix", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
-        title: approved ? "Your expense request was approved" : "Your expense request was rejected",
+        title: "Your expense request was rejected",
       }),
     ]);
   } catch (error) {
@@ -1654,7 +1572,7 @@ export async function submitOutstationRequest(
       ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
       : data.notes,
   });
-  await notifyOutstationSubmitted({ employee: identity.employee, request: submitted });
+  await approveOutstationRequestForPayroll(submitted.id, systemAccessContext);
   return submitted;
 }
 
@@ -2008,7 +1926,7 @@ export async function submitMedicalRepSimpleExpenseRequest(
     }
 
     const submitted = mapOutstationRequestRow(data as Record<string, unknown>);
-    await notifyOutstationSubmitted({ employee: identity.employee, request: submitted });
+    await approveOutstationRequestForPayroll(submitted.id, systemAccessContext);
     return submitted;
   } catch (error) {
     await deleteOutstationTicketAttachments(
@@ -2152,7 +2070,6 @@ export async function approveOutstationRequestForPayroll(
     summary: `Outstation request ${request.id} approved for payroll expense import.`,
   });
 
-  await notifyOutstationDecision({ decision: "approve", request });
   return {
     expenseTripId: expenseRecord.tripId,
     payrollExpenseRows: savedExpenses.length,
@@ -2537,7 +2454,7 @@ export async function createManagerExpenseAsAdmin(
     summary: `Admin created manual outstation expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
   });
 
-  await notifyOutstationSubmitted({ employee, request: created });
+  await approveOutstationRequestForPayroll(created.id, systemAccessContext);
   return created;
 }
 

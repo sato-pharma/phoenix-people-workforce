@@ -5,93 +5,85 @@ function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-// Slice an exported function body so assertions are scoped to that function
-// (mirrors tests/telegram-operations.test.ts). Returns from the declaration up to
-// the next top-level `export ` / function boundary.
-function functionSlice(source: string, declaration: string) {
-  const start = source.indexOf(declaration);
+// Slice an exported function body so assertions are scoped to that function.
+function functionSlice(src: string, declaration: string) {
+  const start = src.indexOf(declaration);
   assert.notEqual(start, -1, `expected to find ${declaration}`);
-  const rest = source.slice(start + declaration.length);
+  const rest = src.slice(start + declaration.length);
   const nextExport = rest.indexOf("\nexport ");
   const nextFn = rest.indexOf("\nasync function ");
-  const ends = [nextExport, nextFn].filter((index) => index !== -1);
+  const ends = [nextExport, nextFn].filter((i) => i !== -1);
   const end = ends.length > 0 ? Math.min(...ends) : rest.length;
   return rest.slice(0, end);
 }
 
 export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
+  const expenses = source("src/lib/payroll/expenses.ts");
 
-  // ── Deep-link targets (module-level constants) ─────────────────────────────────
-  assert.match(service, /function outstationActionCenterUrl/, "per-request action center URL helper must exist");
-  assert.match(service, /admin\/action-center.*module=outstation/, "action center URL must target the outstation module");
-  assert.match(service, /OUTSTATION_EMPLOYEE_PORTAL_URL = "\/employee-portals\/expenses"/, "employee deep-link must be the expenses portal");
-
-  // ── Recipient resolution: submitter's direct manager + Super Admin approver(s) ──
-  assert.match(service, /async function resolveOutstationApprovalRecipients/, "approval recipient resolver must exist");
-  const resolver = functionSlice(service, "async function resolveOutstationApprovalRecipients");
-  assert.match(resolver, /employee\.managerHrId/, "submit alert must target the submitter's direct manager");
-  assert.match(resolver, /\.eq\("role", "Super Admin"\)/, "approver audience must query Super Admin accounts (the real approvers)");
-  assert.doesNotMatch(resolver, /isDesignatedHrSpecialist/, "A-16 (HR Specialist) must NOT be an approval recipient — it has no outstation approve authority");
-  // Best-effort: a missing manager / failed HR lookup must never throw.
-  assert.match(resolver, /console\.warn/, "missing direct manager must warn, not throw");
-  assert.match(resolver, /console\.error/, "failed HR lookup must log, not throw");
-
-  // ── Submit notification (action required) → manager + HR ───────────────────────
-  const submit = functionSlice(service, "async function notifyOutstationSubmitted");
-  assert.match(submit, /eventType: "request_submitted"/, "submit eventType");
-  assert.match(submit, /module: "outstation"/, "submit must use the outstation module (Telegram-enabled, no governance change)");
-  assert.match(
-    submit,
-    /channels: normalizeHrIdForAccess\(recipient\.hrId\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
-    "submit should send email to only the primary approval recipient",
+  // ── Rule 1: No submit notification ────────────────────────────────────────────
+  // Outstation/expense submissions auto-approve directly to payroll. No email on submit.
+  assert.doesNotMatch(
+    service,
+    /async function notifyOutstationSubmitted/,
+    "RULE 1: notifyOutstationSubmitted must NOT exist — no email on submit",
   );
-  assert.match(submit, /priority: "high"/, "submit is action-required (high priority)");
-  assert.match(submit, /outstation:\$\{r\.id\}:request_submitted:\$\{recipient\.hrId\}/, "submit idempotency key per (request, recipient)");
-  assert.match(submit, /actionUrl: reviewUrl/, "submit must deep-link approvers to the per-request action center URL");
-  assert.match(submit, /Promise\.allSettled/, "submit must fan out with allSettled");
-  assert.match(submit, /try \{/, "submit dispatch must be wrapped in try/catch");
-  assert.match(submit, /catch \(error\)/, "submit dispatch must swallow errors (non-blocking)");
 
-  // ── Decision notification (FYI) → submitting employee, reason on reject ────────
-  const decision = functionSlice(service, "async function notifyOutstationDecision");
-  assert.match(decision, /eventType: approved \? "request_approved" : "request_rejected"/, "decision eventType branches on approve/reject");
-  assert.match(decision, /recipientHrId: r\.employeeHrId/, "decision must notify the submitting employee");
-  assert.match(decision, /subjectHrId: r\.employeeHrId/, "decision subject is the employee");
-  assert.match(decision, /Reason: \$\{reason\}/, "reject message must include the rejection reason");
-  assert.match(decision, /rejectionReason: reason/, "reject metadata must carry the rejection reason");
-  assert.match(decision, /outstation:\$\{r\.id\}:\$\{approved \? "request_approved" : "request_rejected"\}:\$\{r\.employeeHrId\.toUpperCase\(\)\}/, "decision idempotency key per (request, employee)");
-  assert.match(decision, /actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL/, "decision must deep-link the employee to their expenses portal");
-  assert.match(decision, /priority: "normal"/, "decision is FYI (normal priority)");
-  assert.match(decision, /try \{/, "decision dispatch must be wrapped in try/catch");
-
-  // ── Every hook site invokes a dispatch helper ──────────────────────────────────
   const submitHooks = [
     "async function submitOutstationRequest",
     "async function submitMedicalRepSimpleExpenseRequest",
     "async function createManagerExpenseAsAdmin",
   ];
   for (const hook of submitHooks) {
-    assert.match(functionSlice(service, hook), /notifyOutstationSubmitted\(/, `${hook} must emit a submit notification`);
+    const slice = functionSlice(service, hook);
+    assert.doesNotMatch(
+      slice,
+      /notifyOutstationSubmitted\(/,
+      `RULE 1: ${hook} must NOT emit a submit notification`,
+    );
+    assert.match(
+      slice,
+      /approveOutstationRequestForPayroll\(/,
+      `RULE 1: ${hook} must auto-approve on submit`,
+    );
   }
-  assert.match(functionSlice(service, "async function approveOutstationRequestForPayroll"), /notifyOutstationDecision\(\{ decision: "approve"/, "approve must notify the employee");
-  assert.match(functionSlice(service, "async function rejectOutstationRequestAsAdmin"), /notifyOutstationDecision\(\{ comment, decision: "reject"/, "reject must notify the employee with the reason");
+
+  // ── Rule 1: No approve notification ──────────────────────────────────────────
+  // Approvals are silent — they auto-happen on submission, no email needed.
+  const approveSlice = functionSlice(service, "async function approveOutstationRequestForPayroll");
+  assert.doesNotMatch(
+    approveSlice,
+    /notifyOutstationDecision\(/,
+    "RULE 1: approveOutstationRequestForPayroll must NOT notify the employee",
+  );
+
+  // ── Rule 1: Reject-only decision notification ─────────────────────────────────
+  // The ONLY email for outstation/expenses is when HR Manager rejects.
+  const decisionSlice = functionSlice(service, "async function notifyOutstationDecision");
+  assert.match(decisionSlice, /decision: "reject"/, "decision function must be reject-only");
+  assert.doesNotMatch(decisionSlice, /"approve"/, "decision function must NOT handle approve");
+  assert.match(decisionSlice, /eventType: "request_rejected"/, "decision eventType must be request_rejected");
+  assert.match(decisionSlice, /recipientHrId: r\.employeeHrId/, "decision must notify the submitting employee");
+  assert.match(decisionSlice, /priority: "normal"/, "decision is FYI (normal priority)");
+
+  assert.match(
+    functionSlice(service, "async function rejectOutstationRequestAsAdmin"),
+    /notifyOutstationDecision\(\{ comment, decision: "reject"/,
+    "RULE 1: reject must notify the employee with the reason",
+  );
+
+  // ── Rule 1: No payroll-import notification ────────────────────────────────────
+  const importSlice = functionSlice(expenses, "async function importApprovedExpensesToPayroll");
+  assert.doesNotMatch(
+    importSlice,
+    /notifyExpensesAddedToPayroll\(/,
+    "RULE 1: payroll import must NOT emit an added-to-payroll alert",
+  );
 
   // ── Governance non-regression: must NOT mark these as payroll-sensitive ────────
-  assert.doesNotMatch(service, /sensitivity: "payroll"/, "outstation notifications must not be flagged payroll-sensitive (would strip Telegram/email)");
-
-  // ── Added-to-payroll completion alert (in the payroll expenses importer) ───────
-  const expenses = source("src/lib/payroll/expenses.ts");
-  assert.match(expenses, /async function notifyExpensesAddedToPayroll/, "added-to-payroll completion alert must exist");
-  const addedHelper = functionSlice(expenses, "async function notifyExpensesAddedToPayroll");
-  assert.match(addedHelper, /eventType: "added_to_payroll"/, "completion alert eventType");
-  assert.match(addedHelper, /module: "outstation"/, "completion alert reuses the outstation module (Telegram-enabled, not payroll-sensitive)");
-  assert.match(addedHelper, /channels: \["in_app", "email", "telegram"\]/, "completion alert delivers on all three channels");
-  assert.match(addedHelper, /recipientHrId: hrId/, "completion alert targets the imported employee");
-  assert.match(addedHelper, /outstation:added_to_payroll:\$\{input\.batchId\}:\$\{hrId\.toUpperCase\(\)\}/, "completion alert is idempotent per (batch, employee)");
-  assert.match(addedHelper, /Promise\.allSettled/, "completion alert fans out with allSettled");
-  assert.match(addedHelper, /catch \(error\)/, "completion alert is best-effort (non-blocking)");
-  // The importer must invoke it after a successful import.
-  assert.match(functionSlice(expenses, "async function importApprovedExpensesToPayroll"), /notifyExpensesAddedToPayroll\(/, "payroll import must emit the added-to-payroll alert");
-  assert.doesNotMatch(addedHelper, /sensitivity: "payroll"/, "completion alert must not be flagged payroll-sensitive");
+  assert.doesNotMatch(
+    service,
+    /sensitivity: "payroll"/,
+    "outstation notifications must not be flagged payroll-sensitive",
+  );
 }

@@ -88,8 +88,8 @@ export async function runMarketingPremiumNotificationTests() {
   assert.match(templates, /"estimatedCost"/, "estimatedCost must be a registered placeholder");
   assert.match(
     templates,
-    /new Set\(\["planTable", "productsTable", "returnCallout"\]\)/,
-    "productsTable + returnCallout must be raw-HTML block tokens",
+    /new Set\(\["planTable", "productsTable", "returnCallout", "scoreTable"\]\)/,
+    "productsTable + returnCallout + scoreTable must be raw-HTML block tokens",
   );
   assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
   assert.match(templates, /\{\{estimatedCost\}\}/, "marketing_request body must render {{estimatedCost}}");

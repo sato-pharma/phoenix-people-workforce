@@ -51,10 +51,10 @@ export type PayrollExpenseDashboardData = {
   trend: PayrollExpenseTrendPoint[];
 };
 
+// Only HR Manager (Super Admin) may reject payroll expenses.
+// Finance Manager and CEO have no approval authority here.
 const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "Super Admin",
-  "Finance Manager",
-  "CEO",
 ]);
 
 function canBypassPayrollExpenseLocks(accessContext: Pick<AccessContext, "role">) {
@@ -70,7 +70,7 @@ export async function assertManualPayrollExpenseApprovalAccess(access: AccessCon
 
   if (!canManuallyApprovePayrollExpenses(access)) {
     throw new Error(
-      "Forbidden: only Account Admin, HR Manager, Finance Manager, or CEO can manually approve expenses for payroll.",
+      "Forbidden: only HR Manager can review and reject payroll expenses.",
     );
   }
 }
@@ -1010,12 +1010,9 @@ export async function importApprovedExpensesToPayroll(input: {
 
   invalidateExecutiveDashboardCache("expenses imported to payroll", ["expenses", "payroll"]);
   const matchedEmployees = Array.isArray(result.matched_employees) ? result.matched_employees.map(String) : [];
-  await notifyExpensesAddedToPayroll({
-    batchId: String(result.target_batch_id),
-    hrIds: matchedEmployees,
-    month: Number(result.target_batch_month ?? input.month),
-    year: Number(result.target_batch_year ?? input.year),
-  });
+  const batchId = String(result.target_batch_id);
+  const batchMonth = Number(result.target_batch_month);
+  const batchYear = Number(result.target_batch_year);
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
@@ -1023,9 +1020,9 @@ export async function importApprovedExpensesToPayroll(input: {
     matchedEmployees,
     saved: savedExpenses.length,
     targetBatch: {
-      id: String(result.target_batch_id),
-      month: Number(result.target_batch_month),
-      year: Number(result.target_batch_year),
+      id: batchId,
+      month: batchMonth,
+      year: batchYear,
     },
   };
 }
