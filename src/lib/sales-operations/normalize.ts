@@ -292,6 +292,23 @@ function firstCell(row: CellRow, index: Map<string, number>, headers: string[] |
   return undefined;
 }
 
+// Most-frequent invoice period among coded rows (the batch period).
+export function dominantPeriodFrom(rows: CodedRow[]): string | null {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.invoiceDate) counts.set(row.invoiceDate, (counts.get(row.invoiceDate) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [period, n] of counts) {
+    if (n > bestN) {
+      best = period;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
 // ───────────────────────── sheet normalizer ─────────────────────────
 
 export type NormalizeInput = {
