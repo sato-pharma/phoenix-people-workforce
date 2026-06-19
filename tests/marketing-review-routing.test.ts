@@ -88,6 +88,16 @@ export async function runMarketingReviewRoutingTests() {
   );
   // Inbox surfaces an advisory list separate from the gating decisions.
   assert.match(service, /advisoryRows/, "inbox exposes advisory (comment-only) rows");
+  // The same comment box is reachable on the request detail/tracking view via a shared component.
+  assert.match(service, /viewerCanComment/, "request detail computes viewer comment eligibility");
+  assert.match(
+    source("src/components/employee-portal/marketing-advisory-comment-box.tsx"),
+    /\/api\/marketing-requests\/\$\{requestId\}\/comment/,
+    "the shared advisory comment box posts to the comment endpoint",
+  );
+  const draftsSource = source("src/components/employee-portal/marketing-request-drafts.tsx");
+  assert.match(draftsSource, /detail\.viewerCanComment/, "the request detail view gates on viewerCanComment");
+  assert.match(draftsSource, /MarketingAdvisoryCommentBox/, "the request detail view renders the advisory comment box");
 
   // ── Migration: routing seed + finance re-point ──────────────────────────────────────────────
   const migration = source("supabase/migrations/20260619130000_marketing_review_product_routing.sql");
