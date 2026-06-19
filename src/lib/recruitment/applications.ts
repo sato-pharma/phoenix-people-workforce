@@ -559,8 +559,8 @@ export async function getOfferApprovalChain(
 export async function decideOfferApproval(
   id: string,
   access: AccessContext,
-  input: { stepId: string; decision: "approved" | "rejected"; reason?: string | null },
-): Promise<{ application: Application; chainState: "pending" | "approved" | "rejected" }> {
+  input: { stepId: string; decision: "approved" | "rejected" | "returned"; reason?: string | null },
+): Promise<{ application: Application; chainState: "pending" | "approved" | "rejected" | "returned" }> {
   const application = await loadApplicationRow(id);
   if (!application.offerId) throw new Error("This application has no offer under approval.");
 
@@ -569,8 +569,8 @@ export async function decideOfferApproval(
   if (!canCastOfferApproval(access, step)) {
     throw new Error("Forbidden: you are not an approver for this step.");
   }
-  if (input.decision === "rejected" && !textOrNull(input.reason)) {
-    throw new Error("A reason is required to reject an offer.");
+  if ((input.decision === "rejected" || input.decision === "returned") && !textOrNull(input.reason)) {
+    throw new Error("A reason is required to reject or return an offer.");
   }
 
   await recordApprovalDecision({
@@ -611,6 +611,25 @@ export async function decideOfferApproval(
       actorHrId: access.hrId ?? null,
       reason: textOrNull(input.reason),
       details: { approvalVersion: step.version },
+    });
+    return { application: updated, chainState };
+  }
+
+  if (chainState === "returned") {
+    // "returned for edit" — uses the same rejection workflow path to send the offer back
+    // to draft so the originator can revise and resubmit. The step-level decision field
+    // ("returned") lets the UI distinguish this from a final rejection.
+    await assertOfferWorkflowTransition({ action: "chain_reject", expectedNextStatus: "offer_approval_rejected", status: "pending_approval" });
+    await assertRecruitmentTransition({ actionKey: "app_offer_approval_rejected", role: systemAccessContext.role, status: application.stage });
+    await setOfferStatus(application.offerId, "approval_rejected");
+    const updated = await commitApplicationStage({
+      id,
+      fromStage: application.stage,
+      toStage: "offer_draft",
+      actionKey: "app_offer_approval_rejected",
+      actorHrId: access.hrId ?? null,
+      reason: textOrNull(input.reason),
+      details: { approvalVersion: step.version, returnedForEdit: true },
     });
     return { application: updated, chainState };
   }

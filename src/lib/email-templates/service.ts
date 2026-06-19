@@ -126,6 +126,10 @@ export type EmailTemplateContext = {
   planTable?: string | null;
   /** Plain-text projection used wherever {{planTable}} appears in text fields. */
   planTableText?: string | null;
+  /** Pre-rendered HTML score table for coaching report metrics; sanitized, not escaped, in bodyHtml. */
+  scoreTable?: string | null;
+  /** Plain-text projection used wherever {{scoreTable}} appears in text fields. */
+  scoreTableText?: string | null;
   recipientName?: string | null;
   startDate?: string | null;
   status?: string | null;
@@ -363,6 +367,8 @@ const placeholderHints = [
   "vacationType",
   // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
   "planTable",
+  // Coaching score table for the coaching_report template.
+  "scoreTable",
   // Marketing-request editable tokens. Scalars fill per request; productsTable + returnCallout
   // are pre-rendered HTML blocks (raw in bodyHtml, empty/text projection elsewhere).
   "estimatedCost",
@@ -491,8 +497,24 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Recruitment Update",
   },
   coaching_report: {
-    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\n{{status}}",
+    bodyHtml:
+      "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:separate;width:100%;border:1px solid #CBD5E1\">" +
+      "<tr><td style=\"background-color:#0F172A;padding:18px\">" +
+      "<p style=\"color:#FFFFFF;font-size:21px;line-height:1.3;font-weight:900\">Coaching Report Review</p>" +
+      "<p style=\"color:#CBD5E1;font-size:13px;line-height:1.6\">{{summary}}</p>" +
+      "</td></tr>" +
+      "<tr><td style=\"background-color:#FFFFFF;padding:16px\">" +
+      "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse;width:100%;border:1px solid #E2E8F0\">" +
+      "<tr><td style=\"background-color:#F8FAFC;border:1px solid #E2E8F0;padding:10px 12px;color:#64748B;font-size:12px;line-height:1.4;font-weight:700;text-align:left\">Status</td>" +
+      "<td style=\"border:1px solid #E2E8F0;padding:10px 12px;color:#0F172A;font-size:13px;line-height:1.4;font-weight:700;text-align:right\">{{status}}</td></tr>" +
+      "</table>" +
+      "<p style=\"color:#0F172A;font-size:16px;line-height:1.4;font-weight:900\">Metric Scorecard</p>" +
+      "{{scoreTable}}" +
+      "<p style=\"color:#64748B;font-size:12px;line-height:1.55\">Please review the submitted coaching scores and acknowledge the report in Phoenix Workforce.</p>" +
+      "</td></tr>" +
+      "</table>",
+    bodyText:
+      "Coaching Report Review\n\n{{summary}}\n\nStatus: {{status}}\n\nMetric Scorecard\n{{scoreTable}}\n\nPlease review the submitted coaching scores and acknowledge the report in Phoenix Workforce.",
     closingText: "Open Phoenix Workforce to review and acknowledge the coaching report.",
     description: "Coaching report notifications: a submitted report awaiting the employee's review and acknowledgement.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -815,7 +837,7 @@ function escapeHtml(value: unknown) {
  * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
  * the security authority. In text fields these tokens resolve to their text projection.
  */
-const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout"]);
+const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable"]);
 
 function interpolate(
   template: string,
@@ -1783,6 +1805,8 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     nextStep: text(input.nextStep),
     planTable: text(input.planTable),
     planTableText: text(input.planTableText),
+    scoreTable: text(input.scoreTable),
+    scoreTableText: text(input.scoreTableText),
     recipientName,
     startDate: text(input.startDate),
     status: text(input.status),
@@ -1835,10 +1859,17 @@ export function renderEmailTemplate(
   const bodyTextVariables = {
     ...variables,
     planTable: variables.planTableText,
+    scoreTable: variables.scoreTableText,
     productsTable: variables.productsTableText,
     returnCallout: variables.returnCalloutText,
   };
-  const inlineVariables = { ...variables, planTable: "", productsTable: "", returnCallout: "" };
+  const inlineVariables = {
+    ...variables,
+    planTable: "",
+    productsTable: "",
+    returnCallout: "",
+    scoreTable: "",
+  };
   const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
   const greeting = interpolate(template.greeting, inlineVariables, false);
   const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true, htmlBlockTokens));
@@ -1880,6 +1911,10 @@ function samplePlanTableContext(): Partial<EmailTemplateContext> {
   return buildSamplePlanTable();
 }
 
+function sampleCoachingScoreContext(): Partial<EmailTemplateContext> {
+  return buildSampleCoachingScoreTable();
+}
+
 // Admin previews have no real request — populate the marketing tokens with demo values so the
 // /admin/email-templates preview shows what the marketing_request template renders as.
 function sampleMarketingContext(): Partial<EmailTemplateContext> {
@@ -1906,6 +1941,32 @@ function sampleMarketingContext(): Partial<EmailTemplateContext> {
     returnCallout: "",
     returnCalloutText: "",
     roiWindow: "Jul – Aug 2026",
+  };
+}
+
+function buildSampleCoachingScoreTable(): { scoreTable: string; scoreTableText: string } {
+  const metricCell = "border:1px solid #E2E8F0;padding:10px 12px;font-size:13px;line-height:1.45;text-align:left;color:#0F172A";
+  const scoreCell = "border:1px solid #E2E8F0;padding:10px 12px;font-size:13px;line-height:1.45;text-align:right;color:#0F172A";
+  const head = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:10px 12px;font-size:12px;line-height:1.4;text-align:left;font-weight:700";
+  const rows: Array<[string, string, string, string]> = [
+    ["Medical & Patient/Physician Knowledge", "Knowledge", "4 / 5", "#166534"],
+    ["Product Knowledge", "Knowledge", "5 / 5", "#166534"],
+    ["Opening, Patient Profile & Attractive Approach", "Call Structure Skills", "4 / 5", "#166534"],
+    ["Handling Customer Objection", "Business Intelligence", "3 / 5", "#92400E"],
+    ["Time & Territory Planning", "Business Planning", "4 / 5", "#166534"],
+    ["Discipline", "Personal Skills", "5 / 5", "#166534"],
+  ];
+  return {
+    scoreTable: [
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;border:1px solid #E2E8F0">',
+      `<thead><tr><th style="${head}">Metric</th><th style="${head};text-align:right">Score</th></tr></thead>`,
+      `<tbody>${rows.map((row, index) => {
+        const background = index % 2 === 0 ? "#FFFFFF" : "#F8FAFC";
+        return `<tr style="background-color:${background}"><td style="${metricCell}"><strong style="color:#0F172A;font-size:13px;line-height:1.45">${row[0]}</strong><br /><span style="color:#64748B;font-size:11px;line-height:1.4">${row[1]}</span></td><td style="${scoreCell}"><strong style="color:${row[3]};font-size:13px">${row[2]}</strong></td></tr>`;
+      }).join("")}</tbody>`,
+      "</table>",
+    ].join(""),
+    scoreTableText: rows.map((row) => `${row[0]} (${row[1]}): ${row[2]}`).join("\n"),
   };
 }
 
@@ -1955,6 +2016,8 @@ export async function previewTemplate(templateKey: string, input: {
   let context = input.context;
   if (templateKey === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS && !text(input.context?.planTable).includes("<table")) {
     context = { ...input.context, ...samplePlanTableContext() };
+  } else if (templateKey === EMAIL_TEMPLATE_KEYS.COACHING_REPORT && !text(input.context?.scoreTable).includes("<table")) {
+    context = { ...input.context, ...sampleCoachingScoreContext() };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST && !text(input.context?.productsTable).includes("<table")) {
     context = { ...sampleMarketingContext(), ...input.context };
   }
@@ -2123,6 +2186,7 @@ export async function sendTemplateTestEmail(input: {
     // Test sends have no real plan submission - the demo table shows what {{planTable}}
     // renders as (mirrors previewTemplate).
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
+    ...(key === EMAIL_TEMPLATE_KEYS.COACHING_REPORT ? buildSampleCoachingScoreTable() : {}),
     ...(input.context ?? {}),
   };
   const rendered = renderEmailTemplate(draft, context, [{ email: to, name: context.recipientName }]);

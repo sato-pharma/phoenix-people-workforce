@@ -36,9 +36,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await readJsonObject(request);
     const stepId = str(body.stepId);
     const decision = str(body.decision);
-    if (!stepId || (decision !== "approved" && decision !== "rejected")) {
+    if (!stepId || (decision !== "approved" && decision !== "rejected" && decision !== "returned")) {
       return NextResponse.json(
-        { error: "validation", message: "A stepId and a decision of approved|rejected are required.", success: false },
+        { error: "validation", message: "A stepId and a decision of approved|rejected|returned are required.", success: false },
         { status: 400 },
       );
     }
