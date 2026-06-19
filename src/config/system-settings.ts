@@ -24,7 +24,7 @@ export const systemDeployment = {
   productionBranch: "main",
   workingBranch: "codex/work-from-production",
   productionUrl: "https://phoenix-workforce.vercel.app",
-  workingPreviewUrl: "https://phoenix-workforce-git-codex-c8df8e-phoenix-workspace-s-projects.vercel.app",
+  workingPreviewUrl: "https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app",
 } as const;
 
 export const systemEditingPolicy = {
