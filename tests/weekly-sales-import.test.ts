@@ -674,7 +674,7 @@ export async function runWeeklySalesImportTests() {
       assert.equal(round2(psNetTotal), 10, "PS net total reconciles to Total Qty (10)");
     }
 
-    // Header drift on the stock column → blocked.
+    // Header drift on the stock column is tolerated when the column-index mapping exists.
     const headerDrift = await parseWeeklyWorkbookBuffer({
       salesBuffer: await psSalesWorkbook(),
       stockBuffer: await psStockWorkbook({ driftHeader: true }),
@@ -687,7 +687,12 @@ export async function runWeeklySalesImportTests() {
       periodDate: "2026-06-06",
     });
     assert.equal(headerDrift.ok, true);
-    if (headerDrift.ok) assert.equal(headerDrift.result.status, "blocked", "PS stock header drift blocks the batch");
+    if (headerDrift.ok) {
+      assert.equal(headerDrift.result.status, "validated", "PS stock header drift validates by column index");
+      const stockRow = headerDrift.rows.find((row) => row.stockQty === 40);
+      assert.ok(stockRow, "PS header-drift stock row present");
+      assert.equal(stockRow?.regionCode, "CA", "PS header-drift stock region resolved by column index");
+    }
 
     // PERMANENT FIX: PS stock mapped BY NAME (no column-index entry) must still resolve. Column
     // positions are fragile — silently lost on a name-only re-import and shifted whenever the export
