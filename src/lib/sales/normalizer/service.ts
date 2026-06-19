@@ -176,6 +176,88 @@ export function buildNormalizedImportRows(rows: CodedRow[], batchId: string) {
   }));
 }
 
+type NormalizedSummaryRow = {
+  batch_id: string;
+  group_type: "line" | "region" | "area" | "product" | "brick";
+  group_key: string;
+  group_label: string;
+  group_code: string | null;
+  official_line: string | null;
+  row_count: number;
+  total_qty: number;
+  total_bonus_qty: number;
+  total_value: number;
+};
+
+type SummaryAccumulator = Omit<NormalizedSummaryRow, "batch_id">;
+
+function addSummary(
+  summaries: Map<string, SummaryAccumulator>,
+  key: string,
+  shape: Pick<SummaryAccumulator, "group_type" | "group_key" | "group_label" | "group_code" | "official_line">,
+  row: CodedRow,
+) {
+  const existing = summaries.get(key) ?? {
+    ...shape,
+    row_count: 0,
+    total_qty: 0,
+    total_bonus_qty: 0,
+    total_value: 0,
+  };
+  existing.row_count += 1;
+  existing.total_qty += Number.isFinite(row.qty) ? row.qty : 0;
+  existing.total_bonus_qty += Number.isFinite(row.bonusQty) ? row.bonusQty : 0;
+  existing.total_value += Number.isFinite(row.value) ? row.value : 0;
+  summaries.set(key, existing);
+}
+
+export function buildNormalizedSummaryRows(rows: CodedRow[], batchId: string): NormalizedSummaryRow[] {
+  const summaries = new Map<string, SummaryAccumulator>();
+
+  for (const row of rows) {
+    const line = row.officialLine || "";
+    addSummary(summaries, `line:${line}`, { group_code: null, group_key: line, group_label: line, group_type: "line", official_line: line }, row);
+
+    addSummary(
+      summaries,
+      `region:${row.regionCode}|${row.regionName}`,
+      { group_code: row.regionCode, group_key: `${row.regionCode}|${row.regionName}`, group_label: row.regionName, group_type: "region", official_line: null },
+      row,
+    );
+
+    addSummary(
+      summaries,
+      `product:${row.productCode}|${row.productName}|${line}`,
+      { group_code: row.productCode, group_key: `${row.productCode}|${row.productName}|${line}`, group_label: row.productName, group_type: "product", official_line: line },
+      row,
+    );
+
+    if (row.isDirect) continue;
+
+    addSummary(
+      summaries,
+      `area:${row.areaCode}|${row.areaName}|${row.regionCode}`,
+      { group_code: row.areaCode, group_key: `${row.areaCode}|${row.areaName}|${row.regionCode}`, group_label: row.areaName, group_type: "area", official_line: row.regionName || row.regionCode },
+      row,
+    );
+
+    addSummary(
+      summaries,
+      `brick:${row.brickId}|${row.brickName}|${row.areaCode}|${row.regionCode}`,
+      { group_code: row.brickId, group_key: `${row.brickId}|${row.brickName}|${row.areaCode}|${row.regionCode}`, group_label: row.brickName, group_type: "brick", official_line: row.areaName || row.areaCode },
+      row,
+    );
+  }
+
+  return [...summaries.values()].map((summary) => ({
+    ...summary,
+    batch_id: batchId,
+    total_bonus_qty: Number(summary.total_bonus_qty.toFixed(6)),
+    total_qty: Number(summary.total_qty.toFixed(6)),
+    total_value: Number(summary.total_value.toFixed(6)),
+  }));
+}
+
 export async function persistNormalizedBatch(input: {
   distributorCode: string;
   distributorName: string;
@@ -230,5 +312,12 @@ export async function persistNormalizedBatch(input: {
     const { error } = await supabase.from("source_of_sales_import_rows").insert(inserts.slice(i, i + 500));
     if (error) throw error;
   }
+
+  const summaries = buildNormalizedSummaryRows(rows, batchId);
+  for (let i = 0; i < summaries.length; i += 500) {
+    const { error } = await supabase.from("source_of_sales_import_summaries").insert(summaries.slice(i, i + 500));
+    if (error) throw error;
+  }
+
   return { batchId, period, importedRows: rows.length };
 }

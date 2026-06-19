@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildNormalizedImportRows } from "../src/lib/sales/normalizer/service.ts";
+import { buildNormalizedImportRows, buildNormalizedSummaryRows } from "../src/lib/sales/normalizer/service.ts";
 import type { CodedRow } from "../src/lib/sales/normalizer/types.ts";
 
 // The exact column set of public.source_of_sales_import_rows after every migration that touches it:
@@ -110,4 +110,18 @@ export async function runSosNormalizerPersistShapeTests() {
   assert.equal(naNsafe!.value, 0);
   assert.equal(naNsafe!.discount, 0);
   assert.equal(naNsafe!.bonus_qty, 0);
+
+  const summaries = buildNormalizedSummaryRows(rows, "batch-1");
+  const byKey = new Map(summaries.map((row) => [`${row.group_type}:${row.group_key}`, row]));
+
+  assert.equal(byKey.get("line:CNS")?.row_count, 2, "line summary aggregates rows by official line");
+  assert.equal(byKey.get("region:CA|Cairo")?.row_count, 2, "region summary aggregates rows by region code/name");
+  assert.equal(byKey.get("area:A1|Area One|CA")?.total_qty, 9, "area summary totals quantity");
+  assert.equal(byKey.get("product:LA001|Lacto 1|CNS")?.total_value, 60, "product summary totals value");
+  assert.equal(byKey.get("brick:B1|Brick One|A1|CA")?.row_count, 1, "brick summary keys by brick id/name/area/region");
+
+  const directSummaries = buildNormalizedSummaryRows([codedRow({ areaCode: "DIRECT", brickId: "", brickName: "", isDirect: true })], "batch-direct");
+  assert.equal(directSummaries.some((row) => row.group_type === "area"), false, "direct rows do not create geography area summaries");
+  assert.equal(directSummaries.some((row) => row.group_type === "brick"), false, "direct rows do not create geography brick summaries");
+  assert.equal(directSummaries.some((row) => row.group_type === "product"), true, "direct rows still create product summaries");
 }
