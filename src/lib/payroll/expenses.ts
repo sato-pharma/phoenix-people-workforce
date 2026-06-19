@@ -1013,7 +1013,6 @@ export async function importApprovedExpensesToPayroll(input: {
   const batchId = String(result.target_batch_id);
   const batchMonth = Number(result.target_batch_month);
   const batchYear = Number(result.target_batch_year);
-  await notifyExpensesAddedToPayroll({ batchId, hrIds: matchedEmployees, month: batchMonth, year: batchYear });
   return {
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
