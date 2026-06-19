@@ -1532,7 +1532,7 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
   const { data: hrApprovers } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["Super Admin", "HR Manager"])
+    .in("role", ["Super Admin"])
     .eq("is_active", true);
   const hrHrIds = (hrApprovers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
   if (hrHrIds.length === 0) return { processed: 0, errors: 0 };

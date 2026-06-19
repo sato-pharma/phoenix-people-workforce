@@ -2,8 +2,9 @@
 //
 // Pure helpers (computeRequiredApprovers, evaluateChainState, canCastOfferApproval)
 // plus thin data-access helpers over the `offer_approval_steps` table. The chain is
-// threshold based: HR Manager/Super Admin + Finance Manager (roles) + the requisition's hiring
-// manager (person) are always required; CEO is added above the per-position cap.
+// threshold based: HR Manager (Super Admin role) is always required; the requisition's
+// hiring manager (Department Head) is added when present; CEO is added above the
+// per-position salary cap. Finance Manager is NOT an approver.
 //
 // Authority is enforced data-drivenly (canCastOfferApproval) — the permission matrix
 // is NOT widened. This module only touches offer_approval_steps (no import of the
@@ -14,8 +15,8 @@ import { normalizeHrId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ApproverKind = "role" | "person";
-export type ApprovalDecision = "pending" | "approved" | "rejected";
-export type ChainState = "pending" | "approved" | "rejected";
+export type ApprovalDecision = "pending" | "approved" | "rejected" | "returned";
+export type ChainState = "pending" | "approved" | "rejected" | "returned";
 
 export type RequiredApprover = {
   sequence: number;
@@ -42,9 +43,10 @@ export type ApprovalStepRow = {
   reason: string | null;
 };
 
-// Pure: required approvers for an offer. The HR Manager step + Finance Manager (roles)
-// + the requisition's hiring manager (person) are always required; CEO is added
-// when net salary exceeds the per-position cap. Sequence is for display order only.
+// Pure: required approvers for an offer. HR Manager (Super Admin role) is always
+// required. The requisition's hiring manager (Department Head) is added when present.
+// CEO is added when net salary exceeds the per-position cap.
+// Finance Manager is NOT an approver — Financial Advisor only executes already-approved requests.
 //
 // Governance: the "HR Manager" approval is reserved for Super Admin (Admin-HR) and the
 // HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role. The retired
@@ -56,7 +58,6 @@ export function computeRequiredApprovers(input: {
 }): RequiredApprover[] {
   const steps: Array<Omit<RequiredApprover, "sequence">> = [
     { kind: "role", role: "Super Admin", hrId: null, required: true, label: "HR Manager" },
-    { kind: "role", role: "Finance Manager", hrId: null, required: true, label: "Finance" },
   ];
 
   if (normalizeHrId(input.hiringManagerHrId)) {
@@ -75,6 +76,7 @@ export function computeRequiredApprovers(input: {
 export function evaluateChainState(steps: Array<Pick<ApprovalStepRow, "required" | "decision">>): ChainState {
   const required = steps.filter((step) => step.required);
   if (required.some((step) => step.decision === "rejected")) return "rejected";
+  if (required.some((step) => step.decision === "returned")) return "returned";
   if (required.length > 0 && required.every((step) => step.decision === "approved")) return "approved";
   return "pending";
 }
@@ -102,7 +104,7 @@ function mapStep(row: Record<string, unknown>): ApprovalStepRow {
     approverRole: row.approver_role ? String(row.approver_role) : null,
     approverHrId: row.approver_hr_id ? String(row.approver_hr_id) : null,
     required: row.required !== false,
-    decision: (["approved", "rejected"].includes(String(row.decision)) ? String(row.decision) : "pending") as ApprovalDecision,
+    decision: (["approved", "rejected", "returned"].includes(String(row.decision)) ? String(row.decision) : "pending") as ApprovalDecision,
     decidedBy: row.decided_by ? String(row.decided_by) : null,
     decidedAt: row.decided_at ? String(row.decided_at) : null,
     reason: row.reason ? String(row.reason) : null,
@@ -181,7 +183,7 @@ export async function loadLatestApprovalSteps(offerId: string): Promise<Approval
 
 export async function recordApprovalDecision(input: {
   stepId: string;
-  decision: "approved" | "rejected";
+  decision: "approved" | "rejected" | "returned";
   decidedBy: string | null;
   reason?: string | null;
 }): Promise<void> {

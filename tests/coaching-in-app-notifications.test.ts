@@ -9,6 +9,14 @@ const notificationSource = readFileSync(
   new URL("../src/lib/notifications/in-app.ts", import.meta.url),
   "utf8",
 );
+const templateServiceSource = readFileSync(
+  new URL("../src/lib/email-templates/service.ts", import.meta.url),
+  "utf8",
+);
+const coachingEmailMigrationSource = readFileSync(
+  new URL("../supabase/migrations/20260619153900_coaching_report_email_score_table.sql", import.meta.url),
+  "utf8",
+);
 
 export function runCoachingInAppNotificationTests() {
   assert.match(
@@ -40,6 +48,31 @@ export function runCoachingInAppNotificationTests() {
     submitRouteSource,
     /actionUrl: `\/employee-portals\/coaching\/\$\{report\.report\.id\}`/,
     "Coaching notification must link to the employee coaching review route.",
+  );
+  assert.match(
+    submitRouteSource,
+    /templateContext: scoreContext/,
+    "Coaching notification email must pass the score table context to the templated email.",
+  );
+  assert.match(
+    submitRouteSource,
+    /Metric<\/th><th[\s\S]*Score<\/th>/,
+    "Coaching notification email table must include Metric and Score columns.",
+  );
+  assert.match(
+    templateServiceSource,
+    /"scoreTable"/,
+    "Coaching score table must be registered as an email template placeholder.",
+  );
+  assert.match(
+    templateServiceSource,
+    /\{\{scoreTable\}\}/,
+    "Coaching report email template must render the score table token.",
+  );
+  assert.match(
+    coachingEmailMigrationSource,
+    /where\s+(?:email_templates\.)?template_key = 'coaching_report'/i,
+    "A migration must update the stored coaching_report template row.",
   );
   assert.match(
     notificationSource,

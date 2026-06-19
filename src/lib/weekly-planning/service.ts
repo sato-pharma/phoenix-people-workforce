@@ -503,14 +503,8 @@ async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | nul
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
-function isHrReviewer(access: AccessContext, employee: EmployeeDirectoryRow | null) {
-  const title = `${employee?.positionTitle ?? ""} ${employee?.jobTitle ?? ""} ${access.role}`.toLowerCase();
-  return (
-    access.role === "Super Admin" ||
-    title.includes("hr manager") ||
-    title.includes("admin hr") ||
-    title.includes("hr specialist")
-  );
+function isHrReviewer(access: AccessContext, _employee: EmployeeDirectoryRow | null) {
+  return access.role === "Super Admin";
 }
 
 function canViewPlan(access: AccessContext, employee: EmployeeDirectoryRow | null, plan: PlanHeaderRow) {
