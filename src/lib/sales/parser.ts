@@ -373,7 +373,9 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
   const parsed = await readUploadRows(file);
 
   const parsedRecords = parsed.rows.map((row, index) =>
-    parseSalesRow(row, line, Number(row.__sourceRowNumber) || index + 2)
+    parseSalesRow(row, line, Number(row.__sourceRowNumber) || index + 2, {
+      skipFactoryPrice: parsed.schemaType === "flat_sheet",
+    })
   );
   assertFileNamePeriodMatchesRows(file.name, parsedRecords);
   const firstValid = parsedRecords.find((record) => record.month && record.year);
