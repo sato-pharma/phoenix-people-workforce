@@ -207,6 +207,7 @@ import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-f
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
+import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -427,3 +428,4 @@ await runTest("employee portal fingerprint visibility", runEmployeePortalFingerp
 await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests);
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
+await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
