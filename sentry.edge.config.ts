@@ -6,16 +6,25 @@ import {
   resolveSentryRelease,
   scrubSentryBreadcrumb,
   scrubSentryErrorEvent,
+  scrubSentryTransactionEvent,
   sentryIgnoredErrors,
 } from "@/lib/observability/sentry";
 
+const dsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
+
 Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  environment: resolveSentryEnvironment(process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT),
-  release: resolveSentryRelease(process.env.NEXT_PUBLIC_SENTRY_RELEASE),
-  tracesSampleRate: parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.1),
-  sendDefaultPii: false,
-  beforeSend: scrubSentryErrorEvent,
   beforeBreadcrumb: scrubSentryBreadcrumb,
+  beforeSend: scrubSentryErrorEvent,
+  beforeSendTransaction: scrubSentryTransactionEvent,
+  denyUrls: [/extensions\//i, /^chrome:\/\//i, /^moz-extension:\/\//i],
+  dsn,
+  enabled: Boolean(dsn),
+  environment: resolveSentryEnvironment(process.env.VERCEL_ENV),
   ignoreErrors: sentryIgnoredErrors,
+  maxBreadcrumbs: 30,
+  normalizeDepth: 3,
+  release: resolveSentryRelease(process.env.VERCEL_GIT_COMMIT_SHA),
+  sampleRate: parseSentrySampleRate(process.env.SENTRY_ERROR_SAMPLE_RATE, 1),
+  sendDefaultPii: false,
+  tracesSampleRate: parseSentrySampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.02),
 });
