@@ -107,6 +107,7 @@ import { runMarketingReferenceImporterTests } from "./marketing-reference-import
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
+import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
 import { runMarketingRoiTests } from "./marketing-roi.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
@@ -333,6 +334,7 @@ await runTest("marketing reference importer", runMarketingReferenceImporterTests
 await runTest("marketing ROI", runMarketingRoiTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
+await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHrIdCasingTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
