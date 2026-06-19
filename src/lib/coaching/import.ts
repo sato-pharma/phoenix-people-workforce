@@ -1,6 +1,6 @@
 import type ExcelJS from "exceljs";
 
-import { type AccessContext, normalizeHrId } from "@/lib/auth/permissions";
+import { type AccessContext, normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   type EmployeeDirectoryRow,
@@ -24,11 +24,8 @@ import {
   loadArchivedEvaluationKeys,
   type CoachingArchivedEvaluationInput,
 } from "@/lib/coaching/archived";
-import {
-  acknowledgeImportedCoachingReport,
-  createDraftCoachingReport,
-  submitCoachingReport,
-} from "@/lib/coaching/service";
+import { calculateCoachingScore, toCoachingScoreRows } from "@/lib/coaching/scoring";
+import type { CoachingScoreResult } from "@/lib/coaching/types";
 
 /**
  * Importer for the historical "Field Coaching Report" Excel template.
@@ -135,6 +132,43 @@ export type CoachingImportCommitResult = {
   importBatchId: string;
   skipped: Array<{ reason: string; rowNumber: number; sourceName: string }>;
 };
+
+type PendingReportImport = {
+  employee: EmployeeDirectoryRow;
+  reportId: string;
+  row: CoachingImportClassifiedRow;
+  scoreResult: CoachingScoreResult;
+};
+
+type InsertedReportRow = {
+  id: string;
+  report_number: string;
+};
+
+const bulkInsertChunkSize = 500;
+
+function actorId(access: AccessContext) {
+  return resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+}
+
+function chunks<T>(rows: T[], size: number) {
+  const output: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) {
+    output.push(rows.slice(index, index + size));
+  }
+  return output;
+}
+
+async function insertRowsInChunks(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  table: string,
+  rows: Array<Record<string, unknown>>,
+) {
+  for (const chunk of chunks(rows, bulkInsertChunkSize)) {
+    const { error } = await supabase.from(table).insert(chunk);
+    if (error) throw error;
+  }
+}
 
 function parseRepName(source: string) {
   const match = source.match(/^(.*?)\s*\(\s*(.*?)\s*\/\s*([^)]*?)\s*\)\s*$/);
@@ -349,13 +383,149 @@ function reportDedupKey(hrId: string | null | undefined, date: string | null | u
 async function loadExistingReportKeys(): Promise<Set<string>> {
   const { data, error } = await getSupabaseAdmin()
     .from("coaching_reports")
-    .select("medical_rep_hr_id, coaching_date");
+    .select("medical_rep_hr_id, coaching_date")
+    .in("status", ["submitted", "reviewed_by_employee", "locked"]);
   if (error) throw error;
   const keys = new Set<string>();
   for (const row of (data ?? []) as Array<{ coaching_date: string | null; medical_rep_hr_id: string }>) {
     keys.add(reportDedupKey(row.medical_rep_hr_id, row.coaching_date));
   }
   return keys;
+}
+
+async function cleanupImportedReportIds(reportIds: string[]) {
+  if (reportIds.length === 0) return;
+  const { error } = await getSupabaseAdmin()
+    .from("coaching_reports")
+    .delete()
+    .in("id", reportIds);
+  if (error) {
+    console.warn("Failed to clean up partial coaching import reports.", error.message);
+  }
+}
+
+async function createImportedReportsInBulk(
+  pending: PendingReportImport[],
+  coachAccess: AccessContext,
+  importBatchId: string,
+  sourceFile: string | null | undefined,
+): Promise<Map<string, InsertedReportRow>> {
+  if (pending.length === 0) return new Map();
+
+  const supabase = getSupabaseAdmin();
+  const coachActor = actorId(coachAccess);
+  const now = new Date().toISOString();
+  const reportIds = pending.map((item) => item.reportId);
+
+  try {
+    const reportRows = pending.map(({ employee, reportId, row, scoreResult }) => ({
+      acknowledged_at: now,
+      actual_score: scoreResult.actualScore,
+      area_id: employee.areaId,
+      area_of_development: row.areaOfDevelopment,
+      coach_hr_id: coachingImportCoachHrId,
+      coach_role: coachAccess.role,
+      coaching_date: row.coachingDate as string,
+      created_by: coachActor,
+      employee_acknowledged: true,
+      final_score_percent: scoreResult.finalScorePercent,
+      general_remarks: row.generalRemarks,
+      id: reportId,
+      line_id: employee.lineId,
+      locked_at: null,
+      max_score: scoreResult.maxScore,
+      medical_rep_hr_id: employee.hrId,
+      performance_zone: scoreResult.performanceZone,
+      status: "reviewed_by_employee",
+      strength_points: row.strengthPoints,
+      submitted_at: now,
+      team_id: employee.teamId,
+      updated_by: coachActor,
+    }));
+
+    const { data: insertedReports, error: reportError } = await supabase
+      .from("coaching_reports")
+      .insert(reportRows)
+      .select("id, report_number");
+    if (reportError) throw reportError;
+
+    const insertedById = new Map(
+      ((insertedReports ?? []) as InsertedReportRow[]).map((report) => [report.id, report]),
+    );
+
+    const scoreRows = pending.flatMap(({ reportId, row, scoreResult }) =>
+      toCoachingScoreRows(reportId, scoreResult, row.scores).map((scoreRow) => ({
+        ...scoreRow,
+      })),
+    );
+    await insertRowsInChunks(supabase, "coaching_score_items", scoreRows);
+
+    const acknowledgmentRows = pending.map(({ reportId, row }) => ({
+      acknowledgment_text: "Acknowledged automatically on historical coaching report import.",
+      employee_hr_id: row.resolvedHrId,
+      ip_address: null,
+      report_id: reportId,
+      user_agent: null,
+    }));
+    await insertRowsInChunks(supabase, "coaching_report_acknowledgments", acknowledgmentRows);
+
+    const auditRows = pending.flatMap(({ reportId, row, scoreResult }) => [
+      {
+        action: "created_draft",
+        actor_hr_id: coachActor,
+        metadata: {
+          historicalImport: true,
+          importBatchId,
+          rowNumber: row.rowNumber,
+          sourceFile: sourceFile ?? null,
+        },
+        new_values: {
+          medicalRepHrId: row.resolvedHrId,
+          score: scoreResult.finalScorePercent,
+        },
+        old_values: null,
+        report_id: reportId,
+      },
+      {
+        action: "submitted",
+        actor_hr_id: coachActor,
+        metadata: {
+          historicalImport: true,
+          importBatchId,
+          rowNumber: row.rowNumber,
+          sourceFile: sourceFile ?? null,
+        },
+        new_values: {
+          actualScore: scoreResult.actualScore,
+          finalScorePercent: scoreResult.finalScorePercent,
+          performanceZone: scoreResult.performanceZone,
+          status: "submitted",
+        },
+        old_values: { status: "draft" },
+        report_id: reportId,
+      },
+      {
+        action: "acknowledged",
+        actor_hr_id: row.resolvedHrId,
+        metadata: {
+          acknowledgmentText: "Acknowledged automatically on historical coaching report import.",
+          historicalImport: true,
+          importBatchId,
+          rowNumber: row.rowNumber,
+          sourceFile: sourceFile ?? null,
+        },
+        new_values: { acknowledgedAt: now, status: "reviewed_by_employee" },
+        old_values: { status: "submitted" },
+        report_id: reportId,
+      },
+    ]);
+    await insertRowsInChunks(supabase, "coaching_report_audit_logs", auditRows);
+
+    return insertedById;
+  } catch (error) {
+    await cleanupImportedReportIds(reportIds);
+    throw error;
+  }
 }
 
 export async function commitCoachingImport(
@@ -401,6 +571,7 @@ export async function commitCoachingImport(
   const existingArchivedKeys = await loadArchivedEvaluationKeys();
   const seenArchivedKeys = new Set<string>();
 
+  const pendingReports: PendingReportImport[] = [];
   const archivedInputs: CoachingArchivedEvaluationInput[] = [];
 
   for (const row of classified) {
@@ -426,46 +597,20 @@ export async function commitCoachingImport(
       }
 
       try {
-        const draft = await createDraftCoachingReport(
-          {
-            areaOfDevelopment: row.areaOfDevelopment,
-            coachingDate: row.coachingDate as string,
-            generalRemarks: row.generalRemarks,
-            medicalRepHrId: row.resolvedHrId,
-            scores: row.scores,
-            strengthPoints: row.strengthPoints,
-          },
-          coachAccess,
-        );
-        const reportId = draft.report.id;
-        const submitted = await submitCoachingReport(reportId, null, coachAccess);
+        const employeeKey = normalizeHrId(row.resolvedHrId);
+        const employee = employeeKey ? directoryIndex.get(employeeKey) ?? null : null;
+        if (!employee) {
+          throw new Error("Medical Rep was not found in employees.");
+        }
+
+        const scoreResult = calculateCoachingScore(row.scores);
+        const reportId = globalThis.crypto.randomUUID();
         existingReportKeys.add(key);
 
         // Historical reports were already reviewed in person — auto-acknowledge on
         // behalf of the rep so they land in the "reviewed_by_employee" state rather
         // than waiting in the rep's pending queue.
-        let acknowledged = false;
-        try {
-          await acknowledgeImportedCoachingReport(reportId, row.resolvedHrId);
-          acknowledged = true;
-        } catch (ackError) {
-          result.errors.push({
-            error: `Report created but auto-acknowledge failed: ${ackError instanceof Error ? ackError.message : "unknown error"}`,
-            rowNumber: row.rowNumber,
-            sourceName: row.sourceName,
-          });
-        }
-
-        result.created.push({
-          acknowledged,
-          finalScorePercent: Number(submitted.report.final_score_percent ?? draft.report.final_score_percent ?? 0),
-          hrId: row.resolvedHrId,
-          performanceZone: submitted.report.performance_zone ?? null,
-          repName: row.resolvedName ?? row.repName,
-          reportId,
-          reportNumber: submitted.report.report_number,
-          rowNumber: row.rowNumber,
-        });
+        pendingReports.push({ employee, reportId, row, scoreResult });
       } catch (error) {
         result.errors.push({
           error: error instanceof Error ? error.message : "Failed to create coaching report.",
@@ -508,6 +653,26 @@ export async function commitCoachingImport(
       strengthPoints: row.strengthPoints,
       territory: row.territory,
       unmatchedReason: row.unmatchedReason,
+    });
+  }
+
+  const insertedReports = await createImportedReportsInBulk(
+    pendingReports,
+    coachAccess,
+    importBatchId,
+    options.sourceFile,
+  );
+  for (const pending of pendingReports) {
+    const inserted = insertedReports.get(pending.reportId);
+    result.created.push({
+      acknowledged: true,
+      finalScorePercent: pending.scoreResult.finalScorePercent,
+      hrId: pending.row.resolvedHrId as string,
+      performanceZone: pending.scoreResult.performanceZone,
+      repName: pending.row.resolvedName ?? pending.row.repName,
+      reportId: pending.reportId,
+      reportNumber: inserted?.report_number ?? pending.reportId,
+      rowNumber: pending.row.rowNumber,
     });
   }
 
