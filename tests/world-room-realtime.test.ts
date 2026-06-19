@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   createWorldRoomRealtimeSessionRequest,
+  extractWorldRoomRealtimeClientSecret,
   worldRoomInstructions,
   worldRoomRealtimeModel,
   worldRoomRealtimeVoice,
@@ -34,4 +35,21 @@ export function runWorldRoomRealtimeTests() {
   );
   assert.match(worldRoomInstructions, /settings, cultures, characters, conflicts/, "instructions must target worldbuilding");
   assert.doesNotMatch(JSON.stringify(request), /OPENAI_API_KEY|sk-/, "session payload must never include server secrets");
+
+  assert.deepEqual(
+    extractWorldRoomRealtimeClientSecret({ expires_at: 123, value: "ek_current_shape" }),
+    { expiresAt: 123, value: "ek_current_shape" },
+    "World Room should accept the top-level ephemeral token shape returned by the WebRTC guide",
+  );
+  assert.deepEqual(
+    extractWorldRoomRealtimeClientSecret({ client_secret: { expires_at: 456, value: "ek_reference_shape" } }),
+    { expiresAt: 456, value: "ek_reference_shape" },
+    "World Room should accept the nested client_secret shape documented in the API reference",
+  );
+  assert.deepEqual(
+    extractWorldRoomRealtimeClientSecret({ session: { client_secret: { value: "ek_wrapped_shape" } } }),
+    { expiresAt: null, value: "ek_wrapped_shape" },
+    "World Room should tolerate wrapped session payloads without leaking parsing details to the client",
+  );
+  assert.equal(extractWorldRoomRealtimeClientSecret({ client_secret: {} }), null, "World Room should reject malformed secrets");
 }
