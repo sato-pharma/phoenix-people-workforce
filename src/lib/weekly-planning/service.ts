@@ -251,6 +251,9 @@ export type EmployeePlansSummary = {
 export type EmployeePlansWorkspace = {
   canAcknowledgeHr: boolean;
   canSubmitPlans: boolean;
+  hasMorePlans: boolean;
+  loadedPlanCount: number;
+  planLimit: number;
   workplaceRegions: string[];
   currentEmployee: {
     fullName: string;
@@ -277,6 +280,8 @@ const planSelect = `
   employee_plan_hr_acknowledgements (*)
 `;
 
+const WORKSPACE_PLAN_LIMIT = 250;
+
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -284,6 +289,21 @@ function cleanText(value: unknown) {
 function nullableText(value: unknown) {
   const cleaned = cleanText(value);
   return cleaned ? cleaned : null;
+}
+
+function isStrictIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function assertItemDateInPeriod(activityDate: string, periodStartDate: string, periodEndDate: string) {
+  if (!isStrictIsoDate(activityDate)) {
+    throw new Error("Plan item activityDate must be a valid YYYY-MM-DD date.");
+  }
+  if (activityDate < periodStartDate || activityDate > periodEndDate) {
+    throw new Error(`Plan item activityDate must stay inside the selected period (${periodStartDate} to ${periodEndDate}).`);
+  }
 }
 
 function normalizeHrId(value: string | null | undefined) {
@@ -582,6 +602,7 @@ function activityRequiresRep(activityType: EmployeePlanActivityType, isCoaching:
 function normalizeItems(
   items: EmployeePlanItemInput[],
   periodStartDate: string,
+  periodEndDate: string,
   medicalRepOptions: PlanningMedicalRepOption[],
   options: NormalizeItemsOptions = {},
 ): EmployeePlanItemInput[] {
@@ -594,7 +615,7 @@ function normalizeItems(
   const repByHrId = new Map(medicalRepOptions.map((option) => [normalizeHrId(option.hrId), option]));
   const normalized = items.length > 0 ? items : [fallback];
   return normalized.map((item, index) => ({
-    ...normalizeItem(item, index, periodStartDate, repByHrId, medicalRepOptions, options),
+    ...normalizeItem(item, index, periodStartDate, periodEndDate, repByHrId, medicalRepOptions, options),
   }));
 }
 
@@ -602,10 +623,14 @@ function normalizeItem(
   item: EmployeePlanItemInput,
   index: number,
   periodStartDate: string,
+  periodEndDate: string,
   repByHrId: Map<string, PlanningMedicalRepOption>,
   medicalRepOptions: PlanningMedicalRepOption[],
   options: NormalizeItemsOptions,
 ): EmployeePlanItemInput & { doubleVisitMedicalRepName?: string | null } {
+  const activityDate = cleanText(item.activityDate) || periodStartDate;
+  assertItemDateInPeriod(activityDate, periodStartDate, periodEndDate);
+
   const rawActivityType = cleanText(item.activityType);
   const activityType = validActivityType(rawActivityType);
   const activityTitle = rawActivityType === "Coaching" ? "Coaching" : cleanText(item.activityTitle);
@@ -663,7 +688,7 @@ function normalizeItem(
     throw new Error("Selected Medical Rep is not assigned to the selected area.");
   }
   return {
-    activityDate: cleanText(item.activityDate) || periodStartDate,
+    activityDate,
     activityTitle: isCoaching ? "Coaching" : activityTitle || activityDisplayLabel(activityType),
     activityType,
     area,
@@ -696,28 +721,22 @@ async function loadPlanRow(planId: string): Promise<PlanHeaderRow> {
   return data as PlanHeaderRow;
 }
 
-async function replacePlanItems(planId: string, items: EmployeePlanItemInput[]) {
-  const supabase = getSupabaseAdmin();
-  const { error: deleteError } = await supabase.from("employee_plan_items").delete().eq("plan_id", planId);
-  if (deleteError) throw deleteError;
-  if (!items.length) return;
-  const { error: insertError } = await supabase.from("employee_plan_items").insert(items.map((item) => ({
-    activity_date: item.activityDate,
-    activity_title: item.activityTitle,
-    activity_type: item.activityType,
+function planItemsRpcPayload(items: EmployeePlanItemInput[]) {
+  return items.map((item) => ({
+    activityDate: item.activityDate,
+    activityTitle: item.activityTitle,
+    activityType: item.activityType,
     area: item.area ?? null,
     attendees: item.attendees ?? null,
-    double_visit_medical_rep_hr_id: item.doubleVisitMedicalRepHrId ?? null,
-    double_visit_medical_rep_name: "doubleVisitMedicalRepName" in item ? item.doubleVisitMedicalRepName ?? null : null,
-    end_time: item.endTime ?? null,
-    location_text: item.locationText ?? null,
+    doubleVisitMedicalRepHrId: item.doubleVisitMedicalRepHrId ?? null,
+    doubleVisitMedicalRepName: "doubleVisitMedicalRepName" in item ? item.doubleVisitMedicalRepName ?? null : null,
+    endTime: item.endTime ?? null,
+    locationText: item.locationText ?? null,
     notes: item.notes ?? "",
     objective: item.objective ?? null,
-    plan_id: planId,
-    sort_order: item.sortOrder ?? 0,
-    start_time: item.startTime ?? null,
-  })));
-  if (insertError) throw insertError;
+    sortOrder: item.sortOrder ?? 0,
+    startTime: item.startTime ?? null,
+  }));
 }
 
 async function recordDecision(input: {
@@ -752,17 +771,21 @@ async function recordDecision(input: {
  * HTTP 409. Notifications stay outside the RPC: they were never the source
  * of the drift bug and remain best-effort.
  */
-async function rpcSubmitPlan(input: {
+async function rpcReplacePlanItems(input: {
   access: AccessContext;
   expectedRevision: number;
+  items: EmployeePlanItemInput[];
   planId: string;
+  submit: boolean;
 }) {
-  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_submit", {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_replace_items", {
     p_actor_hr_id: input.access.hrId,
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_expected_revision: input.expectedRevision,
+    p_items: planItemsRpcPayload(input.items),
     p_plan_id: input.planId,
+    p_submit: input.submit,
   });
   if (error) rethrowWeeklyPlanRpcError(error);
 }
@@ -1111,9 +1134,12 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       .from("employee_plan_headers")
       .select(planSelect)
       .order("created_at", { ascending: false })
-      .limit(250);
+      .limit(WORKSPACE_PLAN_LIMIT + 1);
     if (error) throw error;
-    const visible = ((data ?? []) as PlanHeaderRow[]).filter((plan) => canViewPlan(access, employee, plan));
+    const loadedRows = (data ?? []) as PlanHeaderRow[];
+    const hasMorePlans = loadedRows.length > WORKSPACE_PLAN_LIMIT;
+    const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
+    const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan));
     const plans = visible.map(mapPlan);
     return {
       canAcknowledgeHr,
@@ -1127,7 +1153,10 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
           }
         : null,
+      hasMorePlans,
+      loadedPlanCount: cappedRows.length,
       medicalRepOptions,
+      planLimit: WORKSPACE_PLAN_LIMIT,
       workplaceRegions,
       plans,
       schemaReady: true,
@@ -1147,7 +1176,10 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
           }
         : null,
+      hasMorePlans: false,
+      loadedPlanCount: 0,
       medicalRepOptions,
+      planLimit: WORKSPACE_PLAN_LIMIT,
       workplaceRegions,
       plans: [],
       schemaReady: false,
@@ -1174,16 +1206,17 @@ export async function createEmployeePlan(access: AccessContext, input: {
     throw new Error("Forbidden: only active employees can submit plans.");
   }
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
-  const items = normalizeItems(input.items, period.periodStartDate, await medicalRepOptionsForEmployee(employee), {
-    submit: Boolean(input.submit),
-  });
+  const items = normalizeItems(
+    input.items,
+    period.periodStartDate,
+    period.periodEndDate,
+    await medicalRepOptionsForEmployee(employee),
+    { submit: Boolean(input.submit) },
+  );
 
   // Always create the row in 'draft' first. If the caller asked to submit, we
-  // insert items, then atomically promote to 'submitted' through the
-  // phx_weekly_plan_submit RPC (which also records the decision row). This
-  // guarantees the header never advertises a state that isn't backed by both
-  // its items AND a decision row, and that two concurrent submits can't both
-  // succeed.
+  // replace items and optionally promote to 'submitted' through the item RPC,
+  // so items, revision, and submit decision cannot drift under concurrency.
   const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
     .insert({
@@ -1208,9 +1241,14 @@ export async function createEmployeePlan(access: AccessContext, input: {
     .single();
   if (error) throw error;
   const plan = data as PlanHeaderRow;
-  await replacePlanItems(plan.id, items);
+  await rpcReplacePlanItems({
+    access,
+    expectedRevision: plan.revision,
+    items,
+    planId: plan.id,
+    submit: Boolean(input.submit),
+  });
   if (input.submit) {
-    await rpcSubmitPlan({ access, expectedRevision: plan.revision, planId: plan.id });
     await notifyPlanSubmitted(await loadPlanRow(plan.id));
   }
   await writeAuditLog({
@@ -1234,16 +1272,20 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   if (isClosedEmployeePlanStatus(existing.status)) {
     // Revising a closed plan: spawn a new draft revision (parent_plan_id chain).
     // We always create it as 'draft' first; if the caller wants to submit in
-    // the same call, the phx_weekly_plan_submit RPC promotes the new revision
-    // atomically. The revise audit row is written separately so the new row's
+    // the same call, the item RPC promotes the new revision atomically. The
+    // revise audit row is written separately so the new row's
     // history starts with a `revise` decision row before the optional submit.
     const owner = await currentEmployee(access);
     if (owner && !isActiveEmployee(owner)) {
       throw new Error("Forbidden: only active employees can revise plans.");
     }
-    const items = normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
-      submit: Boolean(input.submit),
-    });
+    const items = normalizeItems(
+      input.items,
+      existing.period_start_date,
+      existing.period_end_date,
+      await medicalRepOptionsForEmployee(owner),
+      { submit: Boolean(input.submit) },
+    );
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .insert({
@@ -1266,7 +1308,6 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       .single();
     if (error) throw error;
     const revisionRow = data as PlanHeaderRow;
-    await replacePlanItems(revisionRow.id, items);
     await recordDecision({
       access,
       action: "revise",
@@ -1274,8 +1315,14 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       planId: revisionRow.id,
       toStatus: "draft",
     });
+    await rpcReplacePlanItems({
+      access,
+      expectedRevision: revisionRow.revision,
+      items,
+      planId: revisionRow.id,
+      submit: Boolean(input.submit),
+    });
     if (input.submit) {
-      await rpcSubmitPlan({ access, expectedRevision: revisionRow.revision, planId: revisionRow.id });
       await notifyPlanSubmitted(await loadPlanRow(revisionRow.id));
     }
     return mapPlan(await loadPlanRow(revisionRow.id));
@@ -1285,14 +1332,20 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     throw new Error("This plan cannot be edited in its current status.");
   }
   const owner = await currentEmployee(access);
-  await replacePlanItems(
-    existing.id,
-    normalizeItems(input.items, existing.period_start_date, await medicalRepOptionsForEmployee(owner), {
-      submit: Boolean(input.submit),
-    }),
-  );
+  await rpcReplacePlanItems({
+    access,
+    expectedRevision: existing.revision,
+    items: normalizeItems(
+      input.items,
+      existing.period_start_date,
+      existing.period_end_date,
+      await medicalRepOptionsForEmployee(owner),
+      { submit: Boolean(input.submit) },
+    ),
+    planId: existing.id,
+    submit: Boolean(input.submit),
+  });
   if (input.submit) {
-    await rpcSubmitPlan({ access, expectedRevision: existing.revision, planId: existing.id });
     await notifyPlanSubmitted(await loadPlanRow(existing.id));
   }
   await writeAuditLog({
@@ -1395,4 +1448,3 @@ export async function cancelEmployeePlan(access: AccessContext, planId: string, 
   });
   return mapPlan(await loadPlanRow(planId));
 }
-

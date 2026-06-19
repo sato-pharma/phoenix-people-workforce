@@ -76,7 +76,13 @@ export type SameLinePlanBooking = {
 
 export type PlanningCalendarWorkspace = {
   conflicts: PlanningCalendarConflict[];
+  hasMoreHeaders: boolean;
+  hasMoreItems: boolean;
+  headerLimit: number;
   items: PlanningCalendarItem[];
+  itemLimit: number;
+  loadedHeaderCount: number;
+  loadedItemCount: number;
   month: number;
   schemaReady: boolean;
   summary: {
