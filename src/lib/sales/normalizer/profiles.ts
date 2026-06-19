@@ -161,15 +161,19 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
   {
-    // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | Column2/Column1 (always 0/1)
-    // | "Attribute" (product NAME). Quantity lives in "Value" — NOT "Column2" (always 0). No per-row
-    // price column; value is recomputed from master. Brick/area resolved via "Area name A" territory
-    // alias (area_aliases table) — customer code crosswalk is a fallback if available.
-    // No per-row date column: Chimipharm pivots cover one period; period is supplied via periodOverride.
+    // Chimipharm exports a pivot: "Area name A" | "Value" (= units sold) | "Column2" | "Column1" |
+    // "Attribute" (product NAME). The ONLY real data columns are "Area name A" (geography), "Value"
+    // (quantity) and "Attribute" (product name). "Column1"/"Column2" are junk pivot constants (always
+    // 1/0) and are deliberately NOT mapped — Column1 is not a product code and Column2 is not a
+    // quantity, so listing them would risk coding a constant as product/qty. No per-row price column;
+    // value is recomputed from the master price. Brick/area is resolved via the "Area name A"
+    // territory alias (area_aliases table) — the customer-code crosswalk stays as a fallback for any
+    // future CP file that carries a customer column. No per-row date column: Chimipharm pivots cover
+    // one period; the period is supplied via the upload screen's period picker (periodOverride).
     distributorCode: "CP",
     distributorName: "chimipharm",
-    productColumns: ["Attribute", "Column1"],
-    qtyColumns: ["Value", "Column2", "Qty"],
+    productColumns: ["Attribute"],
+    qtyColumns: ["Value"],
     valueColumns: [],
     valueSource: "recompute",
     dateColumns: [],
