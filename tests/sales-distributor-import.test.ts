@@ -225,7 +225,7 @@ export async function runSalesDistributorImportTests() {
   assert.ok(psResult.issues.some((issue) => issue.field === "Brick ID" && issue.value === "#N/A"));
 
   const ibnBuffer = await buildIbnSinaWorkbookBuffer([
-    ["10101", 24, "Product A", 240, "2026/04/30", 0, "#N/A", "P-A", "B-1", "A1", "CA", "IS"],
+    ["10101", 24, "Distributor alias for Product A", 240, "2026/04/30", 0, "#N/A", "P-A", "B-1", "A1", "CA", "IS"],
     ["10102", 2, "Product B", 100, "2026/04/29", 1, "#N/A", "P-B", "B-2", "A2", "AB", "IS"],
   ]);
 
@@ -239,7 +239,7 @@ export async function runSalesDistributorImportTests() {
   assert.equal(ibnResult.templateKey, "ibn_sina_is");
   assert.equal(ibnResult.status, "validated");
   assert.equal(ibnResult.failedRows, 0);
-  assert.equal(ibnResult.warningRows, 0);
+  assert.equal(ibnResult.warningRows, 0, "trusted product code accepts distributor-specific product-name aliases");
   assert.equal(ibnResult.totals.totalQty, 26);
   assert.equal(ibnResult.totals.totalBonusQty, 0);
   assert.equal(ibnResult.totals.totalValue, 340);
