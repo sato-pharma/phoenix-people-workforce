@@ -1,0 +1,170 @@
+import OpenAI from "openai";
+
+type OpenAiEnv = Record<string, string | undefined>;
+type ResponseCreateInput = Parameters<OpenAI["responses"]["create"]>[0];
+
+export const OPENAI_EMAIL_DEFAULT_MODEL = "gpt-5.4-nano";
+export const OPENAI_EMAIL_TIMEOUT_MS = 25_000;
+export const OPENAI_MAX_RETRIES = 1;
+export const OPENAI_ROUTE_BUDGET_MS = 60_000;
+export const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
+
+export type PhoenixOpenAiErrorCode =
+  | "auth_failed"
+  | "failed"
+  | "not_configured"
+  | "quota_exceeded"
+  | "rate_limited"
+  | "timeout";
+
+export class PhoenixOpenAiError extends Error {
+  code: PhoenixOpenAiErrorCode;
+  requestId?: string;
+  status?: number;
+
+  constructor(
+    code: PhoenixOpenAiErrorCode,
+    message: string,
+    options: { requestId?: string; status?: number } = {},
+  ) {
+    super(message);
+    this.name = "PhoenixOpenAiError";
+    this.code = code;
+    this.requestId = options.requestId;
+    this.status = options.status;
+  }
+}
+
+export function resolveOpenAiEmailModel(env: OpenAiEnv = process.env) {
+  return env.OPENAI_EMAIL_MODEL?.trim() || env.OPENAI_MODEL?.trim() || OPENAI_EMAIL_DEFAULT_MODEL;
+}
+
+export function hasOpenAiApiKey(env: OpenAiEnv = process.env) {
+  return Boolean(env.OPENAI_API_KEY?.trim());
+}
+
+export function sanitizeOpenAiLogMessage(message: string) {
+  return message
+    .replace(/sk-[a-zA-Z0-9_-]{8,}/g, "sk-***")
+    .replace(/Bearer\s+[^\s"'`]+/gi, "Bearer ***");
+}
+
+function requestIdFrom(error: unknown) {
+  return typeof error === "object" && error !== null && "request_id" in error
+    ? String((error as { request_id?: unknown }).request_id ?? "")
+    : undefined;
+}
+
+function statusFrom(error: unknown) {
+  return typeof error === "object" && error !== null && "status" in error
+    ? Number((error as { status?: unknown }).status)
+    : undefined;
+}
+
+function codeFrom(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : undefined;
+}
+
+function messageFrom(error: unknown) {
+  return error instanceof Error ? error.message : "unknown OpenAI error";
+}
+
+function logOpenAiError(context: string, error: unknown) {
+  const requestId = requestIdFrom(error);
+  const status = statusFrom(error);
+  const detail = sanitizeOpenAiLogMessage(messageFrom(error));
+  console.error(
+    `[openai:${context}] request failed${status ? ` status=${status}` : ""}${requestId ? ` request_id=${requestId}` : ""}: ${detail}`,
+  );
+}
+
+export function normalizeOpenAiError(error: unknown, context = "request") {
+  if (error instanceof PhoenixOpenAiError) return error;
+
+  const requestId = requestIdFrom(error);
+  const status = statusFrom(error);
+  const code = codeFrom(error);
+
+  if (error instanceof OpenAI.APIConnectionTimeoutError) {
+    logOpenAiError(context, error);
+    return new PhoenixOpenAiError("timeout", "The OpenAI request timed out.", { requestId, status });
+  }
+
+  if (error instanceof OpenAI.RateLimitError) {
+    logOpenAiError(context, error);
+    return new PhoenixOpenAiError(
+      code === "insufficient_quota" ? "quota_exceeded" : "rate_limited",
+      messageFrom(error),
+      { requestId, status },
+    );
+  }
+
+  if (error instanceof OpenAI.AuthenticationError || error instanceof OpenAI.PermissionDeniedError) {
+    logOpenAiError(context, error);
+    return new PhoenixOpenAiError("auth_failed", messageFrom(error), { requestId, status });
+  }
+
+  if (error instanceof OpenAI.APIError) {
+    logOpenAiError(context, error);
+    if (status === 401 || status === 403) {
+      return new PhoenixOpenAiError("auth_failed", messageFrom(error), { requestId, status });
+    }
+    if (status === 429) {
+      return new PhoenixOpenAiError(
+        code === "insufficient_quota" ? "quota_exceeded" : "rate_limited",
+        messageFrom(error),
+        { requestId, status },
+      );
+    }
+    return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
+  }
+
+  logOpenAiError(context, error);
+  return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
+}
+
+function openAiClient(apiKey = process.env.OPENAI_API_KEY?.trim()) {
+  if (!apiKey) {
+    throw new PhoenixOpenAiError("not_configured", "OPENAI_API_KEY is not configured.");
+  }
+  return new OpenAI({
+    apiKey,
+    maxRetries: OPENAI_MAX_RETRIES,
+    timeout: OPENAI_EMAIL_TIMEOUT_MS,
+  });
+}
+
+export async function createOpenAiResponseText(params: {
+  input: string;
+  instructions: string;
+  maxOutputTokens?: number;
+  model?: string;
+  purpose: string;
+  reasoning?: ResponseCreateInput["reasoning"];
+  text: NonNullable<ResponseCreateInput["text"]>;
+}) {
+  const model = params.model?.trim() || resolveOpenAiEmailModel();
+
+  try {
+    const request = {
+      input: params.input,
+      instructions: params.instructions,
+      max_output_tokens: params.maxOutputTokens ?? OPENAI_EMAIL_MAX_OUTPUT_TOKENS,
+      model,
+      reasoning: params.reasoning ?? { effort: "low" },
+      store: false,
+      text: params.text,
+    } satisfies ResponseCreateInput;
+    const { data, request_id: requestId } = await openAiClient().responses.create(request).withResponse();
+
+    return {
+      model,
+      outputText: data.output_text ?? "",
+      requestId: requestId || (data as { _request_id?: string })._request_id,
+    };
+  } catch (error) {
+    throw normalizeOpenAiError(error, params.purpose);
+  }
+}

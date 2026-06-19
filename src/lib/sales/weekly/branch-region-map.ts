@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { canonicalWeeklyDistributorCode, weeklyDistributorByCode, weeklyDistributorOptions } from "@/lib/sales/weekly/distributors";
-import { normalizeCode, normalizeKey } from "@/lib/sales/weekly/mapping-normalize";
+import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { WeeklyMappingImportResult } from "@/lib/sales/weekly/product-aliases";
@@ -45,6 +45,13 @@ export type WeeklyBranchRegionIndex = {
   byBranch: Map<string, { regionCode: string; regionName: string; excluded: boolean }>;
   /** PS stock: keyed by column index */
   byColumnIndex: Map<number, { regionCode: string; regionName: string; excluded: boolean; headerRaw: string }>;
+  /**
+   * Soft/fuzzy fallback keyed by `${sourceFileType}|${normalizeSoft(normalizedBranch)}`.
+   * Tolerates the weekly PS header drift pattern: trailing digit suffixes, _ك variants,
+   * parenthetical qualifiers. Only consulted when the exact byBranch lookup fails.
+   * First registered entry wins (avoids overwriting an exact match that also soft-matches).
+   */
+  bySoftName: Map<string, { regionCode: string; regionName: string; excluded: boolean }>;
 };
 
 function fileTypeOf(value: unknown): WeeklyBranchFileType {
@@ -407,7 +414,7 @@ export async function loadBranchRegionIndex(distributorCode: string): Promise<We
     .eq("distributor_code", code);
   if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
 
-  const index: WeeklyBranchRegionIndex = { byBranch: new Map(), byColumnIndex: new Map() };
+  const index: WeeklyBranchRegionIndex = { byBranch: new Map(), byColumnIndex: new Map(), bySoftName: new Map() };
   for (const row of data ?? []) {
     const fileType = fileTypeOf(row.source_file_type);
     const normalized = String(row.normalized_branch ?? "");
@@ -419,7 +426,16 @@ export async function loadBranchRegionIndex(distributorCode: string): Promise<We
     if (row.branch_column_index != null) {
       index.byColumnIndex.set(Number(row.branch_column_index), { ...entry, headerRaw: String(row.branch_header_raw ?? "") });
     }
-    if (normalized) index.byBranch.set(`${fileType}|${normalized}`, entry);
+    if (normalized) {
+      index.byBranch.set(`${fileType}|${normalized}`, entry);
+      // Soft fallback: strip _ك, parentheticals, trailing digit suffix so weekly PS name drift
+      // ("Mansoura" → "Mansoura2") still resolves. First-registered wins (exact match takes
+      // priority by being in byBranch; this only matters when the exact lookup already failed).
+      const softKey = normalizeSoft(normalized);
+      if (softKey && !index.bySoftName.has(`${fileType}|${softKey}`)) {
+        index.bySoftName.set(`${fileType}|${softKey}`, entry);
+      }
+    }
   }
   return index;
 }

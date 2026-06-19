@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SalesImportWorkspace } from "@/components/sales/sales-import-workspace";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewRestrictedProducts, isRestrictedProductCode } from "@/lib/sales/access-scope";
 import {
   listSalesImportDistributors,
   loadSourceOfSalesDashboard,
@@ -47,6 +48,24 @@ export default async function SalesImportPage() {
     ]);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load sales import.";
+  }
+
+  // Confidential products (LA003 / LA004) are surfaced in the import workspace only to CEO /
+  // Super Admin — an SFE Manager also holds sales:import. Auto-mapping still resolves these
+  // products server-side; this only hides them from the workspace's product lists and the
+  // per-product dashboard view.
+  if (!canViewRestrictedProducts(accessContext.role)) {
+    initialProducts = initialProducts.filter((product) => !isRestrictedProductCode(product.productCode));
+    mappingReferences = {
+      ...mappingReferences,
+      products: mappingReferences.products.filter((product) => !isRestrictedProductCode(product.code)),
+    };
+    if (initialDashboard) {
+      initialDashboard = {
+        ...initialDashboard,
+        byProduct: initialDashboard.byProduct.filter((group) => !isRestrictedProductCode(group.code)),
+      };
+    }
   }
 
   return (

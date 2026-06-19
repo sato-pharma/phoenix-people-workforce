@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import type { SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import type { WeeklyBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import { canonicalWeeklyDistributorCode, weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
-import { normalizeCode, normalizeKey } from "@/lib/sales/weekly/mapping-normalize";
+import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
 import type { WeeklyProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import type {
   WeeklyParsedRow,
@@ -577,16 +577,9 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
       if (!cellText(at(header, col))) break;
       lastLocationCol = col;
     }
-    // Header drift check up front (independent of any data row).
-    for (const [colIndex, entry] of ctx.branchMapIndex.byColumnIndex) {
-      if (colIndex < 7 || colIndex > lastLocationCol) continue;
-      const uploaded = cellText(at(header, colIndex));
-      if (uploaded && entry.headerRaw && normalizeKey(uploaded) !== normalizeKey(entry.headerRaw)) {
-        blockingReasons.push(
-          `PS stock column ${colIndex} header drift: uploaded "${uploaded}" does not match the mapped header "${entry.headerRaw}". Re-map the stock locations, then re-upload.`,
-        );
-      }
-    }
+    // PS stock location headers change every month by design (distributors rename branches).
+    // The mapping is keyed by column index, not by name, so header drift never breaks resolution.
+    // No blocking check here — resolveRegion already falls back to name if the index is missing.
     for (let r = 2; r <= stockSheet.rowCount; r += 1) {
       const row = stockSheet.getRow(r);
       const itemCode = cellText(at(row, 3));
@@ -804,6 +797,16 @@ function resolveRegion(obs: WeeklyObservation, branchMapIndex: WeeklyBranchRegio
   const anyKey = `any|${normalized}`;
   const entry = branchMapIndex.byBranch.get(lookupKey) ?? branchMapIndex.byBranch.get(anyKey);
   if (!entry) {
+    // Soft fallback: tolerates weekly PS header drift (trailing digit suffix, _ك variant,
+    // parenthetical qualifier). Hits only when the exact normalizeKey lookup already failed.
+    const softKey = normalizeSoft(branchKeyRaw);
+    const softEntry = softKey
+      ? (branchMapIndex.bySoftName.get(`${obs.branchFileType}|${softKey}`) ?? branchMapIndex.bySoftName.get(`any|${softKey}`))
+      : undefined;
+    if (softEntry) {
+      if (softEntry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
+      return { regionCode: softEntry.regionCode, regionName: softEntry.regionName, excluded: false, failure: null };
+    }
     return {
       regionCode: "",
       regionName: "",

@@ -90,7 +90,7 @@ function branchIndex(input: {
       headerRaw: column.headerRaw,
     });
   }
-  return { byBranch, byColumnIndex };
+  return { byBranch, byColumnIndex, bySoftName: new Map() };
 }
 
 const round2 = (value: number) => Number(value.toFixed(2));

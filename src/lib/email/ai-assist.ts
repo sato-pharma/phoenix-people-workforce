@@ -1,3 +1,9 @@
+import {
+  createOpenAiResponseText,
+  hasOpenAiApiKey,
+  OPENAI_EMAIL_MAX_OUTPUT_TOKENS,
+  PhoenixOpenAiError,
+} from "@/lib/ai/openai-client";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 
 export type AiDraftMode = "composer" | "email_template";
@@ -43,13 +49,6 @@ export class AiAssistError extends Error {
   }
 }
 
-// OPENAI_MODEL must be a chat-completions model that supports response_format
-// json_object (gpt-5*, gpt-4o*, gpt-4.1*, o3*, o4-mini*). Deprecated o1-mini/o1-preview
-// and Responses-API-only models (gpt-5-pro, o1-pro) will 400 - surfaced to the admin as 502.
-function openAiModel() {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-5-mini";
-}
-
 // Mirrors the sanitizer in email-safety.ts INCLUDING its value grammar - values outside
 // it (named colors, em units, ...) are silently dropped on save, so the model must be told
 // the exact formats that survive.
@@ -61,7 +60,57 @@ const allowedHtmlSummary =
   "text-align, direction; border, border-collapse, padding (px or %), width (px or %) on " +
   "table cells. The dir attribute (rtl/ltr) is allowed.";
 
-function buildPrompt(input: AiDraftRequest) {
+const emailAiInstructions = [
+  "You are the email writing assistant inside Phoenix Workforce, the HR system of an Egyptian pharma company.",
+  "You draft or adjust HR email content while preserving the admin's intent and the system's template constraints.",
+  "STRICT RULES:",
+  "1. Placeholders: use ONLY placeholders listed in the request input, written exactly with double curly braces. NEVER invent new placeholders.",
+  `2. bodyHtml must be simple valid HTML using only: ${allowedHtmlSummary} No <html>/<head>/<body> wrapper, no scripts, no images unless the user explicitly provides an https image URL.`,
+  '3. subject, previewText, greeting and closingText are plain text (placeholders allowed). greeting looks like "Dear {{recipientName}},". previewText is one short line shown under the email title and as the inbox preview.',
+  '4. The user may write in Arabic or English. Write the email in the language the user asks for; default to the language of the instruction. Give Arabic paragraphs dir="rtl" on their <p> tags.',
+  "5. PRIORITY: the user's request ALWAYS wins over the current draft. When the user provides their own text or structure, follow it faithfully (fix grammar, improve flow, format it well) and do NOT fall back to the current draft's wording. Use the current draft as the base ONLY for adjustment requests like 'make it shorter' or 'more formal'.",
+  "6. When the user writes bracketed fields like [Employee Name] or [Hiring Date], replace each with the closest placeholder from the allowed list. If nothing fits, keep the text without brackets.",
+  '7. When the user lists label/value rows (Employee: ..., Title: ..., Area: ...), render them as a clean two-column HTML table: label cells bold with style="border: 1px solid #cbd5e1; padding: 8px; background-color: #f8fafc", value cells with style="border: 1px solid #cbd5e1; padding: 8px".',
+  "8. Never return the current draft unchanged or nearly unchanged, and never answer with a single thin sentence when the user asked for structured content. Write a complete, polished email.",
+  "9. Return all five fields required by the schema. For fields the user did not ask to change, keep or improve the current value instead of omitting it.",
+].join("\n\n");
+
+const emailDraftTextFormat = {
+  format: {
+    name: "phoenix_email_draft",
+    schema: {
+      additionalProperties: false,
+      properties: {
+        bodyHtml: {
+          description: "Simple sanitized-email-compatible HTML fragment. No html/head/body wrapper.",
+          type: "string",
+        },
+        closingText: {
+          description: "Plain text closing line. Use an empty string only when intentionally blank.",
+          type: "string",
+        },
+        greeting: {
+          description: "Plain text greeting, for example Dear {{recipientName}},.",
+          type: "string",
+        },
+        previewText: {
+          description: "One short plain text inbox preview line.",
+          type: "string",
+        },
+        subject: {
+          description: "Plain text inbox subject.",
+          type: "string",
+        },
+      },
+      required: ["subject", "previewText", "greeting", "bodyHtml", "closingText"],
+      type: "object",
+    },
+    strict: true,
+    type: "json_schema",
+  },
+} as const;
+
+function buildPromptInput(input: AiDraftRequest, instruction: string) {
   const variableLines = input.variables
     .map((variable) => `- {{${variable.token}}} = ${variable.label} (example: ${variable.sampleValue})`)
     .join("\n");
@@ -83,24 +132,16 @@ function buildPrompt(input: AiDraftRequest) {
     .join(", ");
 
   return [
-    "You are the email writing assistant inside Phoenix Workforce, the HR system of an Egyptian pharma company.",
     input.mode === "email_template"
-      ? `You are editing the reusable system email template "${input.templateName ?? ""}". It is sent automatically, so placeholders are filled with real employee data on every send.`
-      : "You are drafting a one-off HR email in the manual composer.",
-    "STRICT RULES:",
-    `1. Placeholders: use ONLY these, written exactly with double curly braces. NEVER invent new ones.\n${variableLines || "- (none available - do not use any placeholders)"}`,
-    `2. bodyHtml must be simple valid HTML using only: ${allowedHtmlSummary} No <html>/<head>/<body> wrapper, no scripts, no images unless the user explicitly provides an https image URL.`,
-    "3. subject, previewText, greeting and closingText are plain text (placeholders allowed). greeting looks like \"Dear {{recipientName}},\". previewText is one short line shown under the email title and as the inbox preview.",
-    "4. The user may write in Arabic or English. Write the email in the language the user asks for; default to the language of the instruction. Give Arabic paragraphs dir=\"rtl\" on their <p> tags.",
-    "5. PRIORITY: the user's request ALWAYS wins over the current draft. When the user provides their own text or structure, follow it faithfully (fix grammar, improve flow, format it well) and do NOT fall back to the current draft's wording. Use the current draft as the base ONLY for adjustment requests like 'make it shorter' or 'more formal'.",
-    `6. When the user writes bracketed fields like [Employee Name] or [Hiring Date], replace each with the closest placeholder from the allowed list${bracketExamples ? ` (e.g. ${bracketExamples})` : ""}. If nothing fits, keep the text without brackets.`,
-    "7. When the user lists label/value rows (Employee: ..., Title: ..., Area: ...), render them as a clean two-column HTML table: label cells bold with style=\"border: 1px solid #cbd5e1; padding: 8px; background-color: #f8fafc\", value cells with style=\"border: 1px solid #cbd5e1; padding: 8px\".",
-    "8. Never return the current draft unchanged or nearly unchanged, and never answer with a single thin sentence when the user asked for structured content. Write a complete, polished email.",
+      ? `Mode: reusable system email template "${input.templateName ?? ""}". It is sent automatically, so placeholders are filled with real employee data on every send.`
+      : "Mode: one-off HR email in the manual composer.",
+    "Allowed placeholders:",
+    variableLines || "- (none available - do not use any placeholders)",
+    bracketExamples ? `Bracket field examples in scope: ${bracketExamples}` : "No bracket field examples are in scope.",
     "Current draft as JSON:",
     JSON.stringify(input.current ?? {}),
     "User request:",
-    input.instruction,
-    'Respond ONLY with a JSON object: {"subject": string, "previewText": string, "greeting": string, "bodyHtml": string, "closingText": string}',
+    instruction,
   ].join("\n\n");
 }
 
@@ -143,6 +184,35 @@ function stripUnknownTokens(value: string, allowed: ReadonlySet<string>, warning
   return cleaned.replace(/@@PHX_TOKEN_(\d+)@@/g, (_match, index: string) => protectedTokens[Number(index)] ?? "");
 }
 
+function aiAssistErrorFromOpenAi(error: PhoenixOpenAiError) {
+  switch (error.code) {
+    case "not_configured":
+      return new AiAssistError(
+        "ai_not_configured",
+        "The AI assistant is not configured yet. Add your OpenAI key as OPENAI_API_KEY.",
+      );
+    case "quota_exceeded":
+      return new AiAssistError(
+        "ai_rate_limited",
+        "The OpenAI account is out of credit. Add billing/credit on platform.openai.com and try again.",
+      );
+    case "rate_limited":
+      return new AiAssistError(
+        "ai_rate_limited",
+        "The OpenAI rate limit was reached for now. Wait a minute and try again.",
+      );
+    case "auth_failed":
+      return new AiAssistError("ai_failed", "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.");
+    case "timeout":
+      return new AiAssistError("ai_failed", "Could not reach the AI service: request timed out.");
+    case "failed":
+      return new AiAssistError(
+        "ai_failed",
+        error.status ? `The AI service returned ${error.status}. Try again.` : `Could not reach the AI service: ${error.message}`,
+      );
+  }
+}
+
 /**
  * Draft or adjust email content with OpenAI. The output is forced through the same
  * guardrails as a human edit: unknown {{tokens}} are stripped and the HTML body goes
@@ -150,8 +220,7 @@ function stripUnknownTokens(value: string, allowed: ReadonlySet<string>, warning
  * itself would not allow.
  */
 export async function draftEmailWithAi(input: AiDraftRequest): Promise<AiDraftResult> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
+  if (!hasOpenAiApiKey()) {
     throw new AiAssistError(
       "ai_not_configured",
       "The AI assistant is not configured yet. Add your OpenAI key as OPENAI_API_KEY.",
@@ -160,61 +229,26 @@ export async function draftEmailWithAi(input: AiDraftRequest): Promise<AiDraftRe
   const instruction = input.instruction?.trim();
   if (!instruction) throw new AiAssistError("ai_failed", "Tell the assistant what you want first.");
 
-  let response: Response;
+  let text: string;
   try {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
-      body: JSON.stringify({
-        // Reasoning models (gpt-5 family, o-series) spend completion tokens on internal
-        // reasoning BEFORE the JSON answer - a small cap starves the actual reply. They
-        // also reject the legacy max_tokens parameter and non-default temperature, so
-        // max_completion_tokens is used and temperature is left at its default.
-        max_completion_tokens: 8192,
-        messages: [{ content: buildPrompt({ ...input, instruction }), role: "user" }],
-        model: openAiModel(),
-        response_format: { type: "json_object" },
-      }),
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-      signal: AbortSignal.timeout(60000),
+    const response = await createOpenAiResponseText({
+      input: buildPromptInput(input, instruction),
+      instructions: emailAiInstructions,
+      maxOutputTokens: OPENAI_EMAIL_MAX_OUTPUT_TOKENS,
+      purpose: "email-ai",
+      text: emailDraftTextFormat,
     });
+    text = response.outputText;
   } catch (error) {
+    if (error instanceof PhoenixOpenAiError) {
+      throw aiAssistErrorFromOpenAi(error);
+    }
     throw new AiAssistError(
       "ai_failed",
       `Could not reach the AI service: ${error instanceof Error ? error.message : "network error"}`,
     );
   }
 
-  const payload = (await response.json().catch(() => null)) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    error?: { code?: string; message?: string };
-  } | null;
-
-  if (response.status === 429) {
-    const quota = payload?.error?.code === "insufficient_quota";
-    throw new AiAssistError(
-      "ai_rate_limited",
-      quota
-        ? "The OpenAI account is out of credit. Add billing/credit on platform.openai.com and try again."
-        : "The OpenAI rate limit was reached for now. Wait a minute and try again.",
-    );
-  }
-
-  if (!response.ok) {
-    // Upstream error bodies are logged server-side only - they can echo request details
-    // (and on 401 a redacted key fragment) that must never reach the browser.
-    console.error(`[email-ai] OpenAI request failed (${response.status}): ${payload?.error?.message ?? "no error body"}`);
-    throw new AiAssistError(
-      "ai_failed",
-      response.status === 401 || response.status === 403
-        ? "OpenAI rejected the API key. Check OPENAI_API_KEY on the server."
-        : `The AI service returned ${response.status}. Try again.`,
-    );
-  }
-
-  const text = payload?.choices?.[0]?.message?.content ?? "";
   const parsed = parseAiJson(text);
 
   const fieldKeys = ["bodyHtml", "closingText", "greeting", "previewText", "subject"] as const;

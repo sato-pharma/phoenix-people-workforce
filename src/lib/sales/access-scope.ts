@@ -38,6 +38,59 @@ export function isRestrictedProductCode(code: string | null | undefined): boolea
   return RESTRICTED_SET.has(code.trim().toUpperCase());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Confidential products — NAME matching for the LEGACY Sales pipeline.
+//
+// The legacy `sales_records` table keys products by NAME (there is no product_code
+// column), so the code-based guards above cannot reach it. These helpers strip the
+// restricted products by name instead. The name set is the live master names for the
+// restricted codes UNION a hardcoded fallback, so a master-read failure (or a rename)
+// can never un-hide the products.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Confidential product NAME fallbacks, kept in lockstep with RESTRICTED_PRODUCT_CODES. */
+export const RESTRICTED_PRODUCT_NAME_FALLBACKS = ["lacto basic 1", "lacto basic 2"] as const;
+
+/** Normalize a product name for confidential matching: trim, collapse inner whitespace,
+ *  lowercase. Mirrors how source_of_sales_products.normalized_product_name is built. */
+export function normalizeProductNameKey(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+let restrictedNameCache: { names: Set<string>; at: number } | null = null;
+const RESTRICTED_NAME_TTL_MS = 5 * 60 * 1000;
+
+/** The set of confidential product NAMES (normalized): live master names for the restricted
+ *  codes UNION the hardcoded fallbacks. Cached ~5 min. On ANY error it returns the fallbacks
+ *  only — it can never return empty, so a read failure cannot widen visibility. */
+export async function restrictedProductNameSet(): Promise<Set<string>> {
+  const now = Date.now();
+  if (restrictedNameCache && now - restrictedNameCache.at < RESTRICTED_NAME_TTL_MS) {
+    return restrictedNameCache.names;
+  }
+  const names = new Set<string>(RESTRICTED_PRODUCT_NAME_FALLBACKS.map(normalizeProductNameKey));
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("source_of_sales_products")
+      .select("product_name")
+      .in("product_code", [...RESTRICTED_PRODUCT_CODES]);
+    for (const row of data ?? []) {
+      const key = normalizeProductNameKey((row as { product_name?: string | null }).product_name);
+      if (key) names.add(key);
+    }
+  } catch {
+    // Keep the hardcoded fallbacks — never widen visibility on error.
+  }
+  restrictedNameCache = { names, at: now };
+  return names;
+}
+
+/** Test-only: reset the name cache so a test can control what the next read returns. */
+export function __resetRestrictedNameCacheForTests(): void {
+  restrictedNameCache = null;
+}
+
 // Employee `lines.name` values ("Anti Inf", "Pedia", "CNS", "Office") → Source of Sales
 // `official_line` values ("Anti infective", "CNS", "Head Office", "Pedia"). Pedia/CNS match
 // verbatim; "Anti Inf"/"Office" diverge. The map is keyed by a case/whitespace-insensitive key
@@ -254,6 +307,33 @@ export function stripRestrictedRows<T extends { productCode?: string | null }>(
     if (!code) return true;
     return !excluded.has(code.trim().toUpperCase());
   });
+}
+
+/** Drop rows whose product NAME is confidential (legacy pipeline). `enabled === false`
+ *  (an allowed CEO/Super Admin viewer) returns the rows unchanged. Rows with an empty name
+ *  pass through. Pure given the name set — unit-tested directly. */
+export function stripRestrictedRowsByName<T>(
+  rows: T[],
+  restrictedNames: Set<string>,
+  getName: (row: T) => string | null | undefined,
+  enabled: boolean,
+): T[] {
+  if (!enabled || restrictedNames.size === 0) return rows;
+  return rows.filter((row) => {
+    const key = normalizeProductNameKey(getName(row));
+    if (!key) return true;
+    return !restrictedNames.has(key);
+  });
+}
+
+/** Drop confidential names from a plain product-name list (e.g. a filter dropdown). */
+export function stripRestrictedProductNames(
+  names: string[],
+  restrictedNames: Set<string>,
+  enabled: boolean,
+): string[] {
+  if (!enabled || restrictedNames.size === 0) return names;
+  return names.filter((name) => !restrictedNames.has(normalizeProductNameKey(name)));
 }
 
 /**

@@ -2,7 +2,14 @@ import { forbiddenError } from "@/lib/http/api-errors";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { normalizeLineKey, resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import {
+  canViewRestrictedProducts,
+  isRestrictedProductCode,
+  normalizeLineKey,
+  normalizeProductNameKey,
+  resolveSalesAccessScope,
+  restrictedProductNameSet,
+} from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   SalesMarketingAttributionQuality,
@@ -430,6 +437,24 @@ function applyDashboardLineScope(
   };
 }
 
+/** Remove the confidential products (LA003 / LA004) from the per-product ROI breakdown and the
+ *  product filter list — by code (the row/option `value`) and by name (`label`) as a backstop. */
+function stripRestrictedFromMarketingSnapshot(
+  snapshot: SalesMarketingDashboardSnapshot,
+  restrictedNames: Set<string>,
+): SalesMarketingDashboardSnapshot {
+  const isRestricted = (entry: { value: string; label: string }) =>
+    isRestrictedProductCode(entry.value) || restrictedNames.has(normalizeProductNameKey(entry.label));
+  return {
+    ...snapshot,
+    productRoi: snapshot.productRoi.filter((row) => !isRestricted(row)),
+    filters: {
+      ...snapshot.filters,
+      products: snapshot.filters.products.filter((option) => !isRestricted(option)),
+    },
+  };
+}
+
 export async function getSalesMarketingDashboardSnapshot(
   access: AccessContext,
   filters: SalesMarketingDashboardFilters = defaultFilters,
@@ -457,5 +482,12 @@ export async function getSalesMarketingDashboardSnapshot(
     throw result.error;
   }
 
-  return applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
+  const snapshot = applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
+
+  // Confidential products (LA003 / LA004): only CEO / Super Admin may see them. For everyone else
+  // strip the per-product ROI rows and the product filter. NOTE: the summary totals, request
+  // report and customer-impact figures are aggregated INSIDE the RPC and still include these
+  // products' value until the staged `p_exclude_codes` migration is applied (tracked separately).
+  if (canViewRestrictedProducts(access.role)) return snapshot;
+  return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
 }

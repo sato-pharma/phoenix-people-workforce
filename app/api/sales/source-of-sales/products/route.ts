@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { canViewRestrictedProducts, isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import {
   createSourceOfSalesProduct,
@@ -41,7 +42,11 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
     const data = await listSourceOfSalesProducts();
-    return NextResponse.json({ success: true, data });
+    // Confidential products (LA003 / LA004) are listed only for CEO / Super Admin.
+    const visible = canViewRestrictedProducts(access.role)
+      ? data
+      : data.filter((product) => !isRestrictedProductCode(product.productCode));
+    return NextResponse.json({ success: true, data: visible });
   } catch (error) {
     return errorResponse(error, "Failed to load Source of Sales products.");
   }

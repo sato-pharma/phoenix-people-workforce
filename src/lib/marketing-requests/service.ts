@@ -1565,6 +1565,7 @@ async function createMarketingApprovalSteps(params: {
     sequence += 1;
     rows.push({
       allow_reject: input.step.allowReject,
+      allow_return: input.step.allowReturn,
       assigned_hr_id: storedHrId,
       assigned_role: input.assignedRole,
       decision_labels: input.step.decisionLabels,
