@@ -54,13 +54,13 @@ function headerKey(value: unknown): string {
 export type Cell = string | number | boolean | Date | null | undefined;
 export type CellRow = Cell[];
 
-function cellText(value: Cell): string {
+export function cellText(value: Cell): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
   return String(value).trim();
 }
 
-function parseNum(value: Cell): number {
+export function parseNum(value: Cell): number {
   if (typeof value === "number") return value;
   const text = cellText(value).replace(/,/g, "");
   if (!text) return NaN;
