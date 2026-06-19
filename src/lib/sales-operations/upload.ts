@@ -227,7 +227,7 @@ async function runStrictValidation(distributorCode: string, rec: Extract<SalesOp
 
 // ── Public API ─────────────────────────────────────────────────────────────────────────────────
 export type AnalyzeResult =
-  | { status: "ok"; preview: SalesOpsPreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
+  | { status: "ok"; preview: SalesOpsPreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; hasDateColumn: boolean; engineVersion: string; validation: ValidationReport }
   | { status: "header_error"; distributorName: string; missingGroups: HeaderGroup[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorName: string };
 
@@ -247,6 +247,7 @@ export async function analyzeSalesOpsUpload(distributorCode: string, file: File,
     reconciliation,
     period: rec.period,
     needsPeriod: !rec.period,
+    hasDateColumn: rec.hasDateColumn,
     engineVersion: SALES_OPS_ENGINE_VERSION,
     validation,
   };

@@ -19,7 +19,7 @@ export default async function SalesOpsUploadPage() {
     redirect(resolveLandingPathForRole(accessContext.role));
   }
 
-  const distributors = listDistributorTemplates().map((t) => ({ code: t.code, name: t.name }));
+  const distributors = listDistributorTemplates().map((t) => ({ code: t.code, name: t.name, hasDateColumn: t.hasDateColumn }));
 
   return (
     <div className="space-y-4 p-4">

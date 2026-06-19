@@ -42,7 +42,7 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, period: result.period, needsPeriod: result.needsPeriod, engineVersion: result.engineVersion, validation: result.validation });
+    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, period: result.period, needsPeriod: result.needsPeriod, hasDateColumn: result.hasDateColumn, engineVersion: result.engineVersion, validation: result.validation });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });

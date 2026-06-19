@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { CodedRow, NormalizeResult } from "../src/lib/sales-operations/types.ts";
 import {
@@ -8,6 +9,10 @@ import {
   resolveUploadPeriod,
 } from "../src/lib/sales-operations/upload.ts";
 import { validateSalesOpsUpload } from "../src/lib/sales-operations/validation.ts";
+
+function source(path: string) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
 
 function row(over: Partial<CodedRow> = {}): CodedRow {
   return {
@@ -68,4 +73,23 @@ export async function runSalesOperationsUploadTests() {
   assert.equal(residual?.severity, "warning", "wiring nationalUnits!=0 through the context makes the residual check fire");
   // and the one-pivot-row→many-slices reconcile must NOT block (defensive office gate)
   assert.equal(report.findings.find((x) => x.code === "rows_read_mismatch"), undefined);
+
+  // ── Period semantics behind the UI: auto-detect from the sheet, manual month picker for date-less ──
+  // A dated sheet auto-detects its single month with no override; a manual month overrides/consolidates.
+  assert.deepEqual(resolveUploadPeriod(["2026-04", "2026-04"], ""), { kind: "ok", period: "2026-04", consolidate: false }, "dated sheet → period auto-detected from rows");
+  assert.deepEqual(resolveUploadPeriod(["2026-04"], "2026-07"), { kind: "ok", period: "2026-07", consolidate: true }, "a picked month overrides the detected period");
+  // A date-less sheet with no picked month cannot resolve a period (the UI must require the picker).
+  assert.deepEqual(resolveUploadPeriod([], ""), { kind: "missing" }, "date-less sheet with no picked month → missing");
+
+  // ── Wiring guards: hasDateColumn must reach the UI, and the period control must be a month picker ──
+  const uploadSource = source("src/lib/sales-operations/upload.ts");
+  const analyzeRouteSource = source("app/api/sales-operations/upload/analyze/route.ts");
+  const uploadPageSource = source("app/(admin)/sales-operations/upload/page.tsx");
+  const workspaceSource = source("src/components/sales-operations/sales-ops-upload-workspace.tsx");
+  assert.match(uploadSource, /hasDateColumn:\s*rec\.hasDateColumn/, "analyze result must expose hasDateColumn for the UI");
+  assert.match(analyzeRouteSource, /hasDateColumn:\s*result\.hasDateColumn/, "analyze route must forward hasDateColumn");
+  assert.match(uploadPageSource, /hasDateColumn:\s*t\.hasDateColumn/, "upload page must pass each distributor's hasDateColumn");
+  assert.match(workspaceSource, /type="month"/, "period control must be a month picker, not a free-text box");
+  assert.doesNotMatch(workspaceSource, /placeholder="2026-04"/, "the free-text YYYY-MM period box must be removed");
+  assert.match(workspaceSource, /!selectedHasDate && !PERIOD_RE\.test\(period\)/, "date-less channels must require a picked month before analyze");
 }
