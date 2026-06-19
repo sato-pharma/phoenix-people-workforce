@@ -10,20 +10,19 @@
 //   7. source_of_sales_product_aliases (Products tab Arabic aliases)
 //
 // Usage:
-//   node scripts/seed-vlookup-master.mjs [--dry-run] [--production]
+//   node scripts/seed-vlookup-master.mjs [--dry-run] [--production] [--excel path/to/Vlookup-Masterrr.xlsx]
 //
 //   --dry-run     Print what would be inserted without touching the DB
 //   --production  Target production Supabase (default = staging izhmxvgiktiafqusolot)
+//   --excel       Optional workbook path; defaults to Desktop/Mapping/Vlookup-Masterrr.xlsx
 
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 // ── Config ──────────────────────────────────────────────────────────────────────
 
-const EXCEL_PATH = "C:/Users/satoh/OneDrive/Desktop/Vlookup-Masterrr.xlsx";
-const SOURCE_FILE = "Vlookup-Masterrr.xlsx";
 const CHUNK = 500;
 
 const STAGING_URL = "https://izhmxvgiktiafqusolot.supabase.co";
@@ -32,6 +31,20 @@ const STAGING_REF = "izhmxvgiktiafqusolot";
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const USE_PRODUCTION = args.includes("--production");
+const explicitExcelPath = argValue("--excel");
+const DEFAULT_EXCEL_PATHS = [
+  "C:/Users/satoh/OneDrive/Desktop/Mapping/Vlookup-Masterrr.xlsx",
+  "C:/Users/satoh/OneDrive/Desktop/Vlookup-Masterrr.xlsx",
+];
+const EXCEL_PATH = explicitExcelPath ?? DEFAULT_EXCEL_PATHS.find((candidate) => existsSync(candidate)) ?? DEFAULT_EXCEL_PATHS[0];
+const SOURCE_FILE = basename(EXCEL_PATH);
+
+function argValue(name) {
+  const index = args.indexOf(name);
+  if (index === -1) return "";
+  const value = args[index + 1];
+  return value && !value.startsWith("--") ? value : "";
+}
 
 // ── Distributor tab name → canonical distributor code ─────────────────────────
 // The tab name in the Excel vs the distributor_code column value vs our DB code.

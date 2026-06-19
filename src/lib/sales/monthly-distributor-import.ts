@@ -1530,20 +1530,6 @@ async function parseDistributorSalesWorkbookBuffer(input: {
         "warning",
       );
     }
-    if (
-      productReference
-      && normalizeDisplay(rawProductName)
-      && normalizeKey(rawProductName) !== normalizeKey(productReference.productName)
-    ) {
-      addIssue(
-        rowIssues,
-        rowNumber,
-        "Product Name",
-        rawProductName,
-        `Product Name is different from the product source table (${productReference.productName}) for Product Code ${productCode}. Official product reference is used.`,
-        "warning",
-      );
-    }
     if (areaReference && regionCode && normalizeCode(areaReference.regionCode) !== regionCode) {
       addIssue(
         rowIssues,
