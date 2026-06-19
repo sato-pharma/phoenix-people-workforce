@@ -45,6 +45,9 @@ type Props = {
   initialModule?: ActionHubModule | null;
   initialId?: string | null;
   callerRole?: string | null;
+  // When embedded inside the two-tab Actions workspace, the parent renders the
+  // page hero, so the hub skips its own to avoid a duplicate title band.
+  embedded?: boolean;
 };
 
 type ContextData = {
@@ -474,7 +477,7 @@ function resolveResignationActions(status: string): Array<{ key: string; label: 
   return [];
 }
 
-export function ActionCenterHub({ initialData, initialModule, initialId, callerRole }: Props) {
+export function ActionCenterHub({ initialData, initialModule, initialId, callerRole, embedded }: Props) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contextCacheRef = useRef(new Map<string, ContextData>());
@@ -802,20 +805,22 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     <div className="space-y-5">
       {showShortcuts && <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />}
 
-      <AdminPageHero
-        badges={(
-          <>
-            <AdminInsightChip>{stats.total} pending</AdminInsightChip>
-            <AdminInsightChip tone={stats.overdue > 0 ? "orange" : "slate"}>{stats.overdue} overdue</AdminInsightChip>
-            <AdminInsightChip tone={highPriorityCount > 0 ? "orange" : "slate"}>{highPriorityCount} urgent</AdminInsightChip>
-            <AdminInsightChip tone="slate">Avg {stats.avgAge}d age</AdminInsightChip>
-          </>
-        )}
-        description="Review approvals, escalations, and manager decisions from the admin workspace without switching into the employee portal experience."
-        eyebrow="Phoenix Workforce"
-        icon={<Inbox className="h-3.5 w-3.5" />}
-        title="Action Center"
-      />
+      {!embedded && (
+        <AdminPageHero
+          badges={(
+            <>
+              <AdminInsightChip>{stats.total} pending</AdminInsightChip>
+              <AdminInsightChip tone={stats.overdue > 0 ? "orange" : "slate"}>{stats.overdue} overdue</AdminInsightChip>
+              <AdminInsightChip tone={highPriorityCount > 0 ? "orange" : "slate"}>{highPriorityCount} urgent</AdminInsightChip>
+              <AdminInsightChip tone="slate">Avg {stats.avgAge}d age</AdminInsightChip>
+            </>
+          )}
+          description="Review approvals, escalations, and manager decisions from the admin workspace without switching into the employee portal experience."
+          eyebrow="Phoenix Workforce"
+          icon={<Inbox className="h-3.5 w-3.5" />}
+          title="Action Center"
+        />
+      )}
 
       {allItems.length === 0 ? (
         <div className={`flex min-h-[420px] flex-col items-center justify-center gap-4 p-12 text-center ${adminPanelClassName}`}>

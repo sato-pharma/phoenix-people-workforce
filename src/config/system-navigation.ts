@@ -205,7 +205,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "people-management",
     items: [
-      { href: "/admin/action-center", icon: Inbox, label: "Action Center", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
+      { href: "/admin/action-center", icon: Inbox, label: "Actions", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }], roles: ["Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },

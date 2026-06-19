@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { ActionCenterHub } from "@/components/action-center/action-center-hub";
+import { ActionsWorkspace } from "@/components/action-center/actions-workspace";
 import type {
   ActionHubData,
   ActionHubItem,
@@ -13,13 +13,12 @@ import { getVacationActionCenterData } from "@/lib/vacation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
-import { getApproverPendingRequests } from "@/lib/marketing-requests/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { getMyRequestItems } from "@/lib/action-center/service";
 import type { VacationActionCenterRow } from "@/lib/vacation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { EmployeeExcuseRequest } from "@/lib/excuses/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
-import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
 import type { ContractRow } from "@/lib/contracts/types";
 
 export const dynamic = "force-dynamic";
@@ -135,31 +134,6 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
   };
 }
 
-function mapMarketingItem(row: MarketingApproverInboxRow): ActionHubItem {
-  return {
-    id: row.id,
-    module: "marketing",
-    employeeName: row.requesterName,
-    employeeHrId: row.requesterHrId,
-    title: `${row.requestType} · ${row.customerName}`,
-    statusLabel: row.currentStepName,
-    submittedAt: row.submittedAt ?? new Date().toISOString(),
-    urgency: "normal",
-    detail: {
-      module: "marketing",
-      requestCode: row.requestCode,
-      customerName: row.customerName,
-      requestType: row.requestType,
-      estimatedCost: row.estimatedCost,
-      payDate: row.payDate,
-      currentStepName: row.currentStepName,
-      decisionLabels: row.decisionLabels
-        ? { approve: row.decisionLabels.approve, reject: row.decisionLabels.reject, return: row.decisionLabels.return }
-        : null,
-    },
-  };
-}
-
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
 function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
@@ -189,7 +163,7 @@ function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
   };
 }
 
-export default async function ActionCenterPage({
+export default async function ActionsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -203,16 +177,20 @@ export default async function ActionCenterPage({
   const initialModule = (typeof params.module === "string" ? params.module : null) as ActionHubModule | null;
   const initialId = typeof params.id === "string" ? params.id : null;
 
-  const settled = await Promise.allSettled([
-    getVacationActionCenterData(access).catch(() => null),
-    getResignationsDashboardData().catch(() => null),
-    getManagerPendingExcuses(access).catch(() => null),
-    listOutstationRequests().catch(() => null),
-    getApproverPendingRequests(access).catch(() => null),
-    getContractRenewalDashboardData(access).catch(() => null),
+  // The "Awaiting my action" inbox excludes marketing requests by design — marketing
+  // keeps its own dedicated approval inbox. The "My requests" tab is resolved in parallel.
+  const [inboxSettled, myRequests] = await Promise.all([
+    Promise.allSettled([
+      getVacationActionCenterData(access).catch(() => null),
+      getResignationsDashboardData().catch(() => null),
+      getManagerPendingExcuses(access).catch(() => null),
+      listOutstationRequests().catch(() => null),
+      getContractRenewalDashboardData(access).catch(() => null),
+    ]),
+    getMyRequestItems(access).catch(() => []),
   ]);
 
-  const [leaveResult, resignationsResult, excusesResult, outstationResult, marketingResult, contractResult] = settled;
+  const [leaveResult, resignationsResult, excusesResult, outstationResult, contractResult] = inboxSettled;
 
   const items: ActionHubItem[] = [];
 
@@ -245,12 +223,6 @@ export default async function ActionCenterPage({
     }
   }
 
-  if (marketingResult.status === "fulfilled" && marketingResult.value) {
-    for (const row of marketingResult.value.rows) {
-      items.push(mapMarketingItem(row));
-    }
-  }
-
   if (contractResult.status === "fulfilled" && contractResult.value) {
     for (const row of contractResult.value.rows) {
       const item = mapContractRenewalItem(row);
@@ -265,12 +237,18 @@ export default async function ActionCenterPage({
     items,
   };
 
+  // Approvers land on their inbox; pure requesters (empty inbox) land on "My requests".
+  const initialTab: "inbox" | "mine" =
+    initialModule || initialId || items.length > 0 ? "inbox" : myRequests.length > 0 ? "mine" : "inbox";
+
   return (
-    <ActionCenterHub
-      initialData={data}
+    <ActionsWorkspace
+      inboxData={data}
+      myRequests={myRequests}
       initialModule={initialModule}
       initialId={initialId}
       callerRole={access.role}
+      initialTab={initialTab}
     />
   );
 }
