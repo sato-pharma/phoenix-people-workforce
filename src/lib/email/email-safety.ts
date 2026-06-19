@@ -70,6 +70,25 @@ export function sanitizeEmailTemplateHtml(value: string) {
         attribs: { ...attribs, rel: "noopener noreferrer", target: "_blank" },
         tagName: "a",
       }),
+      // sanitize-html's discard mode removes disallowed tags AND their entire content.
+      // The AI may generate div / heading wrappers even when instructed not to.
+      // Transforming them to <p> (which IS in allowedTags) preserves the content while
+      // keeping the email HTML email-client-safe. transformTags runs before the
+      // allowedTags check, so the converted <p> passes through normally.
+      div: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      section: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      article: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      header: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      footer: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      main: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      aside: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      nav: (_tagName, attribs) => ({ tagName: "p", attribs }),
+      h1: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:20px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
+      h2: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:18px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
+      h3: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:16px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
+      h4: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:14px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
+      h5: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:13px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
+      h6: (_tagName, attribs) => ({ tagName: "p", attribs: { ...attribs, style: `font-size:12px;font-weight:bold${attribs.style ? `;${attribs.style}` : ""}` } }),
     },
   }).trim();
 }
