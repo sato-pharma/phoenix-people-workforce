@@ -11,8 +11,6 @@ import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const PROFILE_TABLE = "source_of_sales_distributor_profile";
-
 // The editable fields — ONE cell each, in the exact column order of the exported workbook.
 export const PROFILE_FIELDS = [
   { key: "productCodeColumns", column: "product_code_columns", label: "Product Code" },
@@ -45,38 +43,6 @@ export type EditableProfile = {
   fields: Record<ProfileFieldKey, string[]>;
 };
 
-const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).map((x) => String(x).trim()).filter(Boolean) : []);
-
-// DB row -> editable shape for the UI (one cell per field, exact order).
-function rowToEditable(code: string, row: Record<string, unknown>): EditableProfile {
-  return {
-    distributorCode: code,
-    distributorName: rawProfileForDistributor(code)?.distributorName ?? code,
-    valueSource: row.value_source === "sheet" ? "sheet" : "recompute",
-    regionOnly: Boolean(row.region_only),
-    isCustom: true,
-    fields: {
-      productCodeColumns: arr(row.product_code_columns),
-      productNameColumns: arr(row.product_name_columns),
-      qtyColumns: arr(row.qty_columns),
-      branchCodeColumns: arr(row.branch_code_columns),
-      branchNameColumns: arr(row.branch_name_columns),
-      bonusColumns: arr(row.bonus_columns),
-      valueColumns: arr(row.value_columns),
-      discountColumns: arr(row.discount_columns),
-      dateColumns: arr(row.date_columns),
-      customerCodeColumns: arr(row.customer_code_columns),
-      customerNameColumns: arr(row.customer_name_columns),
-      customerAddressColumns: arr(row.customer_address_columns),
-      areaIdColumns: arr(row.area_id_columns),
-      areaNameColumns: arr(row.area_name_columns),
-      brickIdColumns: arr(row.brick_id_columns),
-      brickNameColumns: arr(row.brick_name_columns),
-      regionColumns: arr(row.region_columns),
-    },
-  };
-}
-
 // Code default -> editable shape. The code profile keeps product code+name in one list (first = code,
 // rest = name) and the geography text under territoryColumns (-> the "Area ID" field).
 function defaultToEditable(p: DistributorProfile): EditableProfile {
@@ -88,8 +54,8 @@ function defaultToEditable(p: DistributorProfile): EditableProfile {
     regionOnly: Boolean(p.regionOnly),
     isCustom: false,
     fields: {
-      productCodeColumns: product.slice(0, 1),
-      productNameColumns: product.slice(1),
+      productCodeColumns: p.productCodeColumns ?? product.slice(0, 1),
+      productNameColumns: p.productNameColumns ?? product.slice(1),
       qtyColumns: p.qtyColumns ?? [],
       branchCodeColumns: [],
       branchNameColumns: [],
@@ -109,55 +75,18 @@ function defaultToEditable(p: DistributorProfile): EditableProfile {
   };
 }
 
-// DB row -> engine DistributorProfile. productColumns = code then name; the brick is resolved from the
-// geography text columns (Area ID / Area Name / Region) and/or the direct Brick ID.
-function rowToProfile(code: string, row: Record<string, unknown>): DistributorProfile {
-  return {
-    distributorCode: code,
-    distributorName: rawProfileForDistributor(code)?.distributorName ?? code,
-    productCodeColumns: arr(row.product_code_columns),
-    productNameColumns: arr(row.product_name_columns),
-    productColumns: [...arr(row.product_code_columns), ...arr(row.product_name_columns)],
-    qtyColumns: arr(row.qty_columns),
-    bonusColumns: arr(row.bonus_columns),
-    valueColumns: arr(row.value_columns),
-    valueSource: row.value_source === "sheet" ? "sheet" : "recompute",
-    dateColumns: arr(row.date_columns),
-    customerCodeColumns: arr(row.customer_code_columns),
-    customerNameColumns: arr(row.customer_name_columns),
-    customerAddressColumns: arr(row.customer_address_columns),
-    territoryColumns: [...arr(row.area_id_columns), ...arr(row.area_name_columns), ...arr(row.region_columns)],
-    brickIdColumns: arr(row.brick_id_columns),
-    discountColumns: arr(row.discount_columns),
-    regionOnly: Boolean(row.region_only),
-  };
-}
-
-// DB-first resolve for ONE distributor — used by the normalizer engine.
+// SINGLE SOURCE OF TRUTH: a distributor's column mapping comes ONLY from the code profiles, which are
+// generated from the unified Headers Mapping sheet. The editable DB override was removed so NOTHING
+// can override the mapping (no second source of headers in Source of Sales). Kept async + same
+// signature for its callers (recognize.ts / service.ts).
 export async function resolveDistributorProfile(distributorCode: string): Promise<DistributorProfile | null> {
-  const code = String(distributorCode ?? "").trim().toUpperCase();
-  if (!code) return null;
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from(PROFILE_TABLE).select("*").eq("distributor_code", code).eq("active", true).maybeSingle();
-    if (!error && data) return rowToProfile(code, data as Record<string, unknown>);
-  } catch { /* table absent / db error -> code fallback */ }
-  return rawProfileForDistributor(code);
+  return rawProfileForDistributor(String(distributorCode ?? "").trim().toUpperCase());
 }
 
-// All distributors as editable profiles (DB override where present, else code default).
+// All distributors as read-only profiles straight from the code profiles (= the Headers Mapping).
+// There is no DB override any more, so every profile is the single source of truth (isCustom=false).
 export async function listEditableProfiles(): Promise<EditableProfile[]> {
-  let dbRows: Record<string, unknown>[] = [];
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data } = await supabase.from(PROFILE_TABLE).select("*").eq("active", true);
-    dbRows = (data ?? []) as Record<string, unknown>[];
-  } catch { /* ignore — all code defaults */ }
-  const byCode = new Map(dbRows.map((r) => [String(r.distributor_code ?? "").toUpperCase(), r]));
-  return RAW_DISTRIBUTOR_PROFILES.map((p) => {
-    const row = byCode.get(p.distributorCode.toUpperCase());
-    return row ? rowToEditable(p.distributorCode, row) : defaultToEditable(p);
-  });
+  return RAW_DISTRIBUTOR_PROFILES.map((p) => defaultToEditable(p));
 }
 
 export type SaveProfileInput = {
@@ -166,49 +95,15 @@ export type SaveProfileInput = {
   regionOnly: boolean;
 };
 
-export async function saveDistributorProfile(distributorCode: string, input: SaveProfileInput, updatedBy: string): Promise<void> {
-  const code = String(distributorCode ?? "").trim().toUpperCase();
-  if (!code) throw new Error("Distributor code is required.");
-  if (!RAW_DISTRIBUTOR_PROFILES.some((p) => p.distributorCode.toUpperCase() === code)) {
-    throw new Error(`Unknown distributor: ${code}`);
-  }
-  const f = input.fields;
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from(PROFILE_TABLE).upsert({
-    distributor_code: code,
-    product_code_columns: arr(f.productCodeColumns),
-    product_name_columns: arr(f.productNameColumns),
-    qty_columns: arr(f.qtyColumns),
-    branch_code_columns: arr(f.branchCodeColumns),
-    branch_name_columns: arr(f.branchNameColumns),
-    bonus_columns: arr(f.bonusColumns),
-    value_columns: arr(f.valueColumns),
-    discount_columns: arr(f.discountColumns),
-    date_columns: arr(f.dateColumns),
-    customer_code_columns: arr(f.customerCodeColumns),
-    customer_name_columns: arr(f.customerNameColumns),
-    customer_address_columns: arr(f.customerAddressColumns),
-    area_id_columns: arr(f.areaIdColumns),
-    area_name_columns: arr(f.areaNameColumns),
-    brick_id_columns: arr(f.brickIdColumns),
-    brick_name_columns: arr(f.brickNameColumns),
-    region_columns: arr(f.regionColumns),
-    value_source: input.valueSource === "sheet" ? "sheet" : "recompute",
-    region_only: Boolean(input.regionOnly),
-    active: true,
-    updated_by: updatedBy,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "distributor_code" });
-  if (error) throw new Error(`Failed to save distributor profile: ${error.message ?? "unknown error"}`);
+// Saving a per-distributor override is no longer allowed — distributor column mappings are defined
+// ONLY by the Headers Mapping (the single source of truth). The editable DB override was removed.
+export async function saveDistributorProfile(_distributorCode: string, _input: SaveProfileInput, _updatedBy: string): Promise<void> {
+  throw new Error("Distributor header mappings are read-only — they are defined by the Headers Mapping (the single source of truth). Update the Headers Mapping / code profile instead of saving a per-distributor override.");
 }
 
-// Reset one distributor back to the code default (delete its override row).
-export async function resetDistributorProfile(distributorCode: string): Promise<void> {
-  const code = String(distributorCode ?? "").trim().toUpperCase();
-  if (!code) return;
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from(PROFILE_TABLE).delete().eq("distributor_code", code);
-  if (error) throw new Error(`Failed to reset distributor profile: ${error.message ?? "unknown error"}`);
+// No-op: there are no DB overrides to reset — the code profile (Headers Mapping) is always the live mapping.
+export async function resetDistributorProfile(_distributorCode: string): Promise<void> {
+  /* intentionally empty — distributor mappings are read-only (single source: the Headers Mapping). */
 }
 
 // The "puzzle pieces": each distributor's column headers. Seeded from the distributor's KNOWN columns

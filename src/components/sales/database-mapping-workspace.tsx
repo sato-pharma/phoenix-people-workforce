@@ -12,7 +12,6 @@ import {
   MapPin,
   Package,
   Plus,
-  Puzzle,
   RefreshCw,
   ShieldCheck,
   Truck,
@@ -24,7 +23,6 @@ import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
 import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
-import { DistributorProfileEditor } from "@/components/sales/distributor-profile-editor";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -572,21 +570,11 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             variant="secondary"
           >
             <ShieldCheck className="h-4 w-4" />
-            Database Validation
-          </Button>
-          <Button
-            className={cn("gap-2 rounded-xl font-black", activeTab === "profiles" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
-            onClick={() => setActiveTab("profiles")}
-            variant="secondary"
-          >
-            <Puzzle className="h-4 w-4" />
             Distributor Mapping
           </Button>
         </div>
 
-        {activeTab === "profiles" ? (
-          <DistributorProfileEditor />
-        ) : activeDef === null ? (
+        {activeDef === null ? (
           <DatabaseValidationTab headerGrid={initialHeaderGrid} />
         ) : (
           <MasterTab
