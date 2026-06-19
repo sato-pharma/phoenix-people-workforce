@@ -19,6 +19,7 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   buildCoachingReportAnalytics,
+  buildTrainingManagerCoachingComparison,
   filterCoachingQuarterlySummaryByReports,
 } from "@/lib/coaching/analytics";
 import {
@@ -126,6 +127,10 @@ export default async function CoachingAnalyticsPage() {
     ...scoreAnalytics,
     quarterlySummary: visibleQuarterlySummary,
     reports,
+    trainingManagerComparison: buildTrainingManagerCoachingComparison({
+      employees,
+      reports,
+    }),
   };
 
   return (

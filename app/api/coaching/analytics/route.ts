@@ -7,8 +7,10 @@ import {
 } from "@/lib/coaching/service";
 import {
   buildCoachingReportAnalytics,
+  buildTrainingManagerCoachingComparison,
   filterCoachingQuarterlySummaryByReports,
 } from "@/lib/coaching/analytics";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
   type AccessContext,
   normalizeHrId,
@@ -42,13 +44,14 @@ export async function GET(request: Request) {
     const access = await requireCoachingPermission(request, "read");
     const filters = enforceAnalyticsScope(filtersFromRequest(request), access);
     const reports = await getCoachingReports(filters, access);
-    const [quarterlySummary, scoreAnalytics] = await Promise.all([
+    const [quarterlySummary, scoreAnalytics, employees] = await Promise.all([
       getCoachingQuarterlySummary({
         medicalRepHrId: filters.medicalRepHrId,
         quarter: filters.quarter,
         year: filters.year,
       }, access),
       getCoachingScoreAnalyticsForReports(reports),
+      getEmployeeDirectoryRows(),
     ]);
     const hasOrgFilters = Boolean(filters.lineId || filters.areaId || filters.teamId);
 
@@ -58,6 +61,11 @@ export async function GET(request: Request) {
         ...scoreAnalytics,
         quarterlySummary: filterCoachingQuarterlySummaryByReports(quarterlySummary, reports, hasOrgFilters || Boolean(filters.coachHrId)),
         reports,
+        trainingManagerComparison: buildTrainingManagerCoachingComparison({
+          employees,
+          filters,
+          reports,
+        }),
       },
       success: true,
     });

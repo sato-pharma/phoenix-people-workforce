@@ -222,6 +222,54 @@ export type CoachingParameterDistributionRow = {
   percent: number;
 };
 
+export type CoachingTrainingManagerComparisonStatus = "coached" | "not_coached";
+
+export type CoachingTrainingManagerComparisonRow = {
+  areaId: number | null;
+  areaName: string | null;
+  averageScore: number | null;
+  coachNames: string[];
+  coachingCount: number;
+  firstCoachingDate: string | null;
+  hireDate: string | null;
+  hrId: string;
+  latestCoachName: string | null;
+  latestCoachingDate: string | null;
+  lineId: number | null;
+  lineName: string | null;
+  medicalRepName: string;
+  status: CoachingTrainingManagerComparisonStatus;
+  teamId: number | null;
+  teamName: string | null;
+};
+
+export type CoachingTrainingManagerComparisonBucket = {
+  coachedCount: number;
+  coachedRate: number;
+  label: string;
+  totalReps: number;
+  uncoachedCount: number;
+};
+
+export type CoachingTrainingManagerAreaComparisonRow = CoachingTrainingManagerComparisonBucket & {
+  areaId: number | null;
+  areaName: string | null;
+};
+
+export type CoachingTrainingManagerHireYearComparisonRow = CoachingTrainingManagerComparisonBucket & {
+  hireYear: number | null;
+};
+
+export type CoachingTrainingManagerComparison = {
+  areaBreakdown: CoachingTrainingManagerAreaComparisonRow[];
+  coachedCount: number;
+  coachedRate: number;
+  hireYearBreakdown: CoachingTrainingManagerHireYearComparisonRow[];
+  rows: CoachingTrainingManagerComparisonRow[];
+  totalMedicalReps: number;
+  uncoachedCount: number;
+};
+
 export type CoachingScoreAnalytics = {
   categoryAverageScores: CoachingCategoryAverageScore[];
   keyDevelopmentAreaDistribution: CoachingParameterDistributionRow[];
