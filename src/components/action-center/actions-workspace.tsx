@@ -17,6 +17,9 @@ type Props = {
   initialId?: string | null;
   callerRole?: string | null;
   initialTab: ActionsTab;
+  // When rendered inside the employee-portal shell (which supplies its own page header),
+  // skip the admin page hero and just render the tabs + content.
+  embedded?: boolean;
 };
 
 export function ActionsWorkspace({
@@ -26,6 +29,7 @@ export function ActionsWorkspace({
   initialId,
   callerRole,
   initialTab,
+  embedded,
 }: Props) {
   const [tab, setTab] = useState<ActionsTab>(initialTab);
 
@@ -36,20 +40,22 @@ export function ActionsWorkspace({
 
   return (
     <div className="space-y-5">
-      <AdminPageHero
-        badges={(
-          <>
-            <AdminInsightChip tone={inboxData.items.length > 0 ? "orange" : "slate"}>
-              {inboxData.items.length} awaiting me
-            </AdminInsightChip>
-            <AdminInsightChip tone="slate">{myRequests.length} my requests</AdminInsightChip>
-          </>
-        )}
-        description="Approvals waiting on your decision, and the live status of the requests you submitted — in one place."
-        eyebrow="Phoenix Workforce"
-        icon={<Inbox className="h-3.5 w-3.5" />}
-        title="Actions"
-      />
+      {!embedded && (
+        <AdminPageHero
+          badges={(
+            <>
+              <AdminInsightChip tone={inboxData.items.length > 0 ? "orange" : "slate"}>
+                {inboxData.items.length} awaiting me
+              </AdminInsightChip>
+              <AdminInsightChip tone="slate">{myRequests.length} my requests</AdminInsightChip>
+            </>
+          )}
+          description="Approvals waiting on your decision, and the live status of the requests you submitted — in one place."
+          eyebrow="Phoenix Workforce"
+          icon={<Inbox className="h-3.5 w-3.5" />}
+          title="Actions"
+        />
+      )}
 
       <div className="flex gap-1 border-b border-slate-200">
         {tabs.map(({ key, label, count, icon: Icon }) => (
