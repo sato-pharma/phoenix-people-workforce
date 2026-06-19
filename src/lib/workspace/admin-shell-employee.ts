@@ -12,7 +12,14 @@ import {
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
-export const workspaceMarketingRoles = ["SFE Manager", "Marketing Manager"] as const satisfies readonly PhoenixRole[];
+export const workspaceMarketingRoles = [
+  "SFE Manager",
+  "Marketing Manager",
+  // Finance Execution of marketing requests runs from the workspace shell. The Financial Advisor
+  // owns that step; Finance Manager is kept as the resolution fallback, so both reach the inbox.
+  "Finance Manager",
+  "Financial Advisor",
+] as const satisfies readonly PhoenixRole[];
 
 type WorkspaceAccessOptions = {
   action?: PermissionAction;

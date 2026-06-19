@@ -18,6 +18,8 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "marketing manager") return "/workspace/marketing-requests";
   if (normalized === "finance manager") return "/admin/outstation/expense-command";
   if (normalized === "sfe manager") return "/workspace/marketing-requests";
+  // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
+  if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
   if (normalized === "training manager") return "/employee-portals/training-manager";
   if (normalized === "ceo") return "/sales";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";

@@ -150,6 +150,7 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   "District Manager": "manager",
   Employee: "employee",
   "Finance Manager": "finance",
+  "Financial Advisor": "finance",
   "Group Product Manager": "manager",
   Manager: "manager",
   "Marketing Manager": "manager",
