@@ -9,8 +9,9 @@ import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/upload
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Weekly files are small (a few hundred rows), so a plain multipart upload is enough — no signed
-// storage URL path like the monthly importer needs.
+// Dry-run validation only — never persists. Returns the full validation result (tables, totals,
+// issues) so the UI can show them before the user decides to confirm upload.
+// The actual persist step is /api/sales/weekly/upload.
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -21,8 +22,6 @@ export async function POST(request: Request) {
     const periodDate = String(formData.get("periodDate") ?? "").trim() || null;
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
-    // The weekly parser only reads .xlsx (ExcelJS xlsx.load). Reject legacy .xls up front with a
-    // clean 400 instead of letting it fail mid-parse as a 500.
     const checkFile = (value: FormDataEntryValue | null, label: string) => {
       if (!(value instanceof File)) {
         return { ok: false as const, response: NextResponse.json({ success: false, error: `${label} is required.`, code: "invalid_weekly_file" }, { status: 400 }) };
@@ -38,30 +37,22 @@ export async function POST(request: Request) {
       return { ok: true as const, file: value };
     };
 
-    // Overseas (PS) ships two matrix files; everyone else ships one combined workbook.
     let result: Awaited<ReturnType<typeof importWeeklySalesFile>>;
     if (distributorCode.toUpperCase() === "PS") {
       const sales = checkFile(formData.get("salesFile"), "The Overseas POS sales matrix file");
       if (!sales.ok) return sales.response;
       const stock = checkFile(formData.get("stockFile"), "The Overseas POS stock matrix file");
       if (!stock.ok) return stock.response;
-      result = await importWeeklySalesFile({ distributorCode, salesFile: sales.file, stockFile: stock.file, uploadedBy, periodDate });
+      result = await importWeeklySalesFile({ distributorCode, salesFile: sales.file, stockFile: stock.file, uploadedBy, periodDate, dryRun: true });
     } else {
       const single = checkFile(formData.get("file"), "A weekly file");
       if (!single.ok) return single.response;
-      result = await importWeeklySalesFile({ distributorCode, file: single.file, uploadedBy, periodDate });
+      result = await importWeeklySalesFile({ distributorCode, file: single.file, uploadedBy, periodDate, dryRun: true });
     }
-    const blocked = result.status !== "validated";
 
-    return NextResponse.json(
-      {
-        success: !blocked,
-        data: result,
-        error: blocked ? "Validation blocked. Fix the flagged rows, then re-upload." : undefined,
-        message: blocked ? "Validation blocked." : "Validation passed and stored.",
-      },
-      { status: blocked ? 400 : 200 },
-    );
+    // Always 200 — the result carries its own status ("validated" | "blocked").
+    // The UI reads result.status to decide whether to show the Confirm Upload button.
+    return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
@@ -73,7 +64,7 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Weekly sales validation failed." },
+      { success: false, error: error instanceof Error ? error.message : "Validation failed." },
       { status: 500 },
     );
   }
