@@ -11,7 +11,7 @@ import {
 import { parseSalesRow } from "@/lib/sales/validation";
 import type { SalesImportPayload } from "@/lib/sales/types";
 
-export type UploadSchemaType = "closing_sheet" | "unsupported";
+export type UploadSchemaType = "closing_sheet" | "flat_sheet" | "unsupported";
 
 export type ParsedUploadRows = {
   headers: string[];
@@ -36,6 +36,7 @@ function readableCellValue(cell: ExcelJS.Cell) {
 
 function detectSchemaType(headers: string[]): UploadSchemaType {
   if (headers.includes("CRM Code") && headers.includes("Med. Rep. Name")) return "closing_sheet";
+  if (headers.includes("HR_ID") && headers.includes("D.M.")) return "flat_sheet";
   return "unsupported";
 }
 
@@ -137,6 +138,45 @@ type ClosingBlock = {
   targetUnitsColumn: number;
   targetValueColumn: number;
 };
+
+const FLAT_SHEET_COLUMN_RENAMES: Record<string, string> = {
+  "Price": "Factory Price",
+  "Manager HR_ID": "Manager HR ID",
+};
+
+function shouldImportFlatRow(values: { hrId: unknown; dm: unknown }) {
+  const hrId = String(values.hrId ?? "").trim();
+  const dm = String(values.dm ?? "").trim().toLowerCase();
+  if (!hrId && !dm) return false;
+  if (dm === "grand total" || hrId.toLowerCase() === "grand total") return false;
+  return true;
+}
+
+export function extractFlatSheetRows(sheet: ExcelJS.Worksheet) {
+  const headerRow = sheet.getRow(1);
+  const rawHeaders: string[] = [];
+  headerRow.eachCell({ includeEmpty: true }, (cell, col) => {
+    rawHeaders[col - 1] = String(cell.text || "").trim();
+  });
+
+  const rows: Record<string, unknown>[] = [];
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber);
+    const values: Record<string, unknown> = {};
+    rawHeaders.forEach((header, index) => {
+      if (!header) return;
+      const key = FLAT_SHEET_COLUMN_RENAMES[header] ?? header;
+      values[key] = readableCellValue(row.getCell(index + 1));
+    });
+
+    if (!shouldImportFlatRow({ hrId: values["HR_ID"], dm: values["D.M."] })) continue;
+
+    values["__sourceRowNumber"] = rowNumber;
+    rows.push(values);
+  }
+
+  return { headers: rawHeaders, rows };
+}
 
 export function extractClosingSheetRows(sheet: ExcelJS.Worksheet) {
   const maxColumn = Math.max(sheet.getRow(1).cellCount, sheet.getRow(2).cellCount);
@@ -252,13 +292,19 @@ async function rowsFromWorkbook(file: File) {
   }
 
   const headers = sheetHeaders(sheet);
-  if (detectSchemaType(headers) !== "closing_sheet") {
+  const schemaType = detectSchemaType(headers);
+
+  if (schemaType === "unsupported") {
     throw new SalesWorkflowError(
       "unsupported_schema",
-      "The workbook schema is not supported. Upload the monthly closing sheet layout only.",
+      "The workbook schema is not supported. Upload the monthly closing sheet or flat sales sheet layout.",
       400,
       { headers }
     );
+  }
+
+  if (schemaType === "flat_sheet") {
+    return extractFlatSheetRows(sheet);
   }
 
   return extractClosingSheetRows(sheet);
