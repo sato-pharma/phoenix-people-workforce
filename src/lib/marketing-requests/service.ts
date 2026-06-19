@@ -398,6 +398,10 @@ export type MarketingRequestDetail = {
 
 export type MarketingRequestDraftWorkspace = {
   approvedRequests: MarketingApprovedRequestRow[];
+  // True when the viewer can create/resubmit drafts (resolvable requester or an
+  // unrestricted oversight role). False for company-wide reviewers who are not a
+  // directory requester — they still see the request lists in read-only mode.
+  canCreateDraft: boolean;
   customers: MarketingCustomer[];
   distributors: MarketingDistributor[];
   drafts: MarketingRequest[];
@@ -697,7 +701,18 @@ function canSeeMarketingHierarchyRecord(
   },
   employeeRows: EmployeeDirectoryRow[],
 ) {
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "CEO" || access.role === "Finance Manager" || access.role === "SFE Manager") {
+  // Company-wide marketing oversight roles see every marketing record. This set MUST stay in
+  // sync with `companyMarketingRoles` above — the Marketing Manager is a mandatory company-wide
+  // approval step (Marketing Review), so it has to see the request queue, customer validation,
+  // ROI tracking, and the requests it has already approved, not just its own subtree.
+  if (
+    access.scope === "system" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO" ||
+    access.role === "Finance Manager" ||
+    access.role === "Marketing Manager" ||
+    access.role === "SFE Manager"
+  ) {
     return true;
   }
 
@@ -811,6 +826,54 @@ function findRequester(access: AccessContext, rows: EmployeeDirectoryRow[]) {
     throw validationError("Requester was not found in the employee directory.", "requester_not_found");
   }
   return requester;
+}
+
+// Non-throwing requester lookup for read surfaces (e.g. the drafts workspace) where a
+// viewer can be a legitimate reviewer (Marketing Manager / SFE Manager / Finance Manager
+// / CEO) without being a directory requester. Mutating paths (create/submit/resubmit)
+// keep using `findRequester`, which still throws `requester_not_found`.
+function tryFindRequester(access: AccessContext, rows: EmployeeDirectoryRow[]): EmployeeDirectoryRow | null {
+  const actorHrId = resolveEmployeeIdentityId(access);
+  if (!actorHrId) return null;
+  return rows.find((row) => normalizeHrId(row.hrId) === normalizeHrId(actorHrId)) ?? null;
+}
+
+export type MarketingDraftProductScope = {
+  canCreateDraft: boolean;
+  products: MarketingProduct[];
+  requesterLineId: number | null;
+  requesterLineName: string | null;
+};
+
+// Resolves the draft-creation product scope for the workspace without hard-failing the
+// whole page. An unrestricted oversight role (Super Admin / SFE Manager / system) sees
+// every product line; a resolvable requester sees only its own line; a company-wide
+// reviewer who is NOT a directory requester degrades to read-only (no creation scope,
+// empty product list) instead of throwing `requester_not_found`.
+export function buildMarketingDraftProductScope(params: {
+  access: AccessContext;
+  productRows: MarketingProductDbRow[];
+  requester: MarketingRequesterLine | null;
+}): MarketingDraftProductScope {
+  const { access, productRows, requester } = params;
+  const unrestrictedProductLines = canUseAnyMarketingProductLine(access);
+  const canCreateDraft = unrestrictedProductLines || requester !== null;
+
+  let products: MarketingProduct[] = [];
+  if (unrestrictedProductLines) {
+    products = productRows.map(mapMarketingProduct);
+  } else if (requester) {
+    products = productRows
+      .filter((product) => marketingProductMatchesRequesterLine(product, requester))
+      .map(mapMarketingProduct);
+  }
+
+  return {
+    canCreateDraft,
+    products,
+    requesterLineId: requester?.lineId ?? null,
+    requesterLineName: unrestrictedProductLines ? "All product lines" : requester?.lineName ?? null,
+  };
 }
 
 function generateMarketingCode(prefix: string) {
@@ -1253,10 +1316,17 @@ async function roleApproverHrId(params: {
 
   if (candidates.length === 0) return null;
   if (role === "CEO" || role === "Finance Manager" || role === "SFE Manager" || role === "Marketing Manager") {
+    // Company-wide singleton roles. Prefer an unambiguous line/area match; otherwise fall back
+    // DETERMINISTICALLY (lowest canonical HR_ID) instead of returning null. Returning null here
+    // previously stalled EVERY submission company-wide whenever two seats existed for a role that
+    // carries no line scope (e.g. a second Marketing Manager) — a legitimate rep's request would
+    // be rejected. Any active holder of these roles can perform the review, so a stable pick is
+    // safe; a genuinely empty roster (0 candidates) still fails loudly above.
     const scoped = candidates.filter((hrId) => employeeMatchesMarketingRequestScope(employeesByHrId.get(hrId), params.request));
     if (scoped.length === 1) return scoped[0];
+    if (scoped.length > 1) return [...scoped].sort()[0];
     if (candidates.length === 1) return candidates[0];
-    return null;
+    return [...candidates].sort()[0];
   }
   return candidates.length === 1 ? candidates[0] : null;
 }
@@ -1420,7 +1490,10 @@ async function createMarketingApprovalSteps(params: {
       supabase: params.supabase,
     });
     if (!assignedHrId) {
-      throw validationError(`Marketing workflow approver for ${step.stepName} could not be resolved exactly.`, "marketing_approver_not_resolved");
+      throw validationError(
+        `No active ${step.assignedRole} is configured to handle the "${step.stepName}" step. Ask an administrator to assign an active ${step.assignedRole} before submitting this marketing request.`,
+        "marketing_approver_not_resolved",
+      );
     }
     pushRow({ assignedHrId, assignedRole: step.assignedRole, isCc: false, step, stepName: step.stepName });
 
@@ -3259,9 +3332,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (inApprovalResult.error) throw inApprovalResult.error;
 
   const employeeRows = await loadEmployeeDirectoryRows();
-  const requester = findRequester(access, employeeRows);
-  const requesterLineId = requester.lineId ?? null;
-  const unrestrictedProductLines = canUseAnyMarketingProductLine(access);
+  // Read-only surface: a valid reviewer may not be a directory requester. Degrade the
+  // creation affordance gracefully instead of failing the whole workspace with a 400.
+  const requester = tryFindRequester(access, employeeRows);
+  const productScope = buildMarketingDraftProductScope({
+    access,
+    productRows: (productsResult.data ?? []) as MarketingProductDbRow[],
+    requester,
+  });
   const drafts = ((draftsResult.data ?? []) as MarketingRequestDbRow[])
     .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
     .map(mapRequest);
@@ -3316,9 +3394,6 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     .filter((row) => validatedCustomerIds.has(row.id))
     .filter((row) => canSeeMarketingCustomer(access, row, employeeRows))
     .map(mapCustomer);
-  const products = ((productsResult.data ?? []) as MarketingProductDbRow[])
-    .filter((product) => unrestrictedProductLines || marketingProductMatchesRequesterLine(product, requester))
-    .map(mapMarketingProduct);
 
   return {
     approvedRequests: buildMarketingApprovedRequestRows({
@@ -3327,14 +3402,15 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       financeRequirements: ((financeRequirementsResult.data ?? []) as MarketingRequestFinanceRequirementDbRow[]).map(mapFinanceRequirement),
       requests: approvedRequests,
     }),
+    canCreateDraft: productScope.canCreateDraft,
     customers,
     distributors: ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor),
     drafts,
     inApproval,
-    products,
+    products: productScope.products,
     requestTypes: ((typesResult.data ?? []) as MarketingRequestTypeDbRow[]).map(mapRequestType),
-    requesterLineId,
-    requesterLineName: unrestrictedProductLines ? "All product lines" : requester.lineName,
+    requesterLineId: productScope.requesterLineId,
+    requesterLineName: productScope.requesterLineName,
     returned,
     stepProgressByRequestId,
   };

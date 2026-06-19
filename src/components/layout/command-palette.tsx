@@ -7,41 +7,22 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, u
 
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
-import { getNavigationSections, type NavigationSectionItem } from "@/config/system-navigation";
+import { getNavigationSections } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
+import { getSections } from "@/lib/navigation/active-path";
 
 /** Custom event the topbar (or anything else) can dispatch to open the palette. */
 export const COMMAND_PALETTE_EVENT = "phoenix:command-palette";
 
 type PaletteItem = { href: string; icon: LucideIcon; label: string; section: string };
 
-// These three mirror the sidebar's nav gating so the palette never lists a destination
-// the current user is not allowed to open. Kept local to avoid coupling to the client sidebar module.
-function permissionAllowed(lookup: PermissionLookup, permissions?: NavigationSectionItem["permissions"]) {
-  if (!permissions || permissions.length === 0) return true;
-  return permissions.some((entry) => {
-    const action = entry.action ?? "read";
-    const key = `${entry.resource}:${action}` as const;
-    if (typeof lookup[key] === "undefined") return true;
-    return Boolean(lookup[key]);
-  });
-}
-
-function roleAllowed(role: PhoenixRole | undefined, roles?: readonly PhoenixRole[]) {
-  if (!roles) return true;
-  return Boolean(role && roles.includes(role));
-}
-
-function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: readonly PhoenixRole[]) {
-  if (!excludedRoles) return true;
-  return !role || !excludedRoles.includes(role);
-}
-
 export function CommandPalette({
   navigationMode,
   permissionLookup,
+  effectiveModuleIds,
   currentRole,
 }: {
+  effectiveModuleIds?: readonly string[] | null;
   navigationMode: NavigationMode;
   permissionLookup: PermissionLookup;
   currentRole?: PhoenixRole;
@@ -58,17 +39,11 @@ export function CommandPalette({
 
   const items = useMemo<PaletteItem[]>(
     () =>
-      getNavigationSections(navigationMode).flatMap((section) =>
-        section.items
-          .filter(
-            (item) =>
-              permissionAllowed(permissionLookup, item.permissions) &&
-              roleAllowed(currentRole, item.roles) &&
-              (navigationMode !== "employee-portal" || roleNotExcluded(currentRole, item.excludedRoles)),
-          )
-          .map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
-      ),
-    [navigationMode, permissionLookup, currentRole],
+      getSections(getNavigationSections(navigationMode), navigationMode, permissionLookup, currentRole, effectiveModuleIds)
+        .flatMap((section) =>
+          section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
+        ),
+    [currentRole, effectiveModuleIds, navigationMode, permissionLookup],
   );
 
   const filtered = useMemo(() => {

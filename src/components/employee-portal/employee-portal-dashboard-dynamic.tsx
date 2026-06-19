@@ -4,6 +4,7 @@ import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employ
 
 type PortalDashboardPageProps = {
   data: MedicalRepPortalData;
+  surface?: "employee-portal" | "workspace";
 };
 
 type ContactHRSupportPageProps = {

@@ -18,10 +18,12 @@ import type { ViewerIdentity } from "@/lib/auth/server";
 export function Topbar({
   navigationMode = "admin",
   permissionLookup = {},
+  effectiveModuleIds,
   viewer,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
+  effectiveModuleIds?: readonly string[] | null;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   scope?: AccessContext["scope"];
@@ -46,6 +48,7 @@ export function Topbar({
       <MobileSidebar
         navigationMode={navigationMode}
         currentRole={currentRole}
+        effectiveModuleIds={effectiveModuleIds}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
         permissionLookup={permissionLookup}

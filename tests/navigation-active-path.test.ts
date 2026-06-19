@@ -206,11 +206,27 @@ export function runNavigationActivePathTests() {
   ] as const;
 
   const marketingManagerAdmin = adminHrefsFor("Marketing Manager");
-  assert.equal(marketingManagerAdmin.includes("/admin/weekly-plans"), true, "A-9 / Marketing Manager keeps admin-shell weekly plans");
+  // De-duplicated: the Marketing Manager works out of its single /workspace home, never the
+  // org-wide /admin duplicates of the same modules.
+  assertIncludesAll(
+    marketingManagerAdmin,
+    ["/workspace/plans", "/workspace/marketing-requests"],
+    "Marketing Manager plans + marketing requests live in the /workspace home",
+  );
   assertExcludesAll(
     marketingManagerAdmin,
-    [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
-    "A-9 / Marketing Manager must not see admin authority modules",
+    [
+      "/admin/weekly-plans",
+      "/admin/marketing-requests",
+      "/admin/marketing-requests/inbox",
+      "/admin/marketing-requests/roi-tracking",
+      "/leave-management/vacation-request",
+      "/leave-management/vacation-report",
+      ...sensitiveHrHrefs,
+      ...systemAdministratorOnlyHrefs,
+      "/payroll",
+    ],
+    "A-9 / Marketing Manager must not see admin authority modules or /admin duplicates of its workspace",
   );
 
   const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");

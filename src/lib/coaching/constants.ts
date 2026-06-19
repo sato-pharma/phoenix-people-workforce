@@ -1,6 +1,6 @@
 export const coachingMaxScore = 100;
 export const coachingScoreItemCount = 20;
-export const coachingMinItemScore = 1;
+export const coachingMinItemScore = 0;
 export const coachingMaxItemScore = 5;
 
 // All Excel-imported coaching reports are attributed to this coach — the field

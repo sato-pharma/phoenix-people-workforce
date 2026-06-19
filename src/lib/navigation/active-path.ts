@@ -25,6 +25,7 @@ import type {
 
 export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
 type PermissionLookupKey = keyof PermissionLookup;
+export type ModuleIdLookup = readonly string[] | null | undefined;
 
 // ── Visibility gating (mirrors the server permission matrix) ─────────────────
 export function permissionAllowed(
@@ -51,11 +52,17 @@ export function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: r
   return !role || !excludedRoles.includes(role);
 }
 
+export function moduleIdAllowed(moduleIds: ModuleIdLookup, item: NavigationSectionItem) {
+  if (!moduleIds) return true;
+  return moduleIds.includes(item.moduleId);
+}
+
 export function getSections(
   sections: readonly NavigationSection[],
   mode: NavigationMode,
   lookup: PermissionLookup,
   role?: PhoenixRole,
+  moduleIds?: ModuleIdLookup,
 ): NavigationSection[] {
   return sections
     .map((section) => ({
@@ -64,6 +71,7 @@ export function getSections(
         (item) =>
           permissionAllowed(lookup, item.permissions) &&
           roleAllowed(role, item.roles) &&
+          moduleIdAllowed(moduleIds, item) &&
           (mode !== "employee-portal" || roleNotExcluded(role, item.excludedRoles)),
       ),
     }))

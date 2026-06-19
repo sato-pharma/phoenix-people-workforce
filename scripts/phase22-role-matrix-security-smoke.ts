@@ -138,6 +138,9 @@ async function verifyRoleMatrix() {
 
   const marketingManager = contextFor("Marketing Manager");
   await expectAccess(marketingManager, "weekly_plans", "approve", true);
+  await expectAccess(marketingManager, "sales", "read", true);
+  await expectAccess(marketingManager, "sales", "export", true);
+  await expectAccess(marketingManager, "weekly_sales", "read", true);
   await expectAccess(marketingManager, "support_requests", "create", true);
   await expectAccess(marketingManager, "support_requests", "read", false);
   await expectAccess(marketingManager, "employees", "read", false);

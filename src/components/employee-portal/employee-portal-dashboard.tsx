@@ -823,7 +823,28 @@ function canSeeTeamLeaveAndStructurePanels(data: MedicalRepPortalData) {
   return isRole(data, "district manager", "district sales manager", "dsm", "national sales manager", "nsm");
 }
 
-function resolveExpenseActionHref(data: MedicalRepPortalData) {
+type PortalDashboardSurface = "employee-portal" | "workspace";
+
+const workspaceDashboardHrefMap: Record<string, string> = {
+  "/employee-portals/expense-dashboard": "/workspace/expense-dashboard",
+  "/employee-portals/expenses": "/workspace/expense-dashboard",
+  "/employee-portals/marketing-requests": "/workspace/marketing-requests",
+  "/employee-portals/probation": "/workspace/probation",
+  "/employee-portals/submit-expense": "/workspace/submit-expense",
+  "/employee-portals/vacancies": "/workspace/vacancies",
+  "/leave-management/vacation-report": "/workspace/leave-management/vacation-report",
+  "/leave-management/vacation-request": "/workspace/leave-management/vacation-request",
+};
+
+function dashboardHrefForSurface(href: string, surface: PortalDashboardSurface) {
+  if (surface !== "workspace") return href;
+  const [pathname, search] = href.split("?", 2);
+  const mappedPath = workspaceDashboardHrefMap[pathname] ?? pathname;
+  return search ? `${mappedPath}?${search}` : mappedPath;
+}
+
+function resolveExpenseActionHref(data: MedicalRepPortalData, surface: PortalDashboardSurface) {
+  if (surface === "workspace") return "/workspace/submit-expense";
   return isRole(data, "medical rep", "medical representative")
     ? "/employee-portals/expenses"
     : "/employee-portals/submit-expense";
@@ -1833,7 +1854,7 @@ const actionIconMap: Record<string, typeof ReceiptText> = {
   "open-vacancies": Users,
 };
 
-function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
+function MyActionsPanel({ data, surface }: { data: MedicalRepPortalData; surface: PortalDashboardSurface }) {
   // Managers (DSM/NSM) get team-management to-dos appended to the server-provided
   // action list. These counts already exist in the payload (data.workforce) and were
   // previously only used for display KPIs — here they become actionable, deep-linked items.
@@ -1841,19 +1862,25 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
     ? [
         {
           count: data.workforce.probationDue,
-          href: "/employee-portals/probation",
+          href: dashboardHrefForSurface("/employee-portals/probation", surface),
           id: "probation-reviews",
           label: "Probation reviews due",
         },
         {
           count: data.workforce.openVacancies,
-          href: "/employee-portals/vacancies",
+          href: dashboardHrefForSurface("/employee-portals/vacancies", surface),
           id: "open-vacancies",
           label: "Open vacancies to fill",
         },
       ].filter((item) => item.count > 0)
     : [];
-  const actions = [...data.overview.myActions, ...managerActions];
+  const actions = [
+    ...data.overview.myActions.map((item) => ({
+      ...item,
+      href: dashboardHrefForSurface(item.href, surface),
+    })),
+    ...managerActions,
+  ];
 
   return (
     <OverviewPagePanel title="My Actions">
@@ -1890,13 +1917,23 @@ function MyActionsPanel({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-function QuickActionsPanel({ data }: { data: MedicalRepPortalData }) {
+function QuickActionsPanel({ data, surface }: { data: MedicalRepPortalData; surface: PortalDashboardSurface }) {
   const actions = [
-    { href: resolveExpenseActionHref(data), icon: ReceiptText, label: "Submit Expense" },
-    { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Submit Vacation Request" },
-    { href: "/employee-portals/marketing-requests", icon: Megaphone, label: "Submit Marketing Request" },
+    { href: resolveExpenseActionHref(data, surface), icon: ReceiptText, id: "expense", label: "Submit Expense" },
+    {
+      href: dashboardHrefForSurface("/leave-management/vacation-request", surface),
+      icon: CalendarDays,
+      id: "vacation",
+      label: "Submit Vacation Request",
+    },
+    {
+      href: dashboardHrefForSurface("/employee-portals/marketing-requests", surface),
+      icon: Megaphone,
+      id: "marketing",
+      label: "Submit Marketing Request",
+    },
   ].filter((item) => {
-    if (item.href === "/employee-portals/marketing-requests") {
+    if (item.id === "marketing") {
       // Marketing Requests is a Beta module: hidden by default, surfaced only
       // when PHOENIX_PORTAL_SHOW_BETA_NAV is enabled (resolved server-side into
       // data.betaNavEnabled) AND the role is already authorized for Marketing.
@@ -3796,7 +3833,13 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData }) {
+export function MedicalRepOverviewPage({
+  data,
+  surface = "employee-portal",
+}: {
+  data: MedicalRepPortalData;
+  surface?: PortalDashboardSurface;
+}) {
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
@@ -3815,8 +3858,8 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
       <ExecutiveCommandStrip data={data} />
       {/* Manager-first: daily to-dos and team operations lead the page. */}
       <div className="grid gap-5 xl:grid-cols-2">
-        <MyActionsPanel data={data} />
-        <QuickActionsPanel data={data} />
+        <MyActionsPanel data={data} surface={surface} />
+        <QuickActionsPanel data={data} surface={surface} />
         {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
         {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
       </div>
@@ -3837,11 +3880,13 @@ export function MedicalRepOverviewPage({ data }: { data: MedicalRepPortalData })
           <OverviewTopProducts data={data} />
         </div>
       </div>
-      <div className="flex justify-center lg:justify-end">
-        <Link className="w-full lg:w-auto" href="/employee-portals/sales">
-          <Button className="w-full rounded px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
-        </Link>
-      </div>
+      {surface === "employee-portal" ? (
+        <div className="flex justify-center lg:justify-end">
+          <Link className="w-full lg:w-auto" href="/employee-portals/sales">
+            <Button className="w-full rounded px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }

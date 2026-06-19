@@ -18,6 +18,7 @@ export type AuditEntityType =
   | "employee_resignation"
   | "field_workforce_compliance_import"
   | "marketing_request"
+  | "module_control_assignment"
   | "notification"
   | "outstation_expense_access"
   | "outstation_request"

@@ -101,6 +101,7 @@ export function coachingStatusLabel(status: string | null | undefined) {
 
 export function coachingScoreMeaning(score: number | string | null | undefined) {
   const numeric = Number(score);
+  if (numeric === 0) return "No Score";
   if (numeric === 1) return "Below Expectations";
   if (numeric === 2) return "Needs Improvement";
   if (numeric === 3) return "Within Average";

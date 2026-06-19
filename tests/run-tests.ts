@@ -1,5 +1,6 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runModulesControlTests } from "./modules-control.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -95,7 +96,9 @@ import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSosHeaderAliasesTests } from "./sos-header-aliases.test.ts";
 import { runSosGuardrailsTests } from "./sos-guardrails.test.ts";
+import { runSosWarningCleanupTests } from "./sos-warning-cleanup.test.ts";
 import { runCustomerMapImportTests } from "./customer-map-import.test.ts";
+import { runMarketingManagerRoleTests } from "./marketing-manager-role.test.ts";
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
@@ -214,6 +217,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 
 await runTest("i18n config", runI18nConfigTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest("modules control governance", runModulesControlTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("email governance", runEmailGovernanceTests);
@@ -312,7 +316,9 @@ await runTest("import coverage aggregation", runImportCoverageTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
 await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
+await runTest("sos warning cleanup", runSosWarningCleanupTests);
 await runTest("customer map import", runCustomerMapImportTests);
+await runTest("marketing manager role", runMarketingManagerRoleTests);
 await runTest("marketing reference importer", runMarketingReferenceImporterTests);
 await runTest("marketing ROI", runMarketingRoiTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
