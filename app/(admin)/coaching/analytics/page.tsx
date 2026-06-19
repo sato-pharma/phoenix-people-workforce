@@ -114,7 +114,12 @@ export default async function CoachingAnalyticsPage() {
     canManageCoachingReports(access) &&
     (await canAccess(access, "coaching", "create"));
 
-  const [reports, quarterlySummary, employees] = await Promise.all([
+  const currentYear = new Date().getFullYear();
+  const initialReportFilters = { year: currentYear };
+
+  const [reports, quarterlySummary, optionReports, optionQuarterlySummary, employees] = await Promise.all([
+    getCoachingReports(initialReportFilters, access),
+    getCoachingQuarterlySummary(initialReportFilters, access),
     getCoachingReports({}, access),
     getCoachingQuarterlySummary({}, access),
     getEmployeeDirectoryRows(),
@@ -171,7 +176,8 @@ export default async function CoachingAnalyticsPage() {
 
         <CoachingAnalyticsDashboard
           canCreate={canCreate}
-          filterOptions={buildFilterOptions(reports, visibleQuarterlySummary, employees)}
+          filterOptions={buildFilterOptions(optionReports, optionQuarterlySummary, employees)}
+          initialFilters={{ year: String(currentYear) }}
           initialData={payload}
         />
     </div>

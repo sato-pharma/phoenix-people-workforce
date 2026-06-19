@@ -256,15 +256,15 @@ export type CoachingTrainingManagerAreaComparisonRow = CoachingTrainingManagerCo
   areaName: string | null;
 };
 
-export type CoachingTrainingManagerHireYearComparisonRow = CoachingTrainingManagerComparisonBucket & {
-  hireYear: number | null;
+export type CoachingTrainingManagerCoachingMonthComparisonRow = CoachingTrainingManagerComparisonBucket & {
+  coachingMonth: number;
 };
 
 export type CoachingTrainingManagerComparison = {
   areaBreakdown: CoachingTrainingManagerAreaComparisonRow[];
   coachedCount: number;
   coachedRate: number;
-  hireYearBreakdown: CoachingTrainingManagerHireYearComparisonRow[];
+  coachingMonthBreakdown: CoachingTrainingManagerCoachingMonthComparisonRow[];
   rows: CoachingTrainingManagerComparisonRow[];
   totalMedicalReps: number;
   uncoachedCount: number;
