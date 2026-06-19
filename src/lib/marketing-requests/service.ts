@@ -92,6 +92,7 @@ type MarketingRequestTypeDbRow = {
 type MarketingWorkflowStepDbRow = {
   active: boolean;
   allow_reject?: boolean | null;
+  allow_return?: boolean | null;
   approval_scope: MarketingWorkflowApprovalScope;
   assigned_role: string;
   cc_roles?: string[] | null;
@@ -111,6 +112,7 @@ type MarketingWorkflowStepDbRow = {
 
 type MarketingRequestApprovalStepDbRow = {
   allow_reject?: boolean | null;
+  allow_return?: boolean | null;
   assigned_hr_id?: string | null;
   assigned_role: string;
   created_at?: string | null;
@@ -438,7 +440,10 @@ export type MarketingRequestDraftWorkspace = {
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
+  /** All returned requests visible to this viewer (read-only for monitoring). */
   returned: MarketingRequest[];
+  /** Subset of returned where the viewer IS the original requester — the only ones they may edit. */
+  returnedToMe: MarketingRequest[];
   stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
 
@@ -1314,6 +1319,7 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
 function mapApprovalStep(row: MarketingRequestApprovalStepDbRow): MarketingRequestApprovalStep {
   return {
     allowReject: row.allow_reject ?? true,
+    allowReturn: row.allow_return ?? true,
     assignedHrId: row.assigned_hr_id ?? null,
     assignedRole: row.assigned_role,
     createdAt: nowIsoFallback(row.created_at),
@@ -2213,6 +2219,9 @@ export async function decideMarketingRequestWorkflow(
   if (decision === "reject" && currentStep.allowReject === false) {
     throw validationError("This step cannot reject the request; return it with a note instead.", "marketing_reject_not_allowed");
   }
+  if (decision === "return" && currentStep.allowReturn === false) {
+    throw validationError("This step cannot return the request for edit.", "marketing_return_not_allowed");
+  }
 
   const decidedAt = new Date().toISOString();
   const terminalStepStatus = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned";
@@ -2523,6 +2532,7 @@ function mapWorkflowStep(row: MarketingWorkflowStepDbRow): MarketingWorkflowStep
   return {
     active: row.active,
     allowReject: row.allow_reject ?? true,
+    allowReturn: row.allow_return ?? true,
     approvalScope: row.approval_scope,
     assignedRole: row.assigned_role,
     ccRoles: Array.isArray(row.cc_roles) ? row.cc_roles.filter((value): value is string => Boolean(value)) : [],
@@ -3692,6 +3702,10 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     requesterLineId: productScope.requesterLineId,
     requesterLineName: productScope.requesterLineName,
     returned,
+    // Only requests the current user personally submitted may be edited after a return.
+    // Managers can see their team's returned requests above (read-only) but must never
+    // get an edit button on another employee's submission.
+    returnedToMe: returned.filter((req) => normalizeHrId(req.requesterHrId) === normalizeHrId(access.hrId)),
     stepProgressByRequestId,
   };
 }

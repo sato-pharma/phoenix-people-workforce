@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 
 import type {
   MarketingRequestDecision,
@@ -32,10 +31,8 @@ function stepStateClasses(step: { isCurrent: boolean; status: string }) {
 }
 
 export function MarketingRequestDecisionConfirmation({
-  detailsHref = "/employee-portals/marketing-requests",
   summary,
 }: {
-  detailsHref?: string;
   summary: MarketingRequestDecisionSummary;
 }) {
   const [activeDecision, setActiveDecision] = useState<MarketingRequestDecision>(summary.decision);
@@ -226,9 +223,6 @@ export function MarketingRequestDecisionConfirmation({
                   {isPending && activeDecision === "reject" ? "Submitting…" : labelFor("reject")}
                 </button>
               ) : null}
-              <Link className="border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700" href={detailsHref}>
-                Open full request
-              </Link>
             </div>
 
             {needsReason ? (
