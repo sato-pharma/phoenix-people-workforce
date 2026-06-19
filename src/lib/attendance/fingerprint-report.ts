@@ -8,6 +8,7 @@ import {
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { formatAttendanceWorkingWeekdays, type AttendanceWorkingWeekday } from "@/lib/attendance/work-schedule";
+import { isAttendanceTrackingEligible } from "@/lib/attendance/eligibility";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -386,8 +387,11 @@ export async function getFingerprintAttendanceReport(input: {
   if (ruleResult.error) throw ruleResult.error;
 
   const allEmployees = uniqueEmployeesByHrId((employeeResult.data ?? []) as EmployeeRow[]);
+  // Attendance & fingerprint tracking applies to Medical Reps, DMs, and RSMs only —
+  // field roles that work in field visits and do not punch in at the office.
+  const eligibleEmployees = allEmployees.filter((emp) => isAttendanceTrackingEligible(emp.job_title));
   const allDepartmentIds = new Set<number>();
-  for (const employee of allEmployees) {
+  for (const employee of eligibleEmployees) {
     if (typeof employee.department_id === "number") allDepartmentIds.add(employee.department_id);
   }
 
@@ -412,7 +416,7 @@ export async function getFingerprintAttendanceReport(input: {
     list.push(rule);
     rulesByPolicy.set(rule.policy_id, list);
   }
-  const policyDetails = allEmployees
+  const policyDetails = eligibleEmployees
     .map((employee) => {
       const policy = resolveActiveAttendancePolicy(employee, activePolicyRows, effectiveDateFrom, effectiveDateTo);
       const department = typeof employee.department_id === "number"
@@ -491,7 +495,7 @@ export async function getFingerprintAttendanceReport(input: {
   const employeeHrIds = Array.from(new Set(punches.map((row) => normalizeHrId(row.employee_hr_id)).filter((value): value is string => Boolean(value))));
   const employeeMap = new Map<string, EmployeeRow>();
 
-  for (const employee of allEmployees) {
+  for (const employee of eligibleEmployees) {
     const hrId = normalizeHrId(employee.hr_id);
     if (hrId && employeeHrIds.includes(hrId)) employeeMap.set(hrId, employee);
   }
@@ -581,6 +585,7 @@ export async function getFingerprintAttendanceReport(input: {
       validTime: durationText(durationMs),
     };
   })
+    .filter((row) => employeeMap.has(row.employeeHrId))
     .filter((row) => textMatches(row, filters))
     .sort((left, right) => left.sortKey.localeCompare(right.sortKey));
 

@@ -269,6 +269,15 @@ export function PlanningCalendar({
     setConflictsOnly(false);
   }
 
+  const cappedResultsBanner = workspace.hasMoreHeaders || workspace.hasMoreItems ? (
+    <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        Planning calendar results are capped at {workspace.headerLimit} headers and {workspace.itemLimit} plan rows. Loaded {workspace.loadedHeaderCount} headers and {workspace.loadedItemCount} rows; narrow the month before using this view for a full audit.
+      </span>
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-5">
       {!workspace.schemaReady ? (
@@ -276,6 +285,7 @@ export function PlanningCalendar({
           Planning calendar data is not ready. National vacations are still shown.
         </div>
       ) : null}
+      {cappedResultsBanner}
 
       <section className="border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-4 border-b border-slate-200 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">

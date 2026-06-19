@@ -1,0 +1,268 @@
+// Weekly Sales — pre-upload AI verification.
+//
+// Reads ONLY the header row of the uploaded workbook(s) and compares it against the per-distributor
+// column contract (column-contract.ts), so the operator can see exactly which data the engine will
+// take from which column BEFORE committing to the upload. An OpenAI call judges each pinned column
+// for "drift" (a renamed/moved header), but the verdict math is recomputed server-side — the AI is
+// never trusted to gate anything.
+//
+// PRIVACY: only column HEADER TEXT leaves the server (product/branch column titles, and for PS the
+// outlet/location names that are themselves the headers). No sales numbers, quantities, or data rows
+// are ever sent — mirrors the privacy posture of src/lib/sales/normalizer/ai-suggest.ts.
+//
+// PRODUCTION SAFETY: when no AI key is configured (e.g. a preview without OPENAI_API_KEY) or the AI
+// call fails, this NEVER throws — it returns the deterministic column plan with aiUsed=false so the
+// operator can still review and verify manually. An AI outage must not freeze the upload flow.
+
+import ExcelJS from "exceljs";
+
+import { weeklyContractByCode, type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
+import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
+import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
+
+// ── AI provider resolution (mirrors src/lib/sales/normalizer/ai-suggest.ts) ───────────────────────
+type Provider = { baseUrl: string; key: string; model: string };
+
+function resolveProvider(): Provider | null {
+  const baseOverride = process.env.AI_BASE_URL?.replace(/\/+$/, "");
+  const modelOverride = process.env.AI_MODEL || process.env.OPENAI_MODEL;
+  if (process.env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: process.env.OPENAI_API_KEY, model: modelOverride || "gpt-4o-mini" };
+  if (process.env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: process.env.GROQ_API_KEY, model: modelOverride || "llama-3.3-70b-versatile" };
+  if (process.env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: process.env.OPENROUTER_API_KEY, model: modelOverride || "openai/gpt-4o-mini" };
+  if (process.env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: process.env.AI_API_KEY, model: modelOverride || "gpt-4o-mini" };
+  return null;
+}
+
+/** True when an AI key is configured — the route surfaces this so the UI can label the mode. */
+export function hasWeeklyVerifyAi(): boolean {
+  return resolveProvider() !== null;
+}
+
+// ── cell / sheet helpers (mirror parser.ts) ───────────────────────────────────────────────────────
+function cellText(cell: ExcelJS.Cell | undefined): string {
+  if (!cell) return "";
+  const value = cell.value as unknown;
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    const obj = value as { result?: unknown; text?: unknown; richText?: { text?: string }[] };
+    if (obj.richText) return obj.richText.map((part) => part.text).join("").trim();
+    if (obj.result != null) return String(obj.result).trim();
+    if (obj.text != null) return String(obj.text).trim();
+  }
+  return String(value).trim();
+}
+
+function findSheet(workbook: ExcelJS.Workbook, sheet: WeeklyContractSheet): ExcelJS.Worksheet | undefined {
+  if (sheet.sheetName) {
+    const exact = workbook.worksheets.find((ws) => ws.name.trim().toLowerCase() === sheet.sheetName!.toLowerCase());
+    if (exact) return exact;
+  }
+  if (sheet.sheetIncludes) {
+    const partial = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes(sheet.sheetIncludes!.toLowerCase()));
+    if (partial) return partial;
+  }
+  return workbook.worksheets[0];
+}
+
+async function loadWorkbook(buffer: ArrayBuffer | Buffer): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as Parameters<typeof workbook.xlsx.load>[0]);
+  return workbook;
+}
+
+export type WeeklyVerifyInput = {
+  distributorCode: string;
+  /** single-file distributors */
+  fileBuffer?: ArrayBuffer | Buffer;
+  fileName?: string;
+  /** PS / Overseas split files */
+  salesBuffer?: ArrayBuffer | Buffer;
+  salesFileName?: string;
+  stockBuffer?: ArrayBuffer | Buffer;
+  stockFileName?: string;
+};
+
+// ── AI overlay ────────────────────────────────────────────────────────────────────────────────────
+type AiJudgement = { id: number; status: "match" | "drift" | "uncertain"; note?: string };
+
+async function judgeWithAi(
+  provider: Provider,
+  distributorName: string,
+  items: { id: number; sheetRole: string; label: string; columnIndex: number; expectedHeaderHint: string; observedHeader: string }[],
+): Promise<{ judgements: AiJudgement[]; summary: string }> {
+  const system =
+    "You verify that a pharmaceutical distributor's weekly Excel export still has the columns the import engine expects. " +
+    "You are given, per pinned column: the field it should hold, the column number, the header text usually seen there, " +
+    "and the header text actually found in the uploaded file (English or Arabic). For each item decide: 'match' (the found " +
+    "header means the same thing as expected), 'drift' (the found header clearly means something different — a column was " +
+    "moved/renamed/inserted), or 'uncertain' (you cannot tell). Headers may be in Arabic; judge by meaning, not exact text. " +
+    "Do NOT invent items or column numbers. Reply with JSON only.";
+  const lines = items
+    .map((it) => `${it.id} | sheet:${it.sheetRole} | field:${it.label} | col:${it.columnIndex} | expected:"${it.expectedHeaderHint}" | found:"${it.observedHeader}"`)
+    .join("\n");
+  const user = `Distributor: ${distributorName}\n\nPinned columns (id | sheet | field | col | expected | found):\n${lines}\n\nReturn ONLY JSON of this exact shape: {"items":[{"id":<id>,"status":"match|drift|uncertain","note":"<short reason>"}],"summary":"<one plain-English sentence about whether the file lines up>"}`;
+
+  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+    body: JSON.stringify({
+      max_completion_tokens: 2000,
+      messages: [
+        { content: system, role: "system" },
+        { content: user, role: "user" },
+      ],
+      model: provider.model,
+      response_format: { type: "json_object" },
+    }),
+    headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+    method: "POST",
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) {
+    // Log upstream body server-side only — it can echo request details / key fragments on 401.
+    const body = await res.text().catch(() => "");
+    console.error(`[weekly-verify] AI request failed (${res.status}): ${body.slice(0, 300)}`);
+    throw new Error(`AI request failed (HTTP ${res.status}).`);
+  }
+  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = json.choices?.[0]?.message?.content ?? "{}";
+  const parsed = JSON.parse(text) as { items?: AiJudgement[]; summary?: string };
+  return { judgements: Array.isArray(parsed.items) ? parsed.items : [], summary: String(parsed.summary ?? "") };
+}
+
+// ── main entry ──────────────────────────────────────────────────────────────────────────────────
+export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<WeeklyVerifyResult> {
+  const contract = weeklyContractByCode(input.distributorCode);
+  const distributor = weeklyDistributorByCode(input.distributorCode);
+  if (!contract || !distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+
+  // Load each provided file into a workbook, keyed by the form field the contract references.
+  const sources: Record<string, { buf?: ArrayBuffer | Buffer; name: string }> = {
+    file: { buf: input.fileBuffer, name: input.fileName || "weekly file" },
+    salesFile: { buf: input.salesBuffer, name: input.salesFileName || "sales matrix file" },
+    stockFile: { buf: input.stockBuffer, name: input.stockFileName || "stock matrix file" },
+  };
+  const workbooks = new Map<string, ExcelJS.Workbook>();
+  for (const key of Object.keys(sources)) {
+    const buf = sources[key].buf;
+    if (buf) workbooks.set(key, await loadWorkbook(buf));
+  }
+
+  const columns: WeeklyVerifyColumn[] = [];
+  const matrices: WeeklyVerifyMatrix[] = [];
+  const files: { role: string; fileName: string; sheetName: string }[] = [];
+  const warnings: string[] = [];
+
+  for (const sheetSpec of contract.sheets) {
+    const workbook = workbooks.get(sheetSpec.formField);
+    if (!workbook) {
+      warnings.push(`The ${sheetSpec.role} file was not provided, so its columns could not be checked.`);
+      continue;
+    }
+    const worksheet = findSheet(workbook, sheetSpec);
+    if (!worksheet) {
+      warnings.push(`Could not find the "${sheetSpec.sheetName ?? sheetSpec.role}" sheet for the ${sheetSpec.role} data.`);
+      continue;
+    }
+    files.push({ role: sheetSpec.role, fileName: sources[sheetSpec.formField].name, sheetName: worksheet.name });
+    const header = worksheet.getRow(sheetSpec.headerRowNumber);
+
+    for (const field of sheetSpec.fields) {
+      const observedHeader = cellText(header.getCell(field.columnIndex));
+      const critical = field.role === "key" || field.role === "value";
+      columns.push({
+        sheetRole: sheetSpec.role,
+        sheetName: worksheet.name,
+        field: field.field,
+        label: field.label,
+        columnIndex: field.columnIndex,
+        expectedHeaderHint: field.expectedHeaderHint,
+        observedHeader,
+        // Deterministic baseline: empty = structural problem. Non-empty headers stay "uncertain"
+        // until the AI judges them (or remain uncertain when AI is unavailable).
+        status: observedHeader ? "uncertain" : "empty",
+        note: observedHeader ? "" : "No header found at this column — the file layout may have shifted.",
+        critical,
+      });
+    }
+
+    if (sheetSpec.matrix) {
+      const { firstColumn, lastColumn, stopAtHeaderPattern } = sheetSpec.matrix;
+      const stopRe = stopAtHeaderPattern ? new RegExp(stopAtHeaderPattern, "i") : null;
+      const detected: string[] = [];
+      const hardLast = lastColumn ?? 400;
+      for (let col = firstColumn; col <= hardLast; col += 1) {
+        const text = cellText(header.getCell(col));
+        if (stopRe && text && stopRe.test(text)) break; // hit the summary column (e.g. Total Qty) — stop, don't count it
+        if (!text) {
+          if (!lastColumn) break; // run to the first blank when there's no hard last column
+          continue;
+        }
+        detected.push(text);
+      }
+      matrices.push({
+        sheetRole: sheetSpec.role,
+        sheetName: worksheet.name,
+        kind: sheetSpec.matrix.kind,
+        firstColumn,
+        detectedCount: detected.length,
+        sampleHeaders: detected.slice(0, 8),
+        note: sheetSpec.matrix.note,
+      });
+    }
+  }
+
+  // ── AI overlay (graceful: never throws out of here) ──
+  const provider = resolveProvider();
+  let aiUsed = false;
+  let aiNote: string | null =
+    "AI verification is not configured here — review the column mapping below and confirm it matches your file before uploading.";
+
+  const judgeItems = columns
+    .filter((c) => c.status !== "empty")
+    .map((c, index) => ({ id: index, ref: c, sheetRole: c.sheetRole, label: c.label, columnIndex: c.columnIndex, expectedHeaderHint: c.expectedHeaderHint, observedHeader: c.observedHeader }));
+
+  if (provider && judgeItems.length > 0) {
+    try {
+      const { judgements, summary } = await judgeWithAi(
+        provider,
+        contract.name,
+        judgeItems.map(({ id, sheetRole, label, columnIndex, expectedHeaderHint, observedHeader }) => ({ id, sheetRole, label, columnIndex, expectedHeaderHint, observedHeader })),
+      );
+      // Clamp: only apply judgements whose id maps to an item we actually sent.
+      const byId = new Map(judgeItems.map((it) => [it.id, it.ref]));
+      for (const j of judgements) {
+        const ref = byId.get(Number(j.id));
+        if (!ref) continue;
+        if (j.status === "match" || j.status === "drift" || j.status === "uncertain") {
+          ref.status = j.status;
+          if (j.note) ref.note = String(j.note).slice(0, 240);
+        }
+      }
+      aiUsed = true;
+      aiNote = summary ? summary.slice(0, 600) : "Column check complete.";
+    } catch (error) {
+      // Degrade gracefully — keep the deterministic plan, let the operator verify manually.
+      console.error("[weekly-verify] AI overlay failed:", error instanceof Error ? error.message : error);
+      aiUsed = false;
+      aiNote = "The AI column check could not run just now — review the mapping below and confirm it looks right before uploading.";
+    }
+  }
+
+  // ── verdict (deterministic — never trust the model's overall call) ──
+  // Drift only when a CRITICAL column clearly drifted or is missing. "uncertain" never blocks "pass"
+  // (the operator is the human gate); per the owner's choice drift WARNS but does not hard-block.
+  const verdict: "pass" | "drift" = columns.some((c) => c.critical && (c.status === "drift" || c.status === "empty")) ? "drift" : "pass";
+
+  return {
+    distributor: { code: distributor.code, name: distributor.name },
+    verdict,
+    aiUsed,
+    aiNote,
+    files,
+    columns,
+    matrices,
+    warnings,
+  };
+}
