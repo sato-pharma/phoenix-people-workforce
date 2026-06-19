@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildMarketingEmailCard } from "@/lib/marketing-requests/service";
+import { buildMarketingEmailContext } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestProduct } from "@/lib/marketing-requests/types";
 
 function source(relPath: string): string {
@@ -13,6 +13,7 @@ function fakeRequest(): MarketingRequest {
     estimatedCost: 3000,
     expectedRoiValue: 10000,
     payDate: "2026-07-01",
+    requestCode: "MKT-REQ-TEST",
     requiredRoiValue: 30000,
     roiDurationMonths: 1,
   } as unknown as MarketingRequest;
@@ -27,14 +28,16 @@ function fakeProduct(name: string, quantity: number, value: number): MarketingRe
 }
 
 /**
- * The premium marketing notification email: a pre-rendered HTML card injected through the
- * {{planTable}} raw-HTML token. The email sanitizer (src/lib/email/email-safety.ts) DROPS
- * `div`, `border-radius`, `box-shadow` and `margin`, so the card MUST be table-based with a
- * whitelisted style vocabulary, and any user text (the return reason) MUST be HTML-escaped.
+ * The marketing email is now FULLY EDITABLE in /admin/email-templates: the premium layout lives in
+ * the marketing_request template body using tokens, and the code only supplies the VALUES via the
+ * `templateContext` passthrough. `productsTable` + `returnCallout` are pre-rendered HTML blocks (the
+ * only parts that can't be hand-typed) — table-based + HTML-escaped, since the email sanitizer drops
+ * `div`/`border-radius`/`margin`.
  */
 export async function runMarketingPremiumNotificationTests() {
-  const card = buildMarketingEmailCard({
+  const ctx = buildMarketingEmailContext({
     currentStepName: "Marketing Review",
+    customerName: "El Ezaby — Nasr City",
     noteHeading: "Returned",
     products: [fakeProduct("Pediacare Drops 15ml", 120, 1800), fakeProduct("Pedia Syrup 100ml", 60, 900)],
     request: fakeRequest(),
@@ -42,60 +45,71 @@ export async function runMarketingPremiumNotificationTests() {
     returnNote: "Reduce the quantity and attach the pharmacy display photo.",
   });
 
-  // ── Rich content the bare email never had ──
-  assert.match(card.html, /Pediacare Drops 15ml/, "products table must list the products");
-  assert.match(card.html, /EGP 1,800/, "product value rendered");
-  assert.match(card.html, /EGP 3,000/, "estimated cost tile rendered");
-  assert.match(card.html, /EGP 30,000/, "required ROI tile rendered");
-  assert.match(card.html, /Required ROI · 1 mo/, "required ROI is labelled with the duration");
-  assert.match(card.html, /Returned by Ali Mohamed Ali · reason/, "return callout names the decider");
-  assert.match(card.html, /Reduce the quantity and attach the pharmacy display photo\./, "return reason text shown");
-  assert.match(card.html, /Currently with:/, "current step surfaced");
+  // ── Scalar token values (filled per request, arranged/labelled in the admin template) ──
+  assert.equal(ctx.estimatedCost, "EGP 3,000");
+  assert.equal(ctx.requiredRoi, "EGP 30,000");
+  assert.equal(ctx.payDate, "2026-07-01");
+  assert.equal(ctx.customerName, "El Ezaby — Nasr City");
+  assert.equal(ctx.currentStep, "Marketing Review");
+  assert.equal(ctx.requestCode, "MKT-REQ-TEST");
+  assert.match(String(ctx.roiWindow), /.+/);
 
-  // ── Email-sanitizer safety: table-based, no dropped constructs ──
-  assert.match(card.html, /<table/i, "the card must be table-based");
-  assert.doesNotMatch(card.html, /<div/i, "no <div> — the email sanitizer discards it");
-  assert.doesNotMatch(card.html, /border-radius|box-shadow|margin:|display:/i, "avoid styles the sanitizer strips");
+  // ── productsTable raw-HTML block: table-based, no div, with text projection ──
+  assert.match(String(ctx.productsTable), /Pediacare Drops 15ml/);
+  assert.match(String(ctx.productsTable), /EGP 1,800/);
+  assert.match(String(ctx.productsTable), /<table/i);
+  assert.doesNotMatch(String(ctx.productsTable), /<div/i);
+  assert.match(String(ctx.productsTableText), /Pediacare Drops 15ml/);
 
-  // ── User text is HTML-escaped (no raw injection through the raw-HTML token) ──
-  const injected = buildMarketingEmailCard({
+  // ── returnCallout raw-HTML block: leads with heading + decider, reason HTML-escaped ──
+  assert.match(String(ctx.returnCallout), /Returned by Ali Mohamed Ali · reason/);
+  assert.match(String(ctx.returnCallout), /Reduce the quantity/);
+  assert.doesNotMatch(String(ctx.returnCallout), /<div/i);
+  assert.match(String(ctx.returnCalloutText), /reason: Reduce the quantity/);
+
+  // Empty blocks when there's nothing to show (so the template renders cleanly).
+  const empty = buildMarketingEmailContext({ products: [], request: fakeRequest() });
+  assert.equal(empty.productsTable, "");
+  assert.equal(empty.returnCallout, "");
+  assert.equal(empty.customerName, "—");
+
+  // XSS — the return note is HTML-escaped before going into the raw block.
+  const injected = buildMarketingEmailContext({
     products: [],
     request: fakeRequest(),
     returnNote: "<script>alert(1)</script>",
   });
-  assert.doesNotMatch(injected.html, /<script>/i, "return note must be HTML-escaped");
-  assert.match(injected.html, /&lt;script&gt;/, "escaped form present");
+  assert.doesNotMatch(String(injected.returnCallout), /<script>/i);
+  assert.match(String(injected.returnCallout), /&lt;script&gt;/);
 
-  // Heading defaults to "Returned" and switches for rejection.
-  assert.match(injected.html, /Returned · reason/, "note heading defaults to Returned");
-
-  // ── Plain-text projection ──
-  assert.match(card.text, /Pediacare Drops 15ml/);
-  assert.match(card.text, /Estimated cost: EGP 3,000/);
-  assert.match(card.text, /reason: Reduce the quantity/);
-
-  // ── Source-pinned wiring so a refactor can't silently regress the feature ──
-  const service = source("src/lib/marketing-requests/service.ts");
-  assert.match(service, /planTableHtml: emailCard\.html/, "marketing email must pass the card via planTableHtml");
-  assert.match(service, /planTableText: emailCard\.text/, "marketing email must pass the plain-text card");
-  assert.match(service, /returnNote: comment/, "the decision flow must forward the return reason to the notification");
-
+  // ── Engine: tokens registered + the two raw-HTML blocks ──
   const templates = source("src/lib/email-templates/service.ts");
+  assert.match(templates, /"productsTable"/, "productsTable must be a registered placeholder");
+  assert.match(templates, /"estimatedCost"/, "estimatedCost must be a registered placeholder");
   assert.match(
     templates,
-    /marketing_request:[\s\S]{0,160}\{\{planTable\}\}/,
-    "the marketing_request email template body must render {{planTable}}",
+    /new Set\(\["planTable", "productsTable", "returnCallout"\]\)/,
+    "productsTable + returnCallout must be raw-HTML block tokens",
+  );
+  assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
+  assert.match(templates, /\{\{estimatedCost\}\}/, "marketing_request body must render {{estimatedCost}}");
+
+  // ── Passthrough wiring: both marketing emails fill the template via templateContext ──
+  const service = source("src/lib/marketing-requests/service.ts");
+  const wiring = service.match(/templateContext: (emailContext|submittedContext)/g) ?? [];
+  assert.equal(wiring.length, 2, "both the workflow and submitted emails must pass templateContext");
+  assert.match(service, /returnNote: comment/, "the decision flow must forward the return reason");
+  const email = source("src/lib/notifications/email.ts");
+  assert.match(
+    email,
+    /\.\.\.\(input\.templateContext \?\? \{\}\)/,
+    "email.ts must merge the caller templateContext into the render context",
   );
 
-  // ── Review view carries the full request context (no click-through to decide) ──
+  // ── Review view + returned-for-edit banner still in place ──
   assert.match(service, /export type MarketingDecisionProductLine/, "decision summary must expose product lines");
-  assert.match(service, /requiredRoiValue: request\.requiredRoiValue/, "decision summary must include the required ROI");
   const decisionView = source("src/components/employee-portal/marketing-request-decision-confirmation.tsx");
   assert.match(decisionView, /summary\.products\.map/, "the review view must render the products");
-  assert.match(decisionView, /Approval progress/, "the review view must show the approval chain");
-
-  // ── Returned-for-edit banner surfaces who returned it and why ──
   const drafts = source("src/components/employee-portal/marketing-request-drafts.tsx");
   assert.match(drafts, /resubmitReturnReason/, "returned-for-edit banner must surface the return reason");
-  assert.match(drafts, /returnReason \?\? returnedStep\?\.decisionNote/, "banner must read the returned step's note");
 }

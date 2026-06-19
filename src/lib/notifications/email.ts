@@ -12,7 +12,7 @@ import {
   systemIdentity,
   systemNotificationEmailText,
 } from "@/config/system-settings";
-import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail } from "@/lib/email-templates/service";
+import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail, type EmailTemplateContext } from "@/lib/email-templates/service";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -84,6 +84,12 @@ export type NotificationEmailInput = {
   planTableHtml?: string;
   /** Plain-text projection of planTableHtml for the text part of the email. */
   planTableText?: string;
+  /**
+   * Extra template tokens this send should fill (e.g. marketing financials, products table).
+   * Merged into the resolved template context, so module-specific tokens stay editable in
+   * /admin/email-templates while the value comes from the caller.
+   */
+  templateContext?: Partial<EmailTemplateContext>;
   /**
    * Name of the person actually RECEIVING this email (for "Dear {{recipientName}},").
    * Without it the hub falls back to the subject employee's name - wrong for emails
@@ -1407,6 +1413,9 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         status: notificationMetricStatus(input),
         subject: input.subject,
         summary: input.summary,
+        // Caller-supplied template fields (e.g. marketing financials, products table) — merged
+        // last so module callers can populate their template-specific tokens.
+        ...(input.templateContext ?? {}),
       },
       employeeHrId: input.employeeHrId,
       fallbackTo: delivery.recipients,
