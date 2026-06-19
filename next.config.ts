@@ -54,13 +54,14 @@ const securityHeaders = [
     : []),
 ];
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   experimental: {
     // Tree-shake large barrel imports so only the icons/charts/primitives a
     // component actually uses land in its client chunk (these are imported
     // across 100+ client components).
     optimizePackageImports: ["lucide-react", "recharts", "radix-ui"],
   },
+  telemetry: false,
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",
@@ -75,15 +76,17 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-};
+} as NextConfig & { telemetry: false };
 
 export default withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
-  org: "sato-pharma",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
 
-  project: "phoenix",
+  org: process.env.SENTRY_ORG,
+
+  project: process.env.SENTRY_PROJECT,
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
@@ -92,6 +95,9 @@ export default withSentryConfig(nextConfig, {
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
   // Upload a larger set of source maps for prettier stack traces (increases build time)
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
   widenClientFileUpload: true,
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
