@@ -91,6 +91,7 @@ export type MarketingRequestType = {
 export type MarketingWorkflowStep = {
   active: boolean;
   allowReject: boolean;
+  allowReturn: boolean;
   approvalScope: MarketingWorkflowApprovalScope;
   assignedRole: string;
   ccRoles: string[];
@@ -511,6 +512,7 @@ export type MarketingRequestPharmacy = {
 
 export type MarketingRequestApprovalStep = {
   allowReject: boolean;
+  allowReturn: boolean;
   assignedHrId: string | null;
   assignedRole: string;
   createdAt: string;

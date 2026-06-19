@@ -514,10 +514,7 @@ export async function WorkspaceMarketingDecisionPage({
       icon={<Inbox className="h-3.5 w-3.5" />}
       title="Marketing Decision"
     >
-      <MarketingRequestDecisionConfirmation
-        detailsHref="/workspace/marketing-requests"
-        summary={summary}
-      />
+      <MarketingRequestDecisionConfirmation summary={summary} />
     </WorkspaceFrame>
   );
 }
