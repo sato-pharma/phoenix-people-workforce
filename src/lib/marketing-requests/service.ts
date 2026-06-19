@@ -1723,7 +1723,7 @@ async function notifyMarketingWorkflow(params: {
       ...(ccHrIds.length > 0
         ? { ccHrIds, workflowParticipantHrIds: Array.from(new Set([...existingParticipants, ...ccHrIds])) }
         : {}),
-      idempotencyKey: `marketing-request:${params.eventType}:${params.request.id}:${params.metadata?.currentStepId ?? params.metadata?.decisionAt ?? "event"}`,
+      idempotencyKey: `marketing-request:${params.eventType}:${params.request.id}:${params.metadata?.idempotencyEpoch ?? params.metadata?.currentStepId ?? params.metadata?.decisionAt ?? "event"}`,
     },
     module: "marketing_requests",
     priority: params.priority ?? "high",
@@ -4044,6 +4044,7 @@ export async function resubmitReturnedMarketingRequest(
       assignedApproverHrId: currentStep.assignedHrId,
       currentStepId: currentStep.id,
       currentStepName: currentStep.stepName,
+      idempotencyEpoch: now,
       workflowApproverHrId: currentStep.assignedHrId,
       ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName }),
     },
