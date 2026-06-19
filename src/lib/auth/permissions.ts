@@ -15,6 +15,7 @@ export const phoenixRoles = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
+  "Financial Advisor",
   "Talent Acquisition",
   "Manager",
   "CEO",
@@ -187,6 +188,7 @@ export const adminShellEmployeeRoles = [
   "SFE Manager",
   "Marketing Manager",
   "Finance Manager",
+  "Financial Advisor",
   "Talent Acquisition",
 ] as const satisfies readonly PhoenixRole[];
 const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
@@ -382,6 +384,18 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     workflow_registry: ["read"],
     report_it: ["read", "create", "export"],
+  },
+  // New role: executes the Finance step of marketing requests from the /workspace admin shell.
+  // Deliberately narrow — marketing-finance participation (granted via the marketing service
+  // role-sets, not a permission resource) + own self-service only; NO HR/payroll/employee authority.
+  "Financial Advisor": {
+    attendance: ["read"],
+    overview: [],
+    employee_profile: ["read", "update"],
+    leave: ["read", "create"],
+    payslips: ["read", "export"],
+    support_requests: ["create"],
+    report_it: ["read", "create"],
   },
   Employee: {
     attendance: ["read"],
@@ -641,7 +655,6 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     "account admin": "Super Admin",
     admin: "Super Admin",
     employee: "Employee",
-    "financial advisor": "Employee",
     nsm: "National Sales Manager",
     "office co-ordinator": "Employee",
     "office coordinator": "Employee",
@@ -672,7 +685,6 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     adminassist: "Employee",
     adminassistant: "Employee",
     buffet: "Employee",
-    financialadvisor: "Employee",
     nsm: "National Sales Manager",
     "office coordinator": "Employee",
     qppv: "Employee",
