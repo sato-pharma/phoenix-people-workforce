@@ -394,6 +394,8 @@ export type MarketingRequestDetail = {
   progress: MarketingRequestStepProgress | null;
   request: MarketingRequest;
   steps: MarketingRequestTimelineStep[];
+  /** True when the viewer is a CC reviewer who may post a non-blocking comment right now. */
+  viewerCanComment: boolean;
 };
 
 export type MarketingRequestDraftWorkspace = {
@@ -4031,12 +4033,27 @@ export async function getMarketingRequestDetail(
     throw forbiddenError("Forbidden: you cannot view this marketing request.");
   }
 
+  // The viewer may post a non-blocking comment when they are a CC reviewer on the step that is
+  // currently active (mirrors postMarketingAdvisoryComment's eligibility rule).
+  const currentGating = steps.find((step) => step.status === "current" && !step.isCc) ?? null;
+  const viewerCanComment = Boolean(
+    actorHrId &&
+      currentGating &&
+      steps.some(
+        (step) =>
+          step.isCc &&
+          step.stepCode === currentGating.stepCode &&
+          normalizeHrId(step.assignedHrId) === actorHrId,
+      ),
+  );
+
   return {
     pharmacies: ((pharmaciesResult.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy),
     products: ((productsResult.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
     progress: buildMarketingStepProgress(steps, employeeRows),
     request: mapRequest(requestRow),
     steps: buildMarketingTimeline(steps, employeeRows),
+    viewerCanComment,
   };
 }
 

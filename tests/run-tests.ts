@@ -97,6 +97,7 @@ import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
+import { runSalesRoiBatchDedupTests } from "./sales-roi-batch-dedup.test.ts";
 import { runSosHeaderAliasesTests } from "./sos-header-aliases.test.ts";
 import { runSosGuardrailsTests } from "./sos-guardrails.test.ts";
 import { runSosWarningCleanupTests } from "./sos-warning-cleanup.test.ts";
@@ -208,6 +209,7 @@ import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-f
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
+import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -321,6 +323,7 @@ await runTest("brick suggestions", runBrickSuggestionsTests);
 await runTest("import coverage aggregation", runImportCoverageTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
 await runTest("sales strict header conformance + name-first product", runSalesStrictConformanceTests);
+await runTest("sales ROI batch dedup (one validated batch per period)", runSalesRoiBatchDedupTests);
 await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
 await runTest("sos warning cleanup", runSosWarningCleanupTests);
@@ -429,3 +432,4 @@ await runTest("employee portal fingerprint visibility", runEmployeePortalFingerp
 await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests);
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
+await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);

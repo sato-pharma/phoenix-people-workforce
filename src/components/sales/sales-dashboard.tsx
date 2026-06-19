@@ -1225,10 +1225,10 @@ function SalesDashboardContent({
 
       {/* KPI Cards - Featured */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard icon={BarChart3} label="Sales" value={formatCurrency(summary.totalApprovedSales)} sub={`${formatNumber(summary.approvedRecords)} rows read`} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
-        <MetricCard icon={Target} label="Target" value={formatCurrency(summary.totalApprovedTarget)} sub={`${formatPercent(summary.achievementRate)} achievement`} tone={summary.achievementRate >= 1 ? "success" : summary.achievementRate >= 0.8 ? "warning" : "danger"} trend={summary.achievementRate >= 0.8 ? "up" : "down"} />
-        <MetricCard icon={Boxes} label="Units Sold" value={formatNumber(summary.unitsSold)} sub={`${formatNumber(summary.activeProducts)} active products`} trend="neutral" />
-        <MetricCard icon={TrendingUp} label="Achievement" value={formatPercent(summary.achievementRate)} sub={`${formatDeltaPercent(salesDelta)} sales vs previous`} tone={summary.achievementRate >= 0.8 ? "success" : "danger"} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
+        <MetricCard icon={BarChart3} label="Sales" value={hasData ? formatCurrency(summary.totalApprovedSales) : "—"} sub={`${formatNumber(summary.approvedRecords)} rows read`} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
+        <MetricCard icon={Target} label="Target" value={hasData ? formatCurrency(summary.totalApprovedTarget) : "—"} sub={hasData ? `${formatPercent(summary.achievementRate)} achievement` : "No data yet"} tone={!hasData ? "neutral" : summary.achievementRate >= 1 ? "success" : summary.achievementRate >= 0.8 ? "warning" : "danger"} trend={!hasData ? "neutral" : summary.achievementRate >= 0.8 ? "up" : "down"} />
+        <MetricCard icon={Boxes} label="Units Sold" value={hasData ? formatNumber(summary.unitsSold) : "—"} sub={`${formatNumber(summary.activeProducts)} active products`} trend="neutral" />
+        <MetricCard icon={TrendingUp} label="Achievement" value={hasData ? formatPercent(summary.achievementRate) : "—"} sub={`${formatDeltaPercent(salesDelta)} sales vs previous`} tone={!hasData ? "neutral" : summary.achievementRate >= 0.8 ? "success" : "danger"} trend={salesDelta === null ? "neutral" : salesDelta >= 0 ? "up" : "down"} />
         <MetricCard
           icon={Link2}
           label="DSM Linkage"
