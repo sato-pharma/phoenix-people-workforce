@@ -25,15 +25,24 @@ function marketingDraftApiError(error: unknown) {
       ? String((error as { message?: unknown }).message ?? "")
       : String(error ?? "");
   const normalized = message.toLowerCase();
-  if (
-    normalized.includes("marketing_request") ||
-    normalized.includes("marketing_customer") ||
-    normalized.includes("marketing_product") ||
-    normalized.includes("marketing_distributor") ||
-    normalized.includes("could not find the table") ||
-    normalized.includes("schema cache") ||
-    (normalized.includes("relation") && normalized.includes("does not exist"))
-  ) {
+  // A real data/constraint error (e.g. a foreign-key violation on an approval step) is NOT a
+  // missing schema — never mask it as "schema not applied", or the true cause stays hidden.
+  const isConstraintViolation =
+    normalized.includes("violates") ||
+    normalized.includes("foreign key") ||
+    normalized.includes("duplicate key") ||
+    normalized.includes("constraint");
+  const isSchemaMissing =
+    !isConstraintViolation &&
+    (normalized.includes("could not find the table") ||
+      normalized.includes("schema cache") ||
+      (normalized.includes("relation") && normalized.includes("does not exist")) ||
+      (normalized.includes("does not exist") &&
+        (normalized.includes("marketing_request") ||
+          normalized.includes("marketing_customer") ||
+          normalized.includes("marketing_product") ||
+          normalized.includes("marketing_distributor"))));
+  if (isSchemaMissing) {
     return {
       code: "marketing_requests_schema_not_ready",
       message: "Marketing request schema is not applied to the connected database yet.",
