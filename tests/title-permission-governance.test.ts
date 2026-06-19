@@ -63,7 +63,6 @@ export function runTitlePermissionGovernanceTests() {
     "Buffet",
     "Office Co-ordinator",
     "Regulatory Affairs",
-    "Financial Advisor",
   ]) {
     assert.equal(resolveEmployeeAccessRole({ jobTitle: title }), "Employee");
     assert.equal(
@@ -72,6 +71,13 @@ export function runTitlePermissionGovernanceTests() {
       `"${title}" must not normalize to an elevated role.`,
     );
   }
+
+  // --- Financial Advisor is BOTH a job title and an explicit app role (marketing finance
+  // executor). Like "Talent Acquisition", the TITLE still provisions as Employee — only an
+  // explicitly-assigned role string carries the role; a title can never confer it. -----------
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "Financial Advisor" }), "Employee");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "Financial Advisor" }), "Employee");
+  assert.equal(normalizeRole("Financial Advisor"), "Financial Advisor");
 
   // --- HR Specialist is NOT a manager. ---------------------------------------
   assert.equal(scopeForRole("Manager"), "team");
