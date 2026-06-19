@@ -61,6 +61,7 @@ const nextConfig: NextConfig = {
     // across 100+ client components).
     optimizePackageImports: ["lucide-react", "recharts", "radix-ui"],
   },
+  // telemetry: false
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",
@@ -92,6 +93,9 @@ export default withSentryConfig(nextConfig, {
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
   // Upload a larger set of source maps for prettier stack traces (increases build time)
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
   widenClientFileUpload: true,
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
