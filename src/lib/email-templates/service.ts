@@ -401,8 +401,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Contract Renewal",
   },
   marketing_request: {
-    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{planTable}}",
+    bodyText: "{{summary}}\n\n{{planTable}}",
     closingText: "Open Phoenix Workforce to review the marketing request and take the next action.",
     description: "Marketing request workflow updates: submission, assignment, approvals, returns, completion, and SLA reminders.",
     greeting: "Dear {{recipientName}},",
