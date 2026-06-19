@@ -31,6 +31,15 @@ export class SalesWorkflowError<TDetails = unknown> extends Error {
   }
 }
 
+// True when a Postgres error is a unique-constraint violation (SQLSTATE 23505). Used to turn the DB
+// backstop (e.g. the one-validated-batch-per-period index) into a friendly "already imported, delete
+// first" message instead of a raw 500. Tolerant of supabase-js error shapes (top-level or nested).
+export function isPostgresUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const e = error as { code?: unknown; cause?: { code?: unknown } };
+  return e.code === "23505" || (typeof e.cause === "object" && e.cause !== null && e.cause.code === "23505");
+}
+
 export function salesSuccess<TDetails>(
   response: Omit<SalesActionResponse<TDetails>, "success">,
 ): SalesActionResponse<TDetails> {

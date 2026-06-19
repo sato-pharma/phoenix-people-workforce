@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { normalizeUploadedFile, persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 
 export const runtime = "nodejs";
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    }
+    // DB backstop (source_of_sales_one_validated_batch_per_period): a validated batch for this
+    // distributor + month already exists. Direct import skips the in-app dedup, so surface it clearly
+    // instead of a raw 500 — keeps the month from being double-counted in ROI/dashboards.
+    if (isPostgresUniqueViolation(error)) {
+      return NextResponse.json({ success: false, error: "A validated sheet for this distributor and month is already imported. Delete it on Source of Sales first, then retry." }, { status: 409 });
     }
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to import." }, { status: 500 });
   }
