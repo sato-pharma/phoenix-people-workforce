@@ -158,3 +158,37 @@ export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string;
     { label: "Position under review", text: "The position itself is under organizational review; renewal will follow that outcome." },
   ],
 };
+
+// ── "My requests" tab (submitter-side view) ───────────────────────────────────
+// The requests the signed-in employee submitted themselves, across modules, each
+// with its live approval status. Read-only — the actual approve/reject happens in
+// the "Awaiting my action" inbox or the module's own page.
+
+export type MyRequestModule = "leave" | "excuse" | "outstation" | "weekly_plan" | "resignation";
+
+export type MyRequestStatusTone = "pending" | "approved" | "rejected" | "returned" | "neutral";
+
+export type MyRequestItem = {
+  id: string;
+  module: MyRequestModule;
+  title: string;
+  statusLabel: string;
+  statusTone: MyRequestStatusTone;
+  submittedAt: string;
+  href: string | null;
+  lines: Array<{ label: string; value: string }>;
+  decisionNote: string | null;
+};
+
+export type MyRequestsData = {
+  generatedAt: string;
+  items: MyRequestItem[];
+};
+
+export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {
+  leave: "Vacation",
+  excuse: "Excuse",
+  outstation: "Outstation",
+  weekly_plan: "Weekly Plan",
+  resignation: "Resignation",
+};

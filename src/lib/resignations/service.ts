@@ -559,6 +559,24 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
   return { employees, payrollCandidates, records, summary };
 }
 
+/**
+ * Submitter-side view: the resignation request(s) the caller filed themselves.
+ * Used by the consolidated Actions "My requests" tab. Scoped strictly to the
+ * caller's own HR_ID — never surfaces another employee's resignation.
+ */
+export async function getMyResignations(access: AccessContext): Promise<ResignationRecord[]> {
+  const hrId = access.hrId?.trim();
+  if (!hrId) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employee_resignations")
+    .select("*")
+    .ilike("employee_hr_id", hrId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => mapResignation(row as ResignationRow));
+}
+
 async function assertResignationRuntimeSchema(
   supabase: SupabaseClient,
   options: { requireVacancies?: boolean } = {},
