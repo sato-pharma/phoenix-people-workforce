@@ -824,10 +824,11 @@ function MarketingRequestDraftWorkspaceInner() {
       );
 
     return calculateMarketingRoiPreview({
+      durationMonths: fieldNumber(roiDurationMonths),
       estimatedCost: fieldNumber(estimatedCost),
       products,
     });
-  }, [estimatedCost, productLines, productMap]);
+  }, [estimatedCost, productLines, productMap, roiDurationMonths]);
 
   const productLineMetrics = useMemo(() => {
     return productLines
