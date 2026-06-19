@@ -182,7 +182,9 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(planningCalendarRouteSource, /getSharedPlanningCalendarWorkspace/);
   assert.match(conflictRouteSource, /getSameLinePlanBookings/);
   assert.doesNotMatch(planningCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_360px\]/, "planning calendar must not narrow the month grid with a right-side detail rail");
-  assert.match(planningCalendarUiSource, /contentClassName="grid gap-2 md:grid-cols-2 2xl:grid-cols-3"/, "selected planning day details must sit below the calendar as a responsive card grid");
+  assert.match(planningCalendarUiSource, /PlanningCalendarDetailsTable/, "selected planning day details must render in the polished details table");
+  assert.match(planningCalendarUiSource, /"Date", "Employee", "Activity", "Region \/ Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning", "Notes"/, "planning details table must expose the full visible activity columns");
+  assert.doesNotMatch(planningCalendarUiSource, /contentClassName="grid gap-2 md:grid-cols-2 2xl:grid-cols-3"/, "selected planning day details must no longer render as a responsive card grid");
 
   const baseItem = {
     activityTitle: "Double Visit",

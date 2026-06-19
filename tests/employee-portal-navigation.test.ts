@@ -132,6 +132,9 @@ export function runEmployeePortalNavigationTests() {
     "SFE Manager should land in its de-duplicated /workspace marketing home",
   );
 
+  const marketingManager = resolveEmployeePortalNavVisibility("Marketing Manager");
+  assert.equal(marketingManager.showIncentiveTab, false, "Marketing Manager should not see Incentive");
+
   // --- Marketing Requests and Contact HR Support both graduated to full modules ------
   const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
 
