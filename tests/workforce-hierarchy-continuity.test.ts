@@ -407,6 +407,21 @@ export function runWorkforceHierarchyContinuityTests() {
     /scope === "TEAM" \|\| scope === "HIERARCHY"/,
     "canSeeVacation must gate the manager fallback to management scopes",
   );
+  assert.match(
+    vacationServiceSource,
+    /const visibleEmployees = filterVacationEmployeesForAccess\(access, activeEmployees\);[\s\S]*const visibleEmployeeHrIds = new Set\(visibleEmployees\.map\(\(employee\) => canonicalHrId\(employee\.hrId\)\)/,
+    "Vacation report must derive the scoped HR ID set from the same visible employee set used for entitlements",
+  );
+  assert.match(
+    vacationServiceSource,
+    /fetchVacationReportRowsFromDatabase\(\{ access, filters: clean, visibleEmployeeHrIds \}\);[\s\S]*\.filter\(\(row\) => canSeeVacation\(access, row, visibleEmployeeHrIds\)\)/,
+    "Vacation report rows must be fetched and filtered by the scoped employee set",
+  );
+  assert.match(
+    vacationServiceSource,
+    /const employeeEligibility = buildEmployeeEligibilityRows\(\{[\s\S]*employees: visibleEmployees,/,
+    "Vacation report entitlements must be built only from scoped visible employees",
+  );
 
   const directorySource = readFileSync(
     new URL("../src/lib/employees/employee-directory.ts", import.meta.url),

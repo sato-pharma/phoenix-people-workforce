@@ -223,10 +223,14 @@ export function runPrivateCalendarTests() {
   assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
   assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
   assert.match(privateCalendarUiSource, /Calendar Report/, "private calendar UI must include a calendar report table");
-  assert.match(privateCalendarUiSource, /Calendar Entry/, "private calendar report must show the calendar entry column");
-  assert.match(privateCalendarUiSource, /Report rows mirror all calendar entries/, "private calendar report must explain that rows mirror calendar entries");
+  assert.match(privateCalendarUiSource, /"Date", "Source", "Entry", "Check-in", "Check-out", "Scheduled Time", "Working Hours", "Status", "Full Details"/, "private calendar report must show attendance and calendar detail columns");
+  assert.doesNotMatch(privateCalendarUiSource, /"HR ID", "Full Name", "Job Title", "Line", "Department"/, "private calendar report must not expose static identity columns");
+  assert.match(privateCalendarUiSource, /Report rows mirror all calendar and attendance details/, "private calendar report must explain that rows mirror calendar and attendance entries");
   assert.doesNotMatch(privateCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_420px\]/, "private calendar must not narrow the month grid with a right-side timeline rail");
   assert.match(privateCalendarUiSource, /lg:grid-cols-2 2xl:grid-cols-3/, "private calendar timeline must render below the calendar as a responsive card grid");
+
+  const workspacePagesSource = readFileSync("src/components/workspace/admin-shell-employee-pages.tsx", "utf8");
+  assert.match(workspacePagesSource, /<PrivateCalendar initialWorkspace=\{workspace\} surface="workspace" \/>/, "workspace private calendar must use the admin-shell surface mode");
 
   const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
   assert.match(adminPageSource, /viewMode: "team"/, "admin private calendars must default to team mode");

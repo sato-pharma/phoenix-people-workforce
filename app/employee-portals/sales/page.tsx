@@ -37,7 +37,7 @@ export default async function EmployeePortalSalesPage({
         title="This page is only available in employee portal mode."
       >
         <div className="mt-4">
-          <EmployeePortalActionLink href="/sales" label="Go to Sales Queue" />
+          <EmployeePortalActionLink href="/sales" label="Go to Sales Dashboard" />
         </div>
       </EmployeePortalEmptyState>
     );

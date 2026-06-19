@@ -51,6 +51,8 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 
+const adminShellEmployeeRolesWithIncentive = adminShellEmployeeRoles.filter((role) => role !== "Marketing Manager");
+
 export type NavigationPermission = {
   action?: PermissionAction;
   resource: PermissionResource;
@@ -148,7 +150,7 @@ const adminNavigationSectionSeeds = [
     id: "workspace-my-workspace",
     items: [
       { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
-      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRolesWithIncentive },
       { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
       { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
@@ -281,8 +283,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-operations",
     items: [
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/import", icon: Database, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/missing-data", icon: TriangleAlert, label: "Missing Data", permissions: [{ action: "import", resource: "sales" }] },
@@ -294,14 +296,6 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
     ],
     label: "Sales Operations",
-  },
-  {
-    id: "old-sales-queue",
-    items: [
-      { href: "/sales/queue", icon: FileUp, label: "Monthly Sales", permissions: [{ resource: "sales" }] },
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
-    ],
-    label: "Old Sales Queue",
   },
   {
     id: "weekly-sales",

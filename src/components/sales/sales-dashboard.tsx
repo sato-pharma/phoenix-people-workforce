@@ -826,11 +826,11 @@ export function SalesDashboard(props: Props) {
           actions={
             !portalMode ? (
               <>
-                <Link href="/sales/import">
-                  <Button variant="secondary">Source of Sales</Button>
+                <Link href="/sales/upload">
+                  <Button variant="secondary">Sales Upload</Button>
                 </Link>
-                <Link href="/sales/queue">
-                  <Button variant="secondary">Review Uploaded Sheets</Button>
+                <Link href="/sales/monthly-closing">
+                  <Button variant="secondary">Monthly Closing</Button>
                 </Link>
               </>
             ) : null
@@ -1008,16 +1008,16 @@ function SalesDashboardContent({
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {!portalMode && (
                 <>
-                  <Link href="/sales/queue">
+                  <Link href="/sales/upload">
                     <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition-all duration-160 ease-out hover:bg-[#F97316] hover:shadow-md hover:-translate-y-px active:scale-95">
                       <FileSpreadsheet className="h-4 w-4" />
-                      Uploaded Sheets
+                      Sales Upload
                     </Button>
                   </Link>
-                  <Link href="/sales/import">
+                  <Link href="/sales/monthly-closing">
                     <Button className="gap-2 rounded-xl" variant="secondary">
                       <UploadCloud className="h-4 w-4" />
-                      Source of Sales
+                      Monthly Closing
                     </Button>
                   </Link>
                 </>
@@ -1207,14 +1207,14 @@ function SalesDashboardContent({
             </p>
             {!portalMode ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                <Link className="inline-flex" href="/sales/import">
+                <Link className="inline-flex" href="/sales/upload">
                   <Button variant="secondary">
-                    Source of Sales
+                    Sales Upload
                   </Button>
                 </Link>
-                <Link className="inline-flex" href="/sales/queue">
+                <Link className="inline-flex" href="/sales/monthly-closing">
                   <Button variant="secondary">
-                    Review Uploaded Sheets
+                    Monthly Closing
                   </Button>
                 </Link>
               </div>
