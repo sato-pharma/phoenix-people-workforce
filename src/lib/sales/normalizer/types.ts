@@ -138,5 +138,9 @@ export type NormalizeResult = {
     ignored: number;
     productResolved: number;
     totalRows: number;
+    // Independent physical counter: every non-empty data row the engine scanned. Equals totalRows by
+    // construction today, but lets the validator assert no-silent-loss for real (totalRows is itself
+    // DEFINED as the bucket sum, so it can never catch a future "skipped without bucketing" bug).
+    scannedDataRows?: number;
   };
 };
