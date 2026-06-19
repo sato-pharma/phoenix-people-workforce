@@ -80,6 +80,7 @@ type RecipientProfile = {
   email: string | null;
   hrId: string | null;
   name: string | null;
+  role: string | null;
   userId: string | null;
 };
 
@@ -414,7 +415,7 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     const supabase = getSupabaseAdmin();
     const query = supabase
       .from("app_auth_users")
-      .select("login_id,hr_id,name,auth_email")
+      .select("login_id,hr_id,name,auth_email,role")
       .limit(1);
     const { data, error } = userId
       ? await query.ilike("login_id", userId).maybeSingle()
@@ -423,7 +424,7 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
         : { data: null, error: null };
 
     if (error) throw error;
-    const row = data as { auth_email?: string | null; hr_id?: string | null; login_id?: string | null; name?: string | null } | null;
+    const row = data as { auth_email?: string | null; hr_id?: string | null; login_id?: string | null; name?: string | null; role?: string | null } | null;
     const resolvedHrId = cleanHrId(row?.hr_id) || hrId || null;
 
     // app_auth_users.auth_email is the synthetic Supabase-auth login key
@@ -449,14 +450,22 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
       email: pickDeliverableEmail(workEmail, row?.auth_email),
       hrId: resolvedHrId,
       name: row?.name ?? null,
+      role: row?.role ?? null,
       userId: row?.login_id ?? (userId || null),
     };
   } catch (error) {
     if (!schemaMissing(error, "app_auth_users")) {
       console.error("Notification recipient profile lookup failed", error);
     }
-    return { email: null, hrId: hrId || null, name: null, userId: userId || null };
+    return { email: null, hrId: hrId || null, name: null, role: null, userId: userId || null };
   }
+}
+
+/** "Dr. " for managerial/professional roles; "" for Medical Rep, Employee, and Super Admin. */
+function managerHonorific(role: string | null): string {
+  if (!role) return "";
+  if (role === "Employee" || role === "Medical Rep" || role === "Super Admin") return "";
+  return "Dr. ";
 }
 
 async function loadPreferences(input: CreateSystemNotificationInput): Promise<LoadedPreferences> {
@@ -759,7 +768,7 @@ async function createGovernanceSkippedNotification(
       governanceSkip: true,
     },
   });
-  const recipient: RecipientProfile = { email: null, hrId: null, name: null, userId: null };
+  const recipient: RecipientProfile = { email: null, hrId: null, name: null, role: null, userId: null };
   const eventId = await createNotificationEvent({
     ...input,
     metadata: {
@@ -1281,6 +1290,7 @@ async function buildChannelEmailInput(
     planTableText: input.email?.planTableText,
     // The notification recipient's own name, so templated greetings address the person
     // receiving the email rather than the employee the notification is about.
+    recipientHonorific: managerHonorific(recipient.role),
     recipientName: input.email?.recipientName ?? recipient.name ?? undefined,
     recipientHrId: recipient.hrId ?? undefined,
     recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),

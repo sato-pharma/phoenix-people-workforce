@@ -89,6 +89,7 @@ export type NotificationEmailInput = {
    * Without it the hub falls back to the subject employee's name - wrong for emails
    * routed to a manager/CEO/HR about someone else's record.
    */
+  recipientHonorific?: string | null;
   recipientName?: string;
   recipientHrId?: string | null;
   recipients?: string[];
@@ -1398,6 +1399,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         line: metricValue(input, "Line"),
         planTable: input.planTableHtml,
         planTableText: input.planTableText,
+        honorific: input.recipientHonorific ?? "",
         recipientName: isAuthTemplateKey(migratedTemplateKey)
           ? systemNotificationEmailText.userRecipientName
           : input.recipientName || employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
