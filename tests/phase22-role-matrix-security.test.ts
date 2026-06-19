@@ -84,6 +84,11 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(financeManager, "recruitment", "read"), false);
 
   assert.equal(await canAccess(marketingManager, "weekly_plans", "approve"), true);
+  // Company-wide commercial oversight: monthly + weekly sales are granted (scope COMPANY).
+  assert.equal(await canAccess(marketingManager, "sales", "read"), true);
+  assert.equal(await canAccess(marketingManager, "sales", "export"), true);
+  assert.equal(await canAccess(marketingManager, "weekly_sales", "read"), true);
+  assert.equal(getSalesScope(marketingManager), "COMPANY");
   assert.equal(await canAccess(marketingManager, "support_requests", "create"), true);
   assert.equal(await canAccess(marketingManager, "support_requests", "read"), false);
   assert.equal(await canAccess(marketingManager, "employees", "read"), false);
