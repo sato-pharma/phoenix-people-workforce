@@ -210,7 +210,10 @@ const adminNavigationSectionSeeds = [
       { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
-      { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }] },
+      // Org-wide plans review for Super Admin + CEO. Admin-shell employee roles (SFE/Marketing/
+      // Finance/Talent Acquisition) use the identical /workspace/plans home instead — listing them
+      // here too produced a duplicate "Weekly / Monthly Plan(s)" sidebar entry.
+      { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["Super Admin", "CEO"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
       { href: "/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }], roles: hrAuthorityNavigationRoles },
@@ -244,8 +247,12 @@ const adminNavigationSectionSeeds = [
   {
     id: "leave-management",
     items: [
-      { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
-      { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
+      // Self-service vacation request/report for Super Admin + CEO. Admin-shell employee roles
+      // (SFE/Marketing/Finance/Talent Acquisition) use the identical /workspace/leave-management
+      // home instead, so listing them here too produced duplicate sidebar entries. HR controls
+      // below (vacation-control / action-center) keep their own role gating.
+      { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }], roles: ["Super Admin", "CEO"] },
+      { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }], roles: ["Super Admin", "CEO"] },
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
     ],
@@ -331,12 +338,15 @@ const adminNavigationSectionSeeds = [
   {
     id: "marketing-requests",
     items: [
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
+      // SFE Manager + Marketing Manager are intentionally NOT here: they use the de-duplicated
+      // /workspace/marketing-requests home (see the "workspace-marketing-requests" group). This
+      // org-wide admin module stays for District Manager + Super Admin only.
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "SFE Manager", "Super Admin", "Marketing Manager"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "Super Admin"] },
     ],
     label: "Marketing Requests",
   },
