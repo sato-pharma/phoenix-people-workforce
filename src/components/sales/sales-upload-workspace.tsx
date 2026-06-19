@@ -221,8 +221,16 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
 
       {analysis?.code === "header_validation_error" ? (
         <AdminCallout tone="danger"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><div>
-          <p className="font-semibold">Wrong or mismatched sheet.</p>
-          {analysis.fingerprintWarning ? <p className="text-xs">Looks more like {analysis.fingerprintWarning.likelyName} ({analysis.fingerprintWarning.likelyCode}). Did you pick the right distributor?</p> : null}
+          <p className="font-semibold">This distributor&apos;s template was not followed — the sheet is rejected.</p>
+          {analysis.missingGroups && analysis.missingGroups.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+              {analysis.missingGroups.map((g) => (
+                <li key={g.label}><span className="font-semibold">{g.label}</span> — expected column {g.expected.map((e) => `"${e}"`).join(" / ")}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mt-1 text-xs">Do not rename or remove the template&apos;s required columns. Fix the header(s) above, then re-analyze.</p>
+          {analysis.fingerprintWarning ? <p className="mt-1 text-xs">Tip: this looks more like {analysis.fingerprintWarning.likelyName} ({analysis.fingerprintWarning.likelyCode}). Did you pick the right distributor?</p> : null}
         </div></AdminCallout>
       ) : null}
 
