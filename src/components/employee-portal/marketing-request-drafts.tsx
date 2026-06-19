@@ -71,6 +71,7 @@ type DraftWorkspacePayload = {
   requesterLineId: number | null;
   requesterLineName: string | null;
   returned: MarketingRequest[];
+  returnedToMe: MarketingRequest[];
   stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
 
@@ -243,6 +244,7 @@ function emptyPayload(): DraftWorkspacePayload {
     requesterLineId: null,
     requesterLineName: null,
     returned: [],
+    returnedToMe: [],
     stepProgressByRequestId: {},
   };
 }
@@ -722,6 +724,7 @@ function MarketingRequestDraftWorkspaceInner() {
         requesterLineId: payload.requesterLineId ?? null,
         requesterLineName: payload.requesterLineName ?? null,
         returned: payload.returned ?? [],
+        returnedToMe: payload.returnedToMe ?? [],
         stepProgressByRequestId: payload.stepProgressByRequestId ?? {},
       });
       setCustomerId(
@@ -1361,7 +1364,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   : "bg-slate-200/60 text-slate-500"
               }`}
             >
-              {workspace.returned.length + workspace.inApproval.length}
+              {workspace.returnedToMe.length + workspace.inApproval.length}
             </span>
           )}
         </button>
@@ -2301,19 +2304,19 @@ function MarketingRequestDraftWorkspaceInner() {
                 </h2>
               </div>
               <Badge variant="warning">
-                {workspace.returned.length} returned
+                {workspace.returnedToMe.length} returned
               </Badge>
             </div>
           </div>
           <div className="space-y-1.5 p-4">
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
-            ) : workspace.returned.length === 0 ? (
+            ) : workspace.returnedToMe.length === 0 ? (
               <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
                 Nothing returned to you right now.
               </p>
             ) : (
-              workspace.returned.map((request) => {
+              workspace.returnedToMe.map((request) => {
                 const progress =
                   workspace.stepProgressByRequestId[request.id] ?? null;
                 return (
