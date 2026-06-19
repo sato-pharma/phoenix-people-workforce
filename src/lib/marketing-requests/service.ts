@@ -3878,23 +3878,25 @@ export async function createMarketingRequestDraft(
       products: draftDetail.products,
       request,
     });
+    const requesterDisplayName = employeeNameByHrId(employeeRows, request.requesterHrId) || request.requesterHrId;
     await createSystemNotification({
       actionUrl: marketingActionUrl(request.id),
       actorId: request.requesterHrId,
       email: {
+        metrics: [
+          { label: "Employee", value: `${requesterDisplayName} (${request.requesterHrId})` },
+        ],
         planTableHtml: submittedCard.html,
         planTableText: submittedCard.text,
       },
       eventType: "request_submitted",
-      message: `${request.requestCode} was submitted by ${request.requesterHrId}.`,
+      message: `${request.requestCode} was submitted by ${requesterDisplayName}.`,
       metadata: {
         customerId: request.customerId,
         idempotencyKey: `marketing-request-submitted:${request.id}`,
-        requestCode: request.requestCode,
         requestOwnerHrId: request.requesterHrId,
-        requestType: requestType.name,
-        status: request.status,
         workflowApproverHrId: currentStep?.assignedHrId ?? null,
+        ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName: requestType.name }),
       },
       module: "marketing_requests",
       priority: "high",
