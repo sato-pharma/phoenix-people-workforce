@@ -137,6 +137,21 @@ export const accessRegistry = [
     },
     surface: "api",
   },
+  {
+    audit: { classification: "public-token", required: true },
+    authMode: "public-token",
+    csrf: { required: true },
+    exceptionReason: "Launch Desk local agent endpoint: same-origin POST runs server-side OpenAI Agents SDK planning without Supabase service-role data access; preview/production require LAUNCH_DESK_ENABLED=true.",
+    guard: "public-token",
+    methods: ["POST"],
+    pattern: "/api/launch-desk/plan",
+    permission: null,
+    serviceRole: {
+      allowed: false,
+      reason: "Does not use Supabase service role; uses the server-only OpenAI API key for launch planning.",
+    },
+    surface: "api",
+  },
   tokenApi({ authMode: "public-token", methods: ["GET", "POST"], pattern: "/api/email/unsubscribe/:token", reason: "RFC 8058 one-click unsubscribe protected by a signed, expiring HMAC token; write-only suppression action, exposes no data." }),
 
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/users/**", permission: [{ resource: "admin_access", action: "read" }, { resource: "user_admin", action: "update" }] }),
