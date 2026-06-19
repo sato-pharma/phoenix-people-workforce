@@ -148,6 +148,9 @@ export type NormalizeResult = {
     scannedDataRows: number;
     fullyCoded: number;
     productResolved: number;
+    // Coded rows whose product matched by the distributor CODE fallback rather than by NAME.
+    // Should be low when the name-first rule is working; a spike means name aliases are missing.
+    productByCodeFallback: number;
     brickResolved: number;
     excludedBonus: number;
     blankKeySkipped: number;

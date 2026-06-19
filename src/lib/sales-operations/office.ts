@@ -234,6 +234,7 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Of
       scannedDataRows: input.pivotRows.length,
       fullyCoded: coded.length,
       productResolved,
+      productByCodeFallback: 0, // Office is name-only (pivot has no product code column)
       brickResolved,
       excludedBonus: 0,
       blankKeySkipped: 0,

@@ -204,6 +204,7 @@ import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runSalesOperationsNormalizeTests } from "./sales-operations-normalize.test.ts";
 import { runSalesOperationsOfficeTests } from "./sales-operations-office.test.ts";
 import { runSalesOperationsRecognizeTests } from "./sales-operations-recognize.test.ts";
+import { runSalesOperationsValidationTests } from "./sales-operations-validation.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -421,3 +422,4 @@ await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("sales-operations normalizer (name-first, value, brick-by-strategy)", runSalesOperationsNormalizeTests);
 await runTest("sales-operations office allocator (two-step contribution, NATIONAL fallback)", runSalesOperationsOfficeTests);
 await runTest("sales-operations recognizer (coded-sheet, header, fingerprint, dispatch)", runSalesOperationsRecognizeTests);
+await runTest("sales-operations validation (ported + adapted checks)", runSalesOperationsValidationTests);

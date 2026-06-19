@@ -332,6 +332,7 @@ export function normalizeSheet({ rows, template, maps, period = "" }: NormalizeI
   const excluded: NormalizeResult["excluded"] = [];
   let scannedDataRows = 0;
   let productResolved = 0;
+  let productByCodeFallback = 0;
   let brickResolved = 0;
   let excludedBonus = 0;
   let blankKeySkipped = 0;
@@ -386,6 +387,7 @@ export function normalizeSheet({ rows, template, maps, period = "" }: NormalizeI
     const brickResolution = resolveBrick(template, { customerCode, brickNameValues }, maps);
     const hierarchy = deriveHierarchy(brickResolution, maps);
     if (productMatch) productResolved++;
+    if (productMatch && productMatch.matchedBy.startsWith("code")) productByCodeFallback++;
     if (hierarchy) brickResolved++;
 
     if (!productMatch || !hierarchy) {
@@ -441,6 +443,7 @@ export function normalizeSheet({ rows, template, maps, period = "" }: NormalizeI
       scannedDataRows,
       fullyCoded: coded.length,
       productResolved,
+      productByCodeFallback,
       brickResolved,
       excludedBonus,
       blankKeySkipped,
