@@ -156,6 +156,12 @@ async function runStrictValidation(distributorCode: string, rec: Extract<Normali
   return validateNormalizedUpload(resultToValidate, ctx);
 }
 
+// Build a precise "no deviation" rejection message naming the exact expected header per failing field.
+export function headerErrorMessage(distributorName: string, missingGroups: { label: string; expected: string[] }[]): string {
+  const parts = missingGroups.map((g) => `${g.label} (expected "${g.expected.join('" / "')}")`);
+  return `This ${distributorName} sheet doesn't match the required template. Missing or renamed required column(s): ${parts.join("; ")}. Do not rename or remove the template's required columns.`;
+}
+
 // Dry-run: recognize + summarize + strictly validate, persist NOTHING. Backs the Sales Upload
 // "Analyze" step and the Diagnostics Center. The optional period mirrors what the user will commit
 // with, so the analyze report matches the commit gate exactly.
@@ -216,7 +222,7 @@ export async function commitMonthlyUpload(input: {
   const rec = await recognizeDistributorWorkbook(input.distributorCode, input.file);
   if (rec.status === "coded_sheet") throw new SalesWorkflowError("coded_sheet", "This sheet is already coded — upload the raw distributor export instead.", 400);
   if (rec.status === "header_error") {
-    throw new SalesWorkflowError("header_validation_error", `Sheet is missing required columns: ${rec.missingGroups.map((g) => g.label).join(", ")}.`, 422);
+    throw new SalesWorkflowError("header_validation_error", headerErrorMessage(rec.distributorName, rec.missingGroups), 422);
   }
   const result = rec.result;
   const reconciliation = buildReconciliation(result);

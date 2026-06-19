@@ -136,8 +136,11 @@ export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorPr
   return fallback ?? { col: readRow(1), headerRow: 1 };
 }
 
-// Pre-flight header validation: confirm a sheet matches the selected distributor's profile,
-// and detect if another distributor's fingerprint columns score higher (wrong-distributor upload).
+// STRICT pre-flight header validation ("no deviation"): the sheet must carry the selected
+// distributor's CANONICAL required columns (Headers Mapping) — brick-lookup key, product NAME, qty,
+// and date when the channel is dated — matched exactly (case/trim only, no alias fallback). A
+// missing or renamed required column is rejected, naming the exact expected header. EXTRA/unmapped
+// columns are ignored (not blocking). Also detects a wrong-distributor upload via fingerprint score.
 export function validateSheetHeaders(
   sheet: ExcelJS.Worksheet,
   profile: DistributorProfile,
@@ -146,21 +149,26 @@ export function validateSheetHeaders(
   const header = buildHeaderMap(sheet, profile);
   const found = new Set(header.col.keys()); // already lowercase-trimmed by buildHeaderMap
 
+  // A required field passes only when its canonical header(s) are present exactly; else it fails and
+  // reports the exact header(s) the distributor must use (so a renamed column is named precisely).
   const check = (label: string, cols: string[] | undefined): HeaderValidationFailure | null => {
-    if (!cols || cols.length === 0) return null;
+    if (!cols || cols.length === 0) return null; // field not required for this distributor
     if (cols.some((c) => found.has(c.trim().toLowerCase()))) return null;
     return { label, expected: cols };
   };
+  // Product is keyed by NAME (owner rule: name-first); the code column is an optional fallback.
+  const productNameCols = profile.productNameColumns?.length ? profile.productNameColumns : profile.productColumns;
+  // Brick-lookup key: customer code for most distributors, area/territory name for CP, or a direct brick id.
   const locationCols = [
     ...(profile.customerCodeColumns ?? []),
     ...(profile.territoryColumns ?? []),
     ...(profile.brickIdColumns ?? []),
   ];
   const missingGroups = [
-    check("Product",              profile.productColumns),
-    check("Quantity",             profile.qtyColumns),
-    check("Date",                 profile.dateColumns),
-    check("Customer / Territory", locationCols.length > 0 ? locationCols : undefined),
+    check("Product name",        productNameCols),
+    check("Quantity",            profile.qtyColumns),
+    check("Date",                profile.dateColumns),
+    check("Customer code / Area", locationCols.length > 0 ? locationCols : undefined),
   ].filter((g): g is HeaderValidationFailure => g !== null);
 
   // Fingerprint scoring: find the profile whose signature columns best match the sheet.

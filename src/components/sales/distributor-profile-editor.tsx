@@ -7,7 +7,8 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Phoenix target fields — EACH holds ONE column, in the exact order/labels of the exported workbook.
+// Phoenix target fields — each holds ONE OR MORE columns (first-present wins), in the exact
+// order/labels of the exported workbook.
 const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "productCodeColumns", label: "Product Code" },
   { key: "productNameColumns", label: "Product Name" },
@@ -43,10 +44,11 @@ type EditableProfile = {
   fields: Record<FieldKey, string[]>;
 };
 
-// Collapse each field to at most ONE column (one box per field).
-function oneToOne(fields: Record<FieldKey, string[]>): Record<FieldKey, string[]> {
+// Normalize the loaded field map so every key is a string[] (defensive; preserves ALL columns —
+// multi-column per field is supported).
+function normalizeFields(fields: Record<FieldKey, string[]>): Record<FieldKey, string[]> {
   const out = {} as Record<FieldKey, string[]>;
-  for (const f of FIELDS) out[f.key] = (fields[f.key] ?? []).slice(0, 1);
+  for (const f of FIELDS) out[f.key] = [...(fields[f.key] ?? [])];
   return out;
 }
 
@@ -75,7 +77,7 @@ export function DistributorProfileEditor() {
       const next = keepSelection && selected ? selected : list[0]?.distributorCode ?? "";
       setSelected(next);
       const found = list.find((p) => p.distributorCode === next) ?? null;
-      setDraft(found ? { ...found, fields: oneToOne(found.fields) } : null);
+      setDraft(found ? { ...found, fields: normalizeFields(found.fields) } : null);
       setCustomAdded([]); setArmed(null);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Failed to load mappings." });
@@ -90,7 +92,7 @@ export function DistributorProfileEditor() {
   function selectDistributor(code: string) {
     setSelected(code);
     const found = profiles.find((p) => p.distributorCode === code) ?? null;
-    setDraft(found ? { ...found, fields: oneToOne(found.fields) } : null);
+    setDraft(found ? { ...found, fields: normalizeFields(found.fields) } : null);
     setCustomAdded([]); setArmed(null); setMessage(null);
   }
 
@@ -108,14 +110,14 @@ export function DistributorProfileEditor() {
   function assign(key: FieldKey, header: string) {
     if (!draft || !header) return;
     const next = { ...draft.fields };
-    for (const f of FIELDS) next[f.key] = next[f.key].filter((v) => v !== header); // header lives in one place only
-    next[key] = [header]; // one box per field (replaces whatever was there -> it returns to the pool)
+    for (const f of FIELDS) next[f.key] = next[f.key].filter((v) => v !== header); // a header lives in one field only
+    next[key] = [...next[key], header]; // APPEND — a field can hold multiple columns (first-present wins)
     setDraft({ ...draft, fields: next });
     setArmed(null);
   }
-  function clearField(key: FieldKey) {
+  function removeValue(key: FieldKey, header: string) {
     if (!draft) return;
-    setDraft({ ...draft, fields: { ...draft.fields, [key]: [] } });
+    setDraft({ ...draft, fields: { ...draft.fields, [key]: draft.fields[key].filter((v) => v !== header) } });
   }
   function addCustom() {
     const v = custom.trim();
@@ -188,7 +190,7 @@ export function DistributorProfileEditor() {
             <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); }} ref={fileRef} type="file" />
           </div>
         )}
-        description="Pick a distributor, then drag its column onto a Phoenix field — or click the column, then click the field. Each field takes exactly ONE column; a placed column leaves the list."
+        description="Pick a distributor, then drag its column onto a Phoenix field — or click the column, then click the field. A field can hold MULTIPLE columns (first present in the sheet wins); a placed column leaves the list."
         title="Distributor → Phoenix mapping (editable)"
       >
         <div className="space-y-5 p-4 md:p-5">
@@ -256,20 +258,24 @@ export function DistributorProfileEditor() {
               {/* RIGHT: one slot per Phoenix field */}
               <div className="space-y-1.5">
                 {FIELDS.map((f) => {
-                  const val = draft.fields[f.key][0];
+                  const vals = draft.fields[f.key];
                   return (
                     <div
-                      className={cn("flex items-center justify-between gap-3 border px-3 py-2", val ? "border-[#E2E8F0] bg-white" : armed ? "border-dashed border-[#F97316] bg-orange-50/40 cursor-pointer" : "border-dashed border-[#D8E0EA] bg-[#FCFDFE]")}
+                      className={cn("flex items-center justify-between gap-3 border px-3 py-2", vals.length > 0 ? "border-[#E2E8F0] bg-white" : armed ? "border-dashed border-[#F97316] bg-orange-50/40 cursor-pointer" : "border-dashed border-[#D8E0EA] bg-[#FCFDFE]")}
                       key={f.key}
                       onClick={() => { if (armed) assign(f.key, armed); }}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); assign(f.key, e.dataTransfer.getData("text/plain")); }}
                     >
                       <span className="text-xs font-black text-[#0B0B0B]">{f.label}</span>
-                      {val ? (
-                        <span className="inline-flex items-center gap-2 border border-[#D8E0EA] bg-[#F8FAFC] px-2 py-1 text-xs font-semibold text-[#0F172A]">
-                          {val}
-                          <button className="text-slate-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); clearField(f.key); }} title="remove" type="button"><X className="h-3 w-3" /></button>
+                      {vals.length > 0 ? (
+                        <span className="flex flex-wrap justify-end gap-1">
+                          {vals.map((val, i) => (
+                            <span key={val} className="inline-flex items-center gap-2 border border-[#D8E0EA] bg-[#F8FAFC] px-2 py-1 text-xs font-semibold text-[#0F172A]">
+                              {i > 0 ? <span className="text-[10px] font-normal text-slate-400">else</span> : null}{val}
+                              <button className="text-slate-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeValue(f.key, val); }} title="remove" type="button"><X className="h-3 w-3" /></button>
+                            </span>
+                          ))}
                         </span>
                       ) : (
                         <span className="text-xs italic text-slate-300">{armed ? "click to place here" : "drop a column"}</span>
