@@ -7,7 +7,6 @@ import { getVacationActionCenterData } from "@/lib/vacation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
-import { getApproverPendingRequests } from "@/lib/marketing-requests/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem } from "@/components/action-center/types";
@@ -15,7 +14,6 @@ import type { VacationActionCenterRow } from "@/lib/vacation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { EmployeeExcuseRequest } from "@/lib/excuses/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
-import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
 import type { ContractRow } from "@/lib/contracts/types";
 
 export const runtime = "nodejs";
@@ -70,15 +68,6 @@ function mapOutstation(r: OutstationExpenseRequest): ActionHubItem {
   };
 }
 
-function mapMarketing(row: MarketingApproverInboxRow): ActionHubItem {
-  return {
-    id: row.id, module: "marketing", employeeName: row.requesterName, employeeHrId: row.requesterHrId,
-    title: `${row.requestType} · ${row.customerName}`, statusLabel: row.currentStepName,
-    submittedAt: row.submittedAt ?? new Date().toISOString(), urgency: "normal",
-    detail: { module: "marketing", requestCode: row.requestCode, customerName: row.customerName, requestType: row.requestType, estimatedCost: row.estimatedCost, payDate: row.payDate, currentStepName: row.currentStepName, decisionLabels: row.decisionLabels ? { approve: row.decisionLabels.approve, reject: row.decisionLabels.reject, return: row.decisionLabels.return } : null },
-  };
-}
-
 function mapContract(row: ContractRow): ActionHubItem | null {
   if (!row.workflow || !ACTIVE_CONTRACT_STATUSES.has(row.workflow.status)) return null;
   const w = row.workflow;
@@ -90,22 +79,22 @@ function mapContract(row: ContractRow): ActionHubItem | null {
   };
 }
 
+// Marketing requests are intentionally excluded from this consolidated inbox — they keep
+// their own dedicated approval inbox at /workspace/marketing-requests + portal equivalents.
 async function fetchAllItems(viewAccess: AccessContext): Promise<ActionHubItem[]> {
   const settled = await Promise.allSettled([
     getVacationActionCenterData(viewAccess).catch(() => null),
     getResignationsDashboardData().catch(() => null),
     getManagerPendingExcuses(viewAccess).catch(() => null),
     listOutstationRequests().catch(() => null),
-    getApproverPendingRequests(viewAccess).catch(() => null),
     getContractRenewalDashboardData(viewAccess).catch(() => null),
   ]);
-  const [leave, resig, excuse, outstation, marketing, contract] = settled;
+  const [leave, resig, excuse, outstation, contract] = settled;
   const items: ActionHubItem[] = [];
   if (leave.status === "fulfilled" && leave.value) for (const r of leave.value.rows) items.push(mapLeave(r));
   if (resig.status === "fulfilled" && resig.value) for (const r of resig.value.records.filter((r) => r.status === "submitted" || r.status === "under_review")) items.push(mapResignation(r));
   if (excuse.status === "fulfilled" && excuse.value) for (const r of excuse.value) items.push(mapExcuse(r));
   if (outstation.status === "fulfilled" && outstation.value) for (const r of outstation.value.filter((r) => r.status === "submitted")) items.push(mapOutstation(r));
-  if (marketing.status === "fulfilled" && marketing.value) for (const r of marketing.value.rows) items.push(mapMarketing(r));
   if (contract.status === "fulfilled" && contract.value) for (const r of contract.value.rows) { const i = mapContract(r); if (i) items.push(i); }
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return items;
