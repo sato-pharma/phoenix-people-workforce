@@ -123,13 +123,18 @@ function FilterSelect({
 
 function DashboardFilters({
   basePath,
+  chrome,
   filters,
   snapshot,
 }: {
   basePath: string;
+  chrome: "admin" | "portal";
   filters: SalesMarketingDashboardFilters;
   snapshot: SalesMarketingDashboardSnapshot;
 }) {
+  // The portal ROI view (Product / Group Product Managers) is product-and-line centric; the
+  // distributor filter is corporate-only noise there, so it is hidden in portal chrome.
+  const showDistributor = chrome !== "portal";
   return (
     <form
       action={basePath}
@@ -137,7 +142,9 @@ function DashboardFilters({
     >
       <FilterSelect label="Line" name="line" options={snapshot.filters.lines} value={selectedValue(filters.lines)} />
       <FilterSelect label="Region" name="region" options={snapshot.filters.regions} value={selectedValue(filters.regions)} />
-      <FilterSelect label="Distributor" name="distributor" options={snapshot.filters.distributors} value={selectedValue(filters.distributors)} />
+      {showDistributor ? (
+        <FilterSelect label="Distributor" name="distributor" options={snapshot.filters.distributors} value={selectedValue(filters.distributors)} />
+      ) : null}
       <FilterSelect label="Product" name="product" options={snapshot.filters.products} value={selectedValue(filters.products)} />
       <FilterSelect label="ROI status" name="roiStatus" options={snapshot.filters.roiStatuses} value={selectedValue(filters.roiStatuses)} />
       <FilterSelect label="Attribution" name="attribution" options={snapshot.filters.attributionQualities} value={selectedValue(filters.attributionQualities)} />
@@ -560,7 +567,7 @@ export function SalesMarketingIntelligenceDashboard({
         />
       ) : null}
 
-      <DashboardFilters basePath={basePath} filters={filters} snapshot={snapshot} />
+      <DashboardFilters basePath={basePath} chrome={chrome} filters={filters} snapshot={snapshot} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <AdminStatCard description="Total cost of approved paid marketing requests in scope." icon={<BadgeDollarSign className="h-5 w-5" />} label="Marketing Spend" size="compact" tone="blue" value={money(summary.totalMarketingCost)} />

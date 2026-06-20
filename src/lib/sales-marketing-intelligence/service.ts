@@ -446,6 +446,59 @@ function applyDashboardLineScope(
   };
 }
 
+/**
+ * Scope the PRODUCT filter dropdown to the viewer's allowed line(s).
+ *
+ * The RPC builds the product option list from the WHOLE active product catalog, so a line-bounded
+ * viewer (Product / Group Product / National Sales Manager) was offered EVERY line's products even
+ * though the dashboard DATA was already line-scoped via the injected `p_lines`. We map each option's
+ * product code to its Source-of-Sales line and keep only those in scope. Fail closed: an unresolved
+ * line, an unknown product line, or a read error yields no options (never widens visibility).
+ *
+ * `allowed === null` (company-wide viewers) keeps the full catalog untouched.
+ */
+async function scopeProductFilterToLines(
+  snapshot: SalesMarketingDashboardSnapshot,
+  allowed: Set<string> | null,
+): Promise<SalesMarketingDashboardSnapshot> {
+  if (!allowed) return snapshot;
+  if (snapshot.filters.products.length === 0) return snapshot;
+
+  const allowedKeys = new Set([...allowed].map(normalizeLineKey));
+  if (allowedKeys.size === 0) {
+    return { ...snapshot, filters: { ...snapshot.filters, products: [] } };
+  }
+
+  const lineByCode = new Map<string, string>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("source_of_sales_products")
+      .select("product_code, line")
+      .eq("active", true);
+    for (const row of data ?? []) {
+      const code = String((row as { product_code?: string | null }).product_code ?? "").trim().toUpperCase();
+      if (!code) continue;
+      lineByCode.set(code, normalizeLineKey((row as { line?: string | null }).line));
+    }
+  } catch {
+    // Keep lineByCode empty → no options survive (fail closed; never widen the viewer's scope).
+  }
+
+  const inScope = (option: SalesMarketingFilterOption) => {
+    const lineKey = lineByCode.get(option.value.trim().toUpperCase());
+    return lineKey !== undefined && allowedKeys.has(lineKey);
+  };
+
+  return {
+    ...snapshot,
+    filters: {
+      ...snapshot.filters,
+      products: snapshot.filters.products.filter(inScope),
+    },
+  };
+}
+
 /** Remove the confidential products (LA003 / LA004) from the per-product ROI breakdown and the
  *  product filter list — by code (the row/option `value`) and by name (`label`) as a backstop. */
 function stripRestrictedFromMarketingSnapshot(
@@ -539,7 +592,10 @@ export async function getSalesMarketingDashboardSnapshot(
     throw result.error;
   }
 
-  const snapshot = applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
+  const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
+  // Line-bounded viewers must only be offered THEIR line's products in the filter dropdown — the
+  // RPC returns the full catalog, so we scope it here to match the already line-scoped data.
+  const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
 
   // Confidential products (LA003 / LA004): only CEO / Super Admin may see them. For everyone else
   // strip the per-product ROI rows and the product filter. NOTE: the summary totals, request
