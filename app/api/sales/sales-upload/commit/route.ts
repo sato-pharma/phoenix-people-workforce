@@ -19,7 +19,11 @@ export async function POST(request: Request) {
     const file = form.get("file");
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
     const periodOverride = String(form.get("period") ?? "").trim();
-    const acknowledgeWarnings = String(form.get("acknowledgeWarnings") ?? "").trim() === "true";
+    // Per-finding acknowledgement: comma-separated warning codes the operator ticked.
+    const acknowledgedWarningCodes = String(form.get("acknowledgedWarningCodes") ?? "")
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
@@ -32,7 +36,7 @@ export async function POST(request: Request) {
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, acknowledgeWarnings });
+    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, acknowledgedWarningCodes });
     if (result.status === "blocked") {
       return NextResponse.json({
         success: false,

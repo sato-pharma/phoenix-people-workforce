@@ -5,7 +5,7 @@ import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
-import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
+import { unacknowledgedWarningCodes, validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -244,7 +244,10 @@ export async function commitMonthlyUpload(input: {
   file: File;
   periodOverride?: string;
   uploadedBy: string;
-  acknowledgeWarnings?: boolean;
+  // PER-FINDING acknowledgement: the warning codes the operator explicitly ticked. Commit blocks
+  // unless EVERY emitted warning code is in this list (errors always block). Replaces the old
+  // single-boolean "acknowledge all".
+  acknowledgedWarningCodes?: readonly string[];
 }): Promise<CommitResult> {
   const rec = await recognizeDistributorWorkbook(input.distributorCode, input.file);
   if (rec.status === "coded_sheet") throw new SalesWorkflowError("coded_sheet", "This sheet is already coded — upload the raw distributor export instead.", 400);
@@ -280,7 +283,9 @@ export async function commitMonthlyUpload(input: {
   // always block; warnings block unless the caller explicitly acknowledged them (the strict gate).
   const crossCheck = await buildDistributorCrossCheck(input.distributorCode, rec.distributorName, input.file);
   const validation = await runStrictValidation(input.distributorCode, rec, stamped, period, crossCheck);
-  if (!validation.ok || (validation.warningCount > 0 && !input.acknowledgeWarnings)) {
+  // Errors always block; each warning blocks until its own code is acknowledged (no blanket override).
+  const unacknowledged = unacknowledgedWarningCodes(validation, input.acknowledgedWarningCodes ?? []);
+  if (!validation.ok || unacknowledged.length > 0) {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }
 
