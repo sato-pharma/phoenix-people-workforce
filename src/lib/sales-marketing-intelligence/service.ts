@@ -318,7 +318,16 @@ function normalizeDashboardSnapshot(value: unknown): SalesMarketingDashboardSnap
     },
     lineRoi: asArray(row.lineRoi).map(normalizeRoiComparisonRow),
     productRoi: asArray(row.productRoi).map(normalizeRoiComparisonRow),
-    regionRoi: asArray(row.regionRoi).map(normalizeRoiComparisonRow),
+    regionRoi: asArray(row.regionRoi)
+      .map(normalizeRoiComparisonRow)
+      // Region groups by the target pharmacy's brick (the authoritative geography). Pharmacies
+      // not yet brick-mapped fall into the null-region bucket the RPC labels "Unassigned";
+      // relabel so it reads as the customer-mapping gap it is, not a missing line/value.
+      .map((region) =>
+        region.value === "Unassigned" || region.label === "Unassigned"
+          ? { ...region, label: "Unmapped pharmacy" }
+          : region,
+      ),
     requestReport: asArray(row.requestReport).map(normalizeRequestRow),
     roiTrend: asArray(row.roiTrend).map(normalizeRoiTrend),
     summary: normalizeSummary(row.summary),

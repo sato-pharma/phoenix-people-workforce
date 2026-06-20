@@ -91,10 +91,11 @@ export function __resetRestrictedNameCacheForTests(): void {
   restrictedNameCache = null;
 }
 
-// Employee `lines.name` values ("Anti Inf", "Pedia", "CNS", "Office") → Source of Sales
-// `official_line` values ("Anti infective", "CNS", "Head Office", "Pedia"). Pedia/CNS match
-// verbatim; "Anti Inf"/"Office" diverge. The map is keyed by a case/whitespace-insensitive key
-// and covers BOTH the employee names and the SoS names, so any case variant resolves to the
+// Employee `lines.name` values ("Anti infective", "Pedia", "CNS", "Office") → Source of Sales
+// `official_line` values ("Anti infective", "CNS", "Head Office", "Pedia"). Anti infective/Pedia/
+// CNS now match verbatim; only "Office" → "Head Office" still diverges. The map is keyed by a
+// case/whitespace-insensitive key and still carries the legacy "anti inf" abbreviation (kept so
+// pre-rename data and the import code "anti_inf" keep resolving), so any variant resolves to the
 // exact SoS official line string (which is what the line-scope filter passes into SQL).
 const OFFICIAL_LINE_BY_KEY: Record<string, string> = {
   "anti inf": "Anti infective",
