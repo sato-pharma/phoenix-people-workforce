@@ -31,6 +31,7 @@ import { buildSalesDashboardView } from "@/lib/sales/metrics";
 import type { SalesDashboardData } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SortableTh, TableSearchInput, useSortableTable, type SortState } from "@/components/ui/sortable-table";
 
 
 type Props = {
@@ -465,6 +466,17 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
   const topAchievement = [...rows].sort((left, right) => valueAsNumber(right.achievementRate) - valueAsNumber(left.achievementRate))[0];
   const topValue = [...rows].sort((left, right) => valueAsNumber(right.sales) - valueAsNumber(left.sales))[0];
 
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "name", accessor: (row) => valueAsText(row.name), type: "string" },
+      { key: "sales", accessor: (row) => valueAsNumber(row.sales), type: "number" },
+      { key: "target", accessor: (row) => valueAsNumber(row.target), type: "number" },
+      { key: "achievementRate", accessor: (row) => valueAsNumber(row.achievementRate), type: "number" },
+    ],
+    searchAccessors: [(row) => valueAsText(row.name)],
+    initialSort: null,
+  });
+
   return (
     <Card className={`${panelClassName} p-4 transition-all duration-160 ease-out hover:shadow-md`}>
       <div className="flex items-center justify-between gap-3">
@@ -488,18 +500,29 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
             <p className="text-[10px] font-semibold text-orange-600">{topValue ? shortCurrency(valueAsNumber(topValue.sales)) : "—"}</p>
           </div>
         </div>
+        <div className="flex items-center justify-end">
+          <div className="w-44">
+            <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Search name…" />
+          </div>
+        </div>
         <div className="max-h-48 overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white">
           <table className="w-full text-left text-xs">
             <thead className="bg-[#F8FAFC] text-[9px] uppercase tracking-[0.08em] text-[#64748B] sticky top-0">
               <tr>
-                <th className="px-2 py-1.5 font-semibold">Name</th>
-                <th className="px-2 py-1.5 font-semibold">Sales</th>
-                <th className="px-2 py-1.5 font-semibold">Target</th>
-                <th className="px-2 py-1.5 font-semibold">Ach. %</th>
+                <SortableTh label="Name" sortKey="name" {...leaderThProps(table)} />
+                <SortableTh label="Sales" sortKey="sales" {...leaderThProps(table)} />
+                <SortableTh label="Target" sortKey="target" {...leaderThProps(table)} />
+                <SortableTh label="Ach. %" sortKey="achievementRate" {...leaderThProps(table)} />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((row, index) => (
+              {table.rows.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-center text-xs text-[#94A3B8]" colSpan={4}>
+                    {table.isFiltered ? "No names match your search." : "No rows."}
+                  </td>
+                </tr>
+              ) : table.rows.map((row, index) => (
                 <tr className="transition-all duration-160 ease-out hover:bg-[#F8FAFC]/80" key={`${valueAsText(row.name)}-${index}`}>
                   <td className="max-w-[180px] truncate px-2 py-1.5 text-xs font-semibold text-[#0F172A]">{valueAsText(row.name)}</td>
                   <td className="px-2 py-1.5 text-xs font-black text-[#F97316]">{shortCurrency(row.sales)}</td>
@@ -513,6 +536,16 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
       </div>
     </Card>
   );
+}
+
+// Compact sortable-header props shared by the leadership table columns.
+function leaderThProps(table: { sort: SortState | null; toggleSort: (key: string) => void }) {
+  return {
+    sort: table.sort,
+    onSort: table.toggleSort,
+    variant: "light" as const,
+    className: "px-2 py-1.5 text-[9px] tracking-[0.08em] font-semibold",
+  };
 }
 
 function RankingSplitTable({

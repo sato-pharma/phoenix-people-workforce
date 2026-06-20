@@ -25,6 +25,8 @@ export async function GET(request: Request) {
       const v = params.get(key);
       return v && v.trim() ? v.trim() : null;
     };
+    const mode = (key: string): "include" | "exclude" =>
+      (params.get(key) ?? "").toLowerCase() === "exclude" ? "exclude" : "include";
     const allWeeks = ["1", "true", "yes", "all"].includes((params.get("allWeeks") ?? "").toLowerCase());
 
     const accessScope = await resolveWeeklyAccessScope(access);
@@ -32,10 +34,14 @@ export async function GET(request: Request) {
       weekStarts: parseList("week"),
       allWeeks,
       weekStart: str("week"),
-      line: str("line"),
-      distributorCode: str("distributor"),
-      regionCode: str("region"),
-      productCode: str("product"),
+      lineCodes: parseList("line"),
+      lineFilterMode: mode("lineMode"),
+      distributorCodes: parseList("distributor"),
+      distributorFilterMode: mode("distributorMode"),
+      regionCodes: parseList("region"),
+      regionFilterMode: mode("regionMode"),
+      productCodes: parseList("product"),
+      productFilterMode: mode("productMode"),
       accessScope,
     });
 
@@ -52,9 +58,23 @@ export async function GET(request: Request) {
           ? `${data.appliedFilters.weekStarts.length}-weeks`
           : "latest";
     parts.push(weekLabel);
-    if (data.appliedFilters.distributorCode) parts.push(data.appliedFilters.distributorCode.toLowerCase());
-    if (data.appliedFilters.regionCode) parts.push(data.appliedFilters.regionCode.toLowerCase());
-    if (data.appliedFilters.lineCode) parts.push(data.appliedFilters.lineCode.toLowerCase().replace(/\s+/g, "-"));
+    // Summarize each multi filter: single include -> the code; multi include -> "N-noun";
+    // exclude -> "excl-N-noun". Empty selections add nothing.
+    const seg = (codes: string[], filterMode: "include" | "exclude", noun: string): string | null => {
+      if (codes.length === 0) return null;
+      if (filterMode === "exclude") return `excl-${codes.length}-${noun}`;
+      if (codes.length === 1) return codes[0].toLowerCase().replace(/\s+/g, "-");
+      return `${codes.length}-${noun}`;
+    };
+    const f = data.appliedFilters;
+    for (const part of [
+      seg(f.distributorCodes, f.distributorFilterMode, "distributors"),
+      seg(f.regionCodes, f.regionFilterMode, "regions"),
+      seg(f.productCodes, f.productFilterMode, "products"),
+      seg(f.lineCodes, f.lineFilterMode, "lines"),
+    ]) {
+      if (part) parts.push(part);
+    }
     const filename = parts.join("_") + ".xlsx";
 
     return new Response(new Uint8Array(buffer), {

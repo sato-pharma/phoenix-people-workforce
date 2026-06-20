@@ -17,6 +17,7 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SortableTh, useSortableTable } from "@/components/ui/sortable-table";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   SourceOfSalesProduct,
@@ -73,7 +74,6 @@ const emptyProductForm: ProductFormState = {
   sourceSheet: "Products",
 };
 
-const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
 const tableCellClassName = "px-4 py-3 align-top";
 
 function sortProducts(products: SourceOfSalesProduct[]) {
@@ -314,6 +314,29 @@ export function SourceOfSalesProductsTab({
     () => products.filter((product) => productMatchesSearch(product, search)),
     [products, search],
   );
+  // Sort-only: the search box above already filters, so the hook gets no searchAccessors.
+  // initialSort null preserves the sortProducts() default (line -> name -> code) until a click.
+  const table = useSortableTable(filteredProducts, {
+    columns: [
+      { key: "productCode", accessor: (row) => row.productCode, type: "string" },
+      { key: "productName", accessor: (row) => row.productName, type: "string" },
+      { key: "normalizedProductName", accessor: (row) => row.normalizedProductName, type: "string" },
+      { key: "factoryPrice", accessor: (row) => row.factoryPrice, type: "number" },
+      { key: "family", accessor: (row) => row.family, type: "string" },
+      { key: "familyCode", accessor: (row) => row.familyCode, type: "string" },
+      { key: "source", accessor: (row) => row.source, type: "string" },
+      { key: "line", accessor: (row) => row.line, type: "string" },
+      { key: "normalizedLine", accessor: (row) => row.normalizedLine, type: "string" },
+      { key: "sourceFile", accessor: (row) => row.sourceFile, type: "string" },
+      { key: "sourceSheet", accessor: (row) => row.sourceSheet, type: "string" },
+      { key: "sourceRowNumber", accessor: (row) => row.sourceRowNumber, type: "number" },
+      { key: "active", accessor: (row) => (row.active ? 1 : 0), type: "number" },
+      { key: "createdAt", accessor: (row) => row.createdAt, type: "date" },
+      { key: "updatedAt", accessor: (row) => row.updatedAt, type: "date" },
+    ],
+    initialSort: null,
+  });
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "text-xs" };
 
   async function reloadProducts() {
     setRefreshing(true);
@@ -475,26 +498,26 @@ export function SourceOfSalesProductsTab({
             <table className="w-full min-w-[1680px] text-left text-sm">
               <thead className="bg-[#F8FAFC]">
                 <tr>
-                  <th className={tableHeaderClassName}>Product Code</th>
-                  <th className={tableHeaderClassName}>Product Name</th>
-                  <th className={tableHeaderClassName}>Normalized Product Name</th>
-                  <th className={tableHeaderClassName}>Factory Price</th>
-                  <th className={tableHeaderClassName}>Family</th>
-                  <th className={tableHeaderClassName}>Family Code</th>
-                  <th className={tableHeaderClassName}>Source</th>
-                  <th className={tableHeaderClassName}>Line</th>
-                  <th className={tableHeaderClassName}>Normalized Line</th>
-                  <th className={tableHeaderClassName}>Source File</th>
-                  <th className={tableHeaderClassName}>Source Sheet</th>
-                  <th className={tableHeaderClassName}>Source Row</th>
-                  <th className={tableHeaderClassName}>Active</th>
-                  <th className={tableHeaderClassName}>Created</th>
-                  <th className={tableHeaderClassName}>Updated</th>
-                  <th className={tableHeaderClassName}>Action</th>
+                  <SortableTh label="Product Code" sortKey="productCode" {...thProps} />
+                  <SortableTh label="Product Name" sortKey="productName" {...thProps} />
+                  <SortableTh label="Normalized Product Name" sortKey="normalizedProductName" {...thProps} />
+                  <SortableTh label="Factory Price" sortKey="factoryPrice" {...thProps} />
+                  <SortableTh label="Family" sortKey="family" {...thProps} />
+                  <SortableTh label="Family Code" sortKey="familyCode" {...thProps} />
+                  <SortableTh label="Source" sortKey="source" {...thProps} />
+                  <SortableTh label="Line" sortKey="line" {...thProps} />
+                  <SortableTh label="Normalized Line" sortKey="normalizedLine" {...thProps} />
+                  <SortableTh label="Source File" sortKey="sourceFile" {...thProps} />
+                  <SortableTh label="Source Sheet" sortKey="sourceSheet" {...thProps} />
+                  <SortableTh label="Source Row" sortKey="sourceRowNumber" {...thProps} />
+                  <SortableTh label="Active" sortKey="active" {...thProps} />
+                  <SortableTh label="Created" sortKey="createdAt" {...thProps} />
+                  <SortableTh label="Updated" sortKey="updatedAt" {...thProps} />
+                  <SortableTh label="Action" {...thProps} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {filteredProducts.map((product) => {
+                {table.rows.map((product) => {
                   const deleting = deleteLoadingCode === product.productCode;
                   return (
                     <tr className="text-[#64748B]" key={product.productCode}>
@@ -565,7 +588,7 @@ export function SourceOfSalesProductsTab({
                     </tr>
                   );
                 })}
-                {filteredProducts.length === 0 ? (
+                {table.rows.length === 0 ? (
                   <tr>
                     <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={16}>
                       No products found.

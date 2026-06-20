@@ -23,6 +23,7 @@ import type {
   WeeklyDashboard,
   WeeklyDelta,
   WeeklyDistributorOption,
+  WeeklyFilterMode,
   WeeklyMissingProduct,
   WeeklyParsedRow,
   WeeklyProductScopeAdmin,
@@ -364,6 +365,31 @@ const normalizeWeekList = (values?: string[] | null): string[] => {
   return out;
 };
 
+// A resolved multi-value filter. `set` holds normalized codes; `mode` decides include/exclude;
+// `has` is the empty-set guard (empty = "all" in BOTH modes); `single` mirrors the legacy single
+// field (populated only for a single-code include, so back-compat readers/exports keep working).
+type ResolvedMultiFilter = { set: Set<string>; mode: WeeklyFilterMode; has: boolean; single: string | null };
+
+function resolveMultiFilter(
+  codes: string[] | null | undefined,
+  legacy: string | null | undefined,
+  mode: WeeklyFilterMode | null | undefined,
+  normalize: (value: string | null | undefined) => string,
+): ResolvedMultiFilter {
+  const raw = codes && codes.length ? codes : legacy ? [legacy] : [];
+  const set = new Set(raw.map((value) => normalize(value)).filter(Boolean));
+  const resolvedMode: WeeklyFilterMode = mode === "exclude" ? "exclude" : "include";
+  const single = resolvedMode === "include" && set.size === 1 ? [...set][0] : null;
+  return { set, mode: resolvedMode, has: set.size > 0, single };
+}
+
+// Row passes the filter when: no filter (empty set), or membership matches the mode.
+function passesMultiFilter(filter: ResolvedMultiFilter, value: string): boolean {
+  if (!filter.has) return true;
+  const inSet = filter.set.has(value);
+  return filter.mode === "include" ? inSet : !inSet;
+}
+
 function rank(rows: FactRow[], keyOf: (row: FactRow) => string, nameOf: (row: FactRow) => string): WeeklyRanked[] {
   const groups = new Map<string, { name: string; salesValue: number; salesUnits: number; stockUnits: number }>();
   let totalValue = 0;
@@ -437,10 +463,20 @@ export async function loadWeeklyDashboard(filters?: {
   weekStart?: string | null;
   weekStarts?: string[] | null;
   allWeeks?: boolean;
+  /** Legacy single-value filters (still accepted; mapped to a single-code include). */
   distributorCode?: string | null;
   regionCode?: string | null;
   productCode?: string | null;
   line?: string | null;
+  /** Multi-value filters + include/exclude mode. Empty array = "all". */
+  distributorCodes?: string[] | null;
+  distributorFilterMode?: WeeklyFilterMode | null;
+  regionCodes?: string[] | null;
+  regionFilterMode?: WeeklyFilterMode | null;
+  productCodes?: string[] | null;
+  productFilterMode?: WeeklyFilterMode | null;
+  lineCodes?: string[] | null;
+  lineFilterMode?: WeeklyFilterMode | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
 }): Promise<WeeklyDashboard> {
@@ -464,11 +500,15 @@ export async function loadWeeklyDashboard(filters?: {
     .map(([code, name]) => ({ code, name }))
     .sort((left, right) => left.name.localeCompare(right.name));
 
-  const distributorFilter = normalizeCode(filters?.distributorCode);
-  const regionFilter = normalizeCode(filters?.regionCode);
-  const productFilter = normalizeCode(filters?.productCode);
-  const lineFilter = normalizeComparableLine(filters?.line);
-  const requestedLine = normalizeText(filters?.line) || null;
+  const distributor = resolveMultiFilter(
+    filters?.distributorCodes,
+    filters?.distributorCode,
+    filters?.distributorFilterMode,
+    normalizeCode,
+  );
+  const region = resolveMultiFilter(filters?.regionCodes, filters?.regionCode, filters?.regionFilterMode, normalizeCode);
+  const product = resolveMultiFilter(filters?.productCodes, filters?.productCode, filters?.productFilterMode, normalizeCode);
+  const line = resolveMultiFilter(filters?.lineCodes, filters?.line, filters?.lineFilterMode, normalizeComparableLine);
   const requestedWeekSet = new Set(normalizeWeekList(filters?.weekStarts).filter((week) => availableWeekSet.has(week)));
   const requestedWeeks = availableWeeks.filter((week) => requestedWeekSet.has(week));
   const allWeeksRequested = filters?.allWeeks === true;
@@ -486,21 +526,33 @@ export async function loadWeeklyDashboard(filters?: {
   const selectedWeekAnchor = selectedWeeks.length > 0 ? selectedWeeks[0] : null;
   const selectedWeekSet = new Set(selectedWeeks);
 
+  const appliedFilters: WeeklyDashboard["appliedFilters"] = {
+    weekStart: selectedWeekAnchor,
+    weekStarts: selectedWeeks,
+    allWeeks: allWeeksRequested,
+    distributorCode: distributor.single,
+    regionCode: region.single,
+    productCode: product.single,
+    lineCode: line.single,
+    productCodes: [...product.set],
+    productFilterMode: product.mode,
+    distributorCodes: [...distributor.set],
+    distributorFilterMode: distributor.mode,
+    regionCodes: [...region.set],
+    regionFilterMode: region.mode,
+    lineCodes: [...line.set],
+    lineFilterMode: line.mode,
+  };
+
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorWeek,
     availableWeeks,
     availableLines: [],
+    availableRegions: [],
+    availableProducts: [],
     distributors,
-    appliedFilters: {
-      weekStart: selectedWeekAnchor,
-      weekStarts: selectedWeeks,
-      allWeeks: allWeeksRequested,
-      distributorCode: distributorFilter || null,
-      regionCode: regionFilter || null,
-      productCode: productFilter || null,
-      lineCode: requestedLine,
-    },
+    appliedFilters,
     kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
     compare: { salesValue: delta(0, null), salesUnits: delta(0, null), stockUnits: delta(0, null) },
     regions: [],
@@ -526,9 +578,10 @@ export async function loadWeeklyDashboard(filters?: {
       )
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
-    if (distributorFilter) query = query.eq("distributor_code", distributorFilter);
-    if (regionFilter) query = query.eq("region_code", regionFilter);
-    if (productFilter) query = query.eq("product_code", productFilter);
+    // Distributor narrowing is a safe DB-level optimization (distributor options come from the batch
+    // list, not these rows, so they never collapse). Region/product/line are filtered IN MEMORY only
+    // so their full option universes stay available for multi-select — and so exclude mode works.
+    if (distributor.has && distributor.mode === "include") query = query.in("distributor_code", [...distributor.set]);
     const page = await query;
     if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
     const data = page.data ?? [];
@@ -559,14 +612,35 @@ export async function loadWeeklyDashboard(filters?: {
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true };
   const visibleRows = applyWeeklyAccessScope(allRows, accessScope);
+  // Filters run AFTER access-scope redaction, so include/exclude can only narrow already-visible
+  // rows — they can never re-expose the confidential LA003/LA004 products.
   const scopedRows = visibleRows.filter((row) => {
-    if (distributorFilter && row.distributorCode !== distributorFilter) return false;
-    if (regionFilter && row.regionCode !== regionFilter) return false;
-    if (productFilter && normalizeCode(row.productCode) !== productFilter) return false;
-    if (lineFilter && normalizeComparableLine(row.officialLine) !== lineFilter) return false;
+    if (!passesMultiFilter(distributor, normalizeCode(row.distributorCode))) return false;
+    if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
+    if (!passesMultiFilter(product, normalizeCode(row.productCode))) return false;
+    if (!passesMultiFilter(line, normalizeComparableLine(row.officialLine))) return false;
     return true;
   });
-  const availableLines = [...new Set(scopedRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort(
+  // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
+  // NOT by region/product/line — so selecting one value never removes the others from their own
+  // dropdown (which would make multi-select impossible). Distributor options come from the batch list.
+  const optionRows = visibleRows.filter(
+    (row) => selectedWeekSet.has(row.weekStart) && passesMultiFilter(distributor, normalizeCode(row.distributorCode)),
+  );
+  const dedupeOptions = (rows: FactRow[], codeOf: (row: FactRow) => string, nameOf: (row: FactRow) => string) => {
+    const byCode = new Map<string, string>();
+    for (const row of rows) {
+      const code = normalizeCode(codeOf(row));
+      if (!code || byCode.has(code)) continue;
+      byCode.set(code, normalizeText(nameOf(row)) || code);
+    }
+    return [...byCode.entries()]
+      .map(([code, name]) => ({ code, name }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  };
+  const availableRegions = dedupeOptions(optionRows, (row) => row.regionCode, (row) => row.regionName);
+  const availableProducts = dedupeOptions(optionRows, (row) => row.productCode, (row) => row.productName);
+  const availableLines = [...new Set(optionRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort(
     (left, right) => left.localeCompare(right),
   );
 
@@ -626,16 +700,10 @@ export async function loadWeeklyDashboard(filters?: {
     priorWeekStart: priorWeek,
     availableWeeks,
     availableLines,
+    availableRegions,
+    availableProducts,
     distributors,
-    appliedFilters: {
-      weekStart: selectedWeekAnchor,
-      weekStarts: selectedWeeks,
-      allWeeks: allWeeksRequested,
-      distributorCode: distributorFilter || null,
-      regionCode: regionFilter || null,
-      productCode: productFilter || null,
-      lineCode: requestedLine,
-    },
+    appliedFilters,
     kpis: {
       salesValue: Number(sum(weekRows, (row) => row.salesValue).toFixed(2)),
       salesUnits: Number(sum(weekRows, (row) => row.netQty).toFixed(2)),
