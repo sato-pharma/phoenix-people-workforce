@@ -6,8 +6,8 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
+import { listMergedDistributorProfiles } from "@/lib/sales/normalizer/distributor-profile-store";
 import { profilesToHeaderGrid } from "@/lib/sales/normalizer/profile-grid";
-import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +38,9 @@ export default async function DatabaseMappingPage() {
     initialError = error instanceof Error ? error.message : "Failed to load Database Mapping.";
   }
 
-  // Pure transform of the code-defined column profiles — the Database Validation tab's header grid.
-  const initialHeaderGrid = profilesToHeaderGrid(RAW_DISTRIBUTOR_PROFILES);
+  // The Database Validation tab's header grid — MERGED profiles (code ∪ DB overrides) so a saved
+  // in-app edit shows here too. Fails closed to code profiles if the override table is absent.
+  const initialHeaderGrid = profilesToHeaderGrid(await listMergedDistributorProfiles());
 
   return <DatabaseMappingWorkspace initialError={initialError} initialHeaderGrid={initialHeaderGrid} initialRows={initialRows} />;
 }

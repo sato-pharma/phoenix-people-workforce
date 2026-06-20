@@ -2,10 +2,9 @@ import ExcelJS from "exceljs";
 
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
-import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
+import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { headerRowTexts, normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
-import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 
@@ -96,8 +95,9 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
     if (codedHits >= 2) return { status: "coded_sheet", distributorName: profile.distributorName };
   }
 
-  // Per-distributor pre-flight header validation.
-  const headerValidation = validateSheetHeaders(sheet, profile, RAW_DISTRIBUTOR_PROFILES);
+  // Per-distributor pre-flight header validation. The fingerprint cross-check scores against the MERGED
+  // profile set (code ∪ DB overrides) so an in-app edited/onboarded distributor participates too.
+  const headerValidation = validateSheetHeaders(sheet, profile, await listMergedDistributorProfiles());
   if (!headerValidation.valid) {
     return {
       status: "header_error",
