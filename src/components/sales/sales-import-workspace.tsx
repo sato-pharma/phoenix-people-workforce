@@ -14,7 +14,6 @@ import {
   Lock,
   Package,
   RefreshCw,
-  Search,
   ShieldCheck,
   Table2,
   Trash2,
@@ -38,6 +37,7 @@ import { SosCoverageTab } from "@/components/sales/sos-coverage-tab";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { SortableTh, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
@@ -371,6 +371,8 @@ function DashboardDistributorTable({ rows }: { rows: SourceOfSalesDashboardDistr
   return <SummaryTable columns={columns} exportColumns={exportColumns} exportRows={exportRows} exportTitle="Source of Sales — By Distributor" rows={mapped} />;
 }
 
+type SummaryEntry = { display: string[]; raw: ExportRow | null; index: number };
+
 function SummaryTable({
   columns,
   exportColumns,
@@ -384,40 +386,47 @@ function SummaryTable({
   exportTitle?: string;
   rows: string[][];
 }) {
-  const [filter, setFilter] = useState("");
-  const lowerFilter = filter.toLowerCase();
-  const filtered = lowerFilter
-    ? rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(lowerFilter)))
-    : rows;
+  // Keep each display row glued to its raw export row so sort + filter never desync the two.
+  const combined = useMemo<SummaryEntry[]>(
+    () => rows.map((display, index) => ({ display, raw: exportRows?.[index] ?? null, index })),
+    [rows, exportRows],
+  );
+  // Sort reads the RAW export value (numeric-aware) when available, never the formatted string.
+  const table = useSortableTable(combined, {
+    columns: columns.map((_, i) => {
+      const exp = exportColumns?.[i];
+      return {
+        key: String(i),
+        type: (exp?.numeric ? "number" : "string") as "number" | "string",
+        accessor: (entry: SummaryEntry) => (exp && entry.raw ? entry.raw[exp.key] : entry.display[i]),
+      };
+    }),
+    searchAccessors: columns.map((_, i) => (entry: SummaryEntry) => entry.display[i]),
+    initialSort: null,
+  });
+  const exportFilteredRows = table.rows.map((entry) => entry.raw).filter((row): row is ExportRow => row !== null);
 
   return (
     <div className="space-y-0 p-4 md:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="relative min-w-[200px] max-w-xs flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
-          <input
-            className="h-9 w-full border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-sm text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/10"
-            onChange={(event) => setFilter(event.target.value)}
+        <div className="min-w-[200px] max-w-xs flex-1">
+          <TableSearchInput
+            value={table.query}
+            onChange={table.setQuery}
+            onClear={table.clearQuery}
             placeholder="Filter rows..."
-            type="text"
-            value={filter}
+            size="sm"
           />
         </div>
         <div className="flex items-center gap-2">
-          {filter && (
+          {table.isFiltered && (
             <span className="text-xs text-[#64748B]">
               <Filter className="mr-1 inline h-3 w-3" />
-              {filtered.length} of {rows.length}
+              {table.visible} of {table.total}
             </span>
           )}
-          {exportColumns && exportRows && exportTitle && (
-            <ExportXlsxButton
-              columns={exportColumns}
-              rows={filter ? exportRows.filter((_row, index) =>
-                rows[index] && rows[index].some((cell) => cell.toLowerCase().includes(lowerFilter)),
-              ) : exportRows}
-              title={exportTitle}
-            />
+          {exportColumns && exportTitle && exportRows && (
+            <ExportXlsxButton columns={exportColumns} rows={exportFilteredRows} title={exportTitle} />
           )}
         </div>
       </div>
@@ -426,21 +435,29 @@ function SummaryTable({
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#F8FAFC]">
               <tr>
-                {columns.map((column) => (
-                  <th className={tableHeaderClassName} key={column}>{column}</th>
+                {columns.map((column, i) => (
+                  <SortableTh
+                    key={column}
+                    label={column}
+                    sortKey={String(i)}
+                    sort={table.sort}
+                    onSort={table.toggleSort}
+                    variant="light"
+                    className="text-xs"
+                  />
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
-              {filtered.length === 0 ? (
+              {table.rows.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-sm text-[#94A3B8]" colSpan={columns.length}>
-                    {filter ? "No rows match the filter." : "No data."}
+                    {table.isFiltered ? "No rows match the filter." : "No data."}
                   </td>
                 </tr>
-              ) : filtered.map((row, rowIndex) => (
-                <tr className="text-[#64748B]" key={`${row.join(":")}:${rowIndex}`}>
-                  {row.map((cell, cellIndex) => (
+              ) : table.rows.map((entry) => (
+                <tr className="text-[#64748B]" key={`${entry.display.join(":")}:${entry.index}`}>
+                  {entry.display.map((cell, cellIndex) => (
                     <td
                       className={cn(
                         "px-4 py-2.5 align-top",

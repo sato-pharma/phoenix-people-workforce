@@ -9,6 +9,9 @@ import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { CoverageSummary, DistributorCoverageRow, PersistentUnmappedCustomer } from "@/lib/sales/import-coverage";
 import { formatNumber } from "@/lib/sales/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SortableTh, TableNoResults, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
+
+type DriftAlert = CoverageSummary["driftAlerts"][number];
 
 
 type BrickOption = { id: string; name: string };
@@ -80,35 +83,102 @@ function StatCard({ label, value, sub }: { label: string; sub?: string; value: s
 }
 
 function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) {
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "distributorCode", accessor: (row) => row.distributorCode, type: "string" },
+      { key: "latestResolvedPct", accessor: (row) => row.latestResolvedPct, type: "number" },
+      { key: "latestNewCustomers", accessor: (row) => row.latestNewCustomers, type: "number" },
+      { key: "latestUnmappedProducts", accessor: (row) => row.latestUnmappedProducts, type: "number" },
+      { key: "latestBrickDrift", accessor: (row) => row.latestBrickDrift, type: "number" },
+      { key: "importCount", accessor: (row) => row.importCount, type: "number" },
+      { key: "latestCommittedAt", accessor: (row) => row.latestCommittedAt, type: "date" },
+    ],
+    searchAccessors: [(row) => row.distributorCode],
+    // Worst-first default (matches the panel description).
+    initialSort: { key: "latestResolvedPct", dir: "asc" },
+    secondarySort: { key: "distributorCode", accessor: (row) => row.distributorCode, type: "string" },
+  });
   if (rows.length === 0) {
     return <p className="px-5 py-4 text-sm text-[#64748B]">No coverage data yet — data populates after the first confirmed import.</p>;
   }
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-[11px] tracking-[0.14em]" };
+  return (
+    <div>
+      <div className="flex justify-end border-b border-[#EEF2F7] px-4 py-2">
+        <div className="w-48">
+          <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter distributors…" />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#020617] text-left text-white">
+              <SortableTh label="Distributor" sortKey="distributorCode" {...thProps} />
+              <SortableTh label="Resolved %" sortKey="latestResolvedPct" align="right" {...thProps} />
+              <SortableTh label="Trend (last 5)" {...thProps} />
+              <SortableTh label="New customers" sortKey="latestNewCustomers" align="right" {...thProps} />
+              <SortableTh label="Unmapped products" sortKey="latestUnmappedProducts" align="right" {...thProps} />
+              <SortableTh label="Brick drift" sortKey="latestBrickDrift" align="right" {...thProps} />
+              <SortableTh label="Imports" sortKey="importCount" align="right" {...thProps} />
+              <SortableTh label="Last import" sortKey="latestCommittedAt" align="right" {...thProps} />
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.length === 0 && <TableNoResults colSpan={8} filtered={table.isFiltered} label="distributors" />}
+            {table.rows.map((row) => (
+              <tr key={row.distributorCode} className="border-t border-[#EEF2F7] hover:bg-[#F8FAFC]">
+                <td className="px-4 py-2.5 font-black text-[#0F172A]">{row.distributorCode}</td>
+                <td className="px-4 py-2.5 text-right"><PctBadge pct={row.latestResolvedPct} /></td>
+                <td className="px-4 py-2.5"><TrendDots values={row.trend} /></td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-[#0F172A]">{formatNumber(row.latestNewCustomers)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-[#0F172A]">{formatNumber(row.latestUnmappedProducts)}</td>
+                <td className="px-4 py-2.5 text-right">
+                  {row.latestBrickDrift > 0
+                    ? <span className="font-bold text-orange-600">{formatNumber(row.latestBrickDrift)}</span>
+                    : <span className="text-[#94A3B8]">0</span>}
+                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-[#64748B]">{formatNumber(row.importCount)}</td>
+                <td className="px-4 py-2.5 text-right text-[#64748B]">
+                  {new Date(row.latestCommittedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
+  const table = useSortableTable(alerts, {
+    columns: [
+      { key: "distributorCode", accessor: (row) => row.distributorCode, type: "string" },
+      { key: "brickDriftCount", accessor: (row) => row.brickDriftCount, type: "number" },
+      { key: "committedAt", accessor: (row) => row.committedAt, type: "date" },
+    ],
+    searchAccessors: [(row) => row.distributorCode],
+    initialSort: { key: "committedAt", dir: "desc" },
+  });
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-[11px] tracking-[0.14em]" };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-[#020617] text-left">
-            {["Distributor", "Resolved %", "Trend (last 5)", "New customers", "Unmapped products", "Brick drift", "Imports", "Last import"].map((h) => (
-              <th key={h} className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B] first:text-white">{h}</th>
-            ))}
+          <tr className="bg-[#020617] text-left text-white">
+            <SortableTh label="Distributor" sortKey="distributorCode" {...thProps} />
+            <SortableTh label="Drift count" sortKey="brickDriftCount" align="right" {...thProps} />
+            <SortableTh label="Import date" sortKey="committedAt" align="right" {...thProps} />
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.distributorCode} className="border-t border-[#EEF2F7] hover:bg-[#F8FAFC]">
-              <td className="px-4 py-2.5 font-black text-[#0F172A]">{row.distributorCode}</td>
-              <td className="px-4 py-2.5"><PctBadge pct={row.latestResolvedPct} /></td>
-              <td className="px-4 py-2.5"><TrendDots values={row.trend} /></td>
-              <td className="px-4 py-2.5 tabular-nums text-[#0F172A]">{formatNumber(row.latestNewCustomers)}</td>
-              <td className="px-4 py-2.5 tabular-nums text-[#0F172A]">{formatNumber(row.latestUnmappedProducts)}</td>
-              <td className="px-4 py-2.5">
-                {row.latestBrickDrift > 0
-                  ? <span className="font-bold text-orange-600">{formatNumber(row.latestBrickDrift)}</span>
-                  : <span className="text-[#94A3B8]">0</span>}
-              </td>
-              <td className="px-4 py-2.5 tabular-nums text-[#64748B]">{formatNumber(row.importCount)}</td>
-              <td className="px-4 py-2.5 text-[#64748B]">
-                {new Date(row.latestCommittedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+          {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="drift alerts" />}
+          {table.rows.map((alert) => (
+            <tr key={alert.batchId} className="border-t border-[#EEF2F7]">
+              <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{alert.distributorCode}</td>
+              <td className="px-4 py-2.5 text-right font-bold text-orange-600">{formatNumber(alert.brickDriftCount)}</td>
+              <td className="px-4 py-2.5 text-right text-[#64748B]">
+                {new Date(alert.committedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
               </td>
             </tr>
           ))}
@@ -350,28 +420,7 @@ export function SosCoverageTab({ bricks }: Props) {
               description="Recent imports where at least one customer's resolved brick differed from its stored mapping."
               title="Brick drift alerts"
             >
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-[#020617] text-left">
-                      {["Distributor", "Drift count", "Import date"].map((h) => (
-                        <th key={h} className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B] first:text-white">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary!.driftAlerts.map((alert) => (
-                      <tr key={alert.batchId} className="border-t border-[#EEF2F7]">
-                        <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{alert.distributorCode}</td>
-                        <td className="px-4 py-2.5 font-bold text-orange-600">{formatNumber(alert.brickDriftCount)}</td>
-                        <td className="px-4 py-2.5 text-[#64748B]">
-                          {new Date(alert.committedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DriftAlertsTable alerts={summary!.driftAlerts} />
             </AdminTableShell>
           ) : null}
         </>

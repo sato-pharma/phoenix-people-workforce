@@ -4,11 +4,13 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  BarChart3,
   CalendarDays,
   ChevronDown,
   Download,
   Filter,
   Loader2,
+  MapPin,
   Minus,
   Package,
   Store,
@@ -24,28 +26,56 @@ import type {
   WeeklyBranchRow,
   WeeklyDashboard,
   WeeklyDelta,
+  WeeklyFilterMode,
   WeeklyRanked,
 } from "@/lib/sales/weekly/types";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
+import {
+  SortableTh,
+  TableNoResults,
+  TableSearchInput,
+  useSortableTable,
+  visibleMax,
+} from "@/components/ui/sortable-table";
 
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pct = (value: number) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 
+type WeeklyFilters = {
+  weeks: string[];
+  allWeeks: boolean;
+  distributorCodes: string[];
+  distributorMode: WeeklyFilterMode;
+  regionCodes: string[];
+  regionMode: WeeklyFilterMode;
+  productCodes: string[];
+  productMode: WeeklyFilterMode;
+  lineCodes: string[];
+  lineMode: WeeklyFilterMode;
+};
+
 export function WeeklyDashboardView({ initial, initialError }: { initial: WeeklyDashboard | null; initialError: string | null }) {
   const [data, setData] = useState<WeeklyDashboard | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<WeeklyFilters>({
     weeks: initial?.appliedFilters.weekStarts?.length ? [...initial.appliedFilters.weekStarts] : initial?.appliedFilters.weekStart ? [initial.appliedFilters.weekStart] : [],
     allWeeks: initial?.appliedFilters.allWeeks ?? false,
-    distributor: "",
-    region: "",
-    product: "",
-    line: "",
+    distributorCodes: initial?.appliedFilters.distributorCodes ?? [],
+    distributorMode: initial?.appliedFilters.distributorFilterMode ?? "include",
+    regionCodes: initial?.appliedFilters.regionCodes ?? [],
+    regionMode: initial?.appliedFilters.regionFilterMode ?? "include",
+    productCodes: initial?.appliedFilters.productCodes ?? [],
+    productMode: initial?.appliedFilters.productFilterMode ?? "include",
+    lineCodes: initial?.appliedFilters.lineCodes ?? [],
+    lineMode: initial?.appliedFilters.lineFilterMode ?? "include",
   });
+  // Stable join key for the weeks branch in the effect body. The filter arrays themselves keep a
+  // stable reference between renders (they only change when setFilters replaces them), so the effect
+  // can depend on them directly without retriggering every render.
   const selectedWeeksKey = useMemo(() => filters.weeks.join("|"), [filters.weeks]);
 
   useEffect(() => {
@@ -56,10 +86,14 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     } else {
       for (const week of selectedWeeksKey ? selectedWeeksKey.split("|") : []) params.append("week", week);
     }
-    if (filters.distributor) params.set("distributor", filters.distributor);
-    if (filters.region) params.set("region", filters.region);
-    if (filters.product) params.set("product", filters.product);
-    if (filters.line) params.set("line", filters.line);
+    for (const code of filters.distributorCodes) params.append("distributor", code);
+    if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
+    for (const code of filters.regionCodes) params.append("region", code);
+    if (filters.regionMode === "exclude") params.set("regionMode", "exclude");
+    for (const code of filters.productCodes) params.append("product", code);
+    if (filters.productMode === "exclude") params.set("productMode", "exclude");
+    for (const code of filters.lineCodes) params.append("line", code);
+    if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
     (async () => {
       // Defer the loading flag off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
@@ -84,11 +118,35 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     return () => {
       cancelled = true;
     };
-  }, [selectedWeeksKey, filters.allWeeks, filters.distributor, filters.region, filters.product, filters.line]);
+  }, [
+    selectedWeeksKey,
+    filters.allWeeks,
+    filters.distributorCodes,
+    filters.distributorMode,
+    filters.regionCodes,
+    filters.regionMode,
+    filters.productCodes,
+    filters.productMode,
+    filters.lineCodes,
+    filters.lineMode,
+  ]);
 
-  const regionOptions = useMemo(() => data?.regions ?? [], [data]);
-  const productOptions = useMemo(() => data?.products ?? [], [data]);
-  const lineOptions = useMemo(() => data?.availableLines ?? [], [data]);
+  const distributorOptions = useMemo(
+    () => (data?.distributors ?? []).map((distributor) => ({ code: distributor.code, label: distributor.name })),
+    [data],
+  );
+  const regionOptions = useMemo(
+    () => (data?.availableRegions ?? []).map((region) => ({ code: region.code, label: region.name })),
+    [data],
+  );
+  const productOptions = useMemo(
+    () => (data?.availableProducts ?? []).map((product) => ({ code: product.code, label: product.name })),
+    [data],
+  );
+  const lineOptions = useMemo(
+    () => (data?.availableLines ?? []).map((line) => ({ code: line, label: line })),
+    [data],
+  );
   const selectedWeekSummary = useMemo(() => {
     if (data?.appliedFilters.allWeeks) {
       return "All time";
@@ -122,10 +180,14 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       } else {
         for (const week of filters.weeks) params.append("week", week);
       }
-      if (filters.distributor) params.set("distributor", filters.distributor);
-      if (filters.region) params.set("region", filters.region);
-      if (filters.product) params.set("product", filters.product);
-      if (filters.line) params.set("line", filters.line);
+      for (const code of filters.distributorCodes) params.append("distributor", code);
+      if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
+      for (const code of filters.regionCodes) params.append("region", code);
+      if (filters.regionMode === "exclude") params.set("regionMode", "exclude");
+      for (const code of filters.productCodes) params.append("product", code);
+      if (filters.productMode === "exclude") params.set("productMode", "exclude");
+      for (const code of filters.lineCodes) params.append("line", code);
+      if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
       const response = await fetch(`/api/sales/weekly/export?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Export failed.");
       const blob = await response.blob();
@@ -243,38 +305,46 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               });
             }}
           />
-          <Select label="Distributor" value={filters.distributor} onChange={(value) => setFilters((f) => ({ ...f, distributor: value }))}>
-            <option value="">All distributors</option>
-            {data.distributors.map((distributor) => (
-              <option key={distributor.code} value={distributor.code}>
-                {distributor.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Region" value={filters.region} onChange={(value) => setFilters((f) => ({ ...f, region: value }))}>
-            <option value="">All regions</option>
-            {regionOptions.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Product" value={filters.product} onChange={(value) => setFilters((f) => ({ ...f, product: value }))}>
-            <option value="">All products</option>
-            {productOptions.map((product) => (
-              <option key={product.code} value={product.code}>
-                {product.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Line" value={filters.line} onChange={(value) => setFilters((f) => ({ ...f, line: value }))}>
-            <option value="">All lines</option>
-            {lineOptions.map((line) => (
-              <option key={line} value={line}>
-                {line}
-              </option>
-            ))}
-          </Select>
+          <MultiSelectFilter
+            label="Distributor"
+            icon={<Store className="h-3.5 w-3.5" />}
+            options={distributorOptions}
+            selected={filters.distributorCodes}
+            mode={filters.distributorMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, distributorCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, distributorMode: next }))}
+            allLabel="All distributors"
+          />
+          <MultiSelectFilter
+            label="Region"
+            icon={<MapPin className="h-3.5 w-3.5" />}
+            options={regionOptions}
+            selected={filters.regionCodes}
+            mode={filters.regionMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, regionCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, regionMode: next }))}
+            allLabel="All regions"
+          />
+          <MultiSelectFilter
+            label="Product"
+            icon={<Package className="h-3.5 w-3.5" />}
+            options={productOptions}
+            selected={filters.productCodes}
+            mode={filters.productMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, productCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, productMode: next }))}
+            allLabel="All products"
+          />
+          <MultiSelectFilter
+            label="Line"
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            options={lineOptions}
+            selected={filters.lineCodes}
+            mode={filters.lineMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, lineCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, lineMode: next }))}
+            allLabel="All lines"
+          />
         </div>
       </div>
 
@@ -373,31 +443,6 @@ function WeekDropdown({
   );
 }
 
-function Select({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block h-[58px] rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-1.5 shadow-sm transition focus-within:border-[#FDBA74] hover:border-[#FDBA74]">
-      <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</span>
-      <SearchableSelect
-        className="mt-1 h-8 w-full bg-transparent text-sm font-black text-[#0F172A] outline-none"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        {children}
-      </SearchableSelect>
-    </label>
-  );
-}
-
 function Kpi({
   icon,
   label,
@@ -455,30 +500,44 @@ function RankTable({
   className?: string;
   maxHeight?: string;
 }) {
-  const max = Math.max(1, ...rows.map((row) => row.salesValue));
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "name", accessor: (row) => row.name, type: "string" },
+      { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
+      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
+      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      { key: "share", accessor: (row) => row.share, type: "number" },
+    ],
+    searchAccessors: [(row) => row.name, (row) => row.code],
+    initialSort: { key: "salesValue", dir: "desc" },
+    secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
+  });
+  const max = visibleMax(table.rows, (row) => row.salesValue);
   return (
     <section className={cn("overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm", className)}>
-      <PanelTitle count={rows.length} title={title} />
+      <PanelTitle
+        count={table.visible}
+        total={table.total}
+        filtered={table.isFiltered}
+        title={title}
+        actions={
+          <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter…" />
+        }
+      />
       <div className={cn("overflow-auto", maxHeight)}>
         <table className="w-full min-w-[620px] text-sm">
           <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
             <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2 text-right">Sales value</th>
-              <th className="px-3 py-2 text-right">Units</th>
-              <th className="px-3 py-2 text-right">Stock</th>
-              <th className="px-3 py-2 text-right">Share</th>
+              <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
+              <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" />
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td className="px-3 py-5 text-center text-[#94A3B8]" colSpan={5}>
-                  No rows.
-                </td>
-              </tr>
-            )}
-            {rows.map((row) => (
+            {table.rows.length === 0 && <TableNoResults colSpan={5} filtered={table.isFiltered} />}
+            {table.rows.map((row) => (
               <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={row.code}>
                 <td className="px-3 py-2">
                   <div className="font-semibold text-[#0F172A]">{row.name}</div>
@@ -500,31 +559,46 @@ function RankTable({
 }
 
 function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
-  const max = Math.max(1, ...rows.map((row) => row.salesValue));
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "name", accessor: (row) => row.name, type: "string" },
+      { key: "regionName", accessor: (row) => row.regionName, type: "string" },
+      { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
+      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
+      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      { key: "share", accessor: (row) => row.share, type: "number" },
+    ],
+    searchAccessors: [(row) => row.name, (row) => row.regionName, (row) => row.code],
+    initialSort: { key: "salesValue", dir: "desc" },
+    secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
+  });
+  const max = visibleMax(table.rows, (row) => row.salesValue);
   return (
     <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <PanelTitle count={rows.length} title="Branches comparison" />
+      <PanelTitle
+        count={table.visible}
+        total={table.total}
+        filtered={table.isFiltered}
+        title="Branches comparison"
+        actions={
+          <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
+        }
+      />
       <div className="max-h-96 overflow-auto">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
             <tr>
-              <th className="px-3 py-2">Branch</th>
-              <th className="px-3 py-2">Region</th>
-              <th className="px-3 py-2 text-right">Sales value</th>
-              <th className="px-3 py-2 text-right">Units</th>
-              <th className="px-3 py-2 text-right">Stock</th>
-              <th className="px-3 py-2 text-right">Share</th>
+              <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
+              <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
+              <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+              <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" />
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td className="px-3 py-5 text-center text-[#94A3B8]" colSpan={6}>
-                  No branch rows.
-                </td>
-              </tr>
-            )}
-            {rows.map((row) => (
+            {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="branch rows" />}
+            {table.rows.map((row) => (
               <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={row.code}>
                 <td className="px-3 py-2">
                   <div className="font-semibold text-[#0F172A]">{row.name}</div>
@@ -547,37 +621,49 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
 }
 
 function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalStock: number }) {
-  const max = Math.max(1, ...rows.map((row) => row.stockUnits));
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "branchName", accessor: (row) => row.branchName, type: "string" },
+      { key: "regionName", accessor: (row) => row.regionName, type: "string" },
+      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+    ],
+    searchAccessors: [(row) => row.branchName, (row) => row.regionName],
+    initialSort: { key: "stockUnits", dir: "desc" },
+    secondarySort: { key: "branchName", accessor: (row) => row.branchName, type: "string" },
+  });
+  const max = visibleMax(table.rows, (row) => row.stockUnits);
+  const shownStock = table.isFiltered ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : totalStock;
   return (
     <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
         <div>
           <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Stock on hand watchlist</div>
           <div className="text-[11px] font-bold text-[#94A3B8]">Zero sales branches</div>
         </div>
-        <div className="text-right">
-          <div className="text-sm font-black tabular-nums text-[#0F172A]">{num(totalStock)}</div>
-          <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{rows.length} rows</div>
+        <div className="flex items-center gap-2">
+          <div className="w-40 sm:w-48">
+            <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
+          </div>
+          <div className="text-right">
+            <div className="text-sm font-black tabular-nums text-[#0F172A]">{num(shownStock)}</div>
+            <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+              {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
+            </div>
+          </div>
         </div>
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
             <tr>
-              <th className="w-[52%] px-3 py-2">Branch</th>
-              <th className="w-[24%] px-3 py-2">Region</th>
-              <th className="w-[24%] px-3 py-2 text-right">Stock units</th>
+              <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} className="w-[52%]" />
+              <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="w-[24%]" />
+              <SortableTh label="Stock units" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="w-[24%]" />
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td className="px-3 py-5 text-center text-[#94A3B8]" colSpan={3}>
-                  No stock-on-hand branches with zero sales in this view.
-                </td>
-              </tr>
-            )}
-            {rows.map((branch) => (
+            {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="stock-on-hand branches with zero sales" />}
+            {table.rows.map((branch) => (
               <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={`${branch.branchCode}-${branch.regionName}`}>
                 <td className="px-3 py-2">
                   <div className="font-semibold text-[#0F172A]">{branch.branchName}</div>
@@ -596,13 +682,29 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
   );
 }
 
-function PanelTitle({ count, title }: { count: number; title: string }) {
+function PanelTitle({
+  count,
+  total,
+  filtered,
+  title,
+  actions,
+}: {
+  count: number;
+  total?: number;
+  filtered?: boolean;
+  title: string;
+  actions?: React.ReactNode;
+}) {
+  const showSplit = filtered && typeof total === "number" && total !== count;
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
       <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">{title}</span>
-      <span className="rounded-[4px] border border-[#E2E8F0] bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
-        {count} rows
-      </span>
+      <div className="flex items-center gap-2">
+        {actions ? <div className="w-40 sm:w-48">{actions}</div> : null}
+        <span className="shrink-0 rounded-[4px] border border-[#E2E8F0] bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+          {showSplit ? `${count} / ${total}` : count} rows
+        </span>
+      </div>
     </div>
   );
 }

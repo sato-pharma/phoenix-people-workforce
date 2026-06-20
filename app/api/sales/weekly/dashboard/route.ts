@@ -25,16 +25,22 @@ export async function GET(request: Request) {
       const value = params.get(key);
       return value && value.trim() ? value.trim() : null;
     };
+    const mode = (key: string): "include" | "exclude" =>
+      (params.get(key) ?? "").toLowerCase() === "exclude" ? "exclude" : "include";
     const allWeeks = ["1", "true", "yes", "all"].includes((params.get("allWeeks") ?? "").toLowerCase());
     const accessScope = await resolveWeeklyAccessScope(access);
     const data = await loadWeeklyDashboard({
       weekStarts: parseList("week"),
       allWeeks,
       weekStart: str("week"),
-      line: str("line"),
-      distributorCode: str("distributor"),
-      regionCode: str("region"),
-      productCode: str("product"),
+      lineCodes: parseList("line"),
+      lineFilterMode: mode("lineMode"),
+      distributorCodes: parseList("distributor"),
+      distributorFilterMode: mode("distributorMode"),
+      regionCodes: parseList("region"),
+      regionFilterMode: mode("regionMode"),
+      productCodes: parseList("product"),
+      productFilterMode: mode("productMode"),
       accessScope,
     });
     return NextResponse.json({ success: true, data });

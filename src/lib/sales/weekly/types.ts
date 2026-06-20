@@ -176,6 +176,9 @@ export type WeeklyBatch = {
 
 // ── Dashboard ────────────────────────────────────────────────────────────────────────────────
 
+/** A multi-value filter is either an allow-list ("include") or a deny-list ("exclude"). */
+export type WeeklyFilterMode = "include" | "exclude";
+
 export type WeeklyRanked = {
   name: string;
   code: string;
@@ -211,15 +214,28 @@ export type WeeklyDashboard = {
   priorWeekStart: string | null;
   availableWeeks: string[];
   availableLines: string[];
+  /** Stable filter-option universes (scoped by week + distributor only, so multi-select never collapses). */
+  availableRegions: WeeklyDistributorOption[];
+  availableProducts: WeeklyDistributorOption[];
   distributors: WeeklyDistributorOption[];
   appliedFilters: {
     weekStart: string | null;
     weekStarts: string[];
     allWeeks: boolean;
+    /** Legacy single-value mirrors (kept for back-compat: populated only when exactly one include code). */
     distributorCode: string | null;
     regionCode: string | null;
     productCode: string | null;
     lineCode: string | null;
+    /** Multi-value selections (normalized codes) + their include/exclude mode. Empty array = "all". */
+    productCodes: string[];
+    productFilterMode: WeeklyFilterMode;
+    distributorCodes: string[];
+    distributorFilterMode: WeeklyFilterMode;
+    regionCodes: string[];
+    regionFilterMode: WeeklyFilterMode;
+    lineCodes: string[];
+    lineFilterMode: WeeklyFilterMode;
   };
   kpis: {
     salesValue: number;
