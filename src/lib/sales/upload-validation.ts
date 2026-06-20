@@ -41,6 +41,19 @@ export type ValidationReport = {
 
 export type PriorPeriodTotals = { period: string; totalValue: number; totalQty: number };
 
+// Result of running the distributor auto-detector against the uploaded file and comparing the top
+// match to the distributor the operator PICKED. Advisory only — the strict header gate validated the
+// file against the picked profile already; this just surfaces a confident "you may have picked the
+// wrong distributor" signal so the wrong file isn't imported under the wrong code.
+export type DistributorCrossCheck = {
+  pickedCode: string;
+  pickedName?: string;
+  bestCode: string | null; // top auto-detected distributor (null when none/ambiguous)
+  bestName: string | null;
+  confidence: "high" | "low" | "none";
+  ambiguous: boolean;
+};
+
 export type ValidationContext = {
   valueSource: "recompute" | "sheet";
   hasDateColumn: boolean; // false → the profile carries no date (period from the picker); skip date checks
@@ -50,6 +63,7 @@ export type ValidationContext = {
   resolvedPeriod?: string | null; // the single period this upload will be stored under
   existingBatchPeriods?: string[]; // periods already imported for THIS distributor
   priorPeriodTotals?: PriorPeriodTotals | null; // most recent earlier batch's totals (anomaly checks)
+  detectorCrossCheck?: DistributorCrossCheck | null; // verify-against-pick cross-check (advisory warning)
 };
 
 // ── Tunable thresholds (named so the rationale is explicit and the tests pin them) ──
@@ -88,6 +102,24 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   const coded = result.coded;
   const s = result.summary;
   const add = (f: ValidationFinding) => findings.push(f);
+
+  // ── Verify-against-pick cross-check ──────────────────────────────────────────────────────────────
+  // The strict header gate already validated this file against the PICKED distributor's profile. Here
+  // we additionally compare the auto-detector's top match to the pick and WARN (never hard-block) only
+  // when the detector is CONFIDENT it is a different distributor — that is the "wrong file" case that
+  // header overlap can let slip through. Low/none/ambiguous detection is ignored so we never cry wolf.
+  const cc = ctx.detectorCrossCheck;
+  if (cc && cc.confidence === "high" && cc.bestCode && cc.bestCode.trim().toLowerCase() !== cc.pickedCode.trim().toLowerCase()) {
+    add({
+      code: "detector_disagrees_with_pick",
+      severity: "warning",
+      title: "This looks like a different distributor",
+      detail: `The file's columns match ${cc.bestName ?? cc.bestCode} (${cc.bestCode}) more closely than the ${cc.pickedName ?? cc.pickedCode} (${cc.pickedCode}) you selected — importing under the wrong distributor mis-codes every row.`,
+      count: 1,
+      sampleRows: [],
+      fixHint: `Switch to ${cc.bestCode} and re-validate, or acknowledge if you really meant to upload this file as ${cc.pickedCode}.`,
+    });
+  }
 
   // ── Structural integrity ───────────────────────────────────────────────────────────────────────
   // Real no-silent-loss guard: every non-empty row the engine scanned must land in exactly one
