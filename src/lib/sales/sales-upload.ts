@@ -1,10 +1,11 @@
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
+import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
 import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
-import { validateNormalizedUpload, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
+import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ async function getPriorPeriodTotals(distributorCode: string, resolvedPeriod: str
 // Assemble the (async) validation context, then run the pure strict validator over the result that
 // WILL be persisted (already consolidated when the user picked a period). The SAME path runs at
 // analyze and commit so the report can never differ between them.
-async function runStrictValidation(distributorCode: string, rec: Extract<NormalizeFileResult, { status: "ok" }>, resultToValidate: NormalizeResult, resolvedPeriod: string | null): Promise<ValidationReport> {
+async function runStrictValidation(distributorCode: string, rec: Extract<NormalizeFileResult, { status: "ok" }>, resultToValidate: NormalizeResult, resolvedPeriod: string | null, crossCheck: DistributorCrossCheck | null = null): Promise<ValidationReport> {
   const [existingBatchPeriods, priorPeriodTotals] = await Promise.all([
     listExistingBatchPeriods(distributorCode),
     getPriorPeriodTotals(distributorCode, resolvedPeriod),
@@ -153,8 +154,28 @@ async function runStrictValidation(distributorCode: string, rec: Extract<Normali
     resolvedPeriod,
     existingBatchPeriods,
     priorPeriodTotals,
+    detectorCrossCheck: crossCheck,
   };
   return validateNormalizedUpload(resultToValidate, ctx);
+}
+
+// Run the auto-detector against the uploaded file and compare its top match to the PICKED distributor,
+// for the verify-against-pick cross-check warning. Best-effort: a detector failure NEVER blocks the
+// upload — it just means no cross-check warning (the strict header gate already validated the pick).
+async function buildDistributorCrossCheck(distributorCode: string, distributorName: string, file: File): Promise<DistributorCrossCheck | null> {
+  try {
+    const detection = await detectDistributorFromBuffer(await file.arrayBuffer());
+    return {
+      pickedCode: distributorCode,
+      pickedName: distributorName,
+      bestCode: detection.best?.distributorCode ?? null,
+      bestName: detection.best?.distributorName ?? null,
+      confidence: detection.confidence,
+      ambiguous: detection.ambiguous,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Build a precise "no deviation" rejection message naming the exact expected header per failing field.
@@ -181,7 +202,8 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   const resolvedPeriod = decision.kind === "ok" ? decision.period : null;
   // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
   // matches the commit gate exactly — including duplicates that only appear after consolidation.
-  const validation = await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod);
+  const crossCheck = await buildDistributorCrossCheck(distributorCode, rec.distributorName, file);
+  const validation = await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck);
   return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
 
@@ -256,7 +278,8 @@ export async function commitMonthlyUpload(input: {
 
   // Strict server-side re-validation with the FINAL resolved period (never trust the client). Errors
   // always block; warnings block unless the caller explicitly acknowledged them (the strict gate).
-  const validation = await runStrictValidation(input.distributorCode, rec, stamped, period);
+  const crossCheck = await buildDistributorCrossCheck(input.distributorCode, rec.distributorName, input.file);
+  const validation = await runStrictValidation(input.distributorCode, rec, stamped, period, crossCheck);
   if (!validation.ok || (validation.warningCount > 0 && !input.acknowledgeWarnings)) {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }

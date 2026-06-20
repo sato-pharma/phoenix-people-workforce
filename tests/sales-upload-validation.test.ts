@@ -230,6 +230,23 @@ function negativeNetBatchDoesNotFalseCollapse() {
   assert.equal(has(report, "qty_anomaly_vs_prior"), false);
 }
 
+// Verify-against-pick cross-check: warn ONLY when the auto-detector is confident the file is a
+// different distributor than the one picked. Low/none/ambiguous/same-code must NOT cry wolf.
+function detectorDisagreementWarnsOnlyWhenConfident() {
+  const base = result([row()]);
+  const warn = validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", pickedName: "Pharma Soft", bestCode: "EG", bestName: "EGD", confidence: "high", ambiguous: false } }));
+  assert.equal(sev(warn, "detector_disagrees_with_pick"), "warning");
+  assert.equal(warn.ok, true); // a warning blocks-until-acknowledged, never hard-blocks
+  // same distributor (case-insensitive) → no finding
+  assert.equal(has(validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", bestCode: "ps", bestName: "Pharma Soft", confidence: "high", ambiguous: false } })), "detector_disagrees_with_pick"), false);
+  // low confidence → no finding
+  assert.equal(has(validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", bestCode: "EG", bestName: "EGD", confidence: "low", ambiguous: false } })), "detector_disagrees_with_pick"), false);
+  // none / null best → no finding
+  assert.equal(has(validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", bestCode: null, bestName: null, confidence: "none", ambiguous: false } })), "detector_disagrees_with_pick"), false);
+  // no cross-check supplied → no finding (back-compat)
+  assert.equal(has(validateNormalizedUpload(base, ctx()), "detector_disagrees_with_pick"), false);
+}
+
 function warningsDoNotClearOkButErrorsDo() {
   const warnOnly = validateNormalizedUpload(result([row({ qty: 0, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
   assert.equal(warnOnly.ok, true); // only warnings → still importable (after acknowledge in UI)
@@ -264,5 +281,6 @@ export function runSalesUploadValidationTests() {
   extremeUnitPriceOnlyForSheet();
   consolidationSurfacesCrossPeriodDuplicates();
   negativeNetBatchDoesNotFalseCollapse();
+  detectorDisagreementWarnsOnlyWhenConfident();
   warningsDoNotClearOkButErrorsDo();
 }
