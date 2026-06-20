@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { normalizeRows, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
+import { normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -73,7 +73,10 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  const sheet = workbook.worksheets[0];
+  // Pick the sheet that actually carries this distributor's data (cover/summary tabs are skipped), and
+  // use that SAME sheet for coded-sheet detection, header validation, and normalization so analyze and
+  // import never read different tabs.
+  const sheet = pickBestSheet(workbook, profile);
   if (!sheet) {
     const maps = await loadCrosswalks(refs);
     const result = normalizeRows(sheet as unknown as ExcelJS.Worksheet, profile, maps);

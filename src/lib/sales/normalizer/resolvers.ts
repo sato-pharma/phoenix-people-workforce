@@ -1,3 +1,4 @@
+import { foldArabicDigits } from "@/lib/sales/normalizer/header-normalize";
 import type { BrickRef, Crosswalks } from "@/lib/sales/normalizer/types";
 
 // Pure resolvers — no I/O, fully unit-tested. They translate a distributor's raw codes/text into
@@ -7,7 +8,7 @@ import type { BrickRef, Crosswalks } from "@/lib/sales/normalizer/types";
 // Normalize a free-text alias for matching: trim, lowercase, collapse whitespace, drop Arabic
 // tatweel + common separators so "الدقى / بين السريات" == "الدقي/بين السريات".
 export function normalizeAliasKey(value: unknown): string {
-  return String(value ?? "")
+  return foldArabicDigits(String(value ?? ""))
     .replace(/ـ/g, "") // tatweel
     .replace(/[إأآا]/g, "ا") // unify alef forms
     .replace(/ى/g, "ي")
@@ -18,7 +19,7 @@ export function normalizeAliasKey(value: unknown): string {
 }
 
 export function normalizeCodeKey(value: unknown): string {
-  return String(value ?? "").trim().toUpperCase();
+  return foldArabicDigits(String(value ?? "")).trim().toUpperCase();
 }
 
 // Numeric-canonical key for leading-zero / number-vs-text drift. A code like "0001502731" (text)
