@@ -10,6 +10,7 @@ import {
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
+  ClipboardList,
   Database,
   FileCheck2,
   FilePlus2,
@@ -284,6 +285,7 @@ const adminNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
