@@ -71,10 +71,16 @@ export async function runExcusesTests() {
     /v2_excuse_email_tokens[\s\S]*used_at: now/,
     "the approval token must be marked used after a decision",
   );
-  // Access is restricted to National Sales Manager or head-office employees.
+  // Access is restricted to the eligible roles or head-office employees.
   assert.match(
     serviceSource,
     /National Sales Manager"[\s\S]*isHeadOfficeExcuseEmployee/,
-    "excuses must be limited to NSM or head-office employees",
+    "excuses must be limited to eligible roles or head-office employees",
+  );
+  // Product / Group Product / Training Managers are also excuse-eligible.
+  assert.match(
+    serviceSource,
+    /"Product Manager"[\s\S]*"Group Product Manager"[\s\S]*"Training Manager"/,
+    "excuses must also be available to PM/GPM/TM",
   );
 }

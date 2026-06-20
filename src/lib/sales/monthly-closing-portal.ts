@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
+import { bridgeEmployeeLineToOfficial, canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { getManagerRegionScope, getWeeklyProductScopeCodes, resolveRegionCodesForNames } from "@/lib/sales/weekly/access";
 import {
   loadMonthlyClosing,
@@ -314,6 +314,51 @@ export async function loadPortalMonthlyClosing(input: {
     line: scope.line,
     availablePeriods: publishedPeriods,
     selectedPeriod,
+    awaitingPublish: false,
+  };
+}
+
+/**
+ * Live (NOT publish-gated) monthly closing for the portal Sales Intelligence section.
+ * Mirrors loadPortalMonthlyClosing but offers every VALIDATED month for the viewer's line
+ * straight from the working closing matrix — there is no publication gate, so PM/GPM always
+ * see current numbers. Line is resolved from the viewer (never chosen), products are scoped to
+ * the viewer's assignment, and confidential products are always stripped.
+ */
+export async function loadPortalLiveMonthly(input: {
+  access: AccessContext;
+  period?: string | null;
+}): Promise<PortalClosingResult> {
+  const scope = await resolvePortalClosingScope(input.access);
+  if (!scope.line) {
+    return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+
+  // The employee line ("Anti Inf", "Office") is bridged to the Source-of-Sales official line
+  // ("Anti infective", "Head Office") so it matches the closing matrix's line dimension.
+  const officialLine = bridgeEmployeeLineToOfficial(scope.line) ?? scope.line;
+  const requested = String(input.period ?? "").trim();
+  const raw = await loadMonthlyClosing({ line: officialLine, period: requested || null });
+
+  // Guard against cross-line leakage: loadMonthlyClosing falls back to the first available line
+  // when the requested line has no validated data. Never show another line's numbers.
+  const sameLine = !!raw.line && raw.line.trim().toLowerCase() === officialLine.trim().toLowerCase();
+  if (!sameLine) {
+    return { matrix: null, line: scope.line, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+
+  const locked: MonthlyClosingMatrix = { ...raw, availableLines: [scope.line] };
+  const safe = stripRestrictedColumns(locked);
+  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const matrix = scope.allowedRegionCodes
+    ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
+    : productScoped;
+
+  return {
+    matrix,
+    line: scope.line,
+    availablePeriods: raw.availablePeriods,
+    selectedPeriod: raw.period,
     awaitingPublish: false,
   };
 }

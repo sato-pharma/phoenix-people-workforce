@@ -14,6 +14,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 type Props = {
   awaitingPublish: boolean;
   availablePeriods: string[];
+  /** Route the period/year selector navigates to. Defaults to the publish-gated monthly-closing
+   *  page; the live Sales-Intelligence monthly page passes its own route. */
+  basePath?: string;
+  /** Empty-state copy shown when there is nothing to display. Defaults to the publish-gated wording. */
+  emptyMessage?: string;
+  emptyTitle?: string;
   line: string | null;
   matrix: MonthlyClosingMatrix | null;
   productScoped: boolean;
@@ -76,6 +82,9 @@ function TrendStrip({ points }: { points: PortalClosingTrendPoint[] }) {
 export function MonthlyClosingPortalView({
   awaitingPublish,
   availablePeriods,
+  basePath = "/employee-portals/monthly-closing",
+  emptyMessage,
+  emptyTitle,
   line,
   matrix,
   productScoped,
@@ -109,7 +118,7 @@ export function MonthlyClosingPortalView({
     if (!period || period === selectedPeriod) return;
     setPendingPeriod(period);
     startTransition(() => {
-      router.push(`/employee-portals/monthly-closing?period=${period}`);
+      router.push(`${basePath}?period=${period}`);
     });
   }
 
@@ -137,10 +146,14 @@ export function MonthlyClosingPortalView({
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
         <CalendarRange className="mx-auto h-8 w-8 text-slate-300" />
-        <p className="mt-3 text-base font-black text-slate-900">No published closing yet</p>
+        <p className="mt-3 text-base font-black text-slate-900">{emptyTitle ?? "No published closing yet"}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-          The monthly closing for the <span className="font-semibold text-slate-700">{line}</span> line will appear here once HR
-          publishes it. Months still being uploaded are not shown.
+          {emptyMessage ?? (
+            <>
+              The monthly closing for the <span className="font-semibold text-slate-700">{line}</span> line will appear here once HR
+              publishes it. Months still being uploaded are not shown.
+            </>
+          )}
         </p>
       </div>
     );
