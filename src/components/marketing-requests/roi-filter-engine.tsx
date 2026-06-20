@@ -557,17 +557,28 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   ) : null}
                 </div>
 
-                {/* Auto-applied (single-value) dimensions — shown read-only */}
-                {autoAppliedDimensions().length > 0 ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Scope:</span>
-                    {autoAppliedDimensions().map((dim) => (
-                      <span key={dim.key} className="inline-flex items-center gap-1 rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1 text-[11px] font-bold text-[#475569]">
-                        {dim.label}: {dim.options.find((option) => option.value === dim.autoApplied?.[0])?.label ?? dim.autoApplied?.[0]}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
+                {/* Auto-applied (single-value) dimensions — shown read-only. A chip is only
+                    rendered when its single value resolves to a human label; we never fall
+                    back to the raw value (e.g. an hr_id). */}
+                {(() => {
+                  const autoChips = autoAppliedDimensions()
+                    .map((dim) => ({
+                      dim,
+                      label: dim.options.find((option) => option.value === dim.autoApplied?.[0])?.label ?? null,
+                    }))
+                    .filter((chip) => chip.label !== null);
+                  if (autoChips.length === 0) return null;
+                  return (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Auto-applied:</span>
+                      {autoChips.map(({ dim, label }) => (
+                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1 text-[11px] font-bold text-[#475569]">
+                          {dim.label}: {label}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Confidential toggle */}
                 {restrictedDim?.render ? (
