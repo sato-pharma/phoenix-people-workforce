@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, FileText, Info, Loader2, Search, ShieldCheck, UploadCloud, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Info, Loader2, Lock, ShieldCheck, Sparkles, Upload, UploadCloud, XCircle } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
@@ -21,10 +21,69 @@ type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProd
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; fixHint?: string };
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null };
+type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
+type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null };
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
+type DetectResponse = { success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string }; error?: string };
 
 const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
+// Weekly-style step UI tokens (match /sales/weekly exactly).
+const stepCard = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
+const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-[#E2E8F0] text-[#64748B]")}>
+        {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
+      </span>
+      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">{label}</span>
+    </div>
+  );
+}
+
+function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="bg-white px-3 py-2.5">
+      <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{label}</div>
+      <div className={cn("mt-0.5 text-sm font-black tabular-nums", accent ? "text-[#F97316]" : "text-[#0F172A]")}>{value}</div>
+    </div>
+  );
+}
+
+function BreakdownTable({ title, headLabel, rows }: { title: string; headLabel: string; rows: BreakdownRow[] }) {
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
+      <div className={darkHead}>{title}</div>
+      <div className="max-h-72 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+            <tr>
+              <th className="px-3 py-1.5">{headLabel}</th>
+              <th className="px-3 py-1.5 text-right">Qty</th>
+              <th className="px-3 py-1.5 text-right">Bonus</th>
+              <th className="px-3 py-1.5 text-right">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && <tr><td className="px-3 py-3 text-center text-[#94A3B8]" colSpan={4}>—</td></tr>}
+            {rows.map((r) => (
+              <tr className="border-t border-[#FFE8D6]" key={r.code}>
+                <td className="px-3 py-1.5 font-semibold text-[#0F172A]">{r.label}{r.parent ? <span className="ml-1 text-[11px] font-medium text-[#94A3B8]">· {r.parent}</span> : null}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{num(r.totalQty)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{num(r.totalBonusQty)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{money(r.totalValue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -61,21 +120,6 @@ function ProfileViewer({ summary }: { summary?: DistributorProfileSummary }) {
           </tr>
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ReceiptChips({ r }: { r: Reconciliation }) {
-  const chip = (label: string, value: number, tone: string) => (
-    <span className={cn("rounded-full border px-3 py-1 text-xs font-bold", tone)}>{label}: {value.toLocaleString()}</span>
-  );
-  return (
-    <div className="flex flex-wrap gap-2">
-      {chip("Rows read", r.rowsRead, "border-[#E2E8F0] bg-[#FCFDFE] text-[#0F172A]")}
-      {chip("Coded", r.rowsCoded, "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]")}
-      {r.rowsIgnored ? chip("Ignored", r.rowsIgnored, "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]") : null}
-      {r.rowsBlankCustomer ? chip("Blank", r.rowsBlankCustomer, "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]") : null}
-      {r.rowsBlocked ? chip("Blocked", r.rowsBlocked, "border-rose-200 bg-rose-50 text-rose-700") : null}
     </div>
   );
 }
@@ -133,41 +177,47 @@ function ValidationPanel({ report, acknowledged, onAcknowledge }: { report: Vali
   );
 }
 
-function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distributorCode: string; hasProfile: boolean; hasDateColumn: boolean }) {
+function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn, onUploaded }: { distributorCode: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
-  const [busy, setBusy] = useState<"analyze" | "commit" | null>(null);
+  const [busy, setBusy] = useState<"verify" | "analyze" | "commit" | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [committed, setCommitted] = useState<CommitResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detected, setDetected] = useState<{ code: string; name: string; confidence: string } | null>(null);
+  const [verified, setVerified] = useState(false);
   const [ackWarnings, setAckWarnings] = useState(false);
 
-  // The validation report is period-specific, so changing the period invalidates a prior analysis.
-  function changePeriod(value: string) {
-    setPeriod(value);
-    setAnalysis(null);
-    setCommitted(null);
-    setAckWarnings(false);
-  }
+  // Any change to file/period/distributor invalidates the verification + validation downstream.
+  function resetDownstream() { setVerified(false); setAnalysis(null); setCommitted(null); setAckWarnings(false); setError(null); }
+  function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); setAckWarnings(false); }
+  function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); if (f) void detect(f); }
 
   async function detect(f: File) {
     setDetected(null);
     try {
       const fd = new FormData(); fd.append("file", f);
       const res = await fetch("/api/sales/monthly-import/detect", { method: "POST", body: fd });
-      const payload = await readJson<{ success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string } }>(res);
+      const payload = await readJson<DetectResponse>(res);
       if (payload.data?.best) setDetected({ code: payload.data.best.distributorCode, name: payload.data.best.distributorName, confidence: payload.data.confidence });
     } catch { /* detection is advisory only */ }
   }
 
   const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
   const validation = analysis?.validation ?? null;
-  // Strict gate: errors always block; warnings block until acknowledged.
   const validationBlocks = validation ? (!validation.ok || (validation.warningCount > 0 && !ackWarnings)) : false;
   const canImport = Boolean(analysis?.success) && unknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
+  const breakdowns = analysis?.breakdowns ?? null;
 
+  // ── Step 1 — AI verification (detect distributor + confirm the column mapping) ──
+  async function handleVerify() {
+    if (!file) { setError("Choose a raw sheet first."); return; }
+    setBusy("verify"); setError(null);
+    try { await detect(file); } finally { setBusy(null); }
+  }
+
+  // ── Step 2 — Strict validation (dry run; persists nothing) ──
   async function analyze() {
     if (!file) { setError("Choose a file first."); return; }
     setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null); setAckWarnings(false);
@@ -176,11 +226,12 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
       const res = await fetch("/api/sales/sales-upload/analyze", { method: "POST", body: fd });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
-      if (!payload.success) setError(payload.error ?? "Analysis failed.");
-    } catch (e) { setError(e instanceof Error ? e.message : "Analysis failed."); }
+      if (!payload.success) setError(payload.error ?? "Validation failed.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Validation failed."); }
     finally { setBusy(null); }
   }
 
+  // ── Step 3 — Confirm & upload (persist) ──
   async function commit() {
     if (!file) return;
     setBusy("commit"); setError(null);
@@ -191,34 +242,79 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
       const payload = await readJson<CommitResponse>(res);
       setCommitted(payload);
       if (!payload.success) setError(payload.error ?? "Import failed.");
+      else onUploaded?.();
     } catch (e) { setError(e instanceof Error ? e.message : "Import failed."); }
     finally { setBusy(null); }
   }
 
+  const rec = analysis?.success ? analysis.reconciliation : null;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* File + period selectors */}
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-          <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => changePeriod(e.target.value)} type="month" value={period} />
+          <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => changePeriod(e.target.value)} type="month" value={period} />
         </label>
-        <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile} onClick={() => fileRef.current?.click()} type="button">
+        <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile || busy !== null} onClick={() => fileRef.current?.click()} type="button">
           <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
         </Button>
-        <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setAnalysis(null); setCommitted(null); void detect(f); } }} ref={fileRef} type="file" />
-        <Button className="h-9 gap-2" disabled={!file || busy !== null || !hasProfile} onClick={() => void analyze()} type="button" variant="secondary">
-          {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}Analyze
-        </Button>
+        <input accept=".xlsx" className="hidden" onChange={(e) => onPickFile(e.target.files?.[0] ?? null)} ref={fileRef} type="file" />
       </div>
-
-      {detected && detected.code !== distributorCode ? (
-        <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>This file looks like <b>{detected.name}</b> ({detected.code}), but you selected <b>{distributorCode}</b>. Pick the right distributor or you&apos;ll get unmapped rows.</span></AdminCallout>
-      ) : detected ? (
-        <p className="text-xs text-[#64748B]">Auto-detected <b className="text-[#0F172A]">{detected.name}</b> ({detected.code}) · confidence {detected.confidence} ✓</p>
-      ) : null}
 
       {error ? <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></AdminCallout> : null}
 
+      {/* ── Step 1: AI verification ── */}
+      <div className="border-t border-dashed border-[#E2E8F0] pt-4">
+        <StepBadge active={!verified} done={verified} label="AI verification" n={1} />
+        <p className="mt-1 text-xs font-medium text-[#64748B]">
+          Reads the file&apos;s headers and confirms which distributor it is and which column feeds product, quantity, date, customer and territory (shown above). Nothing is stored.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60" disabled={busy !== null || !file} onClick={handleVerify} type="button">
+            {busy === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#F97316]" />}
+            {busy === "verify" ? "Analyzing…" : detected ? "Re-run verification" : "Run AI verification"}
+          </button>
+          {!file && <span className="text-xs font-medium text-[#94A3B8]">Pick the raw sheet above first.</span>}
+        </div>
+
+        {detected && (
+          <div className="mt-3">
+            {detected.code !== distributorCode ? (
+              <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>This file looks like <b>{detected.name}</b> ({detected.code}), but you selected <b>{distributorCode}</b>. Pick the right distributor or you&apos;ll get unmapped rows.</span></AdminCallout>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-emerald-200 bg-emerald-50/60 px-3 py-2">
+                <span className="text-sm font-bold text-emerald-700">Recognized as {detected.name} ({detected.code}) · confidence {detected.confidence}</span>
+                {verified ? (
+                  <span className="ml-auto inline-flex items-center gap-1 text-sm font-black text-emerald-700"><ShieldCheck className="h-4 w-4" /> Verified</span>
+                ) : (
+                  <button className="ml-auto inline-flex h-9 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]" onClick={() => setVerified(true)} type="button">
+                    <ShieldCheck className="h-4 w-4" /> Confirm — this looks correct
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Step 2: Strict validation ── */}
+      <div className={cn("border-t border-dashed border-[#E2E8F0] pt-4", !verified && "opacity-60")}>
+        <StepBadge active={verified && !analysis?.success} done={Boolean(analysis?.success)} label="Strict validation" n={2} />
+        <p className="mt-1 text-xs font-medium text-[#64748B]">
+          Parses the sheet, maps every product / territory / customer, runs the strict rules, and shows totals per product, per region and per brick. Nothing is stored yet.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]" disabled={busy !== null || !verified || !hasProfile} onClick={() => void analyze()} type="button">
+            {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : !verified ? <Lock className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
+            {busy === "analyze" ? "Validating…" : "Validate"}
+          </button>
+          {!verified && <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#94A3B8]"><Lock className="h-3.5 w-3.5" /> Complete AI verification above to unlock.</span>}
+        </div>
+      </div>
+
+      {/* Header-template error */}
       {analysis?.code === "header_validation_error" ? (
         <AdminCallout tone="danger"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><div>
           <p className="font-semibold">This distributor&apos;s template was not followed — the sheet is rejected.</p>
@@ -229,39 +325,77 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn }: { distrib
               ))}
             </ul>
           ) : null}
-          <p className="mt-1 text-xs">Do not rename or remove the template&apos;s required columns. Fix the header(s) above, then re-analyze.</p>
+          <p className="mt-1 text-xs">Do not rename or remove the template&apos;s required columns. Fix the header(s) above, then re-validate.</p>
           {analysis.fingerprintWarning ? <p className="mt-1 text-xs">Tip: this looks more like {analysis.fingerprintWarning.likelyName} ({analysis.fingerprintWarning.likelyCode}). Did you pick the right distributor?</p> : null}
         </div></AdminCallout>
       ) : null}
 
-      {analysis?.success && analysis.reconciliation ? (
-        <div className="space-y-2 rounded-xl border border-[#E2E8F0] p-3">
-          <ReceiptChips r={analysis.reconciliation} />
-          {unknowns > 0 ? (
-            <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
-              <p className="font-semibold">{unknowns} unmapped item(s) — import is blocked until they&apos;re mapped.</p>
-              <p className="text-xs">Map them in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-analyze.</p>
-            </div></AdminCallout>
-          ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
-            <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to import.</span></AdminCallout>
+      {/* ── Validation result + Step 3 confirm ── */}
+      {analysis?.success && rec ? (
+        <div className={stepCard}>
+          {/* Header */}
+          <div className={cn("flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black", canImport ? "text-emerald-700" : "text-amber-700")}>
+            {canImport ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+            {canImport ? `Validation passed — ${num(rec.rowsCoded)} rows ready to upload` : "Validation blocked — resolve the items below"}
+          </div>
+
+          {/* KPI strip (reconciliation receipt) */}
+          <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-3 lg:grid-cols-6">
+            <Metric label="Rows read" value={num(rec.rowsRead)} />
+            <Metric accent label="Coded" value={num(rec.rowsCoded)} />
+            <Metric label="Ignored" value={num(rec.rowsIgnored)} />
+            <Metric label="Blank cust." value={num(rec.rowsBlankCustomer)} />
+            <Metric label="Blocked" value={num(rec.rowsBlocked)} />
+            <Metric accent label="Total value" value={money(rec.totalValue)} />
+          </div>
+
+          {/* Unmapped / period gates */}
+          <div className="space-y-2 px-4 pt-4">
+            {unknowns > 0 ? (
+              <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
+                <p className="font-semibold">{unknowns} unmapped item(s) — upload is blocked until they&apos;re mapped.</p>
+                <p className="text-xs">Map them in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-validate.</p>
+              </div></AdminCallout>
+            ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
+              <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>
+            ) : null}
+            {validation ? <ValidationPanel acknowledged={ackWarnings} onAcknowledge={setAckWarnings} report={validation} /> : null}
+          </div>
+
+          {/* Per product / region / brick / line breakdowns */}
+          {breakdowns ? (
+            <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+              <BreakdownTable headLabel="Product" rows={breakdowns.byProduct} title="By product" />
+              <BreakdownTable headLabel="Region" rows={breakdowns.byRegion} title="By region" />
+              <BreakdownTable headLabel="Brick" rows={breakdowns.byBrick} title="By brick" />
+              <BreakdownTable headLabel="Line" rows={breakdowns.byLine} title="By line" />
+            </div>
           ) : null}
 
-          {validation ? <ValidationPanel acknowledged={ackWarnings} onAcknowledge={setAckWarnings} report={validation} /> : null}
-
-          {unknowns === 0 && canImport ? (
-            <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{validation && validation.warningCount > 0 ? "Warnings acknowledged — ready to import." : "Everything checks out — ready to import."}</span></AdminCallout>
-          ) : null}
-          <Button className="h-9 gap-2 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={!canImport || busy !== null} onClick={() => void commit()} type="button">
-            {busy === "commit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Import
-          </Button>
+          {/* Step 3 — Confirm & Upload */}
+          <div className="border-t border-[#E2E8F0] px-4 py-4">
+            <div className="mb-3"><StepBadge active label="Confirm & Upload" n={3} /></div>
+            {committed?.success ? (
+              <div className="flex items-center gap-2 rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                <div>
+                  <p className="text-sm font-black text-emerald-700">{committed.message}</p>
+                  <p className="mt-0.5 text-xs font-medium text-emerald-600">Any earlier upload for {committed.period} was replaced — no double count.</p>
+                </div>
+              </div>
+            ) : canImport ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]" disabled={busy !== null} onClick={() => void commit()} type="button">
+                  {busy === "commit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {busy === "commit" ? "Uploading…" : "Confirm & Upload"}
+                </button>
+                <span className="text-xs font-medium text-[#64748B]">Review the totals above, then confirm to store the data.</span>
+              </div>
+            ) : (
+              <p className="text-xs font-semibold text-amber-700">Resolve the items above, then re-validate before uploading.</p>
+            )}
+          </div>
         </div>
-      ) : null}
-
-      {committed?.success ? (
-        <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{committed.message} (any earlier upload for {committed.period} was replaced — no double count.)</span></AdminCallout>
-      ) : null}
-      {committed && !committed.success && committed.reconciliation ? (
-        <AdminCallout tone="danger"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{committed.error}</span></AdminCallout>
       ) : null}
     </div>
   );
@@ -338,6 +472,8 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
 }
 
 function DistributorUpload({ selected, summary }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary }) {
+  // Bumped after a successful upload so the health panel ("Last monthly") re-reads.
+  const [uploadNonce, setUploadNonce] = useState(0);
   return (
     <div className="space-y-4">
       <Card className={cn(panel, "space-y-3 p-5")}>
@@ -350,13 +486,13 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
             <Download className="h-4 w-4" />Emergency template
           </a>
         </div>
-        <HealthDashboard distributorCode={selected.code} />
+        <HealthDashboard distributorCode={selected.code} key={`health-${selected.code}-${uploadNonce}`} />
         <ProfileViewer summary={summary} />
       </Card>
 
       <Card className={cn(panel, "space-y-3 p-5")}>
         <h3 className="text-base font-black tracking-tight text-slate-950">Upload Monthly Sales</h3>
-        <MonthlyUpload distributorCode={selected.code} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} />
+        <MonthlyUpload distributorCode={selected.code} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} />
       </Card>
 
       {selected.weeklySupported ? (
