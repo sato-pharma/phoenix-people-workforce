@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import { buildEmployeePlanPeriod, employeePlanActivityTypes } from "@/lib/weekly-planning/plan-v1";
@@ -636,13 +637,25 @@ export function PlansWorkspace({
   const ownPlans = plans.filter(
     (item) => item.employeeHrId === workspace.currentEmployee?.hrId,
   );
+  // HR_IDs are stored uppercase on the plan but normalized lowercase on the access
+  // context — compare canonical keys, never raw strings (CLAUDE.md). Super Admin is
+  // the god-mode reviewer at every stage, mirroring the server guards
+  // (assertManagerReviewer / assertCeoReviewer) so the UI never hides an action the
+  // API would actually allow.
+  const isSuperAdminReviewer = access.role === "Super Admin" || access.scope === "system";
+  const sameHrId = (a: string | null | undefined, b: string | null | undefined) => {
+    const left = canonicalHrIdKey(a);
+    return Boolean(left && left === canonicalHrIdKey(b));
+  };
   const managerQueue = plans.filter(
-    (item) => item.status === "submitted" && item.managerHrId === access.hrId,
+    (item) =>
+      item.status === "submitted" &&
+      (isSuperAdminReviewer || sameHrId(item.managerHrId, access.hrId)),
   );
   const ceoQueue = plans.filter(
     (item) =>
       item.status === "manager_approved" &&
-      (access.role === "CEO" || access.role === "Super Admin"),
+      (access.role === "CEO" || isSuperAdminReviewer),
   );
   const hrQueue = plans.filter(
     (item) =>
