@@ -8,7 +8,8 @@ import {
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { formatAttendanceWorkingWeekdays, type AttendanceWorkingWeekday } from "@/lib/attendance/work-schedule";
-import { isAttendanceTrackingEligible } from "@/lib/attendance/eligibility";
+import { isAttendanceTracked } from "@/lib/attendance/eligibility";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -370,7 +371,7 @@ export async function getFingerprintAttendanceReport(input: {
   const effectiveDateFrom = hasDateRange ? dateFrom : todayKey();
   const effectiveDateTo = hasDateRange ? dateTo : todayKey();
 
-  const [employeeResult, policyRows, ruleResult] = await Promise.all([
+  const [employeeResult, policyRows, ruleResult, deviceMappedHrIds] = await Promise.all([
     supabase
       .from("employees")
       .select("hr_id,full_name,job_title,department_id,base_salary")
@@ -381,15 +382,22 @@ export async function getFingerprintAttendanceReport(input: {
       .select("policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
       .eq("is_active", true)
       .order("sort_order"),
+    loadActiveDeviceMappedHrIds(),
   ]);
 
   if (employeeResult.error) throw employeeResult.error;
   if (ruleResult.error) throw ruleResult.error;
 
   const allEmployees = uniqueEmployeesByHrId((employeeResult.data ?? []) as EmployeeRow[]);
-  // Attendance & fingerprint tracking applies to Medical Reps, DMs, and RSMs only —
-  // field roles that work in field visits and do not punch in at the office.
-  const eligibleEmployees = allEmployees.filter((emp) => isAttendanceTrackingEligible(emp.job_title));
+  // An employee is attendance-tracked when actively enrolled on a fingerprint
+  // device (authoritative — covers office/HQ staff who punch the office device)
+  // OR is a field role by title (Medical Rep / DM / RSM). See isAttendanceTracked.
+  const eligibleEmployees = allEmployees.filter((emp) =>
+    isAttendanceTracked({
+      hasDeviceMapping: deviceMappedHrIds.has(normalizeHrId(emp.hr_id) ?? ""),
+      jobTitle: emp.job_title,
+    }),
+  );
   const allDepartmentIds = new Set<number>();
   for (const employee of eligibleEmployees) {
     if (typeof employee.department_id === "number") allDepartmentIds.add(employee.department_id);

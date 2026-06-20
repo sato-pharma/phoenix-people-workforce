@@ -40,7 +40,8 @@ function normalizeTitle(value: string | null | undefined): string {
 
 /**
  * Returns true when ANY of the provided title fields identifies an employee
- * subject to attendance and fingerprint tracking (Medical Rep, DM, RSM only).
+ * subject to attendance and fingerprint tracking by JOB TITLE (Medical Rep, DM,
+ * RSM only). This is one of two tracking signals — see `isAttendanceTracked`.
  */
 export function isAttendanceTrackingEligible(
   ...titles: Array<string | null | undefined>
@@ -52,4 +53,27 @@ export function isAttendanceTrackingEligible(
     if (ATTENDANCE_ELIGIBLE_ROLES.has(resolveJobFunctionRole(title))) return true;
   }
   return false;
+}
+
+/**
+ * Whether an employee is subject to attendance & fingerprint tracking.
+ *
+ * An employee is tracked when EITHER signal is true:
+ *  1. `hasDeviceMapping` — they are ACTIVELY ENROLLED on a fingerprint device.
+ *     This is the authoritative, self-maintaining signal: whoever HR enrols and
+ *     maps on the office device is tracked, regardless of job title. This is how
+ *     office/HQ staff (HR, Finance, Marketing, NSMs, Product/Training managers,
+ *     admins, …) — who actually punch the office device — get tracked.
+ *  2. `jobTitle` is a field role (Medical Rep / DM / RSM). Field reps are tracked
+ *     by title even before a device mapping exists.
+ *
+ * Previously tracking was field-role-by-title ONLY, which hid every office
+ * employee that the office device actually captures. The device-mapping signal
+ * fixes that without disturbing field-role behaviour.
+ */
+export function isAttendanceTracked(input: {
+  hasDeviceMapping: boolean;
+  jobTitle: string | null | undefined;
+}): boolean {
+  return input.hasDeviceMapping || isAttendanceTrackingEligible(input.jobTitle);
 }
