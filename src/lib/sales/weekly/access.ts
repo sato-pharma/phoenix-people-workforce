@@ -8,7 +8,6 @@ import {
   applyLineRegionScope,
   canonicalizeRegionName,
   isRestrictedProductCode,
-  normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -73,6 +72,22 @@ export async function getWeeklyProductScopeCodes(hrKey: string | null): Promise<
   return new Set((data ?? []).map((row) => String(row.product_code ?? "").trim().toUpperCase()).filter(Boolean));
 }
 
+/** Read the explicit SoS region codes assigned to a manager (DM / RSM) in the authoritative
+ *  territory map (sales_manager_region_scope). Returns null when the manager has NO explicit rows,
+ *  so callers fall back to auto region-name resolution rather than failing closed. Shared by the
+ *  weekly and monthly sales scope. */
+export async function getManagerRegionScope(hrKey: string | null): Promise<Set<string> | null> {
+  if (!hrKey) return null;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("sales_manager_region_scope")
+    .select("region_code")
+    .eq("hr_id", hrKey);
+  if (error || !data || data.length === 0) return null;
+  const codes = new Set(data.map((row) => String(row.region_code ?? "").trim().toUpperCase()).filter(Boolean));
+  return codes.size > 0 ? codes : null;
+}
+
 /** All product-scope assignments, grouped by canonical HR_ID (for the admin manager). */
 export async function listWeeklyProductScopeAssignments(): Promise<Map<string, Set<string>>> {
   const supabase = getSupabaseAdmin();
@@ -134,15 +149,18 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   // 4. Product roles without an assignment yet see nothing (fail closed).
   if (PRODUCT_SCOPED_ROLES.has(ctx.role)) return { tier: "product", productCodes: new Set() };
 
-  // 5. Sales-field roles — reuse the monthly line/region scope.
+  // 5. Sales-field roles — reuse the monthly line/region scope. Region codes come from the explicit
+  // territory map first (authoritative; e.g. RSM PD-0001 -> AB+D1+D2, each DM -> his region), else
+  // auto region-name resolution. The explicit map replaces the old hardcoded Pedia-RSM special case.
   if (TERRITORY_SCOPED_ROLES.has(ctx.role)) {
     const scope = await resolveSalesAccessScope(ctx);
     if (scope.canViewAllSales) return { tier: "full", canViewRestricted: scope.canViewRestrictedProducts };
-    let allowedRegionCodes = await resolveRegionCodesForNames(scope.allowedRegionNames);
-    // RSM in the Pedia line has system-wide coverage across all Pedia regions (AB, D1, D2).
-    if (ctx.role === "Regional Manager" && hasPediaLine(scope.allowedLineNames)) {
-      allowedRegionCodes = new Set(["AB", "D1", "D2"]);
-    }
+    const explicit = await getManagerRegionScope(hrKey);
+    let allowedRegionCodes = explicit ?? (await resolveRegionCodesForNames(scope.allowedRegionNames));
+    // NSM (LINE scope) legitimately has no region bound -> whole line. DM / RSM / MR MUST be region-
+    // bounded: if neither the explicit territory map nor the region name resolved, fail closed (see
+    // nothing) rather than fall open to the whole line.
+    if (ctx.role !== "National Sales Manager" && !allowedRegionCodes) allowedRegionCodes = new Set();
     return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes };
   }
 
@@ -156,17 +174,8 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   return { tier: "none" };
 }
 
-/** True when the viewer's allowed lines include Pedia (any case/whitespace variant). */
-function hasPediaLine(lineNames: Set<string> | null): boolean {
-  if (!lineNames) return false;
-  for (const name of lineNames) {
-    if (normalizeLineKey(name) === "pedia") return true;
-  }
-  return false;
-}
-
 /** Map canonical employee region NAMES onto Source-of-Sales region CODES via the master. */
-async function resolveRegionCodesForNames(
+export async function resolveRegionCodesForNames(
   allowedRegionNames: Set<string> | null,
 ): Promise<Set<string> | null> {
   if (!allowedRegionNames) return null;

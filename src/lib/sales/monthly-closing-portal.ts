@@ -6,11 +6,12 @@ import {
 } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { isRestrictedProductCode } from "@/lib/sales/access-scope";
-import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
+import { canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
+import { getManagerRegionScope, getWeeklyProductScopeCodes, resolveRegionCodesForNames } from "@/lib/sales/weekly/access";
 import {
   loadMonthlyClosing,
   type MonthlyClosingCell,
+  type MonthlyClosingGrandTotalRow,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
@@ -32,18 +33,27 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // they were explicitly assigned, which the seed never does.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Roles that can open the portal Monthly Closing tab. Medical Rep is excluded. */
+/** Roles that can open the portal Monthly Closing tab. */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Medical Rep",
 ]);
 
 const PRODUCT_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Product Manager",
   "Group Product Manager",
+]);
+
+// Region-scoped roles: bounded to their own region(s). National Sales Manager is intentionally NOT
+// here — an NSM sees the whole line. PM/GPM are product-scoped above.
+const REGION_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
+  "District Manager",
+  "Regional Manager",
+  "Medical Rep",
 ]);
 
 export function canAccessPortalClosing(access: AccessContext): boolean {
@@ -55,37 +65,53 @@ export type PortalClosingScope = {
   line: string | null;
   /** Allowed product codes for product-scoped roles; null means "the whole line". */
   productCodes: Set<string> | null;
+  /** Allowed SoS region codes for region-scoped roles (DM / RSM / MR); null means "all regions in
+   *  the line" (NSM, or a manager whose region could not be resolved). */
+  allowedRegionCodes: Set<string> | null;
 };
 
-/** Resolve the viewer's line from the employee directory (any role). */
-async function resolveEmployeeLineName(access: AccessContext): Promise<string | null> {
+/** Resolve the viewer's line + region from the employee directory (any role). */
+async function resolveEmployeeGeo(access: AccessContext): Promise<{ line: string | null; region: string | null }> {
   const hrId = resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId;
-  if (!hrId) return null;
+  if (!hrId) return { line: null, region: null };
   const target = normalizeHrId(hrId);
 
   const directory = await getEmployeeDirectory();
   const match = directory.employees.find(
     (employee) => normalizeHrId(employee.hrId) === target,
   );
-  return match?.lineName?.trim() || null;
+  return { line: match?.lineName?.trim() || null, region: match?.regionName?.trim() || null };
 }
 
-/** Line + optional product filter for the caller. */
+/** Line + region/product scope for the caller. */
 export async function resolvePortalClosingScope(
   access: AccessContext,
 ): Promise<PortalClosingScope> {
-  const line = await resolveEmployeeLineName(access);
+  const { line, region } = await resolveEmployeeGeo(access);
+  const hrKey = canonicalHrIdKey(
+    resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
+  );
 
+  // Product / Group Product Managers: only their assigned products (region not applicable).
   if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
-    const hrKey = canonicalHrIdKey(
-      resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
-    );
     const productCodes = await getWeeklyProductScopeCodes(hrKey);
-    return { line, productCodes };
+    return { line, productCodes, allowedRegionCodes: null };
   }
 
-  // Territory roles (DM / RM / NSM) see the whole line.
-  return { line, productCodes: null };
+  // DM / RSM / MR: bounded to their region(s). The explicit territory map is authoritative
+  // (e.g. RSM PD-0001 -> AB+D1+D2, each DM -> his region); else fall back to auto region-name
+  // resolution from the viewer's own region.
+  if (REGION_SCOPED_CLOSING_ROLES.has(access.role)) {
+    const explicit = await getManagerRegionScope(hrKey);
+    const resolved =
+      explicit ?? (await resolveRegionCodesForNames(region ? new Set([canonicalizeRegionName(region)]) : null));
+    // Region-scoped roles MUST be bounded: if neither the explicit map nor the region name resolved
+    // (null), fail closed (empty set => no regions) rather than fall open to the whole line.
+    return { line, productCodes: null, allowedRegionCodes: resolved ?? new Set() };
+  }
+
+  // National Sales Manager (and any other allowed role) — the whole line.
+  return { line, productCodes: null, allowedRegionCodes: null };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -195,6 +221,40 @@ export function stripRestrictedColumns(matrix: MonthlyClosingMatrix): MonthlyClo
   };
 }
 
+/**
+ * Filter a closing matrix down to a set of SoS region codes, recomputing the grand total from the
+ * surviving regions. National-direct and company totals are dropped — a region-scoped manager sees
+ * only their own region(s), never the whole-company figure. Pure — no IO.
+ */
+export function scopeMatrixToRegions(
+  matrix: MonthlyClosingMatrix,
+  codes: Set<string>,
+): MonthlyClosingMatrix {
+  const allowed = new Set([...codes].map((code) => code.trim().toUpperCase()));
+  const regions = matrix.regions.filter((region) => allowed.has((region.regionCode ?? "").trim().toUpperCase()));
+  const columnCount = matrix.columns.length;
+  // Grand total = column-wise sum across the surviving regions' subtotals.
+  const grandCells = Array.from({ length: columnCount }, (_, index) =>
+    sumCells(
+      regions
+        .map((region) => region.subtotal.cells[index])
+        .filter((cell): cell is MonthlyClosingCell => Boolean(cell)),
+    ),
+  );
+  const grandTotal: MonthlyClosingGrandTotalRow = {
+    kind: "grandTotal",
+    cells: grandCells,
+    rowTotal: sumCells(grandCells),
+  };
+  return {
+    ...matrix,
+    regions,
+    grandTotal,
+    directNational: null,
+    companyTotal: null,
+  };
+}
+
 export type PortalClosingResult = {
   matrix: MonthlyClosingMatrix | null;
   line: string | null;
@@ -241,9 +301,13 @@ export async function loadPortalMonthlyClosing(input: {
     availablePeriods: publishedPeriods,
   };
   // Always strip confidential products first; territory roles (productCodes === null) would
-  // otherwise see the raw matrix including LA003 / LA004.
+  // otherwise see the raw matrix including LA003 / LA004. Then apply product scope (PM/GPM) OR
+  // region scope (DM/RSM/MR) — the two are disjoint by role and order-independent (columns vs rows).
   const safe = stripRestrictedColumns(locked);
-  const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const matrix = scope.allowedRegionCodes
+    ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
+    : productScoped;
 
   return {
     matrix,
@@ -280,7 +344,10 @@ export async function loadPortalClosingTrend(input: {
     periods.map(async (period) => {
       const raw = await loadMonthlyClosing({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
-      const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+      const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+      const matrix = scope.allowedRegionCodes
+        ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
+        : productScoped;
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),
