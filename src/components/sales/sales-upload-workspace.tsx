@@ -9,6 +9,7 @@ import { DistributorWorkspaceShell } from "@/components/sales/distributor-worksp
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
+import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -177,7 +178,7 @@ function ValidationPanel({ report, acknowledged, onAcknowledge }: { report: Vali
   );
 }
 
-function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn, onUploaded }: { distributorCode: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void }) {
+function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded }: { distributorCode: string; distributorName: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
@@ -187,21 +188,27 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn, onUploaded 
   const [error, setError] = useState<string | null>(null);
   const [detected, setDetected] = useState<{ code: string; name: string; confidence: string } | null>(null);
   const [verified, setVerified] = useState(false);
+  // True once an auto-detection attempt has finished — even when it found nothing. Lets the UI always
+  // show a result (and a way to continue) instead of silently leaving the operator with a locked step.
+  const [verifyRan, setVerifyRan] = useState(false);
   const [ackWarnings, setAckWarnings] = useState(false);
 
   // Any change to file/period/distributor invalidates the verification + validation downstream.
-  function resetDownstream() { setVerified(false); setAnalysis(null); setCommitted(null); setAckWarnings(false); setError(null); }
+  function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setAckWarnings(false); setError(null); }
   function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); setAckWarnings(false); }
   function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); if (f) void detect(f); }
 
   async function detect(f: File) {
-    setDetected(null);
+    setDetected(null); setVerifyRan(false);
     try {
       const fd = new FormData(); fd.append("file", f);
       const res = await fetch("/api/sales/monthly-import/detect", { method: "POST", body: fd });
       const payload = await readJson<DetectResponse>(res);
+      // best is null when detection is ambiguous (a tie) or matched no profile — leave detected null
+      // and let verifyRan drive the "couldn't recognize, confirm to continue" panel below.
       if (payload.data?.best) setDetected({ code: payload.data.best.distributorCode, name: payload.data.best.distributorName, confidence: payload.data.confidence });
     } catch { /* detection is advisory only */ }
+    finally { setVerifyRan(true); }
   }
 
   const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
@@ -209,6 +216,21 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn, onUploaded 
   const validationBlocks = validation ? (!validation.ok || (validation.warningCount > 0 && !ackWarnings)) : false;
   const canImport = Boolean(analysis?.success) && unknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
   const breakdowns = analysis?.breakdowns ?? null;
+
+  // Step-1 panel decision (pure, regression-tested): guarantees a Confirm path for EVERY finished
+  // detection outcome so the operator can never be silently locked out of Step 2. See
+  // src/lib/sales/upload-verification-step.ts.
+  const verifyStep = resolveVerificationStep({ ran: verifyRan, detectedCode: detected?.code ?? null, selectedCode: distributorCode });
+  const confirmClass = verifyStep.panel === "mismatch"
+    ? "border border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
+    : verifyStep.panel === "unrecognized"
+      ? "bg-[#0F172A] text-white hover:bg-[#1E293B]"
+      : "bg-[#F97316] text-white hover:bg-[#EA6A0C]";
+  const confirmLabel = verifyStep.panel === "mismatch"
+    ? `Yes, this is the ${distributorCode} sheet — continue`
+    : verifyStep.panel === "unrecognized"
+      ? `Confirm — this is the ${distributorCode} sheet`
+      : "Confirm — this looks correct";
 
   // ── Step 1 — AI verification (detect distributor + confirm the column mapping) ──
   async function handleVerify() {
@@ -274,27 +296,35 @@ function MonthlyUpload({ distributorCode, hasProfile, hasDateColumn, onUploaded 
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60" disabled={busy !== null || !file} onClick={handleVerify} type="button">
             {busy === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#F97316]" />}
-            {busy === "verify" ? "Analyzing…" : detected ? "Re-run verification" : "Run AI verification"}
+            {busy === "verify" ? "Analyzing…" : verifyRan ? "Re-run verification" : "Run AI verification"}
           </button>
           {!file && <span className="text-xs font-medium text-[#94A3B8]">Pick the raw sheet above first.</span>}
         </div>
 
-        {detected && (
-          <div className="mt-3">
-            {detected.code !== distributorCode ? (
-              <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>This file looks like <b>{detected.name}</b> ({detected.code}), but you selected <b>{distributorCode}</b>. Pick the right distributor or you&apos;ll get unmapped rows.</span></AdminCallout>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-emerald-200 bg-emerald-50/60 px-3 py-2">
+        {/* Verification result — one block, three outcomes. The Confirm control is driven by
+            resolveVerificationStep().canConfirm, which is true for EVERY finished outcome (match,
+            different-distributor, couldn't-recognize), so the operator is never silently locked out. */}
+        {verifyStep.panel !== "idle" && (
+          <div className="mt-3 space-y-2">
+            {verifyStep.panel === "match" && detected ? (
+              <div className="rounded-[6px] border border-emerald-200 bg-emerald-50/60 px-3 py-2">
                 <span className="text-sm font-bold text-emerald-700">Recognized as {detected.name} ({detected.code}) · confidence {detected.confidence}</span>
-                {verified ? (
-                  <span className="ml-auto inline-flex items-center gap-1 text-sm font-black text-emerald-700"><ShieldCheck className="h-4 w-4" /> Verified</span>
-                ) : (
-                  <button className="ml-auto inline-flex h-9 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]" onClick={() => setVerified(true)} type="button">
-                    <ShieldCheck className="h-4 w-4" /> Confirm — this looks correct
-                  </button>
-                )}
               </div>
-            )}
+            ) : null}
+            {verifyStep.panel === "mismatch" && detected ? (
+              <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>This file looks like <b>{detected.name}</b> ({detected.code}), but you selected <b>{distributorName} ({distributorCode})</b>. Switch to the right distributor above — or, if you&apos;re sure this is the {distributorName} sheet, confirm to continue (the next step still strictly checks every column).</span></AdminCallout>
+            ) : null}
+            {verifyStep.panel === "unrecognized" ? (
+              <AdminCallout tone="neutral"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>Couldn&apos;t auto-recognize a single distributor from this file&apos;s column headers (they didn&apos;t clearly match one profile, or matched more than one). If this really is the <b>{distributorName} ({distributorCode})</b> sheet, confirm to continue — the next step strictly checks every column before anything is stored.</span></AdminCallout>
+            ) : null}
+
+            {verified ? (
+              <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-700"><ShieldCheck className="h-4 w-4" /> Verified</span>
+            ) : verifyStep.canConfirm ? (
+              <button className={cn("inline-flex h-9 items-center gap-2 rounded-[6px] px-4 text-sm font-black transition", confirmClass)} onClick={() => setVerified(true)} type="button">
+                <ShieldCheck className="h-4 w-4" /> {confirmLabel}
+              </button>
+            ) : null}
           </div>
         )}
       </div>
@@ -492,7 +522,7 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
 
       <Card className={cn(panel, "space-y-3 p-5")}>
         <h3 className="text-base font-black tracking-tight text-slate-950">Upload Monthly Sales</h3>
-        <MonthlyUpload distributorCode={selected.code} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} />
+        <MonthlyUpload distributorCode={selected.code} distributorName={selected.name} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} />
       </Card>
 
       {selected.weeklySupported ? (
