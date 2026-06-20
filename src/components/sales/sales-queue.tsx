@@ -27,6 +27,7 @@ import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { SalesHistoryRow } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SortableTh, TableNoResults, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
 
 
 type Props = {
@@ -162,6 +163,63 @@ function LinkageList({ linked, notLinked, title }: { linked: string[]; notLinked
   );
 }
 
+type ManagerTotalRow = { manager: string; rows: number; salesUnits: number; salesValue: number; targetUnits: number; targetValue: number };
+
+function ManagerTotalsTable({ rows }: { rows: ManagerTotalRow[] }) {
+  const table = useSortableTable(rows, {
+    columns: [
+      { key: "manager", accessor: (row) => row.manager, type: "string" },
+      { key: "rows", accessor: (row) => row.rows, type: "number" },
+      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
+      { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
+      { key: "targetUnits", accessor: (row) => row.targetUnits, type: "number" },
+      { key: "targetValue", accessor: (row) => row.targetValue, type: "number" },
+    ],
+    searchAccessors: [(row) => row.manager],
+    initialSort: { key: "salesValue", dir: "desc" },
+  });
+  const th = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "px-5 py-4 tracking-[0.14em]" };
+  return (
+    <div className="px-4 py-4 md:px-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-semibold text-[#64748B]">
+          {table.isFiltered ? `${table.visible} of ${table.total}` : formatNumber(table.total)} managers
+        </span>
+        <div className="w-52">
+          <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Search manager…" />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="bg-[#F8FAFC]">
+            <tr>
+              <SortableTh label="District Manager" sortKey="manager" {...th} />
+              <SortableTh label="Rows" sortKey="rows" align="right" {...th} />
+              <SortableTh label="Sales Units" sortKey="salesUnits" align="right" {...th} />
+              <SortableTh label="Sales Value" sortKey="salesValue" align="right" {...th} />
+              <SortableTh label="Target Units" sortKey="targetUnits" align="right" {...th} />
+              <SortableTh label="Target Value" sortKey="targetValue" align="right" {...th} />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#E2E8F0]">
+            {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="managers" />}
+            {table.rows.map((manager, index) => (
+              <tr className="text-[#64748B]" key={`${manager.manager}:${index}`}>
+                <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{manager.manager}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.rows)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.salesUnits)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(manager.salesValue)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.targetUnits)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(manager.targetValue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function statusBadge(status: string) {
   switch (status) {
     case "approved": return <Badge variant="success">Approved</Badge>;
@@ -233,6 +291,18 @@ export function SalesQueue({ initialData, initialError }: Props) {
       totalWarnings,
     };
   }, [batches]);
+
+  // Quick text filter over the uploaded-sheet cards (summary above stays on the full set).
+  const sheetTable = useSortableTable(batches, {
+    columns: [],
+    searchAccessors: [
+      (batch) => batch.fileName,
+      (batch) => String(batch.line ?? ""),
+      (batch) => String(batch.period ?? ""),
+      (batch) => String(batch.status ?? ""),
+    ],
+    initialSort: null,
+  });
 
   async function reloadHistory() {
     const updated = await fetch("/api/sales/imports", { cache: "no-store" }).then((r) => r.json());
@@ -543,39 +613,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
           description="Totals grouped by the manager HR ID read from the monthly sales sheet."
           title="District Manager Validation Totals"
         >
-          <div className="px-4 py-4 md:px-5">
-            <div className="mb-3 flex items-center justify-end">
-              <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-semibold text-[#64748B]">
-                {formatNumber(uploadResult.details.managerTotals.length)} managers
-              </span>
-            </div>
-            <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="bg-[#F8FAFC]">
-                  <tr>
-                    <th className={adminTableHeaderClassName}>District Manager</th>
-                    <th className={adminTableHeaderClassName}>Rows</th>
-                    <th className={adminTableHeaderClassName}>Sales Units</th>
-                    <th className={adminTableHeaderClassName}>Sales Value</th>
-                    <th className={adminTableHeaderClassName}>Target Units</th>
-                    <th className={adminTableHeaderClassName}>Target Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {uploadResult.details.managerTotals.map((manager, index) => (
-                    <tr className="text-[#64748B]" key={`${manager.manager}:${index}`}>
-                      <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{manager.manager}</td>
-                      <td className="px-4 py-2.5">{formatNumber(manager.rows)}</td>
-                      <td className="px-4 py-2.5">{formatNumber(manager.salesUnits)}</td>
-                      <td className="px-4 py-2.5">{formatCurrency(manager.salesValue)}</td>
-                      <td className="px-4 py-2.5">{formatNumber(manager.targetUnits)}</td>
-                      <td className="px-4 py-2.5">{formatCurrency(manager.targetValue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <ManagerTotalsTable rows={uploadResult.details.managerTotals} />
         </AdminTableShell>
       )}
 
@@ -668,10 +706,17 @@ export function SalesQueue({ initialData, initialError }: Props) {
         description={batches.length === 0 ? "No uploaded sheets yet. Start a new upload from the action bar." : `${batches.length} uploaded sheet${batches.length === 1 ? "" : "s"} in repository.`}
         title="Uploaded Sales Sheets"
         action={(
-          <Button className="gap-2" onClick={() => fileInputRef.current?.click()} variant="secondary">
-            <UploadCloud className="h-4 w-4" />
-            New Upload
-          </Button>
+          <div className="flex items-center gap-2">
+            {batches.length > 0 ? (
+              <div className="w-48">
+                <TableSearchInput value={sheetTable.query} onChange={sheetTable.setQuery} onClear={sheetTable.clearQuery} placeholder="Filter sheets…" />
+              </div>
+            ) : null}
+            <Button className="gap-2" onClick={() => fileInputRef.current?.click()} variant="secondary">
+              <UploadCloud className="h-4 w-4" />
+              New Upload
+            </Button>
+          </div>
         )}
       >
         <div className="px-1 pb-1 pt-0">
@@ -694,9 +739,17 @@ export function SalesQueue({ initialData, initialError }: Props) {
               <p className="text-sm">Use the form above to upload a monthly closing sheet.</p>
             </div>
           </AdminCallout>
+        ) : sheetTable.rows.length === 0 ? (
+          <AdminCallout tone="neutral">
+            <Clock className="mt-0.5 h-4 w-4" />
+            <div>
+              <p className="font-semibold">No sheets match your filter</p>
+              <p className="text-sm">Clear the filter to see all {formatNumber(batches.length)} uploaded sheets.</p>
+            </div>
+          </AdminCallout>
         ) : (
           <div className="divide-y divide-[#E2E8F0] overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.06)]">
-            {batches.map((batch) => {
+            {sheetTable.rows.map((batch) => {
               const isBusy = actionLoading?.startsWith(`${batch.id}:`);
               return (
                 <div className="bg-white px-5 py-5 transition-colors hover:bg-orange-50/35" key={batch.id}>
