@@ -603,7 +603,9 @@ export async function runMarketingRequestServiceTests() {
   // (owner directive). This guards the live behaviour, so it reads the latest migration that defines it.
   const roiMigration = source("supabase/migrations/20260620140000_marketing_roi_customer_code_only.sql");
   const marketingTypesSource = source("src/lib/marketing-requests/types.ts");
-  const roiWorkspaceSource = source("src/components/employee-portal/marketing-roi-tracking-workspace.tsx");
+  // The ROI workspace was rebuilt as the filter-engine; attribution is now surfaced via the
+  // per-row result status + attribution-gap reason rather than a standalone badge.
+  const roiWorkspaceSource = source("src/components/marketing-requests/roi-filter-engine.tsx");
   assert.match(roiMigration, /r\.client_code/, "ROI actuals must match Source-of-Sales rows by exact client_code");
   assert.match(roiMigration, /mpdc\.normalized_pharmacy_code/, "ROI actuals must use the request pharmacy distributor code as the customer key");
   assert.doesNotMatch(roiMigration, /fallback_hits/, "ROI actuals must NOT match sales by brick fallback (customer-code-only)");
@@ -612,8 +614,11 @@ export async function runMarketingRequestServiceTests() {
   assert.match(roiMigration, /attribution_quality/, "ROI actuals must expose attribution quality");
   assert.match(roiMigration, /'exact_customer'/, "attribution quality must still surface exact_customer");
   assert.match(marketingTypesSource, /MarketingRoiAttributionQuality/, "ROI tracking type must model attribution quality");
-  assert.match(serviceSource, /attributionQuality/, "ROI tracking service must return attribution quality");
-  assert.match(roiWorkspaceSource, /AttributionBadge/, "ROI tracking UI must display attribution quality");
+  // The legacy ROI workspace service was retired; the filter-engine report service now carries
+  // attribution quality per row, so the "service surfaces attribution quality" guard points there.
+  const roiReportServiceSource = source("src/lib/marketing-requests/roi-report-service.ts");
+  assert.match(roiReportServiceSource, /attributionQuality/, "ROI report service must return attribution quality");
+  assert.match(roiWorkspaceSource, /attributionGapReason|resultStatus/, "ROI tracking UI must surface attribution status");
 
   // New API routes exist.
   assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");

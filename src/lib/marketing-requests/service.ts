@@ -15,7 +15,7 @@ import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { calculateMarketingRoiPreview, roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
+import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
   toMarketingRequestWorkflowStatus,
@@ -46,9 +46,6 @@ import type {
   MarketingRequestFinanceRequirement,
   MarketingRequestApprovalStep,
   MarketingRequestType,
-  MarketingRoiAttributionQuality,
-  MarketingRoiTrackingRow,
-  MarketingRoiTrackingWorkspace,
   MarketingValidationInput,
   MarketingValidationReportRow,
   MarketingValidationStatus,
@@ -602,7 +599,7 @@ export const marketingCreatorRoles = new Set<AccessContext["role"]>([
   "Super Admin",
 ]);
 
-const companyMarketingRoles = new Set<AccessContext["role"]>([
+export const companyMarketingRoles = new Set<AccessContext["role"]>([
   "CEO",
   "Finance Manager",
   "Financial Advisor",
@@ -675,7 +672,7 @@ function nullableDateOnly(value: unknown, label: string) {
   return raw ? normalizeDateOnly(raw, label) : null;
 }
 
-function normalizeHrId(value: unknown) {
+export function normalizeHrId(value: unknown) {
   const normalized = cleanText(value)?.toLowerCase() ?? null;
   return normalized;
 }
@@ -751,7 +748,7 @@ function reportsUpToViewer(input: {
   return false;
 }
 
-function canSeeMarketingHierarchyRecord(
+export function canSeeMarketingHierarchyRecord(
   access: AccessContext,
   record: {
     employeeHrId?: string | null;
@@ -812,7 +809,7 @@ function assertMarketingAccess(access: AccessContext) {
   }
 }
 
-function assertMarketingWorkspaceAccess(access: AccessContext) {
+export function assertMarketingWorkspaceAccess(access: AccessContext) {
   if (access.scope === "system") return;
   if (!marketingCreatorRoles.has(access.role) && !companyMarketingRoles.has(access.role)) {
     throw forbiddenError(`Forbidden: ${access.role} cannot use marketing requests.`);
@@ -2700,157 +2697,6 @@ function buildRoiWindowLabel(payDate: string | null, months: number): string | n
   const endIndex = startIndex + (span - 1);
   const endLabel = `${Math.floor(endIndex / 12)}-${String((endIndex % 12) + 1).padStart(2, "0")}`;
   return `${startLabel} → ${endLabel}`;
-}
-
-type MarketingRoiActualDbRow = {
-  actual_units: number | string | null;
-  actual_value: number | string | null;
-  attribution_quality?: string | null;
-  exact_sales_rows?: number | string | null;
-  fallback_sales_rows?: number | string | null;
-  request_id: string;
-  sales_rows: number | string | null;
-};
-
-function parseMarketingRoiAttributionQuality(value: unknown): MarketingRoiAttributionQuality {
-  return value === "exact_customer" || value === "brick_fallback" || value === "mixed" || value === "no_sales"
-    ? value
-    : "no_sales";
-}
-
-/**
- * ROI Tracking workspace: every approved request that has a pay date, with its realized
- * sales attributed live (promoted products, at the request's pharmacies, within its ROI
- * window) against the required return. Read-only; the heavy attribution join runs in the
- * phx_marketing_request_roi_actuals SQL function.
- */
-export async function getMarketingRoiTrackingWorkspace(
-  access: AccessContext,
-): Promise<MarketingRoiTrackingWorkspace> {
-  assertMarketingWorkspaceAccess(access);
-
-  const supabase = getSupabaseAdmin();
-  const employeeRows = await loadEmployeeDirectoryRows();
-
-  const [requestsResult, customersResult] = await Promise.all([
-    supabase
-      .from("marketing_requests")
-      .select("*")
-      .in("status", approvedMarketingRequestStatuses)
-      .not("pay_date", "is", null)
-      .order("pay_date", { ascending: false, nullsFirst: false })
-      .limit(200),
-    supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true"),
-  ]);
-  if (requestsResult.error) throw requestsResult.error;
-  if (customersResult.error) throw customersResult.error;
-
-  const requests = ((requestsResult.data ?? []) as MarketingRequestDbRow[])
-    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
-    .map(mapRequest);
-  const customersById = new Map(
-    ((customersResult.data ?? []) as MarketingCustomerDbRow[]).map((row) => {
-      const customer = mapCustomer(row);
-      return [customer.id, customer] as const;
-    }),
-  );
-  const employeesByHrId = new Map(
-    employeeRows.map((employee) => [normalizeHrId(employee.hrId), employee] as const),
-  );
-
-  const requestIds = requests.map((request) => request.id);
-  const actualsByRequestId = new Map<string, {
-    attributionQuality: MarketingRoiAttributionQuality;
-    exactSalesRows: number;
-    fallbackSalesRows: number;
-    salesRows: number;
-    units: number;
-    value: number;
-  }>();
-  if (requestIds.length > 0) {
-    const actualsResult = await supabase.rpc("phx_marketing_request_roi_actuals", {
-      p_request_ids: requestIds,
-    });
-    if (actualsResult.error) throw actualsResult.error;
-    for (const row of (actualsResult.data ?? []) as MarketingRoiActualDbRow[]) {
-      const salesRows = toNumber(row.sales_rows);
-      const exactSalesRows = toNumber(row.exact_sales_rows);
-      const fallbackSalesRows = row.fallback_sales_rows == null && salesRows > 0
-        ? salesRows
-        : toNumber(row.fallback_sales_rows);
-      actualsByRequestId.set(row.request_id, {
-        attributionQuality: row.attribution_quality == null && salesRows > 0
-          ? "brick_fallback"
-          : parseMarketingRoiAttributionQuality(row.attribution_quality),
-        exactSalesRows,
-        fallbackSalesRows,
-        salesRows,
-        units: toNumber(row.actual_units),
-        value: toNumber(row.actual_value),
-      });
-    }
-  }
-
-  const rows: MarketingRoiTrackingRow[] = requests.map((request) => {
-    const actuals = actualsByRequestId.get(request.id) ?? {
-      attributionQuality: "no_sales" as const,
-      exactSalesRows: 0,
-      fallbackSalesRows: 0,
-      salesRows: 0,
-      units: 0,
-      value: 0,
-    };
-    const requester = employeesByHrId.get(normalizeHrId(request.requesterHrId));
-    const customer = customersById.get(request.customerId);
-    const actualSalesValue = roundMarketingMoney(actuals.value);
-    const actualCoverageRatio = request.requiredRoiValue > 0
-      ? roundMarketingRatio(actuals.value / request.requiredRoiValue)
-      : actuals.value > 0
-        ? 1
-        : 0;
-    const actualRoiStatus: MarketingRoiTrackingRow["actualRoiStatus"] = actuals.salesRows === 0
-      ? "no_data"
-      : actuals.value >= request.requiredRoiValue
-        ? "on_track"
-        : "behind";
-
-    return {
-      actualCoverageRatio,
-      actualRoiStatus,
-      actualSalesUnits: actuals.units,
-      actualSalesValue,
-      attributionQuality: actuals.attributionQuality,
-      customerName: customer?.displayName ?? request.customerId,
-      estimatedCost: request.estimatedCost,
-      expectedRoiValue: request.expectedRoiValue,
-      exactSalesRows: actuals.exactSalesRows,
-      fallbackSalesRows: actuals.fallbackSalesRows,
-      hasSalesData: actuals.salesRows > 0,
-      id: request.id,
-      line: requester?.lineName ?? null,
-      payDate: request.payDate,
-      requestCode: request.requestCode,
-      requesterHrId: request.requesterHrId,
-      requiredRoiValue: request.requiredRoiValue,
-      roiCoverageRatio: request.roiCoverageRatio,
-      roiDurationMonths: request.roiDurationMonths,
-      roiStatus: request.roiStatus,
-      roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
-      status: request.status,
-    };
-  });
-
-  return {
-    rows,
-    summary: {
-      behind: rows.filter((row) => row.actualRoiStatus === "behind").length,
-      noData: rows.filter((row) => row.actualRoiStatus === "no_data").length,
-      onTrack: rows.filter((row) => row.actualRoiStatus === "on_track").length,
-      total: rows.length,
-      totalActualValue: roundMarketingMoney(rows.reduce((sum, row) => sum + row.actualSalesValue, 0)),
-      totalRequiredValue: roundMarketingMoney(rows.reduce((sum, row) => sum + row.requiredRoiValue, 0)),
-    },
-  };
 }
 
 function canSeeMarketingRequest(access: AccessContext, row: MarketingRequestDbRow, employeeRows: EmployeeDirectoryRow[]) {

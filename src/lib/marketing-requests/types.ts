@@ -411,45 +411,7 @@ export type MarketingApprovedRequestRow = {
   sumOfAmount: number;
 };
 
-export type MarketingRoiTrackingStatus = "on_track" | "behind" | "no_data";
 export type MarketingRoiAttributionQuality = "exact_customer" | "brick_fallback" | "mixed" | "no_sales";
-
-export type MarketingRoiTrackingRow = {
-  actualCoverageRatio: number;
-  actualRoiStatus: MarketingRoiTrackingStatus;
-  actualSalesUnits: number;
-  actualSalesValue: number;
-  attributionQuality: MarketingRoiAttributionQuality;
-  customerName: string;
-  estimatedCost: number;
-  expectedRoiValue: number;
-  exactSalesRows: number;
-  fallbackSalesRows: number;
-  hasSalesData: boolean;
-  id: string;
-  line: string | null;
-  payDate: string | null;
-  requestCode: string;
-  requesterHrId: string;
-  requiredRoiValue: number;
-  roiCoverageRatio: number;
-  roiDurationMonths: number;
-  roiStatus: MarketingRoiStatus;
-  roiWindow: string | null;
-  status: MarketingRequestStatus;
-};
-
-export type MarketingRoiTrackingWorkspace = {
-  rows: MarketingRoiTrackingRow[];
-  summary: {
-    behind: number;
-    noData: number;
-    onTrack: number;
-    total: number;
-    totalActualValue: number;
-    totalRequiredValue: number;
-  };
-};
 
 export type MarketingRequest = {
   approvedAt: string | null;
