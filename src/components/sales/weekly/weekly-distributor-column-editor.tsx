@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Info, Loader2, Lock, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSearch, Info, Loader2, Lock, RotateCcw, Save } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
+import { MappingAuditHistory } from "@/components/sales/mapping-audit-history";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { WeeklyContractSheet, WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
@@ -42,12 +43,47 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ── live header preview ──────────────────────────────────────────────────────────────────────
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewSalesFile, setPreviewSalesFile] = useState<File | null>(null);
+  const [previewStockFile, setPreviewStockFile] = useState<File | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Record<string, { observedHeader: string; status: "filled" | "empty" }>>({});
+
   const current = useMemo(() => contracts.find((c) => c.code === selected) ?? null, [contracts, selected]);
 
+  function clearPreview() {
+    setPreview({}); setPreviewError(null); setPreviewFile(null); setPreviewSalesFile(null); setPreviewStockFile(null);
+  }
+
   function pick(code: string) {
-    setSelected(code); setMsg(null); setError(null);
+    setSelected(code); setMsg(null); setError(null); clearPreview();
     const c = contracts.find((x) => x.code === code);
     setDraft(c ? clone(c) : null);
+  }
+
+  async function runPreview() {
+    if (!draft) return;
+    setPreviewing(true); setPreviewError(null);
+    try {
+      const fd = new FormData();
+      fd.set("sheets", JSON.stringify(draft.sheets));
+      if (draft.splitFiles) {
+        if (previewSalesFile) fd.set("salesFile", previewSalesFile);
+        if (previewStockFile) fd.set("stockFile", previewStockFile);
+      } else if (previewFile) {
+        fd.set("file", previewFile);
+      }
+      const res = await fetch("/api/sales/database-mapping/weekly-profile/preview", { method: "POST", body: fd });
+      const payload = (await res.json()) as { success?: boolean; error?: string; columns?: { sheetRole: string; field: string; observedHeader: string; status: "filled" | "empty" }[]; missingFiles?: string[] };
+      if (!payload.success) { setPreviewError(payload.error ?? "Preview failed."); return; }
+      const map: Record<string, { observedHeader: string; status: "filled" | "empty" }> = {};
+      for (const c of payload.columns ?? []) map[`${c.sheetRole}|${c.field}`] = { observedHeader: c.observedHeader, status: c.status };
+      setPreview(map);
+      if (payload.missingFiles?.length) setPreviewError(`Attach the ${payload.missingFiles.join(" + ")} file to preview those sheets too.`);
+    } catch (e) { setPreviewError(e instanceof Error ? e.message : "Preview failed."); }
+    finally { setPreviewing(false); }
   }
 
   function setColumnIndex(sheetIdx: number, fieldIdx: number, value: string) {
@@ -137,6 +173,36 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
           <span>Column numbers are 1-based (column A = 1, B = 2, …). A change here applies to the next upload — there is no need to re-deploy. To undo, use <strong>Reset to built-in</strong>.</span>
         </AdminCallout>
 
+        {draft ? (
+          <div className="rounded-[6px] border border-dashed border-[#CBD5E1] bg-[#FCFDFE] p-3">
+            <div className="flex flex-wrap items-end gap-3">
+              {draft.splitFiles ? (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample sales file (.xlsx)</span>
+                    <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewSalesFile(e.target.files?.[0] ?? null)} type="file" />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample stock file (.xlsx)</span>
+                    <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewStockFile(e.target.files?.[0] ?? null)} type="file" />
+                  </label>
+                </>
+              ) : (
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample file (.xlsx)</span>
+                  <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
+                </label>
+              )}
+              <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={previewing || (draft.splitFiles ? !previewSalesFile && !previewStockFile : !previewFile)} onClick={() => void runPreview()} type="button">
+                {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
+                Preview columns from file
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-[#94A3B8]">Reads each column&rsquo;s header from your sample file so you can confirm a column number points at the right field before saving. The file is not stored.</p>
+            {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
+          </div>
+        ) : null}
+
         {!draft ? (
           <p className="text-sm text-[#64748B]">No weekly distributor selected.</p>
         ) : (
@@ -145,6 +211,7 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
               <SheetEditor
                 key={`${sheet.role}-${sheetIdx}`}
                 sheet={sheet}
+                preview={preview}
                 onColumnIndex={(fieldIdx, value) => setColumnIndex(sheetIdx, fieldIdx, value)}
                 onHeaderRow={(value) => setHeaderRow(sheetIdx, value)}
               />
@@ -168,6 +235,8 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
           ) : null}
         </div>
         <p className="text-xs text-[#94A3B8]">A new weekly distributor can&rsquo;t be onboarded here — the weekly importer needs a per-distributor adapter. This editor adjusts the six built-in distributors&rsquo; column positions only.</p>
+
+        <MappingAuditHistory distributorCode={selected} entityType="weekly_distributor_profile" />
       </Card>
     </div>
   );
@@ -175,10 +244,12 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
 
 function SheetEditor({
   sheet,
+  preview,
   onColumnIndex,
   onHeaderRow,
 }: {
   sheet: WeeklyContractSheet;
+  preview: Record<string, { observedHeader: string; status: "filled" | "empty" }>;
   onColumnIndex: (fieldIdx: number, value: string) => void;
   onHeaderRow: (value: string) => void;
 }) {
@@ -199,11 +270,18 @@ function SheetEditor({
       </div>
 
       <div className="grid grid-cols-1 gap-px bg-[#E2E8F0] sm:grid-cols-2 lg:grid-cols-3">
-        {sheet.fields.map((field, fieldIdx) => (
+        {sheet.fields.map((field, fieldIdx) => {
+          const obs = preview[`${sheet.role}|${field.field}`];
+          return (
           <div className="flex items-center justify-between gap-3 bg-white px-3 py-2" key={field.field}>
             <div className="min-w-0">
               <div className="truncate text-[12px] font-bold text-[#0F172A]">{field.label}</div>
               <div className="truncate text-[10px] text-[#94A3B8]">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
+              {obs ? (
+                obs.status === "empty"
+                  ? <div className="mt-0.5 truncate text-[10px] font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
+                  : <div className="mt-0.5 truncate text-[10px] font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
+              ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">
               <span className="text-[9px] font-black uppercase tracking-[0.1em] text-[#94A3B8]">Col</span>
@@ -217,7 +295,8 @@ function SheetEditor({
               />
             </label>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {sheet.matrix ? (
