@@ -2,6 +2,10 @@ import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-rep
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { isAttendanceTracked } from "@/lib/attendance/eligibility";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 
 export type EmployeeAttendanceSummary = {
   absentDays: number;
@@ -114,4 +118,129 @@ export async function getEmployeeAttendanceData(
     rows,
     summary,
   };
+}
+
+// ─── Manager view: who may see whose fingerprint report ─────────────────────
+
+/** Exact, normalized HR_ID equality (never substring — avoids B-1 vs B-10 leakage). */
+function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeHrId(left);
+  const b = normalizeHrId(right);
+  return Boolean(a) && a === b;
+}
+
+export type AttendanceViewTarget = {
+  hrId: string;
+  managerHrId: string | null;
+};
+
+export type AttendanceReportTarget = {
+  hrId: string;
+  fullName: string;
+  jobTitle: string;
+};
+
+/**
+ * Whether `context` may view the fingerprint/attendance report of `target`.
+ *
+ *  - self — always.
+ *  - whole-company viewers (Super Admin, CEO, or company/system scope) — anyone.
+ *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
+ *
+ * Pure + exact-match; the security boundary for the manager view. Guests / no-scope
+ * are denied outright.
+ */
+export function canViewEmployeeAttendanceReport(
+  context: AccessContext,
+  target: AttendanceViewTarget,
+): boolean {
+  if (context.source === "guest" || context.scope === "none") return false;
+  const caller = normalizeHrId(context.hrId);
+  const targetHrId = normalizeHrId(target.hrId);
+  if (!caller || !targetHrId) return false;
+
+  if (sameHrId(caller, targetHrId)) return true; // self
+
+  // Whole-company visibility (CEO / Super Admin / company-or-system scope).
+  if (
+    context.scope === "system" ||
+    context.scope === "company" ||
+    context.role === "Super Admin" ||
+    context.role === "CEO"
+  ) {
+    return true;
+  }
+
+  // Otherwise: direct reports only.
+  return sameHrId(caller, target.managerHrId);
+}
+
+/**
+ * Throws `Forbidden: ...` unless `context` may view `targetHrId`'s report. Resolves
+ * the target's manager from the DB only when needed (i.e. not self / not company-wide),
+ * so the common self path stays a single fast in-memory check.
+ */
+export async function assertCanViewEmployeeAttendance(
+  context: AccessContext,
+  targetHrId: string,
+): Promise<void> {
+  const caller = normalizeHrId(context.hrId);
+  const target = normalizeHrId(targetHrId);
+  if (!caller || !target) {
+    throw new Error("Forbidden: attendance access denied.");
+  }
+  // Self or whole-company viewers need no employee lookup.
+  if (canViewEmployeeAttendanceReport(context, { hrId: target, managerHrId: null })) {
+    return;
+  }
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("employees")
+    .select("manager_hr_id")
+    .ilike("hr_id", target)
+    .maybeSingle();
+  const managerHrId = (data as { manager_hr_id: string | null } | null)?.manager_hr_id ?? null;
+  if (!canViewEmployeeAttendanceReport(context, { hrId: target, managerHrId })) {
+    throw new Error(`Forbidden: ${context.role} cannot view attendance for another employee.`);
+  }
+}
+
+/**
+ * Active DIRECT reports of `managerHrId` who are attendance-tracked (device-enrolled
+ * or a field role) — used to populate the manager's report selector. Returns [] when
+ * none. Terminated/resigned reports are excluded.
+ */
+export async function loadAttendanceDirectReports(managerHrId: string): Promise<AttendanceReportTarget[]> {
+  const normalized = normalizeHrId(managerHrId);
+  if (!normalized) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("hr_id, full_name, job_title, employment_status, manager_hr_id")
+    .ilike("manager_hr_id", normalized);
+  if (error || !data) return [];
+
+  const deviceMapped = await loadActiveDeviceMappedHrIds();
+  return (data as Array<{
+    hr_id: string;
+    full_name: string | null;
+    job_title: string | null;
+    employment_status: string | null;
+    manager_hr_id: string | null;
+  }>)
+    .filter((row) => sameHrId(row.manager_hr_id, normalized))
+    .filter((row) => !isTerminalEmploymentStatus(row.employment_status))
+    .filter((row) =>
+      isAttendanceTracked({
+        hasDeviceMapping: deviceMapped.has(normalizeHrId(row.hr_id) ?? ""),
+        jobTitle: row.job_title,
+      }),
+    )
+    .map((row) => ({
+      hrId: normalizeHrId(row.hr_id) ?? row.hr_id,
+      fullName: row.full_name?.trim() || row.hr_id,
+      jobTitle: row.job_title?.trim() || "",
+    }))
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
