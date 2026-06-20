@@ -1,11 +1,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
-import { summarizeAttendancePolicies } from "@/lib/attendance/metrics";
+import { normalizeAttendanceHrId, summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 import {
   normalizeAttendanceWorkingWeekdays,
   type AttendanceWorkingWeekday,
 } from "@/lib/attendance/work-schedule";
-import { isAttendanceTrackingEligible } from "@/lib/attendance/eligibility";
+import { isAttendanceTracked } from "@/lib/attendance/eligibility";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
 export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
@@ -174,7 +175,7 @@ function validatePolicyRules(rules: Array<{
 
 export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDashboard> {
   const supabase = getSupabaseAdmin();
-  const [policyRows, ruleResult, employeeResult] = await Promise.all([
+  const [policyRows, ruleResult, employeeResult, deviceMappedHrIds] = await Promise.all([
     loadAttendancePolicyGroups(),
     supabase
       .from("attendance_policy_rules")
@@ -185,6 +186,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
       .from("employees")
       .select("hr_id,full_name,job_title")
       .order("full_name"),
+    loadActiveDeviceMappedHrIds(),
   ]);
 
   if (ruleResult.error) throw ruleResult.error;
@@ -208,7 +210,14 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
   }
 
   const employeeRows = (employeeResult.data ?? []) as Array<{ full_name: string | null; hr_id: string; job_title: string | null }>;
-  const eligibleEmployeeRows = employeeRows.filter((row) => isAttendanceTrackingEligible(row.job_title));
+  // Tracked = actively enrolled on a fingerprint device (office/HQ staff) OR a
+  // field role by title (Medical Rep / DM / RSM). See isAttendanceTracked.
+  const eligibleEmployeeRows = employeeRows.filter((row) =>
+    isAttendanceTracked({
+      hasDeviceMapping: deviceMappedHrIds.has(normalizeAttendanceHrId(row.hr_id) ?? ""),
+      jobTitle: row.job_title,
+    }),
+  );
   const employees = eligibleEmployeeRows
     .filter((row) => row.hr_id)
     .map((row) => ({ fullName: row.full_name?.trim() || row.hr_id, hrId: row.hr_id }));

@@ -1,7 +1,21 @@
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { isAttendanceTrackingEligible } from "@/lib/attendance/eligibility";
 import { normalizeMonthKey } from "../candidate-key.ts";
 import { insertDeductionCandidateDrafts } from "../service.ts";
 import type { DeductionCandidateDraft, DeductionType } from "../types.ts";
+
+/**
+ * Whether a fingerprint report row may generate an attendance deduction.
+ *
+ * The fingerprint report now surfaces office/HQ staff (anyone enrolled on a
+ * device) so they can see their own punch history. Deductions, however, stay
+ * scoped to FIELD ROLES ONLY (Medical Rep / DM / RSM) — office/HQ staff are NOT
+ * auto-deducted (owner decision, 2026-06-20). Filtering here keeps deduction
+ * behaviour identical to before the report was widened.
+ */
+function isDeductionEligibleRow(row: { jobTitle: string }): boolean {
+  return isAttendanceTrackingEligible(row.jobTitle);
+}
 
 export type AttendanceDeviceSyncResult = {
   sourceTotal: number;
@@ -52,6 +66,9 @@ export async function syncAttendanceDeviceDeductionCandidates(input: {
 
   const drafts: DeductionCandidateDraft[] = [];
   for (const row of report.rows) {
+    // Office/HQ staff appear in the report for visibility but are not
+    // auto-deducted — deductions stay scoped to field roles. See above.
+    if (!isDeductionEligibleRow(row)) continue;
     const deductionDays = Number(row.deductionDays);
     if (!Number.isFinite(deductionDays) || deductionDays <= 0) continue;
     const [dateIso] = row.sortKey.split("\u0000");
@@ -106,6 +123,7 @@ export async function syncAttendanceDeviceDeductionCandidates(input: {
 
 export const __attendanceDeviceConnectorTestables = {
   deductionTypeForStatus,
+  isDeductionEligibleRow,
   monthRange,
   parseAmount,
 };

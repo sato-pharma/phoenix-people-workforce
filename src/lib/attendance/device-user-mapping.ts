@@ -25,6 +25,29 @@ export async function employeeHasActiveDeviceMapping(hrId: string): Promise<bool
   return (count ?? 0) > 0;
 }
 
+/**
+ * Returns the set of normalized HR_IDs that have at least one ACTIVE fingerprint
+ * device mapping — the authoritative "who is enrolled on the device" list. Whoever
+ * HR maps on the device is subject to attendance tracking regardless of job title
+ * (see `isAttendanceTracked`). Bulk companion to `employeeHasActiveDeviceMapping`.
+ */
+export async function loadActiveDeviceMappedHrIds(): Promise<Set<string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_device_user_map")
+    .select("employee_hr_id")
+    .eq("is_active", true)
+    .not("employee_hr_id", "is", null);
+  if (error) throw error;
+
+  const result = new Set<string>();
+  for (const row of (data ?? []) as Array<{ employee_hr_id: string | null }>) {
+    const hrId = normalizeHrId(row.employee_hr_id);
+    if (hrId) result.add(hrId);
+  }
+  return result;
+}
+
 export type AttendanceEmployeeOption = {
   fullName: string;
   hrId: string;

@@ -109,6 +109,13 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
       year: 2026,
     });
     assert.equal(__attendanceDeviceConnectorTestables.parseAmount("123.456"), 123.46);
+    // Deductions stay scoped to field roles even though the fingerprint report now
+    // surfaces office/HQ staff for visibility (owner decision: office staff not auto-deducted).
+    assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "Medical Representative" }), true);
+    assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "District Sales Manager" }), true);
+    assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "Hr Manager" }), false);
+    assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "Finance Manager" }), false);
+    assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "" }), false);
     assert.equal(__vacationDeductionConnectorTestables.unpaidDays("2.333"), 2.33);
     assert.equal(__vacationDeductionConnectorTestables.unpaidDays(null), 0);
   }
