@@ -7,9 +7,15 @@ import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 // (the prime directive). It is pure — the async caller assembles the context (price map, existing
 // periods, current month, prior-period totals) and passes it in — so it stays fully unit-testable.
 //
-// Severity model:
-//   "error"   → blocks import (data is broken / nothing to import). Cannot be acknowledged away.
-//   "warning" → import allowed only after the user explicitly acknowledges (the "strict" gate).
+// Severity model (owner rule). An upload is BLOCKED only when the system cannot read/recognize the
+// file or importing would corrupt/double-count data; any pure data-quality issue is advisory.
+//   "error"   → HARD BLOCK. Used for: a duplicate sheet (period_replace); an unreadable file —
+//               column mismatch (dark_exceptions); nothing recognized / rows that don't reconcile
+//               (no_coded_rows, all_rows_ignored, rows_read_mismatch); and broken geography that would
+//               corrupt regional totals (brick_to_region_inconsistent, blank_geography). The remaining
+//               hard block — unmapped rows — is gated by the upload flow itself (exceptions), not here.
+//   "warning" → advisory data-quality. Shown to the operator but NEVER blocks; they decide and proceed
+//               (duplicate lines, odd values/discounts, anomalies, future-dated rows, blank dates, …).
 //   "info"    → advisory; never blocks.
 //
 // The catalog was vetted by an adversarial design review against the real engine. Notes baked in:
@@ -32,7 +38,7 @@ export type ValidationFinding = {
 };
 
 export type ValidationReport = {
-  ok: boolean; // no error-severity findings (warnings/info do not clear ok=false)
+  ok: boolean; // false when any hard-block error is present (duplicate sheet / unreadable / unrecognized / broken geography); warnings/info never set ok=false
   errorCount: number;
   warningCount: number;
   infoCount: number;
@@ -117,7 +123,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       detail: `The file's columns match ${cc.bestName ?? cc.bestCode} (${cc.bestCode}) more closely than the ${cc.pickedName ?? cc.pickedCode} (${cc.pickedCode}) you selected — importing under the wrong distributor mis-codes every row.`,
       count: 1,
       sampleRows: [],
-      fixHint: `Switch to ${cc.bestCode} and re-validate, or acknowledge if you really meant to upload this file as ${cc.pickedCode}.`,
+      fixHint: `Switch to ${cc.bestCode} and re-validate, or proceed if you really meant to upload this file as ${cc.pickedCode}.`,
     });
   }
 
@@ -135,7 +141,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
         detail: `The engine scanned ${s.scannedDataRows.toLocaleString()} data rows but only ${accounted.toLocaleString()} were accounted for (coded + ignored + blank + blocked). Importing could silently lose rows.`,
         count: Math.abs(s.scannedDataRows - accounted),
         sampleRows: [],
-        fixHint: "This indicates an engine/profile defect — report the file and distributor; do not import.",
+        fixHint: "This usually indicates an engine/profile defect — report the file and distributor, and review carefully before importing.",
       });
     }
   }
@@ -366,7 +372,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
         detail: `${extreme.length.toLocaleString()} row(s) have a per-unit value far above or below the product's master factory price — a possible units/value column swap, missing separator, or wrong product.`,
         count: extreme.length,
         sampleRows: sampleRows(extreme),
-        fixHint: "Spot-check these rows against the distributor's invoice; verify the value and quantity columns. Acknowledge genuine tender pricing.",
+        fixHint: "Spot-check these rows against the distributor's invoice; verify the value and quantity columns. Genuine tender pricing is fine to keep.",
       });
     }
   }
@@ -508,7 +514,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     if (future.length > 0) {
       add({
         code: "future_dated_rows",
-        severity: "error",
+        severity: "warning",
         title: "Future-dated sales",
         detail: `${future.length.toLocaleString()} row(s) are dated in a month later than ${ctx.currentPeriod}. A sale cannot occur in a month that has not happened — usually a date-orientation misread (DD-MM vs MM-DD) or a year typo.`,
         count: future.length,
@@ -550,7 +556,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       const allBlank = blankDate.length / coded.length > BLANK_DATE_ERROR_RATE;
       add({
         code: "blank_invoice_date",
-        severity: allBlank ? "error" : "warning",
+        severity: "warning",
         title: "Coded rows with no date",
         detail: `${blankDate.length.toLocaleString()} coded row(s) have no parseable invoice date${allBlank ? " — the date column is likely unmapped or malformed" : ""}, so their sales would land in no month.`,
         count: blankDate.length,
@@ -560,16 +566,19 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     }
   }
 
-  // ── Re-upload / replace (double-count prevention) ──────────────────────────────────────────────
+  // ── Duplicate sheet (a hard block) ─────────────────────────────────────────────────────────────
+  // This distributor's month is already uploaded. To prevent any chance of double-counting we BLOCK
+  // (error) rather than silently replace — the operator deletes the existing month in Uploaded Sheets
+  // first, then re-uploads the corrected file.
   if (ctx.resolvedPeriod && (ctx.existingBatchPeriods ?? []).includes(ctx.resolvedPeriod)) {
     add({
       code: "period_replace",
-      severity: "warning",
-      title: "This period is already imported",
-      detail: `A batch for ${ctx.resolvedPeriod} already exists for this distributor. Importing REPLACES it — the previous upload for this month is discarded (no double-count). If this file is partial, the month's totals will shrink.`,
+      severity: "error",
+      title: "This month is already uploaded",
+      detail: `A validated sheet for ${ctx.resolvedPeriod} is already imported for this distributor. To avoid double-counting, the upload is blocked.`,
       count: 1,
       sampleRows: [],
-      fixHint: "This is expected for a corrected re-upload. Acknowledge to replace. If you meant to ADD to the month, stop — this overwrites, it does not merge.",
+      fixHint: "Open Uploaded Sheets, delete the existing batch for this month, then upload this file again.",
     });
   }
 
@@ -590,7 +599,7 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
           detail: `This upload's total value is ${ratio >= 1 ? `${ratio.toFixed(1)}x` : `${pct(ratio)}% of`} ${prior.period} (${Math.round(prior.totalValue).toLocaleString()}). A large swing can mean a pasted block, a wrong month, or a price/discount problem.`,
           count: 1,
           sampleRows: [],
-          fixHint: "Confirm the period and that the file was not pasted twice or partially exported. Acknowledge a genuine promo/slow month.",
+          fixHint: "Confirm the period and that the file was not pasted twice or partially exported. A genuine promo/slow month is fine to keep.",
         });
       }
     }
@@ -627,13 +636,4 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   const warningCount = findings.filter((f) => f.severity === "warning").length;
   const infoCount = findings.filter((f) => f.severity === "info").length;
   return { ok: errorCount === 0, errorCount, warningCount, infoCount, findings };
-}
-
-// PER-FINDING acknowledgement (pure): the warning codes in this report the user has NOT yet
-// acknowledged. Replaces the old single "acknowledge all" flag so noise (e.g. an advisory) can never
-// rubber-stamp a real warning — commit blocks until EVERY emitted warning code is acknowledged
-// individually. Errors are never acknowledgeable (they hard-block via report.ok).
-export function unacknowledgedWarningCodes(report: ValidationReport, acknowledged: readonly string[]): string[] {
-  const acked = new Set(acknowledged);
-  return report.findings.filter((f) => f.severity === "warning" && !acked.has(f.code)).map((f) => f.code);
 }

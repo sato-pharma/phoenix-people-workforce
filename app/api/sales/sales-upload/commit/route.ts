@@ -9,8 +9,9 @@ import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/upload
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Persist a raw monthly sheet. Blocks (persists nothing) if any row is unmapped; replaces a prior
-// upload for the same distributor+period so re-uploading never double-counts.
+// Persist a raw monthly sheet. Only TWO things block (persist nothing): unmapped rows, and a
+// duplicate sheet (this distributor's month is already imported). Every other finding is an advisory
+// warning that never blocks.
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -19,11 +20,6 @@ export async function POST(request: Request) {
     const file = form.get("file");
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
     const periodOverride = String(form.get("period") ?? "").trim();
-    // Per-finding acknowledgement: comma-separated warning codes the operator ticked.
-    const acknowledgedWarningCodes = String(form.get("acknowledgedWarningCodes") ?? "")
-      .split(",")
-      .map((c) => c.trim())
-      .filter(Boolean);
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
@@ -36,7 +32,7 @@ export async function POST(request: Request) {
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, acknowledgedWarningCodes });
+    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy });
     if (result.status === "blocked") {
       return NextResponse.json({
         success: false,
@@ -47,16 +43,16 @@ export async function POST(request: Request) {
       });
     }
     if (result.status === "blocked_validation") {
-      const blocker = result.validation.errorCount > 0
-        ? `${result.validation.errorCount} validation error(s) must be fixed before importing.`
-        : `${result.validation.warningCount} validation warning(s) need to be reviewed and acknowledged before importing.`;
+      // A hard-block error (duplicate sheet, unreadable/unrecognized file, or broken geography).
+      // Surface the first error's message.
+      const firstError = result.validation.findings.find((f) => f.severity === "error");
       return NextResponse.json({
         success: false,
         code: "blocked_validation",
         reconciliation: result.reconciliation,
         data: result.preview,
         validation: result.validation,
-        error: blocker,
+        error: firstError ? `${firstError.title} — ${firstError.detail}` : "This upload is blocked.",
       });
     }
     return NextResponse.json({ success: true, batchId: result.batchId, period: result.period, importedRows: result.importedRows, reconciliation: result.reconciliation, validation: result.validation, message: `Imported ${result.importedRows} rows for ${result.period}.` });
