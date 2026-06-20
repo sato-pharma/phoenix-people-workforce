@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
     await assertPermission(access, "sales", "read");
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period");
-    const data = await loadSourceOfSalesDashboard(period);
+    const data = await loadSourceOfSalesDashboard(period, canViewRestrictedProducts(access.role));
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
