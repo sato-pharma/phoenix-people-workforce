@@ -9,6 +9,10 @@ import {
   type DistributorProfileSummary,
   type SalesDistributorEntry,
 } from "@/lib/sales/distributor-registry";
+import {
+  listSourceOfSalesUploadBatches,
+  type SourceOfSalesUploadBatch,
+} from "@/lib/sales/monthly-distributor-import";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +24,15 @@ export default async function SalesUploadPage() {
 
   let distributors: SalesDistributorEntry[] = [];
   const summaries: Record<string, DistributorProfileSummary> = {};
+  let batches: SourceOfSalesUploadBatch[] = [];
   try {
     await assertPermission(accessContext, "sales", "import");
-    distributors = await listSalesDistributors();
+    const [distributorList, uploadedBatches] = await Promise.all([
+      listSalesDistributors(),
+      listSourceOfSalesUploadBatches().catch(() => [] as SourceOfSalesUploadBatch[]),
+    ]);
+    distributors = distributorList;
+    batches = uploadedBatches;
     const monthly = distributors.filter((d) => d.monthlySupported);
     const resolved = await Promise.all(monthly.map((d) => getDistributorProfileSummary(d.code)));
     monthly.forEach((d, i) => { const s = resolved[i]; if (s) summaries[d.code] = s; });
@@ -30,5 +40,5 @@ export default async function SalesUploadPage() {
     // Render the shell with whatever loaded; the workspace surfaces per-action errors + gating.
   }
 
-  return <SalesUploadWorkspace distributors={distributors} summaries={summaries} />;
+  return <SalesUploadWorkspace batches={batches} distributors={distributors} summaries={summaries} />;
 }
