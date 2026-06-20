@@ -6,7 +6,9 @@
 // A profile is a CANDIDATE only when ALL its required column groups are present (product, qty,
 // customer code) — that keeps generic headers like "Qty" from matching the wrong distributor.
 // Optional groups (customer name/address, value, discount, date, bonus) break ties, because those
-// aliases are highly distributor-specific (e.g. "Address_En", "ORDERACCOUNT", "العميل").
+// aliases are highly distributor-specific (e.g. "Address_En", "ORDERACCOUNT", Arabic customer labels).
+
+import { normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
 
 export type DetectionProfile = {
   distributorCode: string;
@@ -33,8 +35,10 @@ export type DetectionResult = {
   matches: DistributorDetection[]; // all candidates, best-first
 };
 
+// Delegates to the shared header normalizer so the auto-detector keys headers EXACTLY like the importer
+// and the strict gate (Arabic-aware) — a header recognized by one reader is recognized by all.
 export function normalizeHeader(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalizeHeaderKey(value);
 }
 
 export function detectDistributor(headers: string[], profiles: DetectionProfile[]): DetectionResult {

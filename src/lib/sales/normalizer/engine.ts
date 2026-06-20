@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { HEADER_SCAN_ROWS, normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
 import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
@@ -82,10 +83,9 @@ function detectDayFirst(sheet: ExcelJS.Worksheet, header: HeaderMap, dateColumns
 
 type HeaderMap = { col: Map<string, number>; headerRow: number };
 
-export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorProfile): HeaderMap {
-  // Header names this distributor's profile expects (lowercased) — used to skip banner/title rows.
-  // e.g. the IS-S "Monthly Sales by Client for SATO PHARMA (PAS)" report puts a merged title in row 1
-  // and the real header in row 2; without this the title row (>=3 filled cells) wins and nothing maps.
+// All header names this profile expects, normalized via the shared header key. Shared by buildHeaderMap
+// (skip banner/title rows) and pickBestSheet (choose the right worksheet).
+export function knownHeaderKeys(profile?: DistributorProfile): Set<string> {
   const known = new Set<string>();
   for (const name of [
     ...(profile?.productColumns ?? []),
@@ -97,27 +97,36 @@ export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorPr
     ...(profile?.territoryColumns ?? []),
     ...(profile?.brickIdColumns ?? []),
   ]) {
-    const key = name.trim().toLowerCase();
+    const key = normalizeHeaderKey(name);
     if (key) known.add(key);
   }
+  return known;
+}
+
+export function buildHeaderMap(sheet: ExcelJS.Worksheet, profile?: DistributorProfile): HeaderMap {
+  // Header names this distributor's profile expects — used to skip banner/title rows. e.g. the IS-S
+  // "Monthly Sales by Client for SATO PHARMA (PAS)" report puts a merged title in row 1 and the real
+  // header in row 2; without this the title row (>=3 filled cells) wins and nothing maps.
+  const known = knownHeaderKeys(profile);
 
   const readRow = (r: number): Map<string, number> => {
     const col = new Map<string, number>();
     sheet.getRow(r).eachCell({ includeEmpty: false }, (cell, c) => {
-      const key = cellText(cell).trim().toLowerCase();
+      const key = normalizeHeaderKey(cellText(cell));
       if (key && !col.has(key)) col.set(key, c);
     });
     return col;
   };
 
-  // Score the first 10 rows by how many KNOWN profile headers each carries. The real header row carries
-  // several; a banner/title row carries none (IS-S "Monthly Sales by Client…"). Critically, a sparse
-  // metadata row with a single stray cell that happens to equal a column name (e.g. "Name", "Column1",
-  // "qty") must NOT win, so we require >=2 known hits and pick the row with the MOST (earliest on a tie).
+  // Score the first HEADER_SCAN_ROWS rows by how many KNOWN profile headers each carries. The real
+  // header row carries several; a banner/title row carries none (IS-S "Monthly Sales by Client…").
+  // Critically, a sparse metadata row with a single stray cell that happens to equal a column name (e.g.
+  // "Name", "Column1", "qty") must NOT win, so we require >=2 known hits and pick the row with the MOST
+  // (earliest on a tie).
   let best: { col: Map<string, number>; headerRow: number; hits: number } | null = null;
   let firstKnown: HeaderMap | null = null;
   let fallback: HeaderMap | null = null;
-  for (let r = 1; r <= Math.min(sheet.rowCount, 10); r += 1) {
+  for (let r = 1; r <= Math.min(sheet.rowCount, HEADER_SCAN_ROWS); r += 1) {
     const col = readRow(r);
     if (!fallback && col.size >= 3) fallback = { col, headerRow: r };
     if (known.size === 0) {
@@ -153,7 +162,7 @@ export function validateSheetHeaders(
   // reports the exact header(s) the distributor must use (so a renamed column is named precisely).
   const check = (label: string, cols: string[] | undefined): HeaderValidationFailure | null => {
     if (!cols || cols.length === 0) return null; // field not required for this distributor
-    if (cols.some((c) => found.has(c.trim().toLowerCase()))) return null;
+    if (cols.some((c) => found.has(normalizeHeaderKey(c)))) return null;
     return { label, expected: cols };
   };
   // Product is keyed by NAME (owner rule: name-first); the code column is an optional fallback.
@@ -174,7 +183,7 @@ export function validateSheetHeaders(
   // Fingerprint scoring: find the profile whose signature columns best match the sheet.
   // If another distributor scores higher than ours, warn the user.
   const score = (p: DistributorProfile) =>
-    (p.fingerprintColumns ?? []).filter((c) => found.has(c.trim().toLowerCase())).length;
+    (p.fingerprintColumns ?? []).filter((c) => found.has(normalizeHeaderKey(c))).length;
   const myScore = score(profile);
   let bestOther: DistributorProfile | null = null;
   let bestScore = 0;
@@ -195,7 +204,7 @@ export function validateSheetHeaders(
 
 function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
   for (const name of columns ?? []) {
-    const c = map.col.get(name.trim().toLowerCase());
+    const c = map.col.get(normalizeHeaderKey(name));
     if (c) {
       const text = cellText(row.getCell(c)).trim();
       if (text) return text;
@@ -364,6 +373,27 @@ export function normalizeRows(
   };
 }
 
+// Choose the worksheet that actually carries this distributor's data. Many exports lead with a cover /
+// summary / pivot sheet and put the real rows on a later tab; the old "worksheets[0]" assumption then
+// read the wrong sheet. We score each sheet by how many KNOWN profile headers its best header row
+// carries (via buildHeaderMap) and pick the richest; ties keep the earliest sheet. With no profile
+// knowledge we fall back to the widest header row, and to the first sheet when nothing qualifies.
+export function pickBestSheet(workbook: ExcelJS.Workbook, profile?: DistributorProfile): ExcelJS.Worksheet | undefined {
+  const sheets = workbook.worksheets.filter((ws) => ws && ws.rowCount > 0 && ws.columnCount > 0);
+  if (sheets.length <= 1) return sheets[0] ?? workbook.worksheets[0];
+  const known = knownHeaderKeys(profile);
+  let best = sheets[0];
+  let bestHits = -1;
+  for (const ws of sheets) {
+    const header = buildHeaderMap(ws, profile);
+    let hits = 0;
+    if (known.size > 0) { for (const key of header.col.keys()) if (known.has(key)) hits += 1; }
+    else hits = header.col.size; // no profile: prefer the widest header row
+    if (hits > bestHits) { bestHits = hits; best = ws; }
+  }
+  return best;
+}
+
 export async function normalizeRawWorkbook(
   buffer: ArrayBuffer | Buffer,
   profile: DistributorProfile,
@@ -371,7 +401,7 @@ export async function normalizeRawWorkbook(
 ): Promise<NormalizeResult> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  const sheet = workbook.worksheets[0];
+  const sheet = pickBestSheet(workbook, profile);
   if (!sheet) {
     return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0, scannedDataRows: 0 } };
   }
