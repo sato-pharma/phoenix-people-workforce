@@ -1,13 +1,18 @@
-// SINGLE SOURCE OF TRUTH for distributor column mappings: the code profiles (RAW_DISTRIBUTOR_PROFILES),
-// generated from the unified Headers Mapping sheet. The old editable DB override
-// (`source_of_sales_distributor_profile`) was removed — there is no second source of headers in
-// Source of Sales, and the mapping cannot be overridden at runtime. Server-only.
+// Distributor column mappings: code profiles (RAW_DISTRIBUTOR_PROFILES, from the Headers Mapping sheet)
+// MERGED with a governed, DB-backed editable override (source_of_sales_distributor_profile). An active
+// DB row WHOLLY overrides the code profile for that distributor (whole-profile override, per owner
+// decision); code is the fallback/seed; a DB-only row is a newly-onboarded distributor. Server-only.
+//
+// Resolution is DB-first with a short cache. If the table is absent (unapplied migration) the load
+// fails CLOSED to the code profiles and LOGS — it never silently behaves as code-only without a trace.
 
 import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
+import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// The mapping fields, in the exact column order of the exported workbook — consumed by the read-only
-// "Distributor Mapping" viewer and by distributor auto-detection.
+// The mapping fields, in the exact column order of the exported workbook + the DB table columns —
+// consumed by the read-only "Distributor Mapping" viewer, the editor, and distributor auto-detection.
 export const PROFILE_FIELDS = [
   { key: "productCodeColumns", column: "product_code_columns", label: "Product Code" },
   { key: "productNameColumns", column: "product_name_columns", label: "Product Name" },
@@ -35,9 +40,97 @@ export type EditableProfile = {
   distributorName: string;
   valueSource: "recompute" | "sheet";
   regionOnly: boolean;
-  isCustom: boolean; // always false — there are no DB overrides; the code profile is the single source
+  isCustom: boolean; // true → sourced from a DB override row (edited/onboarded in-app); false → code default
   fields: Record<ProfileFieldKey, string[]>;
 };
+
+const PROFILE_TABLE = "source_of_sales_distributor_profile";
+const CACHE_TTL_MS = 30_000;
+
+export type DbProfileRow = {
+  distributor_code: string;
+  distributor_name?: string | null;
+  value_source?: string | null;
+  region_only?: boolean | null;
+} & Partial<Record<(typeof PROFILE_FIELDS)[number]["column"], unknown>>;
+
+let cache: { at: number; byCode: Map<string, DbProfileRow> } | null = null;
+
+/** Drop the cached DB overrides so the next read reflects a just-saved edit. */
+export function invalidateDistributorProfileCache(): void {
+  cache = null;
+}
+
+function strArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.trim() !== "") : [];
+}
+
+// Active DB override rows keyed by canonical code. Fail-closed to {} on a missing table / error, but LOG
+// (so an unapplied migration is visible rather than a silent revert to code-only).
+async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
+  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.byCode;
+  const byCode = new Map<string, DbProfileRow>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from(PROFILE_TABLE).select("*").eq("active", true);
+    if (error) {
+      console.error(`[distributor-profile-store] override load failed (${error.code ?? "?"}): ${error.message}`);
+    } else {
+      for (const raw of data ?? []) {
+        const row = raw as DbProfileRow;
+        const code = normalizeCodeKey(row.distributor_code);
+        if (code) byCode.set(code, row);
+      }
+    }
+  } catch (e) {
+    console.error("[distributor-profile-store] override load threw:", e instanceof Error ? e.message : e);
+  }
+  cache = { at: Date.now(), byCode };
+  return byCode;
+}
+
+// DB row -> engine DistributorProfile (only the engine-relevant fields; product columns are rebuilt as
+// code-then-name for the name-first/code-fallback resolver; territory = area_id; brick = brick_id).
+export function dbRowToProfile(row: DbProfileRow): DistributorProfile | null {
+  const code = normalizeCodeKey(row.distributor_code);
+  if (!code) return null;
+  const productCode = strArray(row.product_code_columns);
+  const productName = strArray(row.product_name_columns);
+  return {
+    distributorCode: code,
+    distributorName: (row.distributor_name && String(row.distributor_name).trim()) || rawProfileForDistributor(code)?.distributorName || code,
+    productColumns: [...productCode, ...productName],
+    productCodeColumns: productCode,
+    productNameColumns: productName,
+    qtyColumns: strArray(row.qty_columns),
+    bonusColumns: strArray(row.bonus_columns),
+    valueColumns: strArray(row.value_columns),
+    discountColumns: strArray(row.discount_columns),
+    dateColumns: strArray(row.date_columns),
+    customerCodeColumns: strArray(row.customer_code_columns),
+    customerNameColumns: strArray(row.customer_name_columns),
+    customerAddressColumns: strArray(row.customer_address_columns),
+    territoryColumns: strArray(row.area_id_columns),
+    brickIdColumns: strArray(row.brick_id_columns),
+    valueSource: row.value_source === "sheet" ? "sheet" : "recompute",
+    regionOnly: Boolean(row.region_only),
+  };
+}
+
+// DB row -> EditableProfile (ALL 17 fields, for round-tripping in the editor).
+export function dbRowToEditable(row: DbProfileRow): EditableProfile {
+  const code = normalizeCodeKey(row.distributor_code);
+  const fields = {} as Record<ProfileFieldKey, string[]>;
+  for (const f of PROFILE_FIELDS) fields[f.key] = strArray(row[f.column]);
+  return {
+    distributorCode: code,
+    distributorName: (row.distributor_name && String(row.distributor_name).trim()) || rawProfileForDistributor(code)?.distributorName || code,
+    valueSource: row.value_source === "sheet" ? "sheet" : "recompute",
+    regionOnly: Boolean(row.region_only),
+    isCustom: true,
+    fields,
+  };
+}
 
 // Code profile -> read-only display shape. Product code/name come from the canonical split; the
 // geography text is surfaced under "Area ID" (territoryColumns).
@@ -71,13 +164,37 @@ function defaultToEditable(p: DistributorProfile): EditableProfile {
   };
 }
 
-// SINGLE SOURCE: resolve a distributor's profile ONLY from the code profiles (the Headers Mapping).
-// Kept async + same signature for its callers (recognize.ts / service.ts).
+// Resolve a distributor's profile: DB override (active) first, else code. (Async signature unchanged.)
 export async function resolveDistributorProfile(distributorCode: string): Promise<DistributorProfile | null> {
-  return rawProfileForDistributor(String(distributorCode ?? "").trim().toUpperCase());
+  const code = normalizeCodeKey(distributorCode);
+  if (!code) return null;
+  const db = await loadDbProfiles();
+  const row = db.get(code);
+  return (row && dbRowToProfile(row)) || rawProfileForDistributor(code);
 }
 
-// All distributors as read-only profiles straight from the code profiles (= the Headers Mapping).
+// PURE: code ∪ DB profiles, DB wins whole-row (unit-tested precedence).
+export function mergeProfilesByCode(codeProfiles: DistributorProfile[], dbProfiles: DistributorProfile[]): DistributorProfile[] {
+  const byCode = new Map<string, DistributorProfile>();
+  for (const p of codeProfiles) byCode.set(normalizeCodeKey(p.distributorCode), p);
+  for (const p of dbProfiles) byCode.set(normalizeCodeKey(p.distributorCode), p);
+  return [...byCode.values()];
+}
+
+// Every distributor's ENGINE profile, code ∪ DB (DB wins whole-row). Used by the readers that need the
+// full fingerprint/recognition set (recognize.ts, registry, the profile viewer).
+export async function listMergedDistributorProfiles(): Promise<DistributorProfile[]> {
+  const db = await loadDbProfiles();
+  const dbProfiles = [...db.values()].map(dbRowToProfile).filter((p): p is DistributorProfile => p !== null);
+  return mergeProfilesByCode(RAW_DISTRIBUTOR_PROFILES, dbProfiles);
+}
+
+// All distributors as EditableProfiles (code defaults overridden by DB rows). Drives the editor + the
+// detection profile builder.
 export async function listEditableProfiles(): Promise<EditableProfile[]> {
-  return RAW_DISTRIBUTOR_PROFILES.map((p) => defaultToEditable(p));
+  const db = await loadDbProfiles();
+  const byCode = new Map<string, EditableProfile>();
+  for (const p of RAW_DISTRIBUTOR_PROFILES) byCode.set(normalizeCodeKey(p.distributorCode), defaultToEditable(p));
+  for (const [code, row] of db) byCode.set(code, dbRowToEditable(row));
+  return [...byCode.values()];
 }

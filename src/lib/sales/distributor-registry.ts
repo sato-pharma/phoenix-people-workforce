@@ -1,6 +1,6 @@
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
+import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
+import { rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -107,15 +107,20 @@ export function summarizeProfile(profile: DistributorProfile): DistributorProfil
   };
 }
 
-const profiledCodeSet = (): Set<string> =>
-  new Set(RAW_DISTRIBUTOR_PROFILES.map((p) => normalizeCodeKey(p.distributorCode)));
-
 // Every distributor the Sales module knows, with monthly/weekly support flags. Reads the master
-// distributor list (DB) and unions it with the code-defined profiles + weekly registry.
+// distributor list (DB) and unions it with the MERGED profiles (code ∪ DB overrides) + weekly registry,
+// so an in-app edited/onboarded distributor shows up in every dropdown with its saved name.
 export async function listSalesDistributors(): Promise<SalesDistributorEntry[]> {
-  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const master: SalesDistributorMasterRow[] = (refs.distributors ?? []).map((d) => ({ code: d.code, name: d.name }));
-  return buildSalesDistributorEntries(master, profiledCodeSet());
+  const [refs, mergedProfiles] = await Promise.all([
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+    listMergedDistributorProfiles(),
+  ]);
+  const master: SalesDistributorMasterRow[] = [
+    ...(refs.distributors ?? []).map((d) => ({ code: d.code, name: d.name })),
+    ...mergedProfiles.map((p) => ({ code: p.distributorCode, name: p.distributorName })),
+  ];
+  const profiledCodes = new Set(mergedProfiles.map((p) => normalizeCodeKey(p.distributorCode)));
+  return buildSalesDistributorEntries(master, profiledCodes);
 }
 
 export async function getDistributor(code: string): Promise<SalesDistributorEntry | null> {
