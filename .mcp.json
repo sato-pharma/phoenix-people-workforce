@@ -1,6 +1,7 @@
 {
-  "servers": {
-    "supabase": {
+  "mcpServers": {
+    "supabase-staging": {
+      "type": "http",
       "url": "https://mcp.supabase.com/mcp"
     }
   }
