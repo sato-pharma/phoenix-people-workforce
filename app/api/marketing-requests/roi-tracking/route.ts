@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
-import { getMarketingRoiTrackingWorkspace } from "@/lib/marketing-requests/service";
+import { getMarketingRoiReport, parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,10 +46,19 @@ function marketingRoiTrackingApiError(error: unknown) {
   };
 }
 
-export async function GET(request: Request) {
+// Filter-Engine results: role-scoped, filtered ROI report + executive KPI band.
+export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    return NextResponse.json(await getMarketingRoiTrackingWorkspace(access));
+    let body: unknown = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+    const filters = parseRoiFilterState(body && typeof body === "object" ? (body as { filters?: unknown }).filters ?? body : {});
+    const report = await getMarketingRoiReport(access, filters, new Date().toISOString());
+    return NextResponse.json(report);
   } catch (error) {
     const { code, message, status } = marketingRoiTrackingApiError(error);
     return NextResponse.json({ error: code, message }, { status });

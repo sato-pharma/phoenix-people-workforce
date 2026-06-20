@@ -23,7 +23,8 @@ import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-a
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
 import { MarketingRequestInbox } from "@/components/employee-portal/marketing-request-inbox";
-import { MarketingRoiTrackingWorkspace } from "@/components/employee-portal/marketing-roi-tracking-workspace";
+import { MarketingRoiFilterEngine } from "@/components/marketing-requests/roi-filter-engine";
+import { MarketingRequestSalesView } from "@/components/marketing-requests/marketing-request-sales-view";
 import { MarketingValidationWorkspace } from "@/components/employee-portal/marketing-validation-workspace";
 import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/personal-expense-workload-dashboard";
 import { PlanningCalendar } from "@/components/employee-portal/planning-calendar";
@@ -442,7 +443,20 @@ export async function WorkspaceMarketingRoiPage() {
       icon={<WalletCards className="h-3.5 w-3.5" />}
       title="ROI Tracking"
     >
-      <MarketingRoiTrackingWorkspace />
+      <MarketingRoiFilterEngine viewSalesBasePath="/workspace" />
+    </WorkspaceFrame>
+  );
+}
+
+export async function WorkspaceMarketingSalesViewPage({ requestId }: { requestId: string }) {
+  await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
+  return (
+    <WorkspaceFrame
+      description="Realized sales of this request's promoted products at its target pharmacies — ROI window or a custom range."
+      icon={<WalletCards className="h-3.5 w-3.5" />}
+      title="View Sales"
+    >
+      <MarketingRequestSalesView requestId={requestId} viewSalesBasePath="/workspace" />
     </WorkspaceFrame>
   );
 }
