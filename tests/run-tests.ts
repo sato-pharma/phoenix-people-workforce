@@ -52,6 +52,7 @@ import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.
 import { runWeeklyPlansHardeningTests } from "./weekly-plans-hardening.test.ts";
 import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
+import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
@@ -300,6 +301,7 @@ await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
+await runTest("action center weekly plans (approver inbox)", runActionCenterWeeklyPlansTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
