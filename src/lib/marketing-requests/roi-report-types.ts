@@ -141,6 +141,18 @@ export type MarketingRoiFilterOptions = {
 };
 
 /**
+ * The role-scoped request index shipped to the client so it can compute SMART,
+ * dependent (faceted) filter options live — each dimension recomputed from the
+ * requests matching the current selection in all other dimensions. The entries are
+ * already scoped + confidential-masked for the viewer (so shipping them cannot leak).
+ */
+export type MarketingRoiFilterFacets = {
+  entries: MarketingRoiRequestIndexEntry[];
+  canRevealRestricted: boolean;
+  totalCount: number;
+};
+
+/**
  * Lightweight, role-scoped projection of one marketing request used to (a) compute
  * filter options cheaply (no ROI math) and (b) apply the chosen filters in TS.
  * Built once per request from the request row + its requester's directory entry +

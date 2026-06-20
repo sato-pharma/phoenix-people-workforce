@@ -11,13 +11,14 @@ import {
   computeMarketingFilterOptions,
   resolveMarketingRoiScope,
 } from "@/lib/marketing-requests/roi-report-scope";
+import { entryMatchesRoiFilters } from "@/lib/marketing-requests/roi-facets";
 import {
   emptyRoiFilterState,
   type MarketingRoiExportApprovalRow,
   type MarketingRoiExportDetail,
   type MarketingRoiExportPharmacyRow,
   type MarketingRoiExportProductRow,
-  type MarketingRoiFilterOptions,
+  type MarketingRoiFilterFacets,
   type MarketingRoiKpiBand,
   type MarketingRoiPreset,
   type MarketingRoiReport,
@@ -350,19 +351,20 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
 
   // ── product master lookup ──────────────────────────────────────────────────
   const productIds = Array.from(new Set(productLinks.map((link) => Number(link.product_id)).filter(Boolean)));
-  const productById = new Map<number, { code: string; name: string; normalizedName: string }>();
+  const productById = new Map<number, { code: string; name: string; normalizedName: string; line: string | null }>();
   for (const part of chunk(productIds)) {
     if (part.length === 0) continue;
     const { data, error } = await supabase
       .from("marketing_products")
-      .select("id, product_code, product_name, normalized_name")
+      .select("id, product_code, product_name, normalized_name, line")
       .in("id", part);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ id: number | string; product_code?: string | null; product_name?: string | null; normalized_name?: string | null }>) {
+    for (const row of (data ?? []) as Array<{ id: number | string; product_code?: string | null; product_name?: string | null; normalized_name?: string | null; line?: string | null }>) {
       productById.set(Number(row.id), {
         code: (row.product_code ?? "").trim().toUpperCase(),
         name: (row.product_name ?? "").trim(),
         normalizedName: (row.normalized_name ?? row.product_name ?? "").trim(),
+        line: (row.line ?? "").trim() || null,
       });
     }
   }
@@ -431,7 +433,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
   );
 
   // ── group links by request ──────────────────────────────────────────────────
-  const productsByRequest = new Map<string, Array<{ code: string; name: string; normalizedName: string }>>();
+  const productsByRequest = new Map<string, Array<{ code: string; name: string; normalizedName: string; line: string | null }>>();
   for (const link of productLinks) {
     const prod = productById.get(Number(link.product_id));
     if (!prod || !prod.code) continue;
@@ -483,6 +485,12 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
       ? rawProducts
       : rawProducts.filter((product) => !isRestrictedMarketingProduct(product.code, product.normalizedName, restrictedNames));
 
+    // Line: prefer the requester's own line, but the employee master leaves line_name unset
+    // for ~all reps, so fall back to the promoted products' line (marketing_products carry a
+    // line). A request spanning multiple lines is shown as a sorted join.
+    const productLines = Array.from(new Set(rawProducts.map((p) => p.line).filter((l): l is string => Boolean(l)))).sort();
+    const derivedLine = productLines.length > 0 ? productLines.join(" / ") : null;
+
     // Scope gate.
     if (!scope.isCompanyWide) {
       if (scope.visibleProductCodes) {
@@ -523,7 +531,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
       requestTypeName: typeNameById.get(request.requestTypeId) ?? null,
       payDate: request.payDate,
       roiDurationMonths: request.roiDurationMonths,
-      lineName: requesterRow?.lineName ?? null,
+      lineName: requesterRow?.lineName ?? derivedLine,
       regionName: requesterRow?.regionName ?? null,
       dmHrId: seats.dmHrId,
       dmName: seats.dmName,
@@ -545,13 +553,19 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
 }
 
 /**
- * Filter options for the viewer's full visible set (no ROI math). For options we
- * reveal confidential products only to a CEO/Super Admin (so they can choose to
- * filter by them); the inclusion toggle then controls totals at report time.
+ * The viewer's role-scoped request index for the SMART (faceted) filter panel. The
+ * client computes dependent/cascading options from this index live (choose an NSM and
+ * the DM list collapses to that NSM's DMs, etc.). Confidential products are revealed in
+ * the index only to a CEO/Super Admin (so they can filter by them); everyone else never
+ * receives them. No ROI math here — it's a cheap projection of the visible requests.
  */
-export async function getMarketingRoiFilterOptions(access: AccessContext): Promise<MarketingRoiFilterOptions> {
+export async function getMarketingRoiFilterOptions(access: AccessContext): Promise<MarketingRoiFilterFacets> {
   const ctx = await buildRoiIndex(access, /* revealRestricted */ access.role === "CEO" || access.role === "Super Admin");
-  return computeMarketingFilterOptions(ctx.scope, ctx.entries);
+  return {
+    entries: ctx.entries,
+    canRevealRestricted: ctx.scope.canRevealRestricted,
+    totalCount: ctx.entries.length,
+  };
 }
 
 export function monthAdd(period: string, months: number): string {
@@ -572,29 +586,10 @@ export function roiWindowLabel(payDate: string | null, months: number): { label:
   return { label: `${start} → ${end}`, endPeriod: end };
 }
 
+// Single source of truth for "does this entry match the chosen filters" — shared with
+// the client's faceted filter engine (roi-facets) so the panel and the report agree.
 function matchesNonRoiFilters(entry: MarketingRoiRequestIndexEntry, filters: RoiFilterState): boolean {
-  const anyOf = (selected: string[], values: string[]) =>
-    selected.length === 0 || values.some((value) => selected.includes(value));
-
-  if (!anyOf(filters.dm, entry.dmHrId ? [entry.dmHrId] : [])) return false;
-  if (!anyOf(filters.nsm, entry.nsmHrId ? [entry.nsmHrId] : [])) return false;
-  if (!anyOf(filters.rsm, entry.rsmHrId ? [entry.rsmHrId] : [])) return false;
-  if (!anyOf(filters.line, entry.lineName ? [entry.lineName] : [])) return false;
-  if (!anyOf(filters.requester, [entry.requesterHrId])) return false;
-  if (!anyOf(filters.approvedBy, entry.approverRoleKeys)) return false;
-  if (!anyOf(filters.status, [entry.status])) return false;
-  if (!anyOf(filters.requestType.map(String), [String(entry.requestTypeId)])) return false;
-  if (!anyOf(filters.region, entry.regionName ? [entry.regionName] : [])) return false;
-  if (!anyOf(filters.distributor, entry.distributorCodes)) return false;
-  if (!anyOf(filters.product, entry.productCodes)) return false;
-  if (!anyOf(filters.pharmacy, entry.pharmacyKeys)) return false;
-
-  if (filters.payDateFrom && (!entry.payDate || entry.payDate < filters.payDateFrom)) return false;
-  if (filters.payDateTo && (!entry.payDate || entry.payDate > filters.payDateTo)) return false;
-  if (filters.durationMin != null && entry.roiDurationMonths < filters.durationMin) return false;
-  if (filters.durationMax != null && entry.roiDurationMonths > filters.durationMax) return false;
-
-  return true;
+  return entryMatchesRoiFilters(entry, filters);
 }
 
 type ActualsRow = {
@@ -1249,21 +1244,25 @@ export async function getMarketingRequestViewSales(
   const productIds = Array.from(
     new Set(((productLinks.data ?? []) as Array<{ product_id: number | string }>).map((row) => Number(row.product_id)).filter(Boolean)),
   );
-  const productByIdMap = new Map<number, { code: string; name: string; normalizedName: string }>();
+  const productByIdMap = new Map<number, { code: string; name: string; normalizedName: string; line: string | null }>();
   if (productIds.length > 0) {
     const { data, error } = await supabase
       .from("marketing_products")
-      .select("id, product_code, product_name, normalized_name")
+      .select("id, product_code, product_name, normalized_name, line")
       .in("id", productIds);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ id: number | string; product_code?: string | null; product_name?: string | null; normalized_name?: string | null }>) {
+    for (const row of (data ?? []) as Array<{ id: number | string; product_code?: string | null; product_name?: string | null; normalized_name?: string | null; line?: string | null }>) {
       productByIdMap.set(Number(row.id), {
         code: (row.product_code ?? "").trim().toUpperCase(),
         name: (row.product_name ?? "").trim(),
         normalizedName: (row.normalized_name ?? row.product_name ?? "").trim(),
+        line: (row.line ?? "").trim() || null,
       });
     }
   }
+  const derivedContextLine = Array.from(
+    new Set(Array.from(productByIdMap.values()).map((p) => p.line).filter((l): l is string => Boolean(l))),
+  ).sort().join(" / ") || null;
   const reveal = canViewRestrictedProducts(access.role);
   const restrictedNames = await restrictedProductNameSet();
   const allProductCodes = Array.from(productByIdMap.values()).map((product) => product.code).filter(Boolean);
@@ -1398,7 +1397,7 @@ export async function getMarketingRequestViewSales(
       customerName,
       requesterHrId: request.requesterHrId,
       requesterName: requester?.fullName ?? null,
-      line: requester?.lineName ?? null,
+      line: requester?.lineName ?? derivedContextLine,
       status: request.status,
       requestTypeName,
       payDate: request.payDate,

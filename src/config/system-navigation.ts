@@ -327,15 +327,17 @@ const adminNavigationSectionSeeds = [
   {
     id: "marketing-requests",
     items: [
-      // SFE Manager + Marketing Manager are intentionally NOT here: they use the de-duplicated
-      // /workspace/marketing-requests home (see the "workspace-marketing-requests" group). This
-      // org-wide admin module stays for District Manager + Super Admin only.
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
+      // SFE Manager + Marketing Manager use the de-duplicated /workspace/marketing-requests home
+      // (see the "workspace-marketing-requests" group); District Manager / Medical Rep / NSM / PM /
+      // GPM use the employee portal. So these admin workflow links are Super-Admin-only in practice.
+      // ROI Tracking is a READ-ONLY executive report, so it also surfaces to the CEO (the oversight
+      // audience the report is built for; the page guard admits the company-oversight roles too).
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["Super Admin"], exact: true },
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["Super Admin", "CEO"] },
     ],
     label: "Marketing Requests",
   },
