@@ -278,3 +278,8 @@ export function weeklyContractByCode(code: string | null | undefined): WeeklyDis
   const key = String(code ?? "").trim().toUpperCase();
   return CONTRACTS.find((contract) => contract.code.toUpperCase() === key);
 }
+
+/** The full set of code-defined (default) weekly contracts. The DB override store overlays these. */
+export function listCodeWeeklyContracts(): readonly WeeklyDistributorContract[] {
+  return CONTRACTS;
+}

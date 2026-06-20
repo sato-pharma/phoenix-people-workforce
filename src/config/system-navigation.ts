@@ -11,6 +11,7 @@ import {
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
   ClipboardList,
+  Columns3,
   Database,
   FileCheck2,
   FilePlus2,
@@ -308,6 +309,7 @@ const adminNavigationSectionSeeds = [
       // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
       // the single Weekly Mapping workspace (old routes redirect here).
       { href: "/sales/weekly/mapping", icon: Tags, label: "Weekly Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
+      { href: "/sales/weekly/distributor-editor", icon: Columns3, label: "Weekly Distributor Column Editor", permissions: [{ action: "import", resource: "weekly_sales" }] },
       { href: "/sales/weekly/assignments", icon: UsersRound, label: "Weekly Product Access", permissions: [{ action: "update", resource: "weekly_sales" }] },
     ],
     label: "Weekly Sales",

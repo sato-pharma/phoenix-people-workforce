@@ -5,7 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // per-entity trail for review + reversal. Best-effort: a failed audit insert must NEVER break the
 // mutation it records (and tolerates the table being absent pre-migration).
 
-export type MappingAuditEntityType = "customer_map" | "product_alias" | "territory_alias" | "area_alias" | "region_alias" | "distributor_profile";
+export type MappingAuditEntityType = "customer_map" | "product_alias" | "territory_alias" | "area_alias" | "region_alias" | "distributor_profile" | "weekly_distributor_profile";
 
 export type MappingAuditEntry = {
   entityType: MappingAuditEntityType;

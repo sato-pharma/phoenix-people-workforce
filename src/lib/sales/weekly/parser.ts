@@ -1,6 +1,12 @@
 import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import {
+  weeklyContractByCode,
+  type WeeklyContractSheet,
+  type WeeklyContractSheetRole,
+  type WeeklyDistributorContract,
+} from "@/lib/sales/weekly/column-contract";
 import type { WeeklyBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import { canonicalWeeklyDistributorCode, weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
@@ -165,7 +171,50 @@ type AdapterContext = {
   workbooks: ExcelJS.Workbook[];
   distributorCode: string;
   branchMapIndex: WeeklyBranchRegionIndex;
+  /** Resolved column contract (DB override merged over code, or code default). Drives column positions.
+   *  Optional: when absent, every lookup falls back to the original code-literal columns. */
+  contract?: WeeklyDistributorContract;
 };
+
+// ── contract-driven column resolution ─────────────────────────────────────────────────────────
+// Adapters read column POSITIONS (and the header-row number, and matrix bounds) from the resolved
+// contract instead of hard-coded literals, so an in-app edit can move a column without a code change.
+// Every lookup carries the original literal as a fallback, so a contract that is somehow missing a sheet
+// or field degrades to EXACTLY the previous hard-coded behaviour (proven by the golden parser tests).
+
+function contractSheet(contract: WeeklyDistributorContract | undefined, role: WeeklyContractSheetRole): WeeklyContractSheet | undefined {
+  return contract?.sheets.find((sheet) => sheet.role === role);
+}
+
+/** 1-based column for a field key on a sheet, or the code-literal fallback if absent. */
+function colOf(sheet: WeeklyContractSheet | undefined, field: string, fallback: number): number {
+  const found = sheet?.fields.find((f) => f.field === field);
+  const value = found?.columnIndex;
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : fallback;
+}
+
+/** First data row = header row + 1, or the code-literal fallback if the sheet is absent. */
+function dataStartRow(sheet: WeeklyContractSheet | undefined, fallback: number): number {
+  const header = sheet?.headerRowNumber;
+  return typeof header === "number" && (header === 1 || header === 2) ? header + 1 : fallback;
+}
+
+/** Header row (1-based) the matrix scan reads, or the fallback if the sheet is absent. */
+function headerRowOf(sheet: WeeklyContractSheet | undefined, fallback: number): number {
+  const header = sheet?.headerRowNumber;
+  return typeof header === "number" && (header === 1 || header === 2) ? header : fallback;
+}
+
+/** Compile a matrix stop-pattern (case-insensitive) from the contract, falling back on any error. */
+function stopRegex(pattern: string | undefined, fallback: RegExp): RegExp {
+  if (!pattern) return fallback;
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return fallback;
+  }
+}
+
 
 type AdapterResult = {
   observations: WeeklyObservation[];
@@ -204,18 +253,22 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
   const blockingReasons: string[] = [];
   const names: string[] = [];
 
+  const salesC = contractSheet(ctx.contract, "sales");
+  const returnsC = contractSheet(ctx.contract, "returns");
+  const stockC = contractSheet(ctx.contract, "stock");
+
   const sales = findSheet(workbook, { name: "Branches Sales", includes: "Branches Sales" });
   if (sales) {
     names.push(sales.name);
-    for (let r = 2; r <= sales.rowCount; r += 1) {
+    for (let r = dataStartRow(salesC, 2); r <= sales.rowCount; r += 1) {
       const row = sales.getRow(r);
-      const itemCode = cellText(at(row, 5));
-      const itemName = cellText(at(row, 6));
-      const branchCode = cellText(at(row, 29));
-      const branchName = cellText(at(row, 30));
-      const qty = cellNumber(at(row, 13));
+      const itemCode = cellText(at(row, colOf(salesC, "itemCode", 5)));
+      const itemName = cellText(at(row, colOf(salesC, "itemName", 6)));
+      const branchCode = cellText(at(row, colOf(salesC, "branchCode", 29)));
+      const branchName = cellText(at(row, colOf(salesC, "branchName", 30)));
+      const qty = cellNumber(at(row, colOf(salesC, "salesQty", 13)));
       if (!itemCode && !itemName && !branchCode) continue;
-      const date = cellDateIso(at(row, 4));
+      const date = cellDateIso(at(row, colOf(salesC, "date", 4)));
       if (date) sheetDates.add(date);
       observations.push({
         side: "sales",
@@ -233,15 +286,15 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
   const returns = findSheet(workbook, { name: "Branch Sales Return", includes: "Branch Sales Return" });
   if (returns) {
     names.push(returns.name);
-    for (let r = 2; r <= returns.rowCount; r += 1) {
+    for (let r = dataStartRow(returnsC, 2); r <= returns.rowCount; r += 1) {
       const row = returns.getRow(r);
-      const itemCode = cellText(at(row, 5));
-      const itemName = cellText(at(row, 6));
-      const branchCode = cellText(at(row, 29));
-      const branchName = cellText(at(row, 30));
-      const qty = Math.abs(cellNumber(at(row, 14))); // RETURN_QTY is negative in the file
+      const itemCode = cellText(at(row, colOf(returnsC, "itemCode", 5)));
+      const itemName = cellText(at(row, colOf(returnsC, "itemName", 6)));
+      const branchCode = cellText(at(row, colOf(returnsC, "branchCode", 29)));
+      const branchName = cellText(at(row, colOf(returnsC, "branchName", 30)));
+      const qty = Math.abs(cellNumber(at(row, colOf(returnsC, "returnQty", 14)))); // RETURN_QTY is negative in the file
       if (!itemCode && !itemName && !branchCode) continue;
-      const date = cellDateIso(at(row, 4));
+      const date = cellDateIso(at(row, colOf(returnsC, "date", 4)));
       if (date) sheetDates.add(date);
       observations.push({
         side: "return",
@@ -262,13 +315,13 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
   if (stock) {
     names.push(stock.name);
     const agg = new Map<string, WeeklyObservation>();
-    for (let r = 2; r <= stock.rowCount; r += 1) {
+    for (let r = dataStartRow(stockC, 2); r <= stock.rowCount; r += 1) {
       const row = stock.getRow(r);
-      const itemCode = cellText(at(row, 1));
-      const itemName = cellText(at(row, 2));
-      const entityCode = cellText(at(row, 13));
-      const entityName = cellText(at(row, 14));
-      const qty = cellNumber(at(row, 3));
+      const itemCode = cellText(at(row, colOf(stockC, "itemCode", 1)));
+      const itemName = cellText(at(row, colOf(stockC, "itemName", 2)));
+      const entityCode = cellText(at(row, colOf(stockC, "entityCode", 13)));
+      const entityName = cellText(at(row, colOf(stockC, "entityName", 14)));
+      const qty = cellNumber(at(row, colOf(stockC, "stockQty", 3)));
       if (!itemCode && !entityCode) continue;
       const key = `${normalizeCode(itemCode)}|${normalizeKey(entityCode || entityName)}`;
       const existing = agg.get(key);
@@ -309,23 +362,26 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   // the same numeric key already registered in the branch-mapping template.
   const branchNameToCode = new Map<string, string>();
 
+  const salesC = contractSheet(ctx.contract, "sales");
+  const stockC = contractSheet(ctx.contract, "stock");
+
   const sales = findSheet(workbook, { name: "SALES", includes: "SALES" });
   if (sales) {
     names.push(sales.name);
-    for (let r = 3; r <= sales.rowCount; r += 1) {
+    for (let r = dataStartRow(salesC, 3); r <= sales.rowCount; r += 1) {
       const row = sales.getRow(r);
-      const itemCode = cellText(at(row, 9));
-      const itemName = cellText(at(row, 10));
+      const itemCode = cellText(at(row, colOf(salesC, "itemCode", 9)));
+      const itemName = cellText(at(row, colOf(salesC, "itemName", 10)));
       // col1 = numeric branch code (e.g. "11"); col2 = Arabic branch name (e.g. "شرق").
       // The mapping template uses the numeric code as the join key, so rawBranchCode = col1.
-      const branchCode = cellText(at(row, 1));
-      const branchName = cellText(at(row, 2));
+      const branchCode = cellText(at(row, colOf(salesC, "branchCode", 1)));
+      const branchName = cellText(at(row, colOf(salesC, "branchName", 2)));
       if (branchCode && branchName) branchNameToCode.set(branchName, branchCode);
-      const gross = cellNumber(at(row, 11));
-      const ret = Math.abs(cellNumber(at(row, 13)));
-      const net = cellNumber(at(row, 15)); // صافى كمية — authoritative net of record
+      const gross = cellNumber(at(row, colOf(salesC, "gross", 11)));
+      const ret = Math.abs(cellNumber(at(row, colOf(salesC, "return", 13))));
+      const net = cellNumber(at(row, colOf(salesC, "net", 15))); // صافى كمية — authoritative net of record
       if (!itemCode && !itemName && !branchCode && !branchName) continue;
-      const date = cellDateIso(at(row, 24));
+      const date = cellDateIso(at(row, colOf(salesC, "date", 24)));
       if (date) sheetDates.add(date);
       // Carry the authoritative net (col15) on the sales-side observation; keep gross (col11) for the
       // display split. The core reconciles return = gross − net so the row reconciles to col15.
@@ -363,10 +419,13 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   if (stock) {
     names.push(stock.name);
 
-    // Map col index → { numericCode, arabicName } for the regular branch columns (6–18).
+    // Map col index → { numericCode, arabicName } for the regular branch columns (matrix block 6–18).
     const branchCols = new Map<number, { code: string; name: string }>();
-    const headerRow = stock.getRow(2);
-    for (let c = 6; c <= 18; c += 1) {
+    const stockHeaderRow = stockC?.headerRowNumber === 1 || stockC?.headerRowNumber === 2 ? stockC.headerRowNumber : 2;
+    const matrixFirst = stockC?.matrix?.firstColumn ?? 6;
+    const matrixLast = stockC?.matrix?.lastColumn ?? 18;
+    const headerRow = stock.getRow(stockHeaderRow);
+    for (let c = matrixFirst; c <= matrixLast; c += 1) {
       const header = cellText(headerRow.getCell(c));
       // Typical header: "إجمالى شرق" → strip "إجمالى " prefix (with or without trailing space).
       const arabicName = header.replace(/^إجمالى\s*/u, "").trim();
@@ -375,10 +434,10 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       branchCols.set(c, { code: numericCode, name: arabicName });
     }
 
-    for (let r = 3; r <= stock.rowCount; r += 1) {
+    for (let r = dataStartRow(stockC, 3); r <= stock.rowCount; r += 1) {
       const row = stock.getRow(r);
-      const itemCode = cellText(at(row, 4));
-      const itemName = cellText(at(row, 5));
+      const itemCode = cellText(at(row, colOf(stockC, "itemCode", 4)));
+      const itemName = cellText(at(row, colOf(stockC, "itemName", 5)));
       if (!itemCode && !itemName) continue;
 
       for (const [col, branch] of branchCols) {
@@ -405,23 +464,24 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
 // data row 3+. Single Date in col1. Sales Quantity (col10) is signed (negative = inline return).
 function adaptISS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
+  const combinedC = contractSheet(ctx.contract, "combined");
   const sheet = findSheet(workbook, { name: "SalesAndStockReport2_DataHub", includes: "DataHub" }) ?? workbook.worksheets[0];
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>();
   if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina Sato", blockingReasons: [] };
 
-  for (let r = 3; r <= sheet.rowCount; r += 1) {
+  for (let r = dataStartRow(combinedC, 3); r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    const itemCode = cellText(at(row, 4));
-    const itemName = cellText(at(row, 5));
-    const branchCode = cellText(at(row, 6));
-    const branchName = cellText(at(row, 7));
+    const itemCode = cellText(at(row, colOf(combinedC, "itemCode", 4)));
+    const itemName = cellText(at(row, colOf(combinedC, "itemName", 5)));
+    const branchCode = cellText(at(row, colOf(combinedC, "branchCode", 6)));
+    const branchName = cellText(at(row, colOf(combinedC, "branchName", 7)));
     // Skip totals/footer row (blank Item Code + blank Branch).
     if (!itemCode && !branchCode) continue;
-    const date = cellDateIso(at(row, 1));
+    const date = cellDateIso(at(row, colOf(combinedC, "date", 1)));
     if (date) sheetDates.add(date);
-    const stock = cellNumber(at(row, 8));
-    const signedSales = cellNumber(at(row, 10));
+    const stock = cellNumber(at(row, colOf(combinedC, "stockQty", 8)));
+    const signedSales = cellNumber(at(row, colOf(combinedC, "signedSales", 10)));
     pushSignedSales(observations, r, { itemCode, itemName, branchCode, branchName }, signedSales);
     if (stock !== 0 || itemCode || branchCode) {
       observations.push({
@@ -443,20 +503,21 @@ function adaptISS(ctx: AdapterContext): AdapterResult {
 // Sales Quantity (col9) signed (negative = return). Free Unit (col10) is ignored.
 function adaptIS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
+  const combinedC = contractSheet(ctx.contract, "combined");
   const sheet = findSheet(workbook, { name: "Sheet2", includes: "Sheet2" }) ?? workbook.worksheets[0];
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>(); // IS has no date column → always require periodDate
   if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina", blockingReasons: [] };
 
-  for (let r = 2; r <= sheet.rowCount; r += 1) {
+  for (let r = dataStartRow(combinedC, 2); r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    const itemCode = cellText(at(row, 3));
-    const itemName = cellText(at(row, 4));
-    const branchCode = cellText(at(row, 5));
-    const branchName = cellText(at(row, 6));
+    const itemCode = cellText(at(row, colOf(combinedC, "itemCode", 3)));
+    const itemName = cellText(at(row, colOf(combinedC, "itemName", 4)));
+    const branchCode = cellText(at(row, colOf(combinedC, "branchCode", 5)));
+    const branchName = cellText(at(row, colOf(combinedC, "branchName", 6)));
     if (!itemCode && !branchCode) continue;
-    const stock = cellNumber(at(row, 7));
-    const signedSales = cellNumber(at(row, 9));
+    const stock = cellNumber(at(row, colOf(combinedC, "stockQty", 7)));
+    const signedSales = cellNumber(at(row, colOf(combinedC, "signedSales", 9)));
     // col10 (Free Unit) is ignored — free units are never counted as sales.
     pushSignedSales(observations, r, { itemCode, itemName, branchCode, branchName }, signedSales);
     if (stock !== 0 || itemCode || branchCode) {
@@ -509,27 +570,32 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
     return { observations, sheetDates, sheetName: "Overseas", blockingReasons };
   }
 
+  const salesC = contractSheet(ctx.contract, "sales");
+  const stockC = contractSheet(ctx.contract, "stock");
+
   // ── SALES matrix: header row 1; Mat. Code col3 / Mat. Desc col4; outlet columns 5..N-1;
   //    Total Qty at col N (detected dynamically — column count varies by month/file version).
   const salesSheet = findSheet(salesWb, { name: "Data", includes: "Data" }) ?? salesWb.worksheets[0];
   if (salesSheet) {
     names.push(`Sales:${salesSheet.name}`);
-    const header = salesSheet.getRow(1);
+    const header = salesSheet.getRow(headerRowOf(salesC, 1));
+    const outletFirst = salesC?.matrix?.firstColumn ?? 5;
+    const totalStop = stopRegex(salesC?.matrix?.stopAtHeaderPattern, /total\s*qty/i);
     // Detect outlet range by scanning for the "Total Qty" summary header instead of hard-coding 118/119.
     let lastOutletCol = 118;
     let totalQtyCol = 119;
-    for (let col = 5; col <= 200; col += 1) {
+    for (let col = outletFirst; col <= 200; col += 1) {
       const hdr = cellText(at(header, col));
       if (!hdr) break;
-      if (/total\s*qty/i.test(hdr)) { totalQtyCol = col; lastOutletCol = col - 1; break; }
+      if (totalStop.test(hdr)) { totalQtyCol = col; lastOutletCol = col - 1; break; }
     }
-    for (let r = 2; r <= salesSheet.rowCount; r += 1) {
+    for (let r = dataStartRow(salesC, 2); r <= salesSheet.rowCount; r += 1) {
       const row = salesSheet.getRow(r);
-      const itemCode = cellText(at(row, 3));
-      const itemName = cellText(at(row, 4));
+      const itemCode = cellText(at(row, colOf(salesC, "itemCode", 3)));
+      const itemName = cellText(at(row, colOf(salesC, "itemName", 4)));
       if (!itemCode && !itemName) continue;
       let outletSum = 0;
-      for (let col = 5; col <= lastOutletCol; col += 1) {
+      for (let col = outletFirst; col <= lastOutletCol; col += 1) {
         const outletHeader = cellText(at(header, col));
         if (!outletHeader) continue;
         const qty = cellNumber(at(row, col)); // PS NET qty (keep negatives)
@@ -570,22 +636,23 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
   const stockSheet = findSheet(stockWb, { name: "Data", includes: "Data" }) ?? stockWb.worksheets[0];
   if (stockSheet) {
     names.push(`Stock:${stockSheet.name}`);
-    const header = stockSheet.getRow(1);
+    const header = stockSheet.getRow(headerRowOf(stockC, 1));
+    const locationFirst = stockC?.matrix?.firstColumn ?? 7;
     // Detect last location column dynamically instead of hard-coding 85.
     let lastLocationCol = 85;
-    for (let col = 7; col <= 200; col += 1) {
+    for (let col = locationFirst; col <= 200; col += 1) {
       if (!cellText(at(header, col))) break;
       lastLocationCol = col;
     }
     // PS stock location headers change every month by design (distributors rename branches).
     // The mapping is keyed by column index, not by name, so header drift never breaks resolution.
     // No blocking check here — resolveRegion already falls back to name if the index is missing.
-    for (let r = 2; r <= stockSheet.rowCount; r += 1) {
+    for (let r = dataStartRow(stockC, 2); r <= stockSheet.rowCount; r += 1) {
       const row = stockSheet.getRow(r);
-      const itemCode = cellText(at(row, 3));
-      const itemName = cellText(at(row, 4));
+      const itemCode = cellText(at(row, colOf(stockC, "itemCode", 3)));
+      const itemName = cellText(at(row, colOf(stockC, "itemName", 4)));
       if (!itemCode && !itemName) continue;
-      for (let col = 7; col <= lastLocationCol; col += 1) {
+      for (let col = locationFirst; col <= lastLocationCol; col += 1) {
         const locHeader = cellText(at(header, col));
         if (!locHeader) continue;
         const qty = cellNumber(at(row, col));
@@ -617,21 +684,22 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
 // RM col15). No period-date column; periodDate is always required on upload.
 function adaptSF(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
+  const combinedC = contractSheet(ctx.contract, "combined");
   const sheet = findSheet(workbook, { name: "Sheet1", includes: "Sheet" }) ?? workbook.worksheets[0];
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>(); // no date column → always require periodDate
   if (!sheet) return { observations, sheetDates, sheetName: "Sofico", blockingReasons: [] };
 
-  for (let r = 2; r <= sheet.rowCount; r += 1) {
+  for (let r = dataStartRow(combinedC, 2); r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    const itemCode = cellText(at(row, 4));    // ItemID — Sofico's own product code (alias key)
-    const itemName = cellText(at(row, 5));    // ItemName
-    const branchCode = cellText(at(row, 12)); // State — branch numeric ID (e.g. "2", "11")
-    const branchName = cellText(at(row, 13)); // statename — Arabic branch display name
+    const itemCode = cellText(at(row, colOf(combinedC, "itemCode", 4)));    // ItemID — Sofico's own product code (alias key)
+    const itemName = cellText(at(row, colOf(combinedC, "itemName", 5)));    // ItemName
+    const branchCode = cellText(at(row, colOf(combinedC, "branchCode", 12))); // State — branch numeric ID (e.g. "2", "11")
+    const branchName = cellText(at(row, colOf(combinedC, "branchName", 13))); // statename — Arabic branch display name
     if (!itemCode && !branchCode) continue;
-    const gross = cellNumber(at(row, 20));    // SalesQty
-    const ret = cellNumber(at(row, 22));      // ReturnQty (positive in the file)
-    const net = cellNumber(at(row, 24));      // NET SALES — authoritative net of record
+    const gross = cellNumber(at(row, colOf(combinedC, "gross", 20)));    // SalesQty
+    const ret = cellNumber(at(row, colOf(combinedC, "return", 22)));      // ReturnQty (positive in the file)
+    const net = cellNumber(at(row, colOf(combinedC, "net", 24)));      // NET SALES — authoritative net of record
     // col21 (BonusQty) is ignored — free units are never counted as sales.
 
     observations.push({
@@ -878,6 +946,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
   branchMapIndex: WeeklyBranchRegionIndex;
   /** explicit period (YYYY-MM-DD) used when the sheet has zero or many distinct dates */
   periodDate?: string | null;
+  /** Resolved column contract (DB override merged over code). When omitted, the CODE contract is used,
+   *  so parsing is byte-identical to the previous hard-coded behaviour. Callers that want in-app edits
+   *  to take effect pass `await resolveWeeklyContract(code)`. */
+  contract?: WeeklyDistributorContract;
 }): Promise<WeeklyParseOutput> {
   let canonicalCode: string;
   try {
@@ -892,6 +964,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
     };
   }
   const distributorName = input.distributorName || weeklyDistributorByCode(canonicalCode)?.name || canonicalCode;
+  // Default to the CODE contract when none is supplied → byte-identical to the previous behaviour.
+  const contract = input.contract ?? weeklyContractByCode(canonicalCode);
 
   const indexes = buildReferenceIndexes(input.references);
   const aliasBucket = input.aliasIndex.get(canonicalCode);
@@ -903,13 +977,13 @@ export async function parseWeeklyWorkbookBuffer(input: {
     if (canonicalCode === "PS") {
       const salesWb = input.salesBuffer ? await loadWorkbook(input.salesBuffer) : undefined;
       const stockWb = input.stockBuffer ? await loadWorkbook(input.stockBuffer) : undefined;
-      adapted = adaptPS({ workbooks: [], distributorCode: canonicalCode, branchMapIndex }, salesWb, stockWb);
+      adapted = adaptPS({ workbooks: [], distributorCode: canonicalCode, branchMapIndex, contract }, salesWb, stockWb);
     } else {
       if (!input.buffer) {
         return { ok: false, error: { code: "empty_file", message: "No workbook was provided." } };
       }
       const workbook = await loadWorkbook(input.buffer);
-      const ctx: AdapterContext = { workbooks: [workbook], distributorCode: canonicalCode, branchMapIndex };
+      const ctx: AdapterContext = { workbooks: [workbook], distributorCode: canonicalCode, branchMapIndex, contract };
       adapted =
         canonicalCode === "EG"
           ? adaptEG(ctx)
