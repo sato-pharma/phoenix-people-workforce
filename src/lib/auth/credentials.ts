@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 
 import { normalizeRole, type PhoenixRole } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AppAuthUser = {
@@ -78,6 +79,29 @@ export async function resolveStoredLoginId(identifierInput: string): Promise<str
   return row?.login_id ?? null;
 }
 
+// Login-time lifecycle gate: deny sign-in when the linked employee has a TERMINAL status
+// (resigned / terminated / inactive / non-renewed) even if app_auth_users.is_active is stale —
+// e.g. a status set via CSV import that bypassed the resignation RPC (which normally also flips
+// is_active). Mirrors the read-time session gate in src/lib/auth/server.ts so login and session
+// enforce the SAME rule via isTerminalEmploymentStatus. Only a CONFIRMED terminal status blocks; a
+// lookup error or an unlinked/missing employee row does NOT block here (login stays available during
+// a transient blip — the read-time session gate fails closed and is the backstop).
+async function isLinkedEmployeeTerminal(hrId: string | null | undefined): Promise<boolean> {
+  const linkedHrId = String(hrId ?? "").trim();
+  if (!linkedHrId) return false;
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("employment_status")
+      .eq("hr_id", linkedHrId)
+      .maybeSingle();
+    if (error || !data) return false;
+    return isTerminalEmploymentStatus((data as { employment_status?: string | null }).employment_status);
+  } catch {
+    return false;
+  }
+}
+
 export async function authenticateLoginId(loginIdInput: string, password: string): Promise<AppAuthUser | null> {
   const loginId = normalizeLoginId(loginIdInput);
   if (!loginId || !password) return null;
@@ -87,6 +111,9 @@ export async function authenticateLoginId(loginIdInput: string, password: string
 
   const passwordMatches = await bcrypt.compare(password, row.password_hash);
   if (!passwordMatches) return null;
+
+  // Resigned / terminated employees can never sign in, even if their login was left active.
+  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
 
   return {
     authEmail: row.auth_email ?? null,

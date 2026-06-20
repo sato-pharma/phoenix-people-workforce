@@ -181,6 +181,22 @@ export async function runAuthSessionTests() {
     "session_version invalidation must remain unchanged",
   );
 
+  // Login-time lifecycle gate: authenticateLoginId must ALSO block a terminal employee at sign-in
+  // (defense-in-depth with the read-time session gate), using the SAME isTerminalEmploymentStatus
+  // helper, so a resigned/terminated person cannot sign in even when app_auth_users.is_active is
+  // stale (e.g. status set via CSV import outside the resignation RPC).
+  const credentialsSource = readFileSync(
+    new URL("../src/lib/auth/credentials.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(credentialsSource, /isTerminalEmploymentStatus/, "login must reuse the shared terminal-status helper");
+  assert.match(credentialsSource, /employment_status/, "login must read employees.employment_status");
+  assert.match(
+    credentialsSource,
+    /if \(await isLinkedEmployeeTerminal\(row\.hr_id\)\) return null/,
+    "authenticateLoginId must deny sign-in for a terminal linked employee",
+  );
+
   // ===========================================================================
   // Auth hardening: DB-backed app sessions, bridge enforcement, guest access.
   // ===========================================================================
