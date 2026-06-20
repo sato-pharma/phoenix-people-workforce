@@ -111,9 +111,11 @@ function allZeroValueBatchWarns() {
   assert.equal(sev(r, "all_zero_value_batch"), "warning");
 }
 
-function nonIntegerQtyInfo() {
+function fractionalQtyNotFlagged() {
+  // Pharma: customers buy partial packs (a strip or two, not the full box), so a fractional quantity
+  // is legitimate data and must NOT be flagged.
   const r = validateNormalizedUpload(result([row({ qty: 12.5, value: 125 })]), ctx());
-  assert.equal(sev(r, "non_integer_qty"), "info");
+  assert.equal(r.findings.some((f) => f.code === "non_integer_qty"), false, "fractional quantity must not be flagged");
 }
 
 function futureDatedRowsBlock() {
@@ -283,7 +285,7 @@ export function runSalesUploadValidationTests() {
   discountOutOfRangeWarns();
   duplicateRowsWarn();
   allZeroValueBatchWarns();
-  nonIntegerQtyInfo();
+  fractionalQtyNotFlagged();
   futureDatedRowsBlock();
   blankDateGuardedByHasDateColumn();
   periodReplaceWarns();
