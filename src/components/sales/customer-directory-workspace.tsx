@@ -15,6 +15,7 @@ import {
   emptyCustomerDirectoryFilterState,
   type CustomerDirectoryFilterState,
 } from "@/components/sales/customer-directory-filters";
+import { SortableTh, TableNoResults, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   CustomerDirectoryFilterOptions,
@@ -111,6 +112,34 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
     }
   }
 
+  const customers = result?.customers ?? [];
+  // Client-side sort + quick-filter over the loaded page (the server filters re-fetch the full set;
+  // this gives instant column sorting + a fast text filter on what is already on screen).
+  const table = useSortableTable(customers, {
+    columns: [
+      { key: "clientName", accessor: (row) => row.clientName, type: "string" },
+      { key: "clientAddress", accessor: (row) => row.clientAddress, type: "string" },
+      { key: "distributorName", accessor: (row) => row.distributorName, type: "string" },
+      { key: "brickId", accessor: (row) => row.brickId, type: "string" },
+      { key: "brickName", accessor: (row) => row.brickName, type: "string" },
+      { key: "areaName", accessor: (row) => row.areaName, type: "string" },
+      { key: "regionName", accessor: (row) => row.regionName, type: "string" },
+      { key: "totalUnits", accessor: (row) => row.totalUnits, type: "number" },
+      { key: "totalValue", accessor: (row) => row.totalValue, type: "number" },
+    ],
+    searchAccessors: [
+      (row) => row.clientName,
+      (row) => row.clientCode,
+      (row) => row.clientAddress,
+      (row) => row.distributorName,
+      (row) => row.brickId,
+      (row) => row.brickName,
+      (row) => row.areaName,
+      (row) => row.regionName,
+    ],
+    initialSort: null,
+  });
+
   if (initialError && !result) {
     return (
       <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
@@ -121,8 +150,6 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
       </div>
     );
   }
-
-  const customers = result?.customers ?? [];
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">
@@ -168,24 +195,40 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
           </div>
         ) : (
           <div className="overflow-x-auto p-4 md:p-5">
-            {result?.truncated ? (
-              <p className="mb-3 text-xs font-semibold text-[#92400E]">
-                Showing the first {formatNumber(customers.length)} customers — refine the filters to narrow the list.
-              </p>
-            ) : null}
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              {result?.truncated ? (
+                <p className="text-xs font-semibold text-[#92400E]">
+                  Showing the first {formatNumber(customers.length)} customers — refine the filters to narrow the list.
+                </p>
+              ) : <span />}
+              <div className="flex items-center gap-2">
+                {table.isFiltered ? (
+                  <span className="text-xs font-semibold text-slate-500">{table.visible} of {table.total} loaded</span>
+                ) : null}
+                <div className="w-56">
+                  <TableSearchInput
+                    value={table.query}
+                    onChange={table.setQuery}
+                    onClear={table.clearQuery}
+                    placeholder="Quick-filter loaded rows…"
+                    size="md"
+                  />
+                </div>
+              </div>
+            </div>
             <div className="overflow-hidden border border-[#E2E8F0]">
               <table className="w-full min-w-[1100px] text-sm">
                 <thead className="bg-[#0B0B0B] text-slate-100">
                   <tr>
-                    <th className={headerCell}>Customer</th>
-                    <th className={headerCell}>Address</th>
-                    <th className={headerCell}>Distributor</th>
-                    <th className={headerCell}>Brick ID</th>
-                    <th className={headerCell}>Brick Name</th>
-                    <th className={headerCell}>Area</th>
-                    <th className={headerCell}>Region</th>
-                    <th className={`${headerCell} text-right`}>Units</th>
-                    <th className={`${headerCell} text-right`}>Value</th>
+                    <SortableTh label="Customer" sortKey="clientName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Address" sortKey="clientAddress" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Distributor" sortKey="distributorName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Brick ID" sortKey="brickId" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Brick Name" sortKey="brickName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Area" sortKey="areaName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Units" sortKey="totalUnits" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Value" sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="text-xs tracking-[0.12em]" />
                     <th className={headerCell}></th>
                   </tr>
                 </thead>
@@ -196,12 +239,16 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                         <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                       </td>
                     </tr>
-                  ) : customers.length === 0 ? (
-                    <tr>
-                      <td className="px-3 py-6 text-center text-slate-400" colSpan={10}>No customers match these filters.</td>
-                    </tr>
+                  ) : table.rows.length === 0 ? (
+                    customers.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-slate-400" colSpan={10}>No customers match these filters.</td>
+                      </tr>
+                    ) : (
+                      <TableNoResults colSpan={10} filtered label="customers" />
+                    )
                   ) : (
-                    customers.map((row) => (
+                    table.rows.map((row) => (
                       <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.clientCode}`}>
                         <td className="px-3 py-2.5">
                           <Link className="block" href={customerHref(row)}>
