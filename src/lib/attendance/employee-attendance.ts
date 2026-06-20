@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionHrId } from "@/lib/deductions-governance/service";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 
@@ -233,7 +234,9 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
     .filter((row) => !isTerminalEmploymentStatus(row.employment_status))
     .filter((row) =>
       isAttendanceTracked({
-        hasDeviceMapping: deviceMapped.has(normalizeHrId(row.hr_id) ?? ""),
+        // The device-mapped set is keyed by normalizeAttendanceHrId (UPPERCASE);
+        // match that exactly — permissions.normalizeHrId is lowercase and would miss.
+        hasDeviceMapping: deviceMapped.has(normalizeAttendanceHrId(row.hr_id) ?? ""),
         jobTitle: row.job_title,
       }),
     )
