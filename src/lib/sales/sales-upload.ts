@@ -6,7 +6,7 @@ import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
-import { unacknowledgedWarningCodes, validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
+import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -241,17 +241,14 @@ async function deleteOtherBatchesForPeriod(distributorCode: string, period: stri
   if (batchDel.error) throw batchDel.error;
 }
 
-// Persist a raw upload. Blocks (persists nothing) if any row is unmapped, if strict validation finds
-// an error, or if there are warnings the caller has not acknowledged — never a partial import.
+// Persist a raw upload. Blocks (persists nothing) when the file can't be used: unmapped rows
+// (exceptions), or any validator error — a duplicate sheet, an unreadable/unrecognized file, or broken
+// geography. Pure data-quality findings are advisory warnings that never block. Never a partial import.
 export async function commitMonthlyUpload(input: {
   distributorCode: string;
   file: File;
   periodOverride?: string;
   uploadedBy: string;
-  // PER-FINDING acknowledgement: the warning codes the operator explicitly ticked. Commit blocks
-  // unless EVERY emitted warning code is in this list (errors always block). Replaces the old
-  // single-boolean "acknowledge all".
-  acknowledgedWarningCodes?: readonly string[];
 }): Promise<CommitResult> {
   const rec = await recognizeDistributorWorkbook(input.distributorCode, input.file);
   if (rec.status === "coded_sheet") throw new SalesWorkflowError("coded_sheet", "This sheet is already coded — upload the raw distributor export instead.", 400);
@@ -283,13 +280,12 @@ export async function commitMonthlyUpload(input: {
   // distinct-month rows into true duplicates).
   const stamped: NormalizeResult = applyPeriodConsolidation(result, decision);
 
-  // Strict server-side re-validation with the FINAL resolved period (never trust the client). Errors
-  // always block; warnings block unless the caller explicitly acknowledged them (the strict gate).
+  // Strict server-side re-validation with the FINAL resolved period (never trust the client). report.ok
+  // is false only for a hard-block error (duplicate sheet, unreadable/unrecognized file, or broken
+  // geography). Pure data-quality findings are warnings that never block.
   const crossCheck = await buildDistributorCrossCheck(input.distributorCode, rec.distributorName, input.file);
   const validation = await runStrictValidation(input.distributorCode, rec, stamped, period, crossCheck);
-  // Errors always block; each warning blocks until its own code is acknowledged (no blanket override).
-  const unacknowledged = unacknowledgedWarningCodes(validation, input.acknowledgedWarningCodes ?? []);
-  if (!validation.ok || unacknowledged.length > 0) {
+  if (!validation.ok) {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }
 

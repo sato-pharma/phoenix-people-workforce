@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { unacknowledgedWarningCodes, validateNormalizedUpload, type ValidationContext, type ValidationReport } from "../src/lib/sales/upload-validation.ts";
+import { validateNormalizedUpload, type ValidationContext, type ValidationReport } from "../src/lib/sales/upload-validation.ts";
 import { applyPeriodConsolidation } from "../src/lib/sales/sales-upload.ts";
 import type { CodedRow, NormalizeException, NormalizeIgnoredRow, NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
 
@@ -54,6 +54,12 @@ const has = (r: ValidationReport, code: string) => r.findings.some((f) => f.code
 const sev = (r: ValidationReport, code: string) => r.findings.find((f) => f.code === code)?.severity;
 
 // ── tests ─────────────────────────────────────────────────────────────────────────────────────
+//
+// Owner rule baked into these tests: an upload is BLOCKED only when the system cannot read/recognize
+// the file or importing would corrupt/double-count data — i.e. unmapped rows (gated by the flow), a
+// duplicate sheet, an unreadable/unrecognized file (column mismatch, nothing coded, rows that don't
+// reconcile), or broken geography. Every PURE data-quality finding is an advisory warning that never
+// sets ok=false (duplicate lines, odd values, anomalies, future-dated rows, blank dates, …).
 
 function cleanBatchPasses() {
   const r = validateNormalizedUpload(result([row({ clientCode: "C1" }), row({ clientCode: "C2", rawRowNumber: 3 })]), ctx());
@@ -63,11 +69,71 @@ function cleanBatchPasses() {
   assert.ok(has(r, "recognition_coverage_summary"));
 }
 
+// ── Hard blocks: can't read / recognize the file, or would corrupt data ─────────────────────────
+
 function noCodedRowsBlocks() {
   const r = validateNormalizedUpload(result([]), ctx());
   assert.ok(has(r, "no_coded_rows"));
   assert.equal(sev(r, "no_coded_rows"), "error");
   assert.equal(r.ok, false);
+}
+
+function allRowsIgnoredBlocks() {
+  // zero coded, all readable rows ignored → nothing recognized
+  const r = validateNormalizedUpload(result([], { ignoredRows: [ignoredRow(2), ignoredRow(3)] }), ctx());
+  assert.ok(has(r, "all_rows_ignored"));
+  assert.equal(sev(r, "all_rows_ignored"), "error");
+  assert.equal(r.ok, false);
+}
+
+function darkExceptionsBlock() {
+  const r = validateNormalizedUpload(result([row()], { exceptions: [darkException()] }), ctx());
+  assert.equal(sev(r, "dark_exceptions"), "error");
+  assert.equal(r.ok, false);
+}
+
+function rowsReadMismatchBlocks() {
+  const r = result([row(), row({ clientCode: "C2", rawRowNumber: 3 })]);
+  r.summary.scannedDataRows = (r.summary.scannedDataRows ?? 0) + 1; // physical counter disagrees
+  const report = validateNormalizedUpload(r, ctx());
+  assert.equal(sev(report, "rows_read_mismatch"), "error");
+  assert.equal(report.ok, false);
+}
+
+function brickToRegionInconsistentBlocks() {
+  const r = validateNormalizedUpload(result([row({ brickId: "B1", regionCode: "R1" }), row({ brickId: "B1", regionCode: "R2", clientCode: "C2", qty: 20, value: 200, rawRowNumber: 3 })]), ctx());
+  assert.equal(sev(r, "brick_to_region_inconsistent"), "error");
+  assert.equal(r.ok, false);
+}
+
+function blankGeographyBlocks() {
+  const r = validateNormalizedUpload(result([row({ brickId: "", areaCode: "", regionCode: "" })]), ctx());
+  assert.equal(sev(r, "blank_geography"), "error");
+  assert.equal(r.ok, false);
+}
+
+function duplicateSheetBlocks() {
+  const r = validateNormalizedUpload(result([row()]), ctx({ resolvedPeriod: "2026-05", existingBatchPeriods: ["2026-05", "2026-04"] }));
+  assert.equal(sev(r, "period_replace"), "error");
+  assert.equal(r.ok, false);
+  // a not-yet-imported period must NOT block
+  const fresh = validateNormalizedUpload(result([row()]), ctx({ resolvedPeriod: "2026-05", existingBatchPeriods: ["2026-04"] }));
+  assert.equal(has(fresh, "period_replace"), false);
+  assert.equal(fresh.ok, true);
+}
+
+// ── Advisory warnings: never block (the owner's "data quality = warn, not block") ───────────────
+
+function duplicateRowsWarnNeverBlock() {
+  const r = validateNormalizedUpload(result([row({ rawRowNumber: 2 }), row({ rawRowNumber: 3 })]), ctx());
+  assert.equal(sev(r, "duplicate_rows"), "warning");
+  assert.equal(r.ok, true); // duplicate LINES are advisory — only a duplicate SHEET blocks
+}
+
+function futureDatedRowsWarnNeverBlock() {
+  const r = validateNormalizedUpload(result([row({ invoiceDate: "2026-12" })]), ctx());
+  assert.equal(sev(r, "future_dated_rows"), "warning");
+  assert.equal(r.ok, true); // a future date is a data-quality note — never blocks
 }
 
 function negativeQtyOnlyWarnsWhenReturnsDominate() {
@@ -90,7 +156,7 @@ function negativeValueExcludesReturns() {
 
 function zeroQtyIsInfoZeroValueWarns() {
   const zq = validateNormalizedUpload(result([row({ qty: 0, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
-  assert.equal(sev(zq, "zero_qty"), "info"); // zero-qty is harmless → advisory, not acknowledge-tax
+  assert.equal(sev(zq, "zero_qty"), "info"); // zero-qty is harmless → advisory
   const zv = validateNormalizedUpload(result([row({ value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
   assert.equal(sev(zv, "zero_value_with_qty"), "warning");
 }
@@ -99,11 +165,6 @@ function discountOutOfRangeWarns() {
   const r = validateNormalizedUpload(result([row({ discount: 1.5 }), row({ clientCode: "C2", discount: -0.2, rawRowNumber: 3 })]), ctx());
   assert.equal(sev(r, "discount_out_of_range"), "warning");
   assert.equal(r.findings.find((f) => f.code === "discount_out_of_range")?.count, 2);
-}
-
-function duplicateRowsWarn() {
-  const r = validateNormalizedUpload(result([row({ rawRowNumber: 2 }), row({ rawRowNumber: 3 })]), ctx());
-  assert.equal(sev(r, "duplicate_rows"), "warning");
 }
 
 function allZeroValueBatchWarns() {
@@ -118,43 +179,23 @@ function fractionalQtyNotFlagged() {
   assert.equal(r.findings.some((f) => f.code === "non_integer_qty"), false, "fractional quantity must not be flagged");
 }
 
-function futureDatedRowsBlock() {
-  const r = validateNormalizedUpload(result([row({ invoiceDate: "2026-12" })]), ctx());
-  assert.equal(sev(r, "future_dated_rows"), "error");
-  assert.equal(r.ok, false);
-}
-
 // The critical date-less-profile guard: a CP-style pivot (no date column) must NOT be flagged for
-// blank dates, but a dated profile with unparseable dates must be.
+// blank dates; a dated profile with unparseable dates is flagged, but only ever as a (non-blocking)
+// warning now — it never escalates to an error.
 function blankDateGuardedByHasDateColumn() {
   const dateless = validateNormalizedUpload(result([row({ invoiceDate: "" })]), ctx({ hasDateColumn: false }));
   assert.equal(has(dateless, "blank_invoice_date"), false);
   const someBlank = validateNormalizedUpload(result([row({ invoiceDate: "" }), row({ clientCode: "C2", invoiceDate: "2026-05", rawRowNumber: 3 })]), ctx({ hasDateColumn: true }));
   assert.equal(sev(someBlank, "blank_invoice_date"), "warning");
   const allBlank = validateNormalizedUpload(result([row({ invoiceDate: "" }), row({ clientCode: "C2", invoiceDate: "", rawRowNumber: 3 })]), ctx({ hasDateColumn: true }));
-  assert.equal(sev(allBlank, "blank_invoice_date"), "error");
-}
-
-function periodReplaceWarns() {
-  const r = validateNormalizedUpload(result([row()]), ctx({ resolvedPeriod: "2026-05", existingBatchPeriods: ["2026-05", "2026-04"] }));
-  assert.equal(sev(r, "period_replace"), "warning");
+  assert.equal(sev(allBlank, "blank_invoice_date"), "warning"); // never escalates to error
+  assert.equal(allBlank.ok, true);
 }
 
 function customerInconsistentBrickWarns() {
   // same customer C1 → two different bricks (qty differs so it is NOT a duplicate)
   const r = validateNormalizedUpload(result([row({ clientCode: "C1", brickId: "B1" }), row({ clientCode: "C1", brickId: "B2", qty: 20, value: 200, rawRowNumber: 3 })]), ctx());
   assert.equal(sev(r, "customer_inconsistent_brick"), "warning");
-}
-
-function brickToRegionInconsistentBlocks() {
-  const r = validateNormalizedUpload(result([row({ brickId: "B1", regionCode: "R1" }), row({ brickId: "B1", regionCode: "R2", clientCode: "C2", qty: 20, value: 200, rawRowNumber: 3 })]), ctx());
-  assert.equal(sev(r, "brick_to_region_inconsistent"), "error");
-  assert.equal(r.ok, false);
-}
-
-function blankGeographyBlocks() {
-  const r = validateNormalizedUpload(result([row({ brickId: "", areaCode: "", regionCode: "" })]), ctx());
-  assert.equal(sev(r, "blank_geography"), "error");
 }
 
 function geographyBrickMissingRespectsRegionOnly() {
@@ -169,30 +210,11 @@ function unknownLineWarns() {
   assert.equal(sev(r, "unknown_official_line"), "warning");
 }
 
-function darkExceptionsBlock() {
-  const r = validateNormalizedUpload(result([row()], { exceptions: [darkException()] }), ctx());
-  assert.equal(sev(r, "dark_exceptions"), "error");
-}
-
 function highIgnoredWarns() {
   // 1 coded + 4 ignored = 5 rows, 80% ignored
   const r = validateNormalizedUpload(result([row()], { ignoredRows: [ignoredRow(3), ignoredRow(4), ignoredRow(5), ignoredRow(6)] }), ctx());
   assert.equal(sev(r, "high_ignored"), "warning");
   assert.equal(sev(r, "ignored_units"), "info");
-}
-
-function allRowsIgnoredBlocks() {
-  // zero coded, all readable rows ignored
-  const r = validateNormalizedUpload(result([], { ignoredRows: [ignoredRow(2), ignoredRow(3)] }), ctx());
-  assert.ok(has(r, "all_rows_ignored"));
-  assert.equal(sev(r, "all_rows_ignored"), "error");
-}
-
-function rowsReadMismatchBlocks() {
-  const r = result([row(), row({ clientCode: "C2", rawRowNumber: 3 })]);
-  r.summary.scannedDataRows = (r.summary.scannedDataRows ?? 0) + 1; // physical counter disagrees
-  const report = validateNormalizedUpload(r, ctx());
-  assert.equal(sev(report, "rows_read_mismatch"), "error");
 }
 
 function priorPeriodSpikeWarns() {
@@ -238,7 +260,7 @@ function detectorDisagreementWarnsOnlyWhenConfident() {
   const base = result([row()]);
   const warn = validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", pickedName: "Pharma Soft", bestCode: "EG", bestName: "EGD", confidence: "high", ambiguous: false } }));
   assert.equal(sev(warn, "detector_disagrees_with_pick"), "warning");
-  assert.equal(warn.ok, true); // a warning blocks-until-acknowledged, never hard-blocks
+  assert.equal(warn.ok, true); // a warning is advisory — it never hard-blocks
   // same distributor (case-insensitive) → no finding
   assert.equal(has(validateNormalizedUpload(base, ctx({ detectorCrossCheck: { pickedCode: "PS", bestCode: "ps", bestName: "Pharma Soft", confidence: "high", ambiguous: false } })), "detector_disagrees_with_pick"), false);
   // low confidence → no finding
@@ -249,60 +271,56 @@ function detectorDisagreementWarnsOnlyWhenConfident() {
   assert.equal(has(validateNormalizedUpload(base, ctx()), "detector_disagrees_with_pick"), false);
 }
 
-function warningsDoNotClearOkButErrorsDo() {
-  const warnOnly = validateNormalizedUpload(result([row({ qty: 5, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
-  assert.equal(warnOnly.ok, true); // only warnings (zero_value_with_qty) → still importable after acknowledge
-  assert.ok(warnOnly.warningCount > 0);
-  const withError = validateNormalizedUpload(result([row({ invoiceDate: "2026-12" })]), ctx());
-  assert.equal(withError.ok, false);
-}
+// The core owner rule, end to end. A batch that trips many DATA-QUALITY findings at once (duplicate
+// lines + future dates + an out-of-range discount) still imports — ok stays true. Each "can't read /
+// would corrupt" case (unreadable file, broken geography, duplicate sheet) flips ok=false.
+function onlyHardBlocksBlockDataQualityIsAdvisory() {
+  const noisy = result([
+    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 2 }),
+    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 3 }), // identical → duplicate line; future-dated; bad discount
+  ]);
+  const report = validateNormalizedUpload(noisy, ctx());
+  assert.ok(has(report, "duplicate_rows"));
+  assert.ok(has(report, "future_dated_rows"));
+  assert.ok(has(report, "discount_out_of_range"));
+  assert.equal(report.errorCount, 0, "pure data-quality findings must never be errors");
+  assert.equal(report.ok, true, "data-quality warnings never block the upload");
 
-// Per-finding acknowledgement: commit blocks until EVERY emitted warning code is acknowledged; an
-// acknowledged code clears only itself, and info/error codes are never "warnings to acknowledge".
-function perFindingAcknowledgement() {
-  // two distinct warnings: zero_value_with_qty + discount_out_of_range
-  const report = validateNormalizedUpload(result([row({ qty: 5, value: 0, discount: 1.5 })]), ctx());
-  const warnCodes = report.findings.filter((f) => f.severity === "warning").map((f) => f.code);
-  assert.ok(warnCodes.length >= 2, "fixture must produce >=2 warnings");
-  // nothing acknowledged → all warnings outstanding
-  assert.equal(unacknowledgedWarningCodes(report, []).length, warnCodes.length);
-  // acknowledging ONE clears only that one
-  const afterOne = unacknowledgedWarningCodes(report, [warnCodes[0]]);
-  assert.equal(afterOne.length, warnCodes.length - 1);
-  assert.equal(afterOne.includes(warnCodes[0]), false);
-  // acknowledging all → none outstanding
-  assert.equal(unacknowledgedWarningCodes(report, warnCodes).length, 0);
-  // acknowledging an info/unknown code does NOT clear a real warning
-  assert.equal(unacknowledgedWarningCodes(report, ["recognition_coverage_summary", "zero_qty"]).length, warnCodes.length);
+  // Each hard block flips ok=false:
+  const unreadable = validateNormalizedUpload(result([row()], { exceptions: [darkException()] }), ctx());
+  assert.equal(unreadable.ok, false);
+  const brokenGeo = validateNormalizedUpload(result([row({ brickId: "B1", regionCode: "R1" }), row({ brickId: "B1", regionCode: "R2", clientCode: "C2", qty: 20, value: 200, rawRowNumber: 3 })]), ctx());
+  assert.equal(brokenGeo.ok, false);
+  const dupSheet = validateNormalizedUpload(result([row()]), ctx({ resolvedPeriod: "2026-05", existingBatchPeriods: ["2026-05"] }));
+  assert.equal(dupSheet.ok, false);
 }
 
 export function runSalesUploadValidationTests() {
   cleanBatchPasses();
   noCodedRowsBlocks();
+  allRowsIgnoredBlocks();
+  darkExceptionsBlock();
+  rowsReadMismatchBlocks();
+  brickToRegionInconsistentBlocks();
+  blankGeographyBlocks();
+  duplicateSheetBlocks();
+  duplicateRowsWarnNeverBlock();
+  futureDatedRowsWarnNeverBlock();
   negativeQtyOnlyWarnsWhenReturnsDominate();
   negativeValueExcludesReturns();
   zeroQtyIsInfoZeroValueWarns();
   discountOutOfRangeWarns();
-  duplicateRowsWarn();
   allZeroValueBatchWarns();
   fractionalQtyNotFlagged();
-  futureDatedRowsBlock();
   blankDateGuardedByHasDateColumn();
-  periodReplaceWarns();
   customerInconsistentBrickWarns();
-  brickToRegionInconsistentBlocks();
-  blankGeographyBlocks();
   geographyBrickMissingRespectsRegionOnly();
   unknownLineWarns();
-  darkExceptionsBlock();
   highIgnoredWarns();
-  allRowsIgnoredBlocks();
-  rowsReadMismatchBlocks();
   priorPeriodSpikeWarns();
   extremeUnitPriceOnlyForSheet();
   consolidationSurfacesCrossPeriodDuplicates();
   negativeNetBatchDoesNotFalseCollapse();
   detectorDisagreementWarnsOnlyWhenConfident();
-  warningsDoNotClearOkButErrorsDo();
-  perFindingAcknowledgement();
+  onlyHardBlocksBlockDataQualityIsAdvisory();
 }
