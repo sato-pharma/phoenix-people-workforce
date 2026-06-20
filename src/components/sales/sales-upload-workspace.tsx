@@ -21,7 +21,8 @@ type Props = {
 };
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
-type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: unknown[]; unknownTerritories: unknown[]; unknownCustomers: unknown[]; period: string | null };
+type UnknownItem = { count: number; raw: string; rawName: string; suggestionCode: string | null; suggestionLabel: string | null };
+type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; period: string | null };
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; fixHint?: string };
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
@@ -174,6 +175,50 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+// The exact items the system could NOT recognize — shown so the operator knows precisely what to map
+// (instead of just a count). Each row is a distinct raw value to map once; `count` is how many sheet
+// rows it blocks, and a suggestion is shown when the engine has a likely match to confirm in Mapping.
+function UnmappedList({ products, customers, territories }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[] }) {
+  const groups = [
+    { label: "Products", items: products },
+    { label: "Customers", items: customers },
+    { label: "Territories / bricks", items: territories },
+  ].filter((g) => g.items.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <div className="space-y-2 rounded-[6px] border border-amber-200 bg-amber-50/40 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-800">What still needs mapping</p>
+      {groups.map((g) => (
+        <div key={g.label}>
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</div>
+          <div className="max-h-56 overflow-auto rounded-[6px] border border-amber-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+                <tr>
+                  <th className="px-3 py-1.5">Value in sheet</th>
+                  <th className="px-3 py-1.5">Name in sheet</th>
+                  <th className="px-3 py-1.5 text-right">Rows</th>
+                  <th className="px-3 py-1.5">Suggested match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.items.map((u, i) => (
+                  <tr className="border-t border-[#FFE8D6]" key={`${u.raw}-${i}`}>
+                    <td className="px-3 py-1.5 font-mono text-xs font-semibold text-[#0F172A]">{u.raw || <span className="italic text-[#94A3B8]">(blank)</span>}</td>
+                    <td className="px-3 py-1.5 text-[#334155]">{u.rawName || <span className="italic text-[#94A3B8]">—</span>}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{u.count.toLocaleString()}</td>
+                    <td className="px-3 py-1.5 text-xs text-[#64748B]">{u.suggestionLabel ? <span>{u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</span> : <span className="italic text-[#94A3B8]">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -394,10 +439,13 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
           {/* Unmapped / period gates */}
           <div className="space-y-2 px-4 pt-4">
             {unknowns > 0 ? (
-              <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
-                <p className="font-semibold">{unknowns} unmapped item(s) — upload is blocked until they&apos;re mapped.</p>
-                <p className="text-xs">Map them in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-validate.</p>
-              </div></AdminCallout>
+              <div className="space-y-2">
+                <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
+                  <p className="font-semibold">{unknowns} unmapped item(s) — upload is blocked until they&apos;re mapped.</p>
+                  <p className="text-xs">These {num(rec.rowsBlocked)} row(s) can&apos;t be coded yet. Map the items below in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-validate.</p>
+                </div></AdminCallout>
+                <UnmappedList customers={analysis.data?.unknownCustomers ?? []} products={analysis.data?.unknownProducts ?? []} territories={analysis.data?.unknownTerritories ?? []} />
+              </div>
             ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
               <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>
             ) : null}
