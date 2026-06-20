@@ -33,7 +33,7 @@ export type DetectionResult = {
   matches: DistributorDetection[]; // all candidates, best-first
 };
 
-function normalizeHeader(value: string): string {
+export function normalizeHeader(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
