@@ -6,6 +6,7 @@ import { normalizeHrId } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import {
   classifyCoachingImportRows,
+  flagCoachingImportDuplicateRows,
   parseCoachingDate,
   parseCoachingWorkbookRows,
 } from "../src/lib/coaching/import.ts";
@@ -129,4 +130,21 @@ export async function runCoachingImportTests() {
   const testerClass = classified[2];
   assert.equal(testerClass.classification, "skipped");
   assert.ok(testerClass.issues.length >= 1);
+
+  const duplicateExisting = flagCoachingImportDuplicateRows(
+    classified,
+    new Set(["b-104|2026-02-16"]),
+    new Set(),
+  );
+  assert.equal(duplicateExisting[0].classification, "duplicate");
+  assert.match(duplicateExisting[0].duplicateReason ?? "", /already exists/i);
+
+  const duplicateInWorkbook = flagCoachingImportDuplicateRows(
+    [...classified, { ...classified[0], rowNumber: 6 }],
+    new Set(),
+    new Set(),
+  );
+  assert.equal(duplicateInWorkbook[0].classification, "matched");
+  assert.equal(duplicateInWorkbook[3].classification, "duplicate");
+  assert.match(duplicateInWorkbook[3].duplicateReason ?? "", /workbook contains another/i);
 }

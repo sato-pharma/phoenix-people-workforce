@@ -25,7 +25,7 @@ type ApiResponse<T> = {
   success: boolean;
 };
 
-type TabKey = "matched" | "archived" | "skipped";
+type TabKey = "matched" | "duplicate" | "archived" | "skipped";
 
 function scoreSum(scores: Record<string, number>) {
   return Object.values(scores).reduce((total, value) => total + (Number(value) || 0), 0);
@@ -33,7 +33,8 @@ function scoreSum(scores: Record<string, number>) {
 
 const tabLabels: Record<TabKey, string> = {
   archived: "Resigned / Unmatched",
-  matched: "Imported",
+  duplicate: "Duplicates",
+  matched: "Ready to Import",
   skipped: "Needs Fixing",
 };
 
@@ -47,7 +48,12 @@ export function CoachingImportWorkspace() {
   const [error, setError] = useState<string | null>(null);
 
   const rowsByTab = useMemo(() => {
-    const groups: Record<TabKey, CoachingImportClassifiedRow[]> = { archived: [], matched: [], skipped: [] };
+    const groups: Record<TabKey, CoachingImportClassifiedRow[]> = {
+      archived: [],
+      duplicate: [],
+      matched: [],
+      skipped: [],
+    };
     for (const row of preview?.rows ?? []) groups[row.classification].push(row);
     return groups;
   }, [preview]);
@@ -66,7 +72,15 @@ export function CoachingImportWorkspace() {
         throw new Error(payload.message || "Failed to read the coaching workbook.");
       }
       setPreview(payload.data);
-      setTab(payload.data.totals.matched > 0 ? "matched" : payload.data.totals.archived > 0 ? "archived" : "skipped");
+      setTab(
+        payload.data.totals.matched > 0
+          ? "matched"
+          : payload.data.totals.duplicate > 0
+            ? "duplicate"
+            : payload.data.totals.archived > 0
+              ? "archived"
+              : "skipped",
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to read the coaching workbook.");
     } finally {
@@ -161,11 +175,12 @@ export function CoachingImportWorkspace() {
                 {result ? "Imported" : `Confirm & import (${totals.matched} report${totals.matched === 1 ? "" : "s"})`}
               </button>
             }
-            description={`Sheet "${preview.sheetName ?? "—"}" · ${totals.total} rows parsed. Review before importing — imported reports are submitted and auto-acknowledged by the rep, with no notifications sent.`}
+            description={`Sheet "${preview.sheetName ?? "—"}" · ${totals.total} rows parsed. Review before importing — duplicates are flagged and skipped; imported reports are submitted and auto-acknowledged by the rep, with no notifications sent.`}
             title="Preview"
           />
           <div className="flex flex-wrap gap-2 px-5 pt-5 sm:px-6">
             <AdminInsightChip surface="light" tone="emerald">{totals.matched} to import</AdminInsightChip>
+            <AdminInsightChip surface="light" tone="slate">{totals.duplicate} duplicate</AdminInsightChip>
             <AdminInsightChip surface="light" tone="orange">{totals.archived} resigned / archived</AdminInsightChip>
             <AdminInsightChip surface="light" tone="slate">{totals.skipped} need fixing</AdminInsightChip>
           </div>
@@ -246,7 +261,11 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
                 ) : null}
                 {tab !== "matched" ? (
                   <td className="px-4 py-3 text-[#94532B]">
-                    {tab === "archived" ? row.unmatchedReason : row.issues.join("; ")}
+                    {tab === "duplicate"
+                      ? row.duplicateReason
+                      : tab === "archived"
+                        ? row.unmatchedReason
+                        : row.issues.join("; ")}
                   </td>
                 ) : null}
               </tr>
