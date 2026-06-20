@@ -96,6 +96,7 @@ import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shap
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
+import { runDistributorDetectionHeaderRowTests } from "./distributor-detection-header-row.test.ts";
 import { runBrickSuggestionsTests } from "./brick-suggestions.test.ts";
 import { runImportCoverageTests } from "./import-coverage.test.ts";
 import { runOfficePivotTests } from "./office-pivot.test.ts";
@@ -334,6 +335,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("detect distributor", runDetectDistributorTests);
+await runTest("detect distributor header-row pick (EG-BR regression)", runDistributorDetectionHeaderRowTests);
 await runTest("brick suggestions", runBrickSuggestionsTests);
 await runTest("import coverage aggregation", runImportCoverageTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
