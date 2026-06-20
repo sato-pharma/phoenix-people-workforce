@@ -74,7 +74,7 @@ const META_COLUMNS = {
 
 const scoreItemLabel = new Map(coachingScoreItems.map((item) => [item.key, item.label]));
 
-export type CoachingImportClassification = "matched" | "archived" | "skipped";
+export type CoachingImportClassification = "matched" | "archived" | "duplicate" | "skipped";
 
 export type CoachingImportRawRow = {
   areaOfDevelopment: string | null;
@@ -98,6 +98,7 @@ export type CoachingImportClassifiedRow = CoachingImportRawRow & {
   classification: CoachingImportClassification;
   coachingQuarter: number | null;
   coachingYear: number | null;
+  duplicateReason: string | null;
   issues: string[];
   resolvedHrId: string | null;
   resolvedName: string | null;
@@ -109,6 +110,7 @@ export type CoachingImportPreview = {
   sheetName: string | null;
   totals: {
     archived: number;
+    duplicate: number;
     matched: number;
     skipped: number;
     total: number;
@@ -351,6 +353,7 @@ export function classifyCoachingImportRows(
       classification,
       coachingQuarter: quarter,
       coachingYear: year,
+      duplicateReason: null,
       issues,
       resolvedHrId: resolved?.hrId ?? null,
       resolvedName: resolved?.fullName ?? null,
@@ -359,9 +362,47 @@ export function classifyCoachingImportRows(
   });
 }
 
+export function flagCoachingImportDuplicateRows(
+  rows: CoachingImportClassifiedRow[],
+  existingReportKeys: Set<string>,
+  existingArchivedKeys: Set<string>,
+): CoachingImportClassifiedRow[] {
+  const seenReportKeys = new Set<string>();
+  const seenArchivedKeys = new Set<string>();
+
+  return rows.map((row) => {
+    if (row.classification === "matched" && row.resolvedHrId) {
+      const key = reportDedupKey(row.resolvedHrId, row.coachingDate);
+      let duplicateReason: string | null = null;
+      if (existingReportKeys.has(key)) {
+        duplicateReason = "A coaching report already exists for this rep and date.";
+      } else if (seenReportKeys.has(key)) {
+        duplicateReason = "This workbook contains another coaching report for this rep and date.";
+      }
+      seenReportKeys.add(key);
+      return duplicateReason ? { ...row, classification: "duplicate", duplicateReason } : row;
+    }
+
+    if (row.classification === "archived") {
+      const key = archivedEvaluationKey(row.sourceName, row.coachingDate);
+      let duplicateReason: string | null = null;
+      if (existingArchivedKeys.has(key)) {
+        duplicateReason = "This resigned-rep evaluation is already archived.";
+      } else if (seenArchivedKeys.has(key)) {
+        duplicateReason = "This workbook contains another resigned-rep evaluation for this source and date.";
+      }
+      seenArchivedKeys.add(key);
+      return duplicateReason ? { ...row, classification: "duplicate", duplicateReason } : row;
+    }
+
+    return row;
+  });
+}
+
 function summarize(rows: CoachingImportClassifiedRow[]): CoachingImportPreview["totals"] {
   return {
     archived: rows.filter((row) => row.classification === "archived").length,
+    duplicate: rows.filter((row) => row.classification === "duplicate").length,
     matched: rows.filter((row) => row.classification === "matched").length,
     skipped: rows.filter((row) => row.classification === "skipped").length,
     total: rows.length,
@@ -372,7 +413,11 @@ export async function previewCoachingImport(buffer: ArrayBuffer): Promise<Coachi
   const workbook = await loadExcelWorkbook(buffer);
   const { rows, sheetName } = parseCoachingWorkbookRows(workbook);
   const directory = await getEmployeeDirectoryRows();
-  const classified = classifyCoachingImportRows(rows, buildDirectoryIndex(directory));
+  const classified = flagCoachingImportDuplicateRows(
+    classifyCoachingImportRows(rows, buildDirectoryIndex(directory)),
+    await loadExistingReportKeys(),
+    await loadArchivedEvaluationKeys(),
+  );
   return { rows: classified, sheetName, totals: summarize(classified) };
 }
 
@@ -537,7 +582,13 @@ export async function commitCoachingImport(
   const { rows } = parseCoachingWorkbookRows(workbook);
   const directory = await getEmployeeDirectoryRows();
   const directoryIndex = buildDirectoryIndex(directory);
-  const classified = classifyCoachingImportRows(rows, directoryIndex);
+  const existingReportKeys = await loadExistingReportKeys();
+  const existingArchivedKeys = await loadArchivedEvaluationKeys();
+  const classified = flagCoachingImportDuplicateRows(
+    classifyCoachingImportRows(rows, directoryIndex),
+    existingReportKeys,
+    existingArchivedKeys,
+  );
 
   // Every imported coaching report is attributed to the fixed field-coaching coach
   // (A-7), regardless of which admin runs the upload. This makes the coach of record
@@ -567,14 +618,20 @@ export async function commitCoachingImport(
     skipped: [],
   };
 
-  const existingReportKeys = await loadExistingReportKeys();
-  const existingArchivedKeys = await loadArchivedEvaluationKeys();
-  const seenArchivedKeys = new Set<string>();
-
   const pendingReports: PendingReportImport[] = [];
   const archivedInputs: CoachingArchivedEvaluationInput[] = [];
 
   for (const row of classified) {
+    if (row.classification === "duplicate") {
+      result.duplicates.push({
+        hrId: row.resolvedHrId ?? row.claimedHrId,
+        reason: row.duplicateReason ?? "This row is a duplicate and was not imported.",
+        rowNumber: row.rowNumber,
+        sourceName: row.sourceName,
+      });
+      continue;
+    }
+
     if (row.classification === "skipped") {
       result.skipped.push({
         reason: row.issues.join("; ") || "Incomplete row.",
@@ -585,16 +642,10 @@ export async function commitCoachingImport(
     }
 
     if (row.classification === "matched" && row.resolvedHrId) {
+      // Duplicates (DB-existing and in-workbook) were already classified as
+      // "duplicate" by flagCoachingImportDuplicateRows above and handled at the
+      // top of this loop, so a "matched" row here is always a genuine new report.
       const key = reportDedupKey(row.resolvedHrId, row.coachingDate);
-      if (existingReportKeys.has(key)) {
-        result.duplicates.push({
-          hrId: row.resolvedHrId,
-          reason: "A coaching report already exists for this rep and date.",
-          rowNumber: row.rowNumber,
-          sourceName: row.sourceName,
-        });
-        continue;
-      }
 
       try {
         const employeeKey = normalizeHrId(row.resolvedHrId);
@@ -621,18 +672,8 @@ export async function commitCoachingImport(
       continue;
     }
 
-    // Archived (resigned / unmatched)
-    const archiveKey = archivedEvaluationKey(row.sourceName, row.coachingDate);
-    if (existingArchivedKeys.has(archiveKey) || seenArchivedKeys.has(archiveKey)) {
-      result.duplicates.push({
-        hrId: row.claimedHrId,
-        reason: "This resigned-rep evaluation is already archived.",
-        rowNumber: row.rowNumber,
-        sourceName: row.sourceName,
-      });
-      continue;
-    }
-    seenArchivedKeys.add(archiveKey);
+    // Archived (resigned / unmatched). Duplicate archived evaluations were
+    // already flagged as "duplicate" above, so this is a genuine new one.
     archivedInputs.push({
       areaOfDevelopment: row.areaOfDevelopment,
       claimedHrId: row.claimedHrId,
