@@ -597,7 +597,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   <button
                     type="button"
                     onClick={() => void runReport(filters)}
-                    disabled={state === "loading"}
+                    disabled={state === "loading" || !roiFilterStateHasAny(filters)}
                     className="inline-flex items-center gap-2 rounded-[6px] bg-[#F97316] px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#EA580C] disabled:opacity-60"
                   >
                     {state === "loading" ? <LoadingSpinner /> : <Filter className="h-3.5 w-3.5" />}
@@ -615,6 +615,9 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
+                  {!roiFilterStateHasAny(filters) ? (
+                    <span className="text-[12px] font-medium text-[#94A3B8]">Choose at least one filter to run the report.</span>
+                  ) : null}
                   {hasReport ? (
                     <>
                       <button
