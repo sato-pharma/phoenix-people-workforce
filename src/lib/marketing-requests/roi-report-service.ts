@@ -190,13 +190,13 @@ function resolveChainSeats(
     const fn = resolveJobFunctionRole(current.jobTitle);
     if (fn === "District Manager" && !seats.dmHrId) {
       seats.dmHrId = key;
-      seats.dmName = current.fullName ?? key;
+      seats.dmName = current.fullName ?? null;
     } else if (fn === "Regional Manager" && !seats.rsmHrId) {
       seats.rsmHrId = key;
-      seats.rsmName = current.fullName ?? key;
+      seats.rsmName = current.fullName ?? null;
     } else if (fn === "National Sales Manager" && !seats.nsmHrId) {
       seats.nsmHrId = key;
-      seats.nsmName = current.fullName ?? key;
+      seats.nsmName = current.fullName ?? null;
     }
     const managerKey = normalizeHrId(current.managerHrId);
     current = managerKey ? byHrId.get(managerKey) ?? null : null;
