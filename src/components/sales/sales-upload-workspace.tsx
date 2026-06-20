@@ -443,32 +443,20 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   );
 }
 
-function WeeklyUpload({ distributorCode }: { distributorCode: string }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function upload(file: File) {
-    setBusy(true); setMsg(null); setError(null);
-    try {
-      const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode);
-      const res = await fetch("/api/sales/weekly/validate", { method: "POST", body: fd });
-      const payload = await readJson<{ success?: boolean; status?: string; message?: string; error?: string }>(res);
-      if (payload.error) setError(payload.error);
-      else setMsg(payload.message ?? "Weekly sheet processed.");
-    } catch (e) { setError(e instanceof Error ? e.message : "Weekly upload failed."); }
-    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
-  }
-
+// Weekly uploads run through the full guided weekly wizard (/sales/weekly) — the same AI verify →
+// validate → confirm flow as monthly, plus the weekly column checks and per-week replace. Rather than
+// keep a degraded one-click weekly path on the hub (and a second weekly UI to maintain), the hub hands
+// off to that single canonical wizard.
+function WeeklyUpload({ distributorName }: { distributorName: string }) {
   return (
-    <div className="space-y-2">
-      <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={busy} onClick={() => fileRef.current?.click()} type="button">
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Upload weekly sheet
-      </Button>
-      <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} ref={fileRef} type="file" />
-      {msg ? <AdminCallout tone="success"><span>{msg}</span></AdminCallout> : null}
-      {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
+    <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-[#E2E8F0] bg-[#FCFDFE] px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-[#0F172A]">Weekly sales use the guided weekly wizard</p>
+        <p className="mt-0.5 text-xs text-[#64748B]">Same AI verify → validate → confirm flow as monthly, with the weekly column checks and per-week replace. Upload {distributorName}&apos;s weekly sheet there.</p>
+      </div>
+      <Link className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[6px] bg-[#0B0B0B] px-4 text-sm font-black text-white transition hover:bg-[#F97316]" href="/sales/weekly">
+        <UploadCloud className="h-4 w-4" /> Open Weekly Upload
+      </Link>
     </div>
   );
 }
@@ -540,7 +528,7 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
       {selected.weeklySupported ? (
         <Card className={cn(panel, "space-y-3 p-5")}>
           <h3 className="text-base font-black tracking-tight text-slate-950">Upload Weekly Sales</h3>
-          <WeeklyUpload distributorCode={selected.code} />
+          <WeeklyUpload distributorName={selected.name} />
         </Card>
       ) : null}
     </div>

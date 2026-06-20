@@ -22,8 +22,11 @@ type Detection = {
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: unknown[]; unknownTerritories: unknown[]; unknownCustomers: unknown[] };
 type ProfileSummary = { productColumns: string[]; quantityColumns: string[]; dateColumns: string[]; customerCodeColumns: string[]; territoryColumns: string[]; valueSource: string; hasDateColumn: boolean };
+type Severity = "error" | "warning" | "info";
+type Finding = { code: string; severity: Severity; title: string; detail: string };
+type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
 type AnalyzeResult =
-  | { status: "ok"; preview: Preview; reconciliation: Reconciliation; period: string | null; needsPeriod: boolean }
+  | { status: "ok"; preview: Preview; reconciliation: Reconciliation; period: string | null; needsPeriod: boolean; validation?: ValidationReport }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[] }
   | { status: "coded_sheet"; distributorName: string };
 type Diag = { detection: Detection; chosenDistributor: string | null; profileSummary: ProfileSummary | null; analyze: AnalyzeResult | null };
@@ -63,7 +66,7 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Upload any file to see what the system would do — detected distributor, the profile it uses, recognition coverage, unknown items and expected totals. Nothing is imported."
+        description="Upload any file to see what the system would do — detected distributor, the profile it uses, recognition coverage, unknown items, expected totals and the strict checks. Reads every worksheet, is Arabic-aware, and flags a wrong-distributor pick. Nothing is imported."
         eyebrow="Sales · One connected module"
         icon={<Stethoscope className="h-4 w-4" />}
         title="Sales Diagnostics"
@@ -132,6 +135,29 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
               ) : (
                 <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>Fully recognized — this file would import cleanly{analyze.needsPeriod ? " (pick a period — no date column)" : ""}.</span></AdminCallout>
               )}
+              {analyze.validation ? (
+                <div className="rounded-xl border border-[#E2E8F0] p-3">
+                  <div className="flex items-center gap-2 text-xs font-bold">
+                    <span className="uppercase tracking-[0.12em] text-[#64748B]">Strict checks</span>
+                    <span className="ml-auto flex gap-2">
+                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.errorCount > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]")}>{analyze.validation.errorCount} error</span>
+                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.warningCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]")}>{analyze.validation.warningCount} warning</span>
+                    </span>
+                  </div>
+                  {analyze.validation.findings.filter((f) => f.severity !== "info").length > 0 ? (
+                    <ul className="mt-2 space-y-1">
+                      {analyze.validation.findings.filter((f) => f.severity !== "info").map((f) => (
+                        <li className="text-xs" key={f.code}>
+                          <span className={cn("font-bold", f.severity === "error" ? "text-rose-700" : "text-amber-800")}>{f.title}</span>
+                          <span className="text-[#64748B]"> — {f.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs font-semibold text-[#16A34A]">No blocking errors or warnings.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : (
             <AdminCallout tone="neutral"><span>No distributor could be analyzed. Try forcing one above.</span></AdminCallout>
