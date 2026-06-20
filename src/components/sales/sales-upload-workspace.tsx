@@ -27,7 +27,8 @@ type Finding = { code: string; severity: Severity; title: string; detail: string
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
 type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
 type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null };
+type AiExplanation = { aiUsed: boolean; summary: string; suggestions: { expected: string; suggestedHeader: string | null; note?: string }[] };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null };
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
 type DetectResponse = { success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string }; error?: string };
 
@@ -369,6 +370,19 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
           ) : null}
           <p className="mt-1 text-xs">Do not rename or remove the template&apos;s required columns. Fix the header(s) above, then re-validate.</p>
           {analysis.fingerprintWarning ? <p className="mt-1 text-xs">Tip: this looks more like {analysis.fingerprintWarning.likelyName} ({analysis.fingerprintWarning.likelyCode}). Did you pick the right distributor?</p> : null}
+          {analysis.aiExplanation?.aiUsed && (analysis.aiExplanation.summary || analysis.aiExplanation.suggestions.length > 0) ? (
+            <div className="mt-2 rounded-[6px] border border-[#F59E0B]/40 bg-amber-50/60 px-3 py-2">
+              <p className="flex items-center gap-1 text-xs font-black text-amber-900"><Sparkles className="h-3.5 w-3.5" /> AI help</p>
+              {analysis.aiExplanation.summary ? <p className="mt-0.5 text-xs text-amber-900">{analysis.aiExplanation.summary}</p> : null}
+              {analysis.aiExplanation.suggestions.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-900">
+                  {analysis.aiExplanation.suggestions.map((s) => (
+                    <li key={s.expected}><span className="font-semibold">{s.expected}</span>{s.suggestedHeader ? <> → likely your column <span className="font-mono">&quot;{s.suggestedHeader}&quot;</span></> : " → no matching column found"}{s.note ? <span className="text-amber-800"> · {s.note}</span> : null}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
         </div></AdminCallout>
       ) : null}
 

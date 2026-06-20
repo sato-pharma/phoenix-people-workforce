@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
+import { headerRowTexts, normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -49,7 +49,7 @@ export type NormalizePreview = {
 
 export type NormalizeFileResult =
   | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; hasDateColumn: boolean; regionOnly: boolean }
-  | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
+  | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; observedHeaders: string[] }
   | { status: "coded_sheet"; distributorName: string };
 
 // Phoenix product code -> master factory price, keyed the same way the engine keys productByCode,
@@ -104,6 +104,7 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
       distributorName: profile.distributorName,
       missingGroups: headerValidation.missingGroups,
       fingerprintWarning: headerValidation.fingerprintWarning,
+      observedHeaders: headerRowTexts(sheet, profile), // column titles only — for the AI explainer + UI
     };
   }
 

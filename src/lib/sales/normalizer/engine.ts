@@ -202,6 +202,18 @@ export function validateSheetHeaders(
   };
 }
 
+// The raw (un-normalized) cell texts of the chosen header row — used to show the operator (and the AI
+// explainer) the column TITLES the file actually has. Header text only; never reads data rows.
+export function headerRowTexts(sheet: ExcelJS.Worksheet, profile?: DistributorProfile): string[] {
+  const header = buildHeaderMap(sheet, profile);
+  const texts: string[] = [];
+  sheet.getRow(header.headerRow).eachCell({ includeEmpty: false }, (cell) => {
+    const text = cellText(cell).trim();
+    if (text) texts.push(text);
+  });
+  return texts;
+}
+
 function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
   for (const name of columns ?? []) {
     const c = map.col.get(normalizeHeaderKey(name));

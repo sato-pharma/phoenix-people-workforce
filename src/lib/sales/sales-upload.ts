@@ -1,5 +1,6 @@
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
 import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
+import { explainHeaderMismatch, type HeaderMismatchExplanation } from "@/lib/sales/normalizer/ai-explain";
 import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
@@ -84,7 +85,7 @@ export function applyPeriodConsolidation(result: NormalizeResult, decision: Peri
 
 export type AnalyzeResult =
   | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
-  | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
+  | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation }
   | { status: "coded_sheet"; distributorName: string };
 
 // Current calendar month as YYYY-MM (server clock). Used by the temporal validations. Date is safe
@@ -191,7 +192,10 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   const rec = await recognizeDistributorWorkbook(distributorCode, file);
   if (rec.status === "coded_sheet") return { status: "coded_sheet", distributorName: rec.distributorName };
   if (rec.status === "header_error") {
-    return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning };
+    // AI helper, ONLY when stuck: explain the mismatch + suggest a column mapping. No-op without an AI
+    // key, and never throws — the deterministic header_error is returned regardless.
+    const aiExplanation = await explainHeaderMismatch({ distributorName: rec.distributorName, observedHeaders: rec.observedHeaders, missingGroups: rec.missingGroups });
+    return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning, aiExplanation };
   }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products);
   const reconciliation = buildReconciliation(rec.result);

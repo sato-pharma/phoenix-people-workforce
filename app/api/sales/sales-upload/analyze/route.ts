@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, code: "coded_sheet_detected", distributorName: result.distributorName, error: "This sheet is already coded — upload the raw distributor export." });
     }
     if (result.status === "header_error") {
-      return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, error: `Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
+      return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, aiExplanation: result.aiExplanation ?? null, error: `Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
     }
     return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation });
   } catch (error) {
