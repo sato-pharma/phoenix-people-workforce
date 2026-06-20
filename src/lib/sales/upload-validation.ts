@@ -260,16 +260,19 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     }
   }
 
+  // Zero-quantity rows add nothing to sales and are harmless, so this is advisory (info) — it was pure
+  // acknowledge-tax as a warning. A genuinely broken quantity COLUMN surfaces via all_zero_value_batch /
+  // low_recognition instead.
   const zeroQty = coded.filter((r) => r.qty === 0);
   if (zeroQty.length > 0) {
     add({
       code: "zero_qty",
-      severity: "warning",
+      severity: "info",
       title: "Zero-quantity rows",
       detail: `${zeroQty.length.toLocaleString()} row(s) have a quantity of zero — they add nothing to sales and may be placeholders or a non-numeric quantity cell read as zero.`,
       count: zeroQty.length,
       sampleRows: sampleRows(zeroQty),
-      fixHint: "Check the quantity column for these rows in the source sheet.",
+      fixHint: "Check the quantity column for these rows in the source sheet if you expected sales there.",
     });
   }
 
@@ -632,4 +635,13 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   const warningCount = findings.filter((f) => f.severity === "warning").length;
   const infoCount = findings.filter((f) => f.severity === "info").length;
   return { ok: errorCount === 0, errorCount, warningCount, infoCount, findings };
+}
+
+// PER-FINDING acknowledgement (pure): the warning codes in this report the user has NOT yet
+// acknowledged. Replaces the old single "acknowledge all" flag so noise (e.g. an advisory) can never
+// rubber-stamp a real warning — commit blocks until EVERY emitted warning code is acknowledged
+// individually. Errors are never acknowledgeable (they hard-block via report.ok).
+export function unacknowledgedWarningCodes(report: ValidationReport, acknowledged: readonly string[]): string[] {
+  const acked = new Set(acknowledged);
+  return report.findings.filter((f) => f.severity === "warning" && !acked.has(f.code)).map((f) => f.code);
 }

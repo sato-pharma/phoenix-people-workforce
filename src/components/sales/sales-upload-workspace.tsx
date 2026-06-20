@@ -134,16 +134,19 @@ const SEVERITY_STYLE: Record<Severity, { row: string; icon: typeof Info; iconCla
   info: { row: "border-l-slate-300 bg-slate-50/60", icon: Info, iconClass: "text-slate-500", label: "Info" },
 };
 
-// Strict validation report shown after Analyze. Errors block import outright; warnings block until the
-// user ticks the acknowledge box; info is advisory. The same findings are re-checked server-side at
+// Strict validation report shown after Analyze. Errors block import outright; EACH warning blocks until
+// its own checkbox is ticked (per-finding acknowledgement — no blanket "acknowledge all" that lets a
+// real warning ride along with noise); info is advisory. The same findings are re-checked server-side at
 // commit, so this panel mirrors the gate exactly.
-function ValidationPanel({ report, acknowledged, onAcknowledge }: { report: ValidationReport; acknowledged: boolean; onAcknowledge: (v: boolean) => void }) {
+function ValidationPanel({ report, acknowledgedCodes, onToggleAck }: { report: ValidationReport; acknowledgedCodes: ReadonlySet<string>; onToggleAck: (code: string, checked: boolean) => void }) {
   const order: Severity[] = ["error", "warning", "info"];
   const sorted = [...report.findings].sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
+  const ackable = report.errorCount === 0; // errors must be fixed first; only then do per-warning acks matter
+  const ackedWarnings = report.findings.filter((f) => f.severity === "warning" && acknowledgedCodes.has(f.code)).length;
   const headline = report.errorCount > 0
     ? { tone: "border-rose-200 bg-rose-50 text-rose-700", text: `${report.errorCount} error(s) must be fixed before importing.` }
     : report.warningCount > 0
-      ? { tone: "border-amber-200 bg-amber-50 text-amber-800", text: `${report.warningCount} warning(s) — review and acknowledge to import.` }
+      ? { tone: "border-amber-200 bg-amber-50 text-amber-800", text: `${ackedWarnings}/${report.warningCount} warning(s) acknowledged` }
       : { tone: "border-emerald-200 bg-emerald-50 text-emerald-700", text: "Strict validation passed — no errors or warnings." };
   return (
     <div className="space-y-2 rounded-xl border border-[#E2E8F0] p-3">
@@ -165,18 +168,18 @@ function ValidationPanel({ report, acknowledged, onAcknowledge }: { report: Vali
                   <p className="text-xs text-[#475569]">{f.detail}</p>
                   {f.fixHint ? <p className="mt-0.5 text-xs italic text-[#64748B]">{f.fixHint}</p> : null}
                   {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-[#94A3B8]">rows: {f.sampleRows.join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                  {f.severity === "warning" && ackable ? (
+                    <label className="mt-1.5 flex w-fit cursor-pointer items-center gap-2 rounded-md border border-amber-200 bg-amber-50/50 px-2 py-1 text-xs font-semibold text-amber-900">
+                      <input checked={acknowledgedCodes.has(f.code)} className="h-3.5 w-3.5 accent-[#F97316]" onChange={(e) => onToggleAck(f.code, e.target.checked)} type="checkbox" />
+                      I&apos;ve reviewed this — import anyway
+                    </label>
+                  ) : null}
                 </div>
               </div>
             </li>
           );
         })}
       </ul>
-      {report.errorCount === 0 && report.warningCount > 0 ? (
-        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm font-semibold text-amber-900">
-          <input checked={acknowledged} className="h-4 w-4 accent-[#F97316]" onChange={(e) => onAcknowledge(e.target.checked)} type="checkbox" />
-          I have reviewed the {report.warningCount} warning(s) above and want to import anyway.
-        </label>
-      ) : null}
     </div>
   );
 }
@@ -194,11 +197,15 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   // True once an auto-detection attempt has finished — even when it found nothing. Lets the UI always
   // show a result (and a way to continue) instead of silently leaving the operator with a locked step.
   const [verifyRan, setVerifyRan] = useState(false);
-  const [ackWarnings, setAckWarnings] = useState(false);
+  // Per-finding acknowledgement: the set of warning codes the operator has individually ticked.
+  const [ackedCodes, setAckedCodes] = useState<Set<string>>(new Set());
+  function toggleAck(code: string, checked: boolean) {
+    setAckedCodes((prev) => { const next = new Set(prev); if (checked) next.add(code); else next.delete(code); return next; });
+  }
 
   // Any change to file/period/distributor invalidates the verification + validation downstream.
-  function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setAckWarnings(false); setError(null); }
-  function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); setAckWarnings(false); }
+  function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setAckedCodes(new Set()); setError(null); }
+  function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); setAckedCodes(new Set()); }
   function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); if (f) void detect(f); }
 
   async function detect(f: File) {
@@ -216,7 +223,9 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
 
   const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
   const validation = analysis?.validation ?? null;
-  const validationBlocks = validation ? (!validation.ok || (validation.warningCount > 0 && !ackWarnings)) : false;
+  // Each warning blocks until its own code is acknowledged (mirrors the server gate exactly).
+  const unackedWarnings = validation ? validation.findings.filter((f) => f.severity === "warning" && !ackedCodes.has(f.code)) : [];
+  const validationBlocks = validation ? (!validation.ok || unackedWarnings.length > 0) : false;
   const canImport = Boolean(analysis?.success) && unknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
   const breakdowns = analysis?.breakdowns ?? null;
 
@@ -245,7 +254,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   // ── Step 2 — Strict validation (dry run; persists nothing) ──
   async function analyze() {
     if (!file) { setError("Choose a file first."); return; }
-    setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null); setAckWarnings(false);
+    setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null); setAckedCodes(new Set());
     try {
       const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
       const res = await fetch("/api/sales/sales-upload/analyze", { method: "POST", body: fd });
@@ -262,7 +271,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     setBusy("commit"); setError(null);
     try {
       const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
-      if (ackWarnings) fd.append("acknowledgeWarnings", "true");
+      if (ackedCodes.size > 0) fd.append("acknowledgedWarningCodes", Array.from(ackedCodes).join(","));
       const res = await fetch("/api/sales/sales-upload/commit", { method: "POST", body: fd });
       const payload = await readJson<CommitResponse>(res);
       setCommitted(payload);
@@ -392,7 +401,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
             ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
               <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>
             ) : null}
-            {validation ? <ValidationPanel acknowledged={ackWarnings} onAcknowledge={setAckWarnings} report={validation} /> : null}
+            {validation ? <ValidationPanel acknowledgedCodes={ackedCodes} onToggleAck={toggleAck} report={validation} /> : null}
           </div>
 
           {/* Per product / region / brick / line breakdowns */}

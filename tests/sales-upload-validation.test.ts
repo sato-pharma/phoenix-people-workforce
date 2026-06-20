@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { validateNormalizedUpload, type ValidationContext, type ValidationReport } from "../src/lib/sales/upload-validation.ts";
+import { unacknowledgedWarningCodes, validateNormalizedUpload, type ValidationContext, type ValidationReport } from "../src/lib/sales/upload-validation.ts";
 import { applyPeriodConsolidation } from "../src/lib/sales/sales-upload.ts";
 import type { CodedRow, NormalizeException, NormalizeIgnoredRow, NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
 
@@ -88,9 +88,9 @@ function negativeValueExcludesReturns() {
   assert.equal(has(ret, "negative_value"), false);
 }
 
-function zeroQtyAndZeroValueWarn() {
+function zeroQtyIsInfoZeroValueWarns() {
   const zq = validateNormalizedUpload(result([row({ qty: 0, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
-  assert.equal(sev(zq, "zero_qty"), "warning");
+  assert.equal(sev(zq, "zero_qty"), "info"); // zero-qty is harmless → advisory, not acknowledge-tax
   const zv = validateNormalizedUpload(result([row({ value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
   assert.equal(sev(zv, "zero_value_with_qty"), "warning");
 }
@@ -248,11 +248,30 @@ function detectorDisagreementWarnsOnlyWhenConfident() {
 }
 
 function warningsDoNotClearOkButErrorsDo() {
-  const warnOnly = validateNormalizedUpload(result([row({ qty: 0, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
-  assert.equal(warnOnly.ok, true); // only warnings → still importable (after acknowledge in UI)
+  const warnOnly = validateNormalizedUpload(result([row({ qty: 5, value: 0 }), row({ clientCode: "C2", value: 100, rawRowNumber: 3 })]), ctx());
+  assert.equal(warnOnly.ok, true); // only warnings (zero_value_with_qty) → still importable after acknowledge
   assert.ok(warnOnly.warningCount > 0);
   const withError = validateNormalizedUpload(result([row({ invoiceDate: "2026-12" })]), ctx());
   assert.equal(withError.ok, false);
+}
+
+// Per-finding acknowledgement: commit blocks until EVERY emitted warning code is acknowledged; an
+// acknowledged code clears only itself, and info/error codes are never "warnings to acknowledge".
+function perFindingAcknowledgement() {
+  // two distinct warnings: zero_value_with_qty + discount_out_of_range
+  const report = validateNormalizedUpload(result([row({ qty: 5, value: 0, discount: 1.5 })]), ctx());
+  const warnCodes = report.findings.filter((f) => f.severity === "warning").map((f) => f.code);
+  assert.ok(warnCodes.length >= 2, "fixture must produce >=2 warnings");
+  // nothing acknowledged → all warnings outstanding
+  assert.equal(unacknowledgedWarningCodes(report, []).length, warnCodes.length);
+  // acknowledging ONE clears only that one
+  const afterOne = unacknowledgedWarningCodes(report, [warnCodes[0]]);
+  assert.equal(afterOne.length, warnCodes.length - 1);
+  assert.equal(afterOne.includes(warnCodes[0]), false);
+  // acknowledging all → none outstanding
+  assert.equal(unacknowledgedWarningCodes(report, warnCodes).length, 0);
+  // acknowledging an info/unknown code does NOT clear a real warning
+  assert.equal(unacknowledgedWarningCodes(report, ["recognition_coverage_summary", "zero_qty"]).length, warnCodes.length);
 }
 
 export function runSalesUploadValidationTests() {
@@ -260,7 +279,7 @@ export function runSalesUploadValidationTests() {
   noCodedRowsBlocks();
   negativeQtyOnlyWarnsWhenReturnsDominate();
   negativeValueExcludesReturns();
-  zeroQtyAndZeroValueWarn();
+  zeroQtyIsInfoZeroValueWarns();
   discountOutOfRangeWarns();
   duplicateRowsWarn();
   allZeroValueBatchWarns();
@@ -283,4 +302,5 @@ export function runSalesUploadValidationTests() {
   negativeNetBatchDoesNotFalseCollapse();
   detectorDisagreementWarnsOnlyWhenConfident();
   warningsDoNotClearOkButErrorsDo();
+  perFindingAcknowledgement();
 }
