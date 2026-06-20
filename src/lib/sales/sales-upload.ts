@@ -1,4 +1,5 @@
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
+import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
@@ -81,7 +82,7 @@ export function applyPeriodConsolidation(result: NormalizeResult, decision: Peri
 }
 
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } }
   | { status: "coded_sheet"; distributorName: string };
 
@@ -165,7 +166,7 @@ export function headerErrorMessage(distributorName: string, missingGroups: { lab
 // Dry-run: recognize + summarize + strictly validate, persist NOTHING. Backs the Sales Upload
 // "Analyze" step and the Diagnostics Center. The optional period mirrors what the user will commit
 // with, so the analyze report matches the commit gate exactly.
-export async function analyzeMonthlyUpload(distributorCode: string, file: File, periodOverride = ""): Promise<AnalyzeResult> {
+export async function analyzeMonthlyUpload(distributorCode: string, file: File, periodOverride = "", excludeProductCodes: readonly string[] = []): Promise<AnalyzeResult> {
   const rec = await recognizeDistributorWorkbook(distributorCode, file);
   if (rec.status === "coded_sheet") return { status: "coded_sheet", distributorName: rec.distributorName };
   if (rec.status === "header_error") {
@@ -173,12 +174,15 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products);
   const reconciliation = buildReconciliation(rec.result);
+  // Per-product/region/brick/line breakdown for the Validate step. Confidential products are
+  // excluded for non-CEO/Super-Admin viewers (excludeProductCodes) so the tables never leak them.
+  const breakdowns = buildPreviewBreakdowns(rec.result.coded, excludeProductCodes);
   const decision = resolveUploadPeriod(rec.result.coded.map((r) => r.invoiceDate), String(periodOverride ?? "").trim());
   const resolvedPeriod = decision.kind === "ok" ? decision.period : null;
   // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
   // matches the commit gate exactly — including duplicates that only appear after consolidation.
   const validation = await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod);
-  return { status: "ok", preview, reconciliation, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
+  return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
 
 export type CommitResult =

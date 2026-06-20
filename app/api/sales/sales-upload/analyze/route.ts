@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { analyzeMonthlyUpload } from "@/lib/sales/sales-upload";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -29,14 +30,17 @@ export async function POST(request: Request) {
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
-    const result = await analyzeMonthlyUpload(distributorCode, file, periodOverride);
+    // Confidential products (LA003/LA004/SS001) are stripped from the breakdown tables for every
+    // role except CEO / Super Admin — the upload's per-product/region/brick view must not leak them.
+    const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+    const result = await analyzeMonthlyUpload(distributorCode, file, periodOverride, excludeProductCodes);
     if (result.status === "coded_sheet") {
       return NextResponse.json({ success: false, code: "coded_sheet_detected", distributorName: result.distributorName, error: "This sheet is already coded — upload the raw distributor export." });
     }
     if (result.status === "header_error") {
       return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, error: `Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
     }
-    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, needsPeriod: result.needsPeriod, validation: result.validation });
+    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });
