@@ -19,8 +19,18 @@ export async function runSalesRestrictedProductsTests() {
   assert.equal(isRestrictedProductCode("LA003"), true, "LA003 is restricted");
   assert.equal(isRestrictedProductCode("la004"), true, "case-insensitive");
   assert.equal(isRestrictedProductCode(" LA003 "), true, "trimmed");
+  assert.equal(isRestrictedProductCode("SS001"), true, "SS001 (Satoslim) is restricted");
+  assert.equal(isRestrictedProductCode(" ss001 "), true, "SS001 case-insensitive + trimmed");
   assert.equal(isRestrictedProductCode("LA001"), false, "Lacto Advanced is not restricted");
   assert.equal(isRestrictedProductCode(null), false, "null is not restricted");
+
+  // ── Satoslim NAME layer (legacy/name guard catches "satoslim") ──
+  const satoslimNames = new Set(["lacto basic 1", "lacto basic 2", "satoslim"]);
+  assert.equal(
+    stripRestrictedRowsByName([{ product: "Satoslim" }], satoslimNames, (r) => r.product, true).length,
+    0,
+    "name layer drops Satoslim",
+  );
 
   // ── normalizeProductNameKey ──
   assert.equal(normalizeProductNameKey("  Lacto   Basic  1 "), "lacto basic 1", "trim + collapse + lower");
