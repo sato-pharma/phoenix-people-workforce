@@ -2,10 +2,8 @@ import { redirect } from "next/navigation";
 
 import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
-import {
-  EmployeePortalEmptyState,
-  EmployeePortalPageShell,
-} from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -55,16 +53,13 @@ export default async function EmployeePortalsHomePage({
     );
   }
 
+  // Minimal command center: the identity hero + the performance trend only.
   return (
-    <div className="mx-auto w-full space-y-5">
+    <div className="mx-auto w-full space-y-5" dir="auto">
       <IdentityCard data={data} />
-      <EmployeePortalPageShell
-        badge="Employee Portal"
-        description="Performance, structure, and team comparison in one command surface."
-        title="My Dashboard"
-      >
+      <WorkspaceErrorBoundary fallbackTitle="My Dashboard unavailable">
         <MedicalRepOverviewPage data={data} />
-      </EmployeePortalPageShell>
+      </WorkspaceErrorBoundary>
     </div>
   );
 }

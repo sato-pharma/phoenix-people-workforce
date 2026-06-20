@@ -3851,6 +3851,17 @@ export function MedicalRepOverviewPage({
     );
   }
 
+  // Employee-portal dashboard is a minimal command center: the identity hero (rendered by the
+  // page) plus the performance trend only — nothing else. The admin-shell workspace surface keeps
+  // the full operational dashboard below (so every panel stays in use; nothing is orphaned).
+  if (surface === "employee-portal") {
+    return (
+      <div className="space-y-6">
+        <OverviewPerformanceChart data={data} />
+      </div>
+    );
+  }
+
   const showTeamLeaveAndStructurePanels = canSeeTeamLeaveAndStructurePanels(data);
 
   return (
@@ -3880,13 +3891,6 @@ export function MedicalRepOverviewPage({
           <OverviewTopProducts data={data} />
         </div>
       </div>
-      {surface === "employee-portal" ? (
-        <div className="flex justify-center lg:justify-end">
-          <Link className="w-full lg:w-auto" href="/employee-portals/sales">
-            <Button className="w-full rounded px-5 lg:w-auto" variant="secondary">Open Full Performance</Button>
-          </Link>
-        </div>
-      ) : null}
     </div>
   );
 }
