@@ -12,11 +12,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // Sales Intelligence — centralized, server-side access scope.
 //
 // THE confidential-product rule lives here and in the SI RPCs (phx_si_*): products
-// LA003 + LA004 ("Lacto Basic 1 & 2") are excluded from EVERY total, KPI, chart, table,
-// filter and export for everyone, and can only be revealed by a CEO or Super Admin who
-// explicitly opts in. The toggle is the ONLY path to an empty exclusion list, and the
-// resolver ignores the opt-in for every other role — so URL/API/filter/export tampering
-// cannot reveal them.
+// LA003 + LA004 ("Lacto Basic 1 & 2") and SS001 ("Satoslim") are excluded from EVERY total,
+// KPI, chart, table, filter and export for everyone, and can only be revealed by a CEO or
+// Super Admin who explicitly opts in. The toggle is the ONLY path to an empty exclusion list,
+// and the resolver ignores the opt-in for every other role — so URL/API/filter/export
+// tampering cannot reveal them.
 //
 // The dashboards are geography-and-line centric (shown by name), never per-medical-rep:
 // the sales files carry line/region/area/brick/product/customer but not rep ownership.
@@ -24,7 +24,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Confidential products excluded by default everywhere. Single source of truth. */
-export const RESTRICTED_PRODUCT_CODES = ["LA003", "LA004"] as const;
+export const RESTRICTED_PRODUCT_CODES = ["LA003", "LA004", "SS001"] as const;
 
 const RESTRICTED_SET = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase()));
 
@@ -49,7 +49,7 @@ export function isRestrictedProductCode(code: string | null | undefined): boolea
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Confidential product NAME fallbacks, kept in lockstep with RESTRICTED_PRODUCT_CODES. */
-export const RESTRICTED_PRODUCT_NAME_FALLBACKS = ["lacto basic 1", "lacto basic 2"] as const;
+export const RESTRICTED_PRODUCT_NAME_FALLBACKS = ["lacto basic 1", "lacto basic 2", "satoslim"] as const;
 
 /** Normalize a product name for confidential matching: trim, collapse inner whitespace,
  *  lowercase. Mirrors how source_of_sales_products.normalized_product_name is built. */
