@@ -1797,39 +1797,6 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
                 </AreaChart>
               </SafeResponsiveContainer>
             </div>
-
-            {/* Achievement per period - horizontal bar indicators */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Achievement</p>
-                <span className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
-                  <span className="inline-block h-px w-3 border-t border-dashed border-slate-400" />
-                  100% target
-                </span>
-              </div>
-              <div className="space-y-1">
-                {chartData.map((point) => {
-                  const pct = Math.min(point.achievement, 150);
-                  const grad = achievementGradient(point.achievement);
-                  const [from, to] = grad.split(",");
-                  return (
-                    <div key={point.period} className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 text-[11px] font-semibold text-slate-500">{point.shortPeriod}</span>
-                      <div className="relative h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-sm"
-                          style={{ width: `${Math.min(100, (pct / 150) * 100)}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
-                        />
-                        <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
-                      </div>
-                      <span className="w-12 shrink-0 text-right text-[11px] font-black text-slate-700">
-                        {point.achievement}%
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
       </ChartErrorBoundary>
