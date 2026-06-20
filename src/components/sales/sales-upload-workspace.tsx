@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Info, Loader2,
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
+import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { UploadedSheetsPanel } from "@/components/sales/uploaded-sheets-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,10 +15,13 @@ import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-i
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
 
+type MapOption = { code: string; name: string };
 type Props = {
   distributors: SalesDistributorEntry[];
   summaries: Record<string, DistributorProfileSummary>;
   batches: SourceOfSalesUploadBatch[];
+  products: MapOption[];
+  bricks: { id: string; name: string }[];
 };
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
@@ -179,41 +183,127 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
   );
 }
 
-// The exact items the system could NOT recognize — shown so the operator knows precisely what to map
-// (instead of just a count). Each row is a distinct raw value to map once; `count` is how many sheet
-// rows it blocks, and a suggestion is shown when the engine has a likely match to confirm in Mapping.
-function UnmappedList({ products, customers, territories }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[] }) {
-  const groups = [
-    { label: "Products", items: products },
-    { label: "Customers", items: customers },
-    { label: "Territories / bricks", items: territories },
-  ].filter((g) => g.items.length > 0);
+// Inline mapping panel: the exact items the system could NOT recognize, each editable RIGHT HERE.
+// Per row: a combobox pre-filled with the engine's suggestion, a checkbox to include it, and type-to-
+// search to pick a different target. "Save mappings" writes them all via the shared save-mappings
+// endpoint, then re-validates so the now-mapped rows clear and the upload can proceed.
+type MapType = "product" | "customer" | "territory";
+const mapKey = (t: MapType, raw: string) => `${t}::${raw}`;
+
+function UnmappedList({ products, customers, territories, productOptions, brickOptions, distributorCode, onSaved }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[]; productOptions: MapOption[]; brickOptions: MapOption[]; distributorCode: string; onSaved: () => void }) {
+  const allGroups: { type: MapType; label: string; items: UnknownItem[]; options: MapOption[]; placeholder: string }[] = [
+    { type: "product", label: "Products", items: products, options: productOptions, placeholder: "product code (e.g. TE001)" },
+    { type: "customer", label: "Customers", items: customers, options: brickOptions, placeholder: "brick (e.g. B10)" },
+    { type: "territory", label: "Territories / bricks", items: territories, options: brickOptions, placeholder: "brick (e.g. B10)" },
+  ];
+  const groups = allGroups.filter((g) => g.items.length > 0);
+
+  // Seed each row's chosen code from the engine suggestion, and pre-confirm rows that HAVE a suggestion
+  // (the common case → just press Save). Math.random/Date are unavailable here; keys are type+raw.
+  const seedSelected: Record<string, string> = {};
+  const seedConfirmed: Record<string, boolean> = {};
+  for (const g of groups) for (const u of g.items) {
+    const k = mapKey(g.type, u.raw);
+    seedSelected[k] = u.suggestionCode ?? "";
+    seedConfirmed[k] = Boolean(u.suggestionCode);
+  }
+  const [selected, setSelected] = useState<Record<string, string>>(seedSelected);
+  const [confirmed, setConfirmed] = useState<Record<string, boolean>>(seedConfirmed);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
   if (groups.length === 0) return null;
+
+  const ready = groups.flatMap((g) => g.items
+    .filter((u) => confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
+    .map((u) => ({ type: g.type, raw: u.raw, code: selected[mapKey(g.type, u.raw)].trim() })));
+
+  function setCode(type: MapType, raw: string, code: string) {
+    const k = mapKey(type, raw);
+    setSelected((p) => ({ ...p, [k]: code }));
+    setConfirmed((p) => ({ ...p, [k]: code.trim().length > 0 })); // picking a value confirms; clearing un-confirms
+  }
+  function toggle(type: MapType, raw: string, on: boolean) {
+    setConfirmed((p) => ({ ...p, [mapKey(type, raw)]: on }));
+  }
+
+  async function save() {
+    if (ready.length === 0) return;
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const res = await fetch("/api/sales/monthly-import/save-mappings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ distributorCode, mappings: ready }),
+      });
+      const payload = await readJson<{ success: boolean; message?: string; error?: string; result?: { invalid: number; invalidEntries?: { raw: string; reason: string }[] } }>(res);
+      if (!payload.success) { setErr(payload.error ?? "Save failed."); return; }
+      const invalid = payload.result?.invalidEntries ?? [];
+      setMsg(invalid.length ? `${payload.message} Some couldn't be saved: ${invalid.map((e) => e.raw).join(", ")}.` : (payload.message ?? "Mappings saved."));
+      onSaved(); // re-validate the same file so the mapped rows drop out and the upload can proceed
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed.");
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="space-y-2 rounded-[6px] border border-amber-200 bg-amber-50/40 p-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-800">What still needs mapping</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-800">Map these here, then re-validate</p>
+        <div className="flex items-center gap-2">
+          {msg ? <span className="text-xs font-semibold text-emerald-700">{msg}</span> : null}
+          {err ? <span className="text-xs font-semibold text-rose-700">{err}</span> : null}
+          <button
+            className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-[#0F172A] px-3 text-xs font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]"
+            disabled={busy || ready.length === 0}
+            onClick={() => void save()}
+            type="button"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {busy ? "Saving…" : `Save ${ready.length} mapping${ready.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      </div>
       {groups.map((g) => (
-        <div key={g.label}>
+        <div key={g.type}>
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</div>
-          <div className="max-h-56 overflow-auto rounded-[6px] border border-amber-200 bg-white">
+          <div className="overflow-visible rounded-[6px] border border-amber-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+              <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
                 <tr>
                   <th className="px-3 py-1.5">Value in sheet</th>
                   <th className="px-3 py-1.5">Name in sheet</th>
                   <th className="px-3 py-1.5 text-right">Rows</th>
-                  <th className="px-3 py-1.5">Suggested match</th>
+                  <th className="px-3 py-1.5">Map to {g.type === "product" ? "product" : "brick"}</th>
                 </tr>
               </thead>
               <tbody>
-                {g.items.map((u, i) => (
-                  <tr className="border-t border-[#FFE8D6]" key={`${u.raw}-${i}`}>
-                    <td className="px-3 py-1.5 font-mono text-xs font-semibold text-[#0F172A]">{u.raw || <span className="italic text-[#94A3B8]">(blank)</span>}</td>
-                    <td className="px-3 py-1.5 text-[#334155]">{u.rawName || <span className="italic text-[#94A3B8]">—</span>}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{u.count.toLocaleString()}</td>
-                    <td className="px-3 py-1.5 text-xs text-[#64748B]">{u.suggestionLabel ? <span>{u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</span> : <span className="italic text-[#94A3B8]">—</span>}</td>
-                  </tr>
-                ))}
+                {g.items.map((u) => {
+                  const k = mapKey(g.type, u.raw);
+                  return (
+                    <tr className="border-t border-[#FFE8D6]" key={k}>
+                      <td className="px-3 py-1.5 align-top font-mono text-xs font-semibold text-[#0F172A]">{u.raw || <span className="italic text-[#94A3B8]">(blank)</span>}</td>
+                      <td className="px-3 py-1.5 align-top text-[#334155]">{u.rawName || <span className="italic text-[#94A3B8]">—</span>}</td>
+                      <td className="px-3 py-1.5 text-right align-top tabular-nums text-[#334155]">{u.count.toLocaleString()}</td>
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <input
+                            aria-label="include this mapping"
+                            checked={Boolean(confirmed[k])}
+                            className="h-4 w-4 shrink-0 accent-[#F97316]"
+                            onChange={(e) => toggle(g.type, u.raw, e.target.checked)}
+                            type="checkbox"
+                          />
+                          <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
+                        </div>
+                        {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
+                          <p className="mt-0.5 pl-6 text-[11px] text-[#64748B]">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -223,7 +313,7 @@ function UnmappedList({ products, customers, territories }: { products: UnknownI
   );
 }
 
-function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded }: { distributorCode: string; distributorName: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void }) {
+function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded, productOptions, brickOptions }: { distributorCode: string; distributorName: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void; productOptions: MapOption[]; brickOptions: MapOption[] }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
@@ -444,7 +534,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
                   <p className="font-semibold">{unknowns} unmapped item(s) — upload is blocked until they&apos;re mapped.</p>
                   <p className="text-xs">These {num(rec.rowsBlocked)} row(s) can&apos;t be coded yet. Map the items below in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-validate.</p>
                 </div></AdminCallout>
-                <UnmappedList customers={analysis.data?.unknownCustomers ?? []} products={analysis.data?.unknownProducts ?? []} territories={analysis.data?.unknownTerritories ?? []} />
+                <UnmappedList brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={analysis.data?.unknownProducts ?? []} territories={analysis.data?.unknownTerritories ?? []} />
               </div>
             ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
               <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>
@@ -549,7 +639,7 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
   );
 }
 
-function DistributorUpload({ selected, summary }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary }) {
+function DistributorUpload({ selected, summary, productOptions, brickOptions }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary; productOptions: MapOption[]; brickOptions: MapOption[] }) {
   // Bumped after a successful upload so the health panel ("Last monthly") re-reads.
   const [uploadNonce, setUploadNonce] = useState(0);
   return (
@@ -570,7 +660,7 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
 
       <Card className={cn(panel, "space-y-3 p-5")}>
         <h3 className="text-base font-black tracking-tight text-slate-950">Upload Monthly Sales</h3>
-        <MonthlyUpload distributorCode={selected.code} distributorName={selected.name} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} />
+        <MonthlyUpload brickOptions={brickOptions} distributorCode={selected.code} distributorName={selected.name} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} productOptions={productOptions} />
       </Card>
 
       {selected.weeklySupported ? (
@@ -583,7 +673,8 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
   );
 }
 
-export function SalesUploadWorkspace({ distributors, summaries, batches }: Props) {
+export function SalesUploadWorkspace({ distributors, summaries, batches, products, bricks }: Props) {
+  const brickOptions: MapOption[] = bricks.map((b) => ({ code: b.id, name: b.name }));
   return (
     <div className="space-y-5">
       <AdminPageHero
@@ -594,7 +685,7 @@ export function SalesUploadWorkspace({ distributors, summaries, batches }: Props
       />
       <UploadedSheetsPanel batches={batches} distributors={distributors} />
       <DistributorWorkspaceShell distributors={distributors}>
-        {(selected) => <DistributorUpload selected={selected} summary={summaries[selected.code]} />}
+        {(selected) => <DistributorUpload brickOptions={brickOptions} productOptions={products} selected={selected} summary={summaries[selected.code]} />}
       </DistributorWorkspaceShell>
     </div>
   );
