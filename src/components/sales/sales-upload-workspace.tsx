@@ -6,15 +6,18 @@ import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Info, Loader2,
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
+import { UploadedSheetsPanel } from "@/components/sales/uploaded-sheets-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
+import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
 
 type Props = {
   distributors: SalesDistributorEntry[];
   summaries: Record<string, DistributorProfileSummary>;
+  batches: SourceOfSalesUploadBatch[];
 };
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
@@ -535,7 +538,7 @@ function DistributorUpload({ selected, summary }: { selected: SalesDistributorEn
   );
 }
 
-export function SalesUploadWorkspace({ distributors, summaries }: Props) {
+export function SalesUploadWorkspace({ distributors, summaries, batches }: Props) {
   return (
     <div className="space-y-5">
       <AdminPageHero
@@ -544,6 +547,7 @@ export function SalesUploadWorkspace({ distributors, summaries }: Props) {
         icon={<UploadCloud className="h-4 w-4" />}
         title="Sales Upload"
       />
+      <UploadedSheetsPanel batches={batches} distributors={distributors} />
       <DistributorWorkspaceShell distributors={distributors}>
         {(selected) => <DistributorUpload selected={selected} summary={summaries[selected.code]} />}
       </DistributorWorkspaceShell>
