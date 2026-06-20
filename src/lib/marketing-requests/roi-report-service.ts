@@ -287,7 +287,10 @@ async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promise<strin
 async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): Promise<RoiIndexContext> {
   assertMarketingWorkspaceAccess(access);
   const supabase = getSupabaseAdmin();
-  const employeeRows = await getEmployeeDirectoryRows();
+  // Include terminated/resigned employees: marketing ROI is a HISTORICAL report, so requests
+  // from departed reps must still resolve their requester name/line/region and manager chain.
+  // Otherwise those requests show "unassigned". This does NOT widen the viewer's access scope.
+  const employeeRows = await getEmployeeDirectoryRows({ includeInactive: true });
   const byHrId = new Map(
     employeeRows
       .map((row) => [normalizeHrId(row.hrId), row] as const)
@@ -1215,7 +1218,10 @@ export async function getMarketingRequestViewSales(
   if (!cleanId) throw new Error("Marketing request id is required.");
 
   const supabase = getSupabaseAdmin();
-  const employeeRows = await getEmployeeDirectoryRows();
+  // Include terminated/resigned employees: marketing ROI is a HISTORICAL report, so requests
+  // from departed reps must still resolve their requester name/line/region and manager chain.
+  // Otherwise those requests show "unassigned". This does NOT widen the viewer's access scope.
+  const employeeRows = await getEmployeeDirectoryRows({ includeInactive: true });
   const byHrId = new Map(
     employeeRows
       .map((row) => [normalizeHrId(row.hrId), row] as const)
