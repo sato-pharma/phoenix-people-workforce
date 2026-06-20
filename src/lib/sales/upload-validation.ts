@@ -206,22 +206,26 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   }
 
   // ── Quantity & value data quality (coded rows) ──────────────────────────────────────────────────
+  // A negative quantity is a NORMAL return / credit note — expected in distributor data, kept as-is, and
+  // NOT flagged on its own (it was pure noise). We only raise a finding when returns DOMINATE the batch
+  // (offset > 25% of the positive units), which usually means a wrong file/period rather than ordinary
+  // returns — that stays a warning so it can be reviewed before import.
   const negativeQty = coded.filter((r) => r.qty < 0);
   if (negativeQty.length > 0) {
     const negSum = Math.abs(negativeQty.reduce((sum, r) => sum + r.qty, 0));
     const posSum = coded.reduce((sum, r) => (r.qty > 0 ? sum + r.qty : sum), 0);
     const dominate = posSum > 0 && negSum / posSum > RETURNS_DOMINATE_RATE;
-    add({
-      code: "negative_qty",
-      severity: dominate ? "warning" : "info",
-      title: dominate ? "Returns dominate this batch" : "Negative quantities (returns)",
-      detail: dominate
-        ? `${negativeQty.length.toLocaleString()} row(s) have a negative quantity and they offset ${pct(negSum / posSum)}% of the positive units — unusually high for a sales month.`
-        : `${negativeQty.length.toLocaleString()} row(s) have a negative quantity — usually returns or credit notes, which are kept.`,
-      count: negativeQty.length,
-      sampleRows: sampleRows(negativeQty),
-      fixHint: "Confirm these are genuine returns. If a sale was entered with a stray minus sign, fix the source cell and re-upload.",
-    });
+    if (dominate) {
+      add({
+        code: "negative_qty",
+        severity: "warning",
+        title: "Returns dominate this batch",
+        detail: `${negativeQty.length.toLocaleString()} row(s) have a negative quantity and they offset ${pct(negSum / posSum)}% of the positive units — unusually high for a sales month.`,
+        count: negativeQty.length,
+        sampleRows: sampleRows(negativeQty),
+        fixHint: "Ordinary returns are fine and kept. This batch is mostly returns, though — confirm it is the right file and period before importing.",
+      });
+    }
   }
 
   const zeroQty = coded.filter((r) => r.qty === 0);
