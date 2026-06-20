@@ -116,14 +116,15 @@ export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Phase 1.5: notification gaps are surfaced where producers are missing.
   // ---------------------------------------------------------------------------
-  // The expenses-outstation notifications are now fully wired: submit (notifyOutstation
-  // Submitted), approve/reject (notifyOutstationDecision), and payroll import
-  // (notifyExpensesAddedToPayroll). No step in that domain is a gap anymore.
+  // The expenses-outstation domain is intentionally near-silent: submit auto-approves into
+  // payroll staging (no submit alert), approval is silent, and payroll import is silent. The
+  // ONLY notification is notifyOutstationDecision on REJECTION → the submitter. These silent
+  // steps are by-design, not unimplemented gaps, so none carry a notificationGap flag.
   const expenseSubmitStep = getWorkflowSubflow("expenses-outstation", "expense")?.steps.find((s) => s.id === "submit");
-  assert.notEqual(expenseSubmitStep?.notificationGap, true, "expense submit alert is wired (no longer a gap)");
+  assert.notEqual(expenseSubmitStep?.notificationGap, true, "expense submit is intentionally silent (not a gap)");
   const addToPayrollStep = getWorkflowSubflow("expenses-outstation", "payroll-queue")?.steps.find((s) => s.id === "add_to_payroll");
-  assert.notEqual(addToPayrollStep?.notificationGap, true, "add-to-payroll completion alert is wired (no longer a gap)");
-  assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), false, "expenses-outstation notifications are fully wired");
+  assert.notEqual(addToPayrollStep?.notificationGap, true, "add-to-payroll is intentionally silent (not a gap)");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), false, "expenses-outstation has no unimplemented notification gaps");
   // The payslip publish notification remains a genuine, unwired gap.
   const payslipStep = getWorkflowSubflow("payroll", "payslip-notification")?.steps.find((s) => s.id === "publish");
   assert.equal(payslipStep?.notificationGap, true, "payslip publish is flagged as a notification gap");
