@@ -338,18 +338,10 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     });
   }
 
-  const fractionalQty = coded.filter((r) => Number.isFinite(r.qty) && r.qty !== 0 && !Number.isInteger(r.qty));
-  if (fractionalQty.length > 0) {
-    add({
-      code: "non_integer_qty",
-      severity: "info",
-      title: "Fractional quantities",
-      detail: `${fractionalQty.length.toLocaleString()} row(s) have a non-whole quantity — usually a decimal/thousands-separator misread or a value placed in the quantity column.`,
-      count: fractionalQty.length,
-      sampleRows: sampleRows(fractionalQty),
-      fixHint: "Check the source for a comma/period separator issue. Leave genuinely fractional product lines as-is.",
-    });
-  }
+  // NOTE: we deliberately do NOT flag fractional quantities. In pharma sales a non-whole quantity is
+  // legitimate and common — customers buy partial packs (a strip or two, not the full box) — so a
+  // decimal qty is normal data, not a misread. The old "Fractional quantities" (non_integer_qty) info
+  // finding was pure noise here and was removed.
 
   // Unit-price sanity for sheet/Direct distributors (recompute derives value from the master price, so
   // its unit price is correct by construction and not checked here).
