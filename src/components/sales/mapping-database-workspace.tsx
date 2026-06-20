@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Database, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Database, Download, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
@@ -26,6 +26,65 @@ const headRow = "sticky top-0 bg-[#020617] text-left text-[11px] font-black uppe
 async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   try { return JSON.parse(text) as T; } catch { return { success: false, error: text } as unknown as T; }
+}
+
+const bulkBtn = "inline-flex h-9 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60";
+
+// Bulk XLSX bar (download the template — pre-filled with the current mappings, so it doubles as the
+// export — then upload the filled sheet). Wired to the existing /api/sales/monthly-import/*-mapping
+// routes; refreshes the tab's list after a successful import. Mirrors the Weekly Mapping flow.
+function MappingBulkBar({ templateHref, templateLabel, uploadUrl, uploadFields, onImported }: {
+  templateHref: string;
+  templateLabel: string;
+  uploadUrl: string;
+  uploadFields?: Record<string, string>;
+  onImported: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function onUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setBusy(true); setResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      for (const [key, value] of Object.entries(uploadFields ?? {})) form.append(key, value);
+      const res = await fetch(uploadUrl, { method: "POST", body: form });
+      const payload = await readJson<{ success?: boolean; message?: string; error?: string; result?: { blockedRows?: { rowNumber: number; reason: string }[] } }>(res);
+      if (payload.success) {
+        setResult({ ok: true, text: payload.message ?? "Imported." });
+        onImported();
+      } else {
+        const blocked = payload.result?.blockedRows ?? [];
+        setResult({
+          ok: false,
+          text: blocked.length
+            ? `${payload.error ?? "Import blocked."} First issue — row ${blocked[0].rowNumber}: ${blocked[0].reason}`
+            : payload.error ?? "Import failed.",
+        });
+      }
+    } catch (caught) {
+      setResult({ ok: false, text: caught instanceof Error ? caught.message : "Import failed." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#FCFDFE] px-3 py-2">
+      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Bulk XLSX</span>
+      <a className={bulkBtn} href={templateHref}><Download className="h-4 w-4" /> {templateLabel}</a>
+      <button className={bulkBtn} disabled={busy} onClick={() => fileRef.current?.click()} type="button">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import filled .xlsx
+      </button>
+      <input ref={fileRef} accept=".xlsx" className="hidden" onChange={onUpload} type="file" />
+      {result ? <span className={cn("text-xs font-semibold", result.ok ? "text-emerald-700" : "text-rose-600")}>{result.text}</span> : null}
+    </div>
+  );
 }
 
 type MonthlyTab = "customers" | "products" | "territories";
@@ -87,6 +146,14 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
         <span className="text-xs text-[#64748B]">{total.toLocaleString()} mapped</span>
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> : null}
       </div>
+
+      <MappingBulkBar
+        onImported={() => void load(0, search)}
+        templateHref={`/api/sales/monthly-import/customer-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
+        templateLabel="Download template (your current map)"
+        uploadFields={{ distributorCode }}
+        uploadUrl="/api/sales/monthly-import/customer-mapping"
+      />
 
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
 
@@ -189,6 +256,15 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-center gap-2 text-xs text-[#64748B]">{rows.length} mapped {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> : null}</div>
+      <MappingBulkBar
+        onImported={() => void load()}
+        templateHref={kind === "product"
+          ? `/api/sales/monthly-import/product-mapping/template?distributor=${encodeURIComponent(distributorCode)}`
+          : "/api/sales/monthly-import/territory-mapping/template"}
+        templateLabel="Download template (current mappings)"
+        uploadFields={kind === "product" ? { distributorCode } : {}}
+        uploadUrl={kind === "product" ? "/api/sales/monthly-import/product-mapping" : "/api/sales/monthly-import/territory-mapping"}
+      />
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
       <div className="overflow-auto rounded-xl border border-[#E2E8F0]">
         <table className="w-full text-sm">
@@ -285,7 +361,7 @@ export function MappingDatabaseWorkspace({ distributors, products, bricks }: Pro
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="The single source of truth for every distributor's mappings. Edit or delete one row at a time — changes are live across upload, normalizer and missing-data instantly."
+        description="The single source of truth for every distributor's mappings. Edit one row at a time, or bulk import/export with the XLSX template — changes are live across upload, normalizer and missing-data instantly."
         eyebrow="Sales · One connected module"
         icon={<Database className="h-4 w-4" />}
         title="Mapping Database"
