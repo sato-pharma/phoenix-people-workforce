@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import {
+  assertCanViewEmployeeAttendance,
+  getEmployeeAttendanceData,
+} from "@/lib/attendance/employee-attendance";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
@@ -19,11 +22,15 @@ export async function GET(request: Request) {
 
     if (!dateFrom || !dateTo) throw validationError("dateFrom and dateTo are required.");
 
-    // Employees can only read their own data (scope = self).
-    const hrId = access.hrId;
-    if (!hrId) throw validationError("No HR ID on session.");
+    const callerHrId = access.hrId;
+    if (!callerHrId) throw validationError("No HR ID on session.");
 
-    return NextResponse.json(await getEmployeeAttendanceData(hrId, dateFrom, dateTo));
+    // Default to self; a manager may request a direct report (CEO/Super Admin: anyone).
+    const requestedHrId = url.searchParams.get("hrId")?.trim();
+    const targetHrId = requestedHrId && requestedHrId.length > 0 ? requestedHrId : callerHrId;
+    await assertCanViewEmployeeAttendance(access, targetHrId);
+
+    return NextResponse.json(await getEmployeeAttendanceData(targetHrId, dateFrom, dateTo));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });

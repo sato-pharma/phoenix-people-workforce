@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateFingerprintReportWorkbook } from "@/lib/attendance/fingerprint-report-export";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { assertCanViewEmployeeAttendance } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
@@ -21,8 +22,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
 
-    const hrId = access.hrId;
-    if (!hrId) {
+    const callerHrId = access.hrId;
+    if (!callerHrId) {
       return NextResponse.json({ error: "unauthorized", message: "No employee identity." }, { status: 401 });
     }
 
@@ -30,13 +31,18 @@ export async function GET(request: Request) {
     const dateFrom = url.searchParams.get("dateFrom") ?? undefined;
     const dateTo = url.searchParams.get("dateTo") ?? undefined;
 
-    const data = await getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: hrId });
+    // Default to self; a manager may export a direct report's report (CEO/Super Admin: anyone).
+    const requestedHrId = url.searchParams.get("hrId")?.trim();
+    const targetHrId = requestedHrId && requestedHrId.length > 0 ? requestedHrId : callerHrId;
+    await assertCanViewEmployeeAttendance(access, targetHrId);
+
+    const data = await getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: targetHrId });
     const workbook = await generateFingerprintReportWorkbook(data);
     const buffer = await workbook.xlsx.writeBuffer();
 
     return new NextResponse(buffer, {
       headers: {
-        "Content-Disposition": `attachment; filename="${filename(hrId)}"`,
+        "Content-Disposition": `attachment; filename="${filename(targetHrId)}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });

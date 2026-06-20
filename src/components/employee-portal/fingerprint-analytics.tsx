@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Clock, Download, LogIn, LogOut, RefreshCw, ScanLine } from "lucide-react";
+import { Clock, Download, LogIn, LogOut, RefreshCw, ScanLine, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
@@ -10,9 +10,18 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+export type FingerprintTarget = {
+  hrId: string;
+  label: string;
+  sublabel?: string;
+  isSelf: boolean;
+};
+
 type Props = {
   hrId: string;
   initialData: EmployeeAttendanceData;
+  /** Selectable reports: always self first, then any direct reports a manager may view. */
+  targets?: FingerprintTarget[];
 };
 
 type QuickFilter = "this-month" | "last-month" | "last-30" | "custom";
@@ -141,21 +150,28 @@ const QUICK_BUTTONS: Array<{ id: QuickFilter; label: string }> = [
 
 const MONTH_OPTIONS = generateMonthOptions();
 
-export function FingerprintAnalytics({ hrId, initialData }: Props) {
+export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
   const today = new Date();
   const currentMonthValue = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+
+  const viewTargets: FingerprintTarget[] =
+    targets && targets.length > 0 ? targets : [{ hrId, label: "My report", sublabel: "You", isSelf: true }];
+  const hasReports = viewTargets.length > 1;
 
   const [data,         setData]         = useState<EmployeeAttendanceData>(initialData);
   const [activeFilter, setActiveFilter] = useState<QuickFilter>("this-month");
   const [customMonth,  setCustomMonth]  = useState<string>(currentMonthValue);
+  const [selectedHrId, setSelectedHrId] = useState<string>(hrId);
   const [fetchError,   setFetchError]   = useState<string | null>(null);
   const [isPending,    startTransition] = useTransition();
 
-  function fetchRange(from: string, to: string) {
+  const selectedTarget = viewTargets.find((target) => target.hrId === selectedHrId) ?? viewTargets[0];
+
+  function fetchFor(targetHrId: string, from: string, to: string) {
     setFetchError(null);
     const url =
       `/api/attendance/employee-attendance` +
-      `?hrId=${encodeURIComponent(hrId)}&dateFrom=${from}&dateTo=${to}`;
+      `?hrId=${encodeURIComponent(targetHrId)}&dateFrom=${from}&dateTo=${to}`;
     startTransition(async () => {
       try {
         const res = await fetch(url);
@@ -171,6 +187,10 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
     });
   }
 
+  function fetchRange(from: string, to: string) {
+    fetchFor(selectedHrId, from, to);
+  }
+
   function handleQuickFilter(filter: QuickFilter) {
     setActiveFilter(filter);
     if (filter === "custom") return; // wait for month select
@@ -184,14 +204,50 @@ export function FingerprintAnalytics({ hrId, initialData }: Props) {
     fetchRange(from, to);
   }
 
+  function handleTargetChange(nextHrId: string) {
+    setSelectedHrId(nextHrId);
+    // Keep the currently shown date window when switching whose report we view.
+    fetchFor(nextHrId, data.dateFrom, data.dateTo);
+  }
+
   const exportHref =
     `/api/attendance/employee-fingerprint-export` +
-    `?dateFrom=${data.dateFrom}&dateTo=${data.dateTo}`;
+    `?hrId=${encodeURIComponent(selectedHrId)}&dateFrom=${data.dateFrom}&dateTo=${data.dateTo}`;
 
   const { summary, rows } = data;
 
   return (
     <div className="space-y-6">
+
+      {/* ── Whose report (managers only) ─────────────────────────────────── */}
+      {hasReports && (
+        <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 shrink-0 text-orange-500" />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Whose Report</p>
+                <p className="text-[13px] font-semibold text-slate-700">
+                  {selectedTarget?.isSelf
+                    ? "Your own attendance"
+                    : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
+                </p>
+              </div>
+            </div>
+            <SearchableSelect
+              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)] outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 sm:w-72"
+              onChange={(e) => handleTargetChange(e.target.value)}
+              value={selectedHrId}
+            >
+              {viewTargets.map((target) => (
+                <option key={target.hrId} value={target.hrId}>
+                  {target.isSelf ? "My report" : `${target.label}${target.sublabel ? ` — ${target.sublabel}` : ""}`}
+                </option>
+              ))}
+            </SearchableSelect>
+          </div>
+        </div>
+      )}
 
       {/* ── Filter strip ─────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">

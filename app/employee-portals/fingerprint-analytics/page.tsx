@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-analytics";
+import { FingerprintAnalytics, type FingerprintTarget } from "@/components/employee-portal/fingerprint-analytics";
 import { PremiumHero } from "@/components/ui/premium-hero";
-import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import { getEmployeeAttendanceData, loadAttendanceDirectReports } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -37,6 +37,24 @@ export default async function FingerprintAnalyticsPage() {
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Attendance data failed to load.";
   }
+
+  // Managers may also view their direct reports' reports. The first target is
+  // always the signed-in user; reports are appended only when they exist.
+  let directReports: Awaited<ReturnType<typeof loadAttendanceDirectReports>> = [];
+  try {
+    directReports = await loadAttendanceDirectReports(hrId);
+  } catch {
+    directReports = [];
+  }
+  const targets: FingerprintTarget[] = [
+    { hrId, label: "My report", sublabel: "You", isSelf: true },
+    ...directReports.map((report) => ({
+      hrId: report.hrId,
+      label: report.fullName,
+      sublabel: report.jobTitle || "Direct report",
+      isSelf: false,
+    })),
+  ];
 
   if (!initialData) {
     initialData = {
@@ -79,7 +97,7 @@ export default async function FingerprintAnalyticsPage() {
           {initialError}
         </p>
       )}
-      <FingerprintAnalytics hrId={hrId} initialData={initialData} />
+      <FingerprintAnalytics hrId={hrId} initialData={initialData} targets={targets} />
     </EmployeePortalPageShell>
   );
 }
