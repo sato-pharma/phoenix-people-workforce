@@ -256,8 +256,8 @@ export function runNavigationActivePathTests() {
   assertIncludesAll(superAdminAuthorityNav, ["/sales"], "Sales Dashboard must stay visible in sales navigation");
   assertExcludesAll(
     superAdminAuthorityNav,
-    ["/sales/import", "/sales/queue"],
-    "Source of Sales and Sales Queue routes must be hidden from visible sidebar navigation",
+    ["/sales/import"],
+    "Legacy Source of Sales import route must be hidden from visible sidebar navigation",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");
