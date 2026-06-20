@@ -10,7 +10,7 @@ export default async function AdminMarketingViewSalesPage({
   params: Promise<{ requestId: string }>;
 }) {
   const { requestId } = await params;
-  await assertMarketingAdminPageAccess();
+  await assertMarketingAdminPageAccess({ allowCompanyOversight: true });
 
   return (
     <div className="space-y-6 p-6 sm:p-8">

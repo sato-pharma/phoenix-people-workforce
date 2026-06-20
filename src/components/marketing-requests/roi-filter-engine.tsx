@@ -31,8 +31,13 @@ import {
   roiFilterStateToParams,
 } from "@/lib/marketing-requests/roi-filter-url";
 import {
+  computeFacetedDimensions,
+  pruneRoiFilterState,
+  withRoiFilterValues,
+} from "@/lib/marketing-requests/roi-facets";
+import {
   emptyRoiFilterState,
-  type MarketingRoiFilterOptions,
+  type MarketingRoiFilterFacets,
   type MarketingRoiPreset,
   type MarketingRoiReport,
   type MarketingRoiReportRow,
@@ -211,7 +216,7 @@ function KpiCard({
 type EngineState = "ready" | "loading" | "loaded" | "error";
 
 export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBasePath: string }) {
-  const [options, setOptions] = React.useState<MarketingRoiFilterOptions | null>(null);
+  const [facets, setFacets] = React.useState<MarketingRoiFilterFacets | null>(null);
   const [optionsError, setOptionsError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<RoiFilterState>(emptyRoiFilterState);
   const [report, setReport] = React.useState<MarketingRoiReport | null>(null);
@@ -240,7 +245,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
           setOptionsError(payload.message ?? "Unable to load filters.");
           return;
         }
-        setOptions(payload as MarketingRoiFilterOptions);
+        setFacets(payload as MarketingRoiFilterFacets);
 
         // Load saved presets (best-effort) and auto-apply the default when the URL is empty.
         let presetList: MarketingRoiPreset[] = [];
@@ -352,25 +357,42 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
     }
   }
 
+  // Live, dependent (faceted) dimensions: recomputed from the scoped index on every
+  // selection change so the filters cascade (pick an NSM → DM collapses to that NSM's
+  // DMs; pick line = Pedia → everything narrows to fit).
+  const faceted = React.useMemo(
+    () => (facets ? computeFacetedDimensions(facets.entries, filters, facets.canRevealRestricted) : null),
+    [facets, filters],
+  );
+
+  // Mutate a filter and auto-fit: drop any other selection that no longer fits.
   function setArray(key: RoiFilterKey, values: string[]) {
     setFilters((prev) => {
-      if (key === "requestType") {
-        return { ...prev, requestType: values.map((value) => Number(value)).filter((value) => Number.isFinite(value)) };
-      }
-      return { ...prev, [key]: values } as RoiFilterState;
+      const next = withRoiFilterValues(prev, key, values);
+      // `key` is the anchor — preserve the user's just-made choice, fit the others to it.
+      return facets ? pruneRoiFilterState(facets.entries, next, key) : next;
+    });
+  }
+
+  // Patch scalar/range/toggle filters and auto-fit the multi-selects (a narrower date
+  // or duration range can make a previously-chosen DM/product impossible).
+  function patchFilters(patch: Partial<RoiFilterState>) {
+    setFilters((prev) => {
+      const next = { ...prev, ...patch } as RoiFilterState;
+      return facets ? pruneRoiFilterState(facets.entries, next) : next;
     });
   }
 
   function renderableDimensions(): RoiFilterDimension[] {
-    return (options?.dimensions ?? []).filter((dim) => dim.render && dim.type === "multiselect");
+    return (faceted?.dimensions ?? []).filter((dim) => dim.render && dim.type === "multiselect");
   }
 
   function autoAppliedDimensions(): RoiFilterDimension[] {
-    return (options?.dimensions ?? []).filter((dim) => !dim.render && dim.autoApplied && dim.autoApplied.length > 0);
+    return (faceted?.dimensions ?? []).filter((dim) => !dim.render && dim.autoApplied && dim.autoApplied.length > 0);
   }
 
   function dimensionByKey(key: RoiFilterKey): RoiFilterDimension | undefined {
-    return options?.dimensions.find((dim) => dim.key === key);
+    return faceted?.dimensions.find((dim) => dim.key === key);
   }
 
   function selectedFor(key: RoiFilterKey): string[] {
@@ -442,10 +464,12 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                 <h2 className="text-[15px] font-black tracking-tight text-[#0F172A]">Build your ROI report</h2>
               </div>
             </div>
-            {options ? (
+            {faceted ? (
               <span className="inline-flex items-center gap-1.5 rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
                 <Filter className="h-3 w-3" />
-                {options.visibleRequestCount} request{options.visibleRequestCount === 1 ? "" : "s"} in scope
+                {faceted.matchedCount === faceted.totalCount
+                  ? `${faceted.totalCount} request${faceted.totalCount === 1 ? "" : "s"} in scope`
+                  : `${faceted.matchedCount} of ${faceted.totalCount} match`}
               </span>
             ) : null}
           </div>
@@ -453,7 +477,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
           <div className="p-4 sm:p-5">
             {optionsError ? (
               <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{optionsError}</div>
-            ) : !options ? (
+            ) : !facets ? (
               <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-[#64748B]">
                 <LoadingSpinner /> Loading filters…
               </div>
@@ -493,7 +517,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           max={durationDim.max}
                           placeholder={String(durationDim.min ?? "")}
                           value={filters.durationMin ?? ""}
-                          onChange={(event) => setFilters((prev) => ({ ...prev, durationMin: event.target.value === "" ? null : Number(event.target.value) }))}
+                          onChange={(event) => patchFilters({ durationMin: event.target.value === "" ? null : Number(event.target.value) })}
                           className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
                         <span className="text-[#94A3B8]">–</span>
@@ -503,7 +527,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           max={durationDim.max}
                           placeholder={String(durationDim.max ?? "")}
                           value={filters.durationMax ?? ""}
-                          onChange={(event) => setFilters((prev) => ({ ...prev, durationMax: event.target.value === "" ? null : Number(event.target.value) }))}
+                          onChange={(event) => patchFilters({ durationMax: event.target.value === "" ? null : Number(event.target.value) })}
                           className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
                       </div>
@@ -518,14 +542,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                         <input
                           type="date"
                           value={filters.payDateFrom ?? ""}
-                          onChange={(event) => setFilters((prev) => ({ ...prev, payDateFrom: event.target.value || null }))}
+                          onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
                           className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
                         <span className="text-[#94A3B8]">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
-                          onChange={(event) => setFilters((prev) => ({ ...prev, payDateTo: event.target.value || null }))}
+                          onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
                           className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
                       </div>
@@ -655,7 +679,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
         {hasReport && report ? <ReportView report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
 
-        {state === "ready" && options ? (
+        {state === "ready" && facets ? (
           <div className="rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-4 py-10 text-center">
             <Filter className="mx-auto h-6 w-6 text-[#CBD5E1]" />
             <p className="mt-2 text-[13px] font-bold text-[#64748B]">Choose your filters and press “Apply Filters”.</p>
