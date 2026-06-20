@@ -39,6 +39,7 @@ import {
   Sparkles,
   Stethoscope,
   Tags,
+  Target,
   TriangleAlert,
   Trash2,
   UsersRound,
@@ -391,6 +392,17 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/team-expenses", icon: ReceiptText, label: "Team Expenses", permissions: [{ resource: "expenses" }], roles: ["National Sales Manager"] },
     ],
     label: "Medical Rep Portal",
+  },
+  {
+    id: "employee-sales-intelligence",
+    items: [
+      { href: "/employee-portals/roi", icon: Target, label: "ROI Intelligence", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager"] },
+    ],
+    label: "Sales Intelligence",
   },
   {
     id: "employee-marketing-requests",

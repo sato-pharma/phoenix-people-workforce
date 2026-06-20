@@ -1,0 +1,61 @@
+import { redirect } from "next/navigation";
+
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { DoubleVisitAnalyticsWorkspace } from "@/components/double-visit-analytics/double-visit-analytics-workspace";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { canAccess } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+// Sales Intelligence section is Product / Group Product Managers only. The dashboard
+// scope (self + reporting chain) is applied inside getDoubleVisitDashboardData via
+// resolveDoubleVisitAccessScope. This portal view is read-only (no import/publish).
+const DOUBLE_VISIT_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager"]);
+
+function dateParam(value: string | string[] | undefined) {
+  const text = typeof value === "string" ? value.slice(0, 10) : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+export default async function PortalDoubleVisitAnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) redirect("/login");
+  if (
+    !DOUBLE_VISIT_PORTAL_ROLES.has(access.role) ||
+    !(await canAccess(access, "double_visit_analytics", "read"))
+  ) {
+    redirect(resolveLandingPathForRole(access.role));
+  }
+
+  const params = await searchParams;
+  const dashboard = await getDoubleVisitDashboardData({
+    access,
+    dateFrom: dateParam(params.dateFrom),
+    dateTo: dateParam(params.dateTo),
+  });
+
+  return (
+    <EmployeePortalPageShell
+      badge="Sales Intelligence"
+      description="Double-visit coverage for you and the team reporting to you — visits, AM/PM split, and per-rep intensity."
+      errorBoundaryTitle="Double-Visit Analytics unavailable"
+      title="Double-Visit Analytics"
+    >
+      <DoubleVisitAnalyticsWorkspace
+        canImport={false}
+        canPublish={false}
+        dashboard={dashboard}
+        ireports360Configured={isIReports360Configured()}
+      />
+    </EmployeePortalPageShell>
+  );
+}

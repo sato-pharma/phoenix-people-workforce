@@ -8,7 +8,6 @@ import {
 } from "@/components/admin/admin-design-system";
 import {
   CoachingAnalyticsDashboard,
-  type CoachingAnalyticsFilterOptions,
   type CoachingAnalyticsPayload,
 } from "@/components/coaching/coaching-analytics-dashboard";
 import {
@@ -22,77 +21,18 @@ import {
   buildTrainingManagerCoachingComparison,
   filterCoachingQuarterlySummaryByReports,
 } from "@/lib/coaching/analytics";
+import { buildCoachingAnalyticsFilterOptions } from "@/lib/coaching/analytics-options";
 import {
   getCoachingQuarterlySummary,
   getCoachingReports,
   getCoachingScoreAnalyticsForReports,
 } from "@/lib/coaching/service";
-import type {
-  CoachingQuarterlySummaryRow,
-  CoachingReportSummaryRow,
-} from "@/lib/coaching/types";
-import {
-  getEmployeeDirectoryRows,
-  type EmployeeDirectoryRow,
-} from "@/lib/employees/employee-directory";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
-import { formatEmployeeDisplayName } from "@/lib/utils";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
 export const dynamic = "force-dynamic";
 
 function isEmployeePortalRole(access: AccessContext) {
   return access.role === "Employee" || access.role === "Medical Rep";
-}
-
-function toOptionMap(
-  rows: { label: string | null | undefined; value: number | string | null | undefined }[],
-) {
-  const options = new Map<string, string>();
-  for (const row of rows) {
-    if (row.value === null || typeof row.value === "undefined") continue;
-    const value = String(row.value);
-    const label = row.label?.trim() || value;
-    if (!options.has(value)) options.set(value, label);
-  }
-  return [...options.entries()]
-    .map(([value, label]) => ({ label, value }))
-    .sort((left, right) => left.label.localeCompare(right.label));
-}
-
-function buildFilterOptions(
-  reports: CoachingReportSummaryRow[],
-  quarterlySummary: CoachingQuarterlySummaryRow[],
-  employees: EmployeeDirectoryRow[],
-): CoachingAnalyticsFilterOptions {
-  return {
-    areas: toOptionMap([
-      ...employees.map((employee) => ({ label: employee.areaName, value: employee.areaId })),
-      ...reports.map((report) => ({ label: report.areaName, value: report.areaId })),
-    ]),
-    lines: toOptionMap([
-      ...employees.map((employee) => ({ label: employee.lineName, value: employee.lineId })),
-      ...reports.map((report) => ({ label: report.lineName, value: report.lineId })),
-    ]),
-    medicalReps: toOptionMap([
-      ...employees.map((employee) => ({
-        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${formatHrIdForDisplay(employee.hrId) ?? employee.hrId})`,
-        value: employee.hrId,
-      })),
-      ...reports.map((report) => ({
-        label: `${formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)} (${formatHrIdForDisplay(report.medicalRepHrId) ?? report.medicalRepHrId})`,
-        value: report.medicalRepHrId,
-      })),
-    ]),
-    teams: toOptionMap(reports.map((report) => ({
-      label: report.teamName || (report.teamId ? `Team ${report.teamId}` : null),
-      value: report.teamId,
-    }))),
-    years: toOptionMap([
-      ...reports.map((report) => ({ label: String(report.coachingYear), value: report.coachingYear })),
-      ...quarterlySummary.map((row) => ({ label: String(row.year), value: row.year })),
-      { label: String(new Date().getFullYear()), value: new Date().getFullYear() },
-    ]).sort((left, right) => Number(right.value) - Number(left.value)),
-  };
 }
 
 export default async function CoachingAnalyticsPage() {
@@ -176,7 +116,7 @@ export default async function CoachingAnalyticsPage() {
 
         <CoachingAnalyticsDashboard
           canCreate={canCreate}
-          filterOptions={buildFilterOptions(optionReports, optionQuarterlySummary, employees)}
+          filterOptions={buildCoachingAnalyticsFilterOptions(optionReports, optionQuarterlySummary, employees)}
           initialFilters={{ year: String(currentYear) }}
           initialData={payload}
         />

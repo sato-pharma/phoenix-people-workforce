@@ -232,7 +232,7 @@ function descendantHrIds(managerKey: string, employees: EmployeeDirectoryRow[]) 
   return allowed;
 }
 
-function resolveDoubleVisitAccessScope(access: AccessContext, employees: EmployeeDirectoryRow[]) {
+export function resolveDoubleVisitAccessScope(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   if (
     access.scope === "system" ||
     access.role === "CEO" ||
@@ -264,15 +264,9 @@ function resolveDoubleVisitAccessScope(access: AccessContext, employees: Employe
     }
   }
 
-  if ((access.role === "Product Manager" || access.role === "Group Product Manager") && viewer?.lineName) {
-    for (const employee of employees) {
-      if (normalizeLabelKey(employee.lineName) !== normalizeLabelKey(viewer.lineName)) continue;
-      const key = normalizedHrKey(employee.hrId);
-      if (key) allowedHrIds.add(key);
-      const line = normalizeLabelKey(employee.lineName);
-      if (line) allowedLines.add(line);
-    }
-  }
+  // Product / Group Product Managers see only themselves and their reporting chain
+  // (self + descendants), which is already seeded into allowedHrIds above. They are
+  // intentionally NOT widened to their whole product line.
 
   return {
     all: false as const,

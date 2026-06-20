@@ -1,9 +1,12 @@
 import {
+  Activity,
   BriefcaseBusiness,
   Building2,
   CalendarClock,
   CalendarDays,
+  CalendarRange,
   ChartColumnBig,
+  ChartNoAxesColumnIncreasing,
   CircleDollarSign,
   ClipboardCheck,
   Database,
@@ -21,6 +24,7 @@ import {
   Send,
   Settings2,
   ShieldCheck,
+  Target,
   Trophy,
   User,
   Users,
@@ -57,6 +61,12 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
   { label: "Fingerprint Report", fullLabel: "Fingerprint Report", href: "/employee-portals/fingerprint-analytics", icon: ScanLine, flags: ["showFingerprintReportTab"] },
+  // Sales Intelligence (Product / Group Product Managers)
+  { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
+  { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, flags: ["showMiniWeeklySalesTab"] },
+  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/monthly-sales", icon: CalendarRange, flags: ["showMiniMonthlySalesTab"] },
+  { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
+  { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   // Training Manager
   { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"] },

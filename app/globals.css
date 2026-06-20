@@ -706,6 +706,40 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   EMPLOYEE-PORTAL DESIGN RULES — mirror of the admin shell, scoped to
+   `.employee-portal-shell` (the EmployeePortalChrome root). Owner directive:
+   the employee portal is now squared, "shredded", and corporate — the same flat
+   visual language as the admin shell. Applies to every current and future portal
+   page/tab/module, including components owned by other sessions (handled here in
+   CSS so their files are never touched).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* RULE 1 — SQUARE CORNERS everywhere. NOTHING is rounded or semi-rounded.
+   Zeroes border-radius for EVERY element inside the portal shell — including
+   rounded-full pills, chips, badges, dots, and avatars. */
+.employee-portal-shell [class*="rounded"] {
+  border-radius: 0 !important;
+}
+
+/* RULE 2 — TABLES. Flat black header bar (same as the shell chrome) + a thin
+   light-orange hairline on every cell (rows AND columns) for a tidy, uniform grid. */
+.employee-portal-shell table {
+  border-collapse: collapse;
+}
+
+.employee-portal-shell thead th {
+  background-color: #000000 !important;
+  color: #f1f5f9 !important;
+  font-size: 0.78rem !important;
+  text-align: center !important;
+}
+
+.employee-portal-shell th,
+.employee-portal-shell td {
+  border: 1px solid rgba(249, 115, 22, 0.22) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ep-pulse-orange,
   .ep-pulse-green,

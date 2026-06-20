@@ -157,8 +157,19 @@ export function isHeadOfficeExcuseEmployee(
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
 }
 
+// Roles that may submit excuses regardless of whether they sit in Head Office.
+// National Sales Manager has always been eligible; Product Manager, Group Product
+// Manager, and Training Manager were added so the field/marketing leadership roles
+// surfaced in the employee portal can record their own 2-hour excuses.
+const EXCUSE_ELIGIBLE_ROLES = new Set([
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Training Manager",
+]);
+
 function canUseExcuses(access: AccessContext, employee: EmployeeDirectoryRow) {
-  return normalizeRole(access.role) === "National Sales Manager" ||
+  return EXCUSE_ELIGIBLE_ROLES.has(normalizeRole(access.role)) ||
     isHeadOfficeExcuseEmployee(employee);
 }
 
@@ -220,7 +231,7 @@ async function loadEligibleEmployee(access: AccessContext) {
     throw new Error("Forbidden: your employee profile is not linked yet.");
   }
   if (!canUseExcuses(access, employee)) {
-    throw new Error("Forbidden: excuses are available for Head Office employees and National Sales Managers only.");
+    throw new Error("Forbidden: excuses are available for Head Office employees, National Sales Managers, Product Managers, Group Product Managers, and Training Managers only.");
   }
 
   return { directory, employee };
