@@ -16,7 +16,8 @@
 
 import ExcelJS from "exceljs";
 
-import { weeklyContractByCode, type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
+import { type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
+import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
 
@@ -133,7 +134,9 @@ async function judgeWithAi(
 
 // ── main entry ──────────────────────────────────────────────────────────────────────────────────
 export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<WeeklyVerifyResult> {
-  const contract = weeklyContractByCode(input.distributorCode);
+  // Resolve the SAME contract the parser will use (DB override merged over code), so the pre-upload
+  // verification reflects exactly which columns the importer will read — never a "green lie".
+  const contract = await resolveWeeklyContract(input.distributorCode);
   const distributor = weeklyDistributorByCode(input.distributorCode);
   if (!contract || !distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
 

@@ -15,6 +15,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
 import type {
@@ -85,9 +86,10 @@ export async function importWeeklySalesFile(input: {
     weeklyDistributorByCode(distributorCode)?.name ??
     distributorCode;
 
-  const [aliasIndex, branchMapIndex] = await Promise.all([
+  const [aliasIndex, branchMapIndex, contract] = await Promise.all([
     loadProductAliasIndex(),
     loadBranchRegionIndex(distributorCode),
+    resolveWeeklyContract(distributorCode),
   ]);
 
   // PS ships a separate sales + stock matrix; everyone else ships one combined workbook.
@@ -112,6 +114,7 @@ export async function importWeeklySalesFile(input: {
     aliasIndex,
     branchMapIndex,
     periodDate: input.periodDate ?? null,
+    contract,
   });
 
   if (!parsed.ok) {

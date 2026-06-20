@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "../src/lib/sales/monthly-distributor-import.ts";
+import { weeklyContractByCode } from "../src/lib/sales/weekly/column-contract.ts";
 import type { WeeklyBranchRegionIndex } from "../src/lib/sales/weekly/branch-region-map.ts";
 import { normalizeCode, normalizeKey } from "../src/lib/sales/weekly/mapping-normalize.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
@@ -385,7 +386,76 @@ async function sfWorkbook(opts?: { hasReturn?: boolean }): Promise<ExcelJS.Buffe
   });
 }
 
+// ── contract override builder: a minimal EG sales-only workbook with the sales qty at an arbitrary col ──
+async function egQtyAtWorkbook(qtyCol1Based: number): Promise<ExcelJS.Buffer> {
+  return bufferOf((wb) => {
+    const sales = wb.addWorksheet("Branches Sales");
+    const header = new Array(Math.max(30, qtyCol1Based)).fill("");
+    header[3] = "INVOICE_DATE"; // col4
+    header[4] = "ITEM_CODE"; // col5
+    header[5] = "ITEM_NAME"; // col6
+    header[qtyCol1Based - 1] = "QTY";
+    header[28] = "BRANCH_CODE"; // col29
+    header[29] = "BRANCH_NAME"; // col30
+    sales.addRow(header);
+    const r = new Array(Math.max(30, qtyCol1Based)).fill("");
+    r[3] = new Date(Date.UTC(2026, 5, 1));
+    r[4] = "EG-SAG";
+    r[5] = "SAGINKGO";
+    r[qtyCol1Based - 1] = 10; // sales qty lives at the requested column only
+    r[28] = "B01";
+    r[29] = "Cairo Branch";
+    sales.addRow(r);
+  });
+}
+
 export async function runWeeklySalesImportTests() {
+  // ════════════ contract-driven column override (Phase 6B) ════════════
+  // Proves the resolved contract DRIVES parsing: with the code contract (salesQty=col13) a file whose qty
+  // sits at col15 reads 0; supplying an override that moves salesQty→col15 makes the same file read 10.
+  {
+    const branch = branchIndex({ branches: [{ key: "B01", fileType: "sales", region: "CA" }] });
+    const aliases = aliasIndex("EG", { "EG-SAG": "SA001" });
+
+    const def = await parseWeeklyWorkbookBuffer({
+      buffer: await egQtyAtWorkbook(15),
+      distributorCode: "EG",
+      distributorName: "EGD",
+      fileName: "EG.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+      periodDate: "2026-06-01",
+    });
+    assert.equal(def.ok, true, "EG override-baseline parses");
+    if (def.ok) {
+      const fact = def.rows.find((row) => row.productCode === "SA001");
+      assert.equal(fact?.salesQty, 0, "default contract reads col13 (empty here) → 0");
+    }
+
+    const overridden = structuredClone(weeklyContractByCode("EG")!);
+    const salesSheet = overridden.sheets.find((sheet) => sheet.role === "sales")!;
+    salesSheet.fields.find((field) => field.field === "salesQty")!.columnIndex = 15;
+    const ov = await parseWeeklyWorkbookBuffer({
+      buffer: await egQtyAtWorkbook(15),
+      distributorCode: "EG",
+      distributorName: "EGD",
+      fileName: "EG.xlsx",
+      references: references(),
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+      periodDate: "2026-06-01",
+      contract: overridden,
+    });
+    assert.equal(ov.ok, true, "EG override parses");
+    if (ov.ok) {
+      const fact = ov.rows.find((row) => row.productCode === "SA001");
+      assert.equal(fact?.salesQty, 10, "override contract (salesQty→col15) reads 10");
+      assert.equal(fact?.netQty, 10, "override net follows the moved column");
+      assert.equal(fact?.salesValue, round2(10 * PRICES.SA001), "override value = net * factory_price");
+    }
+  }
+
   // ════════════ EG (EGD) ════════════
   {
     const branch = branchIndex({
