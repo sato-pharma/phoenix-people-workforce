@@ -31,3 +31,45 @@ export async function writeMappingAudit(entry: MappingAuditEntry): Promise<void>
     });
   } catch { /* audit is best-effort — never block the mutation */ }
 }
+
+export type MappingAuditRecord = {
+  id: string;
+  entityType: string;
+  distributorCode: string | null;
+  entityKey: string;
+  action: string;
+  actor: string;
+  createdAt: string;
+};
+
+// Read the recent audit trail for the editors' history panel. Best-effort: returns [] if the table is
+// absent (unapplied migration) or on any error, so the panel degrades to an empty state, never breaks.
+export async function listMappingAuditEntries(filter: {
+  entityType?: MappingAuditEntityType;
+  distributorCode?: string | null;
+  limit?: number;
+}): Promise<MappingAuditRecord[]> {
+  try {
+    const supabase = getSupabaseAdmin();
+    let query = supabase
+      .from("source_of_sales_mapping_audit")
+      .select("id, entity_type, distributor_code, entity_key, action, actor, created_at")
+      .order("created_at", { ascending: false })
+      .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
+    if (filter.entityType) query = query.eq("entity_type", filter.entityType);
+    if (filter.distributorCode) query = query.eq("distributor_code", filter.distributorCode);
+    const { data, error } = await query;
+    if (error || !data) return [];
+    return data.map((row) => ({
+      id: String(row.id),
+      entityType: String(row.entity_type ?? ""),
+      distributorCode: row.distributor_code ? String(row.distributor_code) : null,
+      entityKey: String(row.entity_key ?? ""),
+      action: String(row.action ?? ""),
+      actor: String(row.actor ?? "system"),
+      createdAt: String(row.created_at ?? ""),
+    }));
+  } catch {
+    return [];
+  }
+}

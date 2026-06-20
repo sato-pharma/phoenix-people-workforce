@@ -78,6 +78,8 @@ export type WeeklySalesValidationResult = {
   templateName: string;
   /** the single week-start date carried in the sheet (YYYY-MM-DD), or null when undated */
   weekStart: string | null;
+  /** which column contract parsed this batch: 'code' (built-in) or 'override' (in-app edit active) */
+  contractSource?: "code" | "override";
   status: "blocked" | "validated";
   blockingReasons: string[];
   rowCount: number;
@@ -171,6 +173,8 @@ export type WeeklyBatch = {
   totalStockQty: number;
   blockingReasons: string[];
   uploadedBy: string | null;
+  /** which column contract parsed this batch: 'code' (built-in) or 'override' (in-app edit active) */
+  columnContractSource: "code" | "override";
   createdAt: string;
 };
 

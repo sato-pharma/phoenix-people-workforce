@@ -3,6 +3,8 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
+import { pickBestSheet } from "@/lib/sales/normalizer/engine";
+import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -44,11 +46,12 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  const sheet = workbook.worksheets[0];
+  // Pick the richest worksheet (not just the first) and scan deep, consistent with the importer engine.
+  const sheet = pickBestSheet(workbook, profile);
   if (!sheet) return { invalid: 0, saved: 0, scannedRows: 0, skipped: 0 };
 
   let headerRow = 1;
-  for (let r = 1; r <= Math.min(sheet.rowCount, 10); r += 1) { let n = 0; sheet.getRow(r).eachCell({ includeEmpty: false }, () => { n += 1; }); if (n >= 3) { headerRow = r; break; } }
+  for (let r = 1; r <= Math.min(sheet.rowCount, HEADER_SCAN_ROWS); r += 1) { let n = 0; sheet.getRow(r).eachCell({ includeEmpty: false }, () => { n += 1; }); if (n >= 3) { headerRow = r; break; } }
   const col = new Map<string, number>();
   sheet.getRow(headerRow).eachCell({ includeEmpty: false }, (cell, i) => { const k = String(cell.text ?? "").trim().toLowerCase(); if (k && !col.has(k)) col.set(k, i); });
   const colOf = (names: string[]) => { for (const n of names) { const i = col.get(n.trim().toLowerCase()); if (i) return i; } return 0; };
