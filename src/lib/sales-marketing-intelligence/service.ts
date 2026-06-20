@@ -1,4 +1,4 @@
-import { forbiddenError } from "@/lib/http/api-errors";
+﻿import { forbiddenError } from "@/lib/http/api-errors";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -406,7 +406,7 @@ async function resolveDashboardLineScope(access: AccessContext): Promise<Set<str
  */
 function mergeLineFilter(userLines: string[], allowed: Set<string> | null): string[] {
   if (!allowed) return userLines;
-  if (allowed.size === 0) return [" __no_line__"];
+  if (allowed.size === 0) return ["__no_line__"];
   const allowedKeys = new Set([...allowed].map(normalizeLineKey));
   if (userLines.length === 0) return [...allowed];
   const narrowed = userLines.filter((line) => allowedKeys.has(normalizeLineKey(line)));
@@ -445,12 +445,60 @@ function stripRestrictedFromMarketingSnapshot(
 ): SalesMarketingDashboardSnapshot {
   const isRestricted = (entry: { value: string; label: string }) =>
     isRestrictedProductCode(entry.value) || restrictedNames.has(normalizeProductNameKey(entry.label));
+
+  // Identify restricted product rows BEFORE filtering so their values can be
+  // subtracted from the pre-aggregated summary totals (which were computed
+  // inside the RPC and include restricted products for all callers).
+  const restrictedProductRows = snapshot.productRoi.filter(isRestricted);
+  const rCost    = restrictedProductRows.reduce((s, r) => s + r.marketingCost, 0);
+  const rActual  = restrictedProductRows.reduce((s, r) => s + r.actualSalesValue, 0);
+  const rUnits   = restrictedProductRows.reduce((s, r) => s + r.actualSalesUnits, 0);
+  const rReqRoi  = restrictedProductRows.reduce((s, r) => s + r.requiredRoiValue, 0);
+  const rExpRoi  = restrictedProductRows.reduce((s, r) => s + r.expectedRoiValue, 0);
+
+  const correctedCost    = Math.max(0, snapshot.summary.totalMarketingCost - rCost);
+  const correctedActual  = Math.max(0, snapshot.summary.actualAttributedSalesValue - rActual);
+  const correctedUnits   = Math.max(0, snapshot.summary.actualAttributedSalesUnits - rUnits);
+  const correctedReqRoi  = Math.max(0, snapshot.summary.requiredRoiValue - rReqRoi);
+  const correctedExpRoi  = Math.max(0, snapshot.summary.expectedRoiValue - rExpRoi);
+
+  // Lines that consist ONLY of restricted products (e.g. "Lacto Basic") are removed
+  // from lineRoi entirely. Mixed lines lose their restricted product contribution
+  // proportionally — not attempted here to keep the fix simple and safe.
+  const productLineMap = new Map<string, { restricted: number; total: number }>();
+  snapshot.productRoi.forEach((row) => {
+    const line = row.line ?? "(Unassigned)";
+    const entry = productLineMap.get(line) ?? { restricted: 0, total: 0 };
+    entry.total += 1;
+    if (isRestricted(row)) entry.restricted += 1;
+    productLineMap.set(line, entry);
+  });
+  const restrictedOnlyLines = new Set(
+    [...productLineMap.entries()]
+      .filter(([, counts]) => counts.total > 0 && counts.restricted === counts.total)
+      .map(([line]) => line),
+  );
+
   return {
     ...snapshot,
     productRoi: snapshot.productRoi.filter((row) => !isRestricted(row)),
+    lineRoi: snapshot.lineRoi.filter((row) => !restrictedOnlyLines.has(row.value) && !restrictedOnlyLines.has(row.line ?? "")),
     filters: {
       ...snapshot.filters,
       products: snapshot.filters.products.filter((option) => !isRestricted(option)),
+    },
+    summary: {
+      ...snapshot.summary,
+      totalMarketingCost:            correctedCost,
+      actualAttributedSalesValue:    correctedActual,
+      actualAttributedSalesUnits:    correctedUnits,
+      requiredRoiValue:              correctedReqRoi,
+      expectedRoiValue:              correctedExpRoi,
+      actualRoiCoverage:             correctedReqRoi > 0 ? correctedActual / correctedReqRoi : 0,
+      coverageGap:                   Math.max(0, correctedReqRoi - correctedActual),
+      expectedGap:                   Math.max(0, correctedReqRoi - correctedExpRoi),
+      noDataSpend:                   Math.max(0, snapshot.summary.noDataSpend - rCost),
+      spendAtRisk:                   Math.max(0, snapshot.summary.spendAtRisk - rCost),
     },
   };
 }

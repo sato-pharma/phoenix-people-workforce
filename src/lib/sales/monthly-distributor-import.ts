@@ -1,8 +1,9 @@
 import ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 export type SalesDistributorOption = {
   code: string;
@@ -2114,6 +2115,7 @@ export async function listSourceOfSalesUploadBatches(): Promise<SourceOfSalesUpl
 }
 
 type SourceOfSalesSummaryRecord = {
+  batchId?: string;
   groupCode: string | null;
   groupKey: string;
   groupLabel: string;
@@ -2159,42 +2161,98 @@ function aggregateDashboardGroups(
 export function buildSourceOfSalesDashboard(input: {
   availablePeriods: string[];
   batches: SourceOfSalesUploadBatch[];
+  geoSummaries?: SourceOfSalesSummaryRecord[];
   period: string | null;
+  restrictedProductCodes?: string[];
   summaries: SourceOfSalesSummaryRecord[];
 }): SourceOfSalesDashboard {
-  const totals = emptyTotals();
-  const distributorMap = new Map<string, SourceOfSalesDashboardDistributor>();
+  const restrictedSet = input.restrictedProductCodes?.length
+    ? new Set(input.restrictedProductCodes.map((c) => c.trim().toUpperCase()))
+    : null;
 
-  input.batches.forEach((batch) => {
-    const batchTotals = {
-      rowCount: batch.rowCount,
-      totalBonusQty: batch.totalBonusQty,
-      totalQty: batch.totalQty,
-      totalValue: batch.totalValue,
+  // ── CEO / unrestricted path ──────────────────────────────────────────────
+  if (!restrictedSet) {
+    const totals = emptyTotals();
+    const distributorMap = new Map<string, SourceOfSalesDashboardDistributor>();
+    input.batches.forEach((batch) => {
+      const batchTotals = { rowCount: batch.rowCount, totalBonusQty: batch.totalBonusQty, totalQty: batch.totalQty, totalValue: batch.totalValue };
+      addDashboardTotals(totals, batchTotals);
+      const key = batch.distributorCode;
+      const distributor = distributorMap.get(key) ?? { ...emptyTotals(), distributorCode: batch.distributorCode, distributorName: batch.distributorName, sheetCount: 0 };
+      distributor.sheetCount += 1;
+      addDashboardTotals(distributor, batchTotals);
+      distributorMap.set(key, distributor);
+    });
+    return {
+      availablePeriods: input.availablePeriods,
+      byArea: aggregateDashboardGroups(input.summaries, "area"),
+      byBrick: aggregateDashboardGroups(input.summaries, "brick"),
+      byDistributor: [...distributorMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.distributorName.localeCompare(r.distributorName)),
+      byLine: aggregateDashboardGroups(input.summaries, "line"),
+      byProduct: aggregateDashboardGroups(input.summaries, "product"),
+      byRegion: aggregateDashboardGroups(input.summaries, "region"),
+      period: input.period,
+      sheetCount: input.batches.length,
+      totals: roundedTotals(totals),
     };
-    addDashboardTotals(totals, batchTotals);
-    const key = batch.distributorCode;
-    const distributor = distributorMap.get(key) ?? {
-      ...emptyTotals(),
-      distributorCode: batch.distributorCode,
-      distributorName: batch.distributorName,
-      sheetCount: 0,
-    };
-    distributor.sheetCount += 1;
-    addDashboardTotals(distributor, batchTotals);
-    distributorMap.set(key, distributor);
+  }
+
+  // ── Non-CEO path: strip restricted products from every dimension ─────────
+  // product-type summary rows carry the product code; all other group types
+  // (line/region/area/brick) have restricted value baked in from import time.
+  // We re-derive totals / byLine / byDistributor from non-restricted product rows,
+  // and use the geoSummaries (from the DB RPC) for byRegion/byArea/byBrick.
+  const isRestricted = (code: string | null) => Boolean(code && restrictedSet.has(code.trim().toUpperCase()));
+  const productRows = input.summaries.filter((s) => s.groupType === "product");
+  const nonRestrictedProducts = productRows.filter((s) => !isRestricted(s.groupCode));
+
+  // Grand totals from non-restricted products
+  const totals = emptyTotals();
+  nonRestrictedProducts.forEach((row) => addDashboardTotals(totals, row));
+
+  // byLine: re-aggregate from non-restricted product rows using officialLine
+  const lineMap = new Map<string, SourceOfSalesDashboardGroup>();
+  nonRestrictedProducts.forEach((row) => {
+    const line = row.officialLine ?? "(No Line)";
+    const current = lineMap.get(line) ?? { ...emptyTotals(), code: null, key: line, label: line, line: line };
+    addDashboardTotals(current, row);
+    lineMap.set(line, current);
   });
+  const byLine = [...lineMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.label.localeCompare(r.label));
+
+  // byDistributor: re-aggregate from non-restricted product rows via batchId
+  const batchById = new Map(input.batches.map((b) => [b.batchId, b]));
+  const sheetCountByCode = new Map<string, number>();
+  input.batches.forEach((b) => sheetCountByCode.set(b.distributorCode, (sheetCountByCode.get(b.distributorCode) ?? 0) + 1));
+  const distMap = new Map<string, SourceOfSalesDashboardDistributor>();
+  nonRestrictedProducts.forEach((row) => {
+    const batch = batchById.get(row.batchId ?? "");
+    if (!batch) return;
+    const key = batch.distributorCode;
+    const current = distMap.get(key) ?? { ...emptyTotals(), distributorCode: batch.distributorCode, distributorName: batch.distributorName, sheetCount: sheetCountByCode.get(key) ?? 0 };
+    addDashboardTotals(current, row);
+    distMap.set(key, current);
+  });
+  const byDistributor = [...distMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.distributorName.localeCompare(r.distributorName));
+
+  // byProduct: filter from product-type summaries
+  const byProduct = aggregateDashboardGroups(productRows.filter((s) => !isRestricted(s.groupCode)), "product");
+
+  // byRegion/byArea/byBrick: use pre-filtered geo summaries from the DB RPC when available;
+  // fall back to the (inflated) pre-aggregated summaries if the RPC was skipped.
+  const geoSource = input.geoSummaries ?? input.summaries;
+  const byRegion = aggregateDashboardGroups(geoSource, "region");
+  const byArea = aggregateDashboardGroups(geoSource, "area");
+  const byBrick = aggregateDashboardGroups(geoSource, "brick");
 
   return {
     availablePeriods: input.availablePeriods,
-    byArea: aggregateDashboardGroups(input.summaries, "area"),
-    byBrick: aggregateDashboardGroups(input.summaries, "brick"),
-    byDistributor: [...distributorMap.values()]
-      .map(roundedTotals)
-      .sort((left, right) => right.totalValue - left.totalValue || left.distributorName.localeCompare(right.distributorName)),
-    byLine: aggregateDashboardGroups(input.summaries, "line"),
-    byProduct: aggregateDashboardGroups(input.summaries, "product"),
-    byRegion: aggregateDashboardGroups(input.summaries, "region"),
+    byArea,
+    byBrick,
+    byDistributor,
+    byLine,
+    byProduct,
+    byRegion,
     period: input.period,
     sheetCount: input.batches.length,
     totals: roundedTotals(totals),
@@ -2203,6 +2261,7 @@ export function buildSourceOfSalesDashboard(input: {
 
 function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSummaryRecord {
   return {
+    batchId: String(row.batch_id ?? ""),
     groupCode: row.group_code === null || row.group_code === undefined ? null : String(row.group_code),
     groupKey: String(row.group_key ?? ""),
     groupLabel: String(row.group_label ?? ""),
@@ -2215,7 +2274,7 @@ function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSum
   };
 }
 
-export async function loadSourceOfSalesDashboard(period?: string | null): Promise<SourceOfSalesDashboard> {
+export async function loadSourceOfSalesDashboard(period?: string | null, canViewRestricted = true): Promise<SourceOfSalesDashboard> {
   const supabase = getSupabaseAdmin();
   // The brick/area/region-name masters are independent of period/batch/summary selection, so fire
   // them now in parallel instead of as extra sequential round-trips at the end. Used to self-heal
@@ -2279,15 +2338,31 @@ export async function loadSourceOfSalesDashboard(period?: string | null): Promis
 
   const summariesResult = await supabase
     .from("source_of_sales_import_summaries")
-    .select("group_type,group_key,group_label,group_code,official_line,row_count,total_qty,total_bonus_qty,total_value")
+    .select("batch_id,group_type,group_key,group_label,group_code,official_line,row_count,total_qty,total_bonus_qty,total_value")
     .in("batch_id", batchIds);
 
   if (summariesResult.error) throw summariesResult.error;
 
+  // For non-CEO/SuperAdmin: call the geo RPC to get region/area/brick totals with
+  // restricted products (LA003/LA004) excluded. The pre-aggregated summaries bake
+  // their value in at import time so cannot be filtered post-hoc.
+  let geoSummaries: SourceOfSalesSummaryRecord[] | undefined;
+  if (!canViewRestricted && batchIds.length > 0) {
+    const geoResult = await supabase.rpc("phx_sos_geo_aggregates_without_restricted", {
+      p_batch_ids: batchIds,
+      p_exclude_codes: RESTRICTED_PRODUCT_CODES as unknown as string[],
+    });
+    if (!geoResult.error && geoResult.data) {
+      geoSummaries = (geoResult.data as Record<string, unknown>[]).map((row) => mapSourceOfSalesSummary(row));
+    }
+  }
+
   const dashboard = buildSourceOfSalesDashboard({
     availablePeriods,
     batches,
+    geoSummaries,
     period: selectedPeriod,
+    restrictedProductCodes: canViewRestricted ? undefined : (RESTRICTED_PRODUCT_CODES as unknown as string[]),
     summaries: (summariesResult.data ?? []).map((row) => mapSourceOfSalesSummary(row as Record<string, unknown>)),
   });
 
