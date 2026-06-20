@@ -70,10 +70,11 @@ function noCodedRowsBlocks() {
   assert.equal(r.ok, false);
 }
 
-function negativeQtyIsInfoUnlessDominant() {
+function negativeQtyOnlyWarnsWhenReturnsDominate() {
+  // routine returns are normal (credit notes) → NOT flagged at all
   const small = validateNormalizedUpload(result([row({ qty: -2, value: -20 }), row({ clientCode: "C2", qty: 100, value: 1000, rawRowNumber: 3 })]), ctx());
-  assert.equal(sev(small, "negative_qty"), "info");
-  // returns dominate (offset > 25% of positive units) → escalate to warning
+  assert.equal(has(small, "negative_qty"), false);
+  // returns dominate (offset > 25% of positive units) → warning (likely wrong file/period)
   const big = validateNormalizedUpload(result([row({ qty: -50, value: -500 }), row({ clientCode: "C2", qty: 10, value: 100, rawRowNumber: 3 })]), ctx());
   assert.equal(sev(big, "negative_qty"), "warning");
 }
@@ -240,7 +241,7 @@ function warningsDoNotClearOkButErrorsDo() {
 export function runSalesUploadValidationTests() {
   cleanBatchPasses();
   noCodedRowsBlocks();
-  negativeQtyIsInfoUnlessDominant();
+  negativeQtyOnlyWarnsWhenReturnsDominate();
   negativeValueExcludesReturns();
   zeroQtyAndZeroValueWarn();
   discountOutOfRangeWarns();
