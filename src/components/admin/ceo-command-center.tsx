@@ -57,7 +57,7 @@ const toneStyles: Record<CeoAttentionTone, { border: string; badge: string; text
 
 // ── Area sparkline ────────────────────────────────────────────────────────────
 
-function AreaSparkline({
+export function AreaSparkline({
   points,
   stroke = "#F97316",
   gradId,
@@ -147,7 +147,7 @@ function RankedMoverList({
 
 // ── Two-series bar chart ──────────────────────────────────────────────────────
 
-function TwoSeriesBars({
+export function TwoSeriesBars({
   data,
   colorA,
   colorB,
@@ -181,7 +181,7 @@ function TwoSeriesBars({
 
 // ── Section shell ─────────────────────────────────────────────────────────────
 
-function SectionShell({
+export function SectionShell({
   title,
   description,
   children,
@@ -379,14 +379,14 @@ async function DeferredSalesCards({ access }: { access: AccessContext }) {
 
 export function CeoCommandCenter({
   data,
-  welcome,
+  welcome: _welcome,
   access,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
 }) {
-  const { health, headcount, payroll, attention, approvals, sos, trends } = data;
+  const { attention, approvals, sos } = data;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -552,102 +552,6 @@ export function CeoCommandCenter({
           >
             <DeferredSalesCards access={access} />
           </Suspense>
-        </div>
-      </SectionShell>
-
-      {/* ── Company health breakdown ──────────────────────────────────────── */}
-      <SectionShell
-        title="Company health breakdown"
-        description="Weighted signal across sales achievement, attendance, employee linkage, and data coverage."
-      >
-        <div className="grid divide-x divide-slate-200 sm:grid-cols-4">
-          {[
-            { label: "Sales achievement", value: health.salesAchievementRate, target: 0.9, color: "#F97316" },
-            { label: "Attendance readiness", value: health.attendanceReadinessRate, target: 1, color: "#3B82F6" },
-            { label: "Employee linkage", value: health.employeeHealthRate, target: 1, color: "#10B981" },
-            { label: "Sales linkage rate", value: health.salesLinkageRate, target: 1, color: "#8B5CF6" },
-          ].map(({ label, value, target, color }) => {
-            const pctVal = Math.round(Math.min(1, value / target) * 100);
-            const statusColor = pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
-            return (
-              <div key={label} className="flex flex-col gap-3 px-5 py-5">
-                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-                <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
-                  {pctVal}%
-                </p>
-                <div className="h-1.5 w-full bg-slate-100">
-                  <div
-                    className="h-full transition-all"
-                    style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionShell>
-
-      {/* ── Trends ────────────────────────────────────────────────────────── */}
-      <SectionShell
-        title="Trends"
-        description="Sales value, people cost, and headcount movement over recent periods."
-      >
-        <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
-          {/* Sales trend */}
-          <div className="px-5 py-5">
-            <div className="mb-1 flex items-baseline justify-between">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Monthly Sales</p>
-              {trends.sales.length > 0 ? (
-                <p className="text-xs font-bold text-slate-900">
-                  {egp(trends.sales[trends.sales.length - 1]?.sales ?? 0)}
-                </p>
-              ) : null}
-            </div>
-            <AreaSparkline
-              points={trends.sales.map((p) => ({ label: p.label, value: p.sales }))}
-              stroke="#F97316"
-              gradId="trend-sales-grad"
-            />
-            <p className="mt-2 text-[9px] text-slate-400">Latest {trends.sales.length} periods</p>
-          </div>
-
-          {/* People cost trend */}
-          <div className="px-5 py-5">
-            <div className="mb-1 flex items-baseline justify-between">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
-              {trends.financial.length > 0 ? (
-                <p className="text-xs font-bold text-slate-900">
-                  {egp(trends.financial[trends.financial.length - 1]?.cost ?? 0)}
-                </p>
-              ) : null}
-            </div>
-            <AreaSparkline
-              points={trends.financial.map((p) => ({ label: p.label, value: p.cost }))}
-              stroke="#8B5CF6"
-              gradId="trend-cost-grad"
-            />
-            <p className="mt-2 text-[9px] text-slate-400">Latest {trends.financial.length} periods</p>
-          </div>
-
-          {/* Hires vs exits */}
-          <div className="px-5 py-5">
-            <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">
-              Headcount movement
-            </p>
-            <TwoSeriesBars
-              data={trends.hireExit.map((p) => ({ label: p.label, a: p.hires, b: p.exits }))}
-              colorA="#10B981"
-              colorB="#F43F5E"
-            />
-            <div className="mt-2 flex items-center gap-4 text-[9px] text-slate-400">
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 bg-emerald-500" /> Hires
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 bg-rose-500" /> Exits
-              </span>
-            </div>
-          </div>
         </div>
       </SectionShell>
 

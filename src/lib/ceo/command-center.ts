@@ -19,15 +19,17 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 /**
  * Bespoke executive data layer for the CEO Command Center, split for streaming.
  *
- * `getCeoCommandCenterData` is the FAST executive summary (health, headcount, payroll,
- * attention, approvals, Source of Sales, trends) — every source resolves in a few
- * seconds. `getCeoSalesDeferred` carries the two heavy aggregators (Weekly Sales and
- * Marketing ROI, ~15s each against prod) so the page can render the summary immediately
- * and stream those cards in behind a Suspense boundary instead of blocking ~16s on them.
+ * `getCeoCommandCenterData` is the FAST executive summary — lean queries only,
+ * renders the hero + SoS card + partial attention queue in ~1-2s. Heavy admin
+ * aggregators (getAdminCommandCenterData, getOverviewDashboard) have been moved to
+ * `getCeoLandingDeferred` so they no longer block first paint.
  *
- * Both run their sources via allSettled so one slow/failing domain degrades to a
- * labelled "unavailable" rather than blanking the page. CEO/Super Admin see confidential
- * products (LA003/LA004/SS001) across Sales — the page is gated to them.
+ * `getCeoSalesDeferred` carries Weekly Sales + Marketing ROI (heavy, ~15s each).
+ *
+ * `getCeoLandingDeferred` (Phase B) carries everything else: health breakdown, trends,
+ * risk signals, double-visit, expense, attendance, ROI signal, and monthly SoS tables.
+ *
+ * All sources run via allSettled so one slow/failing domain degrades to "unavailable".
  */
 
 export type CeoTopMover = { label: string; value: number };
@@ -44,17 +46,17 @@ export type CeoCommandCenterData = {
   generatedAt: string;
   dataUnavailable: string[];
   health: {
-    score: number; // 0..100
-    employeeHealthRate: number; // 0..1
-    salesLinkageRate: number; // 0..1
-    attendanceReadinessRate: number; // 0..1
-    salesAchievementRate: number; // 0..1
+    score: number;
+    employeeHealthRate: number;
+    salesLinkageRate: number;
+    attendanceReadinessRate: number;
+    salesAchievementRate: number;
   };
   headcount: {
     active: number;
     total: number;
     vacancies: number;
-    attritionRate30d: number; // percentage
+    attritionRate30d: number;
     uniqueLines: number;
     uniqueAreas: number;
   };
@@ -74,6 +76,8 @@ export type CeoCommandCenterData = {
     totalQty: number;
     topLines: CeoTopMover[];
     topRegions: CeoTopMover[];
+    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
+    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
   } | null;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
@@ -96,7 +100,7 @@ export type CeoSalesDeferredData = {
   marketing: {
     totalCost: number;
     attributedSalesValue: number;
-    roiCoverage: number; // 0..1 fraction
+    roiCoverage: number;
     actionRequired: number;
     spendAtRisk: number;
     requestCount: number;
@@ -105,11 +109,6 @@ export type CeoSalesDeferredData = {
     topRisk: { customer: string; code: string; action: string } | null;
   } | null;
 };
-
-function clamp01(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
-}
 
 function topMoversFromSos(
   groups: Array<{ label: string; totalValue: number }> | undefined,
@@ -121,9 +120,7 @@ function topMoversFromSos(
 }
 
 // ── Lean CEO-specific data helpers ───────────────────────────────────────────
-// These replace the 4 heavy admin services (employee directory, vacancy report,
-// probation rows, plans workspace) with targeted queries that fetch only the
-// columns the CEO dashboard actually needs, eliminating ~3-8 seconds of load.
+// These are fast targeted queries (no full employee directory, no payroll loops).
 
 async function getCeoHeadcountData() {
   const supabase = getSupabaseAdmin();
@@ -177,14 +174,14 @@ async function getCeoPendingPlansCount(): Promise<number> {
   return error ? 0 : (count ?? 0);
 }
 
+// ── Fast path: main CEO data (hero + SoS + lean attention) ──────────────────
+
 export async function getCeoCommandCenterData(access: AccessContext): Promise<CeoCommandCenterData> {
   const dataUnavailable: string[] = [];
   const canRestricted = canViewRestrictedProducts(access.role);
 
-  const [adminR, overviewR, sosR, leaveR, headcountR, openVacancyR, probationCountsR, pendingPlansR] =
+  const [sosR, leaveR, headcountR, openVacancyR, probationCountsR, pendingPlansR] =
     await Promise.allSettled([
-      getAdminCommandCenterData(access),
-      getOverviewDashboard(access),
       loadSourceOfSalesDashboard(null, canRestricted),
       getAwaitingMyActionItems(access, "admin"),
       getCeoHeadcountData(),
@@ -193,10 +190,6 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
       getCeoPendingPlansCount(),
     ]);
 
-  const admin = adminR.status === "fulfilled" ? adminR.value : null;
-  if (!admin) dataUnavailable.push("Executive signals");
-  const overview = overviewR.status === "fulfilled" ? overviewR.value : null;
-  if (!overview) dataUnavailable.push("Overview trends");
   const sos = sosR.status === "fulfilled" ? sosR.value : null;
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
   const leaveItems = leaveR.status === "fulfilled" ? leaveR.value : null;
@@ -206,58 +199,28 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const openVacancies = openVacancyR.status === "fulfilled" ? openVacancyR.value : 0;
   const probationCounts = probationCountsR.status === "fulfilled" ? probationCountsR.value : { overdue: 0, dueSoon: 0 };
   const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : 0;
-  if (admin?.dataUnavailable?.length) dataUnavailable.push(...admin.dataUnavailable);
 
   const activeHeadcount = headcount?.activeCount ?? 0;
   const uniqueLines = headcount?.uniqueLines ?? 0;
   const uniqueAreas = headcount?.uniqueAreas ?? 0;
   const companyEmployeeHealthRate = activeHeadcount ? (headcount?.withManagerCount ?? 0) / activeHeadcount : 0;
-
-  const exec = admin?.overview.executive;
-  const risk = admin?.overview.risk;
   const probationOverdue = probationCounts.overdue;
   const probationDueSoon = probationCounts.dueSoon;
 
-  // ── Company health score (transparent weighted blend of real rates) ──────────
-  const employeeHealthRate = companyEmployeeHealthRate;
-  const salesLinkageRate = admin?.health.salesLinkageRate ?? 0;
-  const attendanceReadinessRate = admin?.health.attendanceReadinessRate ?? 0;
-  const salesAchievementRate = overview?.sales.achievementRate ?? admin?.overview.sales.achievementRate ?? 0;
-  const score = Math.round(
-    (clamp01(salesAchievementRate / 0.9) * 0.3 +
-      clamp01(attendanceReadinessRate) * 0.2 +
-      clamp01(employeeHealthRate) * 0.25 +
-      clamp01(salesLinkageRate) * 0.15 +
-      clamp01(1 - Math.min(1, dataUnavailable.length * 0.08)) * 0.1) *
-      100,
-  );
+  // Health score is computed in Phase B with accurate rates; fast path uses 0 defaults.
+  const score = 0;
 
-  // ── Attention queue (only surfaces items that actually need the CEO's eye) ────
+  // Fast attention queue — only lean items (probation + leave).
+  // Phase B adds the fuller risk signals (resignations, contracts, coaching, flags).
   const attention: CeoAttentionItem[] = [];
-  if (risk?.expiringContracts) {
-    attention.push({ key: "contracts", label: "Contracts expiring soon", count: risk.expiringContracts, href: "/contracts", tone: "blue" });
-  }
   if (probationOverdue) {
     attention.push({ key: "probationOverdue", label: "Probation decisions overdue", count: probationOverdue, href: "/probation", tone: "rose" });
   }
   if (probationDueSoon) {
     attention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationDueSoon, href: "/probation", tone: "amber" });
   }
-  if (exec?.pendingResignations) {
-    attention.push({ key: "resignations", label: "Pending resignations", count: exec.pendingResignations, href: "/resignations", tone: "rose" });
-  }
-  if (exec?.overdueLeaveSla) {
-    attention.push({ key: "leaveSla", label: "Overdue leave approvals", count: exec.overdueLeaveSla, href: "/admin/action-center", tone: "rose" });
-  }
-  if (admin?.unresolvedSalaryFlags) {
-    attention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: admin.unresolvedSalaryFlags, href: "/payroll", tone: "rose" });
-  }
-  if (exec?.coachingRedZone) {
-    attention.push({ key: "coaching", label: "Coaching red-zone reps", count: exec.coachingRedZone, href: "/coaching", tone: "amber" });
-  }
 
   const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : 0;
-  // plansPending comes from the lean getCeoPendingPlansCount() query above.
 
   const sosOut = sos
     ? {
@@ -266,43 +229,48 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         totalQty: sos.totals.totalQty,
         topLines: topMoversFromSos(sos.byLine),
         topRegions: topMoversFromSos(sos.byRegion),
+        byRegion: [...sos.byRegion].sort((a, b) => b.totalValue - a.totalValue).map((r) => ({
+          label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
+        })),
+        byProduct: [...(sos.byProduct ?? [])].sort((a, b) => b.totalValue - a.totalValue).map((p) => ({
+          label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
+        })),
       }
     : null;
 
   return {
-    generatedAt: admin?.generatedAt ?? new Date().toISOString(),
+    generatedAt: new Date().toISOString(),
     dataUnavailable: Array.from(new Set(dataUnavailable)),
+    // Health rates are 0 in fast path — Phase B renders accurate values
     health: {
       score,
-      employeeHealthRate,
-      salesLinkageRate,
-      attendanceReadinessRate,
-      salesAchievementRate,
+      employeeHealthRate: companyEmployeeHealthRate,
+      salesLinkageRate: 0,
+      attendanceReadinessRate: 0,
+      salesAchievementRate: 0,
     },
     headcount: {
       active: activeHeadcount,
       total: activeHeadcount,
       vacancies: openVacancies,
-      attritionRate30d: exec?.attritionRate30d ?? 0,
+      attritionRate30d: 0,
       uniqueLines,
       uniqueAreas,
     },
+    // Payroll rendered in Phase B; fast path carries zero defaults
     payroll: {
-      batchLabel: admin?.overview.payroll.batchLabel ?? "—",
-      gross: admin?.overview.payroll.gross ?? 0,
-      net: admin?.overview.payroll.net ?? 0,
-      flags: admin?.overview.payroll.flags ?? 0,
-      unresolvedSalaryFlags: admin?.unresolvedSalaryFlags ?? 0,
-      available: admin?.access.showFinancialModules ?? false,
+      batchLabel: "—",
+      gross: 0,
+      net: 0,
+      flags: 0,
+      unresolvedSalaryFlags: 0,
+      available: false,
     },
     attention,
     approvals: { leavePending, plansPending },
     sos: sosOut,
-    trends: {
-      sales: (overview?.sales.trend ?? []).map((point) => ({ label: point.period, sales: point.sales, target: point.target })),
-      financial: (overview?.financial.trend ?? []).map((point) => ({ label: point.month, revenue: point.revenue, cost: point.cost })),
-      hireExit: (overview?.hr.hireExitTrend ?? []).map((point) => ({ label: point.m, hires: point.h, exits: point.e })),
-    },
+    // Trends rendered in Phase B
+    trends: { sales: [], financial: [], hireExit: [] },
   };
 }
 
@@ -359,8 +327,9 @@ export async function getCeoSalesDeferred(access: AccessContext): Promise<CeoSal
 }
 
 // ── Phase B: landing-page deferred data ──────────────────────────────────────
-// Loads the heavier executive widgets behind a second Suspense boundary so the
-// hero + KPI ribbon + attention queue render immediately while these stream in.
+// Loads heavy executive widgets behind a second Suspense boundary. Includes
+// getAdminCommandCenterData + getOverviewDashboard (moved from fast path) so
+// the hero renders immediately while these stream in.
 
 export type CeoDvManagerRow = {
   managerHrId: string;
@@ -371,7 +340,6 @@ export type CeoDvManagerRow = {
   distinctMrs: number;
   overFocusedMrCount: number;
   neglectedMrCount: number | null;
-  /** neglectedMrCount / teamMrCount — null when team size unknown. */
   neglectIndex: number | null;
   teamMrCount: number | null;
   daysSinceLastDv: number | null;
@@ -384,6 +352,27 @@ export type CeoRoiSignal = {
   stillZero: number;
   lastPeriod: string | null;
   trend: Array<{ period: string; onTrack: number; behind: number; noData: number }>;
+};
+
+export type CeoAdminSignals = {
+  attention: CeoAttentionItem[];
+  health: {
+    salesLinkageRate: number;
+    attendanceReadinessRate: number;
+    salesAchievementRate: number;
+    employeeHealthRate: number;
+  };
+  trends: {
+    sales: Array<{ label: string; sales: number; target: number }>;
+    financial: Array<{ label: string; revenue: number; cost: number }>;
+    hireExit: Array<{ label: string; hires: number; exits: number }>;
+  };
+  payroll: {
+    batchLabel: string;
+    gross: number;
+    net: number;
+    unresolvedSalaryFlags: number;
+  };
 };
 
 export type CeoLandingDeferredData = {
@@ -409,23 +398,21 @@ export type CeoLandingDeferredData = {
     chronicLate: Array<{ hrId: string; name: string; lateDays: number; lateRate: number }>;
   } | null;
   managersOnLeave: Array<{ name: string; hrId: string; role: string }> | null;
-  sosMonthly: {
-    period: string | null;
-    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
-    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
-  } | null;
+  adminSignals: CeoAdminSignals | null;
 };
 
 export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoLandingDeferredData> {
   const dataUnavailable: string[] = [];
-  const canRestricted = canViewRestrictedProducts(access.role);
 
-  const [dvR, expenseR, attendanceR, marketingR, sosR] = await Promise.allSettled([
+  // Run all heavy sources concurrently. SoS is NOT re-fetched here — the fast path
+  // already loads it and passes byRegion/byProduct via sosPrefetched prop on the page.
+  const [dvR, expenseR, attendanceR, marketingR, adminR, overviewR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
     getOutstationExpenseCommandData(access, { preset: "30d" }),
     getAttendanceAnalytics(),
     getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
-    loadSourceOfSalesDashboard(null, canRestricted),
+    getAdminCommandCenterData(access),
+    getOverviewDashboard(access),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;
@@ -436,7 +423,8 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
   if (!attendance) dataUnavailable.push("Attendance Analytics");
   const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
   if (!marketing) dataUnavailable.push("ROI Signal");
-  const sos = sosR.status === "fulfilled" ? sosR.value : null;
+  const admin = adminR.status === "fulfilled" ? adminR.value : null;
+  const overview = overviewR.status === "fulfilled" ? overviewR.value : null;
 
   // Double-visit manager rows
   const dvOut = dv
@@ -550,18 +538,52 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
       }
     : null;
 
-  // Monthly SoS by region + product
-  const sosMonthlyOut = sos
-    ? {
-        period: sos.period,
-        byRegion: [...sos.byRegion]
-          .sort((a, b) => b.totalValue - a.totalValue)
-          .map((r) => ({ label: r.label, totalValue: r.totalValue, totalQty: r.totalQty })),
-        byProduct: [...sos.byProduct]
-          .sort((a, b) => b.totalValue - a.totalValue)
-          .map((p) => ({ label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: p.line ?? null })),
-      }
-    : null;
+  // Admin signals — health rates + risk attention + trends (from admin + overview)
+  let adminSignals: CeoAdminSignals | null = null;
+  if (admin || overview) {
+    const exec = admin?.overview?.executive;
+    const risk = admin?.overview?.risk;
+    const signalAttention: CeoAttentionItem[] = [];
+
+    if (risk?.expiringContracts) {
+      signalAttention.push({ key: "contracts", label: "Contracts expiring soon", count: risk.expiringContracts, href: "/contracts", tone: "blue" });
+    }
+    if (exec?.pendingResignations) {
+      signalAttention.push({ key: "resignations", label: "Pending resignations", count: exec.pendingResignations, href: "/resignations", tone: "rose" });
+    }
+    if (exec?.overdueLeaveSla) {
+      signalAttention.push({ key: "leaveSla", label: "Overdue leave approvals", count: exec.overdueLeaveSla, href: "/admin/action-center", tone: "rose" });
+    }
+    if (admin?.unresolvedSalaryFlags) {
+      signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: admin.unresolvedSalaryFlags, href: "/payroll", tone: "rose" });
+    }
+    if (exec?.coachingRedZone) {
+      signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: exec.coachingRedZone, href: "/coaching", tone: "amber" });
+    }
+
+    const salesAchievementRate = overview?.sales?.achievementRate ?? admin?.overview?.sales?.achievementRate ?? 0;
+
+    adminSignals = {
+      attention: signalAttention,
+      health: {
+        salesLinkageRate: admin?.health?.salesLinkageRate ?? 0,
+        attendanceReadinessRate: admin?.health?.attendanceReadinessRate ?? 0,
+        salesAchievementRate,
+        employeeHealthRate: 0,
+      },
+      trends: {
+        sales: (overview?.sales?.trend ?? []).map((p) => ({ label: p.period, sales: p.sales, target: p.target })),
+        financial: (overview?.financial?.trend ?? []).map((p) => ({ label: p.month, revenue: p.revenue, cost: p.cost })),
+        hireExit: (overview?.hr?.hireExitTrend ?? []).map((p) => ({ label: p.m, hires: p.h, exits: p.e })),
+      },
+      payroll: {
+        batchLabel: admin?.overview?.payroll?.batchLabel ?? "—",
+        gross: admin?.overview?.payroll?.gross ?? 0,
+        net: admin?.overview?.payroll?.net ?? 0,
+        unresolvedSalaryFlags: admin?.unresolvedSalaryFlags ?? 0,
+      },
+    };
+  }
 
   return {
     dataUnavailable,
@@ -570,6 +592,6 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
     roiSignal: roiSignalOut,
     attendance: attendanceOut,
     managersOnLeave,
-    sosMonthly: sosMonthlyOut,
+    adminSignals,
   };
 }
