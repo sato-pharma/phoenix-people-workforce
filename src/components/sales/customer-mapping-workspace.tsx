@@ -30,6 +30,7 @@ type Props = {
 type MappingResponse = {
   data?: CustomerMappingResult;
   error?: string;
+  message?: string;
   success: boolean;
 };
 
@@ -96,11 +97,19 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
       if (next.search.trim()) query.set("search", next.search.trim());
       const response = await fetch(`/api/sales/customer-mapping?${query.toString()}`, { cache: "no-store" });
       const text = await response.text();
-      const payload: MappingResponse = text ? JSON.parse(text) : { success: response.ok };
-      if (payload.success && payload.data) {
+      const payload: MappingResponse | null = text ? (JSON.parse(text) as MappingResponse) : null;
+
+      if (!response.ok) {
+        setError(
+          payload?.error ?? payload?.message ?? `Request failed${response.status ? ` (${response.status} ${response.statusText})` : ""}.`,
+        );
+        return;
+      }
+
+      if (payload?.success && payload.data) {
         setResult(payload.data);
       } else {
-        setError(payload.error ?? "Failed to load Customer Mapping.");
+        setError(payload?.error ?? "Failed to load Customer Mapping.");
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load Customer Mapping.");

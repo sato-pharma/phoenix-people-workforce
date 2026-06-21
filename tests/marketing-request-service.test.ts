@@ -620,6 +620,23 @@ export async function runMarketingRequestServiceTests() {
   assert.match(roiReportServiceSource, /attributionQuality/, "ROI report service must return attribution quality");
   assert.match(roiReportServiceSource, /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/, "ROI report must resolve historical (terminated) requesters so region/name/line never go unassigned");
   assert.match(roiWorkspaceSource, /attributionGapReason|resultStatus/, "ROI tracking UI must surface attribution status");
+  assert.match(roiReportServiceSource, /ROI_INDEX_CACHE_TTL_MS/, "ROI tracking must cache the scoped index briefly to avoid duplicate rebuilds");
+  assert.match(roiReportServiceSource, /function getCachedRoiIndex/, "ROI tracking must centralize scoped index cache access");
+  assert.match(
+    roiReportServiceSource,
+    /getMarketingRoiFilterOptions[\s\S]*getCachedRoiIndex\(access/,
+    "ROI filter options must use the cached scoped index",
+  );
+  assert.match(
+    roiReportServiceSource,
+    /getMarketingRoiReport[\s\S]*getCachedRoiIndex\(access/,
+    "ROI reports must reuse the cached scoped index when visibility allows it",
+  );
+  assert.match(roiWorkspaceSource, /Promise\.all\(\[filterOptionsPromise, presetsPromise\]\)/, "ROI tracking must fetch filter options and presets in parallel");
+  assert.match(roiWorkspaceSource, /ROI_ROWS_PER_PAGE/, "ROI tracking must paginate the browser row render");
+  assert.match(roiWorkspaceSource, /visibleRows\.map/, "ROI tracking must render visible rows instead of every report row at once");
+  assert.match(roiWorkspaceSource, /React\.memo\(function ReportRow/, "ROI desktop report rows must be memoized");
+  assert.match(roiWorkspaceSource, /React\.memo\(function ReportCard/, "ROI mobile report cards must be memoized");
 
   // New API routes exist.
   assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");
