@@ -237,6 +237,7 @@ import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
+import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -369,6 +370,7 @@ await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
 await runTest("sos warning cleanup", runSosWarningCleanupTests);
 await runTest("customer map import", runCustomerMapImportTests);
+await runTest("customer directory rollup", runCustomerDirectoryRollupTests);
 await runTest("marketing manager role", runMarketingManagerRoleTests);
 await runTest("marketing reference importer", runMarketingReferenceImporterTests);
 await runTest("marketing ROI", runMarketingRoiTests);
