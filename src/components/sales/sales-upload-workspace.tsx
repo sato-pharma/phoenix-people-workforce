@@ -10,6 +10,8 @@ import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab"
 import { UploadedSheetsPanel } from "@/components/sales/uploaded-sheets-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
@@ -43,6 +45,17 @@ const stepCard = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
 const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
 const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+// Columns for the "Export unmapped (XLSX)" sheet — mirrors the on-screen unmapped table so the operator
+// gets one fix-list (products + customers + territories) to map in bulk offline, then re-validate.
+const UNMAPPED_EXPORT_COLUMNS: ExportColumn[] = [
+  { key: "type", label: "Type", width: 12 },
+  { key: "rawCode", label: "Value in sheet", width: 22 },
+  { key: "rawName", label: "Name in sheet", width: 36 },
+  { key: "rows", label: "Rows", numeric: true, width: 10 },
+  { key: "suggestionCode", label: "Suggested code", width: 18 },
+  { key: "suggestionName", label: "Suggested name", width: 30 },
+];
 
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
@@ -219,6 +232,18 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
     .filter((u) => confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
     .map((u) => ({ type: g.type, raw: u.raw, code: selected[mapKey(g.type, u.raw)].trim() })));
 
+  // Every unmapped row across all groups, flattened into one offline fix-list. Exports the full list
+  // (independent of what's confirmed) so the operator can map products + customers + territories in bulk.
+  const typeLabel: Record<MapType, string> = { product: "Product", customer: "Customer", territory: "Territory" };
+  const exportRows: ExportRow[] = groups.flatMap((g) => g.items.map((u): ExportRow => ({
+    type: typeLabel[g.type],
+    rawCode: u.raw,
+    rawName: u.rawName,
+    rows: u.count,
+    suggestionCode: u.suggestionCode ?? "",
+    suggestionName: u.suggestionLabel ?? "",
+  })));
+
   function setCode(type: MapType, raw: string, code: string) {
     const k = mapKey(type, raw);
     setSelected((p) => ({ ...p, [k]: code }));
@@ -254,6 +279,15 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
         <div className="flex items-center gap-2">
           {msg ? <span className="text-xs font-semibold text-emerald-700">{msg}</span> : null}
           {err ? <span className="text-xs font-semibold text-rose-700">{err}</span> : null}
+          <ExportXlsxButton
+            className="h-8"
+            columns={UNMAPPED_EXPORT_COLUMNS}
+            label="Export unmapped (XLSX)"
+            rows={exportRows}
+            sheetName="Unmapped"
+            subtitle={`${distributorCode} · ${exportRows.length} unmapped item(s) to map`}
+            title={`Unmapped items — ${distributorCode}`}
+          />
           <button
             className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-[#0F172A] px-3 text-xs font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]"
             disabled={busy || ready.length === 0}
