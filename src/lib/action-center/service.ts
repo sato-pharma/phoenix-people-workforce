@@ -4,7 +4,12 @@ import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
 import { getExcuseWorkspace, getManagerPendingExcuses, type EmployeeExcuseRequest } from "@/lib/excuses/service";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
-import { getEmployeePlansWorkspace, type EmployeePlan } from "@/lib/weekly-planning/service";
+import {
+  getEmployeePlansWorkspace,
+  getPlansAwaitingAction,
+  type ApproverPendingPlan,
+  type EmployeePlan,
+} from "@/lib/weekly-planning/service";
 import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacation/types";
@@ -182,10 +187,11 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
 // the admin Actions page and the employee-portal Actions page.
 //
 // SECURITY: the "portal" audience includes ONLY access-scoped, manager-relevant
-// sources — vacation (role-scoped to the caller's team/hierarchy/line) and excuse
-// (scoped to the caller's manager_hr_id). The unscoped HR/admin sources (all
-// resignations, all outstation, contract renewals) are admin-shell only and are
-// never aggregated for a portal manager.
+// sources — vacation (role-scoped to the caller's team/hierarchy/line), excuse
+// (scoped to the caller's manager_hr_id), and weekly plans (scoped to the plan's
+// manager_hr_id / CEO gate). The unscoped HR/admin sources (all resignations, all
+// outstation, contract renewals) are admin-shell only and are never aggregated for
+// a portal manager.
 
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
@@ -327,6 +333,33 @@ function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
   };
 }
 
+function mapWeeklyPlanItem(plan: ApproverPendingPlan): ActionHubItem {
+  const kindLabel = plan.planKind === "weekly" ? "Weekly" : "Monthly";
+  return {
+    id: plan.id,
+    module: "weekly_plan",
+    employeeName: plan.employeeName,
+    employeeHrId: plan.employeeHrId,
+    title: `${kindLabel} plan · ${plan.periodKey}`,
+    statusLabel: plan.stage === "manager" ? "Needs manager review" : "Needs CEO approval",
+    submittedAt: plan.submittedAt,
+    urgency: "normal",
+    detail: {
+      module: "weekly_plan",
+      stage: plan.stage,
+      planKind: plan.planKind,
+      periodKey: plan.periodKey,
+      periodStartDate: plan.periodStartDate,
+      periodEndDate: plan.periodEndDate,
+      employeeJobTitle: plan.employeeJobTitle,
+      managerName: plan.managerName,
+      itemCount: plan.itemCount,
+      items: plan.items,
+      reviewHref: plan.reviewHref,
+    },
+  };
+}
+
 export type ActionInboxAudience = "admin" | "portal";
 
 export async function getAwaitingMyActionItems(
@@ -341,9 +374,10 @@ export async function getAwaitingMyActionItems(
     includeAdminSources ? getResignationsDashboardData().catch(() => null) : Promise.resolve(null),
     includeAdminSources ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     includeAdminSources ? getContractRenewalDashboardData(access).catch(() => null) : Promise.resolve(null),
+    getPlansAwaitingAction(access).catch(() => null),
   ]);
 
-  const [leave, excuse, resignations, outstation, contract] = settled;
+  const [leave, excuse, resignations, outstation, contract, plans] = settled;
   const items: ActionHubItem[] = [];
 
   if (leave.status === "fulfilled" && leave.value) {
@@ -369,6 +403,9 @@ export async function getAwaitingMyActionItems(
       const item = mapContractRenewalItem(row);
       if (item) items.push(item);
     }
+  }
+  if (plans.status === "fulfilled" && plans.value) {
+    for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan));
   }
 
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));

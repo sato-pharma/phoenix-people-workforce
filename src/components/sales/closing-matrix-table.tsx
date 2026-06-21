@@ -565,10 +565,6 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
           </tbody>
         </table>
       </div>
-
-      <p className="mt-3 text-xs text-slate-500">
-        Values in EGP, computed as Qty × factory price × (1 − discount). Contr % = this row&apos;s share of the national total for that product / grand total. Amber family columns sum all concentrations in the family — Contr % is the family&apos;s share of the national grand total. Family columns are display-only and not counted again in the Grand Total. Region rows and the national total are roll-ups of their areas — each area is counted once.
-      </p>
     </div>
   );
 }

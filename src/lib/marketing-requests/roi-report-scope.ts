@@ -200,7 +200,12 @@ function multiselectDimension(
 function pair(value: string | null | undefined, label: string | null | undefined): ValueLabel[] {
   const v = (value ?? "").trim();
   if (!v) return [];
-  return [{ value: v, label: (label ?? v) || v }];
+  // Hide rather than expose a raw key (e.g. an hr_id) when the human label is missing.
+  // Dimensions that intentionally use the value as its own label (status, line, …) always
+  // pass a non-empty label, so this only drops name-keyed options whose name never resolved.
+  const l = (label ?? "").trim();
+  if (!l) return [];
+  return [{ value: v, label: l }];
 }
 
 /**

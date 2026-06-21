@@ -57,22 +57,22 @@ export function ActionsWorkspace({
         />
       )}
 
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-[#E5EAF1]">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 pb-2 pt-1 text-sm font-bold transition-colors ${
+            className={`flex items-center gap-2 px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
               tab === key
-                ? "border-b-2 border-orange-500 text-orange-600"
-                : "text-slate-400 hover:text-slate-600"
+                ? "border-b-2 border-orange-500 text-slate-900"
+                : "border-b-2 border-transparent text-slate-400 hover:text-slate-600"
             }`}
           >
             <Icon className="h-3.5 w-3.5" />
             {label}
             <span
-              className={`inline-flex min-w-[1.25rem] items-center justify-center px-1.5 py-0.5 text-[10px] font-black leading-none ${
-                tab === key ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
+              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+                tab === key ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-500"
               }`}
             >
               {count}

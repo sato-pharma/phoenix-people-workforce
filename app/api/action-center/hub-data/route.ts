@@ -8,6 +8,7 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { getPlansAwaitingAction, type ApproverPendingPlan } from "@/lib/weekly-planning/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem } from "@/components/action-center/types";
 import type { VacationActionCenterRow } from "@/lib/vacation/types";
@@ -79,23 +80,43 @@ function mapContract(row: ContractRow): ActionHubItem | null {
   };
 }
 
+function mapWeeklyPlan(plan: ApproverPendingPlan): ActionHubItem {
+  const kindLabel = plan.planKind === "weekly" ? "Weekly" : "Monthly";
+  return {
+    id: plan.id, module: "weekly_plan", employeeName: plan.employeeName, employeeHrId: plan.employeeHrId,
+    title: `${kindLabel} plan · ${plan.periodKey}`,
+    statusLabel: plan.stage === "manager" ? "Needs manager review" : "Needs CEO approval",
+    submittedAt: plan.submittedAt, urgency: "normal",
+    // The viewer (Super Admin / HR Manager) is always in the admin shell, so the
+    // "view full plan" deep-link points at /admin/weekly-plans, not the viewed
+    // manager's portal shell.
+    detail: { module: "weekly_plan", stage: plan.stage, planKind: plan.planKind, periodKey: plan.periodKey, periodStartDate: plan.periodStartDate, periodEndDate: plan.periodEndDate, employeeJobTitle: plan.employeeJobTitle, managerName: plan.managerName, itemCount: plan.itemCount, items: plan.items, reviewHref: `/admin/weekly-plans?plan=${plan.id}` },
+  };
+}
+
 // Marketing requests are intentionally excluded from this consolidated inbox — they keep
 // their own dedicated approval inbox at /workspace/marketing-requests + portal equivalents.
 async function fetchAllItems(viewAccess: AccessContext): Promise<ActionHubItem[]> {
+  // Weekly plans are scoped to the *viewed* person acting as the plan manager, so
+  // preview the queue as a non-privileged manager identity rather than the Super
+  // Admin god view (which would surface every pending plan in the company).
+  const planManagerAccess: AccessContext = { ...viewAccess, role: "Manager", scope: "team" };
   const settled = await Promise.allSettled([
     getVacationActionCenterData(viewAccess).catch(() => null),
     getResignationsDashboardData().catch(() => null),
     getManagerPendingExcuses(viewAccess).catch(() => null),
     listOutstationRequests().catch(() => null),
     getContractRenewalDashboardData(viewAccess).catch(() => null),
+    getPlansAwaitingAction(planManagerAccess).catch(() => null),
   ]);
-  const [leave, resig, excuse, outstation, contract] = settled;
+  const [leave, resig, excuse, outstation, contract, plans] = settled;
   const items: ActionHubItem[] = [];
   if (leave.status === "fulfilled" && leave.value) for (const r of leave.value.rows) items.push(mapLeave(r));
   if (resig.status === "fulfilled" && resig.value) for (const r of resig.value.records.filter((r) => r.status === "submitted" || r.status === "under_review")) items.push(mapResignation(r));
   if (excuse.status === "fulfilled" && excuse.value) for (const r of excuse.value) items.push(mapExcuse(r));
   if (outstation.status === "fulfilled" && outstation.value) for (const r of outstation.value.filter((r) => r.status === "submitted")) items.push(mapOutstation(r));
   if (contract.status === "fulfilled" && contract.value) for (const r of contract.value.rows) { const i = mapContract(r); if (i) items.push(i); }
+  if (plans.status === "fulfilled" && plans.value) for (const p of plans.value) items.push(mapWeeklyPlan(p));
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return items;
 }

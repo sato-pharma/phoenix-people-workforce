@@ -71,10 +71,32 @@ export async function runExcusesTests() {
     /v2_excuse_email_tokens[\s\S]*used_at: now/,
     "the approval token must be marked used after a decision",
   );
-  // Access is restricted to National Sales Manager or head-office employees.
+  // Access is restricted to the eligible roles or head-office employees.
   assert.match(
     serviceSource,
     /National Sales Manager"[\s\S]*isHeadOfficeExcuseEmployee/,
-    "excuses must be limited to NSM or head-office employees",
+    "excuses must be limited to eligible roles or head-office employees",
+  );
+  // Product / Group Product / Training Managers are also excuse-eligible.
+  assert.match(
+    serviceSource,
+    /"Product Manager"[\s\S]*"Group Product Manager"[\s\S]*"Training Manager"/,
+    "excuses must also be available to PM/GPM/TM",
+  );
+
+  // --- Employee decision email uses its own template, not the manager-facing one --------
+  // The decision (approved/rejected) email must pin the dedicated employee-facing
+  // excuse_decision template; reusing excuse_request shows the manager wording
+  // ("...pending your review", "Dear Dr.") to the employee.
+  assert.match(
+    serviceSource,
+    /sendEmployeeDecisionEmail[\s\S]*templateKey: EMAIL_TEMPLATE_KEYS\.EXCUSE_DECISION/,
+    "the employee decision email must pin the excuse_decision template",
+  );
+  // The decision tokens must be supplied so the template never renders empty {{tokens}}.
+  assert.match(
+    serviceSource,
+    /sendEmployeeDecisionEmail[\s\S]*templateContext: \{[\s\S]*excuseDate:[\s\S]*excuseType:[\s\S]*status:/,
+    "the employee decision email must supply excuseDate/excuseType/status tokens",
   );
 }

@@ -402,7 +402,10 @@ export async function getIReports360RepDayVisits(input: { date: string; hrId: st
   visits: IReports360RepDayVisit[];
 }> {
   const day = input.date.slice(0, 10);
-  const directory = await getEmployeeDirectoryRows();
+  // Historical drill-down: include inactive so a rep who has since departed still resolves
+  // their name/crm_id for a past day (matches the matrix loader above) instead of the page
+  // rendering blank. This is a single-rep lookup, not a visibility scope gate.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   const key = canonicalHrIdKey(input.hrId);
   const employee = directory.find((row) => canonicalHrIdKey(row.hrId) === key) ?? null;
   if (!employee) return { checkins: [], rep: null, route: null, visits: [] };

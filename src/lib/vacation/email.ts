@@ -5,6 +5,7 @@ import {
   type PhoenixEmailAction,
   type PhoenixEmailMetadataRow,
 } from "@/emails/phoenix-email-layout";
+import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import {
@@ -182,13 +183,21 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     : `Your vacation request has been rejected by the vacation approval workflow.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`;
   const templated = await sendTemplatedEmail({
     context: {
+      // CTA + duration are used by both decision templates; the rejection template also uses
+      // {{status}} as the Request ID, {{summary}} as the rejection reason, and {{managerName}}.
+      // Without these the admin-edited leave_approval/leave_rejection emails render blank cells.
+      ctaLabel: "Open in Phoenix Workforce",
+      ctaUrl: systemDeployment.productionUrl,
+      duration: formatDays(input.request.durationDays),
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
+      managerName: input.request.managerName || "your manager",
       recipientName: input.request.employeeName,
       startDate: formatDate(input.request.startDate),
-      status: statusLine,
+      status: approved ? statusLine : (input.request.id ?? "—"),
       subject: `Vacation request ${approved ? "approved" : "rejected"}`,
+      summary: approved ? statusLine : (input.request.hrDecisionComment ?? "—"),
       vacationType: vacationTypeLabel(input.request.vacationType),
     },
     employeeHrId: input.request.employeeHrId,

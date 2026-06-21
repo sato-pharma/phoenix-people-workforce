@@ -8,6 +8,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
@@ -157,8 +158,19 @@ export function isHeadOfficeExcuseEmployee(
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
 }
 
+// Roles that may submit excuses regardless of whether they sit in Head Office.
+// National Sales Manager has always been eligible; Product Manager, Group Product
+// Manager, and Training Manager were added so the field/marketing leadership roles
+// surfaced in the employee portal can record their own 2-hour excuses.
+const EXCUSE_ELIGIBLE_ROLES = new Set([
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Training Manager",
+]);
+
 function canUseExcuses(access: AccessContext, employee: EmployeeDirectoryRow) {
-  return normalizeRole(access.role) === "National Sales Manager" ||
+  return EXCUSE_ELIGIBLE_ROLES.has(normalizeRole(access.role)) ||
     isHeadOfficeExcuseEmployee(employee);
 }
 
@@ -220,7 +232,7 @@ async function loadEligibleEmployee(access: AccessContext) {
     throw new Error("Forbidden: your employee profile is not linked yet.");
   }
   if (!canUseExcuses(access, employee)) {
-    throw new Error("Forbidden: excuses are available for Head Office employees and National Sales Managers only.");
+    throw new Error("Forbidden: excuses are available for Head Office employees, National Sales Managers, Product Managers, Group Product Managers, and Training Managers only.");
   }
 
   return { directory, employee };
@@ -296,6 +308,7 @@ async function enqueueInAppNotification(input: {
 
 async function sendManagerEmail(input: {
   baseUrl: string;
+  employee: EmployeeDirectoryRow;
   manager: EmployeeDirectoryRow;
   request: EmployeeExcuseRequest;
   token: string;
@@ -320,6 +333,15 @@ async function sendManagerEmail(input: {
       recipients: [input.manager.workEmail as string],
       subject: `Excuse approval: ${input.request.employeeName}`,
       summary: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
+      // The admin-edited excuse_request template shows Job Title/Line/Area/Duration; the
+      // metric mapping does not fill those (the "Duration" metric label is not mapped), so
+      // supply them explicitly to avoid blank cells.
+      templateContext: {
+        area: input.employee.areaName ?? "—",
+        duration: `${input.request.durationHours} hours`,
+        jobTitle: input.employee.jobTitle ?? "—",
+        line: input.request.lineName ?? input.employee.lineName ?? "—",
+      },
       title: "Excuse approval required",
       tone: "warning",
     },
@@ -347,6 +369,7 @@ async function sendEmployeeDecisionEmail(input: {
   if (!employeeEmail) return;
 
   const statusLabel = input.request.status === "approved" ? "approved" : "rejected";
+  const excuseTypeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
   await createSystemNotification({
     actionUrl: "/employee-portals/excuses",
     actorId: input.request.managerHrId,
@@ -356,7 +379,7 @@ async function sendEmployeeDecisionEmail(input: {
       ctaLabel: "Open in Phoenix",
       employeeHrId: input.request.employeeHrId,
       metrics: [
-        { label: "Excuse type", value: input.request.excuseType },
+        { label: "Excuse type", value: excuseTypeLabel },
         { label: "Date", value: input.request.excuseDate },
         { label: "Status", value: statusLabel },
       ],
@@ -364,6 +387,18 @@ async function sendEmployeeDecisionEmail(input: {
       recipients: [employeeEmail],
       subject: `Your excuse request was ${statusLabel}`,
       summary: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
+      // Pin the dedicated employee-facing template so the decision email does NOT reuse the
+      // manager-oriented excuse_request wording ("...pending your review", "Dear Dr.").
+      templateKey: EMAIL_TEMPLATE_KEYS.EXCUSE_DECISION,
+      templateContext: {
+        duration: `${input.request.durationHours} hours`,
+        employeeHrId: input.request.employeeHrId,
+        employeeName: input.request.employeeName,
+        excuseDate: input.request.excuseDate,
+        excuseType: excuseTypeLabel,
+        line: input.request.lineName ?? "—",
+        status: statusLabel,
+      },
       title: `Excuse request ${statusLabel}`,
       tone: statusLabel === "approved" ? "success" : "warning",
     },
@@ -447,7 +482,7 @@ export async function createExcuseRequest(
   if (tokenError) throw tokenError;
 
   await Promise.all([
-    sendManagerEmail({ baseUrl: options.baseUrl, manager, request, token }),
+    sendManagerEmail({ baseUrl: options.baseUrl, employee, manager, request, token }),
     enqueueInAppNotification({
       category: "excuse",
       dedupeKey: `excuse-manager-${request.id}`,

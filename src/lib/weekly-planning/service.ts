@@ -62,6 +62,7 @@ import {
   assertPermission,
   canAccess,
   normalizeHrIdForAccess,
+  resolveNavigationMode,
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
@@ -954,6 +955,42 @@ async function authUsersByRole(role: PhoenixRole) {
   return (data ?? []) as AuthUserRow[];
 }
 
+async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("role")
+    .ilike("hr_id", normalized)
+    .maybeSingle();
+  if (error || !data) return null;
+  const role = (data as { role?: string | null }).role;
+  return role ? (role as PhoenixRole) : null;
+}
+
+/**
+ * The manager-review notification must deep-link to the shell the recipient
+ * actually lives in. Admin-shell managers (e.g. Marketing Manager, Super Admin,
+ * CEO) review at /admin/weekly-plans; portal managers (e.g. National Sales /
+ * Group Product Manager) review at /employee-portals/plans. Pointing everyone at
+ * the portal page silently bounced admin-shell managers to /overview, which is
+ * how a submitted plan could appear to "go nowhere". Defaults to the admin shell
+ * when the role can't be resolved (portal managers always have a login row).
+ */
+async function planReviewActionUrl(hrId: string | null | undefined, planId: string): Promise<string> {
+  let mode: "admin" | "employee-portal" = "admin";
+  try {
+    const role = await authRoleForHrId(hrId);
+    if (role) {
+      mode = resolveNavigationMode({ hrId: normalizeHrId(hrId), role, scope: "self", source: "session" });
+    }
+  } catch {
+    // best-effort — fall back to the admin shell review page
+  }
+  const base = mode === "employee-portal" ? "/employee-portals/plans" : "/admin/weekly-plans";
+  return `${base}?plan=${planId}`;
+}
+
 async function hrAcknowledgementRecipients() {
   const supabase = getSupabaseAdmin();
   const { data: authRows } = await supabase
@@ -1021,8 +1058,9 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
   }
 
   try {
+    const actionUrl = await planReviewActionUrl(managerRecipients[0]?.hrId ?? plan.manager_hr_id, plan.id);
     await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      actionUrl,
       emailCcRecipients: ccRecipients,
       eventType: "plan_submitted",
       message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
@@ -1179,6 +1217,199 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       schemaReady: false,
       summary: emptyPlansSummary(),
     };
+  }
+}
+
+export type ApproverPlanStage = "manager" | "ceo";
+
+/**
+ * Pure authorization rule deciding which approval gate (if any) a plan in a given
+ * status is awaiting from the caller. Mirrors the server-side guards enforced in
+ * decideEmployeePlan (assertManagerReviewer / assertCeoReviewer):
+ *   • submitted        → manager stage for the assigned manager (Super Admin too).
+ *   • manager_approved → CEO stage for CEO / Super Admin only.
+ * Returns null when the caller has no pending action on the plan.
+ */
+export function resolveApproverPlanStage(
+  status: EmployeePlanStatus,
+  managerHrId: string | null,
+  access: Pick<AccessContext, "hrId" | "role" | "scope">,
+): ApproverPlanStage | null {
+  const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
+  const isCeo = access.role === "CEO";
+  if (status === "submitted") {
+    return isSuperAdmin || hrIdsMatch(access.hrId, managerHrId) ? "manager" : null;
+  }
+  if (status === "manager_approved") {
+    return isSuperAdmin || isCeo ? "ceo" : null;
+  }
+  return null;
+}
+
+// One planned activity, flattened for read-only calendar rendering in the approver
+// inbox. Mirrors WeeklyPlanCalendarItem in the action-center types (kept structurally
+// identical so the action-center mapper can pass it through without re-shaping).
+export type ApproverPlanItem = {
+  activityDate: string;
+  activityLabel: string;
+  activityType: EmployeePlanActivityType;
+  area: string | null;
+  isCoaching: boolean;
+  notes: string | null;
+  objective: string | null;
+  region: string | null;
+  repName: string | null;
+  timeLabel: string | null;
+};
+
+export type ApproverPendingPlan = {
+  employeeHrId: string;
+  employeeJobTitle: string | null;
+  employeeName: string;
+  id: string;
+  itemCount: number;
+  items: ApproverPlanItem[];
+  managerName: string | null;
+  periodEndDate: string;
+  periodKey: string;
+  periodStartDate: string;
+  planKind: EmployeePlanKind;
+  reviewHref: string;
+  stage: ApproverPlanStage;
+  status: EmployeePlanStatus;
+  submittedAt: string;
+};
+
+function trimClockTime(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{1,2}:\d{2})/);
+  return match ? match[1] : raw;
+}
+
+function approverTimeLabel(start: unknown, end: unknown): string | null {
+  const s = trimClockTime(start);
+  const e = trimClockTime(end);
+  if (s && e) return `${s}–${e}`;
+  if (s) return `from ${s}`;
+  if (e) return `until ${e}`;
+  return null;
+}
+
+function approverItemLabel(activityType: EmployeePlanActivityType, activityTitle: unknown): { label: string; isCoaching: boolean } {
+  const title = String(activityTitle ?? "").trim();
+  const isCoaching = activityType === "Other" && title.toLowerCase() === "coaching";
+  if (isCoaching) return { label: "Coaching", isCoaching: true };
+  return { label: title || activityDisplayLabel(activityType), isCoaching: false };
+}
+
+function mapApproverPlanItem(item: {
+  activity_date: string;
+  activity_title: string;
+  activity_type: EmployeePlanActivityType;
+  area: string | null;
+  double_visit_medical_rep_name: string | null;
+  end_time: string | null;
+  location_text: string | null;
+  notes: string | null;
+  objective: string | null;
+  start_time: string | null;
+}): ApproverPlanItem {
+  const { label, isCoaching } = approverItemLabel(item.activity_type, item.activity_title);
+  return {
+    activityDate: item.activity_date,
+    activityLabel: label,
+    activityType: item.activity_type,
+    area: nullableText(item.area),
+    isCoaching,
+    notes: nullableText(item.notes),
+    objective: nullableText(item.objective),
+    region: nullableText(item.location_text),
+    repName: nullableText(item.double_visit_medical_rep_name),
+    timeLabel: approverTimeLabel(item.start_time, item.end_time),
+  };
+}
+
+/**
+ * Plans currently awaiting the signed-in approver's decision, for the cross-module
+ * Action Center inbox. Two gates are surfaced:
+ *   • manager stage — a `submitted` plan whose `manager_hr_id` is the caller
+ *     (Super Admin sees all submitted plans, mirroring assertManagerReviewer).
+ *   • ceo stage — a `manager_approved` plan, surfaced to CEO / Super Admin only.
+ * Authorization here mirrors the server-side guards in decideEmployeePlan, so a
+ * row only appears for someone actually allowed to act on it. `reviewHref` points
+ * at the viewer's own shell so they can open the full day-by-day plan first.
+ */
+export async function getPlansAwaitingAction(access: AccessContext): Promise<ApproverPendingPlan[]> {
+  const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
+  const isCeo = access.role === "CEO";
+  const viewerHrId = normalizeHrId(access.hrId);
+  if (!isSuperAdmin && !isCeo && !viewerHrId) return [];
+
+  const reviewBase = resolveNavigationMode(access) === "employee-portal"
+    ? "/employee-portals/plans"
+    : "/admin/weekly-plans";
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select(
+        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order)",
+      )
+      .in("status", ["submitted", "manager_approved"])
+      .order("submitted_at", { ascending: true })
+      .limit(WORKSPACE_PLAN_LIMIT);
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<
+      Pick<
+        PlanHeaderRow,
+        | "id"
+        | "employee_hr_id"
+        | "employee_name"
+        | "employee_job_title"
+        | "manager_hr_id"
+        | "manager_name"
+        | "period_key"
+        | "period_start_date"
+        | "period_end_date"
+        | "plan_kind"
+        | "status"
+        | "submitted_at"
+        | "created_at"
+      > & { employee_plan_items?: PlanItemRow[] }
+    >;
+
+    const items: ApproverPendingPlan[] = [];
+    for (const row of rows) {
+      const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access);
+      if (!stage) continue;
+      const planItems = (row.employee_plan_items ?? [])
+        .slice()
+        .sort((a, b) => `${a.activity_date}-${String(a.sort_order).padStart(4, "0")}`.localeCompare(`${b.activity_date}-${String(b.sort_order).padStart(4, "0")}`))
+        .map(mapApproverPlanItem);
+      items.push({
+        employeeHrId: row.employee_hr_id,
+        employeeJobTitle: row.employee_job_title,
+        employeeName: row.employee_name,
+        id: row.id,
+        itemCount: planItems.length,
+        items: planItems,
+        managerName: row.manager_name,
+        periodEndDate: row.period_end_date,
+        periodKey: row.period_key,
+        periodStartDate: row.period_start_date,
+        planKind: row.plan_kind,
+        reviewHref: `${reviewBase}?plan=${row.id}`,
+        stage,
+        status: row.status,
+        submittedAt: row.submitted_at ?? row.created_at,
+      });
+    }
+    return items;
+  } catch (error) {
+    if (isSchemaMissing(error)) return [];
+    throw error;
   }
 }
 

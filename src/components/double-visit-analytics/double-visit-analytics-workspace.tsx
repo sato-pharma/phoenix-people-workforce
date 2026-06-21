@@ -498,13 +498,27 @@ export function DoubleVisitAnalyticsWorkspace({
   canImport,
   canPublish,
   dashboard,
+  embedded = false,
   ireports360Configured,
+  ownDoubleVisits,
 }: {
   canImport: boolean;
   canPublish: boolean;
   dashboard: DoubleVisitDashboardData;
+  /**
+   * Portal (read-only) embedding. The host page already renders a title banner, so the
+   * component suppresses its own header, hides the Imports tab, and exposes a slim
+   * date-range + export toolbar instead.
+   */
+  embedded?: boolean;
   ireports360Configured: boolean;
+  /** When set (portal PM/GPM view), renders a "Your double visits" KPI = the viewer's personal DV count. */
+  ownDoubleVisits?: number | null;
 }) {
+  // Import/publish is admin-only. When neither is granted (the portal view), the entire
+  // Imports tab is hidden — a read-only viewer should never see upload/publish controls or
+  // the admin import-history metadata.
+  const canManageImports = canImport || canPublish;
   const [activeTab, setActiveTab] = useState<Tab>("summary");
   const [selectedManagerKey, setSelectedManagerKey] = useState<string>("");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("ALL");
@@ -621,6 +635,16 @@ export function DoubleVisitAnalyticsWorkspace({
     else { setSortKey(key); setSortDir(key === "name" ? "asc" : "desc"); }
   }
 
+  // Reload the CURRENT page (admin or portal) with the chosen range. Never hardcode the
+  // admin path — a portal user sent to /admin/* is bounced back out by the admin layout.
+  function applyDateRange(from: string, to: string) {
+    const params = new URLSearchParams();
+    if (from) params.set("dateFrom", from);
+    if (to) params.set("dateTo", to);
+    const qs = params.toString();
+    window.location.assign(qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }
+
   function openManager(managerHrId: string | null) {
     const key = hk(managerHrId);
     if (!key) return;
@@ -696,28 +720,59 @@ export function DoubleVisitAnalyticsWorkspace({
     { id: "summary", icon: Sparkles, label: "Summary" },
     { id: "managers", icon: Users, label: "By Manager" },
     { id: "mr-status", icon: User, label: "By MR" },
-    { id: "imports", icon: FileSpreadsheet, label: "Imports" },
+    // Imports/publish is admin-only; the read-only portal view never shows this tab.
+    ...(canManageImports ? [{ id: "imports" as Tab, icon: FileSpreadsheet, label: "Imports" }] : []),
   ];
 
   return (
     <div className="space-y-6">
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Field performance evidence</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
-          <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
+      {embedded ? (
+        // Portal embedding: the host shell already renders the title/description banner, so
+        // show only a slim snapshot + date-range + export toolbar (no duplicate <h1>).
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="text-sm font-medium text-slate-600">
             {dashboard.publishedImport
               ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.dateFrom)} – ${fmtDate(dashboard.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
-              : "No published snapshot — go to Imports to upload and publish a DV file."}
+              : "No published snapshot yet."}
           </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">From</span>
+              <Input className="min-h-10" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">To</span>
+              <Input className="min-h-10" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </label>
+            <Button className="min-h-10 gap-2 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
+              <RefreshCcw className="h-4 w-4" /> Apply
+            </Button>
+            <a href={exportHref}>
+              <Button className="min-h-10 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
+                <Download className="h-4 w-4" /> Excel
+              </Button>
+            </a>
+          </div>
         </div>
-        <a href={exportHref}>
-          <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
-            <Download className="h-4 w-4" /> Executive Excel
-          </Button>
-        </a>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Field performance evidence</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
+            <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
+              {dashboard.publishedImport
+                ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.dateFrom)} – ${fmtDate(dashboard.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
+                : "No published snapshot — go to Imports to upload and publish a DV file."}
+            </p>
+          </div>
+          <a href={exportHref}>
+            <Button className="min-h-11 gap-2 rounded bg-slate-950 px-4 text-white hover:bg-slate-800" type="button">
+              <Download className="h-4 w-4" /> Executive Excel
+            </Button>
+          </a>
+        </div>
+      )}
 
       {message ? <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">{message}</div> : null}
 
@@ -781,17 +836,24 @@ export function DoubleVisitAnalyticsWorkspace({
             <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-300" />
             <h2 className="mt-4 text-lg font-black text-slate-950">No published snapshot yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
-              Double Visit Analytics shows data from the one published snapshot. Import a DV Excel file (or pull live iReports360) and publish it to populate every tab.
+              {canManageImports
+                ? "Double Visit Analytics shows data from the one published snapshot. Import a DV Excel file (or pull live iReports360) and publish it to populate every tab."
+                : "Double Visit Analytics shows data from the official published snapshot. None is published yet — check back once the team publishes a Double Visit file."}
             </p>
-            <Button className="mt-5 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" onClick={() => setActiveTab("imports")} type="button">
-              <Upload className="h-4 w-4" /> Go to Imports
-            </Button>
+            {canManageImports && (
+              <Button className="mt-5 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" onClick={() => setActiveTab("imports")} type="button">
+                <Upload className="h-4 w-4" /> Go to Imports
+              </Button>
+            )}
           </Card>
         ) : (
           <>
             {/* Headline KPI band */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot." />
+              <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot (you + the team reporting to you)." />
+              {typeof ownDoubleVisits === "number" ? (
+                <KpiCard icon={Activity} label="Your Double Visits" value={fmt(ownDoubleVisits)} hint="Double visits you personally performed. Your team's visits are counted in the total above." />
+              ) : null}
               <KpiCard icon={CalendarDays} label="Active DV Days" value={fmt(dashboard.kpis.activeDoubleVisitDays)} hint="Distinct manager × date combinations." />
               <KpiCard icon={Users} label="Active Double-Visitors" value={fmt(activeManagerCount)} hint={`${idleCount} eligible manager${idleCount === 1 ? "" : "s"} did zero DVs.`} />
               <KpiCard icon={Gauge} label="Avg Calls / Day" value={fmt(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits per active double visit day." />
@@ -1273,7 +1335,7 @@ export function DoubleVisitAnalyticsWorkspace({
       {/* ═══════════════════════════════════════════════════════════════════
           IMPORTS TAB
       ═══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "imports" && (
+      {activeTab === "imports" && canManageImports && (
         <>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
@@ -1296,7 +1358,7 @@ export function DoubleVisitAnalyticsWorkspace({
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
                 </label>
                 <div className="flex items-end">
-                  <Button className="min-h-10 w-full gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => window.location.assign(`/admin/double-visit-analytics?dateFrom=${dateFrom}&dateTo=${dateTo}`)} type="button">
+                  <Button className="min-h-10 w-full gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
                     <RefreshCcw className="h-4 w-4" /> Refresh
                   </Button>
                 </div>

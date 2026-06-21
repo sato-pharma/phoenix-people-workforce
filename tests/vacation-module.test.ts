@@ -455,8 +455,9 @@ export function runVacationModuleTests() {
   // moved off GitHub Actions so it stops consuming Actions minutes). Both are CRON_SECRET
   // protected. Any additional cron must be a deliberate, reviewed change.
   const crons = JSON.parse(vercelConfigSource).crons as Array<{ path: string; schedule: string }>;
+  // Daily dispatcher runs at 06:30 UTC = 09:30 Africa/Cairo (EEST, UTC+3 in summer).
   assert.deepEqual(crons, [
-    { path: "/api/notifications/daily", schedule: "0 4 * * *" },
+    { path: "/api/notifications/daily", schedule: "30 6 * * *" },
     { path: "/api/notifications/process?limit=50", schedule: "*/30 * * * *" },
   ]);
 }

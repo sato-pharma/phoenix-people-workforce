@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox, ScanLine } from "lucide-react";
+import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox, ScanLine, Target, CalendarRange, ChartNoAxesColumnIncreasing } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -91,6 +91,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Expenses") return FileText;
   if (title === "Support") return Headphones;
   if (title === "Pharmacovigilance") return FileText;
+  if (title === "Sales Intelligence") return Target;
   return Activity;
 }
 
@@ -124,6 +125,11 @@ function buildEmployeePortalSections({
   showTrainingManagerFieldCoachingTab = false,
   showReportItTab = false,
   showReportItDashboardTab = false,
+  showRoiIntelligenceTab = false,
+  showMiniWeeklySalesTab = false,
+  showMiniMonthlySalesTab = false,
+  showCoachingAnalyticsTab = false,
+  showDoubleVisitAnalyticsTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -144,9 +150,27 @@ function buildEmployeePortalSections({
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
         { href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint },
+      ],
+    },
+    {
+      title: "Payroll",
+      items: [
         { href: "/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
-        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
+      ],
+    },
+    {
+      title: "Sales Operations",
+      items: [
+        ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: ChartNoAxesColumnIncreasing }] : []),
+        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales Closing", icon: CalendarRange }] : []),
+      ],
+    },
+    {
+      title: "Coaching",
+      items: [
+        ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
+        ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
       ],
     },
     {
@@ -167,6 +191,7 @@ function buildEmployeePortalSections({
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/marketing-requests/roi-tracking", label: "ROI Tracking", icon: ChartColumnBig }] : []),
+        ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
       ],
     },
     {
@@ -175,6 +200,7 @@ function buildEmployeePortalSections({
         { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
         { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
       ],
     },
     {
@@ -811,7 +837,7 @@ export function EmployeePortalChrome({
 }) {
   return (
     <RouteTransitionProvider>
-      <div className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
+      <div className="employee-portal-shell relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />

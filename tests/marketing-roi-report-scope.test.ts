@@ -227,4 +227,18 @@ export function runMarketingRoiReportScopeTests() {
       "NSM may never reveal → toggle hidden even when restricted present",
     );
   }
+
+  // ── hr_id never leaks as a name: a name-keyed seat with no resolved fullName is
+  //    HIDDEN from its dimension, never shown as its raw hr_id.
+  {
+    const ceoScope = resolveMarketingRoiScope(access("CEO", "C-1", "company"), rows);
+    const named = entry({ requestId: "n", dmHrId: "d-1", dmName: "DM One" });
+    const nameless = entry({ requestId: "m", dmHrId: "d-2", dmName: null });
+    const dmDim = dim(computeMarketingFilterOptions(ceoScope, [named, nameless]).dimensions, "dm");
+    assert.deepEqual(dmDim.options.map((o) => o.value), ["d-1"], "nameless seat must be hidden, not shown as its hr_id");
+    assert.ok(
+      !dmDim.options.some((o) => o.value === "d-2" || o.label === "d-2"),
+      "raw hr_id must never appear as an option value-as-label",
+    );
+  }
 }
