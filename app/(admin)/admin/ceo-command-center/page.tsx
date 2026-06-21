@@ -73,19 +73,15 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  const isCeo = access.role === "CEO";
-  const welcome = isCeo
-    ? {
-        fullName: "Dr Anwar Gaweesh",
-        roleLabel: "Chief Executive Officer",
-        hrId: access.hrId,
-        imageUrl: "/people/ceo-anwar-gaweesh.png",
-      }
-    : { fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId, imageUrl: viewer.imageUrl };
+  const welcome = {
+    fullName: viewer.displayName,
+    roleLabel: viewer.roleLabel,
+    hrId: access.hrId,
+  };
 
   return (
     <>
-      <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} />
+      <CeoCommandCenter data={result.data} welcome={welcome} access={access} />
       <Suspense fallback={<CeoPhaseBSkeleton />}>
         <CeoPhaseBWidgets access={access} />
       </Suspense>
