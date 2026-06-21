@@ -120,6 +120,7 @@ import { runMarketingManagerRoleTests } from "./marketing-manager-role.test.ts";
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
+import { runReportRpcGuardrailTests } from "./report-rpc-guardrails.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
 import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
 import { runMarketingPremiumNotificationTests } from "./marketing-premium-notifications.test.ts";
@@ -374,6 +375,7 @@ await runTest("marketing ROI report helpers (date math + body parse)", runMarket
 await runTest("marketing ROI facets (smart cascading filters)", runMarketingRoiFacetsTests);
 await runTest("marketing ROI export workbook (xlsx builds)", runMarketingRoiExportWorkbookTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
+await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
 await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHrIdCasingTests);
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
