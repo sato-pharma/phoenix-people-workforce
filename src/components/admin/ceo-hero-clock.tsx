@@ -12,9 +12,15 @@ export function CeoHeroClock() {
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
+    const tick = () => setNow(new Date());
+    // First paint after mount (async, so no synchronous setState in the effect body),
+    // then tick every second. Keeps the SSR placeholder until the client hydrates.
+    const raf = requestAnimationFrame(tick);
+    const id = setInterval(tick, 1000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(id);
+    };
   }, []);
 
   const dateStr = now
