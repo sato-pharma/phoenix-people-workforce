@@ -2623,6 +2623,12 @@ export async function persistDistributorSalesUpload(
     if (error) throw error;
   }
 
+  // Keep the pre-aggregated fact rollup in sync (executive / sales-intelligence
+  // dashboards read the rollup, not the raw table). Idempotent and a no-op for a
+  // non-validated batch (the refresh only aggregates validated batches).
+  const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
+  if (rollupRefresh.error) throw rollupRefresh.error;
+
   return {
     ...result,
     batchId,
