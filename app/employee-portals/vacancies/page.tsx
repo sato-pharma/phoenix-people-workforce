@@ -125,7 +125,7 @@ export default async function EmployeePortalVacanciesPage({
   if (!(await canAccess(access, "vacancies", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Vacancies are available for District Manager and National Sales Manager roles when vacancy scope can be resolved."
+        message="Vacancies are available for District Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
         title="Vacancies Unavailable"
       />
     );
@@ -136,7 +136,7 @@ export default async function EmployeePortalVacanciesPage({
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="This page is available for DSM and NSM roles when vacancy scope can be resolved."
+        message="This page is available for District Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
         title="Vacancies Unavailable"
       />
     );
@@ -201,7 +201,7 @@ export default async function EmployeePortalVacanciesPage({
     },
     {
       label: "Scope",
-      sub: isNsm ? "National view" : "District view",
+      sub: isNsm ? "Line view" : "District view",
       value: data.scopeLabel,
     },
   ];
@@ -233,7 +233,7 @@ export default async function EmployeePortalVacanciesPage({
               Filters
             </span>
             <span className="text-[11px] font-medium text-slate-400">
-              {isNsm ? "National Sales View" : "District Sales View"} &middot;{" "}
+              {isNsm ? "Line Sales View" : "District Sales View"} &middot;{" "}
               {filteredVacancies.length} matching
             </span>
           </div>
