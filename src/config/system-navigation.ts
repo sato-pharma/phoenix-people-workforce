@@ -140,11 +140,11 @@ const adminNavigationSectionSeeds = [
     id: "command-center",
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
-      { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
+      { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Marketing ROI & Customer Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
-      { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
-      { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
+      { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
+      { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
     ],
     label: "Command Center",
@@ -264,7 +264,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "payroll",
     items: [
-      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, exact: true },
+      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, excludedRoles: ["CEO"], exact: true },
       { href: "/admin/m-payroll", icon: ScrollText, label: "CEO Payroll View", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin", "CEO"] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
