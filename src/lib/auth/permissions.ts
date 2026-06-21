@@ -324,7 +324,9 @@ const defaultPermissionMatrix: PermissionMap = {
     overview: ["read"],
     admin_access: ["read"],
     imports: ["read"],
-    contracts: ["read", "approve", "export"],
+    // SoD: read/export only — contract renew/not-renew (can drive termination)
+    // belongs to Super Admin/HR. The CEO is observational on contracts.
+    contracts: ["read", "export"],
     coaching: ["read"],
     employee_profile: ["read", "update", "export"],
     employees: ["read", "export"],
