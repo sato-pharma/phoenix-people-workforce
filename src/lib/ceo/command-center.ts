@@ -1,6 +1,10 @@
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { type AccessContext } from "@/lib/auth/permissions";
+import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
+import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
+import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getOverviewDashboard } from "@/lib/overview/service";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
@@ -352,4 +356,220 @@ export async function getCeoSalesDeferred(access: AccessContext): Promise<CeoSal
     : null;
 
   return { dataUnavailable, weekly: weeklyOut, marketing: marketingOut };
+}
+
+// ── Phase B: landing-page deferred data ──────────────────────────────────────
+// Loads the heavier executive widgets behind a second Suspense boundary so the
+// hero + KPI ribbon + attention queue render immediately while these stream in.
+
+export type CeoDvManagerRow = {
+  managerHrId: string;
+  managerName: string;
+  role: string | null;
+  roleCode: string | null;
+  lineName: string | null;
+  distinctMrs: number;
+  overFocusedMrCount: number;
+  neglectedMrCount: number | null;
+  /** neglectedMrCount / teamMrCount — null when team size unknown. */
+  neglectIndex: number | null;
+  teamMrCount: number | null;
+  daysSinceLastDv: number | null;
+  coveragePct: number | null;
+};
+
+export type CeoRoiSignal = {
+  startedStrong: number;
+  startedWeak: number;
+  stillZero: number;
+  lastPeriod: string | null;
+  trend: Array<{ period: string; onTrack: number; behind: number; noData: number }>;
+};
+
+export type CeoLandingDeferredData = {
+  dataUnavailable: string[];
+  doubleVisit: {
+    managerRows: CeoDvManagerRow[];
+    dateFrom: string;
+    dateTo: string;
+  } | null;
+  expense: {
+    totalAmount: number;
+    approvedPct: number;
+    highRiskCount: number | null;
+    windowLabel: string;
+    byRegion: Array<{ label: string; amount: number }>;
+    topSpenders: Array<{ label: string; amount: number }>;
+  } | null;
+  roiSignal: CeoRoiSignal | null;
+  attendance: {
+    todayIsWorkingDay: boolean;
+    todayAbsentees: Array<{ hrId: string; name: string; department: string }>;
+    weeklyTrend: Array<{ isoWeek: string; lateRate: number; absenceRate: number }>;
+    chronicLate: Array<{ hrId: string; name: string; lateDays: number; lateRate: number }>;
+  } | null;
+  managersOnLeave: Array<{ name: string; hrId: string; role: string }> | null;
+  sosMonthly: {
+    period: string | null;
+    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
+    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
+  } | null;
+};
+
+export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoLandingDeferredData> {
+  const dataUnavailable: string[] = [];
+  const canRestricted = canViewRestrictedProducts(access.role);
+
+  const [dvR, expenseR, attendanceR, marketingR, sosR] = await Promise.allSettled([
+    getDoubleVisitDashboardData({ access }),
+    getOutstationExpenseCommandData(access, { preset: "30d" }),
+    getAttendanceAnalytics(),
+    getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
+    loadSourceOfSalesDashboard(null, canRestricted),
+  ]);
+
+  const dv = dvR.status === "fulfilled" ? dvR.value : null;
+  if (!dv) dataUnavailable.push("Double-Visit Intelligence");
+  const expense = expenseR.status === "fulfilled" ? expenseR.value : null;
+  if (!expense) dataUnavailable.push("Expense Snapshot");
+  const attendance = attendanceR.status === "fulfilled" ? attendanceR.value : null;
+  if (!attendance) dataUnavailable.push("Attendance Analytics");
+  const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
+  if (!marketing) dataUnavailable.push("ROI Signal");
+  const sos = sosR.status === "fulfilled" ? sosR.value : null;
+
+  // Double-visit manager rows
+  const dvOut = dv
+    ? {
+        managerRows: dv.managerSummaries.map((s) => ({
+          managerHrId: s.managerHrId,
+          managerName: s.managerName,
+          role: s.role ?? null,
+          roleCode: s.roleCode ?? null,
+          lineName: s.lineName ?? null,
+          distinctMrs: s.distinctMrs,
+          overFocusedMrCount: s.overFocusedMrCount,
+          neglectedMrCount: s.neglectedMrCount ?? null,
+          neglectIndex:
+            s.neglectedMrCount != null && s.teamMrCount
+              ? Math.round((s.neglectedMrCount / s.teamMrCount) * 100) / 100
+              : null,
+          teamMrCount: s.teamMrCount ?? null,
+          daysSinceLastDv: s.daysSinceLastDv ?? null,
+          coveragePct: s.coveragePct ?? null,
+        })),
+        dateFrom: dv.dateFrom,
+        dateTo: dv.dateTo,
+      }
+    : null;
+
+  // Managers on leave today — derive from DV manager list + leave map
+  let managersOnLeave: CeoLandingDeferredData["managersOnLeave"] = null;
+  if (dv && dv.managerSummaries.length > 0) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const hrIds = dv.managerSummaries.map((s) => s.managerHrId).filter(Boolean);
+    try {
+      const leaveMap = await getApprovedLeaveDayMap({
+        dateFromIso: todayIso,
+        dateToIso: todayIso,
+        employeeHrIds: hrIds,
+      });
+      managersOnLeave = dv.managerSummaries
+        .filter((s) => {
+          const key = s.managerHrId.toUpperCase();
+          for (const [k, dates] of leaveMap) {
+            if (k.toUpperCase() === key && dates.has(todayIso)) return true;
+          }
+          return false;
+        })
+        .map((s) => ({
+          hrId: s.managerHrId,
+          name: s.managerName,
+          role: s.role ?? s.roleCode ?? "Manager",
+        }));
+    } catch {
+      managersOnLeave = [];
+    }
+  }
+
+  // Expense snippet
+  const expenseOut = expense
+    ? {
+        totalAmount: expense.kpis.totalAmount,
+        approvedPct:
+          expense.kpis.totalAmount > 0 ? expense.kpis.approvedAmount / expense.kpis.totalAmount : 0,
+        highRiskCount: expense.kpis.highRiskRows,
+        windowLabel: expense.windowLabel,
+        byRegion: expense.breakdowns.byRegion.slice(0, 7).map((r) => ({ label: r.key, amount: r.total })),
+        topSpenders: expense.leaderboards.topSpenders
+          .slice(0, 5)
+          .map((s) => ({ label: s.name, amount: s.total })),
+      }
+    : null;
+
+  // ROI signal — bucket by most recent period's counts
+  const roiSignalOut: CeoRoiSignal | null = marketing
+    ? (() => {
+        const trend = marketing.roiTrend ?? [];
+        const last = trend.length > 0 ? trend[trend.length - 1] : null;
+        return {
+          startedStrong: last?.onTrackCount ?? 0,
+          startedWeak: last?.behindCount ?? 0,
+          stillZero: last?.noDataCount ?? 0,
+          lastPeriod: last?.period ?? null,
+          trend: trend.slice(-6).map((p) => ({
+            period: p.period,
+            onTrack: p.onTrackCount,
+            behind: p.behindCount,
+            noData: p.noDataCount,
+          })),
+        };
+      })()
+    : null;
+
+  // Attendance
+  const attendanceOut = attendance
+    ? {
+        todayIsWorkingDay: attendance.today.isWorkingDay,
+        todayAbsentees: attendance.today.absentees.map((a) => ({
+          hrId: a.employeeHrId,
+          name: a.employeeName,
+          department: a.department,
+        })),
+        weeklyTrend: attendance.weeklyTrend.slice(-7).map((w) => ({
+          isoWeek: w.isoWeek,
+          lateRate: w.lateRate,
+          absenceRate: w.absenceRate,
+        })),
+        chronicLate: attendance.chronicLate.slice(0, 10).map((c) => ({
+          hrId: c.employeeHrId,
+          name: c.employeeName,
+          lateDays: c.lateDays,
+          lateRate: c.lateRate,
+        })),
+      }
+    : null;
+
+  // Monthly SoS by region + product
+  const sosMonthlyOut = sos
+    ? {
+        period: sos.period,
+        byRegion: [...sos.byRegion]
+          .sort((a, b) => b.totalValue - a.totalValue)
+          .map((r) => ({ label: r.label, totalValue: r.totalValue, totalQty: r.totalQty })),
+        byProduct: [...sos.byProduct]
+          .sort((a, b) => b.totalValue - a.totalValue)
+          .map((p) => ({ label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: p.line ?? null })),
+      }
+    : null;
+
+  return {
+    dataUnavailable,
+    doubleVisit: dvOut,
+    expense: expenseOut,
+    roiSignal: roiSignalOut,
+    attendance: attendanceOut,
+    managersOnLeave,
+    sosMonthly: sosMonthlyOut,
+  };
 }
