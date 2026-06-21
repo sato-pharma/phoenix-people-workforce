@@ -329,6 +329,9 @@ const defaultPermissionMatrix: PermissionMap = {
     contracts: ["read", "export"],
     coaching: ["read"],
     employee_profile: ["read", "update", "export"],
+    // NOTE: hard boundary (hardBoundaryAllowedActions → "employees" → Super Admin only) removes
+    // these actions at runtime. CEO sees only their own employee record via canSeeEmployee().
+    // getEmployeeDirectoryRows() (unfiltered) is used on the command center for headcount only.
     employees: ["read", "export"],
     // SoD: read/export only — expense approval belongs to managers + Finance/Super Admin.
     expenses: ["read", "export"],
@@ -346,7 +349,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // SoD: read/export only — deduction decisions belong to the governance actors.
     deductions: ["read", "export"],
     double_visit_analytics: ["read", "export"],
-    // Retained by owner decision: CEO approves weekly plans.
+    // Retained by owner decision: CEO approves weekly plans for their direct reports.
+    // The approval path binds the actor to the active approval step via the plan workspace,
+    // so this stays scoped to the CEO's chain and does not over-grant company-wide.
     weekly_plans: ["read", "approve", "export"],
     // SoD: read/export only — resignation finalization belongs to Super Admin/HR.
     resignations: ["read", "export"],
