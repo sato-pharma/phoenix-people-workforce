@@ -49,9 +49,9 @@ export function runCoachingPermissionTests() {
   assertCoachingPermission("Employee", '"read"');
   assertCoachingPermission("Medical Rep", '"read"');
   assertCoachingPermission("CEO", '"read"');
-  // Product managers can now create coaching reports.
-  assertCoachingPermission("Product Manager", '"read", "create"');
-  assertCoachingPermission("Group Product Manager", '"read", "create"');
+  // Product managers are coaches: they create AND update/submit their own coaching reports.
+  assertCoachingPermission("Product Manager", '"read", "create", "update"');
+  assertCoachingPermission("Group Product Manager", '"read", "create", "update"');
   assertNoCoachingManagementPermission("Talent Acquisition");
   for (const role of [
     "District Manager",

@@ -763,8 +763,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "draft",
             name: "Create / update draft",
-            actor: "Training Manager",
-            role: "Training Manager / Super Admin",
+            actor: "Coach (Training / Product Manager)",
+            role: "Training Manager / Product Manager / Group Product Manager / Super Admin",
             statusProduced: "draft",
             notificationRecipients: [],
             emailRecipients: [],
@@ -773,8 +773,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "submit",
             name: "Submit report",
-            actor: "Training Manager",
-            role: "Training Manager / Super Admin",
+            actor: "Coach (Training / Product Manager)",
+            role: "Training Manager / Product Manager / Group Product Manager / Super Admin",
             statusProduced: "submitted",
             notificationRecipients: n("Medical Rep (the coached employee)"),
             actionRequiredRecipients: n("Medical Rep (the coached employee)"),

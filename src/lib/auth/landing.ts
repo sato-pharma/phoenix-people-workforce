@@ -19,9 +19,19 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "marketing manager") return "/workspace/marketing-requests/overview";
   if (normalized === "finance manager") return "/admin/outstation/expense-command";
   if (normalized === "sfe manager") return "/workspace/marketing-requests";
+  // Talent Acquisition is an admin-shell HR role but has no admin/overview grant, so the
+  // generic "/admin" fallback redirects it straight back out to the portal — an infinite
+  // bounce (/admin -> /employee-portals -> /overview -> /admin). Land it on its actual home
+  // surface (Recruitment), which its hrAuthority permissions allow.
+  if (normalized === "talent acquisition") return "/recruitment";
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
   if (normalized === "training manager") return "/employee-portals/training-manager";
+  // Product / Group Product Managers are Sales-Intelligence-first: their portal home (the rep
+  // performance chart) is empty for them, so land them on their Weekly Sales SI surface instead.
+  if (normalized === "product manager" || normalized === "group product manager") {
+    return "/employee-portals/weekly-sales";
+  }
   if (normalized === "ceo") return "/admin/ceo-command-center";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
 }

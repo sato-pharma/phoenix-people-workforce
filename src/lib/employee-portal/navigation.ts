@@ -8,7 +8,6 @@ export type EmployeePortalNavVisibility = {
   showExpenseActionTab?: boolean;
   showExpenseDashboardTab?: boolean;
   showIncentiveTab?: boolean;
-  showManagementTab?: boolean;
   showMarketingRequestsTab?: boolean;
   showMarketingInboxTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
@@ -169,13 +168,6 @@ export function resolveEmployeePortalNavVisibility(
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
   const isTrainingManager = resolvedRole === "Training Manager";
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
-  const showManagementTab = [
-    "District Manager",
-    "National Sales Manager",
-    "Product Manager",
-    "Training Manager",
-    "Manager",
-  ].includes(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   const showExpenseActionTab = !isMedicalRep;
@@ -219,7 +211,6 @@ export function resolveEmployeePortalNavVisibility(
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
-    showManagementTab,
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingInboxTab,

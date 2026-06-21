@@ -4,7 +4,45 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, CalendarClock, Zap, LogOut, LineChart as LineChartIcon, Activity, CircleDollarSign, ReceiptText, Trophy, X, Users, BriefcaseBusiness, ClipboardCheck, Building2, ChartColumnBig, FilePlus2, ShieldCheck, Database, Settings2, Home, Send, FileText, Fingerprint, Gift, CalendarDays, Headphones, ChevronsLeft, ChevronsRight, ChevronDown, WalletCards, UserCog, Inbox, ScanLine, Target, CalendarRange, ChartNoAxesColumnIncreasing } from "lucide-react";
+import {
+  Menu,
+  Search,
+  CalendarClock,
+  Zap,
+  LogOut,
+  LineChart as LineChartIcon,
+  Activity,
+  CircleDollarSign,
+  ReceiptText,
+  Trophy,
+  X,
+  Users,
+  BriefcaseBusiness,
+  ClipboardCheck,
+  Building2,
+  ChartColumnBig,
+  FilePlus2,
+  ShieldCheck,
+  Database,
+  Settings2,
+  Home,
+  Send,
+  FileText,
+  Fingerprint,
+  Gift,
+  CalendarDays,
+  Headphones,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronDown,
+  WalletCards,
+  UserCog,
+  Inbox,
+  ScanLine,
+  Target,
+  CalendarRange,
+  ChartNoAxesColumnIncreasing,
+} from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -128,8 +166,8 @@ function buildEmployeePortalSections({
   showRoiIntelligenceTab = false,
   showMiniWeeklySalesTab = false,
   showMiniMonthlySalesTab = false,
-  showCoachingAnalyticsTab = false,
   showDoubleVisitAnalyticsTab = false,
+  showCoachingAnalyticsTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {

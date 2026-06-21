@@ -107,9 +107,12 @@ export function isProbationAdministrator(access: Pick<AccessContext, "role" | "s
 }
 
 // View/export probation access follows the same Super Admin governance boundary as
-// administration; Talent Acquisition stays scoped to recruitment workflows.
+// administration; Talent Acquisition stays scoped to recruitment workflows. Training Manager
+// additionally has company-wide probation VIEW/EXPORT as part of its org-wide training
+// oversight — but deliberately NOT administrator powers (manager_feedback/pass/terminate stay
+// gated by isProbationAdministrator), so TM oversight is strictly read-only.
 export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope">) {
-  return isProbationAdministrator(access);
+  return isProbationAdministrator(access) || access.role === "Training Manager";
 }
 
 export function assertCanExportProbation(access: AccessContext) {
@@ -140,7 +143,7 @@ function canReadProbationEmployee(
     return isSameLine(employee, viewer);
   }
   if (access.role === "Regional Manager") return isInManagerHierarchy(directory, viewer, employee);
-  if (access.role === "Training Manager") return false;
+  // Training Manager is handled above by canViewAllProbation (org-wide read/export oversight).
   return canSeeEmployee(access, employee);
 }
 
