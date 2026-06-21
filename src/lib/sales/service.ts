@@ -26,6 +26,7 @@ import {
   type SalesOwnershipContext,
   type SalesOwnershipResult,
 } from "@/lib/workforce-classification";
+import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import {
   type SalesBatch,
   type SalesBatchDetail,
@@ -195,16 +196,22 @@ async function resolveSalesAccessFilter(accessContext?: AccessContext | null): P
     };
   }
 
-  if (salesScope === "LINE" && viewer?.lineName) {
-    const targetLine = normalizeLineName(viewer.lineName);
+  // LINE scope (NSM / Product Manager / Group Product Manager). Resolve the line by line_id
+  // first (line-name fallback) via sameWorkforceLine: in production manager records frequently
+  // have line_name null while line_id is set, so matching on line-name alone returned an empty
+  // set and the viewer saw NOTHING. A viewer with neither line_id nor line_name fails closed.
+  if (salesScope === "LINE" && viewer && (viewer.lineId != null || viewer.lineName)) {
     const allowedHrIds = new Set<string>();
     directory.employees.forEach((employee) => {
-      if (normalizeLineName(employee.lineName) === targetLine) {
+      if (sameWorkforceLine(viewer, employee)) {
         const employeeId = normalizeHrId(employee.hrId);
         if (employeeId) allowedHrIds.add(employeeId);
       }
     });
-    return { all: false, allowedHrIds, allowedLine: targetLine };
+    // allowedLine still carries the viewer's line NAME (when known) so record-level matching on
+    // the sales sheet's `line` text column keeps working alongside the line_id-resolved HR set.
+    const allowedLine = viewer.lineName ? normalizeLineName(viewer.lineName) : undefined;
+    return { all: false, allowedHrIds, allowedLine };
   }
 
   return { all: false, allowedHrIds: new Set() };
