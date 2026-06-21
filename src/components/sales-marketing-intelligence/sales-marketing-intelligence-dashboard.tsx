@@ -34,6 +34,7 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { RoiRefreshPanel } from "@/components/sales-marketing-intelligence/roi-refresh-panel";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Button } from "@/components/ui/button";
 import type {
@@ -533,6 +534,7 @@ const SMI_ADMIN_BASE_PATH = "/admin/sales-marketing-intelligence";
 
 export function SalesMarketingIntelligenceDashboard({
   basePath = SMI_ADMIN_BASE_PATH,
+  canRefreshRoi = false,
   chrome = "admin",
   filters,
   snapshot,
@@ -540,6 +542,8 @@ export function SalesMarketingIntelligenceDashboard({
   /** Where the filter form/reset post to. Defaults to the admin route; the employee
    *  portal passes its own route so filters stay inside the portal shell. */
   basePath?: string;
+  /** Show the "Refresh ROI" button — CEO / Super Admin only, admin chrome only. */
+  canRefreshRoi?: boolean;
   /** "admin" keeps the dark AdminPageHero + page padding. "portal" drops both so the
    *  dashboard sits cleanly inside EmployeePortalPageShell's own hero. */
   chrome?: "admin" | "portal";
@@ -553,6 +557,7 @@ export function SalesMarketingIntelligenceDashboard({
     <div className={chrome === "portal" ? "space-y-6" : "space-y-6 p-4 sm:p-6 lg:p-8"}>
       {chrome === "admin" ? (
         <AdminPageHero
+          actions={canRefreshRoi ? <RoiRefreshPanel generatedAt={snapshot.generatedAt} /> : undefined}
           badges={(
             <>
               <AdminInsightChip surface="dark">All paid approved history</AdminInsightChip>

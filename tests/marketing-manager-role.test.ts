@@ -55,13 +55,14 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(await canAccess(mm, "recruitment", "read"), false);
   assert.equal(await canAccess(mm, "recruitment", "update"), false);
   assert.equal(await canAccess(mm, "candidates", "read"), false);
-  // No field-management tools (kept deliberately narrow — marketing + commercial only):
-  assert.equal(await canAccess(mm, "coaching", "read"), false, "MM is not a field-management role");
+  // No field-management tools (deliberately narrow — marketing + commercial only):
+  assert.equal(await canAccess(mm, "coaching", "read"), false, "MM is not a field coach role");
   assert.equal(await canAccess(mm, "double_visit_analytics", "read"), false);
-  assert.equal(await canAccess(mm, "organogram", "read"), false);
-  assert.equal(await canAccess(mm, "probation", "read"), false);
   assert.equal(await canAccess(mm, "team", "read"), false);
-  assert.equal(await canAccess(mm, "vacancies", "read"), false);
+  // Org-management visibility granted so MM sees Team Operations workspace items:
+  assert.equal(await canAccess(mm, "organogram", "read"), true, "MM now has organogram read");
+  assert.equal(await canAccess(mm, "probation", "read"), true, "MM now has probation read");
+  assert.equal(await canAccess(mm, "vacancies", "read"), true, "MM now has vacancies read");
 
   // ── Per-domain scope: commercial = COMPANY, financial/HR = SELF ─────────────────────────────
   assert.equal(getSalesScope(mm), "COMPANY", "MM sees company-wide monthly sales + ROI dashboard");
@@ -129,7 +130,7 @@ export async function runMarketingManagerRoleTests() {
   );
   assert.match(
     intelligenceService,
-    /p_lines: effectiveLines/,
+    /p_lines: (?:params\.)?effectiveLines/,
     "ROI dashboard must inject the role-derived line filter into the RPC",
   );
 }
