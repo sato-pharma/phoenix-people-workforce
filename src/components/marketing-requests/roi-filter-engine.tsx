@@ -6,6 +6,8 @@ import {
   Bookmark,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   ExternalLink,
@@ -58,6 +60,30 @@ function percent(ratio: number) {
   return `${Math.round((Number.isFinite(ratio) ? ratio : 0) * 100)}%`;
 }
 
+type RoiSortDirection = "asc" | "desc";
+type RoiSortKey = "requestCode" | "requesterName" | "line" | "customerName" | "status" | "roiWindow" | "requiredRoiValue" | "actualSalesValue" | "actualCoverageRatio" | "resultStatus";
+type RoiSortState = { key: RoiSortKey; direction: RoiSortDirection };
+
+const RESULT_STATUS_SORT_WEIGHT: Record<MarketingRoiResultStatus, number> = {
+  on_track: 0,
+  behind: 1,
+  awaiting_data: 2,
+  no_data: 3,
+};
+
+const ROI_SORT_LABELS: Record<RoiSortKey, string> = {
+  requestCode: "Request",
+  requesterName: "Requester",
+  line: "Line",
+  customerName: "Customer",
+  status: "Status",
+  roiWindow: "ROI window",
+  requiredRoiValue: "Required",
+  actualSalesValue: "Actual",
+  actualCoverageRatio: "Coverage",
+  resultStatus: "Result",
+};
+
 const RESULT_STATUS_META: Record<MarketingRoiResultStatus, { label: string; className: string }> = {
   on_track: { label: "On track", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   behind: { label: "Behind", className: "border-amber-200 bg-amber-50 text-amber-700" },
@@ -71,6 +97,8 @@ const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string
   { value: "awaiting_data", label: "Awaiting data" },
   { value: "no_data", label: "No data" },
 ];
+
+const ROI_ROWS_PER_PAGE = 10;
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -227,6 +255,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
   const [presets, setPresets] = React.useState<MarketingRoiPreset[]>([]);
   const [presetName, setPresetName] = React.useState("");
   const [savingPreset, setSavingPreset] = React.useState(false);
+  const [, startFilterTransition] = React.useTransition();
+
+  async function fetchPresets(): Promise<MarketingRoiPreset[]> {
+    const response = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return (payload.presets ?? []) as MarketingRoiPreset[];
+  }
 
   // Load filter options once; hydrate filters from the URL and auto-apply if present.
   // The URL read + setState live inside the async callback (after the first await) so
@@ -238,40 +274,30 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
       const urlFilters = roiFilterStateFromParams(new URLSearchParams(window.location.search));
       const hasUrl = roiFilterStateHasAny(urlFilters);
       try {
-        const response = await fetch("/api/marketing-requests/roi-tracking/filter-options", { cache: "no-store" });
-        const payload = await response.json();
+        const filterOptionsPromise = fetch("/api/marketing-requests/roi-tracking/filter-options", { cache: "no-store" })
+          .then(async (response) => {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.message ?? "Unable to load filters.");
+            return payload as MarketingRoiFilterFacets;
+          });
+        const presetsPromise = fetchPresets().catch(() => []);
+        const [payload, presetList] = await Promise.all([filterOptionsPromise, presetsPromise]);
         if (cancelled) return;
-        if (!response.ok) {
-          setOptionsError(payload.message ?? "Unable to load filters.");
-          return;
-        }
-        setFacets(payload as MarketingRoiFilterFacets);
-
-        // Load saved presets (best-effort) and auto-apply the default when the URL is empty.
-        let presetList: MarketingRoiPreset[] = [];
-        try {
-          const presetResponse = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
-          if (presetResponse.ok) {
-            const presetPayload = await presetResponse.json();
-            presetList = (presetPayload.presets ?? []) as MarketingRoiPreset[];
-            if (!cancelled) setPresets(presetList);
-          }
-        } catch {
-          // presets are optional
-        }
+        setFacets(payload);
+        setPresets(presetList);
 
         if (hasUrl) {
-          setFilters(urlFilters);
+          startFilterTransition(() => setFilters(urlFilters));
           void runReport(urlFilters);
         } else {
           const fallbackDefault = presetList.find((preset) => preset.isDefault);
           if (fallbackDefault) {
-            setFilters(fallbackDefault.filters);
+            startFilterTransition(() => setFilters(fallbackDefault.filters));
             void runReport(fallbackDefault.filters);
           }
         }
-      } catch {
-        if (!cancelled) setOptionsError("Unable to load filters.");
+      } catch (error) {
+        if (!cancelled) setOptionsError(error instanceof Error ? error.message : "Unable to load filters.");
       }
     })();
     return () => {
@@ -281,15 +307,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
   async function refreshPresets() {
     try {
-      const response = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
-      if (response.ok) setPresets(((await response.json()).presets ?? []) as MarketingRoiPreset[]);
+      setPresets(await fetchPresets());
     } catch {
       // ignore
     }
   }
 
   function applyPreset(preset: MarketingRoiPreset) {
-    setFilters(preset.filters);
+    startFilterTransition(() => setFilters(preset.filters));
     void runReport(preset.filters);
   }
 
@@ -367,19 +392,23 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
   // Mutate a filter and auto-fit: drop any other selection that no longer fits.
   function setArray(key: RoiFilterKey, values: string[]) {
-    setFilters((prev) => {
-      const next = withRoiFilterValues(prev, key, values);
-      // `key` is the anchor — preserve the user's just-made choice, fit the others to it.
-      return facets ? pruneRoiFilterState(facets.entries, next, key) : next;
+    startFilterTransition(() => {
+      setFilters((prev) => {
+        const next = withRoiFilterValues(prev, key, values);
+        // `key` is the anchor — preserve the user's just-made choice, fit the others to it.
+        return facets ? pruneRoiFilterState(facets.entries, next, key) : next;
+      });
     });
   }
 
   // Patch scalar/range/toggle filters and auto-fit the multi-selects (a narrower date
   // or duration range can make a previously-chosen DM/product impossible).
   function patchFilters(patch: Partial<RoiFilterState>) {
-    setFilters((prev) => {
-      const next = { ...prev, ...patch } as RoiFilterState;
-      return facets ? pruneRoiFilterState(facets.entries, next) : next;
+    startFilterTransition(() => {
+      setFilters((prev) => {
+        const next = { ...prev, ...patch } as RoiFilterState;
+        return facets ? pruneRoiFilterState(facets.entries, next) : next;
+      });
     });
   }
 
@@ -503,7 +532,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                     label="ROI status"
                     options={ROI_STATUS_OPTIONS}
                     selected={filters.roiStatus}
-                    onChange={(values) => setFilters((prev) => ({ ...prev, roiStatus: values as MarketingRoiResultStatus[] }))}
+                    onChange={(values) => startFilterTransition(() => setFilters((prev) => ({ ...prev, roiStatus: values as MarketingRoiResultStatus[] })))}
                   />
 
                   {/* ROI duration range */}
@@ -587,7 +616,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       type="checkbox"
                       className="h-4 w-4 accent-[#F97316]"
                       checked={filters.includeRestricted}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked }))}
+                      onChange={(event) => startFilterTransition(() => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked })))}
                     />
                     Include confidential products (LA003 / LA004 / SS001)
                   </label>
@@ -606,7 +635,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   <button
                     type="button"
                     onClick={() => {
-                      setFilters(emptyRoiFilterState());
+                      startFilterTransition(() => setFilters(emptyRoiFilterState()));
                       setReport(null);
                       setState("ready");
                       window.history.replaceState(null, "", window.location.pathname);
@@ -691,7 +720,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
           <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{reportError}</div>
         ) : null}
 
-        {hasReport && report ? <ReportView report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
+        {hasReport && report ? <ReportView key={report.generatedAtIso} report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
 
         {state === "ready" && facets ? (
           <div className="rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-4 py-10 text-center">
@@ -707,6 +736,79 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
 function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport; viewSalesBasePath: string }) {
   const { kpi, rows } = report;
+  const [sort, setSort] = React.useState<RoiSortState>({ key: "actualCoverageRatio", direction: "desc" });
+  const [page, setPage] = React.useState(1);
+
+  const sortKeyLabel = ROI_SORT_LABELS[sort.key];
+
+  function getSortValue(row: MarketingRoiReportRow, key: RoiSortKey): string | number | null {
+    switch (key) {
+      case "requestCode":
+        return row.requestCode;
+      case "requesterName":
+        return row.requesterName ?? row.requesterHrId;
+      case "line":
+        return row.line ?? "";
+      case "customerName":
+        return row.customerName;
+      case "status":
+        return STATUS_LABELS[row.status] ?? row.status;
+      case "roiWindow":
+        return row.roiWindow ?? "";
+      case "requiredRoiValue":
+        return row.requiredRoiValue;
+      case "actualSalesValue":
+        return row.actualSalesValue;
+      case "actualCoverageRatio":
+        return row.hasSalesData ? row.actualCoverageRatio : null;
+      case "resultStatus":
+        return RESULT_STATUS_SORT_WEIGHT[row.resultStatus];
+    }
+  }
+
+  function compareSortValues(left: string | number | null, right: string | number | null): number {
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    if (typeof left === "number" && typeof right === "number") return left - right;
+    return String(left).localeCompare(String(right), undefined, { sensitivity: "base" });
+  }
+
+  const sortedRows = React.useMemo(() => {
+    const next = [...rows];
+    next.sort((a, b) => {
+      const aValue = getSortValue(a, sort.key);
+      const bValue = getSortValue(b, sort.key);
+      const cmp = compareSortValues(aValue, bValue);
+      return sort.direction === "asc" ? cmp : -cmp;
+    });
+    return next;
+  }, [rows, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / ROI_ROWS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * ROI_ROWS_PER_PAGE;
+  const pageEnd = Math.min(pageStart + ROI_ROWS_PER_PAGE, sortedRows.length);
+  const visibleRows = React.useMemo(() => sortedRows.slice(pageStart, pageStart + ROI_ROWS_PER_PAGE), [pageStart, sortedRows]);
+  const pageSummary = sortedRows.length === 0 ? "No rows" : `Showing ${pageStart + 1}-${pageEnd} of ${sortedRows.length}`;
+
+  function toggleSort(nextKey: RoiSortKey) {
+    setPage(1);
+    setSort((current) => {
+      if (current.key !== nextKey) return { key: nextKey, direction: "asc" };
+      return { key: nextKey, direction: current.direction === "asc" ? "desc" : "asc" };
+    });
+  }
+
+  function sortArrow(forKey: RoiSortKey) {
+    if (sort.key !== forKey) return "↕";
+    return sort.direction === "asc" ? "↑" : "↓";
+  }
+
+  function goToPage(nextPage: number) {
+    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+  }
+
   return (
     <div className="space-y-4">
       {/* KPI band */}
@@ -755,76 +857,258 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">ROI Report</p>
             <h3 className="text-[15px] font-black tracking-tight text-[#0F172A]">Actual vs required return</h3>
           </div>
-          <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
-            {rows.length} row{rows.length === 1 ? "" : "s"}
+          <span className="inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+            <span>{pageSummary}</span>
+            {rows.length > 0 ? <span>| Page {currentPage} of {totalPages} | {ROI_ROWS_PER_PAGE} per page</span> : null}
+            {sort ? <span>| Sort: {sortKeyLabel} ({sort.direction === "asc" ? "Asc" : "Desc"})</span> : null}
           </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1320px] border-collapse text-left text-[13px]">
+        <div className="md:hidden">
+          {rows.length === 0 ? (
+            <div className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]">
+              No requests match these filters.
+            </div>
+          ) : (
+            <div className="space-y-2 p-3">
+              {visibleRows.map((row) => <ReportCard key={row.requestId} row={row} viewSalesBasePath={viewSalesBasePath} />)}
+            </div>
+          )}
+        </div>
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-left text-[12px] lg:text-[13px]">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[22%]" />
+              <col className="w-[15%]" />
+              <col className="w-[16%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              <col className="w-[7%]" />
+            </colgroup>
             <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
               <tr>
-                <th className="px-3 py-2.5">Request</th>
-                <th className="px-3 py-2.5">Requester</th>
-                <th className="px-3 py-2.5">Line</th>
-                <th className="px-3 py-2.5">Customer</th>
-                <th className="px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5">ROI window</th>
-                <th className="px-3 py-2.5 text-right">Required</th>
-                <th className="px-3 py-2.5 text-right">Actual</th>
-                <th className="px-3 py-2.5 text-right">Coverage</th>
-                <th className="px-3 py-2.5">Result</th>
-                <th className="px-3 py-2.5 text-right">Sales</th>
+                <th className="px-3 py-2.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <button type="button" onClick={() => toggleSort("requestCode")} className="inline-flex items-center gap-1 font-black">
+                      Request <span className="text-[10px] font-black">{sortArrow("requestCode")}</span>
+                    </button>
+                    <button type="button" onClick={() => toggleSort("requesterName")} className="text-left text-[9px] font-black text-white/70">
+                      Requester {sortArrow("requesterName")}
+                    </button>
+                  </div>
+                </th>
+                <th className="px-3 py-2.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <button type="button" onClick={() => toggleSort("customerName")} className="inline-flex items-center gap-1 font-black">
+                      Customer <span className="text-[10px] font-black">{sortArrow("customerName")}</span>
+                    </button>
+                    <button type="button" onClick={() => toggleSort("line")} className="text-left text-[9px] font-black text-white/70">
+                      Line {sortArrow("line")}
+                    </button>
+                  </div>
+                </th>
+                <th className="px-3 py-2.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <button type="button" onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 font-black">
+                      Status <span className="text-[10px] font-black">{sortArrow("status")}</span>
+                    </button>
+                    <button type="button" onClick={() => toggleSort("roiWindow")} className="text-left text-[9px] font-black text-white/70">
+                      ROI window {sortArrow("roiWindow")}
+                    </button>
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 text-right">
+                  <div className="flex flex-col items-end gap-1">
+                    <button type="button" onClick={() => toggleSort("requiredRoiValue")} className="inline-flex items-center justify-end gap-1 font-black">
+                      Required <span className="text-[10px] font-black">{sortArrow("requiredRoiValue")}</span>
+                    </button>
+                    <button type="button" onClick={() => toggleSort("actualSalesValue")} className="text-right text-[9px] font-black text-white/70">
+                      Actual {sortArrow("actualSalesValue")}
+                    </button>
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 text-right">
+                  <button type="button" onClick={() => toggleSort("actualCoverageRatio")} className="inline-flex w-full items-center justify-end gap-1 font-black">
+                    Coverage <span className="text-[10px] font-black">{sortArrow("actualCoverageRatio")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("resultStatus")} className="inline-flex items-center gap-1 font-black">
+                    Result <span className="text-[10px] font-black">{sortArrow("resultStatus")}</span>
+                  </button>
+                </th>
+                <th className="px-2 py-2.5 text-right">Sales</th>
               </tr>
             </thead>
             <tbody className="bg-white">
               {rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]" colSpan={11}>
+                  <td className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]" colSpan={7}>
                     No requests match these filters.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => <ReportRow key={row.requestId} row={row} viewSalesBasePath={viewSalesBasePath} />)
+                visibleRows.map((row) => <ReportRow key={row.requestId} row={row} viewSalesBasePath={viewSalesBasePath} />)
               )}
             </tbody>
           </table>
         </div>
+        {rows.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-[12px] font-bold text-[#64748B] sm:px-5">
+            <span>{pageSummary}</span>
+            <div className="flex items-center gap-2">
+              <span className="hidden text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8] sm:inline">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                aria-label="Previous page"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-[#E2E8F0] bg-white text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Next page"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-[#E2E8F0] bg-white text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
 }
 
-function ReportRow({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
+function ResultStatusBadge({ row }: { row: MarketingRoiReportRow }) {
   const meta = RESULT_STATUS_META[row.resultStatus];
   return (
-    <tr className="border-t border-[#FEE7D2]">
-      <td className="px-3 py-2.5 font-mono text-[12px] font-bold text-[#0F172A]">{row.requestCode}</td>
-      <td className="px-3 py-2.5 font-semibold text-[#334155]">{row.requesterName ?? row.requesterHrId}</td>
-      <td className="px-3 py-2.5 font-medium text-[#64748B]">{row.line ?? "—"}</td>
-      <td className="px-3 py-2.5 font-semibold text-[#334155]">{row.customerName}</td>
-      <td className="px-3 py-2.5 font-medium text-[#64748B]">{STATUS_LABELS[row.status] ?? row.status}</td>
-      <td className="px-3 py-2.5 font-medium text-[#64748B]">{row.roiWindow ?? "—"}</td>
-      <td className="px-3 py-2.5 text-right font-semibold text-[#475569]">{money(row.requiredRoiValue)}</td>
-      <td className="px-3 py-2.5 text-right font-bold text-[#0F172A]">{money(row.actualSalesValue)}</td>
-      <td className="px-3 py-2.5 text-right font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
-      <td className="px-3 py-2.5">
-        <span
-          className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", meta.className)}
-          title={row.attributionGapReason ?? undefined}
-        >
-          {meta.label}
-        </span>
+    <span
+      className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", meta.className)}
+      title={row.attributionGapReason ?? undefined}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function ViewSalesAction({
+  row,
+  viewSalesBasePath,
+  compact = false,
+}: {
+  row: MarketingRoiReportRow;
+  viewSalesBasePath: string;
+  compact?: boolean;
+}) {
+  return (
+    <a
+      href={`${viewSalesBasePath}/marketing-requests/${row.requestId}/view-sales`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="View sales"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]",
+        compact ? "h-8 w-8 justify-center p-0 lg:w-auto lg:px-2" : "px-2 py-1",
+      )}
+    >
+      <ExternalLink className="h-3 w-3 shrink-0" />
+      <span className={compact ? "sr-only lg:not-sr-only" : undefined}>View Sales</span>
+    </a>
+  );
+}
+
+const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
+  return (
+    <tr className="border-t border-[#FEE7D2] align-top">
+      <td className="px-3 py-3">
+        <p className="truncate font-mono text-[12px] font-bold text-[#0F172A]" title={row.requestCode}>
+          {row.requestCode}
+        </p>
+        <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-[#64748B]">
+          {row.requesterName ?? row.requesterHrId}
+        </p>
       </td>
-      <td className="px-3 py-2.5 text-right">
-        <a
-          href={`${viewSalesBasePath}/marketing-requests/${row.requestId}/view-sales`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
-        >
-          <ExternalLink className="h-3 w-3" /> View Sales
-        </a>
+      <td className="px-3 py-3">
+        <p className="break-words font-semibold leading-5 text-[#334155]" title={row.customerName}>
+          {row.customerName}
+        </p>
+        <p className="mt-1 break-words text-[11px] font-bold uppercase tracking-[0.08em] text-[#94A3B8]">
+          {row.line ?? "No line"}
+        </p>
+      </td>
+      <td className="px-3 py-3">
+        <p className="break-words font-semibold text-[#475569]">{STATUS_LABELS[row.status] ?? row.status}</p>
+        <p className="mt-1 break-words text-[11px] font-medium text-[#94A3B8]">{row.roiWindow ?? "No window"}</p>
+      </td>
+      <td className="px-3 py-3 text-right">
+        <div className="space-y-1">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required</p>
+          <p className="font-semibold text-[#475569]">{money(row.requiredRoiValue)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
+          <p className="font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
+        </div>
+      </td>
+      <td className="px-3 py-3 text-right">
+        <p className="font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No data"}</p>
+        {row.attributionGapReason ? <p className="mt-1 break-words text-[10px] font-medium leading-4 text-[#94A3B8]">{row.attributionGapReason}</p> : null}
+      </td>
+      <td className="px-3 py-2.5">
+        <ResultStatusBadge row={row} />
+      </td>
+      <td className="px-2 py-3 text-right">
+        <ViewSalesAction row={row} viewSalesBasePath={viewSalesBasePath} compact />
       </td>
     </tr>
   );
-}
+});
+
+const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
+  return (
+    <article className="rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[12px] font-bold text-[#0F172A]" title={row.requestCode}>
+            {row.requestCode}
+          </p>
+          <h4 className="mt-1 break-words text-[13px] font-black leading-5 text-[#334155]">{row.customerName}</h4>
+          <p className="mt-1 break-words text-[11px] font-semibold text-[#64748B]">{row.requesterName ?? row.requesterHrId}</p>
+        </div>
+        <ResultStatusBadge row={row} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required</p>
+          <p className="mt-0.5 font-bold text-[#334155]">{money(row.requiredRoiValue)}</p>
+        </div>
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
+          <p className="mt-0.5 font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
+        </div>
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Coverage</p>
+          <p className="mt-0.5 font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No data"}</p>
+        </div>
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Window</p>
+          <p className="mt-0.5 break-words font-bold text-[#64748B]">{row.roiWindow ?? "No window"}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="break-words text-[11px] font-semibold text-[#64748B]">
+          {(STATUS_LABELS[row.status] ?? row.status)} / {row.line ?? "No line"}
+        </p>
+        <ViewSalesAction row={row} viewSalesBasePath={viewSalesBasePath} />
+      </div>
+      {row.attributionGapReason ? <p className="mt-2 break-words text-[11px] font-medium leading-4 text-[#94A3B8]">{row.attributionGapReason}</p> : null}
+    </article>
+  );
+});
