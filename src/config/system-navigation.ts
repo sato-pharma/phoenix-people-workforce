@@ -287,7 +287,7 @@ const adminNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Monthly Dashboard", permissions: [{ resource: "sales" }] },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
