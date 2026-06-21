@@ -228,6 +228,56 @@ type RoiIndexContext = {
   salesDataAsOf: string | null;
 };
 
+
+// Best-effort warm-function cache for the expensive role-scoped ROI index.
+const ROI_INDEX_CACHE_TTL_MS = 60_000;
+const ROI_INDEX_CACHE_MAX_ENTRIES = 32;
+
+type RoiIndexCacheEntry = {
+  expiresAt: number;
+  promise: Promise<RoiIndexContext>;
+};
+
+const roiIndexCache = new Map<string, RoiIndexCacheEntry>();
+
+function roiIndexCacheKey(access: AccessContext, revealRestricted: boolean): string {
+  return [
+    access.source,
+    access.role,
+    access.scope,
+    normalizeHrId(access.hrId) ?? "",
+    (access.loginId ?? "").trim().toLowerCase(),
+    revealRestricted ? "restricted" : "masked",
+  ].join("|");
+}
+
+function trimRoiIndexCache(now: number) {
+  for (const [key, entry] of roiIndexCache) {
+    if (entry.expiresAt <= now) roiIndexCache.delete(key);
+  }
+  while (roiIndexCache.size > ROI_INDEX_CACHE_MAX_ENTRIES) {
+    const oldestKey = roiIndexCache.keys().next().value;
+    if (!oldestKey) break;
+    roiIndexCache.delete(oldestKey);
+  }
+}
+
+function getCachedRoiIndex(access: AccessContext, revealRestricted: boolean): Promise<RoiIndexContext> {
+  const now = Date.now();
+  trimRoiIndexCache(now);
+
+  const key = roiIndexCacheKey(access, revealRestricted);
+  const cached = roiIndexCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  const promise = buildRoiIndex(access, revealRestricted);
+  roiIndexCache.set(key, { expiresAt: now + ROI_INDEX_CACHE_TTL_MS, promise });
+  void promise.catch(() => {
+    if (roiIndexCache.get(key)?.promise === promise) roiIndexCache.delete(key);
+  });
+  return promise;
+}
+
 /** PM/GPM product ownership (§A default = by their employees.line_id). */
 async function resolveOwnedProductScope(
   supabase: SupabaseAdmin,
@@ -579,7 +629,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
  */
 export async function getMarketingRoiFilterOptions(access: AccessContext): Promise<MarketingRoiFilterFacets> {
   try {
-    const ctx = await buildRoiIndex(access, /* revealRestricted */ access.role === "CEO" || access.role === "Super Admin");
+    const ctx = await getCachedRoiIndex(access, /* revealRestricted */ access.role === "CEO" || access.role === "Super Admin");
     return {
       entries: ctx.entries,
       canRevealRestricted: ctx.scope.canRevealRestricted,
@@ -711,7 +761,7 @@ export async function getMarketingRoiReport(
   const includeRestricted = filters.includeRestricted && (access.role === "CEO" || access.role === "Super Admin");
   let ctx: RoiIndexContext;
   try {
-    ctx = await buildRoiIndex(access, includeRestricted);
+    ctx = await getCachedRoiIndex(access, includeRestricted);
   } catch (error) {
     logRoiServiceFailure("getMarketingRoiReport:buildRoiIndex", error, { role: access.role });
     throw error;
@@ -1629,3 +1679,5 @@ async function buildReverseLookup(params: {
   visible.sort((a, b) => b.sharedPharmacyCodes.length - a.sharedPharmacyCodes.length || a.requestCode.localeCompare(b.requestCode));
   return visible;
 }
+
+
