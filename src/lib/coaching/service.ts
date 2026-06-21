@@ -11,6 +11,7 @@ import {
   isWithinManagerHierarchy,
   lineScopeIncludesEmployee,
   reportsToManagerSeat,
+  sameWorkforceLine,
 } from "@/lib/workforce/hierarchy-resolver";
 import { coachingMaxScore } from "@/lib/coaching/constants";
 import {
@@ -195,9 +196,15 @@ export function canAccessCoachingEmployee(
   }
   if (lineRoles.has(access.role)) {
     const accessor = findEmployee(directory, currentHrId);
-    // Department-safe LINE scope: same line AND same department only, so a Sales
-    // line role never sees Marketing/Product employees on a shared product line.
-    return Boolean(accessor && lineScopeIncludesEmployee(accessor, employee));
+    if (!accessor) return false;
+    // GPM sees ALL employees on their product line regardless of department,
+    // so they get a full cross-department line view in coaching.
+    if (access.role === "Group Product Manager") {
+      return sameWorkforceLine(accessor, employee);
+    }
+    // All other line roles (NSM, PM): department-safe — same line AND same
+    // department only, so a Sales role never sees Marketing on a shared line.
+    return lineScopeIncludesEmployee(accessor, employee);
   }
   return false;
 }
