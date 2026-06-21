@@ -264,9 +264,17 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     }
   }
 
-  // Product / Group Product Managers see only themselves and their reporting chain
-  // (self + descendants), which is already seeded into allowedHrIds above. They are
-  // intentionally NOT widened to their whole product line.
+  // GPM and PM are widened to their full product line so the MRs they visit (who
+  // sit on the same line but don't org-report to them) are included in mrScores.
+  // Without this, managerSummaries shows their real DV count while the "by manager"
+  // executive view shows 0 because the visited MRs were absent from scopedEmployees.
+  if (
+    (access.role === "Group Product Manager" || access.role === "Product Manager") &&
+    viewer?.lineName
+  ) {
+    const lineKey = normalizeLabelKey(viewer.lineName);
+    if (lineKey) allowedLines.add(lineKey);
+  }
 
   return {
     all: false as const,
