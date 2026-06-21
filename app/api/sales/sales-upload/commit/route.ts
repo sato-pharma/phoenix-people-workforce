@@ -9,6 +9,7 @@ import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/upload
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 // Persist a raw monthly sheet. Only TWO things block (persist nothing): unmapped rows, and a
 // duplicate sheet (this distributor's month is already imported). Every other finding is an advisory

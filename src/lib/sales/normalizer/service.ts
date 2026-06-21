@@ -17,6 +17,8 @@ export type { NormalizeFileResult, NormalizePreview };
 
 export type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
+const IMPORT_FINALIZING_REASON = "Import is still being finalized. Retry the upload if this remains blocked.";
+
 export async function listMappingReferences(): Promise<MappingReferences> {
   // Only the product + brick name lists are needed for the mapping dropdowns — skip the (large)
   // customer->brick crosswalk that loadSalesReferenceData() pages by default.
@@ -287,7 +289,7 @@ export async function persistNormalizedBatch(input: {
       file_name: input.fileName,
       sheet_name: "Coded",
       period,
-      status: "validated",
+      status: "blocked",
       total_rows: rows.length,
       importable_rows: rows.length,
       failed_rows: 0,
@@ -299,7 +301,7 @@ export async function persistNormalizedBatch(input: {
       rows_ignored: input.result.summary.ignored,
       rows_blank: input.result.summary.blankCustomerSkipped,
       recognition_engine_version: RECOGNITION_ENGINE_VERSION,
-      blocking_reasons: [],
+      blocking_reasons: [IMPORT_FINALIZING_REASON],
       uploaded_by: input.uploadedBy,
     })
     .select("id")
@@ -319,10 +321,17 @@ export async function persistNormalizedBatch(input: {
     if (error) throw error;
   }
 
+  const finalized = await supabase
+    .from("source_of_sales_import_batches")
+    .update({ status: "validated", blocking_reasons: [] })
+    .eq("id", batchId);
+  if (finalized.error) throw finalized.error;
+
   // Keep the pre-aggregated fact rollup in sync so the executive / sales-intelligence
   // dashboards (which read the rollup instead of live-scanning the 410 MB raw table)
   // reflect this batch immediately. Idempotent (delete-then-insert this batch), so a
-  // failed refresh fails the commit and self-heals on retry.
+  // failed refresh fails the commit and self-heals on retry. This must run after
+  // finalization because the rollup RPC intentionally reads only validated batches.
   const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
   if (rollupRefresh.error) throw rollupRefresh.error;
 
