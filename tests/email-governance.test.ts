@@ -201,6 +201,40 @@ export async function runEmailGovernanceTests() {
   assert.match(templateServiceSource, /rollbackEmailTemplate/);
   assert.match(templateServiceSource, /sanitizeEmailTemplateHtml/);
 
+  // The dedicated employee-facing excuse decision template must exist and be employee-facing
+  // (its own subject, not the manager "pending your review" wording).
+  assert.match(
+    templateServiceSource,
+    /templateKey: "excuse_decision"/,
+    "the excuse_decision default template must be registered",
+  );
+  const excuseDecisionDefault = getEmailTemplateHealth(
+    {
+      bodyHtml:
+        "<p>{{summary}}</p><p><strong>Excuse type:</strong> {{excuseType}}</p><p><strong>Date:</strong> {{excuseDate}}</p><p><strong>Duration:</strong> {{duration}}</p><p><strong>Decision:</strong> {{status}}</p>",
+      bodyText: "{{summary}}\n\nExcuse type: {{excuseType}}\nDate: {{excuseDate}}\nDuration: {{duration}}\nDecision: {{status}}",
+      closingText: "Open Phoenix Workforce to review your excuse history.",
+      description: "Excuse decision result sent to the employee.",
+      greeting: "Dear {{honorific}}{{recipientName}},",
+      isActive: true,
+      previewText: "An update on your excuse request.",
+      subject: "Your excuse request was {{status}}",
+      templateKey: "excuse_decision",
+      templateName: "Excuse Decision",
+    },
+    {
+      bccRoles: [],
+      bccStaticEmails: [],
+      ccRoles: [],
+      ccStaticEmails: [],
+      targetLines: [],
+      targetTitles: [],
+      toRoles: ["employee"],
+      toStaticEmails: [],
+    },
+  );
+  assert.equal(excuseDecisionDefault.status, "good", "the excuse_decision template must pass health (tokens are all registered)");
+
   const simulationRouteSource = readFileSync("app/api/admin/email-templates/simulate-recipients/route.ts", "utf8");
   assert.match(simulationRouteSource, /simulateTemplateRecipients/);
 
