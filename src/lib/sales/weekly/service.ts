@@ -533,6 +533,11 @@ export async function loadWeeklyDashboard(filters?: {
   const priorWeek = selectedWeeks.length > 0 ? availableWeeks.find((week) => week < selectedWeeks[0]) ?? null : null;
   const selectedWeekAnchor = selectedWeeks.length > 0 ? selectedWeeks[0] : null;
   const selectedWeekSet = new Set(selectedWeeks);
+  // DB-level week filter — avoids scanning all of history when only 1-2 weeks are needed.
+  // Skip when allWeeks is explicitly requested (full history is intentional in export/diagnostic flows).
+  const weekDbFilter = allWeeksRequested
+    ? ([] as string[])
+    : [...selectedWeekSet, ...(priorWeek ? [priorWeek] : [])];
 
   const appliedFilters: WeeklyDashboard["appliedFilters"] = {
     weekStart: selectedWeekAnchor,
@@ -590,6 +595,7 @@ export async function loadWeeklyDashboard(filters?: {
     // list, not these rows, so they never collapse). Region/product/line are filtered IN MEMORY only
     // so their full option universes stay available for multi-select — and so exclude mode works.
     if (distributor.has && distributor.mode === "include") query = query.in("distributor_code", [...distributor.set]);
+    if (weekDbFilter.length > 0) query = query.in("week_start", weekDbFilter);
     const page = await query;
     if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
     const data = page.data ?? [];
