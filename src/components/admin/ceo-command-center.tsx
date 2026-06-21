@@ -467,44 +467,41 @@ export function CeoCommandCenter({
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero — reuses the Admin identity card (profile + Phoenix Verified) ─────── */}
+      {/* ── Hero — compact admin identity card, max ~7 cm height ─────────────── */}
       <AdminHeroFrame>
         <div>
-          <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+          {/* identity row */}
+          <div className="relative grid items-center gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_180px] lg:gap-5">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
-                <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+              <div className="inline-flex items-center gap-1.5 border border-orange-400/40 bg-orange-500/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
+                <Sparkles aria-hidden="true" className="h-3 w-3" />
                 CEO Command Center
               </div>
-              <div className="mt-4 flex items-start gap-2.5">
-                <h1 className="max-w-3xl text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
+              <div className="mt-2.5 flex items-center gap-2">
+                <h1 className="text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
                   Hello, {firstNameFrom(welcome.fullName)} <span aria-hidden="true">👋🏻</span>
                 </h1>
-                {isCeo ? <span className="mt-1.5 shrink-0"><CeoHiddenNote /></span> : null}
+                {isCeo ? <span className="shrink-0"><CeoHiddenNote /></span> : null}
               </div>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Your full company — people, payroll, sales, expenses, and risk — in one executive surface,
-                confidential products included. Everything is arranged the way you like to see it.
-              </p>
 
-              <div className="mt-5 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
-                  <p className="mt-1 truncate text-sm font-black text-white">{welcome.hrId ?? "—"}</p>
+              <div className="mt-3 grid grid-cols-3 gap-1.5">
+                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
+                  <p className="mt-0.5 truncate text-xs font-black text-white">{welcome.hrId ?? "—"}</p>
                 </div>
-                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Role</p>
-                  <p className="mt-1 truncate text-sm font-black text-white">{welcome.roleLabel}</p>
+                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Role</p>
+                  <p className="mt-0.5 truncate text-xs font-black text-white">{welcome.roleLabel}</p>
                 </div>
-                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Coverage</p>
-                  <p className="mt-1 truncate text-sm font-black text-white">
+                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Coverage</p>
+                  <p className="mt-0.5 truncate text-xs font-black text-white">
                     {n(headcount.uniqueLines)} lines · {n(headcount.uniqueAreas)} areas
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {[
                   { href: "/employees", icon: Users, label: "Employees" },
                   { href: "/payroll", icon: Wallet, label: "Payroll" },
@@ -516,51 +513,51 @@ export function CeoCommandCenter({
                   <Link
                     key={href}
                     href={href}
-                    className="inline-flex items-center gap-2 border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-bold text-white transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.18]"
+                    className="inline-flex items-center gap-1.5 border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.18]"
                   >
-                    <Icon aria-hidden="true" className="h-3.5 w-3.5 text-orange-300" />
+                    <Icon aria-hidden="true" className="h-3 w-3 text-orange-300" />
                     {label}
                   </Link>
                 ))}
               </div>
             </div>
 
-            {/* Identity card — same as the Admin account */}
-            <div className="group relative mx-auto flex h-[260px] w-full max-w-[260px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-amber-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[310px] sm:max-w-[300px] lg:mx-0 lg:h-[330px]">
-              <div className="absolute -inset-1 bg-gradient-to-br from-orange-300/35 via-white/0 to-amber-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
+            {/* Identity photo card — same gradient frame + Phoenix Verified badge as admin */}
+            <div className="group relative mx-auto flex h-[190px] w-full max-w-[160px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-amber-500/20 p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.24)] lg:mx-0">
+              <div className="absolute -inset-0.5 bg-gradient-to-br from-orange-300/35 via-white/0 to-amber-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
               <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-white/95 shadow-inner">
                 {profileImage ? (
                   <Image
                     alt={`${welcome.fullName} profile photo`}
                     className="h-full w-full object-cover object-[center_18%] transition-transform duration-500 group-hover:scale-105"
-                    height={330}
+                    height={190}
                     priority
                     src={profileImage}
                     unoptimized={profileImage.startsWith("/api/")}
-                    width={300}
+                    width={160}
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
-                    <span className="text-[50px] font-black tracking-normal">{initials || "CEO"}</span>
+                    <span className="text-[40px] font-black">{initials || "CEO"}</span>
                   </div>
                 )}
               </div>
-              <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 border border-white/70 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
-                <ShieldCheck className="h-3.5 w-3.5" />
+              <div className="absolute -bottom-3 left-3 right-3 flex items-center justify-center gap-1.5 border border-white/70 bg-white px-2 py-1.5 text-[10px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_8px_24px_rgba(15,23,42,0.18)]">
+                <ShieldCheck className="h-3 w-3" />
                 Phoenix Verified
               </div>
             </div>
           </div>
 
-          {/* KPI ribbon — executive readout */}
+          {/* KPI ribbon — compact executive readout */}
           <div className="relative z-10 grid grid-cols-2 border-t border-white/10 bg-black/40 sm:grid-cols-4">
-            <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4 sm:border-b-0 sm:border-r">
-              <HealthGauge score={health.score} size={72} />
+            <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-2.5 sm:border-b-0 sm:border-r">
+              <HealthGauge score={health.score} size={56} />
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">Company health</p>
-                <p className="text-2xl font-black tracking-tight text-white">
+                <p className="text-xl font-black tracking-tight text-white">
                   {Math.round(health.score)}
-                  <span className="ml-0.5 text-xs font-bold text-slate-500">/100</span>
+                  <span className="ml-0.5 text-[10px] font-bold text-slate-500">/100</span>
                 </p>
               </div>
             </div>
