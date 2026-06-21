@@ -25,6 +25,7 @@ const CENTROIDS: Record<string, RegionCentroid> = {
   "upper egypt": { lat: 27.1809, lng: 31.1837 }, // Assiut — central Upper Egypt
   "delta 1": { lat: 30.7865, lng: 31.0004 }, // Tanta — west/central Delta
   "delta 2": { lat: 31.0409, lng: 31.3785 }, // Mansoura — east Delta
+  "delta 3": { lat: 30.5877, lng: 31.502 }, // Zagazig — Sharkia/Suez/Ismailia/Qalubeya cluster
   "alex bhr": { lat: 31.2001, lng: 29.9187 }, // Alexandria–Behira
   "alex behiera": { lat: 31.0418, lng: 30.4736 }, // Damanhour — Behira
   "head office": { lat: 30.0444, lng: 31.2357 }, // Cairo HQ
