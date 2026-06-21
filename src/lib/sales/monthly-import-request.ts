@@ -100,6 +100,13 @@ export async function removeSalesUploadObject(storagePath: string | null): Promi
   await getSupabaseAdmin().storage.from(SALES_IMPORT_BUCKET).remove([storagePath]).catch(() => {});
 }
 
+/** Best-effort delete of one or more large-file storage objects (no-op for the multipart path). */
+export async function removeSalesUploadObjects(storagePaths: string[]): Promise<void> {
+  const paths = storagePaths.filter((path) => Boolean(path));
+  if (paths.length === 0) return;
+  await getSupabaseAdmin().storage.from(SALES_IMPORT_BUCKET).remove(paths).catch(() => {});
+}
+
 export type ResolvedUploadedSpreadsheet =
   | { ok: true; file: File; field: (name: string) => string; storagePath: string | null }
   | { ok: false; error: string; status: number };
@@ -135,4 +142,86 @@ export async function resolveUploadedSpreadsheet(request: Request): Promise<Reso
   const file = formFile instanceof File ? formFile : null;
   if (!file) return { error: "Sales workbook file is required.", ok: false, status: 400 };
   return { field: (name) => String(formData.get(name) ?? "").trim(), file, ok: true, storagePath: null };
+}
+
+export type ResolvedWeeklyUpload =
+  | { ok: true; storagePaths: string[]; distributorCode: string; periodDate: string | null; file: File | null; salesFile: File | null; stockFile: File | null }
+  | { ok: false; storagePaths: string[]; code: string; error: string; status: number };
+
+const WEEKLY_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// Weekly upload transport resolver. Like resolveUploadedSpreadsheet it accepts BOTH transport paths so
+// large weekly workbooks bypass Vercel's ~4.5MB serverless body cap, but it additionally understands the
+// PS / Overseas dual-file shape (a sales matrix + a stock matrix). For the JSON path the browser has
+// already streamed the workbook(s) to the sales-imports bucket and sends only the reference(s):
+//   • non-PS → { storagePath, distributorCode, periodDate }
+//   • PS     → { salesStoragePath, stockStoragePath, distributorCode, periodDate }
+// Files are returned UNVALIDATED — the caller applies its own validateSpreadsheetFile checks exactly as
+// the multipart routes did, so error messaging stays identical across both transports. `storagePaths`
+// is always returned (even on failure) so the caller can clean up via removeSalesUploadObjects.
+export async function resolveWeeklyUploadRequest(request: Request): Promise<ResolvedWeeklyUpload> {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("application/json")) {
+    const formData = await request.formData();
+    const distributorCode = String(formData.get("distributorCode") ?? "").trim();
+    const periodDate = String(formData.get("periodDate") ?? "").trim() || null;
+    const single = formData.get("file");
+    const sales = formData.get("salesFile");
+    const stock = formData.get("stockFile");
+    return {
+      distributorCode,
+      file: single instanceof File ? single : null,
+      ok: true,
+      periodDate,
+      salesFile: sales instanceof File ? sales : null,
+      stockFile: stock instanceof File ? stock : null,
+      storagePaths: [],
+    };
+  }
+
+  const body = (await request.json().catch(() => ({}))) as {
+    storagePath?: string;
+    salesStoragePath?: string;
+    stockStoragePath?: string;
+    distributorCode?: string;
+    periodDate?: string;
+  };
+  const distributorCode = String(body?.distributorCode ?? "").trim();
+  const periodDate = String(body?.periodDate ?? "").trim() || null;
+
+  const supabase = getSupabaseAdmin();
+  const storagePaths: string[] = [];
+  const downloadOne = async (path: string): Promise<File | null> => {
+    const { data, error } = await supabase.storage.from(SALES_IMPORT_BUCKET).download(path);
+    if (error || !data) return null;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const fileName = path.split("/").pop() ?? "upload.xlsx";
+    return new File([buffer], fileName, { type: WEEKLY_XLSX_MIME });
+  };
+
+  if (distributorCode.toUpperCase() === "PS") {
+    const salesPath = String(body?.salesStoragePath ?? "").trim();
+    const stockPath = String(body?.stockStoragePath ?? "").trim();
+    if (!salesPath || !stockPath) {
+      return { code: "invalid_weekly_file", error: "Both Overseas POS file references are required.", ok: false, status: 400, storagePaths };
+    }
+    storagePaths.push(salesPath, stockPath);
+    const [salesFile, stockFile] = await Promise.all([downloadOne(salesPath), downloadOne(stockPath)]);
+    if (!salesFile || !stockFile) {
+      return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
+    }
+    return { distributorCode, file: null, ok: true, periodDate, salesFile, stockFile, storagePaths };
+  }
+
+  const path = String(body?.storagePath ?? "").trim();
+  if (!path) {
+    return { code: "invalid_weekly_file", error: "Uploaded file reference is missing.", ok: false, status: 400, storagePaths };
+  }
+  storagePaths.push(path);
+  const file = await downloadOne(path);
+  if (!file) {
+    return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
+  }
+  return { distributorCode, file, ok: true, periodDate, salesFile: null, stockFile: null, storagePaths };
 }

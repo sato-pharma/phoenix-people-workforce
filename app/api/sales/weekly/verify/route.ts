@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { removeSalesUploadObjects, resolveWeeklyUploadRequest } from "@/lib/sales/monthly-import-request";
 import { hasWeeklyVerifyAi, verifyWeeklyUpload } from "@/lib/sales/weekly/ai-verify";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -13,7 +14,12 @@ export const dynamic = "force-dynamic";
 // per-distributor column contract, and (when an AI key is set) asks the model to flag drift. This
 // NEVER persists — it is the advisory step before the real /validate upload. Same permission and
 // file-validation as /validate; an actor-scoped rate limit guards the upstream AI spend.
+//
+// Verify reads the whole workbook to extract its headers, so it hits Vercel's ~4.5MB body cap on large
+// files just like /validate. Large workbooks therefore arrive as a Storage reference (JSON storagePath /
+// salesStoragePath+stockStoragePath) and the temp object is deleted once headers are read.
 export async function POST(request: Request) {
+  let cleanupPaths: string[] = [];
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "import");
@@ -24,14 +30,18 @@ export async function POST(request: Request) {
       windowMs: 60_000,
     });
 
-    const formData = await request.formData();
-    const distributorCode = String(formData.get("distributorCode") ?? "").trim();
+    const resolved = await resolveWeeklyUploadRequest(request);
+    cleanupPaths = resolved.storagePaths;
+    if (!resolved.ok) {
+      return NextResponse.json({ success: false, error: resolved.error, code: resolved.code }, { status: resolved.status });
+    }
+    const { distributorCode } = resolved;
     if (!distributorCode) {
       return NextResponse.json({ success: false, error: "Pick a distributor first." }, { status: 400 });
     }
 
-    const checkFile = (value: FormDataEntryValue | null, label: string) => {
-      if (!(value instanceof File)) {
+    const checkFile = (value: File | null, label: string) => {
+      if (!value) {
         return { ok: false as const, response: NextResponse.json({ success: false, error: `${label} is required.`, code: "invalid_weekly_file" }, { status: 400 }) };
       }
       const validation = validateSpreadsheetFile(value, {
@@ -48,9 +58,9 @@ export async function POST(request: Request) {
     // PS / Overseas ships two matrix files; everyone else ships one combined workbook.
     let result;
     if (distributorCode.toUpperCase() === "PS") {
-      const sales = checkFile(formData.get("salesFile"), "The Overseas POS sales matrix file");
+      const sales = checkFile(resolved.salesFile, "The Overseas POS sales matrix file");
       if (!sales.ok) return sales.response;
-      const stock = checkFile(formData.get("stockFile"), "The Overseas POS stock matrix file");
+      const stock = checkFile(resolved.stockFile, "The Overseas POS stock matrix file");
       if (!stock.ok) return stock.response;
       result = await verifyWeeklyUpload({
         distributorCode,
@@ -60,7 +70,7 @@ export async function POST(request: Request) {
         stockFileName: stock.file.name,
       });
     } else {
-      const single = checkFile(formData.get("file"), "A weekly file");
+      const single = checkFile(resolved.file, "A weekly file");
       if (!single.ok) return single.response;
       result = await verifyWeeklyUpload({
         distributorCode,
@@ -84,5 +94,8 @@ export async function POST(request: Request) {
       { success: false, error: error instanceof Error ? error.message : "Verification failed." },
       { status: 500 },
     );
+  } finally {
+    // Verify never persists, so always delete the temp Storage object(s) (large-file path only).
+    await removeSalesUploadObjects(cleanupPaths);
   }
 }
