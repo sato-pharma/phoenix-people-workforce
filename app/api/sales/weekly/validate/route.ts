@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { removeSalesUploadObjects, resolveWeeklyUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importWeeklySalesFile } from "@/lib/sales/weekly/service";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -12,18 +13,27 @@ export const dynamic = "force-dynamic";
 // Dry-run validation only — never persists. Returns the full validation result (tables, totals,
 // issues) so the UI can show them before the user decides to confirm upload.
 // The actual persist step is /api/sales/weekly/upload.
+//
+// Large weekly workbooks (> ~4MB) can't be POSTed through the function (Vercel caps the body at
+// ~4.5MB). For those the browser streams the file(s) straight to the sales-imports Storage bucket and
+// sends only the reference (JSON storagePath / salesStoragePath+stockStoragePath); small files keep the
+// original multipart POST. resolveWeeklyUploadRequest handles both transports identically.
 export async function POST(request: Request) {
+  let cleanupPaths: string[] = [];
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "import");
-
-    const formData = await request.formData();
-    const distributorCode = String(formData.get("distributorCode") ?? "").trim();
-    const periodDate = String(formData.get("periodDate") ?? "").trim() || null;
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
-    const checkFile = (value: FormDataEntryValue | null, label: string) => {
-      if (!(value instanceof File)) {
+    const resolved = await resolveWeeklyUploadRequest(request);
+    cleanupPaths = resolved.storagePaths;
+    if (!resolved.ok) {
+      return NextResponse.json({ success: false, error: resolved.error, code: resolved.code }, { status: resolved.status });
+    }
+    const { distributorCode, periodDate } = resolved;
+
+    const checkFile = (value: File | null, label: string) => {
+      if (!value) {
         return { ok: false as const, response: NextResponse.json({ success: false, error: `${label} is required.`, code: "invalid_weekly_file" }, { status: 400 }) };
       }
       const validation = validateSpreadsheetFile(value, {
@@ -39,13 +49,13 @@ export async function POST(request: Request) {
 
     let result: Awaited<ReturnType<typeof importWeeklySalesFile>>;
     if (distributorCode.toUpperCase() === "PS") {
-      const sales = checkFile(formData.get("salesFile"), "The Overseas POS sales matrix file");
+      const sales = checkFile(resolved.salesFile, "The Overseas POS sales matrix file");
       if (!sales.ok) return sales.response;
-      const stock = checkFile(formData.get("stockFile"), "The Overseas POS stock matrix file");
+      const stock = checkFile(resolved.stockFile, "The Overseas POS stock matrix file");
       if (!stock.ok) return stock.response;
       result = await importWeeklySalesFile({ distributorCode, salesFile: sales.file, stockFile: stock.file, uploadedBy, periodDate, dryRun: true });
     } else {
-      const single = checkFile(formData.get("file"), "A weekly file");
+      const single = checkFile(resolved.file, "A weekly file");
       if (!single.ok) return single.response;
       result = await importWeeklySalesFile({ distributorCode, file: single.file, uploadedBy, periodDate, dryRun: true });
     }
@@ -67,5 +77,8 @@ export async function POST(request: Request) {
       { success: false, error: error instanceof Error ? error.message : "Validation failed." },
       { status: 500 },
     );
+  } finally {
+    // Validation never persists, so always delete the temp Storage object(s) (large-file path only).
+    await removeSalesUploadObjects(cleanupPaths);
   }
 }

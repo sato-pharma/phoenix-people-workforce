@@ -19,6 +19,82 @@ const num = (value: number) => value.toLocaleString(undefined, { maximumFraction
 const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
 const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
 
+// Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
+// body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE), which large weekly POS matrices routinely exceed. Those
+// stream straight to the "sales-imports" Storage bucket via a short-lived signed URL, then the endpoint
+// is called by reference (JSON storagePath). PS / Overseas ships two matrix files, so it needs two
+// references. Small files keep the original direct multipart POST. Mirrors the monthly /sales/upload
+// path; the server resolves both shapes via resolveWeeklyUploadRequest and deletes the temp object(s).
+const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
+
+async function uploadWeeklyFileToStorage(file: File): Promise<string> {
+  const urlRes = await fetch("/api/sales/monthly-import/upload-url", {
+    body: JSON.stringify({ fileName: file.name }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const urlPayload = (await urlRes.json().catch(() => ({}))) as { signedUrl?: string; path?: string; error?: string };
+  if (!urlRes.ok || !urlPayload.signedUrl || !urlPayload.path) {
+    throw new Error(urlPayload.error ?? "Could not start the upload for this large file.");
+  }
+  const putRes = await fetch(urlPayload.signedUrl, {
+    body: file,
+    headers: {
+      "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "x-upsert": "false",
+    },
+    method: "PUT",
+  });
+  if (!putRes.ok) throw new Error("The file could not be uploaded. Please try again.");
+  return urlPayload.path;
+}
+
+type WeeklyPostInput = {
+  distributorCode: string;
+  isPS: boolean;
+  periodDate?: string;
+  file?: File | null;
+  salesFile?: File | null;
+  stockFile?: File | null;
+};
+
+// Posts a weekly request to `endpoint`. Small payloads go multipart; large ones stream to Storage first
+// (both PS files together count toward the cap, so if either pushes the combined body over the limit
+// both are streamed) and the endpoint is called by JSON reference.
+async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Response> {
+  const { distributorCode, isPS, periodDate, file, salesFile, stockFile } = input;
+  const combinedSize = isPS
+    ? (salesFile?.size ?? 0) + (stockFile?.size ?? 0)
+    : file?.size ?? 0;
+
+  if (combinedSize <= LARGE_FILE_THRESHOLD) {
+    const form = new FormData();
+    form.set("distributorCode", distributorCode);
+    if (periodDate) form.set("periodDate", periodDate);
+    if (isPS) {
+      form.set("salesFile", salesFile as File);
+      form.set("stockFile", stockFile as File);
+    } else {
+      form.set("file", file as File);
+    }
+    return fetch(endpoint, { body: form, method: "POST" });
+  }
+
+  const body: Record<string, string> = { distributorCode };
+  if (periodDate) body.periodDate = periodDate;
+  if (isPS) {
+    const [salesStoragePath, stockStoragePath] = await Promise.all([
+      uploadWeeklyFileToStorage(salesFile as File),
+      uploadWeeklyFileToStorage(stockFile as File),
+    ]);
+    body.salesStoragePath = salesStoragePath;
+    body.stockStoragePath = stockStoragePath;
+  } else {
+    body.storagePath = await uploadWeeklyFileToStorage(file as File);
+  }
+  return fetch(endpoint, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" });
+}
+
 export function WeeklyUploadWorkspace({
   distributors,
   initialBatches,
@@ -118,19 +194,6 @@ export function WeeklyUploadWorkspace({
     clearValidation();
   }
 
-  function buildForm() {
-    const form = new FormData();
-    form.set("distributorCode", distributorCode);
-    if (periodDate) form.set("periodDate", periodDate);
-    if (isPS) {
-      form.set("salesFile", salesFile as File);
-      form.set("stockFile", stockFile as File);
-    } else {
-      form.set("file", file as File);
-    }
-    return form;
-  }
-
   async function handleVerify() {
     if (!filesReady) {
       setVerifyError(isPS ? "Pick both matrix files (sales + stock) first." : "Pick a file first.");
@@ -142,15 +205,7 @@ export function WeeklyUploadWorkspace({
     setVerified(false);
     clearValidation();
     try {
-      const form = new FormData();
-      form.set("distributorCode", distributorCode);
-      if (isPS) {
-        form.set("salesFile", salesFile as File);
-        form.set("stockFile", stockFile as File);
-      } else {
-        form.set("file", file as File);
-      }
-      const response = await fetch("/api/sales/weekly/verify", { method: "POST", body: form });
+      const response = await postWeekly("/api/sales/weekly/verify", { distributorCode, file, isPS, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklyVerifyResult; error?: string };
       if (payload?.data) setVerifyResult(payload.data);
       if (!payload?.success) setVerifyError(payload?.error ?? "Verification failed.");
@@ -176,7 +231,7 @@ export function WeeklyUploadWorkspace({
     setUploadDone(false);
     setUploadError(null);
     try {
-      const response = await fetch("/api/sales/weekly/validate", { method: "POST", body: buildForm() });
+      const response = await postWeekly("/api/sales/weekly/validate", { distributorCode, file, isPS, periodDate, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
       if (payload?.data) setValidateResult(payload.data);
       if (!payload?.success) setValidateError(payload?.error ?? "Validation failed.");
@@ -192,7 +247,7 @@ export function WeeklyUploadWorkspace({
     setUploadBusy(true);
     setUploadError(null);
     try {
-      const response = await fetch("/api/sales/weekly/upload", { method: "POST", body: buildForm() });
+      const response = await postWeekly("/api/sales/weekly/upload", { distributorCode, file, isPS, periodDate, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
       if (payload?.success) {
         setUploadDone(true);
