@@ -83,6 +83,11 @@ type CoachingQuarterlySummaryDbRow = {
 const editableStatuses = new Set<CoachingReportStatus>(["draft"]);
 const submittedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee"]);
 const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO"]);
+// Org-wide coaching VIEW oversight: company roles plus Training Manager, who has company-wide
+// training oversight and therefore sees all coaching reports (not just their own). This widens
+// read/list visibility only — write authority still flows through canManageCoachingReports +
+// assertOwnDraftOrOverride + the workflow registry, so a TM still edits only their own drafts.
+const coachingOversightRoles = new Set<AccessContext["role"]>([...companyRoles, "Training Manager"]);
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",
@@ -142,14 +147,16 @@ function requireActorHrId(access: AccessContext) {
 
 function assertCanManageCoachingLifecycle(access: AccessContext) {
   if (!canManageCoachingReports(access)) {
-    throw new Error("Forbidden: Only Training Manager or Super Admin can manage coaching reports.");
+    throw new Error(
+      "Forbidden: Only coaching roles (Training Manager, Product Manager, Group Product Manager) or Super Admin can manage coaching reports.",
+    );
   }
 }
 
 function assertOwnDraftOrOverride(access: AccessContext, report: CoachingReportRow) {
   if (access.scope === "system" || access.role === "Super Admin") return;
   if (!idsMatch(access.hrId, report.coach_hr_id)) {
-    throw new Error("Forbidden: Training Manager can only update and submit their own coaching drafts.");
+    throw new Error("Forbidden: A coach can only update and submit their own coaching drafts.");
   }
 }
 
@@ -172,12 +179,9 @@ export function canAccessCoachingEmployee(
   directory: EmployeeDirectoryRow[],
   coach?: EmployeeDirectoryRow | null,
 ) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return true;
+  if (access.scope === "system" || coachingOversightRoles.has(access.role)) return true;
   const currentHrId = normalizeHrId(access.hrId);
   if (!currentHrId) return false;
-  if (access.role === "Training Manager") {
-    return Boolean(coach && idsMatch(currentHrId, coach.hrId));
-  }
   if (idsMatch(currentHrId, employee.hrId)) return true;
   // TEAM (direct report): seat-continuity aware so a manager keeps their team
   // after a sub-manager resignation (vacant-seat marker), staying consistent with
@@ -679,12 +683,7 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 }
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
-  if (access.scope === "system" || companyRoles.has(access.role)) return rows;
-  if (access.role === "Training Manager") {
-    const coachHrId = normalizeHrId(access.hrId);
-    if (!coachHrId) return [];
-    return rows.filter((row) => idsMatch(coachHrId, row.coachHrId));
-  }
+  if (access.scope === "system" || coachingOversightRoles.has(access.role)) return rows;
   const directory = await getEmployeeDirectoryRows();
   const coach = access.hrId ? findEmployee(directory, access.hrId) : null;
   return rows.filter((row) => {
@@ -748,7 +747,7 @@ export async function getCoachingQuarterlySummary(filters: Pick<CoachingReportFi
   if (error) throw error;
 
   const rows = ((data ?? []) as CoachingQuarterlySummaryDbRow[]).map(mapQuarterly);
-  if (access.scope === "system" || companyRoles.has(access.role)) return rows;
+  if (access.scope === "system" || coachingOversightRoles.has(access.role)) return rows;
 
   const visibleReports = await getCoachingReports({ medicalRepHrId: filters.medicalRepHrId }, access);
   const visibleHrIds = new Set(visibleReports.map((row) => normalizeHrId(row.medicalRepHrId)));
