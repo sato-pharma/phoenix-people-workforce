@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import {
@@ -8,9 +7,8 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
+  HeartPulse,
   Megaphone,
-  ShieldCheck,
-  Sparkles,
   TrendingDown,
   TrendingUp,
   Users,
@@ -18,7 +16,6 @@ import {
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
-import { CeoHiddenNote } from "@/components/admin/ceo-hidden-note";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
 import type {
@@ -31,7 +28,6 @@ export type CeoWelcomeProfile = {
   fullName: string;
   roleLabel: string;
   hrId: string | null;
-  imageUrl?: string | null;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -51,17 +47,6 @@ function pct(value: number, decimals = 0) {
   return `${(Number.isFinite(value) ? value : 0).toFixed(decimals)}%`;
 }
 
-const HONORIFICS = new Set(["dr", "prof", "eng", "mr", "mrs", "ms", "miss"]);
-
-function firstNameFrom(full: string) {
-  const parts = (full || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "there";
-  if (parts.length >= 2 && HONORIFICS.has(parts[0].toLowerCase().replace(/\.$/, ""))) {
-    return `${parts[0]} ${parts[1]}`;
-  }
-  return parts[0];
-}
-
 // ── Attention tone mapping ────────────────────────────────────────────────────
 
 const toneStyles: Record<CeoAttentionTone, { border: string; badge: string; text: string; label: string }> = {
@@ -69,51 +54,6 @@ const toneStyles: Record<CeoAttentionTone, { border: string; badge: string; text
   amber: { border: "border-l-amber-400",  badge: "bg-amber-400 text-white",   text: "text-amber-700",  label: "WARNING" },
   blue:  { border: "border-l-blue-400",   badge: "bg-blue-400 text-white",    text: "text-blue-700",   label: "INFO"    },
 };
-
-// ── HealthGauge ───────────────────────────────────────────────────────────────
-
-function HealthGauge({ score, size = 144 }: { score: number; size?: number }) {
-  const clamped = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
-  const stroke = size >= 130 ? 14 : 10;
-  const radius = size / 2 - stroke - 4;
-  const circumference = 2 * Math.PI * radius;
-  const dash = (clamped / 100) * circumference;
-  const color = clamped >= 75 ? "#10B981" : clamped >= 50 ? "#F59E0B" : "#F43F5E";
-  const label = clamped >= 75 ? "Strong" : clamped >= 50 ? "Moderate" : "Needs attention";
-  const numClass = size >= 130 ? "text-[42px]" : size >= 100 ? "text-[28px]" : "text-[20px]";
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative flex items-center justify-center" style={{ height: size, width: size }}>
-        <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full -rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-          <circle
-            cx={size / 2} cy={size / 2} r={radius}
-            fill="none" stroke={color} strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${circumference - dash}`}
-          />
-        </svg>
-        <div className="absolute flex flex-col items-center leading-none">
-          <span className={`${numClass} font-black tracking-tight text-white`}>{Math.round(clamped)}</span>
-          <span className="text-[8px] font-bold uppercase tracking-[0.22em] text-slate-400">/ 100</span>
-        </div>
-      </div>
-      <span className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color }}>{label}</span>
-    </div>
-  );
-}
-
-// ── Hero KPI ribbon cell ──────────────────────────────────────────────────────
-
-function RibbonStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="flex flex-col justify-center gap-0.5 border-b border-white/10 px-5 py-4 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</span>
-      <span className="text-2xl font-black tracking-tight text-white">{value}</span>
-      {sub ? <span className="text-[10px] text-slate-400">{sub}</span> : null}
-    </div>
-  );
-}
 
 // ── Area sparkline ────────────────────────────────────────────────────────────
 
@@ -441,21 +381,12 @@ export function CeoCommandCenter({
   data,
   welcome,
   access,
-  isCeo = false,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
-  isCeo?: boolean;
 }) {
   const { health, headcount, payroll, attention, approvals, sos, trends } = data;
-  const initials = welcome.fullName
-    .split(/\s+/)
-    .filter((p) => /^[A-Za-z]/.test(p))
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join("");
-  const profileImage = welcome.imageUrl ?? null;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -467,115 +398,22 @@ export function CeoCommandCenter({
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero — compact admin identity card, max ~7 cm height ─────────────── */}
+      {/* ── Hero ────────────────────────────────────────────────────────────── */}
       <AdminHeroFrame>
-        <div>
-          {/* identity row */}
-          <div className="relative grid items-center gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_180px] lg:gap-5">
+        <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-1 lg:p-8">
+          <div className="min-w-0 space-y-4">
+            <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
+              <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+              CEO Command Center
+            </div>
             <div>
-              <div className="inline-flex items-center gap-1.5 border border-orange-400/40 bg-orange-500/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
-                <Sparkles aria-hidden="true" className="h-3 w-3" />
-                CEO Command Center
-              </div>
-              <div className="mt-2.5 flex items-center gap-2">
-                <h1 className="text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
-                  Hello, {firstNameFrom(welcome.fullName)} <span aria-hidden="true">👋🏻</span>
-                </h1>
-                {isCeo ? <span className="shrink-0"><CeoHiddenNote /></span> : null}
-              </div>
-
-              <div className="mt-3 grid grid-cols-3 gap-1.5">
-                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
-                  <p className="mt-0.5 truncate text-xs font-black text-white">{welcome.hrId ?? "—"}</p>
-                </div>
-                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Role</p>
-                  <p className="mt-0.5 truncate text-xs font-black text-white">{welcome.roleLabel}</p>
-                </div>
-                <div className="border border-white/10 bg-white/10 px-3 py-1.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                  <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Coverage</p>
-                  <p className="mt-0.5 truncate text-xs font-black text-white">
-                    {n(headcount.uniqueLines)} lines · {n(headcount.uniqueAreas)} areas
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[
-                  { href: "/employees", icon: Users, label: "Employees" },
-                  { href: "/payroll", icon: Wallet, label: "Payroll" },
-                  { href: "/sales", icon: TrendingUp, label: "Sales" },
-                  { href: "/coaching/analytics", icon: Activity, label: "Coaching" },
-                  { href: "/admin/action-center", icon: ClipboardCheck, label: "Action Center" },
-                  { href: "/admin/data-health", icon: ShieldCheck, label: "Data Health" },
-                ].map(({ href, icon: Icon, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className="inline-flex items-center gap-1.5 border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.18]"
-                  >
-                    <Icon aria-hidden="true" className="h-3 w-3 text-orange-300" />
-                    {label}
-                  </Link>
-                ))}
-              </div>
+              <h1 className="max-w-full whitespace-nowrap text-[28px] font-black tracking-[-0.03em] text-white sm:text-[34px] lg:text-[36px]">
+                Hello Dr. Anwar, here&apos;s your company
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                What began as a vision became a company. What became a company became a family. And what became a family continues to grow under your leadership.
+              </p>
             </div>
-
-            {/* Identity photo card — same gradient frame + Phoenix Verified badge as admin */}
-            <div className="group relative mx-auto flex h-[190px] w-full max-w-[160px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-amber-500/20 p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.24)] lg:mx-0">
-              <div className="absolute -inset-0.5 bg-gradient-to-br from-orange-300/35 via-white/0 to-amber-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
-              <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-white/95 shadow-inner">
-                {profileImage ? (
-                  <Image
-                    alt={`${welcome.fullName} profile photo`}
-                    className="h-full w-full object-cover object-[center_18%] transition-transform duration-500 group-hover:scale-105"
-                    height={190}
-                    priority
-                    src={profileImage}
-                    unoptimized={profileImage.startsWith("/api/")}
-                    width={160}
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
-                    <span className="text-[40px] font-black">{initials || "CEO"}</span>
-                  </div>
-                )}
-              </div>
-              <div className="absolute -bottom-3 left-3 right-3 flex items-center justify-center gap-1.5 border border-white/70 bg-white px-2 py-1.5 text-[10px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_8px_24px_rgba(15,23,42,0.18)]">
-                <ShieldCheck className="h-3 w-3" />
-                Phoenix Verified
-              </div>
-            </div>
-          </div>
-
-          {/* KPI ribbon — compact executive readout */}
-          <div className="relative z-10 grid grid-cols-2 border-t border-white/10 bg-black/40 sm:grid-cols-4">
-            <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-2.5 sm:border-b-0 sm:border-r">
-              <HealthGauge score={health.score} size={56} />
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">Company health</p>
-                <p className="text-xl font-black tracking-tight text-white">
-                  {Math.round(health.score)}
-                  <span className="ml-0.5 text-[10px] font-bold text-slate-500">/100</span>
-                </p>
-              </div>
-            </div>
-            <RibbonStat
-              label="Active staff"
-              value={n(headcount.active)}
-              sub={headcount.vacancies ? `${n(headcount.vacancies)} vacancies` : "Fully staffed"}
-            />
-            <RibbonStat
-              label="Net payroll"
-              value={payroll.available ? egp(payroll.net) : "—"}
-              sub={payroll.available ? payroll.batchLabel : "Restricted"}
-            />
-            <RibbonStat
-              label="Monthly SoS"
-              value={sos ? egp(sos.totalValue) : "—"}
-              sub={sos?.period ?? "No data"}
-            />
           </div>
         </div>
       </AdminHeroFrame>
