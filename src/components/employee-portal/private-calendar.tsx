@@ -656,7 +656,7 @@ export function PrivateCalendar({
               <input
                 className={searchInputClass}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search calendar�"
+                placeholder="Search calendar..."
                 value={query}
               />
             </span>
@@ -992,7 +992,7 @@ function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalenda
               <div className="min-w-0">
                 <h4 className="truncate text-sm font-black text-slate-900">{row.fullName}</h4>
                 <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">
-                  {row.hrId}{row.lineName ? ` � ${row.lineName}` : ""}
+                  {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
               <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black", row.exceptionCount ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"].join(" ")}>
@@ -1207,7 +1207,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
             Source trace
           </div>
           <p className="mt-1 text-[11px] font-semibold text-slate-500">{item.sourceLabel}</p>
-          <p className="text-[11px] font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` � ${item.sourceTable}` : ""}</p>
+          <p className="text-[11px] font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
           {item.sourceRecordId ? <p className="font-mono text-[11px] text-slate-400">ID: {item.sourceRecordId}</p> : null}
         </div>
       </div>
