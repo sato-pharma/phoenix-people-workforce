@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
 import { getMarketingRoiReport, parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Let the function OUTLIVE the attribution RPC's 45s DB statement_timeout so a slow query returns a
+// clean 503 ("narrow your filters") rather than being killed at the platform edge. Mirrors the
+// sibling roi-tracking/export route (app/api/marketing-requests/** had no per-route maxDuration).
+export const maxDuration = 60;
 
 function marketingRoiTrackingApiError(error: unknown) {
   if (isForbiddenError(error)) {
@@ -15,6 +19,9 @@ function marketingRoiTrackingApiError(error: unknown) {
       status: 403,
     };
   }
+
+  // A DB statement timeout (SQLSTATE 57014) is transient + user-actionable, not an internal fault.
+  if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
 
   const message = error instanceof Error
     ? error.message

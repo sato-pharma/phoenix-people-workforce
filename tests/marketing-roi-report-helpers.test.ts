@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
+import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import {
+  buildKpiBand,
   isRestrictedMarketingProduct,
   monthAdd,
   parseRoiFilterState,
@@ -8,11 +10,16 @@ import {
   roiWindowLabel,
 } from "../src/lib/marketing-requests/roi-report-service.ts";
 import {
+  computeMarketingFilterOptions,
+  resolveMarketingRoiScope,
+} from "../src/lib/marketing-requests/roi-report-scope.ts";
+import {
   roiFilterStateFromParams,
   roiFilterStateHasAny,
   roiFilterStateToParams,
 } from "../src/lib/marketing-requests/roi-filter-url.ts";
 import { emptyRoiFilterState } from "../src/lib/marketing-requests/roi-report-types.ts";
+import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError } from "../src/lib/http/api-errors.ts";
 
 export function runMarketingRoiReportHelpersTests() {
   // ── monthAdd: YYYY-MM arithmetic with year rollover ─────────────────────────
@@ -138,4 +145,46 @@ export function runMarketingRoiReportHelpersTests() {
   assert.equal(isRestrictedMarketingProduct("MKT_PRD001", "Guamusin", restrictedNames), false);
   // empty name + non-restricted code → not restricted (no false positive)
   assert.equal(isRestrictedMarketingProduct("MKT_PRD002", "", restrictedNames), false);
+
+  // ── empty-data path: a wiped ROI dataset must yield a CLEAN empty report (HTTP 200),
+  //    never a thrown 500. Lock the two pure stages the report/options endpoints lean on. ──
+  const companyAccess: AccessContext = {
+    hrId: "AA",
+    loginId: "aa",
+    role: "CEO",
+    scope: "system",
+    source: "session",
+  };
+  const emptyScope = resolveMarketingRoiScope(companyAccess, []);
+  assert.equal(emptyScope.isCompanyWide, true, "system scope is company-wide");
+  const emptyOptions = computeMarketingFilterOptions(emptyScope, []);
+  assert.equal(emptyOptions.visibleRequestCount, 0);
+  assert.equal(
+    emptyOptions.dimensions.every((dim) => dim.render === false),
+    true,
+    "no dimension renders when there are zero visible requests",
+  );
+
+  const emptyKpi = buildKpiBand([], null, 0);
+  assert.equal(emptyKpi.requestCount, 0);
+  assert.equal(emptyKpi.totalEstimatedCost, 0);
+  assert.equal(emptyKpi.totalActualValue, 0);
+  assert.equal(emptyKpi.coverageRatio, 0, "no divide-by-zero on an empty report");
+  assert.equal(emptyKpi.onTrackCount, 0);
+  assert.equal(emptyKpi.behindCount, 0);
+  assert.equal(emptyKpi.awaitingDataCount, 0);
+  assert.equal(emptyKpi.noDataCount, 0);
+  assert.equal(emptyKpi.salesDataAsOf, null);
+
+  // ── statement-timeout classifier: the recurring prod 500 was an unclassified SQLSTATE 57014
+  //    (PostgREST surfaces it as a PLAIN object, not an Error). Map it to a clean 503. ──────────
+  assert.equal(isStatementTimeoutError({ code: "57014", message: "canceling statement due to statement timeout" }), true);
+  assert.equal(isStatementTimeoutError({ message: "canceling statement due to statement timeout" }), true);
+  assert.equal(isStatementTimeoutError(new Error("canceling statement due to statement timeout")), true);
+  assert.equal(isStatementTimeoutError(new Error("ERROR: canceling statement due to statement timeout")), true);
+  // unrelated failures are NOT swallowed as timeouts
+  assert.equal(isStatementTimeoutError(new Error("could not find the function in the schema cache")), false);
+  assert.equal(isStatementTimeoutError({ code: "42P01", message: 'relation "x" does not exist' }), false);
+  assert.equal(isStatementTimeoutError(null), false);
+  assert.equal(STATEMENT_TIMEOUT_API_ERROR.status, 503, "timeout is a transient 503, never an opaque 500");
 }

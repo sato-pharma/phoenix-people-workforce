@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { describeUnexpectedError, errorMessageOf } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
@@ -121,6 +122,18 @@ function chunk<T>(items: T[], size = 400): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * Log an unexpected ROI service failure with FULL PostgREST detail (code/details/hint), then let
+ * the caller rethrow. Production 500s on this module were undiagnosable because the route catch
+ * only emitted a generic message; this records the exact DB error (e.g. SQLSTATE 57014 statement
+ * timeout) and which stage raised it. Forbidden (access-control) throws are expected control-flow
+ * and are deliberately NOT logged as errors.
+ */
+function logRoiServiceFailure(stage: string, error: unknown, meta?: Record<string, unknown>): void {
+  if (errorMessageOf(error).toLowerCase().startsWith("forbidden:")) return;
+  console.error(`[marketing-roi] ${stage} failed`, describeUnexpectedError(error), meta ? JSON.stringify(meta) : "");
 }
 
 /** Load every row of `table` for the given request ids (chunked .in()). */
@@ -565,12 +578,17 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
  * receives them. No ROI math here — it's a cheap projection of the visible requests.
  */
 export async function getMarketingRoiFilterOptions(access: AccessContext): Promise<MarketingRoiFilterFacets> {
-  const ctx = await buildRoiIndex(access, /* revealRestricted */ access.role === "CEO" || access.role === "Super Admin");
-  return {
-    entries: ctx.entries,
-    canRevealRestricted: ctx.scope.canRevealRestricted,
-    totalCount: ctx.entries.length,
-  };
+  try {
+    const ctx = await buildRoiIndex(access, /* revealRestricted */ access.role === "CEO" || access.role === "Super Admin");
+    return {
+      entries: ctx.entries,
+      canRevealRestricted: ctx.scope.canRevealRestricted,
+      totalCount: ctx.entries.length,
+    };
+  } catch (error) {
+    logRoiServiceFailure("getMarketingRoiFilterOptions:buildRoiIndex", error, { role: access.role });
+    throw error;
+  }
 }
 
 export function monthAdd(period: string, months: number): string {
@@ -691,7 +709,13 @@ export async function getMarketingRoiReport(
   generatedAtIso: string,
 ): Promise<MarketingRoiReport> {
   const includeRestricted = filters.includeRestricted && (access.role === "CEO" || access.role === "Super Admin");
-  const ctx = await buildRoiIndex(access, includeRestricted);
+  let ctx: RoiIndexContext;
+  try {
+    ctx = await buildRoiIndex(access, includeRestricted);
+  } catch (error) {
+    logRoiServiceFailure("getMarketingRoiReport:buildRoiIndex", error, { role: access.role });
+    throw error;
+  }
   const supabase = getSupabaseAdmin();
   const customerNameById = ctx.customerNameById;
 
@@ -700,11 +724,24 @@ export async function getMarketingRoiReport(
 
   // 2) attribution (rolled up, confidential-masked unless opted-in).
   const excludeCodes = includeRestricted ? [] : RESTRICTED_CODES_UPPER;
-  const { byRequest: actualsByRequest, masked } = await loadActuals(
-    supabase,
-    candidates.map((entry) => entry.requestId),
-    excludeCodes,
-  );
+  let actualsByRequest: Map<string, { value: number; units: number; salesRows: number; quality: string }>;
+  let masked: boolean;
+  try {
+    ({ byRequest: actualsByRequest, masked } = await loadActuals(
+      supabase,
+      candidates.map((entry) => entry.requestId),
+      excludeCodes,
+    ));
+  } catch (error) {
+    // The attribution RPC (phx_marketing_request_roi_actuals[_v2]) is the prime statement-timeout
+    // suspect on the unfiltered full request set — log the candidate count so it's obvious in prod.
+    logRoiServiceFailure("getMarketingRoiReport:loadActuals", error, {
+      role: access.role,
+      candidateCount: candidates.length,
+      masking: excludeCodes.length > 0,
+    });
+    throw error;
+  }
 
   // 3) build rows + result status.
   const autoAppliedByDimension: Partial<Record<RoiFilterKey, string[]>> = {};
@@ -804,7 +841,7 @@ export async function getMarketingRoiReport(
   };
 }
 
-function buildKpiBand(
+export function buildKpiBand(
   rows: MarketingRoiReportRow[],
   salesDataAsOf: string | null,
   restrictedExcludedCount: number,
