@@ -59,7 +59,7 @@ import { periodProseLabel } from "@/lib/sales/periods";
 import type { SalesDashboardData, SalesTrendPoint } from "@/lib/sales/types";
 
 // ---------------------------------------------------------------------------
-// Local shapes — the service returns Record<string, any> for several slices, so
+// Local shapes - the service returns Record<string, any> for several slices, so
 // we describe just the fields this view reads. Business rules (ownership, access
 // scoping, restricted products, targets) all live in getSalesDashboard().
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ export function MonthlySalesDashboard({
   const paretoChartData = useMemo(
     () =>
       pareto.slice(0, 12).map((row) => ({
-        name: row.name.length > 14 ? `${row.name.slice(0, 13)}…` : row.name,
+        name: row.name.length > 14 ? `${row.name.slice(0, 13)}...` : row.name,
         Sales: Math.round(row.sales),
         "Cumulative %": Math.round(row.cumulativePercent * 1000) / 10,
       })),
@@ -405,7 +405,7 @@ export function MonthlySalesDashboard({
     if (last) {
       bullets.push({
         tone: achievementRate >= 1 ? "success" : achievementRate >= 0.8 ? "warning" : "danger",
-        text: `Overall achievement is ${formatPercent(achievementRate, { digits: 1 })} — ${formatCurrency(totalSales)} against a ${formatCurrency(totalTarget)} target.`,
+        text: `Overall achievement is ${formatPercent(achievementRate, { digits: 1 })} - ${formatCurrency(totalSales)} against a ${formatCurrency(totalTarget)} target.`,
       });
     }
     const topProductRow = productPerformance[0];
@@ -490,7 +490,7 @@ export function MonthlySalesDashboard({
         eyebrow="Sales Intelligence"
         icon={<CalendarRange className="h-4 w-4" />}
         title="Monthly Sales Dashboard"
-        description="Approved monthly sales, targets, channel mix, territories and trends — fully filterable across every dimension."
+        description="Approved monthly sales, targets, channel mix, territories and trends - fully filterable across every dimension."
         badges={
           <>
             <AdminInsightChip tone="orange">
@@ -499,7 +499,7 @@ export function MonthlySalesDashboard({
                 : `${trend.length} month${trend.length === 1 ? "" : "s"}`}
             </AdminInsightChip>
             <AdminInsightChip tone="emerald">Achievement {formatPercent(achievementRate, { digits: 1 })}</AdminInsightChip>
-            {loading ? <AdminInsightChip tone="slate">Updating…</AdminInsightChip> : null}
+            {loading ? <AdminInsightChip tone="slate">Updating...</AdminInsightChip> : null}
           </>
         }
         aside={
@@ -640,7 +640,7 @@ export function MonthlySalesDashboard({
               icon={<Gauge className="h-5 w-5" />}
               label="Achievement"
               value={formatPercent(achievementRate, { digits: 1 })}
-              description={achievementDelta === null ? "vs target" : `${achievementDelta >= 0 ? "▲" : "▼"} ${formatPercent(Math.abs(achievementDelta), { digits: 1 })} ${deltaSuffix}`}
+              description={achievementDelta === null ? "vs target" : `${achievementDelta >= 0 ? "+" : "-"} ${formatPercent(Math.abs(achievementDelta), { digits: 1 })} ${deltaSuffix}`}
             />
             <AdminStatCard
               tone="violet"
@@ -812,7 +812,7 @@ export function MonthlySalesDashboard({
                   ))}
                 </div>
               </ChartCard>
-              <ChartCard title="Anomalies" subtitle="Product × territory outliers" icon={<Activity className="h-4 w-4" />}>
+              <ChartCard title="Anomalies" subtitle="Product x territory outliers" icon={<Activity className="h-4 w-4" />}>
                 {anomalies.length === 0 ? (
                   <p className="py-10 text-center text-sm text-slate-400">No significant anomalies detected.</p>
                 ) : (
@@ -825,7 +825,7 @@ export function MonthlySalesDashboard({
                         </div>
                         <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-black ${row.score >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                           {row.score >= 0 ? "+" : ""}
-                          {row.score.toFixed(1)}σ
+                          {row.score >= 0 ? "+" : ""}{row.score.toFixed(1)} Sigma
                         </span>
                       </div>
                     ))}
@@ -844,7 +844,7 @@ export function MonthlySalesDashboard({
                 value={managerTable.query}
                 onChange={managerTable.setQuery}
                 onClear={managerTable.clearQuery}
-                placeholder="Search managers…"
+                placeholder="Search managers..."
                 className="w-full sm:w-64"
               />
             }
@@ -932,7 +932,7 @@ export function MonthlySalesDashboard({
                   value={productTable.query}
                   onChange={productTable.setQuery}
                   onClear={productTable.clearQuery}
-                  placeholder="Search products…"
+                  placeholder="Search products..."
                   className="w-full sm:w-56"
                 />
               }
