@@ -299,6 +299,11 @@ let directoryCache: {
   timestamp: number;
 } | null = null;
 
+// Shared in-flight directory load. Concurrent callers (e.g. the parallel
+// command-center widgets) await this single promise instead of each issuing a
+// full directory query, collapsing the N+1 reference fan-out into one load.
+let inFlightDirectory: Promise<EmployeeDirectoryData> | null = null;
+
 const CACHE_TTL = 30000; // 30 seconds
 
 function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
@@ -823,13 +828,26 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     return directoryCache.data;
   }
 
+  // De-duplicate concurrent loads: callers that arrive while a fetch is already
+  // running share the same promise instead of each issuing their own full
+  // directory query. This is what collapses the parallel command-center widget
+  // fan-out (~10 reference-table reads per widget) down to a single load.
+  if (!inFlightDirectory) {
+    inFlightDirectory = fetchEmployeeDirectory()
+      .then((result) => {
+        directoryCache = {
+          data: result,
+          timestamp: Date.now(),
+        };
+        return result;
+      })
+      .finally(() => {
+        inFlightDirectory = null;
+      });
+  }
+
   try {
-    const result = await fetchEmployeeDirectory();
-    directoryCache = {
-      data: result,
-      timestamp: now,
-    };
-    return result;
+    return await inFlightDirectory;
   } catch (error) {
     if (isEmployeeDirectoryTimeout(error) && directoryCache) {
       return directoryCache.data;
