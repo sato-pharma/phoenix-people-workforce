@@ -1301,6 +1301,8 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     requesterHrId: row.requester_hr_id,
     requestTypeId: Number(row.request_type_id),
     requiredRoiValue: toNumber(
+      // Mirrors the generated DB column (marketing_roi_flat_no_duration): required ROI is a FLAT
+      // 10× estimated cost — campaign duration does NOT scale the target.
       row.required_roi_value ?? toNumber(row.estimated_cost) * 10,
     ),
     roiCoverageRatio: toNumber(row.roi_coverage_ratio),
