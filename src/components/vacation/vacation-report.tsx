@@ -396,15 +396,15 @@ function SortableHeader<K extends string>({
 }) {
   return (
     <th
-      className={cn("cursor-pointer select-none border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100", cls)}
+      className={cn("cursor-pointer select-none border-b border-r border-slate-700 px-3 py-2.5 transition hover:bg-slate-800", cls)}
       onClick={() => onSort(sortKey)}
     >
       <span className="inline-flex items-center gap-1">
         {children}
         {active ? (
-          direction === "asc" ? <ArrowUp className="h-3 w-3 text-orange-500" /> : <ArrowDown className="h-3 w-3 text-orange-500" />
+          direction === "asc" ? <ArrowUp className="h-3 w-3 text-orange-400" /> : <ArrowDown className="h-3 w-3 text-orange-400" />
         ) : (
-          <ArrowUpDown className="h-3 w-3 text-slate-300" />
+          <ArrowUpDown className="h-3 w-3 text-slate-500" />
         )}
       </span>
     </th>
@@ -1771,17 +1771,17 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               {/* Desktop table (xs+) */}
               <div className="hidden xs:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-slate-950 text-[10px] font-bold uppercase tracking-[0.10em] text-white whitespace-nowrap">
                     <tr>
                       <SortableHeader active={entitlementSort === "hrId"} direction={entitlementSortDir} sortKey="hrId" onSort={toggleEntitlementSort}>HR ID</SortableHeader>
                       <SortableHeader active={entitlementSort === "fullName"} direction={entitlementSortDir} sortKey="fullName" onSort={toggleEntitlementSort}>Employee</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Hire Date</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Hire Date</th>
                       <SortableHeader active={entitlementSort === "daysSinceHire"} direction={entitlementSortDir} sortKey="daysSinceHire" onSort={toggleEntitlementSort}>Since Hire</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">6-Mo Date</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Eligibility</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">6-Mo Date</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Eligibility</th>
                       <SortableHeader active={entitlementSort === "annualBalanceDays"} direction={entitlementSortDir} sortKey="annualBalanceDays" onSort={toggleEntitlementSort}>Balance</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
-                      <th className="border-b border-slate-100 px-3 py-2.5">Review</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-700 px-3 py-2.5">Review</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2069,19 +2069,19 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               {/* Desktop table (xs+) */}
               <div className="hidden xs:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-slate-950 text-[10px] font-bold uppercase tracking-[0.10em] text-white whitespace-nowrap">
                     <tr>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">ID</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">ID</th>
                       <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Type</th>
                       <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>From</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">To</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">To</th>
                       <SortableHeader active={requestSort === "durationDays"} direction={requestSortDir} sortKey="durationDays" onSort={toggleRequestSort}>Days</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Payment</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Payment</th>
                       <SortableHeader active={requestSort === "status"} direction={requestSortDir} sortKey="status" onSort={toggleRequestSort}>Status</SortableHeader>
                       <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
-                      <th className="border-b border-slate-100 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
+                      <th className="border-b border-r border-slate-700 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-700 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2110,9 +2110,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">{row.notes}</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.endDate)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{formatDays(row.durationDays)}</td>
+                        <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
+                        <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.endDate)}</td>
+                        <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{formatDays(row.durationDays)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
                             {paymentStatusLabel(row.paymentStatus)}

@@ -13,6 +13,8 @@ import {
 } from "@/lib/auth/permissions";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
 import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
@@ -54,6 +56,14 @@ import {
   resolveFixedSalaryAmounts,
 } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getMyRequestItems, getPortalAttentionInbox } from "@/lib/action-center/service";
+import {
+  EMPTY_PORTAL_ATTENTION_INBOX,
+  type MyRequestItem,
+  type MyRequestStatusTone,
+  type PortalAttentionInbox,
+} from "@/components/action-center/types";
+import { listInAppNotificationsForViewer, type InAppNotificationView } from "@/lib/notifications/in-app";
 import type {
   PayrollExpenseApproval,
   PayrollExpenseReport,
@@ -1687,16 +1697,69 @@ function salesDashboardHasData(dashboard: SalesDashboardData | null) {
   );
 }
 
+/**
+ * Resolve a PM/GPM's assigned products to the product NAMES used by the monthly SoS
+ * data (`v_employee_portal_sales.product` stores names, not codes). Returns null for any
+ * other role or when the manager has no product assignment, so callers keep line scope.
+ *
+ * The weekly path scopes PM/GPM by product CODE (`weekly_sales_product_scope`); the monthly
+ * trend lives on a name-keyed view, so we translate codes → names via `sales_product_codes`
+ * to keep the two consistent ("their products only").
+ */
+async function resolvePortalProductScopeNames(
+  role: PhoenixRole,
+  hrId: string | null,
+  loginId: string | null,
+): Promise<string[] | null> {
+  if (role !== "Product Manager" && role !== "Group Product Manager") return null;
+  const hrKey = canonicalHrIdKey(hrId ?? loginId ?? null);
+  if (!hrKey) return null;
+  const codes = await getWeeklyProductScopeCodes(hrKey);
+  if (codes.size === 0) return null;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("sales_product_codes")
+      .select("product_code, product_name")
+      .in("product_code", Array.from(codes));
+    if (error) return null;
+    const names = Array.from(
+      new Set(
+        (data ?? [])
+          .map((row) => String((row as { product_name?: string | null }).product_name ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+    return names.length > 0 ? names : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getScopedEmployeePortalSalesDashboard({
   line,
   salesScope,
   targetSalesHrIds,
+  productNames,
 }: {
   line: string[];
   salesScope: BusinessScope;
   targetSalesHrIds: string[];
+  productNames?: string[] | null;
 }): Promise<SalesDashboardData> {
   if (salesScope === "LINE") {
+    // PM/GPM: restrict the monthly trend to their assigned products. Falls back to the
+    // full line view if the product-filtered query returns nothing, so the trend is never
+    // accidentally emptied by a name/alias mismatch.
+    if (productNames && productNames.length > 0 && line.length > 0) {
+      const byProducts = await getEmployeePortalSalesDashboard(null, { line, products: productNames });
+      if (byProducts && salesDashboardHasData(byProducts)) return byProducts;
+      logPortalDebug("product-scoped monthly query returned no rows; falling back to line scope", {
+        line,
+        productNames: productNames.length,
+      });
+    }
+
     const byLine = line.length > 0
       ? await getEmployeePortalSalesDashboard(null, { line })
       : null;
@@ -2135,6 +2198,61 @@ export async function getEmployeePortalProfile(access: AccessContext) {
   };
 }
 
+export type PortalSalesPacing = {
+  dayOfMonth: number;
+  daysInMonth: number;
+  achievementPercent: number;
+  expectedPercent: number;
+  deltaPercent: number;
+  status: "ahead" | "on_track" | "behind" | "no_target";
+};
+
+export type PortalMyRequestSummaryItem = {
+  id: string;
+  module: string;
+  title: string;
+  statusLabel: string;
+  statusTone: MyRequestStatusTone;
+  submittedAt: string;
+  decisionNote: string | null;
+};
+
+export type PortalMyRequestsSummary = {
+  counts: { approved: number; pending: number; returned: number; rejected: number; neutral: number };
+  items: PortalMyRequestSummaryItem[];
+};
+
+export type PortalAlert = {
+  id: string;
+  title: string;
+  module: string | null;
+  priority: "normal" | "high";
+  createdAt: string;
+  href: string | null;
+};
+
+/**
+ * Pace the current month's sales against the expected run-rate for today's date so
+ * the Overview can show "ahead / on track / behind" at a glance. Pure + testable;
+ * pass `now` in tests for determinism.
+ */
+export function computeSalesPacing(
+  currentMonthSales: number,
+  currentMonthTarget: number,
+  now: Date = new Date(),
+): PortalSalesPacing {
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const expectedPercent = daysInMonth > 0 ? (dayOfMonth / daysInMonth) * 100 : 0;
+  if (!(currentMonthTarget > 0)) {
+    return { dayOfMonth, daysInMonth, achievementPercent: 0, expectedPercent, deltaPercent: 0, status: "no_target" };
+  }
+  const achievementPercent = (currentMonthSales / currentMonthTarget) * 100;
+  const deltaPercent = achievementPercent - expectedPercent;
+  const status = deltaPercent >= 5 ? "ahead" : deltaPercent <= -5 ? "behind" : "on_track";
+  return { dayOfMonth, daysInMonth, achievementPercent, expectedPercent, deltaPercent, status };
+}
+
 export type MedicalRepPortalData = {
   /**
    * Whether Beta employee-portal modules should be surfaced in the UI, resolved
@@ -2210,6 +2328,10 @@ export type MedicalRepPortalData = {
       label: string;
     }>;
     vacancyDetails: EmployeePortalVacanciesData | null;
+    attentionInbox?: PortalAttentionInbox;
+    myRequests?: PortalMyRequestsSummary;
+    pacing?: PortalSalesPacing | null;
+    alerts?: PortalAlert[];
   };
   payroll: {
       batchId: string | null;
@@ -2313,6 +2435,7 @@ export type MedicalRepPortalData = {
     employeePerformance: Array<{ name: string; role: string; trips: number; distance: number; activeDays: number }>;
     expenseAnalysis: Array<{ label: string; value: string; delta: string }>;
     expenseTrend: Array<{ month: string; expenses: number }>;
+    expenseTrendWeekly: Array<{ week: string; expenses: number }>;
     territoryAnalysis: Array<{ territory: string; trips: number; distance: number; expenses: number }>;
     recentTrips: Array<{ id: string; date: string; employee: string; role: string; from: string; to: string; type: string; distance: number; cost: number }>;
     expenseRows: Array<PayrollExpenseApproval & { location: string }>;
@@ -2376,13 +2499,16 @@ async function buildEmployeePortalOverviewData(input: {
   access: AccessContext;
   currentHrId: string | null;
   pendingExpenseCount: number;
+  expenses: PayrollExpenseApproval[];
 }): Promise<MedicalRepPortalData["overview"]> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [vacationReport, marketingWorkspace, vacancyDetails] = await Promise.all([
+  const [vacationReport, marketingWorkspace, vacancyDetails, myRequestItems, notifications] = await Promise.all([
     getVacationReportData(input.access).catch(() => null),
     getMarketingRequestDraftWorkspace(input.access).catch(() => null),
     getEmployeePortalVacancies(input.access).catch(() => null),
+    getMyRequestItems(input.access).catch(() => [] as MyRequestItem[]),
+    listInAppNotificationsForViewer(input.access, 6).catch(() => [] as InAppNotificationView[]),
   ]);
 
   const vacationRows = vacationReport?.rows ?? [];
@@ -2433,10 +2559,47 @@ async function buildEmployeePortalOverviewData(input: {
     },
   ].filter((item) => item.count > 0);
 
+  // "Needs your attention" composes pending-my-approval items (managers) and
+  // returned-to-me items (everyone). myRequests + expenses are passed through to
+  // avoid duplicate fetches.
+  const attentionInbox = await getPortalAttentionInbox(input.access, {
+    myRequests: myRequestItems,
+    expenses: input.expenses,
+  }).catch(() => EMPTY_PORTAL_ATTENTION_INBOX);
+
+  // "My requests" status strip — group the caller's own submissions by tone.
+  const myRequestCounts = { approved: 0, pending: 0, returned: 0, rejected: 0, neutral: 0 };
+  for (const request of myRequestItems) myRequestCounts[request.statusTone] += 1;
+  const myRequests: PortalMyRequestsSummary = {
+    counts: myRequestCounts,
+    items: myRequestItems.slice(0, 6).map((request) => ({
+      id: request.id,
+      module: request.module,
+      title: request.title,
+      statusLabel: request.statusLabel,
+      statusTone: request.statusTone,
+      submittedAt: request.submittedAt,
+      decisionNote: request.decisionNote,
+    })),
+  };
+
+  // Lightweight alerts feed (birthdays / contract renewals / probation due, etc.).
+  const alerts: PortalAlert[] = (notifications ?? []).map((note) => ({
+    id: note.id,
+    title: note.title,
+    module: note.module,
+    priority: note.priority === "high" ? "high" : "normal",
+    createdAt: note.sentAt ?? note.scheduledFor ?? "",
+    href: note.href,
+  }));
+
   return {
     employeesOnLeaveToday: activeLeaveToday,
     myActions,
     vacancyDetails,
+    attentionInbox,
+    myRequests,
+    alerts,
   };
 }
 
@@ -2676,6 +2839,34 @@ function expensePeriodKey(expense: {
   }
 
   return null;
+}
+
+/**
+ * ISO-week key (YYYY-Www) for an expense, derived from its date. Returns null when
+ * the date is missing/unparseable (week buckets need a real calendar date — unlike
+ * the monthly key there is no payout-month fallback). Used for the weekly expense trend.
+ */
+function expenseWeekKey(expense: { date?: string | null }): string | null {
+  const rawDate = String(expense.date ?? "").trim();
+  if (!rawDate) return null;
+  const date = new Date(rawDate);
+  if (Number.isNaN(date.getTime())) return null;
+  // ISO-8601 week: Thursday-anchored.
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNumber = (target.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3); // move to Thursday
+  const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  const firstDayNumber = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNumber + 3);
+  const week = 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 24 * 3600 * 1000));
+  return `${target.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Human label for an ISO-week key, e.g. "2026-W08" → "W08 · 2026". */
+function toWeekLabel(value: string): string {
+  const [yearText, weekText] = value.split("-W");
+  if (!yearText || !weekText) return value;
+  return `${weekText.startsWith("W") ? weekText : `W${weekText}`} · ${yearText}`;
 }
 
 function normalizeExpenseRequestType(value: string | null | undefined) {
@@ -3495,12 +3686,21 @@ export async function getMedicalRepPortalData(
       targetSalesHrIds.push(...teamHrIds);
     }
 
+    // PM/GPM: their monthly trend follows their assigned products (matches the weekly card),
+    // not the whole line. Null for every other role → unchanged line/team scope.
+    const productScopeNames = await resolvePortalProductScopeNames(
+      currentUser.role as PhoenixRole,
+      currentHrId,
+      currentUser.loginId ?? null,
+    );
+
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
     const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await Promise.all([
       getScopedEmployeePortalSalesDashboard({
         line: salesLineFilter,
         salesScope,
         targetSalesHrIds,
+        productNames: productScopeNames,
       }),
       currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
       listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
@@ -3516,11 +3716,30 @@ export async function getMedicalRepPortalData(
       ...liveOutstationExpenses,
     ];
 
+    // Personal expense workload is scoped to the viewer + their DIRECT reports only —
+    // never the whole line/hierarchy. A manager sees their own trips and the trips of
+    // people who report directly to them, nothing wider.
+    const directReportHrIds = new Set<string>(
+      directory.employees
+        .map((row) => ({ hrId: normalizeHrId(row.hrId), managerHrId: normalizeHrId(row.managerHrId) }))
+        .filter((row) => row.hrId && currentHrId && row.managerHrId === currentHrId)
+        .map((row) => row.hrId as string),
+    );
+    const expenseOwnerAllowList = new Set<string>(
+      [currentHrId, ...directReportHrIds].filter((value): value is string => Boolean(value)),
+    );
+    const scopedExpenses = currentHrId
+      ? expenses.filter((expense) => {
+          const ownerHrId = normalizeHrId((expense as { hrId?: string | null }).hrId);
+          return ownerHrId ? expenseOwnerAllowList.has(ownerHrId) : false;
+        })
+      : expenses;
+
     const base = await getEmployeePortalData(access, {
       payroll: payrollDashboard,
       sales: salesDashboard,
       directory: directory,
-      expenses,
+      expenses: scopedExpenses,
       expenseReports: expenseReports,
     });
 
@@ -3543,11 +3762,12 @@ export async function getMedicalRepPortalData(
       })
     : emptyPortalVacancySummary();
   const pendingApprovalCount = expenses.filter((expense) => !expense.hrApproved).length;
-  const overview = includePortalOverview
+  const overview: MedicalRepPortalData["overview"] = includePortalOverview
     ? await buildEmployeePortalOverviewData({
         access,
         currentHrId,
         pendingExpenseCount: pendingApprovalCount,
+        expenses,
       })
     : {
         employeesOnLeaveToday: [],
@@ -3902,7 +4122,10 @@ export async function getMedicalRepPortalData(
       serviceDurationText: serviceDurationText(base.employmentJourney.serviceDurationDays),
     },
     insights,
-    overview,
+    overview: {
+      ...overview,
+      pacing: includePortalOverview ? computeSalesPacing(currentMonthSales, currentMonthTarget) : null,
+    },
     payroll: {
       batchId: latestBatch?.id ?? null,
       baseSalary: fixedSalary.baseSalary,
@@ -4021,6 +4244,15 @@ export async function getMedicalRepPortalData(
         return {
           month: toPeriodLabel(period),
           expenses: periodExpenses.reduce((sum, e) => sum + (e.total || 0), 0),
+        };
+      }),
+      // Weekly companion to expenseTrend. Buckets the SAME (already self+direct-reports
+      // scoped) `expenses` array by ISO week so the Expense Overview can show weekly + monthly.
+      expenseTrendWeekly: Array.from(new Set(expenses.map((e) => expenseWeekKey(e)).filter(Boolean) as string[])).sort().slice(-12).map(week => {
+        const weekExpenses = expenses.filter((e) => expenseWeekKey(e) === week);
+        return {
+          week: toWeekLabel(week),
+          expenses: weekExpenses.reduce((sum, e) => sum + (e.total || 0), 0),
         };
       }),
       expenseRows: expenses.map((expense) => ({
