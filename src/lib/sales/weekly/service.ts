@@ -490,11 +490,15 @@ export async function loadWeeklyDashboard(filters?: {
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
-  // Validated batches only — blocked uploads never feed the dashboard.
-  const batchesResult = await supabase
+  // Validated batches — ordered newest-first; limit to 200 in the common case (200 ÷ 8 distributors
+  // ≈ 25 weeks of dropdown history). allWeeks skips the limit so the full history stays available.
+  let batchQuery = supabase
     .from("weekly_sales_batches")
     .select("id, week_start, distributor_code, distributor_name")
-    .eq("status", "validated");
+    .eq("status", "validated")
+    .order("week_start", { ascending: false });
+  if (!filters?.allWeeks) batchQuery = batchQuery.limit(200);
+  const batchesResult = await batchQuery;
   if (batchesResult.error) throw new SalesWorkflowError("load_failed", batchesResult.error.message, 500);
   const batches = batchesResult.data ?? [];
 
