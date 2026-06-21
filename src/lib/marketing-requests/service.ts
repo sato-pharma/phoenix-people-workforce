@@ -1301,8 +1301,6 @@ function mapRequest(row: MarketingRequestDbRow): MarketingRequest {
     requesterHrId: row.requester_hr_id,
     requestTypeId: Number(row.request_type_id),
     requiredRoiValue: toNumber(
-      // Mirrors the generated DB column (marketing_roi_flat_no_duration): required ROI is a FLAT
-      // 10× estimated cost — campaign duration does NOT scale the target.
       row.required_roi_value ?? toNumber(row.estimated_cost) * 10,
     ),
     roiCoverageRatio: toNumber(row.roi_coverage_ratio),
@@ -3479,40 +3477,18 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     productRows: (productsResult.data ?? []) as MarketingProductDbRow[],
     requester,
   });
-  // The personal "Marketing Requests" workspace (Create / Approved / Tracking tabs) is a
-  // *my own requests* surface. Company-wide oversight roles (Marketing Manager, SFE Manager,
-  // CEO, Finance, Super Admin) have unbounded visibility, which would otherwise flood their
-  // personal Drafts / In-approval / Returned / Approved lists with EVERY request in the
-  // company. Company-wide monitoring belongs on Control / Inbox / ROI Tracking — so here we
-  // narrow these personal lists to the requests the viewer personally submitted. Line/team
-  // roles keep their existing bounded subtree visibility.
-  const scopeTrackingToOwnRequests =
-    companyMarketingRoles.has(access.role) || access.scope === "system";
-  const ownsMarketingRequest = (request: MarketingRequest) =>
-    normalizeHrId(request.requesterHrId) === normalizeHrId(access.hrId);
-  const narrowToOwnRequests = (requests: MarketingRequest[]) =>
-    scopeTrackingToOwnRequests ? requests.filter(ownsMarketingRequest) : requests;
-
-  const drafts = narrowToOwnRequests(
-    ((draftsResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
-      .map(mapRequest),
-  );
-  const approvedRequests = narrowToOwnRequests(
-    ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
-      .map(mapRequest),
-  );
-  const returned = narrowToOwnRequests(
-    ((returnedResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
-      .map(mapRequest),
-  );
-  const inApproval = narrowToOwnRequests(
-    ((inApprovalResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
-      .map(mapRequest),
-  );
+  const drafts = ((draftsResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+  const approvedRequests = ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+  const returned = ((returnedResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
+  const inApproval = ((inApprovalResult.data ?? []) as MarketingRequestDbRow[])
+    .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+    .map(mapRequest);
 
   // Batch-load approval steps for every in-flight request so the tracking UI can
   // show "currently with <step> — <approver>" without an N+1 query per request.
@@ -4023,63 +3999,6 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   rows.sort(bySubmittedAt);
   advisoryRows.sort(bySubmittedAt);
   return { advisoryRows, rows };
-}
-
-export type MarketingOverviewMetrics = {
-  /** Requests at the viewer's own gating step (approve / return / reject). */
-  awaitingMyDecision: number;
-  /** Requests where the viewer is a CC reviewer and may post a non-blocking comment. */
-  awaitingMyComment: number;
-  /** All marketing requests currently moving through the approval chain (company-wide). */
-  inApprovalTotal: number;
-  /** Requests returned to their submitter for edits (company-wide). */
-  returnedTotal: number;
-  /** Active customer/pharmacy links still awaiting validation (company-wide). */
-  validationPending: number;
-  /** Requests that completed approval (company-wide). */
-  approvedTotal: number;
-  /** Up to five requests awaiting the viewer's decision, for an inline preview. */
-  topPendingForMe: MarketingApproverInboxRow[];
-};
-
-/**
- * Landing-page metrics for a marketing approver / oversight role (e.g. Marketing Manager).
- * Reuses the approver-inbox logic for the "awaiting me" figures and a few cheap COUNT-only
- * queries for the company-wide totals. Deliberately light (no ROI engine) so the overview
- * stays fast. The inbox call is made resilient so a non-decision workspace role still gets a
- * valid (zeroed) overview rather than an error.
- */
-export async function getMarketingOverview(access: AccessContext): Promise<MarketingOverviewMetrics> {
-  assertMarketingWorkspaceAccess(access);
-  const supabase = getSupabaseAdmin();
-
-  const [inbox, inApprovalResult, returnedResult, validationPendingResult, approvedResult] = await Promise.all([
-    getApproverPendingRequests(access).catch(
-      () => ({ advisoryRows: [], rows: [] }) as MarketingApproverInboxWorkspace,
-    ),
-    supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
-    supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "returned"),
-    supabase
-      .from("marketing_customer_pharmacies")
-      .select("id", { count: "exact", head: true })
-      .eq("active", true)
-      .eq("validation_status", "pending"),
-    supabase.from("marketing_requests").select("id", { count: "exact", head: true }).in("status", approvedMarketingRequestStatuses),
-  ]);
-  if (inApprovalResult.error) throw inApprovalResult.error;
-  if (returnedResult.error) throw returnedResult.error;
-  if (validationPendingResult.error) throw validationPendingResult.error;
-  if (approvedResult.error) throw approvedResult.error;
-
-  return {
-    approvedTotal: approvedResult.count ?? 0,
-    awaitingMyComment: inbox.advisoryRows.length,
-    awaitingMyDecision: inbox.rows.length,
-    inApprovalTotal: inApprovalResult.count ?? 0,
-    returnedTotal: returnedResult.count ?? 0,
-    topPendingForMe: inbox.rows.slice(0, 5),
-    validationPending: validationPendingResult.count ?? 0,
-  };
 }
 
 /**

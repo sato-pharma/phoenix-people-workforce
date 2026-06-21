@@ -23,7 +23,6 @@ import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-a
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
 import { MarketingRequestInbox } from "@/components/employee-portal/marketing-request-inbox";
-import { MarketingOverviewDashboard } from "@/components/marketing-requests/marketing-overview-dashboard";
 import { MarketingRoiFilterEngine } from "@/components/marketing-requests/roi-filter-engine";
 import { MarketingRequestSalesView } from "@/components/marketing-requests/marketing-request-sales-view";
 import { MarketingValidationWorkspace } from "@/components/employee-portal/marketing-validation-workspace";
@@ -59,7 +58,6 @@ import {
 import { compactDeductionHrId, listPublishedDeductionsForPortal } from "@/lib/deductions-governance/service";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
-  getMarketingOverview,
   getMarketingRequestDecisionSummary,
   parseMarketingRequestDecision,
 } from "@/lib/marketing-requests/service";
@@ -394,36 +392,6 @@ export async function WorkspaceFingerprintReportPage() {
           },
         }}
       />
-    </WorkspaceFrame>
-  );
-}
-
-export async function WorkspaceMarketingOverviewPage() {
-  const access = await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
-  let data = null;
-  try {
-    data = await getMarketingOverview(access);
-  } catch (error) {
-    logPortalFailure(
-      { hrId: access.hrId, module: "marketing-overview", role: access.role, route: "/workspace/marketing-requests/overview" },
-      error,
-    );
-  }
-  if (!data) {
-    return (
-      <WorkspaceUnavailable
-        message="The marketing overview is temporarily unavailable. Please refresh in a moment."
-        title="Overview Unavailable"
-      />
-    );
-  }
-  return (
-    <WorkspaceFrame
-      description="Your marketing approvals, in-flight requests, and validation status at a glance."
-      icon={<LayoutDashboard className="h-3.5 w-3.5" />}
-      title="Marketing Overview"
-    >
-      <MarketingOverviewDashboard basePath="/workspace/marketing-requests" data={data} />
     </WorkspaceFrame>
   );
 }

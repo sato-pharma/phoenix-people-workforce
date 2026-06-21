@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, FileSearch, Loader2, Plus, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Plus, RotateCcw, Save } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
-import { MappingAuditHistory } from "@/components/sales/mapping-audit-history";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { EditableProfile, ProfileFieldKey } from "@/lib/sales/normalizer/distributor-profile-store";
@@ -66,42 +65,14 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ── live alias preview (does this file actually contain my configured aliases?) ─────────────────
-  const [previewFile, setPreviewFile] = useState<File | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<Partial<Record<ProfileFieldKey, { foundAlias: string | null; status: "found" | "missing" | "empty" }>>>({});
-
   const isNew = selected === NEW;
   const current = useMemo(() => profiles.find((p) => p.distributorCode === selected) ?? null, [profiles, selected]);
 
-  function clearPreview() {
-    setPreview({}); setPreviewError(null); setPreviewFile(null);
-  }
-
   function pick(code: string) {
-    setSelected(code); setMsg(null); setError(null); clearPreview();
+    setSelected(code); setMsg(null); setError(null);
     if (code === NEW) { setDraft(emptyDraft()); return; }
     const p = profiles.find((x) => x.distributorCode === code);
     setDraft(p ? toDraft(p) : emptyDraft());
-  }
-
-  async function runPreview() {
-    if (!previewFile) return;
-    setPreviewing(true); setPreviewError(null);
-    try {
-      const fields = FIELDS.map((f) => ({ key: f.key, label: f.label, aliases: splitCols(draft.fields[f.key]) }));
-      const fd = new FormData();
-      fd.set("fields", JSON.stringify(fields));
-      fd.set("file", previewFile);
-      const res = await fetch("/api/sales/database-mapping/profile/preview", { method: "POST", body: fd });
-      const payload = (await res.json()) as { success?: boolean; error?: string; fields?: { key: ProfileFieldKey; foundAlias: string | null; status: "found" | "missing" | "empty" }[] };
-      if (!payload.success) { setPreviewError(payload.error ?? "Preview failed."); return; }
-      const map: Partial<Record<ProfileFieldKey, { foundAlias: string | null; status: "found" | "missing" | "empty" }>> = {};
-      for (const f of payload.fields ?? []) map[f.key] = { foundAlias: f.foundAlias, status: f.status };
-      setPreview(map);
-    } catch (e) { setPreviewError(e instanceof Error ? e.message : "Preview failed."); }
-    finally { setPreviewing(false); }
   }
 
   function setField(key: ProfileFieldKey, value: string) {
@@ -195,38 +166,15 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
           Region-only (resolving to region/area without a brick is expected)
         </label>
 
-        <div className="rounded-[6px] border border-dashed border-[#CBD5E1] bg-[#FCFDFE] p-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample file (.xlsx)</span>
-              <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
-            </label>
-            <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={previewing || !previewFile} onClick={() => void runPreview()} type="button">
-              {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
-              Check aliases against file
-            </button>
-          </div>
-          <p className="mt-2 text-[11px] text-[#94A3B8]">Reads your sample file&rsquo;s header row and flags, per field, whether any of your aliases is found. The file is not stored.</p>
-          {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
-        </div>
-
         <div className="rounded-[6px] border border-[#E2E8F0]">
           <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">Column aliases — comma-separated header titles the file may use</div>
           <div className="grid grid-cols-1 gap-px bg-[#E2E8F0] sm:grid-cols-2">
-            {FIELDS.map((f) => {
-              const obs = preview[f.key];
-              return (
+            {FIELDS.map((f) => (
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
                 <span className="text-[11px] font-bold text-[#475569]">{f.label}</span>
                 <input className="h-8 rounded-[6px] border border-[#E2E8F0] px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
-                {obs && obs.status !== "empty" ? (
-                  obs.status === "found"
-                    ? <span className="truncate text-[10px] font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
-                    : <span className="truncate text-[10px] font-bold text-amber-700">✗ none of these aliases is in the file</span>
-                ) : null}
               </label>
-              );
-            })}
+            ))}
           </div>
         </div>
 
@@ -246,8 +194,6 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
           ) : null}
         </div>
         <p className="text-xs text-[#94A3B8]">Required to save: a Product Code or Name, a Quantity, and a location (Customer Code, Area/Territory, or Brick ID). &ldquo;sheet&rdquo; value source also needs a Value column.</p>
-
-        <MappingAuditHistory distributorCode={isNew ? null : draft.distributorCode} entityType="distributor_profile" />
       </Card>
     </div>
   );

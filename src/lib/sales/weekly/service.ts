@@ -15,7 +15,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
-import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
+import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
 import type {
@@ -86,12 +86,11 @@ export async function importWeeklySalesFile(input: {
     weeklyDistributorByCode(distributorCode)?.name ??
     distributorCode;
 
-  const [aliasIndex, branchMapIndex, resolved] = await Promise.all([
+  const [aliasIndex, branchMapIndex, contract] = await Promise.all([
     loadProductAliasIndex(),
     loadBranchRegionIndex(distributorCode),
-    resolveWeeklyContractWithSource(distributorCode),
+    resolveWeeklyContract(distributorCode),
   ]);
-  const { contract, source: contractSource } = resolved;
 
   // PS ships a separate sales + stock matrix; everyone else ships one combined workbook.
   const isPS = distributorCode === "PS";
@@ -122,8 +121,6 @@ export async function importWeeklySalesFile(input: {
     const status = parsed.error.code === "unsupported_template" ? 422 : 400;
     throw new SalesWorkflowError(parsed.error.code, parsed.error.message, status);
   }
-  // Stamp which column contract parsed this batch (built-in vs in-app override) for traceability.
-  parsed.result.contractSource = contractSource;
 
   // Only persist a clean (validated) batch; blocked files are returned for the user to fix.
   // dryRun=true skips persistence so the validate step can show tables without storing anything.
@@ -182,7 +179,6 @@ async function persistWeeklyUpload(
       total_stock_qty: result.totals.stockQty,
       blocking_reasons: result.blockingReasons,
       uploaded_by: uploadedBy,
-      column_contract_source: result.contractSource ?? "code",
     })
     .select("id, created_at")
     .single();
@@ -321,7 +317,6 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
     totalStockQty: Number(row.total_stock_qty ?? 0),
     blockingReasons: Array.isArray(row.blocking_reasons) ? (row.blocking_reasons as string[]) : [],
     uploadedBy: row.uploaded_by ? String(row.uploaded_by) : null,
-    columnContractSource: row.column_contract_source === "override" ? "override" : "code",
     createdAt: String(row.created_at ?? ""),
   };
 }

@@ -1,12 +1,11 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { MonthlySalesDashboard } from "@/components/sales/monthly-sales-dashboard";
+import { SalesDashboard } from "@/components/sales/sales-dashboard";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSalesDashboard } from "@/lib/sales/service";
-import type { SalesDashboardData } from "@/lib/sales/types";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +22,7 @@ export default async function SalesPage() {
       fallback={
         <AppRouteLoadingState
           title="Loading Sales"
-          description="Preparing approved sales, targets, ownership, channels, and trends."
+          description="Preparing approved sales, targets, ownership, and transactions."
         />
       }
     >
@@ -33,7 +32,7 @@ export default async function SalesPage() {
 }
 
 async function SalesContent({ accessContext }: { accessContext: AccessContext }) {
-  let initialData: SalesDashboardData | null = null;
+  let initialData = null;
   let initialError: string | null = null;
 
   try {
@@ -42,5 +41,10 @@ async function SalesContent({ accessContext }: { accessContext: AccessContext })
     initialError = error instanceof Error ? error.message : "Failed to load sales dashboard.";
   }
 
-  return <MonthlySalesDashboard initialData={initialData} initialError={initialError} />;
+  return (
+    <SalesDashboard
+      initialData={initialData}
+      initialError={initialError}
+    />
+  );
 }

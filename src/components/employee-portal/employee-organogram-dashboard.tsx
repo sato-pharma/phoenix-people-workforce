@@ -74,8 +74,7 @@ function titleText(row: OrganogramRow) {
 }
 
 function isOfficeLine(row: OrganogramRow) {
-  const line = row.lineName?.trim().toLowerCase();
-  return line === "office" || line === "head office";
+  return row.lineName?.trim().toLowerCase() === "office";
 }
 
 function isSalesDepartment(row: OrganogramRow) {
@@ -441,8 +440,7 @@ function filterOrganogramRows(
 ) {
   const managerHrIdsToKeep = new Set<string>();
   const officeDescendantHrIdsToKeep = new Set<string>();
-  const selectedLineKey = effectiveLineFilter.trim().toLowerCase();
-  const isOfficeSelected = selectedLineKey === "office" || selectedLineKey === "head office";
+  const isOfficeSelected = effectiveLineFilter.trim().toLowerCase() === "office";
 
   const selectedLineRows = effectiveLineFilter
     ? rows.filter((r) =>

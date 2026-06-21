@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Clock, Download, Fingerprint, LogIn, LogOut, RefreshCw, ScanLine, Users } from "lucide-react";
+import { Clock, Download, LogIn, LogOut, RefreshCw, ScanLine, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
@@ -94,37 +94,34 @@ function generateMonthOptions(): Array<{ label: string; value: string }> {
   return options;
 }
 
-function displayDate(key: string) {
-  const [y, m, d] = key.split("-").map(Number);
-  if (!y || !m || !d) return key;
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-}
-
-// ─── KPI tile — flat corporate (square, crisp, black/orange) ──────────────────
+// ─── KPI card (OverviewStatCard pattern) ──────────────────────────────────────
 
 type Accent = "amber" | "green" | "orange" | "red" | "slate";
 
-const TONE: Record<Accent, { bar: string; value: string }> = {
-  amber:  { bar: "bg-amber-500",   value: "text-amber-600"   },
-  green:  { bar: "bg-emerald-500", value: "text-emerald-600" },
-  orange: { bar: "bg-orange-500",  value: "text-orange-600"  },
-  red:    { bar: "bg-rose-500",    value: "text-rose-600"    },
-  slate:  { bar: "bg-slate-800",   value: "text-slate-900"   },
+const TONE: Record<Accent, { bar: string; dot: string }> = {
+  amber:  { bar: "bg-amber-500",   dot: "bg-amber-500"   },
+  green:  { bar: "bg-emerald-500", dot: "bg-emerald-500" },
+  orange: { bar: "bg-orange-500",  dot: "bg-orange-500"  },
+  red:    { bar: "bg-rose-500",    dot: "bg-rose-500"    },
+  slate:  { bar: "bg-slate-400",   dot: "bg-slate-400"   },
 };
 
 function KpiCard({ accent, label, note, value }: { accent: Accent; label: string; note: string; value: number }) {
-  const { bar, value: valueColor } = TONE[accent];
+  const { bar, dot } = TONE[accent];
   return (
-    <div className="group relative min-h-[124px] overflow-hidden border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-200 hover:border-orange-300">
-      <div className={`absolute inset-x-0 top-0 h-[3px] ${bar}`} />
-      <div className="flex h-full flex-col justify-between gap-4 p-5">
-        <div className="flex items-center gap-2">
-          <span className={`h-1.5 w-1.5 ${bar}`} />
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="group relative min-h-[140px] overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)] hover:ring-slate-300">
+      <div className={`absolute inset-x-0 top-0 h-1 ${bar} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
+      <div className="flex h-full flex-col justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${dot} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          </div>
+          <p className="mt-2.5 text-2xl font-black leading-none tracking-tight text-slate-950 tabular-nums">{value}</p>
         </div>
         <div>
-          <p className={`text-[28px] font-black leading-none tracking-tight tabular-nums ${valueColor}`}>{value}</p>
-          <p className="mt-2 text-[11px] font-semibold text-slate-400">{note}</p>
+          <p className="text-[11px] font-semibold text-slate-400">{note}</p>
+          <div className={`mt-3 h-1.5 w-16 rounded-sm ${bar} opacity-70`} />
         </div>
       </div>
     </div>
@@ -141,12 +138,6 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "Short day")   return <Badge variant="warning">Short day</Badge>;
   return <Badge variant="danger">{status}</Badge>;
 }
-
-// ─── Shared chrome ────────────────────────────────────────────────────────────
-
-const CARD = "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
-const FIELD =
-  "h-10 border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -226,19 +217,17 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
   const { summary, rows } = data;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
 
       {/* ── Whose report (managers only) ─────────────────────────────────── */}
       {hasReports && (
-        <div className={`overflow-hidden ${CARD} p-4`}>
+        <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
-                <Users className="h-4 w-4" />
-              </span>
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 shrink-0 text-orange-500" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Whose Report</p>
-                <p className="text-[13px] font-semibold text-slate-800">
+                <p className="text-[13px] font-semibold text-slate-700">
                   {selectedTarget?.isSelf
                     ? "Your own attendance"
                     : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
@@ -246,7 +235,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               </div>
             </div>
             <SearchableSelect
-              className={`${FIELD} w-full sm:w-72`}
+              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)] outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 sm:w-72"
               onChange={(e) => handleTargetChange(e.target.value)}
               value={selectedHrId}
             >
@@ -261,7 +250,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
       )}
 
       {/* ── Filter strip ─────────────────────────────────────────────────── */}
-      <div className={`overflow-hidden ${CARD} p-4`}>
+      <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
@@ -276,10 +265,10 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   type="button"
                   disabled={isPending}
                   className={[
-                    "inline-flex h-9 items-center gap-1.5 px-4 text-[12px] font-bold uppercase tracking-wide transition-colors duration-150",
+                    "inline-flex h-9 items-center gap-1.5 rounded px-4 text-[12px] font-bold transition-all duration-150",
                     active
-                      ? "bg-orange-500 text-white"
-                      : "border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
+                      ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+                      : "border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50/70 hover:text-orange-700",
                     isPending && !active ? "opacity-50 cursor-not-allowed" : "",
                   ].join(" ")}
                 >
@@ -292,9 +281,8 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
           {/* Export button */}
           <a
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-4 text-[12px] font-bold uppercase tracking-wide text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-300 hover:bg-orange-50/70 hover:text-orange-700 hover:shadow-[0_4px_12px_rgba(249,115,22,0.12)]"
             href={exportHref}
-            data-no-print
           >
             <Download className="h-3.5 w-3.5" />
             Export XLSX
@@ -303,11 +291,11 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
         {/* Custom month picker — only visible when "Custom" is active */}
         {activeFilter === "custom" && (
-          <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
+          <div className="mt-4 flex items-end gap-3 border-t border-slate-100 pt-4">
             <div className="space-y-1.5">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
               <SearchableSelect
-                className={FIELD}
+                className="h-10 rounded border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_3px_rgba(15,23,42,0.04)] outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 onChange={(e) => handleCustomMonth(e.target.value)}
                 value={customMonth}
               >
@@ -317,163 +305,154 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               </SearchableSelect>
             </div>
             <p className="pb-2.5 text-xs font-semibold text-slate-400">
-              Showing {displayDate(data.dateFrom)} → {displayDate(data.dateTo)}
+              Showing {data.dateFrom} → {data.dateTo}
             </p>
           </div>
         )}
 
         {fetchError && (
-          <p className="mt-3 border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+          <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
             {fetchError}
           </p>
         )}
       </div>
 
-      {/* ── Results (dims while a new range loads) ───────────────────────── */}
-      <div
-        aria-busy={isPending}
-        className={`space-y-5 transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}
-      >
-
-        {/* ── KPI tiles ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
-          <KpiCard accent="slate"  label="Total Recorded" value={summary.totalRows}                      note="Days in range"     />
-          <KpiCard accent="green"  label="Complete"        value={summary.completeDays}                   note="Full working days" />
-          <KpiCard accent="amber"  label="Late / Early"    value={summary.lateDays}                       note="Attendance flags"  />
-          <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
-          <KpiCard accent="red"    label="Deductions"      value={summary.deductionDays}                  note="Days flagged"      />
-        </div>
-
-        {/* ── Punch log ─────────────────────────────────────────────────── */}
-        {rows.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center ${CARD} py-20 text-center`}>
-            <span className="flex h-12 w-12 items-center justify-center bg-slate-900 text-orange-400">
-              <ScanLine className="h-6 w-6" />
-            </span>
-            <p className="mt-4 text-sm font-bold text-slate-700">No records for this period</p>
-            <p className="mt-1 text-xs text-slate-400">Try a different time range above.</p>
-          </div>
-        ) : (
-          <div className={`overflow-hidden ${CARD}`}>
-
-            {/* section header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
-                  <Fingerprint className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
-                  <p className="mt-0.5 text-[13px] font-semibold text-slate-800 tabular-nums">
-                    {displayDate(data.dateFrom)} → {displayDate(data.dateTo)}
-                  </p>
-                </div>
-              </div>
-              <span className="bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-100 tabular-nums">
-                {rows.length} {rows.length === 1 ? "record" : "records"}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              {(() => {
-                const showDeductionCol = rows.some((r) => r.deductionConfirmed);
-                const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;
-                return (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        {baseCols.map((col) => (
-                          <th key={col} className="px-4 py-3 font-black uppercase tracking-[0.14em]">
-                            {col}
-                          </th>
-                        ))}
-                        {showDeductionCol && (
-                          <th className="px-4 py-3 font-black uppercase tracking-[0.14em]">Deduction</th>
-                        )}
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {rows.map((row, i) => {
-                        const lateMin = parseInt(row.lateMinutes ?? "0", 10);
-                        return (
-                          <tr
-                            key={row.rawDate}
-                            className={`transition-colors duration-150 hover:bg-orange-50/60 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
-                          >
-                            <td className="px-4 py-3 text-center font-mono text-xs font-bold text-slate-800">
-                              {row.date}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.firstPunch ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
-                                  <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.lastPunch ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
-                                  <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.timeLong ? (
-                                <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2 py-0.5">
-                                  <Clock className="h-3 w-3 text-slate-400" />
-                                  <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {lateMin > 0 ? (
-                                <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
-                                  +{lateMin} min
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              <StatusBadge status={row.status} />
-                            </td>
-
-                            {showDeductionCol && (
-                              <td className="px-4 py-3 text-center">
-                                {row.deductionConfirmed ? (
-                                  <span className="inline-flex bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 tabular-nums">
-                                    −{row.deductionDays}d
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-slate-300">—</span>
-                                )}
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                );
-              })()}
-            </div>
-          </div>
-        )}
+      {/* ── KPI cards ────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
+        <KpiCard accent="slate"  label="Total Recorded" value={summary.totalRows}                      note="Days in range"     />
+        <KpiCard accent="green"  label="Complete"        value={summary.completeDays}                   note="Full working days" />
+        <KpiCard accent="amber"  label="Late / Early"    value={summary.lateDays}                       note="Attendance flags"  />
+        <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
+        <KpiCard accent="red"    label="Deductions"      value={summary.deductionDays}                  note="Days flagged"      />
       </div>
+
+      {/* ── Punch log table ───────────────────────────────────────────────── */}
+      {rows.length === 0 ? (
+        <div className="overflow-hidden rounded border border-dashed border-slate-200 bg-slate-50/60 py-20 text-center">
+          <ScanLine className="mx-auto mb-4 h-12 w-12 text-slate-200" />
+          <p className="text-sm font-bold text-slate-400">No records for this period</p>
+          <p className="mt-1 text-xs text-slate-400">Try a different time range above.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+
+          {/* section header */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-7 w-[3px] rounded-sm bg-gradient-to-b from-orange-400 to-orange-600" />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
+                <p className="mt-0.5 text-[13px] font-semibold text-slate-700">
+                  {data.dateFrom} → {data.dateTo}
+                </p>
+              </div>
+            </div>
+            <span className="rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">
+              {rows.length} {rows.length === 1 ? "record" : "records"}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            {(() => {
+              const showDeductionCol = rows.some((r) => r.deductionConfirmed);
+              const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;
+              return (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900">
+                      {baseCols.map((col) => (
+                        <th key={col} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
+                          {col}
+                        </th>
+                      ))}
+                      {showDeductionCol && (
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
+                          Deduction
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {rows.map((row, i) => {
+                      const lateMin = parseInt(row.lateMinutes ?? "0", 10);
+                      return (
+                        <tr
+                          key={row.rawDate}
+                          className={`border-b border-slate-50 transition-colors duration-150 hover:bg-orange-50/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                        >
+                          <td className="px-4 py-3.5">
+                            <span className="font-mono text-xs font-bold text-slate-700">{row.date}</span>
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.firstPunch ? (
+                              <span className="flex items-center gap-1.5">
+                                <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
+                                <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.lastPunch ? (
+                              <span className="flex items-center gap-1.5">
+                                <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
+                                <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {row.timeLong ? (
+                              <span className="inline-flex items-center gap-1.5 rounded bg-slate-100/80 px-2 py-0.5">
+                                <Clock className="h-3 w-3 text-slate-400" />
+                                <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            {lateMin > 0 ? (
+                              <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200 shadow-[0_2px_8px_rgba(245,158,11,0.12)]">
+                                +{lateMin} min
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            <StatusBadge status={row.status} />
+                          </td>
+
+                          {showDeductionCol && (
+                            <td className="px-4 py-3.5 text-right">
+                              {row.deductionConfirmed ? (
+                                <span className="inline-flex rounded-sm bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.12)]">
+                                  −{row.deductionDays}d
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

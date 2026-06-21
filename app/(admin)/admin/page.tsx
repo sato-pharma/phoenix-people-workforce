@@ -20,13 +20,6 @@ export default async function AdminCommandPage() {
     redirect("/employee-portals");
   }
 
-  // The CEO has a dedicated, branded command center. Route the shared "Command Center"
-  // nav link (and any direct /admin hit) to it so the CEO never lands on the generic
-  // admin surface. Super Admin keeps /admin.
-  if (access.role === "CEO") {
-    redirect("/admin/ceo-command-center");
-  }
-
   const [canReadAdmin, canReadOverview, canReadEmployeeProfile] = await Promise.all([
     canAccess(access, "admin", "read"),
     canAccess(access, "overview", "read"),

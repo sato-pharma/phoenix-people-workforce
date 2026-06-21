@@ -12,18 +12,21 @@
 //   AI_MODEL            -> override the model for whichever provider is active
 // With no key it is a no-op and the UI hides the button.
 
-import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
-
 export type AiCandidate = { code: string; label: string };
 export type AiUnknown = { raw: string; rawName?: string };
 export type AiSuggestion = { code: string; raw: string };
 
-// Provider resolution is shared (src/lib/sales/ai/provider.ts). ai-suggest keeps GPT-4o (the heavier
-// model) for the harder name-matching task, overriding the shared "mini" defaults.
-const AI_SUGGEST_MODELS = { openai: "gpt-4o", groq: "llama-3.3-70b-versatile", openrouter: "openai/gpt-4o", generic: "gpt-4o" } as const;
+type Provider = { baseUrl: string; key: string; model: string };
 
-function resolveProvider(): AiProvider | null {
-  return resolveAiProvider({ ...AI_SUGGEST_MODELS });
+// Resolve the active provider from env (OpenAI first). AI_BASE_URL / AI_MODEL override the defaults.
+function resolveProvider(): Provider | null {
+  const baseOverride = process.env.AI_BASE_URL?.replace(/\/+$/, "");
+  const modelOverride = process.env.AI_MODEL;
+  if (process.env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: process.env.OPENAI_API_KEY, model: modelOverride || "gpt-4o" };
+  if (process.env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: process.env.GROQ_API_KEY, model: modelOverride || "llama-3.3-70b-versatile" };
+  if (process.env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: process.env.OPENROUTER_API_KEY, model: modelOverride || "openai/gpt-4o" };
+  if (process.env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: process.env.AI_API_KEY, model: modelOverride || "gpt-4o" };
+  return null;
 }
 
 export function hasAiKey(): boolean {
@@ -55,7 +58,7 @@ function shortReason(raw: string): string {
 
 // One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
 // so the UI surfaces it instead of a misleading "no matches".
-async function generate(provider: AiProvider, kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<string> {
+async function generate(provider: Provider, kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<string> {
   const res = await fetch(`${provider.baseUrl}/chat/completions`, {
     body: JSON.stringify({
       messages: [

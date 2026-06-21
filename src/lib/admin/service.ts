@@ -124,8 +124,6 @@ export type DataHealthStats = {
     leavePendingRequests: number;
     leaveRejectedRequests: number;
     unresolvedSalesExceptions: number;
-    marketingPharmacyCoverageRate: number;
-    marketingUnmappedPharmacyTargets: number;
   };
   salesClassification: Record<SalesOwnershipClassification, {
     label: string;
@@ -575,23 +573,6 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     vacancy_code: rowText(row, "vacancy_code"),
     vacancy_id: rowText(row, "id"),
   }));
-  // Marketing-request pharmacy -> brick/region mapping coverage (best-effort; never breaks the page).
-  let marketingPharmacyCoverageRate = 100;
-  let marketingUnmappedPharmacyTargets = 0;
-  try {
-    const coverage = await supabase.rpc("phx_marketing_pharmacy_mapping_coverage");
-    if (!coverage.error) {
-      const row = (Array.isArray(coverage.data) ? coverage.data[0] : null) as
-        { total_targets?: number; mapped_targets?: number } | null;
-      const total = Number(row?.total_targets ?? 0);
-      const mapped = Number(row?.mapped_targets ?? 0);
-      marketingUnmappedPharmacyTargets = Math.max(0, total - mapped);
-      marketingPharmacyCoverageRate = total > 0 ? (mapped / total) * 100 : 100;
-    }
-  } catch {
-    // RPC unavailable (e.g. fresh DB) — keep the safe defaults.
-  }
-
   const result: DataHealthStats = {
     summary: {
       activeEmployees: sharedActiveEmployees,
@@ -606,8 +587,6 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
       leaveApprovedRequests: leaveMetrics.approvedRequests,
       leavePendingRequests: leaveMetrics.pendingRequests,
       leaveRejectedRequests: leaveMetrics.rejectedRequests,
-      marketingPharmacyCoverageRate,
-      marketingUnmappedPharmacyTargets,
       nonLoginAggregationNodes,
       structureNodes: sharedWorkforce.totalStructure,
       totalEmployees: sharedWorkforce.totalEmployees,

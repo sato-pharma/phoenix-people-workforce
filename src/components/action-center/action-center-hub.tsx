@@ -15,7 +15,6 @@ import type {
   MarketingDetail,
   OutstationDetail,
   ResignationDetail,
-  WeeklyPlanDetail,
 } from "@/components/action-center/types";
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -84,33 +83,21 @@ const SLA_THRESHOLDS: Record<ActionHubModule, number> = {
   resignation: 5,
   marketing: 3,
   contract_renewal: 7,
-  weekly_plan: 2,
 };
 
 const MODULE_COLORS: Record<ActionHubModule, string> = {
-  leave: "bg-sky-50 text-sky-700 border-sky-200/80",
-  resignation: "bg-rose-50 text-rose-700 border-rose-200/80",
-  excuse: "bg-amber-50 text-amber-800 border-amber-200/80",
-  outstation: "bg-violet-50 text-violet-700 border-violet-200/80",
-  marketing: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
-  contract_renewal: "bg-teal-50 text-teal-700 border-teal-200/80",
-  weekly_plan: "bg-indigo-50 text-indigo-700 border-indigo-200/80",
-};
-
-const MODULE_DOTS: Record<ActionHubModule, string> = {
-  leave: "bg-sky-500",
-  resignation: "bg-rose-500",
-  excuse: "bg-amber-500",
-  outstation: "bg-violet-500",
-  marketing: "bg-emerald-500",
-  contract_renewal: "bg-teal-500",
-  weekly_plan: "bg-indigo-500",
+  leave: "bg-sky-100 text-sky-800 border-sky-300",
+  resignation: "bg-rose-100 text-rose-800 border-rose-300",
+  excuse: "bg-amber-100 text-amber-900 border-amber-300",
+  outstation: "bg-violet-100 text-violet-800 border-violet-300",
+  marketing: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  contract_renewal: "bg-teal-100 text-teal-800 border-teal-300",
 };
 
 const URGENCY_COLORS: Record<string, string> = {
-  high: "bg-rose-50 text-rose-700 border-rose-200/80",
-  normal: "bg-amber-50 text-amber-800 border-amber-200/80",
-  low: "bg-slate-50 text-slate-500 border-slate-200",
+  high: "bg-rose-100 text-rose-800 border-rose-300",
+  normal: "bg-amber-100 text-amber-900 border-amber-300",
+  low: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
 function daysSince(iso: string) {
@@ -127,8 +114,7 @@ function itemIsOverdue(item: ActionHubItem) {
 
 function ModuleBadge({ module }: { module: ActionHubModule }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${MODULE_COLORS[module]}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${MODULE_DOTS[module]}`} />
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${MODULE_COLORS[module]}`}>
       {ACTION_HUB_MODULE_LABELS[module]}
     </span>
   );
@@ -151,15 +137,14 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   const daysLeft = threshold - age;
   if (overdue) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
-        <span className="h-1 w-1 rounded-full bg-rose-500" />
+      <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
         Overdue {age}d
       </span>
     );
   }
   if (daysLeft <= 1) {
     return (
-      <span className="inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+      <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );
@@ -357,144 +342,6 @@ function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }
         </div>
       )}
     </dl>
-  );
-}
-
-const PLAN_ACTIVITY_COLORS: Record<string, string> = {
-  Field: "bg-sky-50 text-sky-800 border-sky-200",
-  "Double Visit": "bg-violet-50 text-violet-800 border-violet-200",
-  Training: "bg-amber-50 text-amber-900 border-amber-200",
-  Meeting: "bg-teal-50 text-teal-800 border-teal-200",
-  Event: "bg-rose-50 text-rose-800 border-rose-200",
-  Travel: "bg-orange-50 text-orange-800 border-orange-200",
-  Office: "bg-slate-50 text-slate-700 border-slate-200",
-  Admin: "bg-slate-50 text-slate-700 border-slate-200",
-  Remote: "bg-indigo-50 text-indigo-800 border-indigo-200",
-  Vacation: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  Other: "bg-slate-50 text-slate-700 border-slate-200",
-};
-const PLAN_COACHING_COLOR = "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200";
-
-function planDayParts(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-  return {
-    weekday: dt.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
-    dayNumber: dt.toLocaleDateString("en", { day: "2-digit", timeZone: "UTC" }),
-    month: dt.toLocaleDateString("en", { month: "short", timeZone: "UTC" }),
-  };
-}
-
-function planDaysInPeriod(startIso: string, endIso: string): string[] {
-  const toUtc = (iso: string) => {
-    const [y, m, d] = iso.split("-").map(Number);
-    return Date.UTC(y, (m || 1) - 1, d || 1);
-  };
-  const out: string[] = [];
-  let cur = toUtc(startIso);
-  const end = toUtc(endIso);
-  for (let guard = 0; cur <= end && guard < 400; guard += 1) {
-    const dt = new Date(cur);
-    out.push(`${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`);
-    cur += 86_400_000;
-  }
-  return out;
-}
-
-function PlanActivityCard({ item }: { item: WeeklyPlanDetail["items"][number] }) {
-  const color = item.isCoaching ? PLAN_COACHING_COLOR : PLAN_ACTIVITY_COLORS[item.activityType] ?? PLAN_ACTIVITY_COLORS.Other;
-  const geo = item.activityType === "Training"
-    ? (item.region ? `Format: ${item.region}` : null)
-    : [item.region, item.area].filter(Boolean).join(" · ") || null;
-  return (
-    <div className={`rounded-md border px-2 py-1.5 ${color}`}>
-      <div className="flex items-start justify-between gap-1.5">
-        <span className="text-[11px] font-bold leading-tight">{item.activityLabel}</span>
-        {item.timeLabel && <span className="shrink-0 text-[10px] font-semibold opacity-70">{item.timeLabel}</span>}
-      </div>
-      {geo && <p className="mt-0.5 text-[10px] font-medium opacity-90">{geo}</p>}
-      {item.repName && <p className="text-[10px] opacity-80">with {item.repName}</p>}
-      {item.objective && <p className="mt-0.5 text-[10px] italic leading-snug opacity-75">{item.objective}</p>}
-    </div>
-  );
-}
-
-function WeeklyPlanDetailView({ detail }: { detail: WeeklyPlanDetail }) {
-  const byDate = new Map<string, WeeklyPlanDetail["items"]>();
-  for (const item of detail.items) {
-    const bucket = byDate.get(item.activityDate);
-    if (bucket) bucket.push(item);
-    else byDate.set(item.activityDate, [item]);
-  }
-
-  // Weekly: show the full period as a true week grid (empty days included).
-  // Monthly: agenda of only the days that actually carry activities.
-  const days = detail.planKind === "weekly"
-    ? planDaysInPeriod(detail.periodStartDate, detail.periodEndDate)
-    : Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
-
-  const start = planDayParts(detail.periodStartDate);
-  const end = planDayParts(detail.periodEndDate);
-  const rangeLabel = `${start.weekday} ${start.month} ${start.dayNumber} – ${end.weekday} ${end.month} ${end.dayNumber}`;
-  const gridClass = detail.planKind === "weekly"
-    ? "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
-    : "grid grid-cols-1 gap-2 sm:grid-cols-2";
-
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-black text-slate-900">
-            {detail.planKind === "weekly" ? "Weekly plan" : "Monthly plan"} · {detail.periodKey}
-          </p>
-          <p className="text-[11px] text-slate-500">
-            {rangeLabel} · {detail.itemCount} activit{detail.itemCount === 1 ? "y" : "ies"} ·{" "}
-            {detail.stage === "manager" ? "Manager review" : "CEO approval"}
-          </p>
-          {(detail.employeeJobTitle || detail.managerName) && (
-            <p className="mt-0.5 text-[11px] text-slate-400">
-              {detail.employeeJobTitle ? `Submitter: ${detail.employeeJobTitle}` : null}
-              {detail.employeeJobTitle && detail.managerName ? " · " : null}
-              {detail.managerName ? `Manager: ${detail.managerName}` : null}
-            </p>
-          )}
-        </div>
-        <a
-          href={detail.reviewHref}
-          className="shrink-0 rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600"
-        >
-          Open in full planner ↗
-        </a>
-      </div>
-
-      {days.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white py-6 text-center text-xs text-slate-400">
-          This plan has no activities yet.
-        </p>
-      ) : (
-        <div className={gridClass}>
-          {days.map((day) => {
-            const parts = planDayParts(day);
-            const dayItems = byDate.get(day) ?? [];
-            return (
-              <div key={day} className="flex flex-col rounded-lg border border-slate-200 bg-white p-2">
-                <div className="mb-1.5 flex items-baseline justify-between border-b border-slate-100 pb-1">
-                  <span className="text-[11px] font-black uppercase tracking-wide text-slate-700">{parts.weekday}</span>
-                  <span className="text-[10px] font-bold text-slate-400">{parts.dayNumber} {parts.month}</span>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  {dayItems.length === 0 ? (
-                    <p className="py-2 text-center text-[10px] text-slate-300">No activity</p>
-                  ) : (
-                    dayItems.map((item, idx) => <PlanActivityCard key={`${day}-${idx}`} item={item} />)
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -899,20 +746,6 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     void callApi(`/api/contracts/${selected.id}/workflow`, { action, decisionReason: comment.trim() || undefined });
   }
 
-  function handleWeeklyPlanAction(action: "approve" | "return" | "reject") {
-    if (!selected || selected.detail.module !== "weekly_plan") return;
-    if ((action === "return" || action === "reject") && !comment.trim()) {
-      setError("A comment is required to return or reject a plan.");
-      return;
-    }
-    const stage = selected.detail.stage;
-    const apiAction =
-      stage === "manager"
-        ? action === "approve" ? "manager_approve" : action === "return" ? "manager_return" : "manager_reject"
-        : action === "approve" ? "ceo_approve" : action === "return" ? "ceo_return" : "ceo_reject";
-    void callApi(`/api/weekly-plans/${selected.id}/decision`, { action: apiAction, comment: comment.trim() || null });
-  }
-
   async function handleBulkApprove() {
     if (bulkSelected.size === 0) return;
     setBulkBusy(true);
@@ -961,7 +794,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     });
   }
 
-  const modules: Array<ActionHubModule | "all"> = ["all", "leave", "resignation", "excuse", "outstation", "marketing", "contract_renewal", "weekly_plan"];
+  const modules: Array<ActionHubModule | "all"> = ["all", "leave", "resignation", "excuse", "outstation", "marketing", "contract_renewal"];
   const isBulkModule = (m: ActionHubModule | "all") => m === "excuse" || m === "outstation" || m === "leave";
 
   const priorLeaveHint = contextData?.recentLeave.length
@@ -990,23 +823,22 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       )}
 
       {allItems.length === 0 ? (
-        <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
-          <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-1 ring-emerald-200/70 shadow-[0_12px_30px_rgba(16,185,129,0.18)]">
-            <span className="absolute inset-0 rounded-full bg-emerald-400/10 blur-xl" aria-hidden />
-            <CheckCircle2 className="h-10 w-10" />
+        <div className={`flex min-h-[420px] flex-col items-center justify-center gap-4 p-12 text-center ${adminPanelClassName}`}>
+          <div className="flex h-16 w-16 items-center justify-center border border-emerald-200 bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-9 w-9" />
           </div>
           <div>
-            <p className="text-xl font-black tracking-tight text-slate-900">All clear</p>
-            <p className="mt-1.5 max-w-xs text-sm leading-6 text-slate-500">No approvals or reviews waiting on you right now. You&apos;re on top of everything.</p>
+            <p className="text-lg font-black text-slate-900">All clear</p>
+            <p className="mt-1 max-w-xs text-sm text-slate-500">No pending approvals or reviews. You&apos;re on top of everything.</p>
           </div>
         </div>
       ) : (
         <div className={`flex min-h-[640px] flex-col overflow-hidden lg:h-[calc(100dvh-16rem)] lg:min-h-[560px] lg:flex-row ${adminPanelClassName}`}>
           {/* Left rail */}
-          <div className="flex w-full flex-col border-b border-[#E5EAF1] lg:w-[21rem] lg:shrink-0 lg:border-b-0 lg:border-r max-h-[45vh] lg:max-h-none">
+          <div className="flex w-full flex-col border-b border-slate-200 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r max-h-[45vh] lg:max-h-none">
             {/* Super-admin view-as switcher */}
             {canViewAs && managers && managers.length > 0 && (
-              <div className="border-b border-[#E5EAF1] bg-slate-50/70 px-4 py-2.5">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
                 {viewAsLoading ? (
                   <p className="text-[11px] text-slate-400">Loading queue…</p>
                 ) : (
@@ -1017,7 +849,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       setViewAsItems(null);
                       setSelectedId(null);
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                    className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 focus:outline-none"
                   >
                     <option value="">My queue</option>
                     {managers.map((m) => (
@@ -1026,36 +858,32 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   </SearchableSelect>
                 )}
                 {viewAsHrId && (
-                  <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-orange-600">
-                    <span className="h-1 w-1 rounded-full bg-orange-500" />
-                    Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue
-                  </p>
+                  <p className="mt-0.5 text-[10px] text-orange-600 font-bold">Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue</p>
                 )}
               </div>
             )}
 
-            {/* Rail header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E5EAF1] bg-gradient-to-b from-white to-slate-50/60 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Queue</span>
-                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-black leading-none text-white">{stats.total}</span>
-              </div>
-              <div className="flex items-center gap-3 text-[11px]">
-                {stats.overdue > 0 && (
-                  <span className="flex items-center gap-1 font-bold text-rose-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{stats.overdue} overdue
-                  </span>
-                )}
-                <span className="text-slate-400">avg <span className="font-bold text-slate-600">{stats.avgAge}d</span></span>
-              </div>
+            {/* Stats bar */}
+            <div className="flex shrink-0 items-center gap-5 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px]">
+              <span className="text-slate-500">
+                <span className="font-black text-slate-800">{stats.total}</span> pending
+              </span>
+              {stats.overdue > 0 && (
+                <span className="flex items-center gap-1 text-slate-500">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                  <span className="font-black text-rose-700">{stats.overdue}</span> overdue
+                </span>
+              )}
+              <span className="text-slate-400">
+                avg <span className="font-black text-slate-700">{stats.avgAge}d</span>
+              </span>
             </div>
 
             {/* Module filter tabs */}
-            <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#E5EAF1] bg-white px-2.5 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
               {modules.map((mod) => {
                 const count = moduleCounts[mod] ?? 0;
                 if (mod !== "all" && count === 0) return null;
-                const active = activeModule === mod;
                 return (
                   <button
                     key={mod}
@@ -1066,15 +894,15 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       const firstInModule = allItems.find((item) => mod === "all" || item.module === mod);
                       if (firstInModule) selectItem(firstInModule);
                     }}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all ${
-                      active
-                        ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    className={`flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-bold transition-all ${
+                      activeModule === mod
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-200 hover:text-slate-800"
                     }`}
                   >
                     {mod === "all" ? "All" : ACTION_HUB_MODULE_LABELS[mod as ActionHubModule]}
-                    <span className={`inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-[10px] font-black leading-none ${
-                      active ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-600"
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+                      activeModule === mod ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
                     }`}>
                       {count}
                     </span>
@@ -1084,7 +912,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             </div>
 
             {/* Quick filter chips */}
-            <div className="flex shrink-0 items-center gap-1.5 border-b border-[#E5EAF1] bg-slate-50/50 px-3 py-2">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-slate-100 bg-white px-3 py-2">
               {(["all", "overdue", "high"] as const).map((f) => {
                 const chipCount = f === "all" ? filteredByModule.length : f === "overdue" ? overdueTotalCount : highPriorityCount;
                 if (f !== "all" && chipCount === 0) return null;
@@ -1092,13 +920,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   <button
                     key={f}
                     onClick={() => setActiveFilter(f)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-colors ${
+                    className={`rounded border px-2.5 py-0.5 text-[11px] font-bold transition-colors ${
                       activeFilter === f
                         ? f === "overdue"
-                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          ? "border-rose-400 bg-rose-100 text-rose-800"
                           : f === "high"
-                            ? "border-orange-200 bg-orange-50 text-orange-700"
-                            : "border-slate-300 bg-slate-900 text-white"
+                            ? "border-orange-400 bg-orange-100 text-orange-800"
+                            : "border-slate-300 bg-slate-100 text-slate-800"
                         : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
                     }`}
                   >
@@ -1113,22 +941,18 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
               {filteredItems.length === 0 ? (
                 <p className="p-6 text-center text-sm text-slate-400">No items match this filter.</p>
               ) : (
-                <ul className="divide-y divide-[#EEF2F7]">
+                <ul className="divide-y divide-slate-100">
                   {filteredItems.map((item) => {
                     const canBulk = isBulkModule(item.module);
                     const isSelected = selectedId === item.id;
                     return (
-                      <li key={item.id} className="group relative">
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          aria-pressed={isSelected}
+                      <li key={item.id} className="group">
+                        <button
                           onClick={() => selectItem(item)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectItem(item); } }}
-                          className={`cursor-pointer px-4 py-3 text-left outline-none transition-colors focus-visible:bg-orange-50/60 ${
+                          className={`w-full px-4 py-3 text-left transition-colors hover:bg-orange-50 ${
                             isSelected
                               ? "border-l-[3px] border-orange-500 bg-orange-50/70 pl-[13px]"
-                              : "border-l-[3px] border-transparent hover:bg-slate-50"
+                              : "border-l-[3px] border-transparent"
                           }`}
                         >
                           <div className="mb-1.5 flex flex-wrap items-center gap-1">
@@ -1170,7 +994,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                           <p className="mt-0.5 text-[11px] text-slate-400">
                             {item.employeeHrId} · {item.statusLabel}
                           </p>
-                        </div>
+                        </button>
                       </li>
                     );
                   })}
@@ -1215,17 +1039,14 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
             {!selected ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-300 ring-1 ring-slate-200">
-                  <Inbox className="h-6 w-6" />
-                </div>
-                <p className="text-sm font-bold text-slate-500">Select an item to review it</p>
-                <p className="text-xs text-slate-400">press <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">j</kbd> / <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">k</kbd> to navigate · <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">?</kbd> for shortcuts</p>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-300 text-2xl">→</div>
+                <p className="text-sm font-semibold text-slate-400">Select an item to review it</p>
+                <p className="text-xs text-slate-300">press j / k to navigate · ? for shortcuts</p>
               </div>
             ) : (
               <div>
-                {/* Detail header — branded dark band */}
-                <div className="relative overflow-hidden border-b border-slate-200 bg-[linear-gradient(135deg,#0a0a0c_0%,#101016_58%,#1b1003_100%)] px-5 py-4 sm:px-7">
-                  <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0" />
+                {/* Detail header — dark band */}
+                <div className="border-b border-slate-200 bg-slate-900 px-5 py-4 sm:px-7">
                   <div className="mb-2 flex flex-wrap items-center gap-1.5">
                     <ModuleBadge module={selected.module} />
                     <UrgencyBadge urgency={selected.urgency} />
@@ -1268,30 +1089,26 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   </div>
 
                   {detailTab === "context" ? (
-                    <div className="mb-6 rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
+                    <div className="mb-6 rounded border border-slate-200 bg-slate-50 p-4">
                       <EmployeeContextPanel data={contextData} loading={contextLoading} />
                     </div>
                   ) : (
                     <>
                       {/* Module-specific detail */}
-                      <div className="mb-6 rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
+                      <div className="mb-6 rounded border border-slate-200 bg-slate-50 p-4">
                         {selected.detail.module === "leave" && <LeaveDetailView detail={selected.detail} />}
                         {selected.detail.module === "resignation" && <ResignationDetailView detail={selected.detail} />}
                         {selected.detail.module === "excuse" && <ExcuseDetailView detail={selected.detail} />}
                         {selected.detail.module === "outstation" && <OutstationDetailView detail={selected.detail} />}
                         {selected.detail.module === "marketing" && <MarketingDetailView detail={selected.detail} />}
                         {selected.detail.module === "contract_renewal" && <ContractRenewalDetailView detail={selected.detail} />}
-                        {selected.detail.module === "weekly_plan" && <WeeklyPlanDetailView detail={selected.detail} />}
                       </div>
 
                       {/* Action zone */}
-                      <div className="rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Decision</p>
-                        </div>
+                      <div className="rounded border border-slate-200 bg-slate-50 p-4">
+                        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Decision</p>
                         {notice ? (
-                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                          <div className="rounded border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
                             {notice}
                           </div>
                         ) : (
@@ -1307,7 +1124,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     e.target.value = "";
                                   }
                                 }}
-                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
+                                className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:border-orange-300 focus:outline-none disabled:opacity-50"
                               >
                                 <option value="">— Select a template reason —</option>
                                 {REJECTION_TEMPLATES[selected.module].map((t) => (
@@ -1325,11 +1142,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               placeholder="Add a comment or rejection reason…"
                               rows={3}
                               disabled={busy}
-                              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
+                              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100 disabled:opacity-50"
                             />
 
                             {error && (
-                              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+                              <p className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
                                 {error}
                               </p>
                             )}
@@ -1383,11 +1200,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "excuse" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleExcuseAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                                     {busy ? "…" : "Approve"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                    className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1396,11 +1213,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "outstation" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleOutstationAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                                     {busy ? "…" : "Approve for Payroll"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleOutstationAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                    className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1411,17 +1228,17 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                 return (
                                   <>
                                     <button disabled={busy} onClick={() => handleMarketingAction("approve")}
-                                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                      className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                                       {busy ? "…" : (labels?.approve ?? "Approve")}
                                     </button>
                                     {labels?.return && (
                                       <button disabled={busy} onClick={() => handleMarketingAction("return")}
-                                        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
+                                        className="rounded bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50">
                                         {busy ? "…" : labels.return}
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleMarketingAction("reject")}
-                                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                      className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
                                       {busy ? "…" : (labels?.reject ?? "Reject")}
                                     </button>
                                   </>
@@ -1434,44 +1251,27 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                   <>
                                     {status === "requested" && (
                                       <button disabled={busy} onClick={() => handleContractRenewalAction("manager_review")}
-                                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50">
+                                        className="rounded bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50">
                                         {busy ? "…" : "Mark Under Review"}
                                       </button>
                                     )}
                                     {status === "manager_review" && (
                                       <button disabled={busy} onClick={() => handleContractRenewalAction("hr_review")}
-                                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50">
+                                        className="rounded bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50">
                                         {busy ? "…" : "Send to HR Review"}
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("renew")}
-                                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                                      className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                                       {busy ? "…" : "Renew Contract"}
                                     </button>
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("not_renew")}
-                                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
+                                      className="rounded bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
                                       {busy ? "…" : "Do Not Renew"}
                                     </button>
                                   </>
                                 );
                               })()}
-
-                              {selected.module === "weekly_plan" && selected.detail.module === "weekly_plan" && (
-                                <>
-                                  <button disabled={busy} onClick={() => handleWeeklyPlanAction("approve")}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
-                                    {busy ? "…" : selected.detail.stage === "manager" ? "Approve → CEO" : "Approve (final)"}
-                                  </button>
-                                  <button disabled={busy} onClick={() => handleWeeklyPlanAction("return")}
-                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
-                                    {busy ? "…" : "Return for edit"}
-                                  </button>
-                                  <button disabled={busy} onClick={() => handleWeeklyPlanAction("reject")}
-                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
-                                    {busy ? "…" : "Reject"}
-                                  </button>
-                                </>
-                              )}
                             </div>
                           </div>
                         )}

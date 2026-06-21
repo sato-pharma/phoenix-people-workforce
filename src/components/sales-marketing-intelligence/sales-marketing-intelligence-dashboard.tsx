@@ -122,29 +122,20 @@ function FilterSelect({
 }
 
 function DashboardFilters({
-  basePath,
-  chrome,
   filters,
   snapshot,
 }: {
-  basePath: string;
-  chrome: "admin" | "portal";
   filters: SalesMarketingDashboardFilters;
   snapshot: SalesMarketingDashboardSnapshot;
 }) {
-  // The portal ROI view (Product / Group Product Managers) is product-and-line centric; the
-  // distributor filter is corporate-only noise there, so it is hidden in portal chrome.
-  const showDistributor = chrome !== "portal";
   return (
     <form
-      action={basePath}
+      action="/admin/sales-marketing-intelligence"
       className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_repeat(2,145px)_120px_auto_auto]"
     >
       <FilterSelect label="Line" name="line" options={snapshot.filters.lines} value={selectedValue(filters.lines)} />
       <FilterSelect label="Region" name="region" options={snapshot.filters.regions} value={selectedValue(filters.regions)} />
-      {showDistributor ? (
-        <FilterSelect label="Distributor" name="distributor" options={snapshot.filters.distributors} value={selectedValue(filters.distributors)} />
-      ) : null}
+      <FilterSelect label="Distributor" name="distributor" options={snapshot.filters.distributors} value={selectedValue(filters.distributors)} />
       <FilterSelect label="Product" name="product" options={snapshot.filters.products} value={selectedValue(filters.products)} />
       <FilterSelect label="ROI status" name="roiStatus" options={snapshot.filters.roiStatuses} value={selectedValue(filters.roiStatuses)} />
       <FilterSelect label="Attribution" name="attribution" options={snapshot.filters.attributionQualities} value={selectedValue(filters.attributionQualities)} />
@@ -199,7 +190,7 @@ function DashboardFilters({
       <div className="flex items-end">
         <Link
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-          href={basePath}
+          href="/admin/sales-marketing-intelligence"
         >
           <RefreshCcw className="h-4 w-4" />
           Reset
@@ -529,20 +520,10 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
   );
 }
 
-const SMI_ADMIN_BASE_PATH = "/admin/sales-marketing-intelligence";
-
 export function SalesMarketingIntelligenceDashboard({
-  basePath = SMI_ADMIN_BASE_PATH,
-  chrome = "admin",
   filters,
   snapshot,
 }: {
-  /** Where the filter form/reset post to. Defaults to the admin route; the employee
-   *  portal passes its own route so filters stay inside the portal shell. */
-  basePath?: string;
-  /** "admin" keeps the dark AdminPageHero + page padding. "portal" drops both so the
-   *  dashboard sits cleanly inside EmployeePortalPageShell's own hero. */
-  chrome?: "admin" | "portal";
   filters: SalesMarketingDashboardFilters;
   snapshot: SalesMarketingDashboardSnapshot;
 }) {
@@ -550,24 +531,22 @@ export function SalesMarketingIntelligenceDashboard({
   const attribution = snapshot.attributionHealth;
 
   return (
-    <div className={chrome === "portal" ? "space-y-6" : "space-y-6 p-4 sm:p-6 lg:p-8"}>
-      {chrome === "admin" ? (
-        <AdminPageHero
-          badges={(
-            <>
-              <AdminInsightChip surface="dark">All paid approved history</AdminInsightChip>
-              <AdminInsightChip surface="dark" tone="emerald">Raw rows returned: {snapshot.limits.rawRowsReturned}</AdminInsightChip>
-              <AdminInsightChip surface="dark" tone="slate">Tables capped at {snapshot.limits.tableLimit}</AdminInsightChip>
-            </>
-          )}
-          description="Corporate decision view for Marketing ROI, request spend, customer and pharmacy impact, and attribution trust. Source of Sales powers attribution only."
-          eyebrow="Marketing ROI"
-          icon={<Target className="h-4 w-4" />}
-          title="Marketing ROI & Customer Intelligence"
-        />
-      ) : null}
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <AdminPageHero
+        badges={(
+          <>
+            <AdminInsightChip surface="dark">All paid approved history</AdminInsightChip>
+            <AdminInsightChip surface="dark" tone="emerald">Raw rows returned: {snapshot.limits.rawRowsReturned}</AdminInsightChip>
+            <AdminInsightChip surface="dark" tone="slate">Tables capped at {snapshot.limits.tableLimit}</AdminInsightChip>
+          </>
+        )}
+        description="Corporate decision view for Marketing ROI, request spend, customer and pharmacy impact, and attribution trust. Source of Sales powers attribution only."
+        eyebrow="Marketing ROI"
+        icon={<Target className="h-4 w-4" />}
+        title="Marketing ROI & Customer Intelligence"
+      />
 
-      <DashboardFilters basePath={basePath} chrome={chrome} filters={filters} snapshot={snapshot} />
+      <DashboardFilters filters={filters} snapshot={snapshot} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <AdminStatCard description="Total cost of approved paid marketing requests in scope." icon={<BadgeDollarSign className="h-5 w-5" />} label="Marketing Spend" size="compact" tone="blue" value={money(summary.totalMarketingCost)} />

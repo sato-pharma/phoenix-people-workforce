@@ -153,8 +153,7 @@ async function verifyRoleMatrix() {
   await expectAccess(ceo, "payroll", "read", true);
   await expectAccess(ceo, "employees", "read", false);
   await expectAccess(ceo, "expenses", "approve", false);
-  await expectAccess(ceo, "contracts", "approve", false);
-  await expectAccess(ceo, "contracts", "read", true);
+  await expectAccess(ceo, "contracts", "approve", true);
   await expectAccess(ceo, "leave", "approve", true);
   await expectAccess(ceo, "support_requests", "create", true);
   await expectAccess(ceo, "support_requests", "read", false);

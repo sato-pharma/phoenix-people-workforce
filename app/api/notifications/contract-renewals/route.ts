@@ -119,13 +119,6 @@ export async function runContractRenewalNotifications(request: Request) {
         notificationType: "contract_renewal",
         subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
         summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
-        // The admin-edited contract_renewal template shows Area/Line/Position; this reminder
-        // only sent those values in `metadata`, so the cells rendered blank. Supply them.
-        templateContext: {
-          area: employee.areaName ?? "—",
-          jobTitle: employee.jobTitle ?? "—",
-          line: employee.lineName ?? row.line ?? "—",
-        },
         title: "Contract Renewal Reminder - Pending Manager Recommendation",
         tone: row.daysUntil <= 7 ? "danger" : "warning",
       },
