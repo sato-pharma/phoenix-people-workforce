@@ -41,6 +41,7 @@ const eslintConfig = defineConfig([
     // `.codex-worktrees` holds full checkouts of other branches and must never be
     // linted by this project's CI (it produces thousands of unrelated findings).
     ".codex-worktrees/**",
+    ".playwright-cli/**",
     ".vercel/**",
     // Generated output files — not part of the app source.
     "coverage/**",
