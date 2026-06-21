@@ -3,14 +3,14 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
   BarChart3,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
-  HeartPulse,
   Megaphone,
+  ShieldCheck,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Users,
@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
-import { CeoHeroClock } from "@/components/admin/ceo-hero-clock";
 import { CeoHiddenNote } from "@/components/admin/ceo-hidden-note";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
@@ -27,7 +26,6 @@ import type {
   CeoCommandCenterData,
   CeoTopMover,
 } from "@/lib/ceo/command-center";
-import type { EgxQuote } from "@/lib/market/egx";
 
 export type CeoWelcomeProfile = {
   fullName: string;
@@ -62,34 +60,6 @@ function firstNameFrom(full: string) {
     return `${parts[0]} ${parts[1]}`;
   }
   return parts[0];
-}
-
-// Time-aware greeting in Cairo local time — warm but dignified. Returns the lead line
-// and a quiet sub-line. For the CEO it is personal; for a reviewer it stays neutral.
-function warmGreeting(fullName: string, isCeo: boolean): { lead: string; sub: string } {
-  const name = firstNameFrom(fullName);
-  if (!isCeo) {
-    return { lead: `${name}, here's the company.`, sub: "Company-wide health, decisions, and full sales performance." };
-  }
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      hour12: false,
-      timeZone: "Africa/Cairo",
-    }).format(new Date()),
-  );
-  const word = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-  const part = `Good ${word}`;
-  const tail =
-    hour < 12
-      ? "your company is awake and working for you."
-      : hour < 17
-        ? "here is where the day stands."
-        : "here is how today went.";
-  return {
-    lead: `${part}, ${name} — ${tail}`,
-    sub: `Welcome back! Everything is arranged for you this ${word}.`,
-  };
 }
 
 // ── Attention tone mapping ────────────────────────────────────────────────────
@@ -472,158 +442,117 @@ export function CeoCommandCenter({
   welcome,
   access,
   isCeo = false,
-  market = null,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
   isCeo?: boolean;
-  market?: EgxQuote | null;
 }) {
   const { health, headcount, payroll, attention, approvals, sos, trends } = data;
-  const greeting = warmGreeting(welcome.fullName, isCeo);
+  const initials = welcome.fullName
+    .split(/\s+/)
+    .filter((p) => /^[A-Za-z]/.test(p))
+    .slice(0, 2)
+    .map((p) => p[0].toUpperCase())
+    .join("");
+  const profileImage = welcome.imageUrl ?? null;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(data.generatedAt));
 
   const totalApprovals = approvals.leavePending + approvals.plansPending;
-  const totalAttention = attention.length + (totalApprovals > 0 ? 1 : 0);
   const allClear = attention.length === 0 && totalApprovals === 0;
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero (executive keynote: identity left · cutout bleeds right · KPI ribbon) ── */}
+      {/* ── Hero — reuses the Admin identity card (profile + Phoenix Verified) ─────── */}
       <AdminHeroFrame>
         <div>
-          {/* Top band — decorative rings + watermark + the cutout, with identity over it */}
-          <div className="relative min-h-[300px] overflow-hidden lg:min-h-[348px]">
-            {/* ambient warm glow */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-0 hidden w-[64%] bg-[radial-gradient(72%_78%_at_70%_46%,rgba(249,115,22,0.22),transparent_72%)] lg:block"
-            />
-            {/* concentric rings */}
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 720 720"
-              className="pointer-events-none absolute right-[-8%] top-1/2 hidden h-[720px] w-[720px] -translate-y-1/2 lg:block"
-            >
-              <g fill="none" stroke="#F97316">
-                <circle cx="360" cy="360" r="130" strokeOpacity="0.16" />
-                <circle cx="360" cy="360" r="196" strokeOpacity="0.12" />
-                <circle cx="360" cy="360" r="262" strokeOpacity="0.09" />
-                <circle cx="360" cy="360" r="326" strokeOpacity="0.055" />
-                <circle cx="360" cy="360" r="358" strokeOpacity="0.035" />
-              </g>
-            </svg>
-            {/* faint phoenix watermark */}
-            <Image
-              src="/brand/phoenix-bird-icon.png"
-              alt=""
-              aria-hidden="true"
-              width={520}
-              height={520}
-              className="pointer-events-none absolute right-[15%] top-1/2 hidden w-[420px] -translate-y-1/2 opacity-[0.05] lg:block"
-            />
-            {/* desktop cutout — bleeds to the right/bottom edge, no frame */}
-            {welcome.imageUrl ? (
-              <div className="absolute inset-y-0 right-0 hidden w-[48%] xl:w-[44%] lg:block">
-                <Image
-                  alt={welcome.fullName}
-                  src={welcome.imageUrl}
-                  fill
-                  priority
-                  sizes="48vw"
-                  className="object-contain object-[right_bottom] drop-shadow-[0_30px_55px_rgba(0,0,0,0.5)]"
-                />
-              </div>
-            ) : null}
-
-            {/* Identity content */}
-            <div className="relative z-10 max-w-[620px] px-5 pb-6 pt-6 sm:px-6 lg:px-8 lg:pb-8 lg:pt-9">
-              <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
-                <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+          <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
+                <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
                 CEO Command Center
               </div>
-              <div className="mt-4">
-                <div className="flex items-start gap-2.5">
-                  <h1 className="text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl lg:text-[44px] lg:leading-[1.04]">
-                    {greeting.lead}
-                  </h1>
-                  {isCeo ? <span className="mt-1.5 shrink-0"><CeoHiddenNote /></span> : null}
+              <div className="mt-4 flex items-start gap-2.5">
+                <h1 className="max-w-3xl text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
+                  Hello, {firstNameFrom(welcome.fullName)} <span aria-hidden="true">👋🏻</span>
+                </h1>
+                {isCeo ? <span className="mt-1.5 shrink-0"><CeoHiddenNote /></span> : null}
+              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                Your full company — people, payroll, sales, expenses, and risk — in one executive surface,
+                confidential products included. Everything is arranged the way you like to see it.
+              </p>
+
+              <div className="mt-5 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
+                  <p className="mt-1 truncate text-sm font-black text-white">{welcome.hrId ?? "—"}</p>
                 </div>
-                <p className="mt-2 text-[11px] font-black uppercase tracking-[0.2em] text-orange-300/85">
-                  {welcome.fullName} · {welcome.roleLabel}
-                </p>
-                <p className="mt-2.5 max-w-md text-sm leading-6 text-slate-400">{greeting.sub}</p>
+                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Role</p>
+                  <p className="mt-1 truncate text-sm font-black text-white">{welcome.roleLabel}</p>
+                </div>
+                <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Coverage</p>
+                  <p className="mt-1 truncate text-sm font-black text-white">
+                    {n(headcount.uniqueLines)} lines · {n(headcount.uniqueAreas)} areas
+                  </p>
+                </div>
               </div>
 
-              {/* mobile cutout */}
-              {welcome.imageUrl ? (
-                <div className="relative mt-5 flex h-[240px] items-end justify-center lg:hidden">
-                  <Image
-                    alt={welcome.fullName}
-                    src={welcome.imageUrl}
-                    fill
-                    priority
-                    sizes="80vw"
-                    className="object-contain object-bottom"
-                  />
-                </div>
-              ) : null}
-
-              {/* pill bar: date · time · EGX 30 · attention */}
-              <div className="mt-5 flex flex-wrap items-center gap-3 text-[11px]">
-                <div className="inline-flex items-stretch border border-white/12 bg-white/[0.04]">
-                  <CeoHeroClock />
-                  {market ? (
-                    <span className="flex items-center gap-2 border-l border-white/12 px-3.5 py-2.5">
-                      <span className="text-[10px] font-black tracking-[0.12em] text-slate-400">EGX&nbsp;30</span>
-                      <span className="font-bold tabular-nums text-white">
-                        {market.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <span
-                        className={`inline-flex items-center gap-0.5 font-bold ${
-                          market.changePct >= 0 ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {market.changePct >= 0 ? (
-                          <TrendingUp aria-hidden="true" className="h-3 w-3" />
-                        ) : (
-                          <TrendingDown aria-hidden="true" className="h-3 w-3" />
-                        )}
-                        {pct(Math.abs(market.changePct), 2)}
-                      </span>
-                    </span>
-                  ) : null}
-                </div>
-                {totalAttention > 0 ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {[
+                  { href: "/employees", icon: Users, label: "Employees" },
+                  { href: "/payroll", icon: Wallet, label: "Payroll" },
+                  { href: "/sales", icon: TrendingUp, label: "Sales" },
+                  { href: "/coaching/analytics", icon: Activity, label: "Coaching" },
+                  { href: "/admin/action-center", icon: ClipboardCheck, label: "Action Center" },
+                  { href: "/admin/data-health", icon: ShieldCheck, label: "Data Health" },
+                ].map(({ href, icon: Icon, label }) => (
                   <Link
-                    href="/admin/action-center"
-                    className="inline-flex items-center gap-2 border border-rose-400/40 bg-rose-500/12 px-3.5 py-2.5 font-semibold text-rose-100 transition-colors hover:bg-rose-500/20"
+                    key={href}
+                    href={href}
+                    className="inline-flex items-center gap-2 border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-bold text-white transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.18]"
                   >
-                    <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
-                    {totalAttention} item{totalAttention !== 1 ? "s" : ""} need your attention
+                    <Icon aria-hidden="true" className="h-3.5 w-3.5 text-orange-300" />
+                    {label}
                   </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Identity card — same as the Admin account */}
+            <div className="group relative mx-auto flex h-[260px] w-full max-w-[260px] items-center justify-center border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-amber-500/20 p-2 shadow-[0_24px_54px_rgba(0,0,0,0.24)] sm:h-[310px] sm:max-w-[300px] lg:mx-0 lg:h-[330px]">
+              <div className="absolute -inset-1 bg-gradient-to-br from-orange-300/35 via-white/0 to-amber-300/30 opacity-80 blur-sm transition-opacity duration-300 group-hover:opacity-100" />
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-white/95 shadow-inner">
+                {profileImage ? (
+                  <Image
+                    alt={`${welcome.fullName} profile photo`}
+                    className="h-full w-full object-cover object-[center_18%] transition-transform duration-500 group-hover:scale-105"
+                    height={330}
+                    priority
+                    src={profileImage}
+                    unoptimized={profileImage.startsWith("/api/")}
+                    width={300}
+                  />
                 ) : (
-                  <span className="inline-flex items-center gap-2 border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-2.5 font-semibold text-emerald-200">
-                    <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
-                    All clear
-                  </span>
+                  <div className="flex h-full w-full items-center justify-center bg-orange-500/10 text-orange-500 transition-transform duration-500 group-hover:scale-105">
+                    <span className="text-[50px] font-black tracking-normal">{initials || "CEO"}</span>
+                  </div>
                 )}
-                {data.dataUnavailable.length > 0 ? (
-                  <span className="inline-flex items-center gap-2 border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 font-semibold text-amber-100">
-                    <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
-                    {data.dataUnavailable.length} source{data.dataUnavailable.length !== 1 ? "s" : ""} unavailable
-                  </span>
-                ) : null}
+              </div>
+              <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 border border-white/70 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Phoenix Verified
               </div>
             </div>
           </div>
 
-          {/* KPI ribbon — full-width executive readout */}
+          {/* KPI ribbon — executive readout */}
           <div className="relative z-10 grid grid-cols-2 border-t border-white/10 bg-black/40 sm:grid-cols-4">
             <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4 sm:border-b-0 sm:border-r">
               <HealthGauge score={health.score} size={72} />
