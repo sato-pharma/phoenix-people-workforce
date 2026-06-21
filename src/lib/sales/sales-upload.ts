@@ -1,12 +1,20 @@
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
 import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
+import {
+  createSourceOfSalesUploadFromBuffer,
+  isCodedSystemChannel,
+  type DistributorSalesValidationResult,
+  type ParsedDistributorRow,
+} from "@/lib/sales/monthly-distributor-import";
 import { explainHeaderMismatch, type HeaderMismatchExplanation } from "@/lib/sales/normalizer/ai-explain";
+import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
+import { commitOfficeAllocation, previewOfficeAllocation } from "@/lib/sales/office-upload";
 import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
-import type { NormalizeResult } from "@/lib/sales/normalizer/types";
+import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
-import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationReport } from "@/lib/sales/upload-validation";
+import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationFinding, type ValidationReport, type ValidationSeverity } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── E3: the single raw-only upload pipeline ────────────────────────────────────────────────────
@@ -191,6 +199,16 @@ export function headerErrorMessage(distributorName: string, missingGroups: { lab
 // "Analyze" step and the Diagnostics Center. The optional period mirrors what the user will commit
 // with, so the analyze report matches the commit gate exactly.
 export async function analyzeMonthlyUpload(distributorCode: string, file: File, periodOverride = "", excludeProductCodes: readonly string[] = []): Promise<AnalyzeResult> {
+  // Office channel: pivot format (product name + total units, no geography). Requires a period upfront
+  // for the two-step brick allocation. Route through the Office-specific path (see end of file).
+  if (normalizeCodeKey(distributorCode) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) {
+    return analyzeOfficeChannel(distributorCode, file, String(periodOverride ?? "").trim(), excludeProductCodes);
+  }
+  // Coded system channels (Direct) arrive already-coded — they can't go through the raw recognizer
+  // (which rejects coded sheets). Route them through the coded importer (see end of file).
+  if (isCodedSystemChannel(distributorCode)) {
+    return analyzeCodedSystemChannel(distributorCode, file, String(periodOverride ?? "").trim(), excludeProductCodes);
+  }
   const rec = await recognizeDistributorWorkbook(distributorCode, file);
   if (rec.status === "coded_sheet") return { status: "coded_sheet", distributorName: rec.distributorName };
   if (rec.status === "header_error") {
@@ -253,6 +271,15 @@ export async function commitMonthlyUpload(input: {
   periodOverride?: string;
   uploadedBy: string;
 }): Promise<CommitResult> {
+  // Office channel: pivot allocation — always needs a period.
+  if (normalizeCodeKey(input.distributorCode) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) {
+    return commitOfficeChannel(input.distributorCode, input.file, String(input.periodOverride ?? "").trim(), input.uploadedBy);
+  }
+  // Coded system channels (Direct): persist via the coded importer — byte-identical to the legacy
+  // /sales/import path (template_key "direct_orders", is_direct=true). See end of file.
+  if (isCodedSystemChannel(input.distributorCode)) {
+    return commitCodedSystemChannel(input.distributorCode, input.file, String(input.periodOverride ?? "").trim(), input.uploadedBy);
+  }
   const rec = await recognizeDistributorWorkbook(input.distributorCode, input.file);
   if (rec.status === "coded_sheet") throw new SalesWorkflowError("coded_sheet", "This sheet is already coded — upload the raw distributor export instead.", 400);
   if (rec.status === "header_error") {
@@ -323,4 +350,255 @@ export async function commitMonthlyUpload(input: {
     throw error;
   }
   return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, validation, ...persisted };
+}
+
+// ── Coded system channels (Direct) on the Sales Upload hub ──────────────────────────────────────
+// Direct is uploaded ALREADY coded (region-only, value-from-sheet), so it can't run through the raw
+// recognizer (which rejects coded sheets). These adapters route it through the proven coded importer
+// (createSourceOfSalesUploadFromBuffer) and map the result into the SAME AnalyzeResult / CommitResult
+// shapes the hub UI consumes. The DB write is byte-identical to the legacy /sales/import path
+// (template_key "direct_orders", is_direct=true) — only the entry page changes. The breakdown tables
+// run through buildPreviewBreakdowns with the same excludeProductCodes the raw path uses, so the
+// confidential-products rule (LA003/LA004/SS001) is honored for non-CEO viewers here too.
+
+type CodedParseResult = DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] };
+
+// Map a coded parsed row onto the recognizer's CodedRow so the shared breakdown builder runs unchanged.
+function codedParsedRowToCodedRow(p: ParsedDistributorRow): CodedRow {
+  return {
+    areaCode: p.areaCode,
+    areaName: p.areaName,
+    brickId: p.brickId,
+    brickName: p.brickName,
+    bonusQty: p.bonusQty,
+    clientCode: p.clientCode,
+    clientName: p.clientName,
+    clientAddress: p.clientAddress,
+    discount: p.discount,
+    distributorCode: p.distributorCode,
+    invoiceDate: p.invoicePeriod ?? p.invoiceDate ?? "",
+    isDirect: p.isDirect,
+    officialLine: p.officialLine,
+    productCode: p.productCode,
+    productName: p.productName,
+    qty: p.qty,
+    rawRowNumber: p.rowNumber,
+    regionCode: p.regionCode,
+    regionName: p.regionName,
+    value: p.value,
+  };
+}
+
+function codedReconciliation(r: DistributorSalesValidationResult): ReconciliationReceipt {
+  const rowsIgnored = Math.max(0, r.rowCount - r.importableRows - r.failedRows);
+  return {
+    rowsRead: r.rowCount,
+    rowsCoded: r.importableRows,
+    rowsIgnored,
+    rowsBlankCustomer: 0,
+    rowsBlocked: r.failedRows,
+    totalQty: Number((r.totals.totalQty ?? 0).toFixed(6)),
+    totalValue: Number((r.totals.totalValue ?? 0).toFixed(6)),
+  };
+}
+
+// Map the coded importer's per-row issues + batch reasons into the hub's ValidationReport. `ok` mirrors
+// the coded engine's authoritative gate exactly (status "validated" ⇔ no hard block), so analyze and
+// commit never disagree. Per-row issues are grouped by (severity, field, message) into one finding.
+function codedValidationReport(r: DistributorSalesValidationResult): ValidationReport {
+  const groups = new Map<string, ValidationFinding>();
+  for (const issue of r.issues) {
+    const severity: ValidationSeverity = issue.severity === "failure" ? "error" : "warning";
+    const key = `${severity}|${issue.field}|${issue.message}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (existing.sampleRows.length < 12 && Number.isFinite(issue.rowNumber)) existing.sampleRows.push(issue.rowNumber);
+    } else {
+      groups.set(key, {
+        code: key,
+        severity,
+        title: issue.field,
+        detail: issue.message,
+        count: 1,
+        sampleRows: Number.isFinite(issue.rowNumber) ? [issue.rowNumber] : [],
+      });
+    }
+  }
+  const findings: ValidationFinding[] = [...groups.values()];
+  for (const reason of r.blockingReasons ?? []) {
+    findings.push({ code: `block|${reason}`, severity: "error", title: "Upload blocked", detail: reason, count: 1, sampleRows: [] });
+  }
+  for (const note of r.advisories ?? []) {
+    findings.push({ code: `advisory|${note}`, severity: "info", title: "Advisory", detail: note, count: 1, sampleRows: [] });
+  }
+  return {
+    ok: r.status === "validated",
+    errorCount: findings.filter((f) => f.severity === "error").length,
+    warningCount: findings.filter((f) => f.severity === "warning").length,
+    infoCount: findings.filter((f) => f.severity === "info").length,
+    findings,
+  };
+}
+
+// Minimal NormalizePreview for a coded channel. Direct is fully ID-coded, so there are never unmapped
+// items (the unknown* lists stay empty); the reconciliation receipt + breakdowns carry the real numbers.
+function codedPreview(distributorCode: string, r: DistributorSalesValidationResult): NormalizePreview {
+  const ignored = Math.max(0, r.rowCount - r.importableRows - r.failedRows);
+  return {
+    distributorCode,
+    distributorName: r.distributor.name,
+    period: r.period,
+    periods: r.period ? [{ period: r.period, rows: r.importableRows }] : [],
+    sampleCoded: [],
+    summary: {
+      brickResolved: r.importableRows,
+      blankCustomerSkipped: 0,
+      fullyCoded: r.importableRows,
+      ignored,
+      productResolved: r.importableRows,
+      totalRows: r.rowCount,
+      scannedDataRows: r.rowCount,
+    },
+    unknownCustomers: [],
+    unknownProducts: [],
+    unknownTerritories: [],
+    blankCustomerSkipped: 0,
+    blankCustomerErrors: 0,
+    darkCount: 0,
+  };
+}
+
+async function analyzeCodedSystemChannel(distributorCode: string, file: File, periodOverride: string, excludeProductCodes: readonly string[]): Promise<AnalyzeResult> {
+  const parsed = (await createSourceOfSalesUploadFromBuffer({
+    buffer: await file.arrayBuffer(),
+    distributorCode,
+    fileName: file.name,
+    uploadedBy: "preview",
+    periodOverride,
+    dryRun: true,
+  })) as CodedParseResult;
+  const codedRows = parsed.parsedRows
+    .filter((row) => row.validationState !== "failed")
+    .map(codedParsedRowToCodedRow);
+  return {
+    status: "ok",
+    preview: codedPreview(distributorCode, parsed),
+    reconciliation: codedReconciliation(parsed),
+    breakdowns: buildPreviewBreakdowns(codedRows, excludeProductCodes),
+    period: parsed.period,
+    needsPeriod: !parsed.period,
+    engineVersion: RECOGNITION_ENGINE_VERSION,
+    validation: codedValidationReport(parsed),
+  };
+}
+
+async function commitCodedSystemChannel(distributorCode: string, file: File, periodOverride: string, uploadedBy: string): Promise<CommitResult> {
+  // persistOnlyIfValidated: a blocked result writes NOTHING (fail-closed). A duplicate validated sheet
+  // throws SalesWorkflowError(409) from the coded persist, which the commit route surfaces as today.
+  const result = (await createSourceOfSalesUploadFromBuffer({
+    buffer: await file.arrayBuffer(),
+    distributorCode,
+    fileName: file.name,
+    uploadedBy,
+    periodOverride,
+    persistOnlyIfValidated: true,
+  })) as DistributorSalesValidationResult & { batchId: string | null };
+  const reconciliation = codedReconciliation(result);
+  if (result.status === "validated" && result.batchId) {
+    return {
+      status: "imported",
+      batchId: result.batchId,
+      period: result.period,
+      importedRows: result.importableRows,
+      reconciliation,
+      engineVersion: RECOGNITION_ENGINE_VERSION,
+      validation: codedValidationReport(result),
+    };
+  }
+  return {
+    status: "blocked_validation",
+    reconciliation,
+    preview: codedPreview(distributorCode, result),
+    validation: codedValidationReport(result),
+  };
+}
+
+// ── Office allocation channel on the Sales Upload hub ───────────────────────────────────────────
+// Office is a pivot file (product name + total units, no geography). It CANNOT go through the raw
+// recognizer (no normalizer profile) and is NOT a coded sheet. Instead route through
+// previewOfficeAllocation / commitOfficeAllocation which do the two-step brick allocation.
+// Period is mandatory upfront (the allocation uses that period's sales data as its distribution base).
+
+function officeBreakdowns(result: DistributorSalesValidationResult, excludeProductCodes: readonly string[]): PreviewBreakdowns {
+  const excluded = new Set(excludeProductCodes.map((c) => normalizeCodeKey(c)));
+  const byProduct = result.byProduct
+    .filter((p) => !excluded.has(normalizeCodeKey(p.productCode)))
+    .map((p) => ({ code: p.productCode, label: p.productName, parent: p.officialLine || null, rowCount: p.rowCount, totalQty: p.totalQty, totalBonusQty: p.totalBonusQty, totalValue: p.totalValue }));
+  const byRegion = result.byRegion.map((r) => ({ code: r.regionCode, label: r.regionName, parent: null, rowCount: r.rowCount, totalQty: r.totalQty, totalBonusQty: r.totalBonusQty, totalValue: r.totalValue }));
+  const byBrick = result.byBrick.map((b) => ({ code: b.brickId, label: b.brickName, parent: b.areaCode, rowCount: b.rowCount, totalQty: b.totalQty, totalBonusQty: b.totalBonusQty, totalValue: b.totalValue }));
+  const byLine = result.byLine.map((l) => ({ code: l.line, label: l.line, parent: null, rowCount: l.rowCount, totalQty: l.totalQty, totalBonusQty: l.totalBonusQty, totalValue: l.totalValue }));
+  return { byProduct, byRegion, byBrick, byLine };
+}
+
+function emptyOfficePreview(distributorCode: string): NormalizePreview {
+  return {
+    distributorCode,
+    distributorName: "Office",
+    period: null,
+    periods: [],
+    sampleCoded: [],
+    summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0, scannedDataRows: 0 },
+    unknownCustomers: [],
+    unknownProducts: [],
+    unknownTerritories: [],
+    blankCustomerSkipped: 0,
+    blankCustomerErrors: 0,
+    darkCount: 0,
+  };
+}
+
+async function analyzeOfficeChannel(distributorCode: string, file: File, periodOverride: string, excludeProductCodes: readonly string[]): Promise<AnalyzeResult> {
+  if (!periodOverride) {
+    return {
+      status: "ok",
+      preview: emptyOfficePreview(distributorCode),
+      reconciliation: { rowsRead: 0, rowsCoded: 0, rowsIgnored: 0, rowsBlankCustomer: 0, rowsBlocked: 0, totalQty: 0, totalValue: 0 },
+      breakdowns: { byProduct: [], byRegion: [], byBrick: [], byLine: [] },
+      period: null,
+      needsPeriod: true,
+      engineVersion: RECOGNITION_ENGINE_VERSION,
+      validation: { ok: true, errorCount: 0, warningCount: 0, infoCount: 0, findings: [] },
+    };
+  }
+  const result = await previewOfficeAllocation({ buffer: await file.arrayBuffer(), fileName: file.name, period: periodOverride });
+  return {
+    status: "ok",
+    preview: codedPreview(distributorCode, result),
+    reconciliation: codedReconciliation(result),
+    breakdowns: officeBreakdowns(result, excludeProductCodes),
+    period: result.period,
+    needsPeriod: false,
+    engineVersion: RECOGNITION_ENGINE_VERSION,
+    validation: codedValidationReport(result),
+  };
+}
+
+async function commitOfficeChannel(distributorCode: string, file: File, periodOverride: string, uploadedBy: string): Promise<CommitResult> {
+  if (!periodOverride) throw new SalesWorkflowError("missing_period", "Office allocation requires a period — pick the month before importing.", 400);
+  const result = await commitOfficeAllocation({ buffer: await file.arrayBuffer(), fileName: file.name, period: periodOverride, uploadedBy });
+  const reconciliation = codedReconciliation(result);
+  if (result.status !== "validated") {
+    return { status: "blocked_validation", reconciliation, preview: codedPreview(distributorCode, result), validation: codedValidationReport(result) };
+  }
+  if (!result.batchId) throw new SalesWorkflowError("persist_failed", "Office allocation did not return a batch ID.", 500);
+  return {
+    status: "imported",
+    batchId: result.batchId,
+    period: result.period,
+    importedRows: result.importableRows,
+    reconciliation,
+    engineVersion: RECOGNITION_ENGINE_VERSION,
+    validation: codedValidationReport(result),
+  };
 }

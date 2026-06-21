@@ -43,6 +43,11 @@ const stepCard = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
 const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
 const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const UPLOAD_YEARS = [2024, 2025, 2026, 2027, 2028];
+// Reserved sentinel already handled server-side: rows whose product alias resolves to this are
+// dropped from coding (ignoredRows) rather than surfaced as unmapped exceptions.
+const IGNORE_PRODUCT_CODE = "IGNORE";
 
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
@@ -249,24 +254,47 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
   }
   const [selected, setSelected] = useState<Record<string, string>>(seedSelected);
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>(seedConfirmed);
+  const [excluded, setExcluded] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   if (groups.length === 0) return null;
 
-  const ready = groups.flatMap((g) => g.items
-    .filter((u) => confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
+  const readyMapped = groups.flatMap((g) => g.items
+    .filter((u) => !excluded[mapKey(g.type, u.raw)] && confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
     .map((u) => ({ type: g.type, raw: u.raw, code: selected[mapKey(g.type, u.raw)].trim() })));
+  const readyExcluded = groups
+    .filter((g) => g.type === "product")
+    .flatMap((g) => g.items
+      .filter((u) => excluded[mapKey(g.type, u.raw)])
+      .map((u) => ({ type: g.type as MapType, raw: u.raw, code: IGNORE_PRODUCT_CODE })));
+  const ready = [...readyMapped, ...readyExcluded];
 
   function setCode(type: MapType, raw: string, code: string) {
     const k = mapKey(type, raw);
     setSelected((p) => ({ ...p, [k]: code }));
     setConfirmed((p) => ({ ...p, [k]: code.trim().length > 0 })); // picking a value confirms; clearing un-confirms
+    setExcluded((p) => ({ ...p, [k]: false })); // un-exclude if user starts mapping
   }
   function toggle(type: MapType, raw: string, on: boolean) {
     setConfirmed((p) => ({ ...p, [mapKey(type, raw)]: on }));
   }
+  function exclude(type: MapType, raw: string) {
+    const k = mapKey(type, raw);
+    setExcluded((p) => ({ ...p, [k]: true }));
+    setConfirmed((p) => ({ ...p, [k]: false }));
+  }
+  function unexclude(type: MapType, raw: string) {
+    setExcluded((p) => ({ ...p, [mapKey(type, raw)]: false }));
+  }
+  const mapCount = readyMapped.length;
+  const exclCount = readyExcluded.length;
+  const saveLabel = mapCount > 0 && exclCount > 0
+    ? `Map ${mapCount}, exclude ${exclCount}`
+    : mapCount > 0
+      ? `Save ${mapCount} mapping${mapCount === 1 ? "" : "s"}`
+      : `Exclude ${exclCount}`;
 
   async function save() {
     if (ready.length === 0) return;
@@ -301,7 +329,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
             type="button"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-            {busy ? "Saving…" : `Save ${ready.length} mapping${ready.length === 1 ? "" : "s"}`}
+            {busy ? "Saving…" : saveLabel}
           </button>
         </div>
       </div>
@@ -327,19 +355,38 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                       <td className="px-3 py-1.5 align-top text-[#334155]">{u.rawName || <span className="italic text-[#94A3B8]">—</span>}</td>
                       <td className="px-3 py-1.5 text-right align-top tabular-nums text-[#334155]">{u.count.toLocaleString()}</td>
                       <td className="px-3 py-1.5">
-                        <div className="flex items-center gap-2">
-                          <input
-                            aria-label="include this mapping"
-                            checked={Boolean(confirmed[k])}
-                            className="h-4 w-4 shrink-0 accent-[#F97316]"
-                            onChange={(e) => toggle(g.type, u.raw, e.target.checked)}
-                            type="checkbox"
-                          />
-                          <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
-                        </div>
-                        {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
-                          <p className="mt-0.5 pl-6 text-[11px] text-[#64748B]">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
-                        ) : null}
+                        {excluded[k] ? (
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">Excluded — rows will be skipped</span>
+                            <button className="text-[11px] text-[#64748B] underline hover:text-[#0F172A]" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <input
+                                aria-label="include this mapping"
+                                checked={Boolean(confirmed[k])}
+                                className="h-4 w-4 shrink-0 accent-[#F97316]"
+                                onChange={(e) => toggle(g.type, u.raw, e.target.checked)}
+                                type="checkbox"
+                              />
+                              <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
+                              {g.type === "product" ? (
+                                <button
+                                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold text-[#94A3B8] transition hover:bg-slate-100 hover:text-slate-600"
+                                  onClick={() => exclude(g.type, u.raw)}
+                                  title="Exclude — skip all rows with this product instead of mapping it"
+                                  type="button"
+                                >
+                                  × Excl
+                                </button>
+                              ) : null}
+                            </div>
+                            {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
+                              <p className="mt-0.5 pl-6 text-[11px] text-[#64748B]">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
+                            ) : null}
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
@@ -357,6 +404,8 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
+  const [periodMonth, setPeriodMonth] = useState("");
+  const [periodYear, setPeriodYear] = useState("");
   const [busy, setBusy] = useState<"verify" | "analyze" | "commit" | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [committed, setCommitted] = useState<CommitResponse | null>(null);
@@ -369,6 +418,8 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   // Any change to file/period/distributor invalidates the verification + validation downstream.
   function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setError(null); }
   function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); }
+  function onMonthChange(m: string) { setPeriodMonth(m); changePeriod(m && periodYear ? `${periodYear}-${m}` : ""); }
+  function onYearChange(y: string) { setPeriodYear(y); changePeriod(y && periodMonth ? `${y}-${periodMonth}` : ""); }
   function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); if (f) void detect(f); }
 
   async function detect(f: File) {
@@ -450,10 +501,19 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     <div className="space-y-4">
       {/* File + period selectors */}
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-          <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => changePeriod(e.target.value)} type="month" value={period} />
-        </label>
+          <div className="flex gap-1">
+            <select className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
+              <option value="">Month</option>
+              {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
+            </select>
+            <select className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
+              <option value="">Year</option>
+              {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+            </select>
+          </div>
+        </div>
         <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile || busy !== null} onClick={() => fileRef.current?.click()} type="button">
           <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
         </Button>
