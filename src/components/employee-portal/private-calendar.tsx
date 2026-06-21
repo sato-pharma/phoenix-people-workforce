@@ -656,7 +656,7 @@ export function PrivateCalendar({
               <input
                 className={searchInputClass}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search calendar…"
+                placeholder="Search calendar..."
                 value={query}
               />
             </span>

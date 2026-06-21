@@ -4726,8 +4726,11 @@ export async function getEmployeePortalVacancies(
     }));
 
     return {
-      roleView: isNsm ? "nsm" : "dsm",
-      scopeLabel: isNsm
+      // All line-scoped roles (NSM + Product/Group Product Manager) use the line view + line
+      // label; only the District Manager uses the team/own-name view. Previously PM/GPM fell into
+      // the "dsm" branch and were mislabeled "Team Vacancies / District view" with their own name.
+      roleView: isLineScoped ? "nsm" : "dsm",
+      scopeLabel: isLineScoped
         ? currentEmployee.lineName ?? currentUser.line ?? "Your line"
         : currentEmployee.fullName,
       summary: {

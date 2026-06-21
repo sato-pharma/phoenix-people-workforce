@@ -516,7 +516,7 @@ const defaultPermissionMatrix: PermissionMap = {
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
-    coaching: ["read", "create"],
+    coaching: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -538,7 +538,7 @@ const defaultPermissionMatrix: PermissionMap = {
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
-    coaching: ["read", "create"],
+    coaching: ["read", "create", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "export"],
@@ -574,7 +574,10 @@ const defaultPermissionMatrix: PermissionMap = {
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
-    employees: ["read", "export"],
+    // NOTE: the `employees` (employee-master admin) resource is intentionally NOT granted —
+    // it is Super-Admin-only at the hard boundary. Training Manager's org-wide directory
+    // visibility comes from `team`/`employee_profile` reads + the Training-Manager branch in
+    // canSeeEmployee(), not from employee-master admin access.
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
@@ -1086,6 +1089,12 @@ function canSeeDirectReportsByRole(role: PhoenixRole) {
 export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
   if (context.source === "guest" || context.scope === "none") return false;
   if (context.scope === "system" || context.role === "Super Admin") return true;
+
+  // Training Manager has org-wide training oversight: they coach and assess employees across
+  // every line, so the employee directory (and any canSeeEmployee-gated training surface) shows
+  // the whole company. Sensitive financial domains stay self-scoped because getPayrollScope /
+  // getExpensesScope key off role, not this helper, so org-wide oversight never exposes salaries.
+  if (context.role === "Training Manager") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
