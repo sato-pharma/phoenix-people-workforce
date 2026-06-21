@@ -19,6 +19,11 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "marketing manager") return "/workspace/marketing-requests/overview";
   if (normalized === "finance manager") return "/admin/outstation/expense-command";
   if (normalized === "sfe manager") return "/workspace/marketing-requests";
+  // Talent Acquisition is an admin-shell HR role but has no admin/overview grant, so the
+  // generic "/admin" fallback redirects it straight back out to the portal — an infinite
+  // bounce (/admin -> /employee-portals -> /overview -> /admin). Land it on its actual home
+  // surface (Recruitment), which its hrAuthority permissions allow.
+  if (normalized === "talent acquisition") return "/recruitment";
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
   if (normalized === "training manager") return "/employee-portals/training-manager";
