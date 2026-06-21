@@ -736,6 +736,50 @@ function aliasList(spec: FieldSpec | undefined): string[] {
   return Array.isArray(spec) ? spec : [spec];
 }
 
+// ── Coded "system" channels (Direct) ───────────────────────────────────────────────────────────
+// Direct (company) sales arrive ALREADY coded — the operator fills Product ID / Region ID / Distrub ID
+// by hand — and are region-only with the sale value taken straight from the sheet. They have a
+// dedicated coded template but NO raw normalizer profile, so the Sales Upload hub routes them through
+// this coded importer instead of the raw recognizer (which rejects coded sheets). These helpers let the
+// distributor registry / upload hub treat such a channel as monthly-uploadable and show a profile
+// summary without inventing a fake raw profile. Discriminator: a coded template with regionOnly = true.
+const CODED_SYSTEM_CHANNEL_DEFS = DISTRIBUTOR_SALES_TEMPLATES.filter((t) => t.regionOnly === true);
+
+export function isCodedSystemChannel(distributorCode: string): boolean {
+  const code = normalizeCode(distributorCode);
+  return CODED_SYSTEM_CHANNEL_DEFS.some((t) => t.distributorCodes.map(normalizeCode).includes(code));
+}
+
+export type CodedSystemChannelSummary = {
+  productColumns: string[];
+  quantityColumns: string[];
+  dateColumns: string[];
+  customerNameColumns: string[];
+  territoryColumns: string[];
+  valueSource: "recompute" | "sheet";
+  hasDateColumn: boolean;
+  regionOnly: boolean;
+};
+
+// Project the coded template into the read-only "what the system reads" column view (the profile
+// viewer on the upload hub). Returns null for a normal distributor (handled by its raw profile).
+export function codedSystemChannelSummary(distributorCode: string): CodedSystemChannelSummary | null {
+  const code = normalizeCode(distributorCode);
+  const def = CODED_SYSTEM_CHANNEL_DEFS.find((t) => t.distributorCodes.map(normalizeCode).includes(code));
+  if (!def) return null;
+  const dateCols = aliasList(def.fields.invoiceDate);
+  return {
+    productColumns: [...aliasList(def.fields.productCode), ...(def.optionalFields?.productName ?? [])],
+    quantityColumns: aliasList(def.fields.qty),
+    dateColumns: dateCols,
+    customerNameColumns: def.customerFields?.name ?? [],
+    territoryColumns: aliasList(def.fields.regionCode),
+    valueSource: def.valueField ? "sheet" : "recompute",
+    hasDateColumn: dateCols.length > 0,
+    regionOnly: Boolean(def.regionOnly),
+  };
+}
+
 function findHeaderMap(sheet: ExcelJS.Worksheet, def: DistributorSalesTemplateDef): HeaderMap | null {
   const maxHeaderRow = Math.min(sheet.rowCount, 10);
   const fieldEntries = Object.entries(def.fields) as Array<[DistributorSalesTemplateField, FieldSpec]>;

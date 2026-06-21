@@ -1,4 +1,9 @@
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import {
+  codedSystemChannelSummary,
+  isCodedSystemChannel,
+  loadSalesReferenceData,
+} from "@/lib/sales/monthly-distributor-import";
+import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
@@ -120,6 +125,12 @@ export async function listSalesDistributors(): Promise<SalesDistributorEntry[]> 
     ...mergedProfiles.map((p) => ({ code: p.distributorCode, name: p.distributorName })),
   ];
   const profiledCodes = new Set(mergedProfiles.map((p) => normalizeCodeKey(p.distributorCode)));
+  // Coded system channels (Direct) and the Office allocation channel have no raw normalizer profile,
+  // but ARE monthly-uploadable — mark them supported so the upload hub enables file pick + validate.
+  for (const row of master) {
+    if (isCodedSystemChannel(row.code)) profiledCodes.add(normalizeCodeKey(row.code));
+    if (normalizeCodeKey(row.code) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) profiledCodes.add(normalizeCodeKey(row.code));
+  }
   return buildSalesDistributorEntries(master, profiledCodes);
 }
 
@@ -133,10 +144,49 @@ export async function getDistributor(code: string): Promise<SalesDistributorEntr
 // Re-exported from the weekly registry so callers have ONE place to ask "is this weekly-applicable?".
 export const isWeeklyDistributor = isWeeklyDistributorCode;
 
-// DB-first profile summary for the distributor profile viewer (honors saved overrides).
+// DB-first profile summary for the distributor profile viewer (honors saved overrides). For a coded
+// system channel (Direct) there is no raw profile — synthesize the "what the system reads" view from
+// the coded template so the upload hub enables and the viewer shows the real columns.
 export async function getDistributorProfileSummary(code: string): Promise<DistributorProfileSummary | null> {
   const profile = await resolveDistributorProfile(code);
-  return profile ? summarizeProfile(profile) : null;
+  if (profile) return summarizeProfile(profile);
+  const coded = codedSystemChannelSummary(code);
+  if (coded) {
+    return {
+      distributorCode: normalizeCodeKey(code),
+      distributorName: normalizeCodeKey(code),
+      productColumns: coded.productColumns,
+      customerCodeColumns: [],
+      customerNameColumns: coded.customerNameColumns,
+      quantityColumns: coded.quantityColumns,
+      dateColumns: coded.dateColumns,
+      territoryColumns: coded.territoryColumns,
+      discountColumns: [],
+      bonusColumns: [],
+      valueSource: coded.valueSource,
+      hasDateColumn: coded.hasDateColumn,
+      regionOnly: coded.regionOnly,
+    };
+  }
+  // Office pivot: product name + total units, no geography, no date column — period is always required.
+  if (normalizeCodeKey(code) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) {
+    return {
+      distributorCode: normalizeCodeKey(code),
+      distributorName: "Office",
+      productColumns: ["Row Labels"],
+      customerCodeColumns: [],
+      customerNameColumns: [],
+      quantityColumns: ["Sum of المبيعات"],
+      dateColumns: [],
+      territoryColumns: [],
+      discountColumns: [],
+      bonusColumns: [],
+      valueSource: "recompute",
+      hasDateColumn: false,
+      regionOnly: false,
+    };
+  }
+  return null;
 }
 
 // ── C6: distributor health + readiness (computed from existing tables; no new schema) ──
