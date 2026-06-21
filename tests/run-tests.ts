@@ -204,6 +204,7 @@ import { runPhase20ProductionReadinessTests } from "./phase20-production-readine
 import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.test.ts";
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
+import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
 import { runPhase24RealAuthRlsApiSmokeTests } from "./phase24-real-auth-rls-api-smoke.test.ts";
 import { runPhase25StagingRlsMutationSmokeTests } from "./phase25-staging-rls-mutation-smoke.test.ts";
@@ -452,6 +453,7 @@ await runTest("phase 20 production readiness", runPhase20ProductionReadinessTest
 await runTest("phase 21 security hardening", runPhase21SecurityHardeningTests);
 await runTest("phase 22 role matrix security", runPhase22RoleMatrixSecurityTests);
 await runTest("CEO organogram visibility", runCeoOrganogramVisibilityTests);
+await runTest("CEO command center", runCeoCommandCenterTests);
 await runTest("phase 23 browser role walkthrough", runPhase23BrowserRoleWalkthroughTests);
 await runTest("phase 24 real auth RLS/API smoke", runPhase24RealAuthRlsApiSmokeTests);
 await runTest("phase 25 staging RLS mutation smoke", runPhase25StagingRlsMutationSmokeTests);
