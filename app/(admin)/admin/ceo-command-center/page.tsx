@@ -79,6 +79,7 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     <CeoCommandCenter
       data={result.data}
       welcome={{ fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId }}
+      access={access}
     />
   );
 }

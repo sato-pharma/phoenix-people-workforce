@@ -1,8 +1,10 @@
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { createAccessContext, type AccessContext } from "@/lib/auth/permissions";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getOverviewDashboard } from "@/lib/overview/service";
 import { getProbationRows } from "@/lib/probation/service";
+import { getVacancyReport } from "@/lib/reports/vacancies";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
@@ -14,12 +16,17 @@ import {
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
 
 /**
- * Bespoke executive data layer for the CEO Command Center. Composes the existing
- * domain aggregators (admin command center, overview, Source of Sales, Weekly Sales,
- * Marketing ROI, pending approvals) into ONE executive snapshot. Every source is run
- * via allSettled so one slow/failing domain degrades to a labelled "unavailable"
- * rather than blanking the page or showing a misleading zero. CEO/Super Admin see
- * confidential products (LA003/LA004/SS001) across Sales — the page is gated to them.
+ * Bespoke executive data layer for the CEO Command Center, split for streaming.
+ *
+ * `getCeoCommandCenterData` is the FAST executive summary (health, headcount, payroll,
+ * attention, approvals, Source of Sales, trends) — every source resolves in a few
+ * seconds. `getCeoSalesDeferred` carries the two heavy aggregators (Weekly Sales and
+ * Marketing ROI, ~15s each against prod) so the page can render the summary immediately
+ * and stream those cards in behind a Suspense boundary instead of blocking ~16s on them.
+ *
+ * Both run their sources via allSettled so one slow/failing domain degrades to a
+ * labelled "unavailable" rather than blanking the page. CEO/Super Admin see confidential
+ * products (LA003/LA004/SS001) across Sales — the page is gated to them.
  */
 
 export type CeoTopMover = { label: string; value: number };
@@ -60,40 +67,42 @@ export type CeoCommandCenterData = {
   };
   attention: CeoAttentionItem[];
   approvals: { leavePending: number; plansPending: number };
-  sales: {
-    sos: {
-      period: string | null;
-      totalValue: number;
-      totalQty: number;
-      topLines: CeoTopMover[];
-      topRegions: CeoTopMover[];
-    } | null;
-    weekly: {
-      weekStart: string | null;
-      salesValue: number;
-      salesUnits: number;
-      wowPct: number | null;
-      wowPriorMissing: boolean;
-      trend: CeoTopMover[];
-      topRegions: CeoTopMover[];
-    } | null;
-    marketing: {
-      totalCost: number;
-      attributedSalesValue: number;
-      roiCoverage: number; // percentage
-      actionRequired: number;
-      spendAtRisk: number;
-      requestCount: number;
-      paidRequests: number;
-      behindRequests: number;
-      topRisk: { customer: string; code: string; action: string } | null;
-    } | null;
-  };
+  sos: {
+    period: string | null;
+    totalValue: number;
+    totalQty: number;
+    topLines: CeoTopMover[];
+    topRegions: CeoTopMover[];
+  } | null;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
     financial: Array<{ label: string; revenue: number; cost: number }>;
     hireExit: Array<{ label: string; hires: number; exits: number }>;
   };
+};
+
+export type CeoSalesDeferredData = {
+  dataUnavailable: string[];
+  weekly: {
+    weekStart: string | null;
+    salesValue: number;
+    salesUnits: number;
+    wowPct: number | null;
+    wowPriorMissing: boolean;
+    trend: CeoTopMover[];
+    topRegions: CeoTopMover[];
+  } | null;
+  marketing: {
+    totalCost: number;
+    attributedSalesValue: number;
+    roiCoverage: number; // 0..1 fraction
+    actionRequired: number;
+    spendAtRisk: number;
+    requestCount: number;
+    paidRequests: number;
+    behindRequests: number;
+    topRisk: { customer: string; code: string; action: string } | null;
+  } | null;
 };
 
 function clamp01(value: number) {
@@ -114,15 +123,23 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const dataUnavailable: string[] = [];
   const canRestricted = canViewRestrictedProducts(access.role);
 
-  const [adminR, overviewR, sosR, weeklyR, marketingR, leaveR, plansR, probationR] = await Promise.allSettled([
+  // The CEO command center is gated to CEO + Super Admin and shows COMPANY-WIDE
+  // executive figures. Headcount / vacancies / probation must NOT be narrowed by the
+  // CEO's self-only employee-row visibility — that restriction protects the salary-bearing
+  // employee master, not aggregate counts (same reason the organogram is unfiltered for the
+  // CEO). So pull people/org figures from company-wide sources: the unfiltered directory
+  // rows + vacancy report, and probation via an elevated read.
+  const companyView = createAccessContext({ hrId: access.hrId, role: "Super Admin" });
+
+  const [adminR, overviewR, sosR, leaveR, plansR, probationR, directoryR, vacancyR] = await Promise.allSettled([
     getAdminCommandCenterData(access),
     getOverviewDashboard(access),
     loadSourceOfSalesDashboard(null, canRestricted),
-    resolveWeeklyAccessScope(access).then((accessScope) => loadWeeklyDashboard({ accessScope })),
-    getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
     getAwaitingMyActionItems(access, "admin"),
     getEmployeePlansWorkspace(access),
-    getProbationRows(access),
+    getProbationRows(companyView),
+    getEmployeeDirectoryRows(),
+    getVacancyReport(),
   ]);
 
   const admin = adminR.status === "fulfilled" ? adminR.value : null;
@@ -131,17 +148,30 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   if (!overview) dataUnavailable.push("Overview trends");
   const sos = sosR.status === "fulfilled" ? sosR.value : null;
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
-  const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : null;
-  if (!weekly) dataUnavailable.push("Weekly Sales");
-  const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
-  if (!marketing) dataUnavailable.push("Marketing ROI");
   const leaveItems = leaveR.status === "fulfilled" ? leaveR.value : null;
   if (!leaveItems) dataUnavailable.push("Pending leave approvals");
   const plans = plansR.status === "fulfilled" ? plansR.value : null;
   if (!plans) dataUnavailable.push("Pending plan approvals");
   const probationRows = probationR.status === "fulfilled" ? probationR.value : null;
   if (!probationRows) dataUnavailable.push("Probation");
+  const directoryRows = directoryR.status === "fulfilled" ? directoryR.value : null;
+  if (!directoryRows) dataUnavailable.push("Headcount");
+  const vacancyReport = vacancyR.status === "fulfilled" ? vacancyR.value : null;
+  if (!vacancyReport) dataUnavailable.push("Vacancies");
   if (admin?.dataUnavailable?.length) dataUnavailable.push(...admin.dataUnavailable);
+
+  // Company-wide headcount + structure from the unfiltered directory (not access-scoped).
+  const activeStaff = (directoryRows ?? []).filter((row) =>
+    ["active", "on_leave"].includes(String(row.employmentStatus ?? "active").toLowerCase()),
+  );
+  const activeHeadcount = activeStaff.length;
+  const openVacancies = vacancyReport?.summary.openVacancies ?? 0;
+  const uniqueLines = new Set(activeStaff.map((row) => row.lineName).filter(Boolean)).size;
+  const uniqueAreas = new Set(activeStaff.map((row) => row.areaName).filter(Boolean)).size;
+  // Company "health" proxy (admin.health.employeeHealthRate is CEO-self-only → bogus 100%).
+  const companyEmployeeHealthRate = activeHeadcount
+    ? activeStaff.filter((row) => row.managerHrId).length / activeHeadcount
+    : 0;
 
   const exec = admin?.overview.executive;
   const risk = admin?.overview.risk;
@@ -158,7 +188,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   ).length;
 
   // ── Company health score (transparent weighted blend of real rates) ──────────
-  const employeeHealthRate = admin?.health.employeeHealthRate ?? overview?.hr.employeeHealthRate ?? 0;
+  const employeeHealthRate = companyEmployeeHealthRate;
   const salesLinkageRate = admin?.health.salesLinkageRate ?? 0;
   const attendanceReadinessRate = admin?.health.attendanceReadinessRate ?? 0;
   const salesAchievementRate = overview?.sales.achievementRate ?? admin?.overview.sales.achievementRate ?? 0;
@@ -208,6 +238,60 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
       }
     : null;
 
+  return {
+    generatedAt: admin?.generatedAt ?? new Date().toISOString(),
+    dataUnavailable: Array.from(new Set(dataUnavailable)),
+    health: {
+      score,
+      employeeHealthRate,
+      salesLinkageRate,
+      attendanceReadinessRate,
+      salesAchievementRate,
+    },
+    headcount: {
+      active: activeHeadcount,
+      total: activeHeadcount,
+      vacancies: openVacancies,
+      attritionRate30d: exec?.attritionRate30d ?? 0,
+      uniqueLines,
+      uniqueAreas,
+    },
+    payroll: {
+      batchLabel: admin?.overview.payroll.batchLabel ?? "—",
+      gross: admin?.overview.payroll.gross ?? 0,
+      net: admin?.overview.payroll.net ?? 0,
+      flags: admin?.overview.payroll.flags ?? 0,
+      unresolvedSalaryFlags: admin?.unresolvedSalaryFlags ?? 0,
+      available: admin?.access.showFinancialModules ?? false,
+    },
+    attention,
+    approvals: { leavePending, plansPending },
+    sos: sosOut,
+    trends: {
+      sales: (overview?.sales.trend ?? []).map((point) => ({ label: point.period, sales: point.sales, target: point.target })),
+      financial: (overview?.financial.trend ?? []).map((point) => ({ label: point.month, revenue: point.revenue, cost: point.cost })),
+      hireExit: (overview?.hr.hireExitTrend ?? []).map((point) => ({ label: point.m, hires: point.h, exits: point.e })),
+    },
+  };
+}
+
+/**
+ * The two heavy Sales aggregators (Weekly Sales + Marketing ROI, ~15s each against prod),
+ * loaded separately so the page streams them behind a Suspense boundary.
+ */
+export async function getCeoSalesDeferred(access: AccessContext): Promise<CeoSalesDeferredData> {
+  const dataUnavailable: string[] = [];
+
+  const [weeklyR, marketingR] = await Promise.allSettled([
+    resolveWeeklyAccessScope(access).then((accessScope) => loadWeeklyDashboard({ accessScope })),
+    getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
+  ]);
+
+  const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : null;
+  if (!weekly) dataUnavailable.push("Weekly Sales");
+  const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
+  if (!marketing) dataUnavailable.push("Marketing ROI");
+
   const weeklyOut = weekly
     ? {
         weekStart: weekly.weekStart,
@@ -240,39 +324,5 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
       }
     : null;
 
-  return {
-    generatedAt: admin?.generatedAt ?? new Date().toISOString(),
-    dataUnavailable: Array.from(new Set(dataUnavailable)),
-    health: {
-      score,
-      employeeHealthRate,
-      salesLinkageRate,
-      attendanceReadinessRate,
-      salesAchievementRate,
-    },
-    headcount: {
-      active: admin?.overview.hr.activeEmployees ?? overview?.hr.activeEmployees ?? 0,
-      total: admin?.overview.hr.totalEmployees ?? overview?.hr.totalEmployees ?? 0,
-      vacancies: admin?.overview.hr.vacantPositions ?? overview?.vacancies.openVacancies ?? 0,
-      attritionRate30d: exec?.attritionRate30d ?? 0,
-      uniqueLines: admin?.overview.hr.uniqueLines ?? overview?.hr.uniqueLines ?? 0,
-      uniqueAreas: admin?.overview.hr.uniqueAreas ?? overview?.hr.uniqueAreas ?? 0,
-    },
-    payroll: {
-      batchLabel: admin?.overview.payroll.batchLabel ?? "—",
-      gross: admin?.overview.payroll.gross ?? 0,
-      net: admin?.overview.payroll.net ?? 0,
-      flags: admin?.overview.payroll.flags ?? 0,
-      unresolvedSalaryFlags: admin?.unresolvedSalaryFlags ?? 0,
-      available: admin?.access.showFinancialModules ?? false,
-    },
-    attention,
-    approvals: { leavePending, plansPending },
-    sales: { sos: sosOut, weekly: weeklyOut, marketing: marketingOut },
-    trends: {
-      sales: (overview?.sales.trend ?? []).map((point) => ({ label: point.period, sales: point.sales, target: point.target })),
-      financial: (overview?.financial.trend ?? []).map((point) => ({ label: point.month, revenue: point.revenue, cost: point.cost })),
-      hireExit: (overview?.hr.hireExitTrend ?? []).map((point) => ({ label: point.m, hires: point.h, exits: point.e })),
-    },
-  };
+  return { dataUnavailable, weekly: weeklyOut, marketing: marketingOut };
 }
