@@ -2097,14 +2097,21 @@ function mapSourceOfSalesBatch(row: Record<string, unknown>): SourceOfSalesUploa
 
 export async function listSourceOfSalesUploadBatches(): Promise<SourceOfSalesUploadBatch[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_import_batches")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const rows: Record<string, unknown>[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const pageRows = (data ?? []) as Record<string, unknown>[];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) break;
+  }
 
-  if (error) throw error;
-  return (data ?? []).map((row) => mapSourceOfSalesBatch(row as Record<string, unknown>));
+  return rows.map((row) => mapSourceOfSalesBatch(row));
 }
 
 type SourceOfSalesSummaryRecord = {
@@ -3220,16 +3227,28 @@ export async function listMonthlyClosingLines(): Promise<string[]> {
 
 export async function listMonthlyClosingPeriods(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_import_batches")
-    .select("period")
-    .eq("status", "validated")
-    .not("period", "is", null)
-    .order("period", { ascending: false });
+  const rows = new Set<string>();
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("period")
+      .eq("status", "validated")
+      .not("period", "is", null)
+      .order("period", { ascending: false })
+      .range(from, from + pageSize - 1);
 
-  if (error) throw error;
+    if (error) throw error;
 
-  return [...new Set((data ?? []).map((row) => String((row as Record<string, unknown>).period ?? "")).filter(Boolean))]
+    for (const row of data ?? []) {
+      const period = String((row as Record<string, unknown>).period ?? "").trim();
+      if (period) rows.add(period);
+    }
+
+    if (!(data ?? []).length || (data ?? []).length < pageSize) break;
+  }
+
+  return [...rows]
     .sort((left, right) => right.localeCompare(left));
 }
 
