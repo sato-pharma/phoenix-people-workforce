@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   HeartPulse,
-  Layers,
   Megaphone,
   TrendingDown,
   TrendingUp,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
+import { CeoHeroClock } from "@/components/admin/ceo-hero-clock";
 import { CeoHiddenNote } from "@/components/admin/ceo-hidden-note";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
@@ -27,6 +27,7 @@ import type {
   CeoCommandCenterData,
   CeoTopMover,
 } from "@/lib/ceo/command-center";
+import type { EgxQuote } from "@/lib/market/egx";
 
 export type CeoWelcomeProfile = {
   fullName: string;
@@ -77,7 +78,8 @@ function warmGreeting(fullName: string, isCeo: boolean): { lead: string; sub: st
       timeZone: "Africa/Cairo",
     }).format(new Date()),
   );
-  const part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const word = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+  const part = `Good ${word}`;
   const tail =
     hour < 12
       ? "your company is awake and working for you."
@@ -86,7 +88,7 @@ function warmGreeting(fullName: string, isCeo: boolean): { lead: string; sub: st
         : "here is how today went.";
   return {
     lead: `${part}, ${name} — ${tail}`,
-    sub: "Welcome back. Everything, arranged the way you like to see it.",
+    sub: `Welcome back! Everything is arranged for you this ${word}.`,
   };
 }
 
@@ -470,20 +472,16 @@ export function CeoCommandCenter({
   welcome,
   access,
   isCeo = false,
+  market = null,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
   isCeo?: boolean;
+  market?: EgxQuote | null;
 }) {
   const { health, headcount, payroll, attention, approvals, sos, trends } = data;
   const greeting = warmGreeting(welcome.fullName, isCeo);
-  const initials = welcome.fullName
-    .split(/\s+/)
-    .filter((p) => /^[A-Za-z]/.test(p))
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join("");
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -496,83 +494,137 @@ export function CeoCommandCenter({
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero (keynote layout: identity left · executive cutout right · KPI ribbon) ── */}
+      {/* ── Hero (executive keynote: identity left · cutout bleeds right · KPI ribbon) ── */}
       <AdminHeroFrame>
-        <div className="relative overflow-hidden">
-          {/* ambient warm glow where he stands */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[58%] bg-[radial-gradient(68%_72%_at_72%_42%,rgba(249,115,22,0.20),transparent_70%)] lg:block"
-          />
-          <div className="relative grid items-end gap-4 px-5 pt-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,380px)] lg:gap-8 lg:px-8 lg:pt-8">
-            {/* Left: identity + context chips */}
-            <div className="z-10 min-w-0 space-y-4 pb-2 lg:pb-6">
-              <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
-                <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-                CEO Command Center
-              </div>
-              <div>
-                <div className="flex items-start gap-2.5">
-                  <h1 className="text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl lg:text-[44px] lg:leading-[1.05]">
-                    {greeting.lead}
-                  </h1>
-                  {isCeo ? <span className="mt-1.5 shrink-0"><CeoHiddenNote /></span> : null}
-                </div>
-                <p className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-orange-300/80">
-                  {welcome.fullName} · {welcome.roleLabel}
-                </p>
-                <p className="mt-2.5 max-w-lg text-sm leading-6 text-slate-400">{greeting.sub}</p>
-              </div>
-              <div className="flex flex-wrap gap-2 text-[10px]">
-                <span className="inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">
-                  <Layers aria-hidden="true" className="h-3 w-3" />
-                  {n(headcount.uniqueLines)} product lines · {n(headcount.uniqueAreas)} areas
-                </span>
-                <span className="inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">
-                  <Activity aria-hidden="true" className="h-3 w-3" />
-                  {generatedLabel}
-                </span>
-                {totalAttention > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 border border-rose-400/40 bg-rose-500/15 px-3 py-1 text-rose-100">
-                    <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-                    {totalAttention} item{totalAttention !== 1 ? "s" : ""} need your attention
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
-                    <CheckCircle2 aria-hidden="true" className="h-3 w-3" />
-                    All clear
-                  </span>
-                )}
-                {data.dataUnavailable.length > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-amber-100">
-                    <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-                    {data.dataUnavailable.length} source{data.dataUnavailable.length !== 1 ? "s" : ""} unavailable
-                  </span>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Right: executive cutout — he stands in the hero, no frame */}
-            <div className="relative z-10 flex min-h-[280px] items-end justify-center sm:min-h-[320px] lg:min-h-[360px]">
-              {welcome.imageUrl ? (
+        <div>
+          {/* Top band — decorative rings + watermark + the cutout, with identity over it */}
+          <div className="relative min-h-[300px] overflow-hidden lg:min-h-[348px]">
+            {/* ambient warm glow */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 hidden w-[64%] bg-[radial-gradient(72%_78%_at_70%_46%,rgba(249,115,22,0.22),transparent_72%)] lg:block"
+            />
+            {/* concentric rings */}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 720 720"
+              className="pointer-events-none absolute right-[-8%] top-1/2 hidden h-[720px] w-[720px] -translate-y-1/2 lg:block"
+            >
+              <g fill="none" stroke="#F97316">
+                <circle cx="360" cy="360" r="130" strokeOpacity="0.16" />
+                <circle cx="360" cy="360" r="196" strokeOpacity="0.12" />
+                <circle cx="360" cy="360" r="262" strokeOpacity="0.09" />
+                <circle cx="360" cy="360" r="326" strokeOpacity="0.055" />
+                <circle cx="360" cy="360" r="358" strokeOpacity="0.035" />
+              </g>
+            </svg>
+            {/* faint phoenix watermark */}
+            <Image
+              src="/brand/phoenix-bird-icon.png"
+              alt=""
+              aria-hidden="true"
+              width={520}
+              height={520}
+              className="pointer-events-none absolute right-[15%] top-1/2 hidden w-[420px] -translate-y-1/2 opacity-[0.05] lg:block"
+            />
+            {/* desktop cutout — bleeds to the right/bottom edge, no frame */}
+            {welcome.imageUrl ? (
+              <div className="absolute inset-y-0 right-0 hidden w-[48%] xl:w-[44%] lg:block">
                 <Image
                   alt={welcome.fullName}
                   src={welcome.imageUrl}
                   fill
                   priority
-                  sizes="(max-width: 1024px) 70vw, 380px"
-                  className="object-contain object-bottom drop-shadow-[0_30px_45px_rgba(0,0,0,0.55)]"
+                  sizes="48vw"
+                  className="object-contain object-[right_bottom] drop-shadow-[0_30px_55px_rgba(0,0,0,0.5)]"
                 />
-              ) : (
-                <div className="flex h-[200px] w-[200px] items-center justify-center border border-orange-400/30 bg-orange-500/10">
-                  <span className="text-[56px] font-black text-orange-400">{initials || "CEO"}</span>
+              </div>
+            ) : null}
+
+            {/* Identity content */}
+            <div className="relative z-10 max-w-[620px] px-5 pb-6 pt-6 sm:px-6 lg:px-8 lg:pb-8 lg:pt-9">
+              <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
+                <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+                CEO Command Center
+              </div>
+              <div className="mt-4">
+                <div className="flex items-start gap-2.5">
+                  <h1 className="text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl lg:text-[44px] lg:leading-[1.04]">
+                    {greeting.lead}
+                  </h1>
+                  {isCeo ? <span className="mt-1.5 shrink-0"><CeoHiddenNote /></span> : null}
                 </div>
-              )}
+                <p className="mt-2 text-[11px] font-black uppercase tracking-[0.2em] text-orange-300/85">
+                  {welcome.fullName} · {welcome.roleLabel}
+                </p>
+                <p className="mt-2.5 max-w-md text-sm leading-6 text-slate-400">{greeting.sub}</p>
+              </div>
+
+              {/* mobile cutout */}
+              {welcome.imageUrl ? (
+                <div className="relative mt-5 flex h-[240px] items-end justify-center lg:hidden">
+                  <Image
+                    alt={welcome.fullName}
+                    src={welcome.imageUrl}
+                    fill
+                    priority
+                    sizes="80vw"
+                    className="object-contain object-bottom"
+                  />
+                </div>
+              ) : null}
+
+              {/* pill bar: date · time · EGX 30 · attention */}
+              <div className="mt-5 flex flex-wrap items-center gap-3 text-[11px]">
+                <div className="inline-flex items-stretch border border-white/12 bg-white/[0.04]">
+                  <CeoHeroClock />
+                  {market ? (
+                    <span className="flex items-center gap-2 border-l border-white/12 px-3.5 py-2.5">
+                      <span className="text-[10px] font-black tracking-[0.12em] text-slate-400">EGX&nbsp;30</span>
+                      <span className="font-bold tabular-nums text-white">
+                        {market.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-0.5 font-bold ${
+                          market.changePct >= 0 ? "text-emerald-400" : "text-rose-400"
+                        }`}
+                      >
+                        {market.changePct >= 0 ? (
+                          <TrendingUp aria-hidden="true" className="h-3 w-3" />
+                        ) : (
+                          <TrendingDown aria-hidden="true" className="h-3 w-3" />
+                        )}
+                        {pct(Math.abs(market.changePct), 2)}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+                {totalAttention > 0 ? (
+                  <Link
+                    href="/admin/action-center"
+                    className="inline-flex items-center gap-2 border border-rose-400/40 bg-rose-500/12 px-3.5 py-2.5 font-semibold text-rose-100 transition-colors hover:bg-rose-500/20"
+                  >
+                    <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
+                    {totalAttention} item{totalAttention !== 1 ? "s" : ""} need your attention
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-2 border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-2.5 font-semibold text-emerald-200">
+                    <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                    All clear
+                  </span>
+                )}
+                {data.dataUnavailable.length > 0 ? (
+                  <span className="inline-flex items-center gap-2 border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 font-semibold text-amber-100">
+                    <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
+                    {data.dataUnavailable.length} source{data.dataUnavailable.length !== 1 ? "s" : ""} unavailable
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
           {/* KPI ribbon — full-width executive readout */}
-          <div className="relative z-10 mt-4 grid grid-cols-2 border-t border-white/10 bg-black/30 sm:grid-cols-4 lg:mt-0">
+          <div className="relative z-10 grid grid-cols-2 border-t border-white/10 bg-black/40 sm:grid-cols-4">
             <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4 sm:border-b-0 sm:border-r">
               <HealthGauge score={health.score} size={72} />
               <div>
