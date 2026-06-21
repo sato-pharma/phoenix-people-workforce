@@ -177,7 +177,10 @@ export function canAccessCoachingEmployee(
   access: AccessContext,
   employee: EmployeeDirectoryRow,
   directory: EmployeeDirectoryRow[],
-  coach?: EmployeeDirectoryRow | null,
+  // Retained for call-site compatibility (callers pass the resolved coach). No longer consulted:
+  // org-wide oversight roles (incl. Training Manager) short-circuit below, and own-draft write
+  // scoping is enforced separately by assertOwnDraftOrOverride.
+  _coach?: EmployeeDirectoryRow | null,
 ) {
   if (access.scope === "system" || coachingOversightRoles.has(access.role)) return true;
   const currentHrId = normalizeHrId(access.hrId);

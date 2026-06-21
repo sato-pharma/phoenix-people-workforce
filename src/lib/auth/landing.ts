@@ -22,6 +22,11 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
   if (normalized === "training manager") return "/employee-portals/training-manager";
+  // Product / Group Product Managers are Sales-Intelligence-first: their portal home (the rep
+  // performance chart) is empty for them, so land them on their Weekly Sales SI surface instead.
+  if (normalized === "product manager" || normalized === "group product manager") {
+    return "/employee-portals/weekly-sales";
+  }
   if (normalized === "ceo") return "/admin/ceo-command-center";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
 }
