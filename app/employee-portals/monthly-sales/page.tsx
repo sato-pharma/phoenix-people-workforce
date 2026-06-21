@@ -47,15 +47,17 @@ export default async function PortalMonthlySalesPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Sales Intelligence"
+      badge="Sales Operations"
       description="Your products' monthly sales from Source of Sales — by area and region, rolled up to national. Live, not gated by publishing."
-      errorBoundaryTitle="Monthly Sales unavailable"
-      title="Monthly Sales"
+      errorBoundaryTitle="Monthly Sales Closing unavailable"
+      title="Monthly Sales Closing"
     >
       <MonthlyClosingPortalView
         awaitingPublish={false}
         availablePeriods={result?.availablePeriods ?? []}
         basePath="/employee-portals/monthly-sales"
+        distributorsExpected={result?.distributorsExpected ?? null}
+        distributorsUploaded={result?.distributorsUploaded ?? null}
         emptyMessage="No validated Source-of-Sales months are available for your products yet. Months appear here as soon as their sales are uploaded — no publishing step required."
         emptyTitle="No monthly sales yet"
         line={result?.line ?? null}

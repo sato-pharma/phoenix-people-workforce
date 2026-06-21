@@ -235,6 +235,32 @@ export function WeeklyMiniDashboardView({
           </table>
         </div>
       </div>
+
+      {data.zeroSalesBranches.length > 0 ? (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <p className="border-b border-slate-100 px-4 py-3 text-sm font-black text-slate-800">Branches with stock, no sales</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#0f172a] text-left text-[11px] font-bold uppercase tracking-[0.1em] text-white">
+                  <th className="px-4 py-2.5">Branch</th>
+                  <th className="px-4 py-2.5">Region</th>
+                  <th className="px-4 py-2.5 text-right">Stock units</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.zeroSalesBranches.map((branch) => (
+                  <tr className="border-b border-orange-50 last:border-0" key={`${branch.branchCode}-${branch.regionName}`}>
+                    <td className="px-4 py-2.5 font-semibold text-slate-800">{branch.branchName}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{branch.regionName}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">{num(branch.stockUnits)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

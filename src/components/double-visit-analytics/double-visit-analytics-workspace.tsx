@@ -499,11 +499,14 @@ export function DoubleVisitAnalyticsWorkspace({
   canPublish,
   dashboard,
   ireports360Configured,
+  ownDoubleVisits,
 }: {
   canImport: boolean;
   canPublish: boolean;
   dashboard: DoubleVisitDashboardData;
   ireports360Configured: boolean;
+  /** When set (portal PM/GPM view), renders a "Your double visits" KPI = the viewer's personal DV count. */
+  ownDoubleVisits?: number | null;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("summary");
   const [selectedManagerKey, setSelectedManagerKey] = useState<string>("");
@@ -791,7 +794,10 @@ export function DoubleVisitAnalyticsWorkspace({
           <>
             {/* Headline KPI band */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot." />
+              <KpiCard icon={Activity} label="Double Visits" value={fmt(dashboard.kpis.totalVisits)} hint="Total visit count from official snapshot (you + the team reporting to you)." />
+              {typeof ownDoubleVisits === "number" ? (
+                <KpiCard icon={Activity} label="Your Double Visits" value={fmt(ownDoubleVisits)} hint="Double visits you personally performed. Your team's visits are counted in the total above." />
+              ) : null}
               <KpiCard icon={CalendarDays} label="Active DV Days" value={fmt(dashboard.kpis.activeDoubleVisitDays)} hint="Distinct manager × date combinations." />
               <KpiCard icon={Users} label="Active Double-Visitors" value={fmt(activeManagerCount)} hint={`${idleCount} eligible manager${idleCount === 1 ? "" : "s"} did zero DVs.`} />
               <KpiCard icon={Gauge} label="Avg Calls / Day" value={fmt(dashboard.kpis.averageVisitsPerDoubleVisitDay)} hint="Visits per active double visit day." />

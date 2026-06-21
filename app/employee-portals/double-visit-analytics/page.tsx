@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DoubleVisitAnalyticsWorkspace } from "@/components/double-visit-analytics/double-visit-analytics-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, normalizeHrId } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
@@ -43,6 +43,13 @@ export default async function PortalDoubleVisitAnalyticsPage({
     dateTo: dateParam(params.dateTo),
   });
 
+  // "Your double visits" = the DVs the viewer personally performed (managerHrId === viewer). PM/GPM
+  // oversee DVs but rarely perform them, so this is often 0 while the team total above is higher.
+  const viewerKey = normalizeHrId(access.hrId);
+  const ownDoubleVisits = viewerKey
+    ? dashboard.managerSummaries.find((summary) => normalizeHrId(summary.managerHrId) === viewerKey)?.totalDvs ?? 0
+    : 0;
+
   return (
     <EmployeePortalPageShell
       badge="Sales Intelligence"
@@ -55,6 +62,7 @@ export default async function PortalDoubleVisitAnalyticsPage({
         canPublish={false}
         dashboard={dashboard}
         ireports360Configured={isIReports360Configured()}
+        ownDoubleVisits={ownDoubleVisits}
       />
     </EmployeePortalPageShell>
   );
