@@ -259,7 +259,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           <RowSkeleton />
           <RowSkeleton />
         </div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && advisoryRows.length === 0 ? (
         <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <Inbox className="h-4 w-4" />
