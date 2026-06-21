@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
+import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import {
@@ -22,9 +23,6 @@ export default async function CeoCommandPage() {
     redirect("/employee-portals");
   }
 
-  // CEO + Super Admin (or system) only. The CEO lands here; Super Admin can open it for
-  // review. Anyone else with admin access falls back to the generic command center.
-  // Mirrors the server gate elsewhere — sidebar visibility is never the security boundary.
   const allowed = access.role === "CEO" || canAccessSystemAdministratorWorkspace(access);
   if (!allowed) {
     redirect("/admin");
@@ -75,10 +73,6 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  // When Dr Anwar himself is viewing, present his name, title, and portrait exactly
-  // as he should see them — a curated static asset guarantees a fast, correct photo
-  // regardless of what the employees table holds. Super Admin reviewers keep their
-  // own resolved identity so the page never misrepresents who is signed in.
   const isCeo = access.role === "CEO";
   const welcome = isCeo
     ? {
@@ -89,5 +83,12 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
       }
     : { fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId, imageUrl: viewer.imageUrl };
 
-  return <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} />;
+  return (
+    <>
+      <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} />
+      <Suspense fallback={<CeoPhaseBSkeleton />}>
+        <CeoPhaseBWidgets access={access} />
+      </Suspense>
+    </>
+  );
 }
