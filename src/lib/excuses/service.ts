@@ -8,6 +8,7 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
@@ -368,6 +369,7 @@ async function sendEmployeeDecisionEmail(input: {
   if (!employeeEmail) return;
 
   const statusLabel = input.request.status === "approved" ? "approved" : "rejected";
+  const excuseTypeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
   await createSystemNotification({
     actionUrl: "/employee-portals/excuses",
     actorId: input.request.managerHrId,
@@ -377,7 +379,7 @@ async function sendEmployeeDecisionEmail(input: {
       ctaLabel: "Open in Phoenix",
       employeeHrId: input.request.employeeHrId,
       metrics: [
-        { label: "Excuse type", value: input.request.excuseType },
+        { label: "Excuse type", value: excuseTypeLabel },
         { label: "Date", value: input.request.excuseDate },
         { label: "Status", value: statusLabel },
       ],
@@ -385,11 +387,17 @@ async function sendEmployeeDecisionEmail(input: {
       recipients: [employeeEmail],
       subject: `Your excuse request was ${statusLabel}`,
       summary: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
-      // Fill the excuse_request template's Duration/Line cells from the request so they are
-      // not blank. (Job Title/Area are not on the request object here.)
+      // Pin the dedicated employee-facing template so the decision email does NOT reuse the
+      // manager-oriented excuse_request wording ("...pending your review", "Dear Dr.").
+      templateKey: EMAIL_TEMPLATE_KEYS.EXCUSE_DECISION,
       templateContext: {
         duration: `${input.request.durationHours} hours`,
+        employeeHrId: input.request.employeeHrId,
+        employeeName: input.request.employeeName,
+        excuseDate: input.request.excuseDate,
+        excuseType: excuseTypeLabel,
         line: input.request.lineName ?? "—",
+        status: statusLabel,
       },
       title: `Excuse request ${statusLabel}`,
       tone: statusLabel === "approved" ? "success" : "warning",

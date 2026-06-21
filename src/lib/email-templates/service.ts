@@ -34,6 +34,7 @@ export const emailTemplateKeys = [
   "outstation",
   "marketing_request",
   "excuse_request",
+  "excuse_decision",
   "offer_status",
   "recruitment_update",
   "coaching_report",
@@ -44,6 +45,7 @@ export const emailTemplateKeys = [
 export const EMAIL_TEMPLATE_KEYS = {
   BIRTHDAY: "birthday",
   COACHING_REPORT: "coaching_report",
+  EXCUSE_DECISION: "excuse_decision",
   EXCUSE_REQUEST: "excuse_request",
   CONTRACT_RENEWAL: "contract_renewal",
   GENERAL: "general",
@@ -105,6 +107,10 @@ export type EmailTemplateContext = {
   destination?: string | null;
   approvalFlow?: string | null;
   duration?: string | null;
+  /** Friendly excuse type label (e.g. "Morning excuse") for the excuse_decision template. */
+  excuseType?: string | null;
+  /** Excuse date (YYYY-MM-DD) for the excuse_decision template. */
+  excuseDate?: string | null;
   endDate?: string | null;
   employeeHrId?: string | null;
   employeeName?: string | null;
@@ -342,6 +348,9 @@ const placeholderHints = [
   "status",
   "date",
   "duration",
+  // Excuse-decision tokens (employee-facing approval/rejection notice).
+  "excuseType",
+  "excuseDate",
   "startDate",
   "endDate",
   "hireDate",
@@ -390,6 +399,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
   excuse_request: emptyRules(["direct_manager"], ["hr"]),
+  excuse_decision: emptyRules(["employee"]),
   offer_status: emptyRules(["hr"], []),
   recruitment_update: emptyRules(["hr", "recruiter"], []),
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
@@ -471,6 +481,25 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "excuse_request",
     templateName: "Excuse Request",
+  },
+  excuse_decision: {
+    bodyHtml:
+      "<p>{{summary}}</p>" +
+      "<p><strong>Excuse type:</strong> {{excuseType}}</p>" +
+      "<p><strong>Date:</strong> {{excuseDate}}</p>" +
+      "<p><strong>Duration:</strong> {{duration}}</p>" +
+      "<p><strong>Decision:</strong> {{status}}</p>",
+    bodyText:
+      "{{summary}}\n\nExcuse type: {{excuseType}}\nDate: {{excuseDate}}\nDuration: {{duration}}\nDecision: {{status}}",
+    closingText: "Open Phoenix Workforce to review your excuse history.",
+    description:
+      "Excuse decision result sent to the employee after their manager approves or rejects an excuse (late arrival / early leave) request.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "An update on your excuse request.",
+    subject: "Your excuse request was {{status}}",
+    templateKey: "excuse_decision",
+    templateName: "Excuse Decision",
   },
   offer_status: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -734,6 +763,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   general: "General",
   marketing_request: "General",
   excuse_request: "Leave Management",
+  excuse_decision: "Leave Management",
   offer_status: "Recruitment",
   recruitment_update: "Recruitment",
   coaching_report: "Employee Lifecycle",
@@ -1787,6 +1817,8 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     date: text(input.date || new Date().toISOString().slice(0, 10)),
     destination: text(input.destination),
     duration: text(input.duration),
+    excuseType: text(input.excuseType),
+    excuseDate: text(input.excuseDate),
     endDate: text(input.endDate),
     employeeHrId: text(input.employeeHrId),
     employeeName: text(input.employeeName),
