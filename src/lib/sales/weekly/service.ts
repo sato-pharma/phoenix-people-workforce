@@ -490,11 +490,15 @@ export async function loadWeeklyDashboard(filters?: {
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
-  // Validated batches only — blocked uploads never feed the dashboard.
-  const batchesResult = await supabase
+  // Validated batches — ordered newest-first; limit to 200 in the common case (200 ÷ 8 distributors
+  // ≈ 25 weeks of dropdown history). allWeeks skips the limit so the full history stays available.
+  let batchQuery = supabase
     .from("weekly_sales_batches")
     .select("id, week_start, distributor_code, distributor_name")
-    .eq("status", "validated");
+    .eq("status", "validated")
+    .order("week_start", { ascending: false });
+  if (!filters?.allWeeks) batchQuery = batchQuery.limit(200);
+  const batchesResult = await batchQuery;
   if (batchesResult.error) throw new SalesWorkflowError("load_failed", batchesResult.error.message, 500);
   const batches = batchesResult.data ?? [];
 
@@ -575,6 +579,12 @@ export async function loadWeeklyDashboard(filters?: {
 
   // Fetch validated fact rows (paged) and aggregate in memory — volume is small (hundreds/week).
   const validIds = new Set(batches.map((batch) => String(batch.id)));
+  // Push the week filter to DB when a specific week is selected so we only scan 1-2 weeks
+  // instead of the full history table. When allWeeks is requested we skip the filter and
+  // let validIds (derived from batches) gate what we aggregate.
+  const weekDbFilter = allWeeksRequested
+    ? ([] as string[])
+    : [...selectedWeekSet, ...(priorWeek ? [priorWeek] : [])];
   const allRows: FactRow[] = [];
   const pageSize = 1000;
   let from = 0;
@@ -589,6 +599,7 @@ export async function loadWeeklyDashboard(filters?: {
     // Distributor narrowing is a safe DB-level optimization (distributor options come from the batch
     // list, not these rows, so they never collapse). Region/product/line are filtered IN MEMORY only
     // so their full option universes stay available for multi-select — and so exclude mode works.
+    if (weekDbFilter.length > 0) query = query.in("week_start", weekDbFilter);
     if (distributor.has && distributor.mode === "include") query = query.in("distributor_code", [...distributor.set]);
     const page = await query;
     if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
