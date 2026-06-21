@@ -1035,6 +1035,12 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             title="Assigned Sales"
             value={`${stats.salesClassification.assigned_employee_sales.records} / ${formatCurrency(stats.salesClassification.assigned_employee_sales.salesValue)}`}
           />
+          <SummaryCard
+            color={stats.summary.marketingPharmacyCoverageRate > 95 ? "green" : stats.summary.marketingPharmacyCoverageRate > 80 ? "orange" : "rose"}
+            icon={Activity}
+            title="Pharmacy Map Coverage"
+            value={`${stats.summary.marketingPharmacyCoverageRate.toFixed(0)}% · ${stats.summary.marketingUnmappedPharmacyTargets} unmapped`}
+          />
         </div>
       </section>
 
