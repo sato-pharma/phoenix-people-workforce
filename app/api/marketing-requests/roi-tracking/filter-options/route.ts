@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
 import { getMarketingRoiFilterOptions } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Headroom over the scoped-index reads (employee directory + marketing_* loads); matches the sibling
+// roi-tracking routes (app/api/marketing-requests/** had no per-route maxDuration).
+export const maxDuration = 60;
 
 function filterOptionsApiError(error: unknown) {
   if (isForbiddenError(error)) {
@@ -15,6 +18,9 @@ function filterOptionsApiError(error: unknown) {
       status: 403,
     };
   }
+
+  // A DB statement timeout (SQLSTATE 57014) is transient + user-actionable, not an internal fault.
+  if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
 
   const message = error instanceof Error
     ? error.message

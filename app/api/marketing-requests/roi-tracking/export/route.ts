@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
 import { buildMarketingRoiReportWorkbook } from "@/lib/export/marketing-roi-workbook";
 import {
   getMarketingRoiReport,
@@ -20,6 +20,8 @@ function exportApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return { code: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", status: 403 };
   }
+  // A DB statement timeout (SQLSTATE 57014) is transient + user-actionable, not an internal fault.
+  if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
   const message = error instanceof Error ? error.message : String(error ?? "");
   const normalized = message.toLowerCase();
   if (
