@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { removeSalesUploadObject, resolveUploadedSpreadsheet } from "@/lib/sales/monthly-import-request";
 import { commitMonthlyUpload } from "@/lib/sales/sales-upload";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -11,16 +12,19 @@ export const dynamic = "force-dynamic";
 
 // Persist a raw monthly sheet. Only TWO things block (persist nothing): unmapped rows, and a
 // duplicate sheet (this distributor's month is already imported). Every other finding is an advisory
-// warning that never blocks.
+// warning that never blocks. Large workbooks (> ~4MB) arrive by Storage reference (storagePath)
+// instead of in the body, bypassing Vercel's ~4.5MB function body cap.
 export async function POST(request: Request) {
+  let cleanupStoragePath: string | null = null;
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    const form = await request.formData();
-    const file = form.get("file");
-    const distributorCode = String(form.get("distributorCode") ?? "").trim();
-    const periodOverride = String(form.get("period") ?? "").trim();
-    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
+    const resolved = await resolveUploadedSpreadsheet(request);
+    if (!resolved.ok) return NextResponse.json({ success: false, error: resolved.error }, { status: resolved.status });
+    cleanupStoragePath = resolved.storagePath;
+    const file = resolved.file;
+    const distributorCode = resolved.field("distributorCode");
+    const periodOverride = resolved.field("period");
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
     const validation = validateSpreadsheetFile(file, {
@@ -60,5 +64,9 @@ export async function POST(request: Request) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     if (error instanceof SalesWorkflowError) return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to import the sheet." }, { status: 500 });
+  } finally {
+    // Delete the temp Storage object once the import is persisted (or has failed) — the bucket only
+    // ever holds in-flight uploads.
+    await removeSalesUploadObject(cleanupStoragePath);
   }
 }

@@ -99,3 +99,40 @@ export async function removeSalesUploadObject(storagePath: string | null): Promi
   if (!storagePath) return;
   await getSupabaseAdmin().storage.from(SALES_IMPORT_BUCKET).remove([storagePath]).catch(() => {});
 }
+
+export type ResolvedUploadedSpreadsheet =
+  | { ok: true; file: File; field: (name: string) => string; storagePath: string | null }
+  | { ok: false; error: string; status: number };
+
+// Generic single-file upload resolver for the /sales/upload endpoints (analyze / commit / weekly
+// validate). Like resolveSalesUploadRequest it accepts BOTH transport paths so large workbooks bypass
+// Vercel's ~4.5MB serverless body cap, but it carries no domain-specific fields — the caller reads what
+// it needs via field() (works identically for the JSON body and the multipart form) and applies its own
+// spreadsheet validation. The caller owns the returned storagePath's lifecycle (delete via
+// removeSalesUploadObject once processing is done).
+export async function resolveUploadedSpreadsheet(request: Request): Promise<ResolvedUploadedSpreadsheet> {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const path = String(body?.storagePath ?? "").trim();
+    if (!path) return { error: "Uploaded file reference is missing.", ok: false, status: 400 };
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.storage.from(SALES_IMPORT_BUCKET).download(path);
+    if (error || !data) {
+      return { error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400 };
+    }
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const fileName = path.split("/").pop() ?? "upload.xlsx";
+    const file = new File([buffer], fileName, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    return { field: (name) => String(body?.[name] ?? "").trim(), file, ok: true, storagePath: path };
+  }
+
+  const formData = await request.formData();
+  const formFile = formData.get("file");
+  const file = formFile instanceof File ? formFile : null;
+  if (!file) return { error: "Sales workbook file is required.", ok: false, status: 400 };
+  return { field: (name) => String(formData.get(name) ?? "").trim(), file, ok: true, storagePath: null };
+}

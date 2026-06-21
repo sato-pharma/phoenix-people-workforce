@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
+import { removeSalesUploadObject, resolveUploadedSpreadsheet } from "@/lib/sales/monthly-import-request";
 import { analyzeMonthlyUpload } from "@/lib/sales/sales-upload";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -10,16 +11,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Dry-run: recognize + summarize a raw monthly sheet WITHOUT persisting. Same recognizer the commit
-// step uses, so analyze and upload can never disagree.
+// step uses, so analyze and upload can never disagree. Large workbooks (> ~4MB) arrive by Storage
+// reference (storagePath) instead of in the body, so they bypass Vercel's ~4.5MB function body cap.
 export async function POST(request: Request) {
+  let cleanupStoragePath: string | null = null;
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    const form = await request.formData();
-    const file = form.get("file");
-    const distributorCode = String(form.get("distributorCode") ?? "").trim();
-    const periodOverride = String(form.get("period") ?? "").trim();
-    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "A raw sheet is required." }, { status: 400 });
+    const resolved = await resolveUploadedSpreadsheet(request);
+    if (!resolved.ok) return NextResponse.json({ success: false, error: resolved.error }, { status: resolved.status });
+    cleanupStoragePath = resolved.storagePath;
+    const file = resolved.file;
+    const distributorCode = resolved.field("distributorCode");
+    const periodOverride = resolved.field("period");
     if (!distributorCode) return NextResponse.json({ success: false, error: "Distributor is required." }, { status: 400 });
 
     const validation = validateSpreadsheetFile(file, {
@@ -44,5 +48,8 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });
+  } finally {
+    // Analyze never persists, so always delete the temp Storage object once we're done with it.
+    await removeSalesUploadObject(cleanupStoragePath);
   }
 }
