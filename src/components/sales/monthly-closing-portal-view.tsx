@@ -25,6 +25,9 @@ type Props = {
   productScoped: boolean;
   selectedPeriod: string | null;
   trend: PortalClosingTrendPoint[];
+  /** Live monthly-closing completion bar: distinct distributors uploaded this period + expected total. */
+  distributorsUploaded?: number | null;
+  distributorsExpected?: number | null;
 };
 
 function splitPeriod(period: string): { year: number; month: number } | null {
@@ -83,6 +86,8 @@ export function MonthlyClosingPortalView({
   awaitingPublish,
   availablePeriods,
   basePath = "/employee-portals/monthly-closing",
+  distributorsExpected,
+  distributorsUploaded,
   emptyMessage,
   emptyTitle,
   line,
@@ -175,6 +180,23 @@ export function MonthlyClosingPortalView({
           value={String(productCount)}
         />
       </div>
+
+      {typeof distributorsExpected === "number" && distributorsExpected > 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Distributors uploaded</p>
+            <p className="text-xs font-black tabular-nums text-slate-700">
+              {distributorsUploaded ?? 0} of {distributorsExpected} · {Math.min(100, Math.round(((distributorsUploaded ?? 0) / distributorsExpected) * 100))}%
+            </p>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74] transition-all"
+              style={{ width: `${Math.min(100, Math.round(((distributorsUploaded ?? 0) / distributorsExpected) * 100))}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1 sm:w-40">

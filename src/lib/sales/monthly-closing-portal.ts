@@ -15,6 +15,7 @@ import {
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee-portal Monthly Closing.
@@ -32,6 +33,28 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // (Lacto Basic) are always stripped — a product manager only ever sees them if
 // they were explicitly assigned, which the seed never does.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Owner-set expected distributor count for the Monthly Sales Closing completion bar (fixed). */
+const MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS = 10;
+
+/** Distinct distributors with a VALIDATED upload for a period — the closing-completion numerator.
+ *  A distributor's upload covers all its lines, so this is period-wide (not line-scoped). */
+async function countUploadedDistributorsForPeriod(period: string | null): Promise<number> {
+  if (!period) return 0;
+  const supabase = getSupabaseAdmin();
+  const result = await supabase
+    .from("source_of_sales_import_batches")
+    .select("distributor_code")
+    .eq("status", "validated")
+    .eq("period", period);
+  if (result.error) return 0;
+  const codes = new Set(
+    (result.data ?? [])
+      .map((row) => String((row as { distributor_code?: unknown }).distributor_code ?? "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  return codes.size;
+}
 
 /** Roles that can open the portal Monthly Closing tab. */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
@@ -263,6 +286,9 @@ export type PortalClosingResult = {
   selectedPeriod: string | null;
   /** True when the viewer has a line but nothing has been published for it yet. */
   awaitingPublish: boolean;
+  /** Live monthly only: distinct distributors uploaded this period + the fixed expected total (completion bar). */
+  distributorsUploaded?: number;
+  distributorsExpected?: number;
 };
 
 /**
@@ -360,6 +386,8 @@ export async function loadPortalLiveMonthly(input: {
     availablePeriods: raw.availablePeriods,
     selectedPeriod: raw.period,
     awaitingPublish: false,
+    distributorsUploaded: await countUploadedDistributorsForPeriod(raw.period),
+    distributorsExpected: MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS,
   };
 }
 
