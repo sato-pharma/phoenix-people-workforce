@@ -122,7 +122,7 @@ type EmployeePortalNavSection = {
 
 function sectionRailIcon(title: string): typeof Activity {
   if (title === "My Workspace") return Home;
-  if (title === "Marketing Requests") return BriefcaseBusiness;
+  if (title === "Marketing & ROI") return BriefcaseBusiness;
   if (title === "Leave Management") return CalendarDays;
   if (title === "Team Performance") return Users;
   if (title === "Team Operations") return BriefcaseBusiness;
@@ -168,6 +168,8 @@ function buildEmployeePortalSections({
   showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
+  showActionsTab = false,
+  showAttendanceTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -181,8 +183,9 @@ function buildEmployeePortalSections({
     {
       title: "My Workspace",
       items: [
-        ...(showDashboardTab ? [{ href: "/employee-portals", label: "My Dashboard", icon: Home }] : []),
-        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon }] : []),
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/actions", label: "Actions", icon: Inbox }] : []),
+        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "Sales Dashboard", icon: LineChartIcon }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
@@ -221,7 +224,7 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Marketing Requests",
+      title: "Marketing & ROI",
       items: [
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
@@ -237,8 +240,9 @@ function buildEmployeePortalSections({
       items: [
         { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
         { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
+        ...(showAttendanceTab ? [{ href: "/employee-portals/attendance", label: "My Attendance", icon: ScanLine }] : []),
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
-        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
       ],
     },
     {
@@ -263,7 +267,7 @@ function buildEmployeePortalSections({
       title: "Expenses",
       items: [
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
-        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
+        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Command Center", icon: CircleDollarSign }] : []),
         ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: Send }] : []),
       ],
     },

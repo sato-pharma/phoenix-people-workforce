@@ -19,7 +19,7 @@ export function runPhase13BrowserSmokeRegressionTests() {
 
   assert.match(portalExpensesSource, /redirect\("\/employee-portals\/expense-dashboard"\)/);
   assert.doesNotMatch(portalExpensesSource, /redirect\("\/employee-portals"\)/);
-  assert.match(portalLayoutSource, /href: "\/employee-portals\/expense-dashboard", label: "Expense Dashboard"/);
+  assert.match(portalLayoutSource, /href: "\/employee-portals\/expense-dashboard", label: "Expense Command Center"/);
 
   const portalHomeSource = readFileSync("app/employee-portals/page.tsx", "utf8");
   assert.match(portalHomeSource, /PortalCommandCenter/);

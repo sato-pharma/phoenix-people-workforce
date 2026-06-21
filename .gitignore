@@ -64,3 +64,7 @@ desktop.ini
 # Local git worktrees and agent runtime (never track or deploy)
 .codex-worktrees/
 .claude/scheduled_tasks.lock
+
+# Local-only throwaway tooling/scratch (screenshots, scratch git objects)
+.playwright-cli/
+.alt-git-objects/

@@ -42,6 +42,7 @@ const eslintConfig = defineConfig([
     // linted by this project's CI (it produces thousands of unrelated findings).
     ".codex-worktrees/**",
     ".playwright-cli/**",
+    ".alt-git-objects/**",
     ".vercel/**",
     // Generated output files — not part of the app source.
     "coverage/**",
