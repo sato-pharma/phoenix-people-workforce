@@ -319,5 +319,12 @@ export async function persistNormalizedBatch(input: {
     if (error) throw error;
   }
 
+  // Keep the pre-aggregated fact rollup in sync so the executive / sales-intelligence
+  // dashboards (which read the rollup instead of live-scanning the 410 MB raw table)
+  // reflect this batch immediately. Idempotent (delete-then-insert this batch), so a
+  // failed refresh fails the commit and self-heals on retry.
+  const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
+  if (rollupRefresh.error) throw rollupRefresh.error;
+
   return { batchId, period, importedRows: rows.length };
 }
