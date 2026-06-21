@@ -39,6 +39,8 @@ export type EmployeePortalNavVisibility = {
   showMiniMonthlySalesTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
+  showActionsTab?: boolean;
+  showAttendanceTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -92,8 +94,6 @@ const marketingRequestRoles = new Set<PhoenixRole>([
 ]);
 
 const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
-  "Product Manager",
-  "Group Product Manager",
   "Training Manager",
   "Marketing Manager",
 ]);
@@ -220,7 +220,7 @@ export function resolveEmployeePortalNavVisibility(
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
-    showReportItTab: isA3Account,
+    showReportItTab: isA3Account || isProductManager || isGroupProductManager,
     showReportItDashboardTab: false,
     showOrganogramTab:
       showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
@@ -236,11 +236,13 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab:
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
-    showFingerprintReportTab: hasDeviceMapping === true,
+    showFingerprintReportTab: hasDeviceMapping === true || isProductManager || isGroupProductManager,
     showRoiIntelligenceTab: showSalesIntelligence,
     showMiniWeeklySalesTab: showSalesIntelligence,
     showMiniMonthlySalesTab: showSalesIntelligence,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence,
+    showActionsTab: !isTrainingManager,
+    showAttendanceTab: true,
   };
 }

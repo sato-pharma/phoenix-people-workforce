@@ -152,14 +152,14 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-my-workspace",
     items: [
-      { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace", icon: LayoutDashboard, label: "Command Center", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
       { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRolesWithIncentive },
       { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
       { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/deductions", icon: ReceiptText, label: "Deductions", moduleId: "admin.workspace.deductions", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "My Attendance", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "My Workspace",
   },
@@ -172,7 +172,7 @@ const adminNavigationSectionSeeds = [
       { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
       { href: "/workspace/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.workspace.roi_tracking", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
     ],
-    label: "Marketing Requests",
+    label: "Marketing & ROI",
   },
   {
     id: "workspace-leave-management",
@@ -194,7 +194,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-expenses",
     items: [
-      { href: "/workspace/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", moduleId: "admin.workspace.expense_dashboard", permissions: [{ resource: "expenses", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/expense-dashboard", icon: ReceiptText, label: "Expense Command Center", moduleId: "admin.workspace.expense_dashboard", permissions: [{ resource: "expenses", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/submit-expense", icon: PlusCircle, label: "Submit Expense", moduleId: "admin.workspace.submit_expense", permissions: [{ resource: "outstation", action: "create" }], roles: adminShellEmployeeRoles },
     ],
     label: "Expenses",

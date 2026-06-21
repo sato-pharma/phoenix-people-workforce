@@ -150,7 +150,7 @@ export function runEmployeePortalNavigationTests() {
   // Product Manager and Group Product Manager are authorized for Marketing and must
   // see the module in nav without the launch flag (regression coverage).
   const productManagerDefault = resolveEmployeePortalNavVisibility("Product Manager");
-  assert.equal(productManagerDefault.showMyPerformanceTab, false, "Product Manager should not see My Performance");
+  assert.equal(productManagerDefault.showMyPerformanceTab, true, "Product Manager now sees Sales Dashboard (showMyPerformanceTab)");
   assert.equal(productManagerDefault.showExpenseActionTab, true, "Product Manager should see Submit Expense in nav");
   assert.equal(productManagerDefault.showMarketingRequestsTab, true, "Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(productManagerDefault.showMarketingInboxTab, true, "Product Manager should see the Marketing Approval Inbox in nav");
@@ -160,7 +160,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(productManagerDefault.showOrganogramTab, true, "Product Manager should see the line-scoped Organogram tab in nav");
 
   const groupProductManagerDefault = resolveEmployeePortalNavVisibility("Group Product Manager");
-  assert.equal(groupProductManagerDefault.showMyPerformanceTab, false, "Group Product Manager should not see My Performance");
+  assert.equal(groupProductManagerDefault.showMyPerformanceTab, true, "Group Product Manager now sees Sales Dashboard (showMyPerformanceTab)");
   assert.equal(groupProductManagerDefault.showExpenseActionTab, true, "Group Product Manager should see Submit Expense in nav");
   assert.equal(groupProductManagerDefault.showMarketingRequestsTab, true, "Group Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(groupProductManagerDefault.showMarketingInboxTab, true, "Group Product Manager should see the Marketing Approval Inbox in nav");
