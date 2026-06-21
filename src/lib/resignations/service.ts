@@ -1,7 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { getEmployeeDirectory, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
@@ -370,6 +370,18 @@ async function notifyResignationWorkflow(
   const actionUrl = record.id
     ? `/admin/action-center?module=resignation&id=${encodeURIComponent(record.id)}`
     : "/admin/action-center?module=resignation";
+  // The admin-editable resignation_workflow template renders an employee detail table
+  // (Department/Position/Last Working Day) and a "Dear {{managerName}}" greeting. The
+  // minimal record passed here lacks those fields, so load the directory row defensively
+  // to populate them — a directory failure must never block the resignation notification.
+  let resignationDetail: Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number] | null = null;
+  try {
+    const directory = await getEmployeeDirectoryRows();
+    resignationDetail =
+      directory.find((row) => normalizeHrId(row.hrId) === normalizeHrId(record.employeeHrId)) ?? null;
+  } catch {
+    resignationDetail = null;
+  }
   await createSystemNotification({
     actionUrl,
     actorId: "system",
@@ -385,6 +397,14 @@ async function notifyResignationWorkflow(
       notificationType: "resignation",
       subject: `Phoenix ${title} - ${record.employeeName}`,
       summary: `Resignation workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      // Tokens the resignation_workflow template uses but the metric mapping never fills.
+      templateContext: {
+        date: record.effectiveDate,
+        endDate: record.effectiveDate,
+        jobTitle: resignationDetail?.jobTitle ?? "—",
+        line: resignationDetail?.lineName ?? "—",
+        managerName: resignationDetail?.managerName ?? "Team",
+      },
       title,
       tone,
     },
