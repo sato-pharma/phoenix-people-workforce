@@ -16,6 +16,17 @@ import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacat
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { ContractRow } from "@/lib/contracts/types";
+import { getApproverPendingRequests, getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import type { MarketingApprovedRequestRow, MarketingRequest } from "@/lib/marketing-requests/types";
+import { listUnifiedOutstationExpenses } from "@/lib/payroll/expenses";
+import type { PayrollExpenseApproval } from "@/lib/payroll/types";
+import {
+  EMPTY_PORTAL_ATTENTION_INBOX,
+  type ActionHubUrgency,
+  type PortalAttentionInbox,
+  type PortalAttentionItem,
+  type PortalAttentionModule,
+} from "@/components/action-center/types";
 
 // Case-insensitive HR_ID equality (matches the `.ilike` comparisons used across the
 // domain services). Guards each source so a manager viewing their own list never sees
@@ -131,6 +142,43 @@ function mapResignationRecord(row: ResignationRecord): MyRequestItem {
   };
 }
 
+function mapMarketingRequest(row: MarketingRequest): MyRequestItem {
+  return {
+    id: `marketing:${row.id}`,
+    module: "marketing",
+    title: `Marketing · ${row.requestCode}`,
+    statusLabel: humanize(row.status),
+    statusTone: toTone(row.status),
+    submittedAt: row.submittedAt ?? row.createdAt,
+    href: null,
+    lines: [
+      { label: "Code", value: row.requestCode },
+      {
+        label: "Est. cost",
+        value: `${Number(row.estimatedCost || 0).toLocaleString("en-EG", { maximumFractionDigits: 0 })} EGP`,
+      },
+    ],
+    decisionNote: null,
+  };
+}
+
+function mapMarketingApproved(row: MarketingApprovedRequestRow): MyRequestItem {
+  return {
+    id: `marketing:${row.id}`,
+    module: "marketing",
+    title: `Marketing · ${row.requestCode}`,
+    statusLabel: humanize(row.status),
+    statusTone: toTone(row.status),
+    submittedAt: "",
+    href: null,
+    lines: [
+      { label: "Code", value: row.requestCode },
+      { label: "Customer", value: row.customerName },
+    ],
+    decisionNote: null,
+  };
+}
+
 /**
  * Aggregate every request the signed-in employee submitted themselves, across
  * modules, into one uniform list for the Actions "My requests" tab.
@@ -151,9 +199,10 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
     listMedicalRepExpenseRequests(access).catch(() => null),
     getEmployeePlansWorkspace(access).catch(() => null),
     getMyResignations(access).catch(() => null),
+    getMarketingRequestDraftWorkspace(access).catch(() => null),
   ]);
 
-  const [vacation, excuse, outstation, plans, resignations] = settled;
+  const [vacation, excuse, outstation, plans, resignations, marketing] = settled;
   const items: MyRequestItem[] = [];
 
   if (vacation.status === "fulfilled" && vacation.value) {
@@ -176,6 +225,19 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
   }
   if (resignations.status === "fulfilled" && resignations.value) {
     for (const row of resignations.value) items.push(mapResignationRecord(row));
+  }
+  if (marketing.status === "fulfilled" && marketing.value) {
+    const workspace = marketing.value;
+    // Dedupe by request id across the draft-workspace buckets and guard to the
+    // caller's own requests so a manager never sees a report's request here.
+    const ownById = new Map<string, MyRequestItem>();
+    for (const row of [...workspace.drafts, ...workspace.inApproval, ...workspace.returned]) {
+      if (sameHrId(row.requesterHrId, hrId)) ownById.set(row.id, mapMarketingRequest(row));
+    }
+    for (const row of workspace.approvedRequests) {
+      if (sameHrId(row.requesterHrId, hrId)) ownById.set(row.id, mapMarketingApproved(row));
+    }
+    for (const item of ownById.values()) items.push(item);
   }
 
   items.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
@@ -410,4 +472,180 @@ export async function getAwaitingMyActionItems(
 
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return items;
+}
+
+// ── Portal Overview "Needs your attention" inbox ──────────────────────────────
+// Role-adaptive feed used ONLY by the employee-portal Overview tile. Approver
+// roles see items pending their decision (vacation / excuse / marketing / plan /
+// team expenses); everyone sees items returned to them for action. Each source is
+// independently access-scoped — this NEVER widens the Actions-Center portal
+// audience. Heavy fetches (myRequests, expenses) can be injected by the caller to
+// avoid duplicate work when the overview payload already loaded them.
+
+const PORTAL_ATTENTION_RETURNED_HREF: Record<PortalAttentionModule, string> = {
+  leave: "/employee-portals/actions",
+  excuse: "/employee-portals/actions",
+  marketing: "/employee-portals/marketing-requests",
+  outstation: "/employee-portals/expenses",
+  weekly_plan: "/employee-portals/plans",
+};
+
+function urgencyRank(urgency: ActionHubUrgency): number {
+  return urgency === "high" ? 0 : urgency === "normal" ? 1 : 2;
+}
+
+function portalAttentionModuleForMyRequest(module: MyRequestItem["module"]): PortalAttentionModule | null {
+  switch (module) {
+    case "leave":
+      return "leave";
+    case "excuse":
+      return "excuse";
+    case "outstation":
+      return "outstation";
+    case "weekly_plan":
+      return "weekly_plan";
+    case "marketing":
+      return "marketing";
+    default:
+      return null; // resignation has no portal "attention" surface
+  }
+}
+
+// Only people-managers approve team outstation expenses (not PM/GPM/TM, who are
+// product-portfolio roles, nor individual contributors). Keeps the attention inbox
+// from surfacing expense approvals to roles that never action them.
+const EXPENSE_APPROVER_ROLES = new Set<string>([
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Manager",
+]);
+
+export async function getPortalAttentionInbox(
+  access: AccessContext,
+  opts: { myRequests?: MyRequestItem[]; expenses?: PayrollExpenseApproval[] } = {},
+): Promise<PortalAttentionInbox> {
+  const hrId = access.hrId?.trim() ?? "";
+  if (!hrId) return EMPTY_PORTAL_ATTENTION_INBOX;
+
+  const [awaiting, marketingApprovals, plans, expenses, myRequests] = await Promise.all([
+    getAwaitingMyActionItems(access, "portal").catch(() => [] as ActionHubItem[]),
+    getApproverPendingRequests(access).catch(() => null),
+    getEmployeePlansWorkspace(access).catch(() => null),
+    opts.expenses
+      ? Promise.resolve(opts.expenses)
+      : listUnifiedOutstationExpenses(undefined, undefined, undefined, access).catch(
+          () => [] as PayrollExpenseApproval[],
+        ),
+    opts.myRequests ? Promise.resolve(opts.myRequests) : getMyRequestItems(access).catch(() => [] as MyRequestItem[]),
+  ]);
+
+  const items: PortalAttentionItem[] = [];
+
+  // 1) Vacation + excuse approvals (already portal-scoped by getAwaitingMyActionItems).
+  for (const item of awaiting) {
+    const attentionModule: PortalAttentionModule | null =
+      item.module === "leave" ? "leave" : item.module === "excuse" ? "excuse" : null;
+    if (!attentionModule) continue;
+    items.push({
+      id: `approval:${item.module}:${item.id}`,
+      module: attentionModule,
+      kind: "approval",
+      title: item.title,
+      subtitle: item.employeeName,
+      href: "/employee-portals/actions",
+      submittedAt: item.submittedAt,
+      urgency: item.urgency,
+    });
+  }
+
+  // 2) Marketing requests pending the caller's gating decision (scoped to approver).
+  if (marketingApprovals) {
+    for (const row of marketingApprovals.rows) {
+      items.push({
+        id: `approval:marketing:${row.id}`,
+        module: "marketing",
+        kind: "approval",
+        title: `Marketing · ${row.requestCode}`,
+        subtitle: `${row.requesterName} · ${row.currentStepName}`,
+        href: "/employee-portals/marketing-requests/inbox",
+        submittedAt: row.submittedAt ?? "",
+        urgency: "normal",
+      });
+    }
+  }
+
+  // 3) Weekly/monthly plans awaiting the caller's manager approval. The workspace is
+  //    visibility-scoped, so additionally require the plan's managerHrId === caller.
+  if (plans) {
+    for (const plan of plans.plans) {
+      if (plan.status !== "submitted") continue;
+      if (!sameHrId(plan.managerHrId, hrId)) continue;
+      items.push({
+        id: `approval:weekly_plan:${plan.id}`,
+        module: "weekly_plan",
+        kind: "approval",
+        title: `${plan.planKind === "monthly" ? "Monthly" : "Weekly"} plan · ${plan.periodKey}`,
+        subtitle: plan.employeeName,
+        href: "/employee-portals/plans",
+        submittedAt: plan.submittedAt ?? plan.updatedAt,
+        urgency: "normal",
+      });
+    }
+  }
+
+  // 4) Team outstation expense REQUESTS pending the caller's approval. Only people-
+  //    managers approve team expenses, and only system-entered requests (trip_id
+  //    "OUTSTATION-…") are part of an approval workflow — historical Excel rows
+  //    (different trip_id) are excluded so the inbox never floods with non-actionable
+  //    line history. Exclude the caller's own claims (those live in My Requests).
+  if (EXPENSE_APPROVER_ROLES.has(access.role)) {
+    for (const expense of expenses) {
+      if (expense.hrApproved) continue;
+      if (!String(expense.tripId).startsWith("OUTSTATION-")) continue;
+      if (sameHrId(expense.hrId, hrId)) continue;
+      items.push({
+        id: `approval:outstation:${expense.tripId}`,
+        module: "outstation",
+        kind: "approval",
+        title: `Expense · ${expense.date}`,
+        subtitle: expense.hr || expense.hrId || null,
+        href: "/employee-portals/expense-dashboard",
+        submittedAt: expense.date,
+        urgency: "normal",
+      });
+    }
+  }
+
+  // 5) Returned-to-me items (for everyone, including non-managers).
+  for (const request of myRequests) {
+    if (request.statusTone !== "returned") continue;
+    const attentionModule = portalAttentionModuleForMyRequest(request.module);
+    if (!attentionModule) continue;
+    items.push({
+      id: `returned:${request.id}`,
+      module: attentionModule,
+      kind: "returned",
+      title: request.title,
+      subtitle: request.decisionNote,
+      href: PORTAL_ATTENTION_RETURNED_HREF[attentionModule],
+      submittedAt: request.submittedAt,
+      urgency: "high",
+    });
+  }
+
+  items.sort((a, b) => {
+    // Returned items first (the user must act), then by urgency, then oldest first.
+    if (a.kind !== b.kind) return a.kind === "returned" ? -1 : 1;
+    if (a.urgency !== b.urgency) return urgencyRank(a.urgency) - urgencyRank(b.urgency);
+    return String(a.submittedAt).localeCompare(String(b.submittedAt));
+  });
+
+  const capped = items.slice(0, 50);
+  return {
+    totalCount: capped.length,
+    approvalCount: capped.filter((item) => item.kind === "approval").length,
+    returnedCount: capped.filter((item) => item.kind === "returned").length,
+    items: capped,
+  };
 }

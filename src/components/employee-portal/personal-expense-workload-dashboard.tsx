@@ -613,7 +613,21 @@ export function PersonalExpenseWorkloadDashboard({
   const rows: ExpenseRow[] = useMemo(() => {
     const source = data.workload?.expenseRows ?? [];
 
-    return source.map((expense) => ({
+    return source.map((expense) => {
+      const fromCity = compactTripPlace(expense.from || "", expense.to || "", "from");
+      const toCity = compactTripPlace(expense.to || "", expense.from || "", "to", expense.location);
+      // Prefer the parsed destination; fall back to the (richer) compacted to/from city
+      // so trips with an unparseable "to" field aren't mislabelled "Unknown".
+      const parsedDestination = extractDestination(expense.to || "", expense.location);
+      const destinationCity =
+        parsedDestination !== "Unknown"
+          ? parsedDestination
+          : toCity !== "Unknown"
+            ? toCity
+            : fromCity !== "Unknown"
+              ? fromCity
+              : "Unknown";
+      return {
       hrId: normalizeString(expense.hrId),
       ownerName: normalizeString(expense.specialist || expense.hrId || "Employee"),
       tripId: normalizeString(expense.tripId),
@@ -621,10 +635,10 @@ export function PersonalExpenseWorkloadDashboard({
       toDate: normalizeString(expense.toDate),
       requestType: normalizeString(expense.requestType),
       from: normalizeString(expense.from),
-      fromCity: compactTripPlace(expense.from || "", expense.to || "", "from"),
+      fromCity,
       to: normalizeString(expense.to),
-      toCity: compactTripPlace(expense.to || "", expense.from || "", "to", expense.location),
-      destinationCity: extractDestination(expense.to || "", expense.location),
+      toCity,
+      destinationCity,
       status: normalizeString(expense.status),
       travelCost: Number(expense.travelCost ?? 0),
       meetingAmount: Number(expense.meetingAmount ?? 0),
@@ -638,7 +652,8 @@ export function PersonalExpenseWorkloadDashboard({
       hrNotes: normalizeString(expense.hrNotes || expense.description),
       approvedAt: normalizeString(expense.approvedAt ?? ""),
       hrApproved: Boolean(expense.hrApproved),
-    }));
+      };
+    });
   }, [data.workload?.expenseRows]);
 
   /* -------- filter state -------- */
@@ -1640,7 +1655,7 @@ export function PersonalExpenseWorkloadDashboard({
                         : [Number(value).toLocaleString(), "Trips"]
                     }
                   />
-                  <Bar dataKey="trips" radius={[0, 0, 0, 0]}>
+                  <Bar dataKey="trips" name="Trips" radius={[0, 0, 0, 0]}>
                     {destinationSummary.map((row) => (
                       <Cell key={row.city} fill={spendColorForValue(row.trips, destinationTripsMax)} />
                     ))}

@@ -410,11 +410,6 @@ export default async function EmployeePortalVacanciesPage({
                               vacancy.jobTitle ??
                               "Unspecified Position"}
                           </p>
-                          {vacancy.note ? (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
-                              {vacancy.note}
-                            </p>
-                          ) : null}
                           {vacancy.isDistrictManagerVacancy ? (
                             <span className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                               DSM Vacancy
@@ -511,11 +506,6 @@ export default async function EmployeePortalVacanciesPage({
                       <span>{formatDate(vacancy.createdAt)}</span>
                     </div>
 
-                    {vacancy.note ? (
-                      <p className="mt-1.5 text-[11px] text-slate-400">
-                        {vacancy.note}
-                      </p>
-                    ) : null}
                   </div>
                 );
               })}

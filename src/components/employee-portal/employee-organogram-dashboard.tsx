@@ -18,11 +18,6 @@ import type { VacancyReportData } from "@/lib/reports/vacancies";
 /* ------------------------------------------------------------------ */
 
 type OrganogramRow = VacancyReportData["organogramRows"][number];
-type MemberNode = {
-  children: MemberNode[];
-  key: string;
-  row: OrganogramRow;
-};
 type ManagerLane = {
   dsm: OrganogramRow | null;
   members: OrganogramRow[];
@@ -211,56 +206,6 @@ function isMarketingManager(row: OrganogramRow) {
 
 function formatDate(value: string | null | undefined) {
   return formatDateOnly(value, "en", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Tree Builder                                                      */
-/* ------------------------------------------------------------------ */
-
-function buildMemberTree(members: OrganogramRow[]) {
-  const memberIds = new Set(members.map((m) => normalizeHrIdKey(m.hrId)).filter(Boolean));
-  const parentByNodeKey = new Map<string, string>();
-  const nodesByHrId = new Map<string, MemberNode[]>();
-  const nodes = members.map((m, i) => ({
-    children: [],
-    key: `${rowKey(m)}-${i}`,
-    row: m,
-  }) satisfies MemberNode);
-
-  for (const node of nodes) {
-    const hrId = normalizeHrIdKey(node.row.hrId);
-    nodesByHrId.set(hrId, [...(nodesByHrId.get(hrId) ?? []), node]);
-  }
-
-  const roots: MemberNode[] = [];
-  for (const node of nodes) {
-    const memberHrId = normalizeHrIdKey(node.row.hrId);
-    const managerHrId = normalizeHrIdKey(node.row.managerHrId);
-    if (managerHrId && memberHrId !== managerHrId && memberIds.has(managerHrId)) {
-      const managerNode = nodesByHrId.get(managerHrId)?.[0];
-      let cursor = managerNode?.key;
-      let createsCycle = false;
-      while (cursor) {
-        if (cursor === node.key) { createsCycle = true; break; }
-        cursor = parentByNodeKey.get(cursor);
-      }
-      if (managerNode && !createsCycle) {
-        managerNode.children.push(node);
-        parentByNodeKey.set(node.key, managerNode.key);
-      } else {
-        roots.push(node);
-      }
-    } else {
-      roots.push(node);
-    }
-  }
-
-  const sortNodes = (n: MemberNode[]) => {
-    n.sort((a, b) => a.row.fullName.localeCompare(b.row.fullName));
-    for (const nd of n) sortNodes(nd.children);
-  };
-  sortNodes(roots);
-  return roots;
 }
 
 /* ------------------------------------------------------------------ */
@@ -593,21 +538,6 @@ function TeamMemberCardUI({ row }: { row: OrganogramRow }) {
   );
 }
 
-function TeamMemberNodeUI({ node }: { node: MemberNode }) {
-  return (
-    <div>
-      <TeamMemberCardUI row={node.row} />
-      {node.children.length > 0 && (
-        <div className="ml-3 divide-y divide-gray-100 border-l border-orange-200 pl-1.5">
-          {node.children.map((child) => (
-            <TeamMemberNodeUI key={child.key} node={child} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ManagerLaneUI({
   group,
   groupKey,
@@ -678,16 +608,26 @@ function ManagerLaneUI({
         )}
       </div>
 
-      {/* Team members — visible dividers between cards */}
+      {/* Team members — flat list so every counted member is its own visible row.
+          (A member whose managerHrId happens to match a peer was previously nested
+          under that peer via buildMemberTree and visually "disappeared" as a row.) */}
       <div className="divide-y divide-gray-100 bg-white">
         {group.members.length === 0 ? (
           <div className="px-3 py-4 text-center text-[11px] text-slate-400">
             No team members assigned.
           </div>
         ) : (
-          buildMemberTree(group.members).map((node) => (
-            <TeamMemberNodeUI key={node.key} node={node} />
-          ))
+          [...group.members]
+            .sort((a, b) =>
+              a.type === b.type
+                ? a.fullName.localeCompare(b.fullName)
+                : a.type === "vacancy"
+                  ? 1
+                  : -1,
+            )
+            .map((row, index) => (
+              <TeamMemberCardUI key={`${rowKey(row)}-${index}`} row={row} />
+            ))
         )}
       </div>
     </div>

@@ -121,13 +121,25 @@ export function runEmployeePortalPayslipSalaryTests() {
 
   assert.match(
     dashboardSource,
-    /showTeamLeaveAndStructurePanels \? <EmployeesOnLeaveTodayPanel data=\{data\} \/> : null/,
-    "Employees on Leave Today panel must be hidden for Medical Rep overview.",
+    /const showTeamPanels = canSeeTeamLeaveAndStructurePanels\(data\)/,
+    "Overview must derive team-panel visibility from the manager-role check.",
   );
 
   assert.match(
     dashboardSource,
-    /showTeamLeaveAndStructurePanels \? <TeamStructurePanel data=\{data\} \/> : null/,
-    "Team Structure panel must be hidden for Medical Rep overview.",
+    /showTeamPanels \? \([\s\S]*?<EmployeesOnLeaveTodayPanel data=\{data\} \/>[\s\S]*?\) : null/,
+    "Employees on Leave Today panel must be gated by the manager-role check (hidden for Medical Rep overview).",
+  );
+
+  assert.match(
+    dashboardSource,
+    /const showTeamStructure = canSeeTeamLeaveAndStructurePanels\(data\)/,
+    "Full-performance page must derive Team Structure visibility from the manager-role check.",
+  );
+
+  assert.match(
+    dashboardSource,
+    /showTeamStructure \? <TeamStructurePanel data=\{data\} \/> : null/,
+    "Team Structure panel must be hidden for non-manager roles.",
   );
 }
