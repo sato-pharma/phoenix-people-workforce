@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import {
@@ -30,6 +31,7 @@ export type CeoWelcomeProfile = {
   fullName: string;
   roleLabel: string;
   hrId: string | null;
+  imageUrl?: string | null;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -49,8 +51,15 @@ function pct(value: number, decimals = 0) {
   return `${(Number.isFinite(value) ? value : 0).toFixed(decimals)}%`;
 }
 
+const HONORIFICS = new Set(["dr", "prof", "eng", "mr", "mrs", "ms", "miss"]);
+
 function firstNameFrom(full: string) {
-  return (full || "").trim().split(/\s+/)[0] || "there";
+  const parts = (full || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "there";
+  if (parts.length >= 2 && HONORIFICS.has(parts[0].toLowerCase().replace(/\.$/, ""))) {
+    return `${parts[0]} ${parts[1]}`;
+  }
+  return parts[0];
 }
 
 // ── Attention tone mapping ────────────────────────────────────────────────────
@@ -436,6 +445,12 @@ export function CeoCommandCenter({
   access: AccessContext;
 }) {
   const { health, headcount, payroll, attention, approvals, sos, trends } = data;
+  const initials = welcome.fullName
+    .split(/\s+/)
+    .filter((p) => /^[A-Za-z]/.test(p))
+    .slice(0, 2)
+    .map((p) => p[0].toUpperCase())
+    .join("");
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -494,8 +509,24 @@ export function CeoCommandCenter({
             </div>
           </div>
 
-          {/* Right: Health gauge + 3 quick KPI tiles */}
+          {/* Right: Profile photo + Health gauge + 3 quick KPI tiles */}
           <div className="flex flex-col items-center gap-4 lg:items-end">
+            <div className="relative h-[100px] w-[100px] shrink-0 overflow-hidden border border-orange-300/25 bg-gradient-to-tr from-orange-500/20 via-white/10 to-sky-500/20 shadow-[0_12px_28px_rgba(0,0,0,0.24)]">
+              {welcome.imageUrl ? (
+                <Image
+                  alt={welcome.fullName}
+                  className="h-full w-full object-cover object-[center_18%]"
+                  height={100}
+                  priority
+                  src={welcome.imageUrl}
+                  width={100}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-orange-500/10">
+                  <span className="text-[28px] font-black text-orange-400">{initials || "CEO"}</span>
+                </div>
+              )}
+            </div>
             <HealthGauge score={health.score} />
             <div className="flex gap-2">
               <HeroMetricTile
