@@ -179,6 +179,22 @@ export async function resolveWeeklyContract(code: string | null | undefined): Pr
   return (row && dbRowToContract(row)) || weeklyContractByCode(key);
 }
 
+/**
+ * Resolve the contract AND report whether it came from an in-app DB override ('override') or the
+ * built-in code contract ('code'). Used to stamp each upload batch for traceability.
+ */
+export async function resolveWeeklyContractWithSource(
+  code: string | null | undefined,
+): Promise<{ contract: WeeklyDistributorContract | undefined; source: "code" | "override" }> {
+  const key = codeKey(code);
+  if (!key) return { contract: undefined, source: "code" };
+  const db = await loadWeeklyColumnProfiles();
+  const row = db.get(key);
+  const dbContract = row && dbRowToContract(row);
+  if (dbContract) return { contract: dbContract, source: "override" };
+  return { contract: weeklyContractByCode(key), source: "code" };
+}
+
 /** All known weekly contracts as editor shapes (code defaults overlaid by DB rows, with isCustom). */
 export async function listEditableWeeklyContracts(): Promise<EditableWeeklyContract[]> {
   const db = await loadWeeklyColumnProfiles();

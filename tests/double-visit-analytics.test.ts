@@ -12,7 +12,9 @@ import {
   buildExecutiveSummary,
   buildManagerMrPairs,
   buildManagerSummariesDetailed,
+  resolveDoubleVisitAccessScope,
 } from "../src/lib/double-visit-analytics/service.ts";
+import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { DoubleVisitKpis, DoubleVisitLogEntry } from "../src/lib/double-visit-analytics/types.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
@@ -406,4 +408,71 @@ export function runDoubleVisitAnalyticsTests() {
   assert.equal(topPair.firstDate, "2026-06-01");
   assert.equal(topPair.lastDate, "2026-06-06");
   assert.equal(pairs[1].visits, 2, "second pair after the heavy one");
+
+  // ── PM/GPM double-visit scope = self + reporting chain, WIDENED to their whole product
+  //    LINE. Production keys lines by numeric line_id (line_name is null on manager records
+  //    and the DV import uses an unrelated text code), so the widening resolves the line via
+  //    sameWorkforceLine(line_id) and pulls EVERY line member into allowedHrIds — including
+  //    same-line peers who do NOT org-report to the PM. See resolveDoubleVisitAccessScope. ──
+  const scopeEmployees = [
+    employee({ fullName: "PM Owner", hrId: "A-10", lineId: 1, positionTitle: "Product Manager" }),
+    employee({ fullName: "DSM Under PM", hrId: "B-10", lineId: 1, managerHrId: "A-10" }),
+    employee({ fullName: "Rep One", hrId: "M-1", lineId: 1, managerHrId: "B-10" }),
+    employee({ fullName: "Rep Two", hrId: "M-2", lineId: 1, managerHrId: "B-10" }),
+    // Same line (line_id 1), reports OUTSIDE the PM's chain — visible via the LINE scope.
+    employee({ fullName: "Same Line Peer", hrId: "M-9", lineId: 1, managerHrId: "B-77" }),
+    // Different product line (line_id 2) — must NOT be visible.
+    employee({ fullName: "Other Line Rep", hrId: "M-20", lineId: 2, managerHrId: "B-88" }),
+  ];
+  const k = (id: string) => normalizeHrIdForAccess(id) as string;
+  const pmAccess = { hrId: "A-10", loginId: "A-10", role: "Product Manager", scope: "line", source: "session" };
+  const pmScope = resolveDoubleVisitAccessScope(
+    pmAccess as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
+    scopeEmployees,
+  );
+  assert.equal(pmScope.all, false, "PM is not granted org-wide double-visit access");
+  if (pmScope.all === false) {
+    assert.ok(pmScope.allowedHrIds.has(k("A-10")), "PM sees herself");
+    assert.ok(pmScope.allowedHrIds.has(k("B-10")), "PM sees the DSM reporting to her");
+    assert.ok(pmScope.allowedHrIds.has(k("M-1")), "PM sees reps under her DSM");
+    assert.ok(pmScope.allowedHrIds.has(k("M-2")), "PM sees reps under her DSM");
+    // Widened to the whole product line (by line_id): a same-line peer OUTSIDE the reporting
+    // chain IS in scope — this is what makes the GPM/PM "by manager" view whole.
+    assert.ok(pmScope.allowedHrIds.has(k("M-9")), "PM sees a same-line peer via line widening");
+    // ...but a different product line stays out of scope.
+    assert.ok(!pmScope.allowedHrIds.has(k("M-20")), "PM does NOT see a different product line");
+  }
+
+  // line_name fallback: when line_id is absent, widening matches on the normalized line name.
+  const nameScope = resolveDoubleVisitAccessScope(
+    { hrId: "A-30", loginId: "A-30", role: "Group Product Manager", scope: "line", source: "session" } as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
+    [
+      employee({ fullName: "GPM Owner", hrId: "A-30", lineName: "CNS", positionTitle: "Group Product Manager" }),
+      employee({ fullName: "CNS Peer", hrId: "M-31", lineName: "CNS", managerHrId: "B-99" }),
+      employee({ fullName: "GI Rep", hrId: "M-32", lineName: "GI", managerHrId: "B-99" }),
+    ],
+  );
+  assert.equal(nameScope.all, false);
+  if (nameScope.all === false) {
+    assert.ok(nameScope.allowedHrIds.has(k("M-31")), "GPM sees a same-line peer via line-name fallback");
+    assert.ok(!nameScope.allowedHrIds.has(k("M-32")), "GPM does NOT see a different line");
+    assert.ok(nameScope.allowedLines.has("cns"), "line label captured when present");
+  }
+
+  // A PM with nobody reporting to her and no resolvable line sees only herself.
+  const loneScope = resolveDoubleVisitAccessScope(
+    { hrId: "A-77", loginId: "A-77", role: "Group Product Manager", scope: "line", source: "session" } as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
+    scopeEmployees,
+  );
+  assert.equal(loneScope.all, false);
+  if (loneScope.all === false) {
+    assert.deepEqual([...loneScope.allowedHrIds], [k("A-77")], "a GPM with no reports sees only herself");
+  }
+
+  // Training Manager keeps full read access (unchanged by this fix).
+  const tmScope = resolveDoubleVisitAccessScope(
+    { hrId: "T-1", loginId: "T-1", role: "Training Manager", scope: "line", source: "session" } as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
+    scopeEmployees,
+  );
+  assert.equal(tmScope.all, true, "Training Manager retains org-wide double-visit visibility");
 }

@@ -39,6 +39,7 @@ import {
   Sparkles,
   Stethoscope,
   Tags,
+  Target,
   TriangleAlert,
   Trash2,
   UsersRound,
@@ -165,6 +166,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-marketing-requests",
     items: [
+      { href: "/workspace/marketing-requests/overview", icon: LayoutDashboard, label: "Overview", moduleId: "admin.workspace.marketing_overview", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
       { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
       { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
       { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
@@ -286,6 +288,7 @@ const adminNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales", permissions: [{ resource: "sales" }] },
       { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
@@ -382,8 +385,6 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
-      { href: "/payslips", icon: ChartColumnBig, label: "Payroll & Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }], exact: true },
-      { href: "/employee-portals/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "employee_profile" }], exact: true },
       { href: "/employee-portals/contact-hr-support", icon: LifeBuoy, label: "HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
       { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Outstation Expenses", permissions: [{ resource: "expenses" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager", "Manager"] },
@@ -391,6 +392,30 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/team-expenses", icon: ReceiptText, label: "Team Expenses", permissions: [{ resource: "expenses" }], roles: ["National Sales Manager"] },
     ],
     label: "Medical Rep Portal",
+  },
+  {
+    id: "payroll",
+    items: [
+      { href: "/payslips", icon: ScrollText, label: "Payslips", permissions: [{ resource: "payroll" }, { resource: "payslips" }], exact: true },
+      { href: "/employee-portals/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "employee_profile" }], exact: true },
+    ],
+    label: "Payroll",
+  },
+  {
+    id: "employee-sales-intelligence",
+    items: [
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+    ],
+    label: "Sales Operations",
+  },
+  {
+    id: "coaching",
+    items: [
+      { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager"] },
+    ],
+    label: "Coaching",
   },
   {
     id: "employee-marketing-requests",
@@ -475,6 +500,7 @@ const employeePortalNavigationSectionSeeds = [
           "Super Admin",
         ],
       },
+      { href: "/employee-portals/roi", icon: Target, label: "ROI Dashboard", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
     ],
     label: "Marketing Requests",
   },
@@ -485,15 +511,9 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
+      { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
     ],
     label: "Leave Management",
-  },
-  {
-    id: "attendance",
-    items: [
-      { href: "/employee-portals/attendance", icon: Fingerprint, label: "My Attendance", permissions: [{ resource: "attendance", action: "read" }] },
-    ],
-    label: "Attendance",
   },
   {
     id: "pharmacovigilance",

@@ -86,7 +86,7 @@ export async function GET(request: Request) {
       "daily-notification-dispatcher",
       () => runDailyNotifications(request),
       {
-        schedule: { type: "crontab", value: "0 4 * * *" },
+        schedule: { type: "crontab", value: "30 6 * * *" },
         checkinMargin: 60,
         maxRuntime: 60,
         timezone: "Etc/UTC",
