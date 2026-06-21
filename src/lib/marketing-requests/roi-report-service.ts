@@ -142,6 +142,7 @@ async function loadByRequestIds<T>(
 
 function mapRoiRequest(row: RoiRequestRow): MappedRoiRequest {
   const estimatedCost = toNum(row.estimated_cost);
+  const roiDurationMonths = Math.max(1, Number(row.roi_duration_months) || 1);
   return {
     id: row.id,
     requestCode: row.request_code,
@@ -151,10 +152,11 @@ function mapRoiRequest(row: RoiRequestRow): MappedRoiRequest {
     status: row.status,
     requestTypeId: Number(row.request_type_id),
     payDate: row.pay_date,
-    roiDurationMonths: Math.max(1, Number(row.roi_duration_months) || 1),
+    roiDurationMonths,
     estimatedCost,
     expectedRoiValue: toNum(row.expected_roi_value),
-    // Mirrors mapRequest(): required ROI defaults to 10× the estimated cost.
+    // Mirrors the generated DB column (marketing_roi_flat_no_duration): required ROI is a FLAT
+    // 10× estimated cost — campaign duration does NOT scale the target.
     requiredRoiValue: toNum(row.required_roi_value ?? estimatedCost * 10),
   };
 }
@@ -581,6 +583,29 @@ export function monthAdd(period: string, months: number): string {
   return `${resultYear}-${String(resultMonth + 1).padStart(2, "0")}`;
 }
 
+/**
+ * Realized-ROI verdict for one request. "Actual vs required" is only a fair judgement once the
+ * FULL ROI window has been loaded:
+ *  - a request that has ALREADY met/exceeded its required return is `on_track` even mid-window;
+ *  - a request still below target while its window has unuploaded months is `awaiting_data`
+ *    (≠ behind) — an in-progress campaign must not be flagged as failing against its full
+ *    multi-month required return;
+ *  - only once the window is complete is the request judged `behind` (some sales, below target)
+ *    or `no_data` (nothing attributed).
+ * This honors the documented contract that `awaiting_data` means the window has unuploaded months.
+ */
+export function resolveRoiResultStatus(input: {
+  salesRows: number;
+  actualValue: number;
+  requiredRoiValue: number;
+  salesDataComplete: boolean;
+}): MarketingRoiResultStatus {
+  if (input.salesRows > 0 && input.actualValue >= input.requiredRoiValue) return "on_track";
+  if (!input.salesDataComplete) return "awaiting_data";
+  if (input.salesRows > 0) return "behind";
+  return "no_data";
+}
+
 export function roiWindowLabel(payDate: string | null, months: number): { label: string | null; endPeriod: string | null } {
   if (!payDate) return { label: null, endPeriod: null };
   const start = payDate.slice(0, 7);
@@ -706,20 +731,22 @@ export async function getMarketingRoiReport(
         ? 1
         : 0;
 
-    let resultStatus: MarketingRoiResultStatus;
-    if (actuals.salesRows > 0) {
-      resultStatus = actuals.value >= request.requiredRoiValue ? "on_track" : "behind";
-    } else {
-      resultStatus = salesDataComplete ? "no_data" : "awaiting_data";
-    }
+    const resultStatus = resolveRoiResultStatus({
+      salesRows: actuals.salesRows,
+      actualValue: actuals.value,
+      requiredRoiValue: request.requiredRoiValue,
+      salesDataComplete,
+    });
 
     let attributionGapReason: string | null = null;
-    if (actuals.salesRows === 0) {
-      if (withheld) attributionGapReason = "Confidential — attribution masking pending deploy";
-      else if (entry.pharmacyKeys.length === 0) attributionGapReason = "No target pharmacy distributor codes";
-      else if (resultStatus === "awaiting_data") {
-        attributionGapReason = `ROI window runs to ${endPeriod ?? "?"}; sales loaded through ${ctx.salesDataAsOf ?? "n/a"}`;
-      } else attributionGapReason = "No matching sales in the ROI window";
+    if (withheld && actuals.salesRows === 0) {
+      attributionGapReason = "Confidential — attribution masking pending deploy";
+    } else if (resultStatus === "awaiting_data") {
+      attributionGapReason = `ROI window runs to ${endPeriod ?? "?"}; sales loaded through ${ctx.salesDataAsOf ?? "n/a"}`;
+    } else if (actuals.salesRows === 0) {
+      attributionGapReason = entry.pharmacyKeys.length === 0
+        ? "No target pharmacy distributor codes"
+        : "No matching sales in the ROI window";
     }
 
     return {

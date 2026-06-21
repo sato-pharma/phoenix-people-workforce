@@ -409,14 +409,16 @@ export function runDoubleVisitAnalyticsTests() {
   assert.equal(topPair.lastDate, "2026-06-06");
   assert.equal(pairs[1].visits, 2, "second pair after the heavy one");
 
-  // ── PM/GPM double-visit scope = self + reporting chain only (NOT whole line) ──
+  // ── PM/GPM double-visit scope = self + reporting chain, WIDENED to their whole product
+  //    line (so MRs they visit on the same line — who don't org-report to them — are still
+  //    counted in the executive "by manager" view). See resolveDoubleVisitAccessScope. ──
   const scopeEmployees = [
     employee({ fullName: "PM Owner", hrId: "A-10", lineName: "CNS", positionTitle: "Product Manager" }),
     employee({ fullName: "DSM Under PM", hrId: "B-10", lineName: "CNS", managerHrId: "A-10" }),
     employee({ fullName: "Rep One", hrId: "M-1", lineName: "CNS", managerHrId: "B-10" }),
     employee({ fullName: "Rep Two", hrId: "M-2", lineName: "CNS", managerHrId: "B-10" }),
-    // Same line, but reports OUTSIDE the PM's chain — must NOT be visible.
-    employee({ fullName: "Other Line Peer", hrId: "M-9", lineName: "CNS", managerHrId: "B-77" }),
+    // Same line, reports OUTSIDE the PM's chain — visible via the LINE scope, not the chain.
+    employee({ fullName: "Same Line Peer", hrId: "M-9", lineName: "CNS", managerHrId: "B-77" }),
   ];
   const k = (id: string) => normalizeHrIdForAccess(id) as string;
   const pmAccess = { hrId: "A-10", loginId: "A-10", role: "Product Manager", scope: "line", source: "session" };
@@ -430,8 +432,11 @@ export function runDoubleVisitAnalyticsTests() {
     assert.ok(pmScope.allowedHrIds.has(k("B-10")), "PM sees the DSM reporting to her");
     assert.ok(pmScope.allowedHrIds.has(k("M-1")), "PM sees reps under her DSM");
     assert.ok(pmScope.allowedHrIds.has(k("M-2")), "PM sees reps under her DSM");
-    assert.ok(!pmScope.allowedHrIds.has(k("M-9")), "PM must NOT see a same-line peer outside her chain");
-    assert.equal(pmScope.allowedLines.size, 0, "PM scope is no longer widened by line");
+    // The reporting chain alone does not include a same-line peer outside it...
+    assert.ok(!pmScope.allowedHrIds.has(k("M-9")), "same-line peer is not in the PM's reporting chain");
+    // ...but PM/GPM ARE widened to their whole product line, so that peer is still visible by line.
+    assert.equal(pmScope.allowedLines.size, 1, "PM scope is widened to her product line");
+    assert.ok(pmScope.allowedLines.has("cns"), "PM sees her whole CNS line");
   }
 
   // A PM with nobody reporting to her sees only herself.
