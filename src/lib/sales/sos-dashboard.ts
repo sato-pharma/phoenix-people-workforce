@@ -9,7 +9,13 @@
 // (LA003/LA004/SS001) are stripped at leaf level for everyone except CEO / Super Admin.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
+import {
+  RESTRICTED_PRODUCT_CODES,
+  canViewRestrictedProducts,
+  canonicalizeRegionName,
+  normalizeLineKey,
+  resolveSalesAccessScope,
+} from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
@@ -107,10 +113,29 @@ export async function getSosDashboard(
   const supabase = getSupabaseAdmin();
   const canSeeRestricted = canViewRestrictedProducts(accessContext.role);
 
-  const [availablePeriods, references] = await Promise.all([
+  const [availablePeriods, references, salesScope] = await Promise.all([
     listMonthlyClosingPeriods(),
     loadSalesReferenceData({ includeCustomerBricks: false }),
+    resolveSalesAccessScope(accessContext),
   ]);
+
+  // Per-viewer LINE/REGION lockdown. The SoS RPCs return the WHOLE company; without this any
+  // role holding `sales:read` (e.g. Product/Group Product Manager) could fetch every line/region
+  // via /api/sales/sos-dashboard. Company-scope roles (CEO / Super Admin / SFE / Marketing) keep
+  // the full view; everyone else is bounded to their own line (and region, when the role carries
+  // a region bound). A missing line fails CLOSED (empty set → no rows), never company-wide.
+  const scopeLineKeys: Set<string> | null =
+    salesScope.canViewAllSales || !salesScope.allowedLineNames
+      ? null
+      : new Set([...salesScope.allowedLineNames].map(normalizeLineKey));
+  const scopeRegionCodes: Set<string> | null =
+    salesScope.canViewAllSales || !salesScope.allowedRegionNames
+      ? null
+      : new Set(
+          references.regions
+            .filter((r) => salesScope.allowedRegionNames!.has(canonicalizeRegionName(r.regionName)))
+            .map((r) => r.regionCode.toUpperCase()),
+        );
 
   // Label + master maps.
   const regionLabel = new Map<string, string>();
@@ -183,6 +208,10 @@ export async function getSosDashboard(
 
   const keepExec = (row: ExecRow): boolean => {
     if (!canSeeRestricted && RESTRICTED_SET.has(row.productCode.toUpperCase())) return false;
+    // Access-scope lockdown (line/region) — applied before user-supplied filters so a scoped
+    // caller can never widen past their own line/region via query params.
+    if (scopeLineKeys && !scopeLineKeys.has(normalizeLineKey(row.officialLine))) return false;
+    if (scopeRegionCodes && !scopeRegionCodes.has(row.regionCode.toUpperCase())) return false;
     if (lineFilter && row.officialLine.toLowerCase() !== lineFilter) return false;
     if (distSet && !distSet.has(row.distributorCode.toUpperCase())) return false;
     if (regionSet && !regionSet.has(row.regionCode.toUpperCase())) return false;
@@ -190,6 +219,12 @@ export async function getSosDashboard(
     if (productSet && !productSet.has(row.productCode.toUpperCase())) return false;
     return true;
   };
+
+  // Brick + customer aggregates come from RPCs that carry no LINE dimension, so they cannot be
+  // line-attributed. For a non-company (line/region scoped) caller, returning them would leak
+  // cross-line customer/brick totals — so they are suppressed entirely for those callers. Company
+  // roles (canViewAllSales) keep the full sections.
+  const canSeeCrossLineGeography = salesScope.canViewAllSales;
 
   // Detail = selected period (the only month we pull full leaf rows for).
   const detail = (detailRows as Array<Record<string, unknown>>)
@@ -298,7 +333,7 @@ export async function getSosDashboard(
     .sort((a, b) => b.value - a.value);
 
   // Bricks (exclude Direct already; respect region/area/distributor filters).
-  const brickRows: BrickRow[] = (brickRaw as Array<Record<string, unknown>>)
+  const brickRows: BrickRow[] = (canSeeCrossLineGeography ? (brickRaw as Array<Record<string, unknown>>) : [])
     .map((row) => ({
       distributorCode: norm(row.distributor_code as string),
       regionCode: norm(row.region_code as string),
@@ -328,7 +363,7 @@ export async function getSosDashboard(
     .slice(0, 12);
 
   // Customers (exclude Direct; respect region/area/distributor filters; no product dimension).
-  const customerRows: CustomerRow[] = (customerRaw as Array<Record<string, unknown>>)
+  const customerRows: CustomerRow[] = (canSeeCrossLineGeography ? (customerRaw as Array<Record<string, unknown>>) : [])
     .map((row) => ({
       clientCode: norm(row.client_code as string),
       clientName: norm(row.client_name as string),
