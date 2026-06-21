@@ -8,6 +8,7 @@ import {
   normalizeLineKey,
   normalizeProductNameKey,
   resolveSalesAccessScope,
+  RESTRICTED_PRODUCT_CODES,
   restrictedProductNameSet,
 } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -499,8 +500,20 @@ async function scopeProductFilterToLines(
   };
 }
 
-/** Remove the confidential products (LA003 / LA004) from the per-product ROI breakdown and the
- *  product filter list — by code (the row/option `value`) and by name (`label`) as a backstop. */
+/**
+ * Server-side confidential-product exclusion passed to the RPC's `p_exclude_codes`. CEO / Super
+ * Admin get the full picture (empty list = nothing excluded); every other dashboard role
+ * (Marketing Manager, SFE Manager, …) gets the restricted codes excluded INSIDE the RPC, so the
+ * summary and EVERY breakdown (customer / region / distributor / product / line / trend /
+ * attribution) drop confidential sales value at source. Driven purely from the caller's role —
+ * never from client input. Defense in depth alongside stripRestrictedFromMarketingSnapshot.
+ */
+export function resolveMarketingExcludeCodes(role: AccessContext["role"]): string[] {
+  return canViewRestrictedProducts(role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+}
+
+/** Remove the confidential products (LA003 / LA004 / SS001) from the per-product ROI breakdown and
+ *  the product filter list — by code (the row/option `value`) and by name (`label`) as a backstop. */
 function stripRestrictedFromMarketingSnapshot(
   snapshot: SalesMarketingDashboardSnapshot,
   restrictedNames: Set<string>,
@@ -579,6 +592,7 @@ export async function getSalesMarketingDashboardSnapshot(
     p_attribution_qualities: filters.attributionQualities,
     p_customer_search: filters.customerSearch || null,
     p_distributor_codes: filters.distributors,
+    p_exclude_codes: resolveMarketingExcludeCodes(access.role),
     p_from_month: filters.fromMonth || null,
     p_limit: filters.limit,
     p_lines: effectiveLines,
@@ -597,10 +611,10 @@ export async function getSalesMarketingDashboardSnapshot(
   // RPC returns the full catalog, so we scope it here to match the already line-scoped data.
   const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
 
-  // Confidential products (LA003 / LA004): only CEO / Super Admin may see them. For everyone else
-  // strip the per-product ROI rows and the product filter. NOTE: the summary totals, request
-  // report and customer-impact figures are aggregated INSIDE the RPC and still include these
-  // products' value until the staged `p_exclude_codes` migration is applied (tracked separately).
+  // Confidential products (LA003 / LA004 / SS001): only CEO / Super Admin may see them. The RPC
+  // now excludes them server-side via `p_exclude_codes` (above), so the summary and EVERY breakdown
+  // already drop their value at source. We still strip the per-product ROI rows and the product
+  // filter here as defense in depth — a future RPC edit or new entrypoint cannot leak them.
   if (canViewRestrictedProducts(access.role)) return snapshot;
   return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
 }
