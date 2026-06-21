@@ -463,6 +463,17 @@ async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: s
       notificationType: "probation",
       subject: `Phoenix ${title} - ${record.employeeName}`,
       summary: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      // The admin-editable probation_workflow template renders an employee detail table
+      // ({{line}}/{{jobTitle}}/{{endDate}}); the generic metric→context mapping leaves
+      // those tokens empty. Fill them from the workflow record so the email is not blank.
+      templateContext: {
+        area: record.areaName ?? "—",
+        employeeHrId: record.employeeHrId,
+        employeeName: record.employeeName,
+        endDate: record.probationEndDate ?? "—",
+        jobTitle: record.jobTitle ?? "—",
+        line: record.lineName ?? "—",
+      },
       title,
       tone,
     },
@@ -695,6 +706,8 @@ export async function processDueProbationReminderEvents(limit = 25) {
 
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
+    const daysRemainingValue = Number.isFinite(daysRemaining) ? daysRemaining : row.days_remaining;
+    const reminderManagerName = employee.managerName ?? managerOf(employee, employees)?.fullName ?? "Team";
     const actionUrl = `/api/probation/redirect?employeeHrId=${encodeURIComponent(employee.hrId)}`;
     const notificationResult = await createSystemNotification({
       actionUrl,
@@ -706,11 +719,28 @@ export async function processDueProbationReminderEvents(limit = 25) {
         metrics: [
           { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
           { label: "Hire date", value: employee.hireDate ?? "-" },
-          { label: "Days remaining", value: Number.isFinite(daysRemaining) ? String(daysRemaining) : String(row.days_remaining) },
+          { label: "Days remaining", value: String(daysRemainingValue) },
         ],
         notificationType: "probation",
         subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
         summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+        // The admin-editable probation_reminder template renders a detail table whose
+        // cells use {{line}}/{{jobTitle}}/{{area}}/{{hireDate}}/{{endDate}}/{{duration}}
+        // plus a "Dear {{managerName}}" greeting. The generic metric→context mapping in
+        // notifications/email.ts does not populate those tokens, so without this explicit
+        // templateContext the email goes out with all of those rows blank. templateContext
+        // is merged last into the render context, so it authoritatively fills them.
+        templateContext: {
+          area: employee.areaName ?? "—",
+          duration: `${daysRemainingValue} day${daysRemainingValue === 1 ? "" : "s"} remaining`,
+          employeeHrId: employee.hrId,
+          employeeName: employee.fullName,
+          endDate: row.probation_end_date ?? "—",
+          hireDate: employee.hireDate ?? "—",
+          jobTitle: employee.jobTitle ?? "—",
+          line: employee.lineName ?? "—",
+          managerName: reminderManagerName,
+        },
         title: event.subject ?? "Probation reminder",
         tone: row.days_remaining <= 15 ? "danger" : "warning",
       },

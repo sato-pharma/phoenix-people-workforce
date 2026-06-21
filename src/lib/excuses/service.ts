@@ -307,6 +307,7 @@ async function enqueueInAppNotification(input: {
 
 async function sendManagerEmail(input: {
   baseUrl: string;
+  employee: EmployeeDirectoryRow;
   manager: EmployeeDirectoryRow;
   request: EmployeeExcuseRequest;
   token: string;
@@ -331,6 +332,15 @@ async function sendManagerEmail(input: {
       recipients: [input.manager.workEmail as string],
       subject: `Excuse approval: ${input.request.employeeName}`,
       summary: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
+      // The admin-edited excuse_request template shows Job Title/Line/Area/Duration; the
+      // metric mapping does not fill those (the "Duration" metric label is not mapped), so
+      // supply them explicitly to avoid blank cells.
+      templateContext: {
+        area: input.employee.areaName ?? "—",
+        duration: `${input.request.durationHours} hours`,
+        jobTitle: input.employee.jobTitle ?? "—",
+        line: input.request.lineName ?? input.employee.lineName ?? "—",
+      },
       title: "Excuse approval required",
       tone: "warning",
     },
@@ -375,6 +385,12 @@ async function sendEmployeeDecisionEmail(input: {
       recipients: [employeeEmail],
       subject: `Your excuse request was ${statusLabel}`,
       summary: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
+      // Fill the excuse_request template's Duration/Line cells from the request so they are
+      // not blank. (Job Title/Area are not on the request object here.)
+      templateContext: {
+        duration: `${input.request.durationHours} hours`,
+        line: input.request.lineName ?? "—",
+      },
       title: `Excuse request ${statusLabel}`,
       tone: statusLabel === "approved" ? "success" : "warning",
     },
@@ -458,7 +474,7 @@ export async function createExcuseRequest(
   if (tokenError) throw tokenError;
 
   await Promise.all([
-    sendManagerEmail({ baseUrl: options.baseUrl, manager, request, token }),
+    sendManagerEmail({ baseUrl: options.baseUrl, employee, manager, request, token }),
     enqueueInAppNotification({
       category: "excuse",
       dedupeKey: `excuse-manager-${request.id}`,
