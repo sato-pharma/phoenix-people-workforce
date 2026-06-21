@@ -41,12 +41,9 @@ const eslintConfig = defineConfig([
     // `.codex-worktrees` holds full checkouts of other branches and must never be
     // linted by this project's CI (it produces thousands of unrelated findings).
     ".codex-worktrees/**",
-    ".vercel/**",
-    // Local-only throwaway tooling/scratch dirs (screenshots, scratch git objects).
-    // Untracked and never part of CI source — keep them out of the local lint gate
-    // so they cannot produce confusing red runs.
     ".playwright-cli/**",
     ".alt-git-objects/**",
+    ".vercel/**",
     // Generated output files — not part of the app source.
     "coverage/**",
     "output/**",

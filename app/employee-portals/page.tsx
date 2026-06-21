@@ -1,27 +1,17 @@
 import { redirect } from "next/navigation";
 
-import { MedicalRepOverviewPage } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
-import { IdentityCard } from "@/components/employee-portal/identity-card";
+import { PortalCommandCenter } from "@/components/employee-portal/portal-command-center";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
-import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 
-export default async function EmployeePortalsHomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ teamPeriod?: string | string[] }>;
-}) {
-  const resolvedSearchParams = await searchParams;
+export const dynamic = "force-dynamic";
+
+export default async function EmployeePortalsHomePage() {
   const access = await resolveAccessContextFromPage();
   const mode = resolveNavigationMode(access);
-  const rawTeamPeriod = Array.isArray(resolvedSearchParams?.teamPeriod)
-    ? resolvedSearchParams.teamPeriod[0]
-    : resolvedSearchParams?.teamPeriod;
-  const normalizedTeamPeriod = String(rawTeamPeriod ?? "").trim().toLowerCase();
-  const teamComparisonPeriod = /^\d{4}-\d{2}$/.test(normalizedTeamPeriod) ? normalizedTeamPeriod : null;
 
   if (mode !== "employee-portal") {
     redirect("/overview");
@@ -36,20 +26,14 @@ export default async function EmployeePortalsHomePage({
     throw error;
   }
 
-  let data = null;
+  let snapshot;
   try {
-    data = await getMedicalRepPortalData(access, {
-      teamComparisonPeriod,
-    });
+    snapshot = await getPortalHomeSnapshot(access);
   } catch (error) {
     logPortalFailure(
-      { route: "/employee-portals", module: "dashboard", role: access.role, hrId: access.hrId },
+      { route: "/employee-portals", module: "home-snapshot", role: access.role, hrId: access.hrId },
       error,
     );
-    data = null;
-  }
-
-  if (!data) {
     return (
       <EmployeePortalEmptyState
         message="Your command center is temporarily unavailable. Please try again in a moment."
@@ -58,13 +42,5 @@ export default async function EmployeePortalsHomePage({
     );
   }
 
-  // Minimal command center: the identity hero + the performance trend only.
-  return (
-    <div className="mx-auto w-full space-y-5" dir="auto">
-      <IdentityCard data={data} />
-      <WorkspaceErrorBoundary fallbackTitle="My Dashboard unavailable">
-        <MedicalRepOverviewPage data={data} />
-      </WorkspaceErrorBoundary>
-    </div>
-  );
+  return <PortalCommandCenter snapshot={snapshot} />;
 }
