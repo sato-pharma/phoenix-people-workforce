@@ -611,6 +611,9 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["create"],
     weekly_plans: ["read", "create", "update", "approve"],
     report_it: ["read", "create"],
+    vacancies: ["read"],
+    probation: ["read"],
+    organogram: ["read"],
   },
   Manager: {
     attendance: ["read", "create", "update", "delete", "export"],

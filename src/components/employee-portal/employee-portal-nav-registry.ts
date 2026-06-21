@@ -58,9 +58,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlansTab"] },
   { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
+  { label: "Actions", fullLabel: "Actions", href: "/employee-portals/actions", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
-  { label: "Fingerprint Report", fullLabel: "Fingerprint Report", href: "/employee-portals/fingerprint-analytics", icon: ScanLine, flags: ["showFingerprintReportTab"] },
+  { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, flags: ["showMiniWeeklySalesTab"] },
@@ -81,6 +82,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Leave Management
   { label: "Vacation", fullLabel: "Vacation Request", href: "/leave-management/vacation-request", icon: CalendarDays },
   { label: "Leave", fullLabel: "Vacation Report", href: "/leave-management/vacation-report", icon: FileText },
+  { label: "Attendance", fullLabel: "My Attendance", href: "/employee-portals/attendance", icon: ScanLine, flags: ["showAttendanceTab"] },
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab"] },
   // Team Performance
