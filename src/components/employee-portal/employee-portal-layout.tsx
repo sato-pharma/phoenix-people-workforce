@@ -42,7 +42,6 @@ import {
   Target,
   CalendarRange,
   ChartNoAxesColumnIncreasing,
-  Lock,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -168,6 +167,7 @@ function buildEmployeePortalSections({
   showMiniWeeklySalesTab = false,
   showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
+  showCoachingAnalyticsTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
