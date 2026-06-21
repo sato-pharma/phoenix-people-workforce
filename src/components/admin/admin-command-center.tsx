@@ -547,12 +547,10 @@ export function AdminCommandCenter({
   data,
   welcomeProfile = null,
   profilePhotoUrl = null,
-  surfaceLabel = "Admin Command Center",
 }: {
   data: AdminCommandCenterData;
   welcomeProfile?: CommandCenterWelcomeProfile | null;
   profilePhotoUrl?: string | null;
-  surfaceLabel?: string;
 }) {
   const { overview: o, health, operations, payrollEligibleCount, dataUnavailable, generatedAt } = data;
   const { showAdminModules, showFinancialModules } = data.access;
@@ -616,7 +614,7 @@ export function AdminCommandCenter({
   const profileImage = profilePhotoUrl ?? employeeProfileImageForHrId(welcomeProfile?.hrId ?? null);
   const heroTitle = welcomeProfile
     ? <>Hello, {firstNameFrom(welcomeProfile.fullName)} <span aria-hidden="true">👋🏻</span></>
-    : surfaceLabel;
+    : "Admin Command Center";
   const heroCopy = welcomeProfile
     ? "Your Phoenix command center is ready for a focused, confident day. Keep the employee journey moving, protect every detail, and turn today's HR work into progress people can feel."
     : heroDescription;
@@ -1170,7 +1168,7 @@ export function AdminCommandCenter({
         ) : null}
 
         <footer className="flex flex-col gap-2 border border-slate-200 bg-white/85 px-4 py-3 text-xs text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.06)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-semibold">Phoenix Workforce / {surfaceLabel}</p>
+          <p className="font-semibold">Phoenix Workforce / Admin Command Center</p>
           <p className="flex items-center gap-2">
             <span aria-hidden="true" className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: "1.8s" }} />

@@ -317,21 +317,18 @@ export function PrivateCalendar({
   const today = todayIso();
   const isTeamView = viewMode === "team";
   const isWorkspaceSurface = surface === "workspace";
-  // Employee (portal) surface mirrors the Planning Calendar's flat corporate look: bordered white
-  // panels with a soft shadow and bordered white inputs (not ring-shadow rounded panels / borderless
-  // grey inputs). The workspace (admin) surface keeps its existing styling.
   const panelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden border border-slate-200 bg-white shadow-sm";
+    : "overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60";
   const secondaryPanelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden border border-slate-200 bg-white shadow-sm";
+    : "overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200/60";
   const inputClass = isWorkspaceSurface
     ? "h-10 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-    : "h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60";
+    : "h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
   const searchInputClass = isWorkspaceSurface
     ? "h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15"
-    : "h-10 w-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+    : "h-10 w-full rounded-xl border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
   const controlRadiusClass = isWorkspaceSurface ? "rounded-sm" : "rounded-xl";
 
   const employeeByHrId = useMemo(
@@ -508,97 +505,38 @@ export function PrivateCalendar({
 
       {/* ── Header + Metrics ── */}
       <section className={panelClass}>
-        {isWorkspaceSurface ? (
-          <div className="border-b border-slate-200 bg-slate-950 px-5 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
-                    <UserRound className="h-3 w-3" />
-                    Private Calendar
-                  </span>
-                  {workspace.access.isGlobalViewer ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
-                      Global view
-                    </span>
-                  ) : null}
-                  {isTeamView ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
-                      <UsersRound className="h-3 w-3" />
-                      Team mode
-                    </span>
-                  ) : null}
-                </div>
-                <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
-                <p className="mt-1 text-sm font-semibold text-slate-300">
-                  {isTeamView
-                    ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
-                    : selectedEmployee.fullName}{" "}
-                  {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  aria-label="Previous month"
-                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
-                  disabled={isPending}
-                  onClick={() => shiftMonth(-1)}
-                  type="button"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  className={["h-9 bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
-                  disabled={isPending}
-                  onClick={goToday}
-                  type="button"
-                >
-                  Today
-                </button>
-                <button
-                  aria-label="Next month"
-                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
-                  disabled={isPending}
-                  onClick={() => shiftMonth(1)}
-                  type="button"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-4 border-b border-slate-200 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className={isWorkspaceSurface ? "border-b border-slate-200 bg-slate-950 px-5 py-4" : "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-5"}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-orange-700">
-                  <UserRound className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                  <UserRound className="h-3 w-3" />
                   Private Calendar
                 </span>
                 {workspace.access.isGlobalViewer ? (
-                  <span className="inline-flex items-center gap-1.5 border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
                     Global view
                   </span>
                 ) : null}
                 {isTeamView ? (
-                  <span className="inline-flex items-center gap-1.5 border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-700">
-                    <UsersRound className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
+                    <UsersRound className="h-3 w-3" />
                     Team mode
                   </span>
                 ) : null}
               </div>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-300">
                 {isTeamView
                   ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
                   : selectedEmployee.fullName}{" "}
                 {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
               <button
                 aria-label="Previous month"
-                className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
                 disabled={isPending}
                 onClick={() => shiftMonth(-1)}
                 type="button"
@@ -606,7 +544,7 @@ export function PrivateCalendar({
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
-                className="inline-flex h-10 items-center justify-center border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className={["h-9 bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
                 disabled={isPending}
                 onClick={goToday}
                 type="button"
@@ -615,7 +553,7 @@ export function PrivateCalendar({
               </button>
               <button
                 aria-label="Next month"
-                className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
                 disabled={isPending}
                 onClick={() => shiftMonth(1)}
                 type="button"
@@ -624,7 +562,7 @@ export function PrivateCalendar({
               </button>
             </div>
           </div>
-        )}
+        </div>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
           <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" surface={surface} />
@@ -795,9 +733,9 @@ export function PrivateCalendar({
       <div className="space-y-6">
         {/* ── Calendar Grid ── */}
         <section className={panelClass}>
-          <div className={["grid grid-cols-7", isWorkspaceSurface ? "bg-slate-950" : "border-b border-slate-200 bg-slate-50"].join(" ")}>
+          <div className="grid grid-cols-7 bg-slate-950">
             {weekdays.map((weekday) => (
-              <div key={weekday} className={["px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.14em]", isWorkspaceSurface ? "text-slate-400" : "text-slate-500"].join(" ")}>
+              <div key={weekday} className="px-2 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
                 {weekday}
               </div>
             ))}
@@ -953,7 +891,7 @@ function Metric({
   };
 
   return (
-    <div className={[isWorkspaceSurface ? "rounded-sm border p-4" : "border p-4", tone === "warning" ? "border-red-100 bg-red-50/60" : "border-slate-200 bg-slate-50/60"].join(" ")}>
+    <div className={[isWorkspaceSurface ? "rounded-sm border p-4" : "rounded-xl p-4 ring-1", tone === "warning" ? "bg-red-50/60 border-red-100 ring-red-100" : "bg-slate-50/60 border-slate-200 ring-slate-200/60"].join(" ")}>
       <div className="flex items-center justify-between gap-2">
         <span className={["inline-flex h-8 w-8 items-center justify-center rounded-lg", iconBg[color] ?? iconBg.slate].join(" ")}>
           {icon}

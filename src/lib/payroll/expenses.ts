@@ -184,7 +184,7 @@ type ExpenseAccessFilter = {
   allowedHrIds: Set<string>;
 };
 
-export function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
+function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
   const managerMap = new Map<string, string[]>();
   directory.employees.forEach((employee) => {
     const managerId = normalizeHrIdForAccess(employee.managerHrId);
@@ -197,7 +197,7 @@ export function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployee
   return managerMap;
 }
 
-export function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
+function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
   const allowedHrIds = new Set<string>();
   const canonicalRoot = normalizeHrIdForAccess(rootHrId);
   if (!canonicalRoot) return allowedHrIds;
@@ -248,19 +248,7 @@ function collectLineHrIds(
   return lineHrIds;
 }
 
-// Roles whose portal expense dashboard must show only themselves + their reporting
-// chain (self + descendants), rather than their whole product line. These roles reach
-// the expense filter exclusively through the employee-portal expense dashboard — the
-// admin payroll dashboard is Super-Admin-only and the workspace dashboard is gated to
-// SFE/Finance/Financial-Advisor/Talent-Acquisition/Marketing — so overriding their
-// scope here has no collateral effect on other surfaces.
-const PORTAL_HIERARCHY_EXPENSE_ROLES = new Set<PhoenixRole>([
-  "Product Manager",
-  "Group Product Manager",
-  "Training Manager",
-]);
-
-export async function resolveExpenseAccessFilter(
+async function resolveExpenseAccessFilter(
   accessContext: AccessContext,
 ): Promise<ExpenseAccessFilter> {
   if (accessContext.scope === "system") {
@@ -271,10 +259,7 @@ export async function resolveExpenseAccessFilter(
     return { all: false, allowedHrIds: new Set() };
   }
 
-  // PM/GPM/TM see self + reporting chain; all other roles keep their matrix scope.
-  const scope = PORTAL_HIERARCHY_EXPENSE_ROLES.has(accessContext.role)
-    ? "HIERARCHY"
-    : getExpensesScope({ role: accessContext.role });
+  const scope = getExpensesScope({ role: accessContext.role });
   const currentHrId = resolveEmployeeIdentityId(accessContext);
 
   if (scope === "COMPANY") return { all: true, allowedHrIds: new Set() };

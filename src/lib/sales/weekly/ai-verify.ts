@@ -16,16 +16,22 @@
 
 import ExcelJS from "exceljs";
 
-import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
 import { type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
 import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
 
-// ── AI provider resolution (shared with src/lib/sales/ai/provider.ts) ──────────────────────────────
-// ai-verify uses the shared "mini" model defaults exactly, so it delegates straight to resolveAiProvider.
-function resolveProvider(): AiProvider | null {
-  return resolveAiProvider();
+// ── AI provider resolution (mirrors src/lib/sales/normalizer/ai-suggest.ts) ───────────────────────
+type Provider = { baseUrl: string; key: string; model: string };
+
+function resolveProvider(): Provider | null {
+  const baseOverride = process.env.AI_BASE_URL?.replace(/\/+$/, "");
+  const modelOverride = process.env.AI_MODEL || process.env.OPENAI_MODEL;
+  if (process.env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: process.env.OPENAI_API_KEY, model: modelOverride || "gpt-4o-mini" };
+  if (process.env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: process.env.GROQ_API_KEY, model: modelOverride || "llama-3.3-70b-versatile" };
+  if (process.env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: process.env.OPENROUTER_API_KEY, model: modelOverride || "openai/gpt-4o-mini" };
+  if (process.env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: process.env.AI_API_KEY, model: modelOverride || "gpt-4o-mini" };
+  return null;
 }
 
 /** True when an AI key is configured — the route surfaces this so the UI can label the mode. */
@@ -84,7 +90,7 @@ export type WeeklyVerifyInput = {
 type AiJudgement = { id: number; status: "match" | "drift" | "uncertain"; note?: string };
 
 async function judgeWithAi(
-  provider: AiProvider,
+  provider: Provider,
   distributorName: string,
   items: { id: number; sheetRole: string; label: string; columnIndex: number; expectedHeaderHint: string; observedHeader: string }[],
 ): Promise<{ judgements: AiJudgement[]; summary: string }> {

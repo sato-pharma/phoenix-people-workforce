@@ -618,7 +618,6 @@ export async function runMarketingRequestServiceTests() {
   // attribution quality per row, so the "service surfaces attribution quality" guard points there.
   const roiReportServiceSource = source("src/lib/marketing-requests/roi-report-service.ts");
   assert.match(roiReportServiceSource, /attributionQuality/, "ROI report service must return attribution quality");
-  assert.match(roiReportServiceSource, /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/, "ROI report must resolve historical (terminated) requesters so region/name/line never go unassigned");
   assert.match(roiWorkspaceSource, /attributionGapReason|resultStatus/, "ROI tracking UI must surface attribution status");
 
   // New API routes exist.

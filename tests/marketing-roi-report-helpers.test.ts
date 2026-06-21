@@ -4,7 +4,6 @@ import {
   isRestrictedMarketingProduct,
   monthAdd,
   parseRoiFilterState,
-  resolveRoiResultStatus,
   roiWindowLabel,
 } from "../src/lib/marketing-requests/roi-report-service.ts";
 import {
@@ -29,39 +28,6 @@ export function runMarketingRoiReportHelpersTests() {
   assert.deepEqual(roiWindowLabel(null, 3), { label: null, endPeriod: null });
   // a zero/garbage duration is clamped to a single month
   assert.equal(roiWindowLabel("2026-03-01", 0).endPeriod, "2026-03");
-
-  // ── resolveRoiResultStatus: "actual vs required" verdict ─────────────────────
-  // Complete window, met/exceeded required → on track.
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 4, actualValue: 1000, requiredRoiValue: 1000, salesDataComplete: true }),
-    "on_track",
-  );
-  // Complete window, below required → behind.
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 4, actualValue: 600, requiredRoiValue: 1000, salesDataComplete: true }),
-    "behind",
-  );
-  // Complete window, nothing attributed → no data.
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 0, actualValue: 0, requiredRoiValue: 1000, salesDataComplete: true }),
-    "no_data",
-  );
-  // REGRESSION: incomplete window with partial sales below target must NOT be "behind".
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 2, actualValue: 300, requiredRoiValue: 1000, salesDataComplete: false }),
-    "awaiting_data",
-    "an in-progress campaign must not be flagged behind against its full required return",
-  );
-  // Incomplete window, no sales yet → awaiting data.
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 0, actualValue: 0, requiredRoiValue: 1000, salesDataComplete: false }),
-    "awaiting_data",
-  );
-  // Already met the required return mid-window → on track even though the window is incomplete.
-  assert.equal(
-    resolveRoiResultStatus({ salesRows: 3, actualValue: 1200, requiredRoiValue: 1000, salesDataComplete: false }),
-    "on_track",
-  );
 
   // ── parseRoiFilterState: defensive parsing of an untrusted request body ──────
   const empty = parseRoiFilterState(null);

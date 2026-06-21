@@ -14,20 +14,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 type Props = {
   awaitingPublish: boolean;
   availablePeriods: string[];
-  /** Route the period/year selector navigates to. Defaults to the publish-gated monthly-closing
-   *  page; the live Sales-Intelligence monthly page passes its own route. */
-  basePath?: string;
-  /** Empty-state copy shown when there is nothing to display. Defaults to the publish-gated wording. */
-  emptyMessage?: string;
-  emptyTitle?: string;
   line: string | null;
   matrix: MonthlyClosingMatrix | null;
   productScoped: boolean;
   selectedPeriod: string | null;
   trend: PortalClosingTrendPoint[];
-  /** Live monthly-closing completion bar: distinct distributors uploaded this period + expected total. */
-  distributorsUploaded?: number | null;
-  distributorsExpected?: number | null;
 };
 
 function splitPeriod(period: string): { year: number; month: number } | null {
@@ -85,11 +76,6 @@ function TrendStrip({ points }: { points: PortalClosingTrendPoint[] }) {
 export function MonthlyClosingPortalView({
   awaitingPublish,
   availablePeriods,
-  basePath = "/employee-portals/monthly-closing",
-  distributorsExpected,
-  distributorsUploaded,
-  emptyMessage,
-  emptyTitle,
   line,
   matrix,
   productScoped,
@@ -123,7 +109,7 @@ export function MonthlyClosingPortalView({
     if (!period || period === selectedPeriod) return;
     setPendingPeriod(period);
     startTransition(() => {
-      router.push(`${basePath}?period=${period}`);
+      router.push(`/employee-portals/monthly-closing?period=${period}`);
     });
   }
 
@@ -151,14 +137,10 @@ export function MonthlyClosingPortalView({
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
         <CalendarRange className="mx-auto h-8 w-8 text-slate-300" />
-        <p className="mt-3 text-base font-black text-slate-900">{emptyTitle ?? "No published closing yet"}</p>
+        <p className="mt-3 text-base font-black text-slate-900">No published closing yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-          {emptyMessage ?? (
-            <>
-              The monthly closing for the <span className="font-semibold text-slate-700">{line}</span> line will appear here once HR
-              publishes it. Months still being uploaded are not shown.
-            </>
-          )}
+          The monthly closing for the <span className="font-semibold text-slate-700">{line}</span> line will appear here once HR
+          publishes it. Months still being uploaded are not shown.
         </p>
       </div>
     );
@@ -180,23 +162,6 @@ export function MonthlyClosingPortalView({
           value={String(productCount)}
         />
       </div>
-
-      {typeof distributorsExpected === "number" && distributorsExpected > 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Distributors uploaded</p>
-            <p className="text-xs font-black tabular-nums text-slate-700">
-              {distributorsUploaded ?? 0} of {distributorsExpected} · {Math.min(100, Math.round(((distributorsUploaded ?? 0) / distributorsExpected) * 100))}%
-            </p>
-          </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74] transition-all"
-              style={{ width: `${Math.min(100, Math.round(((distributorsUploaded ?? 0) / distributorsExpected) * 100))}%` }}
-            />
-          </div>
-        </div>
-      ) : null}
 
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1 sm:w-40">

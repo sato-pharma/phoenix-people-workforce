@@ -158,9 +158,9 @@ export async function runPhase22RoleMatrixSecurityTests() {
   }
 
   // Segregation of duties: the CEO account is observational on irreversible HR/finance
-  // workflows. It must NOT approve contracts/resignations/expenses/outstation/deductions or
-  // mutate attendance, but RETAINS leave + weekly-plan approval (owner decision) and read/export.
-  for (const resource of ["contracts", "resignations", "expenses", "outstation", "deductions"] as const) {
+  // workflows. It must NOT approve resignations/expenses/outstation/deductions or mutate
+  // attendance, but RETAINS leave + weekly-plan approval (owner decision) and read/export.
+  for (const resource of ["resignations", "expenses", "outstation", "deductions"] as const) {
     assert.equal(await canAccess(ceo, resource, "approve"), false, `CEO must not approve ${resource}`);
     assert.equal(await canAccess(ceo, resource, "read"), true, `CEO can still read ${resource}`);
   }

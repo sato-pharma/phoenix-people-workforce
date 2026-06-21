@@ -4,8 +4,7 @@ export type ActionHubModule =
   | "excuse"
   | "outstation"
   | "marketing"
-  | "contract_renewal"
-  | "weekly_plan";
+  | "contract_renewal";
 
 export type ActionHubUrgency = "high" | "normal" | "low";
 
@@ -93,49 +92,13 @@ export type ContractRenewalDetail = {
   currentStatus: string;
 };
 
-// One planned activity, rendered read-only in the approver inbox calendar. Kept
-// structurally identical to ApproverPlanItem in the weekly-planning service so the
-// service result passes straight through without re-shaping.
-export type WeeklyPlanCalendarItem = {
-  activityDate: string;
-  activityLabel: string;
-  activityType: string;
-  area: string | null;
-  isCoaching: boolean;
-  notes: string | null;
-  objective: string | null;
-  region: string | null;
-  repName: string | null;
-  timeLabel: string | null;
-};
-
-export type WeeklyPlanDetail = {
-  module: "weekly_plan";
-  // Which approval gate the caller is acting on: the direct-manager review of a
-  // freshly submitted plan, or the CEO approval of a manager-approved plan.
-  stage: "manager" | "ceo";
-  planKind: "weekly" | "monthly";
-  periodKey: string;
-  periodStartDate: string;
-  periodEndDate: string;
-  employeeJobTitle: string | null;
-  managerName: string | null;
-  itemCount: number;
-  // The full plan, day-by-day, so the approver reviews everything inline without
-  // leaving the Action Center.
-  items: WeeklyPlanCalendarItem[];
-  // Secondary deep-link to the full planner surface (admin or portal shell).
-  reviewHref: string;
-};
-
 export type ActionHubDetail =
   | LeaveDetail
   | ResignationDetail
   | ExcuseDetail
   | OutstationDetail
   | MarketingDetail
-  | ContractRenewalDetail
-  | WeeklyPlanDetail;
+  | ContractRenewalDetail;
 
 // ── Unified item ──────────────────────────────────────────────────────────────
 
@@ -165,7 +128,6 @@ export const ACTION_HUB_MODULE_LABELS: Record<ActionHubModule, string> = {
   outstation: "Outstation",
   marketing: "Marketing",
   contract_renewal: "Contract Renewal",
-  weekly_plan: "Weekly Plan",
 };
 
 export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string; text: string }>> = {
@@ -194,11 +156,6 @@ export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string;
     { label: "Pending salary review", text: "Contract renewal deferred pending completion of the annual salary review process." },
     { label: "Documentation incomplete", text: "Required contract documentation has not been received or is incomplete." },
     { label: "Position under review", text: "The position itself is under organizational review; renewal will follow that outcome." },
-  ],
-  weekly_plan: [
-    { label: "Missing field coverage", text: "Returned: the plan does not cover the expected field days for this period." },
-    { label: "Wrong region / area", text: "Returned: please correct the region/area selected for one or more activities." },
-    { label: "Insufficient detail", text: "Returned: add objectives and customer/brick detail before resubmitting." },
   ],
 };
 

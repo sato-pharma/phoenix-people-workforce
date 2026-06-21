@@ -131,9 +131,6 @@ function normalizeLine(value: string | null | undefined): PhoenixLine {
     "anti-inf": "Anti-Infective",
     "antiinfective": "Anti-Infective",
     "anti infective": "Anti-Infective",
-    // lines.name id=4 was renamed "Office" → "Head Office"; keep classifying it as the Office bucket.
-    "head office": "Office",
-    "headoffice": "Office",
   };
   return aliases[normalized] ?? "Other";
 }

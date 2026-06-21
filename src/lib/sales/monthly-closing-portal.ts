@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { bridgeEmployeeLineToOfficial, canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
+import { canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { getManagerRegionScope, getWeeklyProductScopeCodes, resolveRegionCodesForNames } from "@/lib/sales/weekly/access";
 import {
   loadMonthlyClosing,
@@ -15,7 +15,6 @@ import {
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee-portal Monthly Closing.
@@ -33,28 +32,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // (Lacto Basic) are always stripped — a product manager only ever sees them if
 // they were explicitly assigned, which the seed never does.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Owner-set expected distributor count for the Monthly Sales Closing completion bar (fixed). */
-const MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS = 10;
-
-/** Distinct distributors with a VALIDATED upload for a period — the closing-completion numerator.
- *  A distributor's upload covers all its lines, so this is period-wide (not line-scoped). */
-async function countUploadedDistributorsForPeriod(period: string | null): Promise<number> {
-  if (!period) return 0;
-  const supabase = getSupabaseAdmin();
-  const result = await supabase
-    .from("source_of_sales_import_batches")
-    .select("distributor_code")
-    .eq("status", "validated")
-    .eq("period", period);
-  if (result.error) return 0;
-  const codes = new Set(
-    (result.data ?? [])
-      .map((row) => String((row as { distributor_code?: unknown }).distributor_code ?? "").trim().toUpperCase())
-      .filter(Boolean),
-  );
-  return codes.size;
-}
 
 /** Roles that can open the portal Monthly Closing tab. */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
@@ -286,9 +263,6 @@ export type PortalClosingResult = {
   selectedPeriod: string | null;
   /** True when the viewer has a line but nothing has been published for it yet. */
   awaitingPublish: boolean;
-  /** Live monthly only: distinct distributors uploaded this period + the fixed expected total (completion bar). */
-  distributorsUploaded?: number;
-  distributorsExpected?: number;
 };
 
 /**
@@ -341,53 +315,6 @@ export async function loadPortalMonthlyClosing(input: {
     availablePeriods: publishedPeriods,
     selectedPeriod,
     awaitingPublish: false,
-  };
-}
-
-/**
- * Live (NOT publish-gated) monthly closing for the portal Sales Intelligence section.
- * Mirrors loadPortalMonthlyClosing but offers every VALIDATED month for the viewer's line
- * straight from the working closing matrix — there is no publication gate, so PM/GPM always
- * see current numbers. Line is resolved from the viewer (never chosen), products are scoped to
- * the viewer's assignment, and confidential products are always stripped.
- */
-export async function loadPortalLiveMonthly(input: {
-  access: AccessContext;
-  period?: string | null;
-}): Promise<PortalClosingResult> {
-  const scope = await resolvePortalClosingScope(input.access);
-  if (!scope.line) {
-    return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
-  }
-
-  // The employee line ("Anti Inf", "Office") is bridged to the Source-of-Sales official line
-  // ("Anti infective", "Head Office") so it matches the closing matrix's line dimension.
-  const officialLine = bridgeEmployeeLineToOfficial(scope.line) ?? scope.line;
-  const requested = String(input.period ?? "").trim();
-  const raw = await loadMonthlyClosing({ line: officialLine, period: requested || null });
-
-  // Guard against cross-line leakage: loadMonthlyClosing falls back to the first available line
-  // when the requested line has no validated data. Never show another line's numbers.
-  const sameLine = !!raw.line && raw.line.trim().toLowerCase() === officialLine.trim().toLowerCase();
-  if (!sameLine) {
-    return { matrix: null, line: scope.line, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
-  }
-
-  const locked: MonthlyClosingMatrix = { ...raw, availableLines: [scope.line] };
-  const safe = stripRestrictedColumns(locked);
-  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = scope.allowedRegionCodes
-    ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
-    : productScoped;
-
-  return {
-    matrix,
-    line: scope.line,
-    availablePeriods: raw.availablePeriods,
-    selectedPeriod: raw.period,
-    awaitingPublish: false,
-    distributorsUploaded: await countUploadedDistributorsForPeriod(raw.period),
-    distributorsExpected: MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS,
   };
 }
 

@@ -33,13 +33,6 @@ export type EmployeePortalNavVisibility = {
   showReportItTab?: boolean;
   showReportItDashboardTab?: boolean;
   showFingerprintReportTab?: boolean;
-  // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
-  // analytics surfaces that mirror the admin dashboards inside the employee portal.
-  showRoiIntelligenceTab?: boolean;
-  showMiniWeeklySalesTab?: boolean;
-  showMiniMonthlySalesTab?: boolean;
-  showCoachingAnalyticsTab?: boolean;
-  showDoubleVisitAnalyticsTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -202,20 +195,11 @@ export function resolveEmployeePortalNavVisibility(
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
   const baseShowIncentiveTab = !isTrainingManager && resolvedRole !== "Marketing Manager";
-  // Product / Group Product Managers get the line/product-scoped Sales Intelligence
-  // analytics surfaces. Each page enforces its own server-side scope; the sidebar
-  // visibility just mirrors that access.
-  const showSalesIntelligence = isProductManager || isGroupProductManager;
 
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
-    showExcusesTab:
-      isHeadOffice ||
-      isNationalSalesManager ||
-      isProductManager ||
-      isGroupProductManager ||
-      isTrainingManager,
+    showExcusesTab: isHeadOffice || isNationalSalesManager,
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
@@ -246,10 +230,5 @@ export function resolveEmployeePortalNavVisibility(
     showVacanciesTab:
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showFingerprintReportTab: hasDeviceMapping === true,
-    showRoiIntelligenceTab: showSalesIntelligence,
-    showMiniWeeklySalesTab: showSalesIntelligence,
-    showMiniMonthlySalesTab: showSalesIntelligence,
-    showCoachingAnalyticsTab: showSalesIntelligence,
-    showDoubleVisitAnalyticsTab: showSalesIntelligence,
   };
 }

@@ -3,12 +3,10 @@ import assert from "node:assert/strict";
 import {
   isRestrictedProductCode,
   normalizeProductNameKey,
-  RESTRICTED_PRODUCT_CODES,
   stripRestrictedProductNames,
   stripRestrictedRows,
   stripRestrictedRowsByName,
 } from "../src/lib/sales/access-scope.ts";
-import { resolveMarketingExcludeCodes } from "../src/lib/sales-marketing-intelligence/service.ts";
 
 // The confidential products LA003 / LA004 ("Lacto Basic 1 & 2") must be visible only to CEO /
 // Super Admin. The SoS pipeline keys products by CODE; the legacy pipeline keys them by NAME.
@@ -92,29 +90,5 @@ export async function runSalesRestrictedProductsTests() {
     stripRestrictedRowsByName(codeOnly, restrictedNames, (r) => r.product, true).length,
     1,
     "name layer alone misses a code-only restricted row",
-  );
-
-  // ── Sales & Marketing Intelligence aggregate exclusion (p_exclude_codes) ──
-  // The RPC computes summary + every breakdown server-side, so the exclusion MUST be driven from
-  // the caller's role, not client input. CEO / Super Admin opt into the full picture (empty list);
-  // every other dashboard role gets the confidential codes excluded inside the RPC.
-  assert.deepEqual(resolveMarketingExcludeCodes("CEO"), [], "CEO sees full aggregates");
-  assert.deepEqual(resolveMarketingExcludeCodes("Super Admin"), [], "Super Admin sees full aggregates");
-  assert.deepEqual(
-    [...resolveMarketingExcludeCodes("Marketing Manager")].sort(),
-    ["LA003", "LA004", "SS001"],
-    "Marketing Manager aggregates exclude the confidential codes",
-  );
-  assert.deepEqual(
-    [...resolveMarketingExcludeCodes("SFE Manager")].sort(),
-    ["LA003", "LA004", "SS001"],
-    "SFE Manager aggregates exclude the confidential codes",
-  );
-  // The exclusion list and the per-product strip both flow from the same constant, so they can
-  // never diverge — adding a code in one place hides it everywhere.
-  assert.deepEqual(
-    [...resolveMarketingExcludeCodes("National Sales Manager")].sort(),
-    [...RESTRICTED_PRODUCT_CODES].sort(),
-    "non-privileged dashboard roles exclude exactly the restricted set",
   );
 }
