@@ -32,6 +32,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     supabase
       .from("salary_batches")
       .select("id, year, month")
+      .in("status", ["approved", "locked"])
       .order("year", { ascending: false })
       .order("month", { ascending: false })
       .limit(1)
