@@ -28,7 +28,11 @@ export async function assertOutstationAdminAccess(
 ) {
   await assertPermission(access, "outstation", action);
 
-  if (!canUseAdminOutstationWorkspace(access)) {
+  // CEO and Finance Manager are read-only observers — they can view the dashboard
+  // but must never gain approval authority (enforced by executionOnlyOutstationRoles).
+  const isReadOnly = action === "read";
+  const isExecutionOnly = executionOnlyOutstationRoles.includes(access.role);
+  if (!canUseAdminOutstationWorkspace(access) && !(isReadOnly && isExecutionOnly)) {
     throw new Error(
       "Forbidden: only HR Manager (Super Admin) can access admin outstation expenses.",
     );
