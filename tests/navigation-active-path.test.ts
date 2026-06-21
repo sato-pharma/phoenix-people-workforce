@@ -160,6 +160,39 @@ export function runNavigationActivePathTests() {
     "admin mode: excludedRoles ignored, item retained",
   );
 
+  // ── getSections: an explicit ordered moduleIds list drives item + section order ─
+  // Modules Control (user/role/position/line assignment) stores a curated, ordered
+  // module whitelist. When supplied, getSections must honor it for BOTH which items
+  // appear and the sequence — items within a section, and the section order itself.
+  const orderSections = [
+    section("personal", [
+      item("/a", { moduleId: "m.a" }),
+      item("/b", { moduleId: "m.b" }),
+    ]),
+    section("marketing", [
+      item("/c", { moduleId: "m.c" }),
+      item("/d", { moduleId: "m.d" }),
+    ]),
+  ];
+  const orderedNav = getSections(orderSections, "admin", {}, "Super Admin", ["m.d", "m.a", "m.c"]);
+  assert.deepEqual(
+    orderedNav.map((s) => s.id),
+    ["marketing", "personal"],
+    "sections sort by their earliest-ranked item in the moduleIds order",
+  );
+  assert.deepEqual(
+    orderedNav.flatMap((s) => s.items.map((i) => i.href)),
+    ["/d", "/c", "/a"],
+    "items follow the explicit moduleIds order; unlisted /b is filtered out",
+  );
+  // No assignment (moduleIds null) leaves the natural config order untouched.
+  const naturalNav = getSections(orderSections, "admin", {}, "Super Admin", null);
+  assert.deepEqual(
+    naturalNav.map((s) => s.id),
+    ["personal", "marketing"],
+    "without an assignment, sections keep their config order",
+  );
+
   const superAdminCleanupNav = getSections(
     adminNavigationSections,
     "admin",

@@ -64,7 +64,7 @@ export function getSections(
   role?: PhoenixRole,
   moduleIds?: ModuleIdLookup,
 ): NavigationSection[] {
-  return sections
+  const visible = sections
     .map((section) => ({
       ...section,
       items: section.items.filter(
@@ -76,6 +76,28 @@ export function getSections(
       ),
     }))
     .filter((section) => section.items.length > 0);
+
+  // When an explicit, ordered module list is supplied (a Modules Control assignment
+  // for this user/role/position/line), honor that order so admins can curate BOTH
+  // which items appear AND the sequence — items within a section, and the sections
+  // themselves (a section sorts by its earliest-ranked item). Without an assignment
+  // (moduleIds null/empty) the natural config order is preserved for everyone else.
+  if (Array.isArray(moduleIds) && moduleIds.length > 0) {
+    const orderRank = new Map(moduleIds.map((moduleId, index) => [moduleId, index] as const));
+    const rankOf = (item: NavigationSectionItem) =>
+      orderRank.get(item.moduleId) ?? Number.MAX_SAFE_INTEGER;
+    return visible
+      .map((section) => ({
+        ...section,
+        items: [...section.items].sort((left, right) => rankOf(left) - rankOf(right)),
+      }))
+      .sort(
+        (left, right) =>
+          Math.min(...left.items.map(rankOf)) - Math.min(...right.items.map(rankOf)),
+      );
+  }
+
+  return visible;
 }
 
 // ── Active-route detection (data-driven via item.exact / item.activeTab) ─────
