@@ -150,19 +150,27 @@ function buildEmployeePortalSections({
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
         { href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint },
-        { href: "/payslips", label: "Payslips", icon: FileText },
-        { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
-        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
       ],
     },
     {
-      title: "Sales Intelligence",
+      title: "Payroll",
       items: [
-        ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Intelligence", icon: Target }] : []),
+        { href: "/payslips", label: "Payslips", icon: FileText },
+        { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
+      ],
+    },
+    {
+      title: "Sales Operations",
+      items: [
         ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: ChartNoAxesColumnIncreasing }] : []),
-        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales", icon: CalendarRange }] : []),
-        ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
+        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales Closing", icon: CalendarRange }] : []),
+      ],
+    },
+    {
+      title: "Coaching",
+      items: [
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
+        ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
       ],
     },
     {
@@ -183,6 +191,7 @@ function buildEmployeePortalSections({
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/marketing-requests/roi-tracking", label: "ROI Tracking", icon: ChartColumnBig }] : []),
+        ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
       ],
     },
     {
@@ -191,6 +200,7 @@ function buildEmployeePortalSections({
         { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
         { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
       ],
     },
     {
