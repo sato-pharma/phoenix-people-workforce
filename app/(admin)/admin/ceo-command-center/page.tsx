@@ -12,7 +12,6 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { getCeoCommandCenterData } from "@/lib/ceo/command-center";
-import { getEgxQuote } from "@/lib/market/egx";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +45,7 @@ export default async function CeoCommandPage() {
 }
 
 async function CeoCommandContent({ access }: { access: AccessContext }) {
-  const [viewer, result, market] = await Promise.all([
+  const [viewer, result] = await Promise.all([
     resolveViewerIdentityFromPage(access),
     getCeoCommandCenterData(access)
       .then((data) => ({ data, error: null as string | null }))
@@ -54,7 +53,6 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
         console.error("Failed to load CEO Command Center:", error);
         return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
       }),
-    getEgxQuote(),
   ]);
 
   if (!result.data) {
@@ -91,7 +89,5 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
       }
     : { fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId, imageUrl: viewer.imageUrl };
 
-  return (
-    <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} market={market} />
-  );
+  return <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} />;
 }
