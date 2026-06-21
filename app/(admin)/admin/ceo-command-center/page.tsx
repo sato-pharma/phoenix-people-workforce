@@ -75,11 +75,19 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  return (
-    <CeoCommandCenter
-      data={result.data}
-      welcome={{ fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId, imageUrl: viewer.imageUrl }}
-      access={access}
-    />
-  );
+  // When Dr Anwar himself is viewing, present his name, title, and portrait exactly
+  // as he should see them — a curated static asset guarantees a fast, correct photo
+  // regardless of what the employees table holds. Super Admin reviewers keep their
+  // own resolved identity so the page never misrepresents who is signed in.
+  const isCeo = access.role === "CEO";
+  const welcome = isCeo
+    ? {
+        fullName: "Dr Anwar Gaweesh",
+        roleLabel: "Chief Executive Officer",
+        hrId: access.hrId,
+        imageUrl: "/people/ceo-anwar-gaweesh.png",
+      }
+    : { fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId, imageUrl: viewer.imageUrl };
+
+  return <CeoCommandCenter data={result.data} welcome={welcome} access={access} isCeo={isCeo} />;
 }
