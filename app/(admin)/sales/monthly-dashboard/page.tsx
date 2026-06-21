@@ -8,6 +8,9 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSosDashboard, type SosDashboardData } from "@/lib/sales/sos-dashboard";
 
 export const dynamic = "force-dynamic";
+// Safety net: the Source-of-Sales aggregation can take a few seconds on large months; give the
+// server render headroom above the platform default so it never gets cut off mid-query.
+export const maxDuration = 60;
 
 export default async function SourceOfSalesDashboardPage() {
   const accessContext = await resolveAccessContextFromPage();
