@@ -300,13 +300,6 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
-    ],
-    label: "Sales Operations",
-  },
-  {
-    id: "weekly-sales",
-    items: [
       { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }] },
       // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
@@ -315,7 +308,7 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/weekly/distributor-editor", icon: Columns3, label: "Weekly Distributor Column Editor", permissions: [{ action: "import", resource: "weekly_sales" }] },
       { href: "/sales/weekly/assignments", icon: UsersRound, label: "Weekly Product Access", permissions: [{ action: "update", resource: "weekly_sales" }] },
     ],
-    label: "Weekly Sales",
+    label: "Sales Operations",
   },
   {
     id: "field-coaching",
@@ -324,6 +317,7 @@ const adminNavigationSectionSeeds = [
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
       { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
       { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }] },
     ],
     label: "Field Coaching",
   },
@@ -333,21 +327,20 @@ const adminNavigationSectionSeeds = [
       // SFE Manager + Marketing Manager use the de-duplicated /workspace/marketing-requests home
       // (see the "workspace-marketing-requests" group); District Manager / Medical Rep / NSM / PM /
       // GPM use the employee portal. So these admin workflow links are Super-Admin-only in practice.
-      // ROI Tracking is a READ-ONLY executive report, so it also surfaces to the CEO (the oversight
+      // ROI Dashboard is a READ-ONLY executive report, so it also surfaces to the CEO (the oversight
       // audience the report is built for; the page guard admits the company-oversight roles too).
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["Super Admin"], exact: true },
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", roles: ["Super Admin", "CEO"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["Super Admin", "CEO"] },
     ],
     label: "Marketing Requests",
   },
   {
     id: "access-communication",
     items: [
-      { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }] },
       { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
       { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
       { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
@@ -364,6 +357,13 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
     ],
     label: "Pharmacovigilance",
+  },
+  {
+    id: "request-hr-support",
+    items: [
+      { href: "/workspace/contact-hr-support", icon: LifeBuoy, label: "Request HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
+    ],
+    label: "Support",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
