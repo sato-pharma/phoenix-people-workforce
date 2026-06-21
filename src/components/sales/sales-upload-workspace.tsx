@@ -100,6 +100,46 @@ async function readJson<T>(res: Response): Promise<T> {
   try { return JSON.parse(text) as T; } catch { return { success: false, error: text } as unknown as T; }
 }
 
+// Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
+// body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE). Those upload straight to the "sales-imports" Storage
+// bucket via a short-lived signed URL, then the endpoint is called by reference (storagePath JSON).
+// Small files keep the original direct multipart POST. Mirrors the proven /sales/import path; the
+// server resolves both shapes via resolveUploadedSpreadsheet and deletes the temp object afterwards.
+const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
+
+async function postSalesUpload(endpoint: string, file: File, fields: Record<string, string | undefined>): Promise<Response> {
+  const entries = Object.entries(fields).filter(([, v]) => v != null && v !== "") as [string, string][];
+  if (file.size <= LARGE_FILE_THRESHOLD) {
+    const fd = new FormData();
+    fd.append("file", file);
+    for (const [key, value] of entries) fd.append(key, value);
+    return fetch(endpoint, { body: fd, method: "POST" });
+  }
+  const urlRes = await fetch("/api/sales/monthly-import/upload-url", {
+    body: JSON.stringify({ fileName: file.name }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const urlPayload = (await urlRes.json().catch(() => ({}))) as { signedUrl?: string; path?: string; error?: string };
+  if (!urlRes.ok || !urlPayload.signedUrl || !urlPayload.path) {
+    throw new Error(urlPayload.error ?? "Could not start the upload for this large file.");
+  }
+  const putRes = await fetch(urlPayload.signedUrl, {
+    body: file,
+    headers: {
+      "content-type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "x-upsert": "false",
+    },
+    method: "PUT",
+  });
+  if (!putRes.ok) throw new Error("The file could not be uploaded. Please try again.");
+  return fetch(endpoint, {
+    body: JSON.stringify({ storagePath: urlPayload.path, ...Object.fromEntries(entries) }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+}
+
 function ProfileViewer({ summary }: { summary?: DistributorProfileSummary }) {
   if (!summary) {
     return <AdminCallout tone="neutral"><span>No recognition profile for this distributor yet. Set one up in <Link className="font-semibold text-[#F97316] underline" href="/sales/database-mapping">Master Data &amp; Profiles</Link>.</span></AdminCallout>;
@@ -333,6 +373,9 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
 
   async function detect(f: File) {
     setDetected(null); setVerifyRan(false);
+    // Detection is advisory; for large files skip the extra Storage upload but still mark verification
+    // as run so the operator gets the "confirm this distributor" path (Analyze re-validates anyway).
+    if (f.size > LARGE_FILE_THRESHOLD) { setVerifyRan(true); return; }
     try {
       const fd = new FormData(); fd.append("file", f);
       const res = await fetch("/api/sales/monthly-import/detect", { method: "POST", body: fd });
@@ -379,8 +422,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     if (!file) { setError("Choose a file first."); return; }
     setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null);
     try {
-      const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
-      const res = await fetch("/api/sales/sales-upload/analyze", { method: "POST", body: fd });
+      const res = await postSalesUpload("/api/sales/sales-upload/analyze", file, { distributorCode, period });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
       if (!payload.success) setError(payload.error ?? "Validation failed.");
@@ -393,8 +435,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     if (!file) return;
     setBusy("commit"); setError(null);
     try {
-      const fd = new FormData(); fd.append("file", file); fd.append("distributorCode", distributorCode); if (period) fd.append("period", period);
-      const res = await fetch("/api/sales/sales-upload/commit", { method: "POST", body: fd });
+      const res = await postSalesUpload("/api/sales/sales-upload/commit", file, { distributorCode, period });
       const payload = await readJson<CommitResponse>(res);
       setCommitted(payload);
       if (!payload.success) setError(payload.error ?? "Import failed.");

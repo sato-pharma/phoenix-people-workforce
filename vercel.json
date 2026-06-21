@@ -8,5 +8,10 @@
       "path": "/api/notifications/process?limit=50",
       "schedule": "*/30 * * * *"
     }
-  ]
+  ],
+  "functions": {
+    "app/api/sales/**/*": {
+      "maxDuration": 60
+    }
+  }
 }
