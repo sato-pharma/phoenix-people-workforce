@@ -6,7 +6,7 @@ import { EmployeePortalEmptyState } from "@/components/employee-portal/enterpris
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 
 export default async function EmployeePortalsHomePage({
@@ -29,7 +29,12 @@ export default async function EmployeePortalsHomePage({
   if (access.role === "Training Manager") {
     redirect("/employee-portals/training-manager");
   }
-  await assertPermission(access, "employee_profile", "read");
+  try {
+    await assertPermission(access, "employee_profile", "read");
+  } catch (error) {
+    if (isForbiddenError(error)) redirect("/login");
+    throw error;
+  }
 
   let data = null;
   try {
