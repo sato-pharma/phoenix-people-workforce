@@ -430,6 +430,21 @@ export function EmployeeProbationDashboard({
             />
           </label>
 
+          {/* Line */}
+          <label className="block">
+            <span className={`mb-1.5 block ${labelClassName}`}>Line</span>
+            <SearchableSelect
+              className={inputClassName}
+              onChange={(e) => setLineFilter(e.target.value)}
+              value={lineFilter}
+            >
+              <option value={ALL_VALUE}>All lines</option>
+              {filterOptions.lines.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </SearchableSelect>
+          </label>
+
           {/* Area */}
           <label className="block">
             <span className={`mb-1.5 block ${labelClassName}`}>Area</span>

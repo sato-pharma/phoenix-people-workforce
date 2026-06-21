@@ -306,15 +306,13 @@ export function runEmployeePortalNavigationTests() {
     "Marketing quick-action must not surface for Training Manager",
   );
 
-  // The dashboard Quick Actions are Submit Expense, Submit Vacation Request, and
-  // Submit Weekly Plan (Marketing was intentionally removed from the dashboard
-  // quick-actions; the helper above still gates the Marketing module elsewhere).
-  assert.match(dashboardSource, /label: "Submit Expense"/, "Core Submit Expense quick-action must remain present");
-  assert.match(dashboardSource, /label: "Submit Vacation Request"/, "Core Submit Vacation Request quick-action must remain present");
-  assert.match(dashboardSource, /label: "Submit Weekly Plan"/, "Dashboard must surface the Submit Weekly Plan quick-action");
-  assert.doesNotMatch(
+  // The dashboard wires the quick-action through the gating helper, and Core 8
+  // quick-actions (Submit Expense, Submit Vacation Request) remain ungated.
+  assert.match(
     dashboardSource,
-    /label: "Submit Marketing Request"/,
-    "Marketing quick-action must no longer appear in the dashboard quick-actions",
+    /shouldShowEmployeePortalMarketingQuickAction\(data\.betaNavEnabled, data\.employee\.roleLabel\)/,
+    "Dashboard Marketing quick-action must be gated via shouldShowEmployeePortalMarketingQuickAction",
   );
+  assert.match(dashboardSource, /label: "Submit Expense"/, "Core 8 Submit Expense quick-action must remain present");
+  assert.match(dashboardSource, /label: "Submit Vacation Request"/, "Core 8 Submit Vacation Request quick-action must remain present");
 }

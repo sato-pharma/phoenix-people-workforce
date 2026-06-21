@@ -336,8 +336,6 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/employee-context", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/hub-data", permission: { resource: "employees", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/managers", permission: { resource: "employees", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/portal-overview/weekly-trend", permission: { resource: "employee_profile", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/portal-overview/double-visit", permission: { resource: "employee_profile", action: "read" } }),
 
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/modules-control", permission: { resource: "module_control", action: "read" } }), surface: "page" },

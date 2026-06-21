@@ -115,24 +115,12 @@ const TONE: Record<Accent, { bar: string; value: string }> = {
 function KpiCard({ accent, label, note, value }: { accent: Accent; label: string; note: string; value: number }) {
   const { bar, value: valueColor } = TONE[accent];
   return (
-<<<<<<< HEAD
-    <div className="group relative min-h-[140px] overflow-hidden border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_42px_rgba(15,23,42,0.09)] hover:ring-slate-300">
-      <div className={`absolute inset-x-0 top-0 h-1 ${bar} opacity-90 transition-all duration-300 group-hover:h-1.5`} />
-      <div className="flex h-full flex-col justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className={`h-1.5 w-1.5 rounded-full ${dot} shadow-[0_0_0_3px_rgba(15,23,42,0.03)]`} />
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
-          </div>
-          <p className="mt-2.5 text-2xl font-black leading-none tracking-tight text-slate-950 tabular-nums">{value}</p>
-=======
     <div className="group relative min-h-[124px] overflow-hidden border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-200 hover:border-orange-300">
       <div className={`absolute inset-x-0 top-0 h-[3px] ${bar}`} />
       <div className="flex h-full flex-col justify-between gap-4 p-5">
         <div className="flex items-center gap-2">
           <span className={`h-1.5 w-1.5 ${bar}`} />
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
->>>>>>> origin/main
         </div>
         <div>
           <p className={`text-[28px] font-black leading-none tracking-tight tabular-nums ${valueColor}`}>{value}</p>
@@ -242,11 +230,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
       {/* ── Whose report (managers only) ─────────────────────────────────── */}
       {hasReports && (
-<<<<<<< HEAD
-        <div className="overflow-hidden border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
-=======
         <div className={`overflow-hidden ${CARD} p-4`}>
->>>>>>> origin/main
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
@@ -277,11 +261,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
       )}
 
       {/* ── Filter strip ─────────────────────────────────────────────────── */}
-<<<<<<< HEAD
-      <div className="overflow-hidden border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
-=======
       <div className={`overflow-hidden ${CARD} p-4`}>
->>>>>>> origin/main
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
@@ -363,11 +343,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
           <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
           <KpiCard accent="red"    label="Deductions"      value={summary.deductionDays}                  note="Days flagged"      />
         </div>
-<<<<<<< HEAD
-      ) : (
-        <div className="overflow-hidden border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
-=======
->>>>>>> origin/main
 
         {/* ── Punch log ─────────────────────────────────────────────────── */}
         {rows.length === 0 ? (
@@ -399,72 +374,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               </span>
             </div>
 
-<<<<<<< HEAD
-                  <tbody>
-                    {rows.map((row, i) => {
-                      const lateMin = parseInt(row.lateMinutes ?? "0", 10);
-                      return (
-                        <tr
-                          key={row.rawDate}
-                          className={`border-b border-slate-50 transition-colors duration-150 hover:bg-orange-50/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
-                        >
-                          <td className="whitespace-nowrap px-4 py-3.5">
-                            <span className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{row.date}</span>
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3.5">
-                            {row.firstPunch ? (
-                              <span className="flex items-center gap-1.5">
-                                <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
-                                <span className="text-[13px] font-semibold text-slate-700">{row.firstPunch}</span>
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3.5">
-                            {row.lastPunch ? (
-                              <span className="flex items-center gap-1.5">
-                                <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
-                                <span className="text-[13px] font-semibold text-slate-700">{row.lastPunch}</span>
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3.5">
-                            {row.timeLong ? (
-                              <span className="inline-flex items-center gap-1.5 bg-slate-100/80 px-2 py-0.5">
-                                <Clock className="h-3 w-3 text-slate-400" />
-                                <span className="text-[13px] font-bold text-slate-700">{row.timeLong}</span>
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </td>
-
-                          <td className="px-4 py-3.5">
-                            {lateMin > 0 ? (
-                              <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200 shadow-[0_2px_8px_rgba(245,158,11,0.12)]">
-                                +{lateMin} min
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </td>
-
-                          <td className="px-4 py-3.5">
-                            <StatusBadge status={row.status} />
-                          </td>
-
-                          {showDeductionCol && (
-                            <td className="px-4 py-3.5 text-right">
-                              {row.deductionConfirmed ? (
-                                <span className="inline-flex rounded-sm bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 shadow-[0_2px_8px_rgba(244,63,94,0.12)]">
-                                  −{row.deductionDays}d
-=======
             <div className="overflow-x-auto">
               {(() => {
                 const showDeductionCol = rows.some((r) => r.deductionConfirmed);
@@ -501,7 +410,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                                 <span className="inline-flex items-center gap-1.5">
                                   <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
                                   <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
->>>>>>> origin/main
                                 </span>
                               ) : (
                                 <span className="text-xs text-slate-300">—</span>

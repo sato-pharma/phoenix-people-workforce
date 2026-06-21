@@ -27,7 +27,6 @@ export type EmployeePortalNavVisibility = {
   showSupportTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
-  showCoachingAnalyticsTab?: boolean;
   showTrainingManagerCreateCoachingTab?: boolean;
   showTrainingManagerDashboardTab?: boolean;
   showTrainingManagerFieldCoachingTab?: boolean;
@@ -239,8 +238,6 @@ export function resolveEmployeePortalNavVisibility(
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
     showSupportTab: true,
     showTeamCoachingTab,
-    // PM/GPM get a line-scoped coaching analytics dashboard (their line's reps).
-    showCoachingAnalyticsTab: isProductManager || isGroupProductManager,
     showTeamExpensesTab: isNationalSalesManager,
     showTeamPerformanceTab,
     showTrainingManagerCreateCoachingTab: isTrainingManager,

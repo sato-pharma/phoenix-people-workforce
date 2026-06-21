@@ -71,7 +71,6 @@ type EmployeePortalNavProps = {
 };
 
 type EmployeePortalNavItem = {
-  badge?: "coming-soon";
   href: string;
   label: string;
   icon: typeof Activity;
@@ -121,7 +120,6 @@ function buildEmployeePortalSections({
   showSupportTab = false,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
-  showCoachingAnalyticsTab = false,
   showTrainingManagerCreateCoachingTab = false,
   showTrainingManagerDashboardTab = false,
   showTrainingManagerFieldCoachingTab = false,
@@ -210,7 +208,6 @@ function buildEmployeePortalSections({
       items: [
         ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
         ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
-        ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
         ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: ChartColumnBig }] : []),
         ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: Users }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
@@ -385,12 +382,6 @@ function EmployeePortalMenu({
                     } shrink-0 transition ${pending ? "text-[#EA580C]" : navIconClass(active)}`}
                   />
                   <span>{item.label}</span>
-                  {item.badge === "coming-soon" && !pending ? (
-                    <span className="ml-auto flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">
-                      <Lock className="h-2.5 w-2.5" />
-                      Soon
-                    </span>
-                  ) : null}
                   {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                 </Link>
               );
