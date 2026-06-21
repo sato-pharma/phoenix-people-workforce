@@ -10,6 +10,9 @@
     }
   ],
   "functions": {
+    "app/api/sales/sales-upload/commit/route.ts": {
+      "maxDuration": 300
+    },
     "app/api/sales/**/*": {
       "maxDuration": 60
     }

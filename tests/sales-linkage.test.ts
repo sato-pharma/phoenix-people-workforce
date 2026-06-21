@@ -27,13 +27,36 @@ function consumersShareTheEngine() {
   assert.match(analyze, /analyzeMonthlyUpload/, "analyze route must use the shared analyze service");
   const commit = read("../app/api/sales/sales-upload/commit/route.ts");
   assert.match(commit, /commitMonthlyUpload/, "commit route must use the shared commit service");
+  assert.match(commit, /export const maxDuration = 300/, "large sales-upload commits must have a five-minute Vercel duration");
   const diagnostics = read("../src/lib/sales/diagnostics.ts");
   assert.match(diagnostics, /analyzeMonthlyUpload/, "diagnostics must reuse the same analyze (recognizer) path");
   const missing = read("../app/api/sales/monthly-import/missing/route.ts");
   assert.match(missing, /normalizeUploadedFile|recognizeDistributorWorkbook/, "the monthly analyzer must use the shared recognizer");
 }
 
+function normalizerCommitsAreFinalizedAtomically() {
+  const service = read("../src/lib/sales/normalizer/service.ts");
+  assert.match(service, /status: "blocked"/, "normalizer imports must start blocked until child rows are persisted");
+  assert.match(service, /status: "validated"/, "normalizer imports must finalize to validated after all rows are persisted");
+  assert.match(service, /blocking_reasons: \[IMPORT_FINALIZING_REASON\]/, "blocked in-flight imports must carry a retry-safe reason");
+  const upload = read("../src/lib/sales/sales-upload.ts");
+  assert.match(upload, /\.eq\("status", "validated"\)/, "duplicate/prior-period checks must only use finalized batches");
+}
+
+function salesUploadCommitDurationIsConfigured() {
+  const raw = read("../vercel.json");
+  const specific = raw.indexOf('"app/api/sales/sales-upload/commit/route.ts"');
+  const broad = raw.indexOf('"app/api/sales/**/*"');
+  assert.ok(specific >= 0, "vercel.json must configure the sales-upload commit route explicitly");
+  assert.ok(broad >= 0, "vercel.json must retain the broad sales API duration default");
+  assert.ok(specific < broad, "the sales-upload commit duration must be declared before the broad sales API rule");
+  const vercel = JSON.parse(raw) as { functions?: Record<string, { maxDuration?: number }> };
+  assert.equal(vercel.functions?.["app/api/sales/sales-upload/commit/route.ts"]?.maxDuration, 300, "sales-upload commit needs a five-minute Vercel duration");
+}
+
 export function runSalesLinkageTests() {
   singleEngineSource();
   consumersShareTheEngine();
+  normalizerCommitsAreFinalizedAtomically();
+  salesUploadCommitDurationIsConfigured();
 }

@@ -95,8 +95,8 @@ function currentPeriodUtc(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-// Periods already imported for this distributor (normalizer batches only — the set the replace logic
-// in deleteOtherBatchesForPeriod actually operates on). Best-effort: a read failure returns [].
+// Validated periods already imported for this distributor. Incomplete/blocked batches are ignored so
+// a timed-out upload can be retried and replaced.
 async function listExistingBatchPeriods(distributorCode: string): Promise<string[]> {
   try {
     const supabase = getSupabaseAdmin();
@@ -105,7 +105,8 @@ async function listExistingBatchPeriods(distributorCode: string): Promise<string
       .from("source_of_sales_import_batches")
       .select("period")
       .eq("distributor_code", dist)
-      .eq("template_key", "normalizer");
+      .eq("template_key", "normalizer")
+      .eq("status", "validated");
     if (error) return [];
     return [...new Set((data ?? []).map((r) => String((r as { period: unknown }).period ?? "")).filter((p) => VALID_PERIOD.test(p)))];
   } catch {
@@ -125,6 +126,7 @@ async function getPriorPeriodTotals(distributorCode: string, resolvedPeriod: str
       .select("period,total_value,total_qty")
       .eq("distributor_code", dist)
       .eq("template_key", "normalizer")
+      .eq("status", "validated")
       .lt("period", resolvedPeriod)
       .order("period", { ascending: false })
       .limit(1)
@@ -221,7 +223,8 @@ export type CommitResult =
 // validated batches for one month never coexist — the DB partial unique index
 // (source_of_sales_one_validated_batch_per_period) is the hard backstop if anything still races past
 // this. Pass keepBatchId to spare a specific batch; omit it to clear all prior batches for the month.
-// Scoped to template_key='normalizer' + a validated YYYY-MM period, so it can never touch unrelated data.
+// Scoped to template_key='normalizer' + a YYYY-MM period, so it can never touch unrelated data.
+// This deliberately removes blocked/incomplete leftovers too, allowing a clean retry after a timeout.
 async function deleteOtherBatchesForPeriod(distributorCode: string, period: string, keepBatchId?: string): Promise<void> {
   if (!VALID_PERIOD.test(period)) return;
   const supabase = getSupabaseAdmin();
@@ -289,8 +292,9 @@ export async function commitMonthlyUpload(input: {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }
 
-  // Replace-not-double-count: remove any prior validated batch for this (distributor, month) BEFORE
+  // Replace-not-double-count: remove any prior normalizer batch for this (distributor, month) BEFORE
   // inserting the replacement. This keeps two validated batches for one month from ever coexisting
+  // and also clears blocked leftovers from interrupted uploads so the retry starts cleanly
   // (the old insert-then-delete ordering could leave both during a race → ROI/dashboard double-count).
   // The DB partial unique index (source_of_sales_one_validated_batch_per_period) is the hard backstop:
   // if a duplicate still races past this delete (or a same-month batch from another template exists),
