@@ -72,8 +72,8 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(resolveNavigationMode(mm), "admin", "MM is an admin-shell account, never the portal");
   assert.equal(
     resolveLandingPathForRole("Marketing Manager"),
-    "/workspace/marketing-requests",
-    "MM lands in its de-duplicated /workspace marketing home",
+    "/workspace/marketing-requests/overview",
+    "MM lands on its at-a-glance marketing Overview dashboard",
   );
 
   // ── Structural guarantees (source-pinned, so refactors cannot silently regress them) ─────────
