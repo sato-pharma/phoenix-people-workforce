@@ -48,7 +48,7 @@ export function runSosInvoiceDateTests() {
   // Even without the column hint, 22 cannot be a month — day-first wins via the guard.
   assert.equal(resolveInvoiceDate("22-04-2026", undefined, "2026-04"), "2026-04-22");
 
-  // ── EP-S ambiguity: "4/9/2026" — the period arbitrates the orientation ──────────────
+  // ── Slash-date ambiguity: "4/9/2026" — the period arbitrates the orientation ─────────
   assert.equal(
     resolveInvoiceDate("4/9/2026", undefined, "2026-04"),
     "2026-04-09",
