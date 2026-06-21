@@ -37,7 +37,6 @@ export type EmployeePortalNavVisibility = {
   showRoiIntelligenceTab?: boolean;
   showMiniWeeklySalesTab?: boolean;
   showMiniMonthlySalesTab?: boolean;
-  showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
 };
 
@@ -240,7 +239,6 @@ export function resolveEmployeePortalNavVisibility(
     showRoiIntelligenceTab: showSalesIntelligence,
     showMiniWeeklySalesTab: showSalesIntelligence,
     showMiniMonthlySalesTab: showSalesIntelligence,
-    showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence,
   };
 }

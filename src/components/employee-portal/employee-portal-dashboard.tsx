@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Component, type ReactElement, type ReactNode } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Area,
