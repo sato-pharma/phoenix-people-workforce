@@ -423,55 +423,6 @@ const IBN_SINA_SATO_ISS_TEMPLATE: DistributorSalesTemplateDef = {
   },
 };
 
-// EPDA "Pharmacies" direct feed (code EP-S). Coded format like IS-S, but quantity is "qnt",
-// the date is "inv_date", and each line carries an is_bonus flag. Bonus-flagged rows are
-// skipped entirely (free goods are not counted as sales). Captures the customer fields.
-const EPDA_SATO_EPS_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusFlagField: "is_bonus",
-  customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
-  discountField: "Discount%",
-  distributorCodes: ["EP-S"],
-  fields: {
-    areaCode: "Area ID",
-    brickId: BRICK_ID_HEADER_ALIASES,
-    distributorCode: "Distrub ID",
-    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
-    productCode: "Product ID",
-    qty: QTY_HEADER_ALIASES,
-    regionCode: "Region ID",
-  },
-  key: "epda_pharmacies_eps",
-  name: "EPDA Pharmacies EP-S coded template",
-  optionalFields: {
-    productName: ["class_name"],
-  },
-};
-
-// EPDA "Bulk" (wholesale / جملة) branch (code EP-R). Same coded EPDA layout as EP-S — qty "qnt", date
-// "inv_date", whole-line is_bonus flag, customer cust_code/cust_name/cust_address — for the user's
-// canonical monthly sheet (raw EPDA export + appended Product ID / Brick ID / Area ID / Region ID /
-// Distrub ID, where Distrub ID = "EP-R"). Value RECOMPUTED from Qty x factory_price x (1 - Discount%).
-const EPDA_BULK_EPR_TEMPLATE: DistributorSalesTemplateDef = {
-  bonusFlagField: "is_bonus",
-  customerFields: { address: ["cust_address"], code: ["cust_code"], name: ["cust_name"] },
-  discountField: "Discount%",
-  distributorCodes: ["EP-R"],
-  fields: {
-    areaCode: "Area ID",
-    brickId: BRICK_ID_HEADER_ALIASES,
-    distributorCode: "Distrub ID",
-    invoiceDate: INVOICE_DATE_HEADER_ALIASES,
-    productCode: "Product ID",
-    qty: QTY_HEADER_ALIASES,
-    regionCode: "Region ID",
-  },
-  key: "epda_bulk_epr",
-  name: "EPDA Bulk coded template",
-  optionalFields: {
-    productName: ["class_name"],
-  },
-};
-
 // EGD Branch (code EG-BR) — a separate branch of EGD (parent code EG). Fully-coded EGD monthly sheet:
 // EGD's raw export with the Phoenix coded columns (Product ID / Brick ID / Area ID / Region ID /
 // Distrub ID, where Distrub ID = "EG-BR") appended. Date is "Invoice Date", qty the net "Qty",
@@ -632,8 +583,6 @@ const DISTRIBUTOR_SALES_TEMPLATES = [
   OVERSEAS_PS_TEMPLATE,
   IBN_SINA_IS_TEMPLATE,
   IBN_SINA_SATO_ISS_TEMPLATE,
-  EPDA_SATO_EPS_TEMPLATE,
-  EPDA_BULK_EPR_TEMPLATE,
   EGD_PH_TEMPLATE,
   MEC_MC_TEMPLATE,
   SOFICO_SF_TEMPLATE,
@@ -1058,8 +1007,8 @@ function isoFromYmd(year: number, month: number, day: number): string | null {
 
 // Resolves the row's full DAY-level invoice date (ISO YYYY-MM-DD) for daily analytics. Runs
 // BESIDE invoicePeriod() — never replaces it — and is guarded by it: a candidate date is accepted
-// ONLY when its YYYY-MM equals the row's derived period, so a slash-date misread (the EP-S
-// "4/9/2026" m/d-vs-d/m ambiguity) can never land in the wrong month; it resolves to null and the
+// ONLY when its YYYY-MM equals the row's derived period, so a slash-date m/d-vs-d/m ambiguity
+// can never land in the wrong month; it resolves to null and the
 // row simply stays "undated" in day-grain views. When the column orientation is unknown and a
 // value is ambiguous, BOTH orientations are tried and the period match picks the right one.
 export function resolveInvoiceDate(

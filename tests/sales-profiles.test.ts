@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { RAW_DISTRIBUTOR_PROFILES } from "../src/lib/sales/normalizer/profiles.ts";
 import { WEEKLY_DISTRIBUTORS } from "../src/lib/sales/weekly/distributors.ts";
@@ -47,8 +48,29 @@ function chimipharmPivotHasNoDateColumn() {
   assert.equal(cp!.valueSource, "recompute", "CP value is recomputed from master price");
 }
 
+function retiredDistributorCodesStayOutOfCodePaths() {
+  const retiredCodes = ["EP" + "-S", "EP" + "-R"];
+  const profileCodes = new Set(RAW_DISTRIBUTOR_PROFILES.map((p) => p.distributorCode.trim().toUpperCase()));
+  for (const code of retiredCodes) {
+    assert.ok(!profileCodes.has(code), `retired distributor ${code} must not have a raw profile`);
+  }
+
+  const guardedFiles = [
+    "src/lib/sales/monthly-distributor-import.ts",
+    "src/lib/sales/master-data/import-service.ts",
+    "scripts/seed-vlookup-master.mjs",
+  ];
+  for (const file of guardedFiles) {
+    const contents = readFileSync(file, "utf8");
+    for (const code of retiredCodes) {
+      assert.ok(!contents.includes(code), `${file} must not reintroduce retired distributor ${code}`);
+    }
+  }
+}
+
 export function runSalesProfilesTests() {
   profileInvariants();
   weeklyDistributorsHaveProfiles();
   chimipharmPivotHasNoDateColumn();
+  retiredDistributorCodesStayOutOfCodePaths();
 }

@@ -5,8 +5,8 @@
 //   2. source_of_sales_areas    (Areas tab)
 //   3. source_of_sales_blocks   (Blocks tab + any missing from Bricks tab)
 //   4. source_of_sales_bricks   (Bricks tab)
-//   5. source_of_sales_distributors (adds EP-S if missing)
-//   6. source_of_sales_customer_map (~47k records: IS/SF/RM/EG/EP-S/POS tabs)
+//   5. source_of_sales_distributors (no code-only additions)
+//   6. source_of_sales_customer_map (~47k records: IS/SF/RM/EG/POS tabs)
 //   7. source_of_sales_product_aliases (Products tab Arabic aliases)
 //
 // Usage:
@@ -54,7 +54,6 @@ const TAB_DISTRIBUTOR_MAP = {
   SF: "SF",
   RM: "RM",
   EG: "EG",
-  "EP-S": "EP-S",
   POS: "PS",
 };
 
@@ -68,9 +67,6 @@ const PRODUCT_ALIAS_DISTRIBUTOR_MAP = {
   SOFICO: "SF",
   RAMCO: "RM",
   MEC: "MC",
-  "EP-B": "EP-R",
-  "EPDA BULK": "EP-R",
-  "EPDA SOUTH": "EP-S",
 };
 
 // ── Normalization helpers (mirrors src/lib/sales/normalizer/resolvers.ts) ──────
@@ -473,21 +469,11 @@ async function main() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // STEP 4: Distributors — ensure EP-S exists
+  // STEP 4: Distributors
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n── Step 4: Distributors ──");
   const distSheet = wb.getWorksheet("Distbutors");
-  const distRows = [
-    // Always ensure EP-S is present (it appears in EP-S tab data but may not be seeded)
-    {
-      distributor_code: "EP-S",
-      distributor_name: "EPDA South",
-      normalized_distributor_name: "epda south",
-      source_file: SOURCE_FILE,
-      source_sheet: "Distbutors",
-      active: true,
-    },
-  ];
+  const distRows = [];
 
   if (distSheet) {
     for (let r = 2; r <= distSheet.rowCount; r++) {
@@ -495,16 +481,15 @@ async function main() {
       const code = normalizeCodeKey(cellText(row.getCell(1)));
       const name = cellText(row.getCell(2));
       if (!code || !name) continue;
-      // Don't re-add ones already seeded in foundation migration (EG, IS, PS, SF, RM, MC, EP, CP)
-      // Just add EP-S which is new
-      if (code === "EP-S" || code === "EPS") continue; // already added above
+      // Distributor master rows are managed by the foundation data and admin tools.
+      // This seed step intentionally avoids re-adding retired or ad hoc channels.
     }
   }
 
   await upsertChunked(mockSupabase, "source_of_sales_distributors", distRows, "distributor_code", "Distributors");
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // STEP 5: Customer map (IS, SF, RM, EG, EP-S, POS tabs)
+  // STEP 5: Customer map (IS, SF, RM, EG, POS tabs)
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n── Step 5: Customer Map ──");
   // brickById was built above from brickCanonical (canonical area/region per brick)

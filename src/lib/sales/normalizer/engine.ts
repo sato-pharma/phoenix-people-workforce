@@ -277,7 +277,7 @@ export function normalizeRows(
       continue;
     }
 
-    // Bonus/free-goods flag: skip rows marked as bonus deliveries (EP-S/EP-R: is_bonus = 1).
+    // Bonus/free-goods flag: skip rows marked as bonus deliveries.
     // These are free-goods shipments, not real sales — counting them inflates the numbers.
     if (profile.bonusColumns?.length) {
       const flag = firstValue(row, header, profile.bonusColumns);
