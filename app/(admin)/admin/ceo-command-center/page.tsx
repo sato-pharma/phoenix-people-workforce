@@ -83,7 +83,7 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     <>
       <CeoCommandCenter data={result.data} welcome={welcome} access={access} />
       <Suspense fallback={<CeoPhaseBSkeleton />}>
-        <CeoPhaseBWidgets access={access} />
+        <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} />
       </Suspense>
     </>
   );
