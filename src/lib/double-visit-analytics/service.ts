@@ -10,6 +10,7 @@ import {
 import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports360-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildDoubleVisitPreviewFromWorkbook,
@@ -264,16 +265,27 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     }
   }
 
-  // GPM and PM are widened to their full product line so the MRs they visit (who
-  // sit on the same line but don't org-report to them) are included in mrScores.
-  // Without this, managerSummaries shows their real DV count while the "by manager"
-  // executive view shows 0 because the visited MRs were absent from scopedEmployees.
+  // GPM and PM oversee their entire product LINE, not just their reporting chain. In
+  // production the employee directory keys lines by numeric line_id (line_name is null on
+  // the manager records), and the DV import labels lines with an unrelated text code — so
+  // matching on line_name alone never fires. Resolve the full line with the canonical
+  // sameWorkforceLine (line_id preferred, line-name fallback) and add every line member to
+  // allowedHrIds, so a DV is in scope whenever the double-visitor OR the visited MR sits on
+  // the line. Without this a GPM saw only their direct chain (≈30 of ≈1,900 line visits).
   if (
     (access.role === "Group Product Manager" || access.role === "Product Manager") &&
-    viewer?.lineName
+    viewer &&
+    (viewer.lineId != null || viewer.lineName)
   ) {
-    const lineKey = normalizeLabelKey(viewer.lineName);
-    if (lineKey) allowedLines.add(lineKey);
+    for (const employee of employees) {
+      if (!sameWorkforceLine(viewer, employee)) continue;
+      const key = normalizedHrKey(employee.hrId);
+      if (key) allowedHrIds.add(key);
+      // Keep any non-null line label too, so line-tagged rows with no mapped employee
+      // (e.g. resigned/vacant territories on the line) are still captured.
+      const line = normalizeLabelKey(employee.lineName);
+      if (line) allowedLines.add(line);
+    }
   }
 
   return {

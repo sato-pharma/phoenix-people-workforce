@@ -13,8 +13,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // Sales Intelligence section is Product / Group Product Managers only. The dashboard
-// scope (self + reporting chain) is applied inside getDoubleVisitDashboardData via
-// resolveDoubleVisitAccessScope. This portal view is read-only (no import/publish).
+// scope (self + reporting chain, WIDENED to the manager's whole product line) is applied
+// inside getDoubleVisitDashboardData via resolveDoubleVisitAccessScope. This portal view is
+// read-only (no import/publish) — the workspace is rendered with embedded + canImport/canPublish=false.
 const DOUBLE_VISIT_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager"]);
 
 function dateParam(value: string | string[] | undefined) {
@@ -61,6 +62,7 @@ export default async function PortalDoubleVisitAnalyticsPage({
         canImport={false}
         canPublish={false}
         dashboard={dashboard}
+        embedded
         ireports360Configured={isIReports360Configured()}
         ownDoubleVisits={ownDoubleVisits}
       />
