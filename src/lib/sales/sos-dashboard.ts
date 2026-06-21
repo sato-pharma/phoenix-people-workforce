@@ -154,32 +154,22 @@ export async function getSosDashboard(
   // Trend window = the most-recent N months, always including the selected period.
   const windowPeriods = [...new Set([...availablePeriods.slice(0, TREND_WINDOW), selectedPeriod])].sort();
 
-  // One leaf-row fetch per window month (parallel). The selected month doubles as the detail source.
-  const execByPeriod = new Map<string, ExecRow[]>();
-  const [, brickRaw, customerRaw] = await Promise.all([
-    Promise.all(
-      windowPeriods.map(async (period) => {
-        const rows = await rpcAll(
-          supabase,
-          "phx_exec_distributor_product",
-          { p_period: period },
-          ["distributor_code", "region_code", "area_code", "product_code"],
-        );
-        execByPeriod.set(
-          period,
-          (rows as Array<Record<string, unknown>>).map((row) => ({
-            distributorCode: norm(row.distributor_code as string),
-            officialLine: norm(row.official_line as string),
-            regionCode: norm(row.region_code as string),
-            areaCode: norm(row.area_code as string),
-            productCode: norm(row.product_code as string),
-            productName: norm(row.product_name as string),
-            units: Number(row.units ?? 0),
-            value: Number(row.value ?? 0),
-          })),
-        );
-      }),
-    ),
+  // Detail leaf rows for the SELECTED period only — drives every breakdown table below. The 6-month
+  // trend is fetched separately as lightweight per-period totals (phx_exec_sos_trend) instead of
+  // re-running the heavy per-distributor/product aggregate once per window month. The old pattern
+  // fired ~6 heavy aggregates concurrently, saturated the DB (16–26s each) and timed the page out.
+  const excludeCodes = canSeeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES];
+  const [detailRows, trendResult, brickRaw, customerRaw] = await Promise.all([
+    rpcAll(supabase, "phx_exec_distributor_product", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
+    supabase.rpc("phx_exec_sos_trend", {
+      p_areas: filters.areas ?? [],
+      p_distributors: filters.distributors ?? [],
+      p_exclude_codes: excludeCodes,
+      p_lines: filters.line ? [filters.line] : [],
+      p_periods: windowPeriods,
+      p_products: filters.products ?? [],
+      p_regions: filters.regions ?? [],
+    }),
     rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
     rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
   ]);
@@ -201,21 +191,36 @@ export async function getSosDashboard(
     return true;
   };
 
-  // Trend across the window (filter-aware).
-  const trend: SosTrendPoint[] = windowPeriods.map((period) => {
-    const rows = (execByPeriod.get(period) ?? []).filter(keepExec);
-    return {
-      period,
-      value: rows.reduce((sum, row) => sum + row.value, 0),
-      units: rows.reduce((sum, row) => sum + row.units, 0),
-    };
-  });
-
-  // Detail = selected period.
-  const detail = (execByPeriod.get(selectedPeriod) ?? []).filter(keepExec);
+  // Detail = selected period (the only month we pull full leaf rows for).
+  const detail = (detailRows as Array<Record<string, unknown>>)
+    .map((row) => ({
+      distributorCode: norm(row.distributor_code as string),
+      officialLine: norm(row.official_line as string),
+      regionCode: norm(row.region_code as string),
+      areaCode: norm(row.area_code as string),
+      productCode: norm(row.product_code as string),
+      productName: norm(row.product_name as string),
+      units: Number(row.units ?? 0),
+      value: Number(row.value ?? 0),
+    }))
+    .filter(keepExec);
 
   const totalValue = detail.reduce((sum, row) => sum + row.value, 0);
   const totalUnits = detail.reduce((sum, row) => sum + row.units, 0);
+
+  // Trend across the window: lightweight per-period totals from phx_exec_sos_trend (filter-aware,
+  // restricted-stripped in SQL). The SELECTED period reuses the detail totals so the last point
+  // always matches the KPI summary exactly. Non-fatal: a trend failure never blocks the dashboard.
+  const trendByPeriod = new Map<string, { units: number; value: number }>();
+  const trendRows = (trendResult.error ? [] : trendResult.data ?? []) as Array<Record<string, unknown>>;
+  for (const row of trendRows) {
+    trendByPeriod.set(String(row.period ?? ""), { units: Number(row.units ?? 0), value: Number(row.value ?? 0) });
+  }
+  const trend: SosTrendPoint[] = windowPeriods.map((period) =>
+    period === selectedPeriod
+      ? { period, units: totalUnits, value: totalValue }
+      : { period, units: trendByPeriod.get(period)?.units ?? 0, value: trendByPeriod.get(period)?.value ?? 0 },
+  );
   const directValue = detail.filter((row) => isDirect(row.distributorCode)).reduce((sum, row) => sum + row.value, 0);
   const distributorValue = totalValue - directValue;
 
