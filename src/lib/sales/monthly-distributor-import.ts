@@ -2622,6 +2622,11 @@ export async function persistDistributorSalesUpload(
   const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
   if (rollupRefresh.error) throw rollupRefresh.error;
 
+  // Keep the customer-directory rollup in sync alongside the fact rollup (same batch,
+  // same idempotent, validated-only semantics) so customer-mapping views reflect this import.
+  const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
+  if (customerRollupRefresh.error) throw customerRollupRefresh.error;
+
   return {
     ...result,
     batchId,

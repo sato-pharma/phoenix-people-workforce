@@ -567,19 +567,19 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   {payDateDim?.render ? (
                     <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm">
                       <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Pay date</p>
-                      <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <input
                           type="date"
                           value={filters.payDateFrom ?? ""}
                           onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
-                          className="h-8 min-w-0 flex-1 rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
-                        <span className="shrink-0 text-[#94A3B8]">–</span>
+                        <span className="text-[#94A3B8]">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
                           onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
-                          className="h-8 min-w-0 flex-1 rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
                         />
                       </div>
                     </div>

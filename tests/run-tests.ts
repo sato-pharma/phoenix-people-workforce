@@ -148,7 +148,6 @@ import { runWorkflowControlMigrationReadinessTests } from "./workflow-control-mi
 import { runWorkflowControlServicesTests } from "./workflow-control-services.test.ts";
 import { runWorkflowControlApiRoutesTests } from "./workflow-control-api-routes.test.ts";
 import { runEmployeePortalSalesScopeTests } from "./employee-portal-sales-scope.test.ts";
-import { runPortalOverviewPacingTests } from "./portal-overview-pacing.test.ts";
 import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
@@ -410,7 +409,6 @@ await runTest("outstation policy classification", runOutstationPolicyClassificat
 await runTest("outstation notifications", runOutstationNotificationsTests);
 await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
-await runTest("portal overview pacing + attention guard", runPortalOverviewPacingTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("company calendar", runCompanyCalendarTests);

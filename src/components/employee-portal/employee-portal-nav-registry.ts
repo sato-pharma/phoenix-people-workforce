@@ -85,7 +85,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab"] },
   // Team Performance
   { label: "Team", fullLabel: "Team Performance", href: "/employee-portals/team-performance", icon: Trophy, flags: ["showTeamPerformanceTab"] },
-  { label: "Coaching analytics", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "MRs", fullLabel: "MRs Performance", href: "/employee-portals/med-reps-performance", icon: ChartColumnBig, flags: ["showMedRepsPerformanceTab"] },
   { label: "DSMs", fullLabel: "DSMs Performance", href: "/employee-portals/dsms-performance", icon: Users, flags: ["showDsmsPerformanceTab"] },
   { label: "Team exp", fullLabel: "Team Expenses", href: "/employee-portals/team-expenses", icon: WalletCards, flags: ["showTeamExpensesTab"] },

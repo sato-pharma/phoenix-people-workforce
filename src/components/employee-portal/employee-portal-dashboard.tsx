@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Component, type ReactElement, type ReactNode } from "react";
@@ -20,7 +20,6 @@ import {
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import {
   Activity,
-  Bell,
   AlertTriangle,
   ArrowUpRight,
   Calculator,
@@ -59,6 +58,8 @@ import {
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { formatDateOnly } from "@/lib/date-only";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
+import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -822,23 +823,6 @@ function canSeeTeamLeaveAndStructurePanels(data: MedicalRepPortalData) {
   return isRole(data, "district manager", "district sales manager", "dsm", "national sales manager", "nsm");
 }
 
-// Roles that perform double visits and therefore see the coaching-coverage section.
-// Mirrors the manager set in the double-visit service's access scope (DM/RM/NSM/PM/GPM/TM).
-function canSeeDoubleVisitInsights(data: MedicalRepPortalData) {
-  return isRole(
-    data,
-    "district manager",
-    "district sales manager",
-    "dsm",
-    "regional manager",
-    "national sales manager",
-    "nsm",
-    "product manager",
-    "group product manager",
-    "training manager",
-  );
-}
-
 type PortalDashboardSurface = "employee-portal" | "workspace";
 
 const workspaceDashboardHrefMap: Record<string, string> = {
@@ -992,69 +976,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
           );
         })}
       </div>
-      <ThisWeekCalendar />
     </section>
-  );
-}
-
-function ThisWeekCalendar() {
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const dayOfWeek = today.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + mondayOffset);
-
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
-  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const monthLabel = today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-
-  return (
-    <div className="border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">This Week</p>
-          <p className="text-[12px] font-semibold text-slate-800">{monthLabel}</p>
-        </div>
-        <CalendarDays className="h-4 w-4 text-orange-500" />
-      </div>
-      <div className="grid grid-cols-7">
-        {dayNames.map((name) => (
-          <div key={name} className="border-b border-slate-100 bg-slate-50 py-1.5 text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
-            {name}
-          </div>
-        ))}
-        {days.map((day, i) => {
-          const dateStr = day.toISOString().slice(0, 10);
-          const isToday = dateStr === todayStr;
-          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-          return (
-            <div key={dateStr} className={`flex flex-col items-center gap-0.5 py-3 ${isWeekend ? "bg-slate-50/70" : "bg-white"}`}>
-              <span
-                className={`flex h-8 w-8 items-center justify-center text-[14px] font-black transition-colors ${
-                  isToday
-                    ? "bg-orange-600 text-white"
-                    : isWeekend
-                    ? "text-slate-300"
-                    : "text-slate-700"
-                }`}
-              >
-                {day.getDate()}
-              </span>
-              {isToday ? (
-                <span className="text-[8px] font-black uppercase tracking-[0.12em] text-orange-600">Today</span>
-              ) : (
-                <span className="text-[8px] font-medium text-slate-300">{dayNames[i]}</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -1460,6 +1382,102 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
   );
 }
 
+function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
+  const rows = data.sales.teamComparison ?? [];
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Periods are "YYYY-MM" strings; sort descending so the newest period chip is first.
+  const comparisonPeriods = Array.from(new Set(data.sales.trend.map((item) => String(item.period).trim()).filter(Boolean))).sort((left, right) => right.localeCompare(left));
+  const validPeriodSet = new Set(comparisonPeriods.map((period) => period.toLowerCase()));
+  const rawSelectedPeriod = data.sales.teamComparisonPeriod?.toLowerCase().trim();
+  const selectedPeriod = rawSelectedPeriod && validPeriodSet.has(rawSelectedPeriod) ? rawSelectedPeriod : "all";
+  const handlePeriodChange = (period: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (period === "all") {
+      params.delete("teamPeriod");
+    } else {
+      params.set("teamPeriod", period);
+    }
+    const next = params.toString();
+    router.push(next ? `${pathname}?${next}` : pathname);
+  };
+
+  const periodOptions = [
+    { value: "all", label: "All" },
+    ...comparisonPeriods.slice(0, 5).map((period) => ({
+      value: period,
+      label: toPeriodLabel(period),
+    })),
+  ];
+
+  if (rows.length === 0) {
+    return (
+      <OverviewPagePanel title="Rank in Team Comparison">
+        <div className="mb-3">
+          <PeriodSegmentedControl
+            options={periodOptions}
+            value={selectedPeriod}
+            onChange={handlePeriodChange}
+          />
+        </div>
+        <p className="text-sm text-slate-500">Team comparison is not available for this period.</p>
+      </OverviewPagePanel>
+    );
+  }
+
+  return (
+    <OverviewPagePanel
+      title="Rank in Team Comparison"
+      action={(
+        <PeriodSegmentedControl
+          options={periodOptions}
+          value={selectedPeriod}
+          onChange={handlePeriodChange}
+        />
+      )}
+    >
+      <div className="space-y-2">
+        {rows.map((row) => {
+          const pct = row.achievementPercent;
+          const fillWidth = Math.max(6, Math.min(100, pct));
+          const belowTarget = pct < 70;
+          const [fromColor, toColor] = achievementGradient(pct).split(",");
+          return (
+            <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
+                    {row.position}
+                  </span>
+                  <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
+                  {belowTarget ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                      Below target
+                    </span>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="font-mono text-sm font-black tabular-nums text-slate-700">{pct.toFixed(1)}%</p>
+                  <p className="break-words font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
+                </div>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
+                <div
+                  className="h-full rounded-sm"
+                  style={{ width: `${fillWidth}%`, background: `linear-gradient(to right, ${fromColor}, ${toColor})` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </OverviewPagePanel>
+  );
+}
+
 /* RankInTeamCard was removed during rollback */
 
 function OverviewPagePanel({
@@ -1804,11 +1822,10 @@ const actionIconMap: Record<string, typeof ReceiptText> = {
 };
 
 function MyActionsPanel({ data, surface }: { data: MedicalRepPortalData; surface: PortalDashboardSurface }) {
-  // "Needs your attention": items pending the caller's decision (managers) plus items
-  // returned to the caller (everyone), composed server-side in overview.attentionInbox.
-  // Manager team-ops to-dos (probation / vacancies) are appended as additional rows.
-  const inbox = data.overview.attentionInbox;
-  const managerOps = canSeeTeamLeaveAndStructurePanels(data)
+  // Managers (DSM/NSM) get team-management to-dos appended to the server-provided
+  // action list. These counts already exist in the payload (data.workforce) and were
+  // previously only used for display KPIs — here they become actionable, deep-linked items.
+  const managerActions = canSeeTeamLeaveAndStructurePanels(data)
     ? [
         {
           count: data.workforce.probationDue,
@@ -1824,92 +1841,43 @@ function MyActionsPanel({ data, surface }: { data: MedicalRepPortalData; surface
         },
       ].filter((item) => item.count > 0)
     : [];
-  // Legacy fallback for loaders that don't populate the attention inbox.
-  const legacyActions = !inbox
-    ? data.overview.myActions.map((item) => ({ ...item, href: dashboardHrefForSurface(item.href, surface) }))
-    : [];
-
-  const inboxItems = inbox?.items ?? [];
-  const managerOpsTotal = managerOps.reduce((sum, op) => sum + op.count, 0);
-  const totalCount = (inbox?.totalCount ?? 0) + managerOpsTotal;
-  const isEmpty = inboxItems.length === 0 && managerOps.length === 0 && legacyActions.length === 0;
+  const actions = [
+    ...data.overview.myActions.map((item) => ({
+      ...item,
+      href: dashboardHrefForSurface(item.href, surface),
+    })),
+    ...managerActions,
+  ];
 
   return (
-    <OverviewPagePanel
-      title="Needs Your Attention"
-      action={totalCount > 0 ? <span className="rounded bg-orange-500 px-2 py-0.5 text-xs font-bold text-white">{totalCount}</span> : null}
-    >
-      {isEmpty ? (
-        <OverviewSectionEmpty icon={ShieldCheck} title="Nothing needs you right now." hint="You're all caught up." />
+    <OverviewPagePanel title="My Actions">
+      {actions.length === 0 ? (
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+          <ShieldCheck className="mb-2 h-8 w-8 text-slate-300" />
+          <p className="text-sm font-medium text-slate-500">No pending actions right now.</p>
+          <p className="mt-1 text-xs text-slate-400">You&apos;re all caught up.</p>
+        </div>
       ) : (
-        <div className="space-y-2.5">
-          {inboxItems.slice(0, 5).map((item) => {
-            const Icon = ATTENTION_MODULE_ICON[item.module] ?? ReceiptText;
-            const href = dashboardHrefForSurface(item.href, surface);
-            const returned = item.kind === "returned";
-            return (
-              <Link
-                key={item.id}
-                href={href}
-                className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
-              >
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded ring-1 ${returned ? "bg-sky-50 text-sky-600 ring-sky-100" : "bg-orange-50 text-orange-600 ring-orange-100"}`}>
-                  <Icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
-                  {item.subtitle ? <p className="truncate text-xs text-slate-500">{item.subtitle}</p> : null}
-                </div>
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${returned ? "bg-sky-100 text-sky-700" : "bg-orange-100 text-orange-700"}`}>
-                  {returned ? "Returned" : "Review"}
-                </span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
-              </Link>
-            );
-          })}
-          {managerOps.map((op) => (
+        <div className="space-y-3">
+          {actions.map((item) => (
             <Link
-              key={op.id}
-              href={op.href}
-              className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
+              key={item.id}
+              className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
+              href={item.href}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-100 text-slate-600 ring-1 ring-slate-200">
-                <ClipboardList className="h-4 w-4" />
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100 transition-transform duration-200 group-hover:scale-105">
+                {(() => {
+                  const Icon = actionIconMap[item.id] ?? ReceiptText;
+                  return <Icon className="h-5 w-5" />;
+                })()}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-800">{op.label}</p>
+                <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
               </div>
-              <span className="shrink-0 text-sm font-semibold text-orange-600">({op.count})</span>
+              <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
               <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
             </Link>
           ))}
-          {legacyActions.map((item) => {
-            const Icon = actionIconMap[item.id] ?? ReceiptText;
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                className="group flex items-center gap-3 rounded border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/40"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">{item.label}</p>
-                </div>
-                <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
-              </Link>
-            );
-          })}
-          {inbox && inbox.totalCount > 5 ? (
-            <Link
-              href={dashboardHrefForSurface("/employee-portals/actions", surface)}
-              className="block pt-1 text-center text-xs font-semibold text-orange-600 hover:underline"
-            >
-              View all {inbox.totalCount} items
-            </Link>
-          ) : null}
         </div>
       )}
     </OverviewPagePanel>
@@ -1926,12 +1894,21 @@ function QuickActionsPanel({ data, surface }: { data: MedicalRepPortalData; surf
       label: "Submit Vacation Request",
     },
     {
-      href: dashboardHrefForSurface("/employee-portals/plans", surface),
-      icon: CalendarDays,
-      id: "weekly-plan",
-      label: "Submit Weekly Plan",
+      href: dashboardHrefForSurface("/employee-portals/marketing-requests", surface),
+      icon: Megaphone,
+      id: "marketing",
+      label: "Submit Marketing Request",
     },
-  ].filter(() => true);
+  ].filter((item) => {
+    if (item.id === "marketing") {
+      // Marketing Requests is a Beta module: hidden by default, surfaced only
+      // when PHOENIX_PORTAL_SHOW_BETA_NAV is enabled (resolved server-side into
+      // data.betaNavEnabled) AND the role is already authorized for Marketing.
+      // Mirrors the sidebar nav gating in buildEmployeePortalSections.
+      return shouldShowEmployeePortalMarketingQuickAction(data.betaNavEnabled, data.employee.roleLabel);
+    }
+    return true;
+  });
 
   return (
     <OverviewPagePanel title="Quick Actions">
@@ -3823,494 +3800,6 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-// ── Overview redesign primitives ───────────────────────────────────────────────
-
-const ATTENTION_MODULE_ICON: Record<string, typeof ReceiptText> = {
-  leave: CalendarDays,
-  excuse: CalendarClock,
-  marketing: Megaphone,
-  outstation: ReceiptText,
-  weekly_plan: ClipboardList,
-};
-
-function statusToneDot(tone: string): string {
-  switch (tone) {
-    case "approved":
-      return "bg-emerald-500";
-    case "pending":
-      return "bg-amber-500";
-    case "returned":
-      return "bg-sky-500";
-    case "rejected":
-      return "bg-rose-500";
-    default:
-      return "bg-slate-400";
-  }
-}
-
-function OverviewSectionEmpty({ icon: Icon, title, hint }: { icon: typeof ReceiptText; title: string; hint?: string }) {
-  return (
-    <div className="flex h-full min-h-[180px] flex-col items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
-      <Icon className="mb-2 h-8 w-8 text-slate-300" />
-      <p className="text-sm font-medium text-slate-500">{title}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
-    </div>
-  );
-}
-
-function ChartSkeleton({ height = 232 }: { height?: number }) {
-  return <div className="w-full animate-pulse rounded border border-slate-100 bg-slate-50" style={{ height }} />;
-}
-
-function weekLabel(weekStart: string): string {
-  const parsed = new Date(weekStart);
-  if (Number.isNaN(parsed.getTime())) return weekStart;
-  return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-}
-
-// Target pacing: month-to-date achievement vs the expected run-rate for today.
-function TargetPacingChip({ data }: { data: MedicalRepPortalData }) {
-  const pacing = data.overview.pacing;
-  if (!pacing || pacing.status === "no_target") return null;
-  const toneMap = {
-    ahead: { label: "Ahead of pace", classes: "bg-emerald-50 text-emerald-700 ring-emerald-100", bar: "from-emerald-500 to-emerald-400" },
-    on_track: { label: "On pace", classes: "bg-sky-50 text-sky-700 ring-sky-100", bar: "from-sky-500 to-sky-400" },
-    behind: { label: "Behind pace", classes: "bg-rose-50 text-rose-700 ring-rose-100", bar: "from-rose-500 to-rose-400" },
-    no_target: { label: "", classes: "", bar: "" },
-  } as const;
-  const tone = toneMap[pacing.status];
-  const achievement = Math.round(pacing.achievementPercent);
-  const expected = Math.round(pacing.expectedPercent);
-  return (
-    <Card className="relative flex flex-col gap-3 overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.05)] sm:flex-row sm:items-center sm:justify-between lg:px-5">
-      <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-          <TrendingUp className="h-5 w-5" />
-        </span>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">This month pacing</p>
-          <p className="text-sm font-semibold text-slate-900">
-            {achievement}% achieved · day {pacing.dayOfMonth} of {pacing.daysInMonth}
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="hidden h-2 w-36 overflow-hidden rounded-sm bg-slate-100 sm:block">
-          <div className={`h-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(2, achievement))}%` }} />
-        </div>
-        <span className="hidden text-xs font-medium text-slate-500 sm:inline">Expected {expected}%</span>
-        <span className={`rounded px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ring-1 ${tone.classes}`}>{tone.label}</span>
-      </div>
-    </Card>
-  );
-}
-
-// "My requests" — the caller's own submissions grouped by status tone.
-function MyRequestsStrip({ data, surface }: { data: MedicalRepPortalData; surface: PortalDashboardSurface }) {
-  const summary = data.overview.myRequests;
-  const allHref = dashboardHrefForSurface("/employee-portals/actions", surface);
-  const counts = summary?.counts ?? { approved: 0, pending: 0, returned: 0, rejected: 0, neutral: 0 };
-  const items = summary?.items ?? [];
-  const total = counts.approved + counts.pending + counts.returned + counts.rejected + counts.neutral;
-  const chips = [
-    { key: "approved", label: "Approved", value: counts.approved, classes: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
-    { key: "pending", label: "Pending", value: counts.pending, classes: "bg-amber-50 text-amber-700 ring-amber-100" },
-    { key: "returned", label: "Returned", value: counts.returned, classes: "bg-sky-50 text-sky-700 ring-sky-100" },
-    { key: "rejected", label: "Rejected", value: counts.rejected, classes: "bg-rose-50 text-rose-700 ring-rose-100" },
-  ];
-  return (
-    <OverviewPagePanel
-      title="My Requests"
-      action={
-        <Link href={allHref} className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:underline">
-          View all <ArrowUpRight className="h-3 w-3" />
-        </Link>
-      }
-    >
-      {total === 0 ? (
-        <OverviewSectionEmpty icon={ClipboardList} title="No requests submitted yet." hint="Your vacations, expenses and marketing requests appear here." />
-      ) : (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {chips.map((chip) => (
-              <div key={chip.key} className={`rounded px-3 py-2 text-center ring-1 ${chip.classes}`}>
-                <p className="text-lg font-black leading-none">{chip.value}</p>
-                <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em]">{chip.label}</p>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {items.slice(0, 4).map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded border border-slate-100 bg-slate-50/50 px-3 py-2">
-                <span className={`h-2 w-2 shrink-0 rounded-sm ${statusToneDot(item.statusTone)}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
-                  {item.decisionNote ? <p className="truncate text-xs text-slate-500">{item.decisionNote}</p> : null}
-                </div>
-                <span className="shrink-0 text-[11px] font-semibold text-slate-500">{item.statusLabel}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </OverviewPagePanel>
-  );
-}
-
-// Lightweight alerts feed (birthdays / contract renewals / probation due, etc.).
-function AlertsFeedPanel({ data }: { data: MedicalRepPortalData }) {
-  const alerts = data.overview.alerts ?? [];
-  return (
-    <OverviewPagePanel title="Alerts">
-      {alerts.length === 0 ? (
-        <OverviewSectionEmpty icon={Bell} title="No new alerts." />
-      ) : (
-        <div className="space-y-2">
-          {alerts.slice(0, 6).map((alert) => {
-            const body = (
-              <div className="flex items-start gap-3 rounded border border-slate-100 bg-white px-3 py-2.5 transition-colors hover:border-orange-200 hover:bg-orange-50/30">
-                <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded ring-1 ${alert.priority === "high" ? "bg-rose-50 text-rose-600 ring-rose-100" : "bg-slate-100 text-slate-500 ring-slate-200"}`}>
-                  <Bell className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-800">{alert.title}</p>
-                  {alert.module ? <p className="text-[11px] uppercase tracking-wide text-slate-400">{alert.module}</p> : null}
-                </div>
-              </div>
-            );
-            return alert.href ? (
-              <Link key={alert.id} href={alert.href} className="block">
-                {body}
-              </Link>
-            ) : (
-              <div key={alert.id}>{body}</div>
-            );
-          })}
-        </div>
-      )}
-    </OverviewPagePanel>
-  );
-}
-
-// Expense executive summary built from data already in the payload (no extra fetch).
-function ExpenseOverviewPanel({ data, surface }: { data: MedicalRepPortalData; surface: PortalDashboardSurface }) {
-  const workload = data.workload;
-  const trend = workload?.expenseTrend ?? [];
-  const weeklyTrend = workload?.expenseTrendWeekly ?? [];
-  const [granularity, setGranularity] = useState<"month" | "week">("month");
-  const rows = workload?.expenseRows ?? [];
-  const currentMonth = trend.length > 0 ? trend[trend.length - 1].expenses : workload?.totalExpenses ?? 0;
-  const approved = rows.filter((row) => row.hrApproved).length;
-  const pending = rows.length - approved;
-  const href = dashboardHrefForSurface(resolveExpenseActionHref(data, surface), surface);
-  const hasData = trend.length > 0 || rows.length > 0;
-  // Show the weekly view only when there's weekly data to back it; otherwise keep it monthly-only.
-  const canToggleGranularity = weeklyTrend.length > 0 && trend.length > 0;
-  const activeGranularity = canToggleGranularity ? granularity : "month";
-  // Normalize both trends to a single { label, expenses } shape so the chart has one stable type.
-  const chartData: Array<{ label: string; expenses: number }> =
-    activeGranularity === "week"
-      ? weeklyTrend.map((point) => ({ label: point.week, expenses: point.expenses }))
-      : trend.map((point) => ({ label: point.month, expenses: point.expenses }));
-  return (
-    <OverviewPagePanel
-      title="Expense Overview"
-      action={
-        <Link href={href} className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:underline">
-          Open expenses <ArrowUpRight className="h-3 w-3" />
-        </Link>
-      }
-    >
-      {!hasData ? (
-        <OverviewSectionEmpty icon={ReceiptText} title="No expense activity yet." />
-      ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">This month</p>
-              <p className="mt-1 text-sm font-black text-orange-600">{egp(currentMonth)}</p>
-            </div>
-            <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Approved</p>
-              <p className="mt-1 text-sm font-black text-emerald-600">{approved}</p>
-            </div>
-            <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Pending</p>
-              <p className="mt-1 text-sm font-black text-amber-600">{pending}</p>
-            </div>
-          </div>
-          {chartData.length > 0 ? (
-            <div className="space-y-2">
-              {canToggleGranularity ? (
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                    {activeGranularity === "week" ? "Weekly trend" : "Monthly trend"}
-                  </p>
-                  <div className="inline-flex overflow-hidden rounded border border-slate-200">
-                    {(["month", "week"] as const).map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => setGranularity(option)}
-                        className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] transition ${
-                          activeGranularity === option
-                            ? "bg-slate-900 text-white"
-                            : "bg-white text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        {option === "month" ? "Monthly" : "Weekly"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="h-40 w-full rounded border border-slate-100 bg-white/70 px-1 pt-3 shadow-inner">
-                <ChartErrorBoundary>
-                  <SafeResponsiveContainer style={{ width: "100%", height: "100%" }}>
-                    <AreaChart data={chartData} margin={{ top: 6, right: 12, left: -8, bottom: 4 }}>
-                      <defs>
-                        <linearGradient id="expenseTrendFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#f97316" stopOpacity={0.28} />
-                          <stop offset="100%" stopColor="#f97316" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                      <YAxis tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(value: number) => `${Math.round(value / 1000)}k`} width={46} />
-                      <Tooltip contentStyle={{ borderRadius: 6, fontSize: 12 }} formatter={(value: unknown) => egp(Number(value))} />
-                      <Area dataKey="expenses" name="Expenses" type="monotone" stroke="#f97316" strokeWidth={2.5} fill="url(#expenseTrendFill)" />
-                    </AreaChart>
-                  </SafeResponsiveContainer>
-                </ChartErrorBoundary>
-              </div>
-            </div>
-          ) : null}
-          {rows.length > 0 ? (
-            <div className="space-y-1.5">
-              {rows.slice(0, 3).map((row, index) => (
-                <div key={`${row.tripId}-${index}`} className="flex items-center gap-3 rounded border border-slate-100 bg-slate-50/50 px-3 py-1.5">
-                  <span className={`h-2 w-2 shrink-0 rounded-sm ${row.hrApproved ? "bg-emerald-500" : "bg-amber-500"}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-slate-700">{row.location || row.to || row.description || "Expense"}</p>
-                  </div>
-                  <span className="shrink-0 text-xs font-semibold text-slate-600">{egp(row.total)}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      )}
-    </OverviewPagePanel>
-  );
-}
-
-// Weekly sales trend — lazily fetched so it never blocks first paint. Scope + the
-// confidential-product strip are applied server-side in the API route.
-type WeeklyTrendResponse = {
-  available: boolean;
-  weeks: Array<{ weekStart: string; salesValue: number; salesUnits: number }>;
-  comparePct: number | null;
-};
-
-function WeeklyTrendCard() {
-  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; data: WeeklyTrendResponse | null }>({
-    status: "loading",
-    data: null,
-  });
-  useEffect(() => {
-    let active = true;
-    fetch("/api/portal-overview/weekly-trend", { cache: "no-store" })
-      .then((response) => (response.ok ? (response.json() as Promise<WeeklyTrendResponse>) : Promise.reject(new Error("failed"))))
-      .then((json) => {
-        if (active) setState({ status: "ready", data: json });
-      })
-      .catch(() => {
-        if (active) setState({ status: "error", data: null });
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const weeks = state.data?.weeks ?? [];
-  const chartData = weeks.map((week) => ({ label: weekLabel(week.weekStart), salesValue: week.salesValue }));
-  const comparePct = state.data?.comparePct ?? null;
-
-  return (
-    <OverviewPagePanel
-      title="Weekly Sales Trend"
-      action={
-        comparePct != null ? (
-          <span className={`rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${comparePct >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-            {comparePct >= 0 ? "+" : ""}
-            {comparePct.toFixed(1)}% vs prior
-          </span>
-        ) : null
-      }
-    >
-      {state.status === "loading" ? (
-        <ChartSkeleton height={280} />
-      ) : state.status === "error" || !state.data?.available || chartData.length === 0 ? (
-        <OverviewSectionEmpty icon={TrendingUp} title="Weekly trend unavailable." hint="No weekly sales in your scope yet." />
-      ) : (
-        <div className="h-[280px] w-full rounded border border-slate-100 bg-white/70 px-1 pt-3 shadow-inner sm:h-[320px]">
-          <ChartErrorBoundary>
-            <SafeResponsiveContainer style={{ width: "100%", height: "100%" }}>
-              <AreaChart data={chartData} margin={{ top: 10, right: 12, left: -8, bottom: 6 }}>
-                <defs>
-                  <linearGradient id="weeklyTrendFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fontWeight: 700, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                <YAxis tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(value: number) => `${Math.round(value / 1000)}k`} width={52} />
-                <Tooltip contentStyle={{ borderRadius: 6, fontSize: 12 }} formatter={(value: unknown) => egp(Number(value))} />
-                <Area dataKey="salesValue" name="Weekly sales" type="monotone" stroke="#0ea5e9" strokeWidth={3} fill="url(#weeklyTrendFill)" />
-              </AreaChart>
-            </SafeResponsiveContainer>
-          </ChartErrorBoundary>
-        </div>
-      )}
-    </OverviewPagePanel>
-  );
-}
-
-// Sales Performance Overview: weekly (lazy) + monthly (from payload) side by side.
-function SalesPerformanceOverviewSection({ data }: { data: MedicalRepPortalData }) {
-  return (
-    <div className="grid items-start gap-5 xl:grid-cols-2">
-      <WeeklyTrendCard />
-      <OverviewPerformanceChart data={data} />
-    </div>
-  );
-}
-
-// Double-visit coaching insights (managers only) — lazily fetched.
-type DoubleVisitResponse = {
-  available: boolean;
-  kpis: {
-    totalVisits: number;
-    doubleVisitorCount: number;
-    coveredReps: number;
-    totalReps: number;
-    neverVisitedCount: number;
-    coveragePercent: number;
-  } | null;
-  byRegion: Array<{ label: string; totalVisits: number; mrCount: number; coveragePercent: number }>;
-  mostVisited: Array<{ name: string; totalDvs: number; lineName: string | null }>;
-  fewestVisited: Array<{ name: string; totalDvs: number; lineName: string | null }>;
-  neverVisited: Array<{ name: string; lineName: string | null; areaName: string | null }>;
-};
-
-function DoubleVisitList({ title, tone, rows }: { title: string; tone: "emerald" | "amber" | "rose"; rows: Array<{ name: string; meta: string }> }) {
-  const toneClasses = { emerald: "text-emerald-700", amber: "text-amber-700", rose: "text-rose-700" }[tone];
-  return (
-    <div className="rounded border border-slate-100 bg-slate-50/50 p-3">
-      <p className={`mb-2 text-[11px] font-bold uppercase tracking-[0.1em] ${toneClasses}`}>{title}</p>
-      {rows.length === 0 ? (
-        <p className="text-xs text-slate-400">None</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {rows.slice(0, 5).map((row, index) => (
-            <li key={`${row.name}-${index}`} className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs font-medium text-slate-700">{row.name}</span>
-              <span className="shrink-0 text-[11px] text-slate-500">{row.meta}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function DoubleVisitInsightsSection() {
-  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; data: DoubleVisitResponse | null }>({
-    status: "loading",
-    data: null,
-  });
-  useEffect(() => {
-    let active = true;
-    fetch("/api/portal-overview/double-visit", { cache: "no-store" })
-      .then((response) => (response.ok ? (response.json() as Promise<DoubleVisitResponse>) : Promise.reject(new Error("failed"))))
-      .then((json) => {
-        if (active) setState({ status: "ready", data: json });
-      })
-      .catch(() => {
-        if (active) setState({ status: "error", data: null });
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (state.status === "loading") {
-    return (
-      <OverviewPagePanel title="Double-Visit Coaching">
-        <ChartSkeleton height={220} />
-      </OverviewPagePanel>
-    );
-  }
-  const data = state.data;
-  if (state.status === "error" || !data?.available || !data.kpis) {
-    return (
-      <OverviewPagePanel title="Double-Visit Coaching">
-        <OverviewSectionEmpty icon={Users} title="No double-visit activity in the current snapshot." />
-      </OverviewPagePanel>
-    );
-  }
-  const { kpis } = data;
-  const maxRegionVisits = Math.max(1, ...data.byRegion.map((row) => row.totalVisits));
-  return (
-    <OverviewPagePanel title="Double-Visit Coaching">
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Double visits</p>
-            <p className="mt-1 text-sm font-black text-slate-800">{kpis.totalVisits}</p>
-          </div>
-          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Coverage</p>
-            <p className="mt-1 text-sm font-black text-emerald-600">{kpis.coveragePercent}%</p>
-          </div>
-          <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Reps covered</p>
-            <p className="mt-1 text-sm font-black text-slate-800">
-              {kpis.coveredReps}/{kpis.totalReps}
-            </p>
-          </div>
-          <div className="rounded border border-rose-100 bg-rose-50/60 px-3 py-2.5">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-rose-400">Never visited</p>
-            <p className="mt-1 text-sm font-black text-rose-600">{kpis.neverVisitedCount}</p>
-          </div>
-        </div>
-
-        {data.byRegion.length > 0 ? (
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">By region / area</p>
-            {data.byRegion.slice(0, 6).map((row) => (
-              <div key={row.label} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600">{row.label}</span>
-                <div className="relative h-2.5 flex-1 overflow-hidden rounded-sm bg-slate-100">
-                  <div className="h-full rounded-sm bg-gradient-to-r from-orange-500 to-orange-400" style={{ width: `${Math.round((row.totalVisits / maxRegionVisits) * 100)}%` }} />
-                </div>
-                <span className="w-10 shrink-0 text-right text-xs font-bold text-slate-700">{row.totalVisits}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <DoubleVisitList title="Most visited" tone="emerald" rows={data.mostVisited.map((row) => ({ name: row.name, meta: `${row.totalDvs} DVs` }))} />
-          <DoubleVisitList title="Fewest visited" tone="amber" rows={data.fewestVisited.map((row) => ({ name: row.name, meta: `${row.totalDvs} DVs` }))} />
-          <DoubleVisitList title="Never visited" tone="rose" rows={data.neverVisited.map((row) => ({ name: row.name, meta: row.lineName ?? row.areaName ?? "—" }))} />
-        </div>
-      </div>
-    </OverviewPagePanel>
-  );
-}
-
 export function MedicalRepOverviewPage({
   data,
   surface = "employee-portal",
@@ -4341,38 +3830,20 @@ export function MedicalRepOverviewPage({
   }
 
   const showTeamLeaveAndStructurePanels = canSeeTeamLeaveAndStructurePanels(data);
-  const showDoubleVisit = canSeeDoubleVisitInsights(data);
 
   return (
     <div className="space-y-6">
-      {/* Above the fold: KPIs → pacing → what needs me → my requests. (IdentityCard is rendered by the page shell.) */}
       <ExecutiveCommandStrip data={data} />
-      <div className="grid items-start gap-5 xl:grid-cols-2">
+      {/* Manager-first: daily to-dos and team operations lead the page. */}
+      <div className="grid gap-5 xl:grid-cols-2">
         <MyActionsPanel data={data} surface={surface} />
-        <MyRequestsStrip data={data} surface={surface} />
+        <QuickActionsPanel data={data} surface={surface} />
+        {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
+        {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
       </div>
-      <QuickActionsPanel data={data} surface={surface} />
-
-      {/* Pillar 1 — Sales performance (weekly + monthly, scope-labelled). */}
-      <SalesPerformanceOverviewSection data={data} />
-
-      {/* Pillar 2 — Double-visit coaching (managers only). */}
-      {showDoubleVisit ? <DoubleVisitInsightsSection /> : null}
-
-      {/* Pillar 3 — Expense overview + remaining target. */}
+      {/* Team performance + actionable signals, surfaced high for managers. */}
       <div className="grid items-start gap-5 xl:grid-cols-2">
-        <ExpenseOverviewPanel data={data} surface={surface} />
-        <ToReachTargetWidget data={data} />
-      </div>
-
-      {/* Team operations (managers only). */}
-      {showTeamLeaveAndStructurePanels ? (
-        <EmployeesOnLeaveTodayPanel data={data} />
-      ) : null}
-
-      {/* Alerts + business signals. */}
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <AlertsFeedPanel data={data} />
+        <TeamRankComparisonWidget data={data} />
         <OverviewInsightsAlerts data={data} />
       </div>
       <OverviewPerformanceChart data={data} />
@@ -4396,24 +3867,9 @@ export function MedicalRepSalesPage({ data }: { data: MedicalRepPortalData }) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
 
-  // Deep analytics (territory / line / product breakdowns + team structure) live here
-  // on the full performance page; the Overview keeps a high-level summary only.
-  const showTeamStructure = canSeeTeamLeaveAndStructurePanels(data);
-
   return (
     <>
       <SalesPerformanceSection data={data} />
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <div className="space-y-5">
-          <TerritoryComparisonChart data={data} />
-          <LinePerformanceBreakdown data={data} />
-        </div>
-        <div className="space-y-5">
-          <ProductFamilyBreakdown data={data} />
-          <OverviewTopProducts data={data} />
-          {showTeamStructure ? <TeamStructurePanel data={data} /> : null}
-        </div>
-      </div>
       <SmartInsightsStrip data={data} />
     </>
   );

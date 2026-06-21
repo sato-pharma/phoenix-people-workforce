@@ -207,7 +207,7 @@ export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string;
 // with its live approval status. Read-only — the actual approve/reject happens in
 // the "Awaiting my action" inbox or the module's own page.
 
-export type MyRequestModule = "leave" | "excuse" | "outstation" | "weekly_plan" | "resignation" | "marketing";
+export type MyRequestModule = "leave" | "excuse" | "outstation" | "weekly_plan" | "resignation";
 
 export type MyRequestStatusTone = "pending" | "approved" | "rejected" | "returned" | "neutral";
 
@@ -234,42 +234,4 @@ export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {
   outstation: "Outstation",
   weekly_plan: "Weekly Plan",
   resignation: "Resignation",
-  marketing: "Marketing",
-};
-
-// ── Portal "Needs your attention" inbox (overview-only aggregation) ────────────
-// A lightweight, role-adaptive feed used ONLY by the employee-portal Overview
-// dashboard tile. For approver roles it surfaces items pending their decision
-// (vacation / excuse / marketing / plan / expense); for everyone it surfaces
-// items returned to them for action. This is a SEPARATE composition from the
-// Actions-Center inbox (getAwaitingMyActionItems) and never widens its scope —
-// each source is independently access-scoped.
-
-export type PortalAttentionKind = "approval" | "returned";
-
-export type PortalAttentionModule = "leave" | "excuse" | "marketing" | "outstation" | "weekly_plan";
-
-export type PortalAttentionItem = {
-  id: string;
-  module: PortalAttentionModule;
-  kind: PortalAttentionKind;
-  title: string;
-  subtitle: string | null;
-  href: string;
-  submittedAt: string;
-  urgency: ActionHubUrgency;
-};
-
-export type PortalAttentionInbox = {
-  totalCount: number;
-  approvalCount: number;
-  returnedCount: number;
-  items: PortalAttentionItem[];
-};
-
-export const EMPTY_PORTAL_ATTENTION_INBOX: PortalAttentionInbox = {
-  totalCount: 0,
-  approvalCount: 0,
-  returnedCount: 0,
-  items: [],
 };
