@@ -58,6 +58,30 @@ function percent(ratio: number) {
   return `${Math.round((Number.isFinite(ratio) ? ratio : 0) * 100)}%`;
 }
 
+type RoiSortDirection = "asc" | "desc";
+type RoiSortKey = "requestCode" | "requesterName" | "line" | "customerName" | "status" | "roiWindow" | "requiredRoiValue" | "actualSalesValue" | "actualCoverageRatio" | "resultStatus";
+type RoiSortState = { key: RoiSortKey; direction: RoiSortDirection };
+
+const RESULT_STATUS_SORT_WEIGHT: Record<MarketingRoiResultStatus, number> = {
+  on_track: 0,
+  behind: 1,
+  awaiting_data: 2,
+  no_data: 3,
+};
+
+const ROI_SORT_LABELS: Record<RoiSortKey, string> = {
+  requestCode: "Request",
+  requesterName: "Requester",
+  line: "Line",
+  customerName: "Customer",
+  status: "Status",
+  roiWindow: "ROI window",
+  requiredRoiValue: "Required",
+  actualSalesValue: "Actual",
+  actualCoverageRatio: "Coverage",
+  resultStatus: "Result",
+};
+
 const RESULT_STATUS_META: Record<MarketingRoiResultStatus, { label: string; className: string }> = {
   on_track: { label: "On track", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   behind: { label: "Behind", className: "border-amber-200 bg-amber-50 text-amber-700" },
@@ -71,6 +95,9 @@ const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string
   { value: "awaiting_data", label: "Awaiting data" },
   { value: "no_data", label: "No data" },
 ];
+
+const INITIAL_VISIBLE_ROI_ROWS = 150;
+const ROI_ROW_INCREMENT = 150;
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -227,6 +254,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
   const [presets, setPresets] = React.useState<MarketingRoiPreset[]>([]);
   const [presetName, setPresetName] = React.useState("");
   const [savingPreset, setSavingPreset] = React.useState(false);
+  const [, startFilterTransition] = React.useTransition();
+
+  async function fetchPresets(): Promise<MarketingRoiPreset[]> {
+    const response = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return (payload.presets ?? []) as MarketingRoiPreset[];
+  }
 
   // Load filter options once; hydrate filters from the URL and auto-apply if present.
   // The URL read + setState live inside the async callback (after the first await) so
@@ -238,40 +273,30 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
       const urlFilters = roiFilterStateFromParams(new URLSearchParams(window.location.search));
       const hasUrl = roiFilterStateHasAny(urlFilters);
       try {
-        const response = await fetch("/api/marketing-requests/roi-tracking/filter-options", { cache: "no-store" });
-        const payload = await response.json();
+        const filterOptionsPromise = fetch("/api/marketing-requests/roi-tracking/filter-options", { cache: "no-store" })
+          .then(async (response) => {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.message ?? "Unable to load filters.");
+            return payload as MarketingRoiFilterFacets;
+          });
+        const presetsPromise = fetchPresets().catch(() => []);
+        const [payload, presetList] = await Promise.all([filterOptionsPromise, presetsPromise]);
         if (cancelled) return;
-        if (!response.ok) {
-          setOptionsError(payload.message ?? "Unable to load filters.");
-          return;
-        }
-        setFacets(payload as MarketingRoiFilterFacets);
-
-        // Load saved presets (best-effort) and auto-apply the default when the URL is empty.
-        let presetList: MarketingRoiPreset[] = [];
-        try {
-          const presetResponse = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
-          if (presetResponse.ok) {
-            const presetPayload = await presetResponse.json();
-            presetList = (presetPayload.presets ?? []) as MarketingRoiPreset[];
-            if (!cancelled) setPresets(presetList);
-          }
-        } catch {
-          // presets are optional
-        }
+        setFacets(payload);
+        setPresets(presetList);
 
         if (hasUrl) {
-          setFilters(urlFilters);
+          startFilterTransition(() => setFilters(urlFilters));
           void runReport(urlFilters);
         } else {
           const fallbackDefault = presetList.find((preset) => preset.isDefault);
           if (fallbackDefault) {
-            setFilters(fallbackDefault.filters);
+            startFilterTransition(() => setFilters(fallbackDefault.filters));
             void runReport(fallbackDefault.filters);
           }
         }
-      } catch {
-        if (!cancelled) setOptionsError("Unable to load filters.");
+      } catch (error) {
+        if (!cancelled) setOptionsError(error instanceof Error ? error.message : "Unable to load filters.");
       }
     })();
     return () => {
@@ -281,15 +306,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
   async function refreshPresets() {
     try {
-      const response = await fetch("/api/marketing-requests/roi-tracking/presets", { cache: "no-store" });
-      if (response.ok) setPresets(((await response.json()).presets ?? []) as MarketingRoiPreset[]);
+      setPresets(await fetchPresets());
     } catch {
       // ignore
     }
   }
 
   function applyPreset(preset: MarketingRoiPreset) {
-    setFilters(preset.filters);
+    startFilterTransition(() => setFilters(preset.filters));
     void runReport(preset.filters);
   }
 
@@ -367,19 +391,23 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
   // Mutate a filter and auto-fit: drop any other selection that no longer fits.
   function setArray(key: RoiFilterKey, values: string[]) {
-    setFilters((prev) => {
-      const next = withRoiFilterValues(prev, key, values);
-      // `key` is the anchor — preserve the user's just-made choice, fit the others to it.
-      return facets ? pruneRoiFilterState(facets.entries, next, key) : next;
+    startFilterTransition(() => {
+      setFilters((prev) => {
+        const next = withRoiFilterValues(prev, key, values);
+        // `key` is the anchor — preserve the user's just-made choice, fit the others to it.
+        return facets ? pruneRoiFilterState(facets.entries, next, key) : next;
+      });
     });
   }
 
   // Patch scalar/range/toggle filters and auto-fit the multi-selects (a narrower date
   // or duration range can make a previously-chosen DM/product impossible).
   function patchFilters(patch: Partial<RoiFilterState>) {
-    setFilters((prev) => {
-      const next = { ...prev, ...patch } as RoiFilterState;
-      return facets ? pruneRoiFilterState(facets.entries, next) : next;
+    startFilterTransition(() => {
+      setFilters((prev) => {
+        const next = { ...prev, ...patch } as RoiFilterState;
+        return facets ? pruneRoiFilterState(facets.entries, next) : next;
+      });
     });
   }
 
@@ -503,7 +531,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                     label="ROI status"
                     options={ROI_STATUS_OPTIONS}
                     selected={filters.roiStatus}
-                    onChange={(values) => setFilters((prev) => ({ ...prev, roiStatus: values as MarketingRoiResultStatus[] }))}
+                    onChange={(values) => startFilterTransition(() => setFilters((prev) => ({ ...prev, roiStatus: values as MarketingRoiResultStatus[] })))}
                   />
 
                   {/* ROI duration range */}
@@ -587,7 +615,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       type="checkbox"
                       className="h-4 w-4 accent-[#F97316]"
                       checked={filters.includeRestricted}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked }))}
+                      onChange={(event) => startFilterTransition(() => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked })))}
                     />
                     Include confidential products (LA003 / LA004 / SS001)
                   </label>
@@ -606,7 +634,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   <button
                     type="button"
                     onClick={() => {
-                      setFilters(emptyRoiFilterState());
+                      startFilterTransition(() => setFilters(emptyRoiFilterState()));
                       setReport(null);
                       setState("ready");
                       window.history.replaceState(null, "", window.location.pathname);
@@ -691,7 +719,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
           <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{reportError}</div>
         ) : null}
 
-        {hasReport && report ? <ReportView report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
+        {hasReport && report ? <ReportView key={report.generatedAtIso} report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
 
         {state === "ready" && facets ? (
           <div className="rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-4 py-10 text-center">
@@ -707,6 +735,70 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
 function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport; viewSalesBasePath: string }) {
   const { kpi, rows } = report;
+  const [sort, setSort] = React.useState<RoiSortState>({ key: "actualCoverageRatio", direction: "desc" });
+  const [visibleRowCount, setVisibleRowCount] = React.useState(INITIAL_VISIBLE_ROI_ROWS);
+
+  const sortKeyLabel = ROI_SORT_LABELS[sort.key];
+
+  function getSortValue(row: MarketingRoiReportRow, key: RoiSortKey): string | number | null {
+    switch (key) {
+      case "requestCode":
+        return row.requestCode;
+      case "requesterName":
+        return row.requesterName ?? row.requesterHrId;
+      case "line":
+        return row.line ?? "";
+      case "customerName":
+        return row.customerName;
+      case "status":
+        return STATUS_LABELS[row.status] ?? row.status;
+      case "roiWindow":
+        return row.roiWindow ?? "";
+      case "requiredRoiValue":
+        return row.requiredRoiValue;
+      case "actualSalesValue":
+        return row.actualSalesValue;
+      case "actualCoverageRatio":
+        return row.hasSalesData ? row.actualCoverageRatio : null;
+      case "resultStatus":
+        return RESULT_STATUS_SORT_WEIGHT[row.resultStatus];
+    }
+  }
+
+  function compareSortValues(left: string | number | null, right: string | number | null): number {
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    if (typeof left === "number" && typeof right === "number") return left - right;
+    return String(left).localeCompare(String(right), undefined, { sensitivity: "base" });
+  }
+
+  const sortedRows = React.useMemo(() => {
+    const next = [...rows];
+    next.sort((a, b) => {
+      const aValue = getSortValue(a, sort.key);
+      const bValue = getSortValue(b, sort.key);
+      const cmp = compareSortValues(aValue, bValue);
+      return sort.direction === "asc" ? cmp : -cmp;
+    });
+    return next;
+  }, [rows, sort]);
+
+  const visibleRows = React.useMemo(() => sortedRows.slice(0, visibleRowCount), [sortedRows, visibleRowCount]);
+  const hiddenRowCount = Math.max(0, sortedRows.length - visibleRows.length);
+
+  function toggleSort(nextKey: RoiSortKey) {
+    setSort((current) => {
+      if (current.key !== nextKey) return { key: nextKey, direction: "asc" };
+      return { key: nextKey, direction: current.direction === "asc" ? "desc" : "asc" };
+    });
+  }
+
+  function sortArrow(forKey: RoiSortKey) {
+    if (sort.key !== forKey) return "↕";
+    return sort.direction === "asc" ? "↑" : "↓";
+  }
+
   return (
     <div className="space-y-4">
       {/* KPI band */}
@@ -755,24 +847,65 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">ROI Report</p>
             <h3 className="text-[15px] font-black tracking-tight text-[#0F172A]">Actual vs required return</h3>
           </div>
-          <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+            <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
             {rows.length} row{rows.length === 1 ? "" : "s"}
+            {sort ? ` • Sort: ${sortKeyLabel} (${sort.direction === "asc" ? "Asc" : "Desc"})` : null}
           </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1320px] border-collapse text-left text-[13px]">
             <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
               <tr>
-                <th className="px-3 py-2.5">Request</th>
-                <th className="px-3 py-2.5">Requester</th>
-                <th className="px-3 py-2.5">Line</th>
-                <th className="px-3 py-2.5">Customer</th>
-                <th className="px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5">ROI window</th>
-                <th className="px-3 py-2.5 text-right">Required</th>
-                <th className="px-3 py-2.5 text-right">Actual</th>
-                <th className="px-3 py-2.5 text-right">Coverage</th>
-                <th className="px-3 py-2.5">Result</th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("requestCode")} className="inline-flex items-center gap-1 font-black">
+                    Request <span className="text-[10px] font-black">{sortArrow("requestCode")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("requesterName")} className="inline-flex items-center gap-1 font-black">
+                    Requester <span className="text-[10px] font-black">{sortArrow("requesterName")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("line")} className="inline-flex items-center gap-1 font-black">
+                    Line <span className="text-[10px] font-black">{sortArrow("line")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("customerName")} className="inline-flex items-center gap-1 font-black">
+                    Customer <span className="text-[10px] font-black">{sortArrow("customerName")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 font-black">
+                    Status <span className="text-[10px] font-black">{sortArrow("status")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("roiWindow")} className="inline-flex items-center gap-1 font-black">
+                    ROI window <span className="text-[10px] font-black">{sortArrow("roiWindow")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5 text-right">
+                  <button type="button" onClick={() => toggleSort("requiredRoiValue")} className="inline-flex w-full items-center justify-end gap-1 font-black">
+                    Required <span className="text-[10px] font-black">{sortArrow("requiredRoiValue")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5 text-right">
+                  <button type="button" onClick={() => toggleSort("actualSalesValue")} className="inline-flex w-full items-center justify-end gap-1 font-black">
+                    Actual <span className="text-[10px] font-black">{sortArrow("actualSalesValue")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5 text-right">
+                  <button type="button" onClick={() => toggleSort("actualCoverageRatio")} className="inline-flex w-full items-center justify-end gap-1 font-black">
+                    Coverage <span className="text-[10px] font-black">{sortArrow("actualCoverageRatio")}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2.5">
+                  <button type="button" onClick={() => toggleSort("resultStatus")} className="inline-flex items-center gap-1 font-black">
+                    Result <span className="text-[10px] font-black">{sortArrow("resultStatus")}</span>
+                  </button>
+                </th>
                 <th className="px-3 py-2.5 text-right">Sales</th>
               </tr>
             </thead>
@@ -784,17 +917,31 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => <ReportRow key={row.requestId} row={row} viewSalesBasePath={viewSalesBasePath} />)
+                visibleRows.map((row) => <ReportRow key={row.requestId} row={row} viewSalesBasePath={viewSalesBasePath} />)
               )}
             </tbody>
           </table>
         </div>
+        {hiddenRowCount > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-[12px] font-bold text-[#64748B] sm:px-5">
+            <span>
+              Showing {visibleRows.length} of {rows.length} rows.
+            </span>
+            <button
+              type="button"
+              onClick={() => setVisibleRowCount((count) => Math.min(rows.length, count + ROI_ROW_INCREMENT))}
+              className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-white px-3 py-1.5 text-[12px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+            >
+              Show next {Math.min(ROI_ROW_INCREMENT, hiddenRowCount)}
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
 }
 
-function ReportRow({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
+const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
   const meta = RESULT_STATUS_META[row.resultStatus];
   return (
     <tr className="border-t border-[#FEE7D2]">
@@ -827,4 +974,4 @@ function ReportRow({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; vie
       </td>
     </tr>
   );
-}
+});
