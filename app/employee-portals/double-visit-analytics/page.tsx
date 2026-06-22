@@ -18,7 +18,7 @@ export const maxDuration = 60;
 // scope (self + reporting chain, WIDENED to the manager's whole product line) is applied
 // inside getDoubleVisitDashboardData via resolveDoubleVisitAccessScope. This portal view is
 // read-only (no import/publish) — the workspace is rendered with embedded + canImport/canPublish=false.
-const DOUBLE_VISIT_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Training Manager"]);
+const DOUBLE_VISIT_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Training Manager", "Marketing Manager"]);
 
 function dateParam(value: string | string[] | undefined) {
   const text = typeof value === "string" ? value.slice(0, 10) : "";

@@ -17,7 +17,7 @@ export const maxDuration = 60;
 // returns the product tier (their assigned product codes from weekly_sales_product_scope), and
 // applyWeeklyAccessScope inside loadWeeklyDashboard keeps only those products and strips
 // confidential codes (LA003/LA004/SS001).
-const WEEKLY_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"]);
+const WEEKLY_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"]);
 
 export default async function PortalWeeklySalesPage() {
   const access = await resolveAccessContextFromPage();

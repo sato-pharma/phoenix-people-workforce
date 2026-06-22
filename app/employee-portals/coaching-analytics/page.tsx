@@ -29,7 +29,7 @@ export const maxDuration = 60;
 // Sales Intelligence section is Product / Group Product Managers only. Coaching reports
 // are auto-scoped to the viewer's line + department inside getCoachingReports
 // (filterSummariesForAccess), so PM/GPM see only their own line.
-const COACHING_ANALYTICS_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager"]);
+const COACHING_ANALYTICS_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
 
 export default async function PortalCoachingAnalyticsPage() {
   const access = await resolveAccessContextFromPage();
