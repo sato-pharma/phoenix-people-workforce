@@ -65,7 +65,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
     >
       <PersonalExpenseWorkloadDashboard
         adminKeyCards={null}
-        data={data}
+        data={{ workload: data.workload }}
         showHero={false}
       />
     </EmployeePortalPageShell>

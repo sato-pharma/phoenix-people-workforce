@@ -343,5 +343,10 @@ export async function persistNormalizedBatch(input: {
   const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
   if (customerRollupRefresh.error) throw customerRollupRefresh.error;
 
+  // Refresh the pre-computed Marketing ROI fact tables so the fast dashboard path reflects
+  // this batch immediately. Advisory-lock protected — a 'skipped' run self-heals on next import.
+  const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
+  if (roiRefresh.error) throw roiRefresh.error;
+
   return { batchId, period, importedRows: rows.length };
 }

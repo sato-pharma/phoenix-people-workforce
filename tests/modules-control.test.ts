@@ -145,19 +145,20 @@ export function runModulesControlTests() {
     }),
     "A-9 Marketing Manager can receive allowed workspace modules",
   );
-  for (const blockedModuleId of ["admin.workspace.organogram", "admin.workspace.vacancies", "admin.workspace.probation_tracker"]) {
-    assert.throws(
+  // Marketing Manager was granted vacancies/organogram/probation read access so the workspace
+  // Team Operations section now shows for MM — these modules are no longer blocked.
+  for (const allowedModuleId of ["admin.workspace.organogram", "admin.workspace.vacancies", "admin.workspace.probation_tracker"]) {
+    assert.doesNotThrow(
       () => validateModuleAssignmentList({
         catalog,
         matrix: permissionMatrix,
-        moduleIds: [blockedModuleId],
+        moduleIds: [allowedModuleId],
         navigationMode: "admin",
         people: [hossam],
         targetKey: "a-9",
         targetType: "user",
       }),
-      /Blocked: A-9 is Marketing Manager\..*requires/,
-      `${blockedModuleId} must stay blocked for A-9 without backend permission`,
+      `${allowedModuleId} is now accessible to A-9 Marketing Manager`,
     );
   }
 

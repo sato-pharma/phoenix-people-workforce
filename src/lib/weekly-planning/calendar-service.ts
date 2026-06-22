@@ -23,6 +23,12 @@ import {
 
 const CALENDAR_HEADER_LIMIT = 1000;
 const CALENDAR_ITEM_LIMIT = 5000;
+const ALLOWED_CALENDAR_OWNER_ROLES = new Set([
+  "national sales manager",
+  "product manager",
+  "group product manager",
+  "territory manager",
+]);
 
 type PlanCalendarHeaderRow = {
   employee_hr_id: string;
@@ -55,8 +61,35 @@ function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function normalizeLowerText(value: string | null | undefined) {
+  return cleanText(value).toLowerCase();
+}
+
 function normalizeHrId(value: string | null | undefined) {
   return normalizeHrIdForAccess(value) ?? "";
+}
+
+function isHeadOfficeLine(lineName: string | null | undefined) {
+  const normalized = normalizeLowerText(lineName).replace(/[^a-z0-9]/g, "");
+  return ["office", "headoffice", "hq"].includes(normalized);
+}
+
+function isAllowedCalendarOwnerTitle(employeeJobTitle: string | null) {
+  const role = normalizeLowerText(employeeJobTitle);
+  if (!role) return false;
+  if ([...ALLOWED_CALENDAR_OWNER_ROLES].some((allowedRole) => role.includes(allowedRole))) return true;
+  const tokens = role.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const aliases = new Set(["nsm", "pm", "gpm", "tm"]);
+  if (tokens.some((token) => aliases.has(token))) return true;
+  const hasManager = tokens.includes("manager");
+  const hasTerritory = tokens.includes("territory");
+  return hasManager && hasTerritory;
+}
+
+function isAllowedCalendarOwner(item: PlanningCalendarPlanItem) {
+  if (isHeadOfficeLine(item.lineName)) return true;
+  const title = normalizeLowerText(item.employeeJobTitle);
+  return ALLOWED_CALENDAR_OWNER_ROLES.has(title) || isAllowedCalendarOwnerTitle(item.employeeJobTitle);
 }
 
 function sameLine(left: string | null | undefined, right: string | null | undefined) {
@@ -221,15 +254,16 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
-    const conflicts = buildPlanningCalendarConflicts(rawPlanItems);
-    const planItems = attachPlanningConflictWarnings(rawPlanItems, conflicts);
+    const planItems = rawPlanItems.filter(isAllowedCalendarOwner);
+    const conflicts = buildPlanningCalendarConflicts(planItems);
+    const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
     return {
       conflicts,
       hasMoreHeaders,
       hasMoreItems,
       headerLimit: CALENDAR_HEADER_LIMIT,
-      items: [...holidays, ...planItems].sort((left, right) => `${left.startDate}-${left.title}`.localeCompare(`${right.startDate}-${right.title}`)),
+      items: [...holidays, ...warnedPlanItems].sort((left, right) => `${left.startDate}-${left.title}`.localeCompare(`${right.startDate}-${right.title}`)),
       itemLimit: CALENDAR_ITEM_LIMIT,
       loadedHeaderCount,
       loadedItemCount,

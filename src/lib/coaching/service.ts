@@ -83,11 +83,12 @@ type CoachingQuarterlySummaryDbRow = {
 const editableStatuses = new Set<CoachingReportStatus>(["draft"]);
 const submittedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee"]);
 const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO"]);
-// Org-wide coaching VIEW oversight: company roles plus Training Manager, who has company-wide
-// training oversight and therefore sees all coaching reports (not just their own). This widens
-// read/list visibility only — write authority still flows through canManageCoachingReports +
-// assertOwnDraftOrOverride + the workflow registry, so a TM still edits only their own drafts.
-const coachingOversightRoles = new Set<AccessContext["role"]>([...companyRoles, "Training Manager"]);
+// Org-wide coaching VIEW oversight: company roles plus Training Manager and Marketing Manager,
+// who have company-wide oversight and therefore see all coaching reports (not just their own).
+// This widens read/list visibility only — write authority still flows through
+// canManageCoachingReports + assertOwnDraftOrOverride + the workflow registry, so these oversight
+// roles never gain edit rights on others' reports (Marketing Manager is view-only by design).
+const coachingOversightRoles = new Set<AccessContext["role"]>([...companyRoles, "Training Manager", "Marketing Manager"]);
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",

@@ -65,7 +65,11 @@ export function WeeklyMiniDashboardView({
   const [data, setData] = useState<WeeklyDashboard | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
-  const [week, setWeek] = useState<string>(initial?.weekStart ?? "");
+  // If SSR returned no weekStart, fall back to the first available week so the
+  // client-side fetch fires immediately without waiting for a user selection.
+  const [week, setWeek] = useState<string>(
+    initial?.weekStart || initial?.availableWeeks?.[0] || "",
+  );
 
   useEffect(() => {
     if (!week) return;
@@ -104,6 +108,15 @@ export function WeeklyMiniDashboardView({
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
         {error}
+      </div>
+    );
+  }
+
+  if (data?.scopeEmpty) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center shadow-sm">
+        <p className="text-sm font-semibold text-amber-800">Your product scope hasn&apos;t been configured yet.</p>
+        <p className="mt-1 text-xs text-amber-700">Contact your system administrator to assign your product codes in the Weekly Sales settings.</p>
       </div>
     );
   }
@@ -149,7 +162,7 @@ export function WeeklyMiniDashboardView({
         <KpiCard delta={data.compare.stockUnits} icon={<Store className="h-4 w-4" />} label="Stock Units" value={num(data.kpis.stockUnits)} />
       </div>
 
-      {trend.length > 1 ? (
+      {trend.length >= 4 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <p className="mb-3 text-sm font-black text-slate-800">Weekly sales value trend</p>
           <SafeResponsiveContainer minHeight={240}>

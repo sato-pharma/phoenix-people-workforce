@@ -1,223 +1,239 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { FileDown, FileSpreadsheet, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 
-import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminInsightChip, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listSalaryBatches } from "@/lib/payroll/service";
+import type { SalaryBatch } from "@/lib/payroll/types";
+import { payrollMonths, payrollPeriodLabel, statusBadge } from "@/components/payroll/dashboard/shared";
+import { formatDateTimeValue } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
 
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
+type QueryValue = string | string[] | undefined;
 
-function periodLabel(month: number, year: number) {
-  return `${MONTHS[month - 1]} ${year}`;
+type SearchParams = Promise<{
+  month?: QueryValue;
+  year?: QueryValue;
+}>;
+
+function asText(value: QueryValue) {
+  return Array.isArray(value) ? value[0] : value ?? "";
 }
 
-function batchStatusBadge(status: string) {
-  if (status === "approved" || status === "locked") {
-    return (
-      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
-        <CheckCircle className="mr-1 h-3 w-3" />
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    );
+function parsePayrollPeriod(
+  monthInput: QueryValue,
+  yearInput: QueryValue,
+  referenceDate: Date,
+) {
+  const monthText = asText(monthInput);
+  const yearText = asText(yearInput);
+  const requestedMonth = Number(monthText);
+  const requestedYear = Number(yearText);
+
+  const fallbackMonth = referenceDate.getMonth() + 1;
+  const fallbackYear = referenceDate.getFullYear();
+  let month = fallbackMonth;
+  let year = fallbackYear;
+  let hasIssue = false;
+
+  if (Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12) {
+    month = requestedMonth;
+  } else if (monthText) {
+    hasIssue = true;
   }
-  if (status === "rejected") {
-    return (
-      <Badge className="border-rose-200 bg-rose-50 text-rose-700">
-        <AlertCircle className="mr-1 h-3 w-3" />
-        Rejected
-      </Badge>
-    );
+
+  if (Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= fallbackYear + 2) {
+    year = requestedYear;
+  } else if (yearText) {
+    hasIssue = true;
   }
-  return (
-    <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-      <Clock className="mr-1 h-3 w-3" />
-      {status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-    </Badge>
-  );
+
+  return { hasIssue, month, year };
 }
 
-type PageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default async function MPayrollPage({ searchParams }: PageProps) {
+export default async function MPayrollPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const access = await resolveAccessContextFromPage();
-
-  const isAllowed = access.role === "CEO" || canAccessSystemAdministratorWorkspace(access);
-  if (!isAllowed) {
-    redirect("/admin");
-  }
+  await assertPermission(access, "payroll", "read");
 
   const now = new Date();
-  const resolved = await searchParams;
-  const rawMonth = Array.isArray(resolved.month) ? resolved.month[0] : resolved.month;
-  const rawYear = Array.isArray(resolved.year) ? resolved.year[0] : resolved.year;
-  const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : now.getUTCMonth() + 1;
-  const year = rawYear ? parseInt(rawYear, 10) : now.getUTCFullYear();
+  const params = await searchParams;
+  const { hasIssue, month, year } = parsePayrollPeriod(params.month, params.year, now);
 
-  const allBatches = await listSalaryBatches().catch(() => []);
-  const periodBatches = allBatches.filter((b) => b.month === month && b.year === year);
+  let batches: SalaryBatch[] = [];
+  let fetchError: string | null = null;
+  let availableYears: number[] = [];
 
-  const years = [...new Set(allBatches.map((b) => b.year))].sort((a, b) => b - a);
-  if (!years.includes(year)) years.unshift(year);
+  try {
+    batches = await listSalaryBatches();
+    const years = new Set<number>([year, year - 1, year + 1, year + 2]);
+    batches.forEach((batch) => years.add(batch.year));
+    availableYears = Array.from(years).sort((left, right) => right - left);
+  } catch (error) {
+    fetchError = error instanceof Error ? error.message : "Unable to load payroll batches.";
+  }
+
+  const periodBatches = batches.filter((batch) => batch.month === month && batch.year === year);
+  const selectedDownloadUrl = `/api/payroll/template?ready=1&month=${month}&year=${year}`;
+  const periodLabel = payrollPeriodLabel(month, year);
 
   return (
     <div className="space-y-6">
       <AdminPageHero
-        eyebrow="CEO VIEW"
-        title="CEO Payroll View"
-        description={`Salary sheets uploaded by HR — ${periodLabel(month, year)}`}
-        badges={
+        actions={(
+          <Link href={selectedDownloadUrl} target="_blank">
+            <Button className="h-10 rounded-xl border border-[#FDBA74] bg-[#FFF7ED] px-5 font-semibold text-[#9A3412] hover:bg-[#FFEDD5]">
+              <Download className="mr-2 h-4 w-4" />
+              Download Payroll XLSX
+            </Button>
+          </Link>
+        )}
+        badges={(
           <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>{periodLabel(month, year)}</AdminInsightChip>
-            <AdminInsightChip tone={periodBatches.length > 0 ? "orange" : "slate"}>
-              {periodBatches.length} sheet{periodBatches.length !== 1 ? "s" : ""}
-            </AdminInsightChip>
+            <AdminInsightChip>M.payroll</AdminInsightChip>
+            <AdminInsightChip tone="orange">{periodLabel}</AdminInsightChip>
           </div>
-        }
+        )}
+        description="Pick month and year, then download Phoenix-styled payroll data for that period and review salary sheets uploaded by HR."
+        eyebrow="CEO Payroll Console"
+        icon={<Download className="h-3.5 w-3.5" />}
+        title="M.payroll"
       />
 
-      {/* Period picker */}
-      <form className="flex items-center gap-3 border border-[#E2E8F0] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <label className="text-sm font-black text-[#0F172A]">Period</label>
-        <select
-          className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
-          defaultValue={month}
-          name="month"
-        >
-          {MONTHS.map((name, i) => (
-            <option key={i + 1} value={i + 1}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
-          defaultValue={year}
-          name="year"
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
-        <button
-          className="border border-[#0F172A] bg-[#0F172A] px-4 py-1.5 text-sm font-black text-white transition hover:bg-[#1E293B]"
-          type="submit"
-        >
-          View
-        </button>
-      </form>
+      <Card className={`${adminPanelClassName} p-5`}>
+        <form action="/admin/m-payroll" className="grid gap-4 md:grid-cols-[220px_160px_auto]">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+              Month
+            </span>
+            <select
+              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+              defaultValue={String(month)}
+              name="month"
+            >
+              {payrollMonths.map((monthOption) => (
+                <option key={monthOption.value} value={monthOption.value}>
+                  {monthOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      {/* Batch list */}
-      {periodBatches.length === 0 ? (
-        <div className="border border-[#E2E8F0] bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-          <FileSpreadsheet className="mx-auto mb-3 h-8 w-8 text-[#CBD5E1]" />
-          <p className="text-sm font-black text-[#0F172A]">No salary sheets found</p>
-          <p className="mt-1 text-sm text-[#64748B]">
-            HR has not uploaded any payroll for {periodLabel(month, year)} yet.
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+              Year
+            </span>
+            <select
+              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+              defaultValue={String(year)}
+              name="year"
+            >
+              {availableYears.map((yearOption) => (
+                <option key={yearOption} value={yearOption}>
+                  {yearOption}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <Button className="h-11 rounded-xl px-6" type="submit">
+            Apply Period
+          </Button>
+        </form>
+      </Card>
+
+      {hasIssue ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 text-[#B45309]" />
+          <div>
+            <p className="font-semibold">Invalid period detected</p>
+            <p className="text-sm">
+              The selected values were reset to the latest available period: {periodLabel}
+            </p>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {fetchError ? (
+        <AdminCallout tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4 text-[#B91C1C]" />
+          <div>
+            <p className="font-semibold">Unable to load payroll uploads</p>
+            <p className="text-sm">{fetchError}</p>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
+        <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-bold text-[#0F172A]">Uploaded Salary Sheets</h2>
+            <Badge variant="neutral">{periodBatches.length} sheets</Badge>
+          </div>
+          <p className="mt-2 text-sm text-[#64748B]">
+            Period selected: {periodLabel} • Showing uploads stored in the payroll vault
           </p>
         </div>
-      ) : (
-        <div className="border border-[#E2E8F0] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-          <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-3">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
-              Salary Sheets — {periodLabel(month, year)}
-            </h2>
-          </div>
-          <table className="w-full border-collapse text-left">
-            <thead className="bg-[#F8FAFC]">
-              <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
-                <th className="px-5 py-3">File Name</th>
-                <th className="px-5 py-3">Period</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Uploaded By</th>
-                <th className="px-5 py-3">Uploaded At</th>
-                <th className="px-5 py-3">Download</th>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs font-black uppercase tracking-[0.12em] text-[#64748B]">
+                <th className="px-3 py-3">Uploaded File</th>
+                <th className="px-3 py-3">Uploaded by HR</th>
+                <th className="px-3 py-3">Status</th>
+                <th className="px-3 py-3">Uploaded At</th>
+                <th className="px-3 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {periodBatches.map((batch) => (
-                <tr
-                  className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]"
-                  key={batch.id}
-                >
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-[#94A3B8]" />
-                      <span className="font-semibold text-[#0F172A]">{batch.fileName}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4 text-[#475569]">{periodLabel(batch.month, batch.year)}</td>
-                  <td className="px-5 py-4">{batchStatusBadge(batch.status)}</td>
-                  <td className="px-5 py-4 text-[#475569]">{batch.uploadedBy ?? "—"}</td>
-                  <td className="px-5 py-4 text-[#475569]">
-                    {new Date(batch.createdAt).toLocaleDateString("en-EG", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </td>
-                  <td className="px-5 py-4">
-                    <Link
-                      className="inline-flex items-center gap-2 border border-[#0F172A] bg-[#0F172A] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E293B]"
-                      href={`/api/payroll/${batch.id}/download`}
-                    >
-                      <FileDown className="h-3.5 w-3.5" />
-                      XLSX
-                    </Link>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {fetchError || periodBatches.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-8 text-center text-sm text-[#64748B]" colSpan={5}>
+                    {fetchError
+                      ? "Payroll batches could not be loaded."
+                      : `No salary sheets were uploaded for ${periodLabel}.`}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                periodBatches.map((batch) => (
+                  <tr className="transition-colors hover:bg-[#FCFDFE]" key={batch.id}>
+                    <td className="px-3 py-3">
+                      <p className="font-semibold text-[#0F172A]">{batch.fileName}</p>
+                      <p className="mt-0.5 text-xs text-[#64748B]">Batch ID: {batch.id}</p>
+                    </td>
+                    <td className="px-3 py-3 text-[#0F172A]">{batch.uploadedBy ?? "System Upload"}</td>
+                    <td className="px-3 py-3">{statusBadge(batch.status)}</td>
+                    <td className="px-3 py-3 text-[#64748B]">{formatDateTimeValue(batch.createdAt)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
+                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </Link>
+                        <Link href={`/payroll?batchId=${batch.id}`}>
+                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                            Open batch
+                          </Button>
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      )}
-
-      {/* Recent history summary */}
-      {allBatches.length > 0 && (
-        <div className="border border-[#E2E8F0] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-          <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-3">
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-              Recent Periods
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-2 p-4">
-            {[...new Set(allBatches.map((b) => `${b.year}-${String(b.month).padStart(2, "0")}`))]
-              .sort()
-              .reverse()
-              .slice(0, 12)
-              .map((key) => {
-                const [y, m] = key.split("-").map(Number);
-                const count = allBatches.filter((b) => b.year === y && b.month === m).length;
-                const isActive = y === year && m === month;
-                return (
-                  <Link
-                    className={`border px-3 py-1.5 text-xs font-black transition ${
-                      isActive
-                        ? "border-[#F97316] bg-[#F97316] text-white"
-                        : "border-[#E2E8F0] bg-white text-[#0F172A] hover:border-[#F97316]/50 hover:text-[#F97316]"
-                    }`}
-                    href={`/admin/m-payroll?month=${m}&year=${y}`}
-                    key={key}
-                  >
-                    {periodLabel(m, y)}
-                    <span className="ml-1 opacity-60">({count})</span>
-                  </Link>
-                );
-              })}
-          </div>
-        </div>
-      )}
+      </Card>
     </div>
   );
 }

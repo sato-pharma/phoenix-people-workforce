@@ -577,7 +577,11 @@ export function derivePrivateCalendarExceptions(input: {
       const vacations = dayItems.filter((item) => item.source === "vacation");
       const excuses = dayItems.filter((item) => item.source === "excuse");
       const plans = dayItems.filter((item) => item.source === "plan");
+      const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
+      // Single Visit (plan with activityType="Field") or a Double Visit on this date
+      // satisfies the attendance requirement — the field record is the attendance proof.
+      const hasFieldVisit = plans.some((p) => p.title.startsWith("Single Visit")) || doubleVisits.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -608,7 +612,7 @@ export function derivePrivateCalendarExceptions(input: {
         }));
       }
 
-      if (plans.length > 0 && attendance.length === 0 && vacations.length === 0 && holidays.length === 0) {
+      if (plans.length > 0 && attendance.length === 0 && vacations.length === 0 && holidays.length === 0 && !hasFieldVisit) {
         exceptions.push(createException({
           code: "planned_day_without_attendance",
           date,
@@ -626,7 +630,8 @@ export function derivePrivateCalendarExceptions(input: {
         attendance.length === 0 &&
         vacations.length === 0 &&
         excuses.length === 0 &&
-        holidays.length === 0
+        holidays.length === 0 &&
+        !hasFieldVisit
       ) {
         exceptions.push(createException({
           code: "missing_attendance_cover",

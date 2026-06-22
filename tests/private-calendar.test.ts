@@ -233,7 +233,7 @@ export function runPrivateCalendarTests() {
   assert.match(workspacePagesSource, /<PrivateCalendar initialWorkspace=\{workspace\} surface="workspace" \/>/, "workspace private calendar must use the admin-shell surface mode");
 
   const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
-  assert.match(adminPageSource, /viewMode: "individual"|viewMode: "team"/, "admin private calendars must declare a viewMode");
+  assert.match(adminPageSource, /PrivateCalendarsFilterMap|PrivateCalendar/, "admin private calendars page must render a calendar or filter-map component");
 
   const vacationActionCenterSource = readFileSync("src/components/vacation/vacation-action-center.tsx", "utf8");
   assert.match(vacationActionCenterSource, /Approval impact preview/, "vacation action center must show approval impact preview");

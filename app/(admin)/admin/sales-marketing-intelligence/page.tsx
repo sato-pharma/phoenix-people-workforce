@@ -1,14 +1,16 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { Target } from "lucide-react";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { SalesMarketingIntelligenceDashboard } from "@/components/sales-marketing-intelligence/sales-marketing-intelligence-dashboard";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import type { SalesMarketingDashboardSnapshot } from "@/lib/sales-marketing-intelligence/types";
+import type { AccessContext } from "@/lib/auth/permissions";
+import type { SalesMarketingDashboardFilters, SalesMarketingDashboardSnapshot } from "@/lib/sales-marketing-intelligence/types";
 import {
   canAccessSalesMarketingIntelligence,
-  getSalesMarketingDashboardSnapshot,
+  getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
 
@@ -56,6 +58,42 @@ function dashboardLoadMessage(error: unknown) {
   return message || "Failed to load Marketing ROI & Customer Intelligence.";
 }
 
+// Inner async component — loads data after the page shell streams to the client.
+async function SalesMarketingDashboardContent({
+  access,
+  filters,
+}: {
+  access: AccessContext;
+  filters: SalesMarketingDashboardFilters;
+}) {
+  let snapshot: SalesMarketingDashboardSnapshot | null = null;
+  let loadError: unknown = null;
+  try {
+    snapshot = await getSalesMarketingDashboard(access, filters);
+  } catch (error) {
+    loadError = error;
+  }
+
+  if (snapshot) {
+    return (
+      <SalesMarketingIntelligenceDashboard
+        canRefreshRoi={access.role === "Super Admin" || access.role === "CEO"}
+        filters={filters}
+        snapshot={snapshot}
+      />
+    );
+  }
+
+  return (
+    <AdminCallout tone="warning">
+      <div className="space-y-1">
+        <p className="font-bold">Dashboard data is not available.</p>
+        <p>{dashboardLoadMessage(loadError)}</p>
+      </div>
+    </AdminCallout>
+  );
+}
+
 export default async function SalesMarketingIntelligencePage({
   searchParams,
 }: {
@@ -68,32 +106,16 @@ export default async function SalesMarketingIntelligencePage({
 
   const filters = parseSalesMarketingDashboardFilters(await searchParams);
 
-  let snapshot: SalesMarketingDashboardSnapshot | null = null;
-  let loadError: unknown = null;
-  try {
-    snapshot = await getSalesMarketingDashboardSnapshot(access, filters);
-  } catch (error) {
-    loadError = error;
-  }
-
-  if (snapshot) {
-    return <SalesMarketingIntelligenceDashboard filters={filters} snapshot={snapshot} />;
-  }
-
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <AdminPageHero
-        description="Corporate decision view for Marketing ROI, request spend, customer and pharmacy impact, and attribution trust."
-        eyebrow="Marketing ROI"
-        icon={<Target className="h-4 w-4" />}
-        title="Marketing ROI & Customer Intelligence"
-      />
-      <AdminCallout tone="warning">
-        <div className="space-y-1">
-          <p className="font-bold">Dashboard data is not available.</p>
-          <p>{dashboardLoadMessage(loadError)}</p>
-        </div>
-      </AdminCallout>
-    </div>
+    <Suspense
+      fallback={
+        <AppRouteLoadingState
+          description="Loading Marketing ROI & Customer Intelligence data."
+          title="Loading dashboard"
+        />
+      }
+    >
+      <SalesMarketingDashboardContent access={access} filters={filters} />
+    </Suspense>
   );
 }
