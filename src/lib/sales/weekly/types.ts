@@ -258,6 +258,8 @@ export type WeeklyDashboard = {
   branchBreakdown: WeeklyBranchComparisonRow[];
   /** branches with stock on hand but zero sales this week */
   zeroSalesBranches: WeeklyBranchRow[];
+  /** true when the viewer's access scope has no product codes assigned — admin must configure. */
+  scopeEmpty?: boolean;
   /** simple value trend across the available weeks (in-scope) */
   trend: {
     weekStart: string;
