@@ -575,14 +575,15 @@ export async function loadWeeklyDashboard(filters?: {
     trend: [],
   });
 
-  if (availableWeeks.length === 0) return empty();
-
   // PM/GPM with no product codes assigned in weekly_sales_product_scope: flag it explicitly so
   // the UI can show a clear "contact admin" message rather than a silently empty dashboard.
+  // Must come BEFORE the availableWeeks guard so the flag is set even when no batches exist yet.
   const scope = filters?.accessScope;
   if (scope?.tier === "product" && scope.productCodes.size === 0) {
     return { ...empty(), scopeEmpty: true };
   }
+
+  if (availableWeeks.length === 0) return empty();
 
   // Fetch validated fact rows (paged) and aggregate in memory — volume is small (hundreds/week).
   // Narrow to batch_id (the FK, always populated) rather than week_start on the rows table
