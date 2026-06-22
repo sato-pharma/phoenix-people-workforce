@@ -32,7 +32,7 @@ function monthLabel(ym: string) {
 
 // --- shared layout primitives ---
 
-function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="bg-slate-900 px-5 py-3">
@@ -67,7 +67,7 @@ function StatTile({
 
 // Premium navigation tile — large mobile-friendly tap target with orange left-border accent.
 // Used for the 3 primary Sales Intelligence tiles in the PM/GPM layout.
-function PremiumNavTile({
+export function PremiumNavTile({
   href,
   icon: Icon,
   label,
@@ -106,7 +106,7 @@ function PremiumNavTile({
 
 // Marketing tool row — full-width list item, 48px+ tall, icon left, description, arrow right.
 // Used for the Marketing Tools section links.
-function MarketingToolRow({
+export function MarketingToolRow({
   href,
   icon: Icon,
   label,
@@ -135,7 +135,7 @@ function MarketingToolRow({
 }
 
 // Shared pending actions block — shown when leave/excuse approvals are outstanding.
-function PendingActions({
+export function PendingActions({
   pendingVacationCount,
   pendingExcuseCount,
 }: {
