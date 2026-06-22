@@ -16,18 +16,20 @@ import {
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
+import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
+import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
 import type {
   CeoAttentionTone,
   CeoCommandCenterData,
-  CeoTopMover,
 } from "@/lib/ceo/command-center";
 
 export type CeoWelcomeProfile = {
   fullName: string;
   roleLabel: string;
   hrId: string | null;
+  imageUrl?: string | null;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -105,43 +107,6 @@ export function AreaSparkline({
         <span>{last.label}</span>
       </div>
     </div>
-  );
-}
-
-// ── Ranked mover list ─────────────────────────────────────────────────────────
-
-function RankedMoverList({
-  movers,
-  empty,
-  format,
-}: {
-  movers: CeoTopMover[];
-  empty: string;
-  format?: (v: number) => string;
-}) {
-  if (!movers.length) return <p className="text-xs text-slate-400">{empty}</p>;
-  const fmt = format ?? egp;
-  const top = movers[0]?.value || 1;
-  return (
-    <ul className="space-y-2.5">
-      {movers.map((mover, i) => (
-        <li key={mover.label} className="flex items-center gap-2.5">
-          <span className="w-5 shrink-0 text-center text-[10px] font-black text-slate-300">#{i + 1}</span>
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate text-[11px] font-semibold text-slate-700">{mover.label}</span>
-              <span className="shrink-0 text-[11px] font-black text-slate-900">{fmt(mover.value)}</span>
-            </div>
-            <div className="h-1 w-full bg-slate-100">
-              <div
-                className="h-full bg-gradient-to-r from-orange-500 to-amber-400"
-                style={{ width: `${Math.max(4, (mover.value / top) * 100)}%` }}
-              />
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -296,7 +261,7 @@ async function DeferredSalesCards({ access }: { access: AccessContext }) {
           ) : null
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           <AreaSparkline
             points={(weekly?.trend ?? []).map((p) => ({ label: p.label, value: p.value }))}
             stroke="#F97316"
@@ -304,7 +269,14 @@ async function DeferredSalesCards({ access }: { access: AccessContext }) {
           />
           <div>
             <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
-            <RankedMoverList movers={weekly?.topRegions ?? []} empty="No weekly data yet." />
+            <CeoTopMoversTable
+              movers={weekly?.topRegions ?? []}
+              title="Weekly Top Regions"
+              exportTitle="Weekly Sales — Top Regions"
+              subtitle={weekly?.weekStart ? `Week of ${weekly.weekStart}` : undefined}
+              labelHeader="Region"
+              empty="No weekly data yet."
+            />
           </div>
         </div>
       </PerfCard>
@@ -400,21 +372,16 @@ export function CeoCommandCenter({
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
       <AdminHeroFrame>
-        <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-1 lg:p-8">
-          <div className="min-w-0 space-y-4">
-            <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
-              <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-              CEO Command Center
-            </div>
-            <div>
-              <h1 className="max-w-full whitespace-nowrap text-[28px] font-black tracking-[-0.03em] text-white sm:text-[34px] lg:text-[36px]">
-                Hello Dr. Anwar, here&apos;s your company
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                What began as a vision became a company. What became a company became a family. And what became a family continues to grow under your leadership.
-              </p>
-            </div>
+        <div className="p-5 sm:p-6 lg:p-8">
+          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
+            <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+            CEO Command Center
           </div>
+          <CeoHeroIdentity
+            fullName={_welcome.fullName}
+            roleLabel={_welcome.roleLabel}
+            imageUrl={_welcome.imageUrl}
+          />
         </div>
       </AdminHeroFrame>
 
@@ -529,14 +496,28 @@ export function CeoCommandCenter({
             headlineSub={sos?.period ? `Monthly · ${sos.period}` : "Monthly"}
             badge={sos ? <span className="text-[10px] text-slate-400">{n(sos.totalQty)} units</span> : null}
           >
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
-                <RankedMoverList movers={sos?.topLines ?? []} empty="No monthly sales loaded yet." />
+                <CeoTopMoversTable
+                  movers={sos?.topLines ?? []}
+                  title="SoS Top Lines"
+                  exportTitle="Source of Sales — Top Lines"
+                  subtitle={sos?.period ?? undefined}
+                  labelHeader="Product Line"
+                  empty="No monthly sales loaded yet."
+                />
               </div>
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
-                <RankedMoverList movers={sos?.topRegions ?? []} empty="—" />
+                <CeoTopMoversTable
+                  movers={sos?.topRegions ?? []}
+                  title="SoS Top Regions"
+                  exportTitle="Source of Sales — Top Regions"
+                  subtitle={sos?.period ?? undefined}
+                  labelHeader="Region"
+                  empty="No regional sales data yet."
+                />
               </div>
             </div>
           </PerfCard>

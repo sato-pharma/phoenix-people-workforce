@@ -73,11 +73,19 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  const welcome = {
-    fullName: viewer.displayName,
-    roleLabel: viewer.roleLabel,
-    hrId: access.hrId,
-  };
+  const welcome = access.role === "CEO"
+    ? {
+        fullName: "Dr. Anwar Gaweesh",
+        roleLabel: "Chief Executive Officer",
+        hrId: access.hrId,
+        imageUrl: null,
+      }
+    : {
+        fullName: viewer.displayName,
+        roleLabel: viewer.roleLabel,
+        hrId: access.hrId,
+        imageUrl: null,
+      };
 
   return (
     <>
