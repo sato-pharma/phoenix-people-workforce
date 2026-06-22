@@ -589,7 +589,15 @@ export async function loadWeeklyDashboard(filters?: {
   // (nullable; may differ from the batch's canonical date for multi-date uploads). Filter to the
   // batches covering the selected week(s) + prior week so we skip irrelevant history, OR to all
   // validated batches when allWeeks is requested.
-  const batchIdsForRows = allWeeksRequested
+  //
+  // Exception: product-scoped users (PM/GPM) get ALL historical batches so the trend chart covers
+  // the full available history rather than just the selected + prior week. Their product universe is
+  // small (2–4 codes, ~hundreds of rows) so loading all history is safe. Full/territory scopes are
+  // kept at the 2-week window because their row counts can be orders of magnitude larger.
+  const scopeIsBoundedProduct =
+    filters?.accessScope?.tier === "product" &&
+    (filters.accessScope as Extract<WeeklyAccessScope, { tier: "product" }>).productCodes.size > 0;
+  const batchIdsForRows = allWeeksRequested || scopeIsBoundedProduct
     ? [...batches.map((b) => String(b.id))]
     : batches
         .filter((b) => {
