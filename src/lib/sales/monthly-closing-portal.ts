@@ -35,7 +35,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Owner-set expected distributor count for the Monthly Sales Closing completion bar (fixed). */
-const MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS = 10;
+const MONTHLY_CLOSING_EXPECTED_DISTRIBUTORS = 17;
 
 /** Distinct distributors with a VALIDATED upload for a period — the closing-completion numerator.
  *  A distributor's upload covers all its lines, so this is period-wide (not line-scoped). */

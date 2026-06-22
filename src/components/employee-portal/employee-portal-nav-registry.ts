@@ -20,7 +20,6 @@ import {
   LineChart,
   type LucideIcon,
   ReceiptText,
-  ScanLine,
   Send,
   Settings2,
   ShieldCheck,
@@ -82,7 +81,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Leave Management
   { label: "Vacation", fullLabel: "Vacation Request", href: "/leave-management/vacation-request", icon: CalendarDays },
   { label: "Leave", fullLabel: "Vacation Report", href: "/leave-management/vacation-report", icon: FileText },
-  { label: "Attendance", fullLabel: "My Attendance", href: "/employee-portals/attendance", icon: ScanLine, flags: ["showAttendanceTab"] },
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab"] },
   // Team Performance
