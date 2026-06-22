@@ -525,10 +525,10 @@ export function CoachingReportsCenter({
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[72vh]">
             <table className="min-w-[1180px] w-full border-collapse text-left">
-              <thead className="bg-[#F8FAFC]">
-                <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <thead className="sticky top-0 z-10 bg-slate-900">
+                <tr className="border-b border-slate-700 text-[11px] font-black uppercase tracking-[0.14em] text-slate-300">
                   <th className="px-5 py-3">Report Number</th>
                   <th className="px-5 py-3">Medical Rep</th>
                   <th className="px-5 py-3">HR ID</th>

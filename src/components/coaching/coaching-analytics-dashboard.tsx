@@ -631,16 +631,17 @@ function CoverageStackedChart({
   if (data.length === 0) return <EmptyChart message={emptyMessage} />;
   return (
     <SafeResponsiveContainer className="h-full">
-      <BarChart data={data} margin={{ bottom: 0, left: -18, right: 14, top: 12 }}>
+      <BarChart data={data} margin={{ bottom: 60, left: -18, right: 14, top: 12 }}>
         <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 8" vertical={false} />
         <XAxis
           axisLine={false}
           dataKey="label"
+          height={70}
           interval={0}
-          tick={{ fill: CHART_AXIS, fontSize: 10, fontWeight: 700 }}
+          tick={{ angle: -35, fill: CHART_AXIS, fontSize: 10, fontWeight: 700, textAnchor: "end" }}
           tickFormatter={(value) => {
             const label = String(value);
-            return label.length > 12 ? `${label.slice(0, 11)}...` : label;
+            return label.length > 14 ? `${label.slice(0, 13)}…` : label;
           }}
           tickLine={false}
           tickMargin={8}
@@ -673,7 +674,7 @@ function TrainingManagerComparisonSection({ comparison }: { comparison: Coaching
   const [areaTableFilters, setAreaTableFilters] = useState<AreaCoverageTableFilters>(emptyAreaCoverageTableFilters);
   const [repTableFilters, setRepTableFilters] = useState<MedicalRepComparisonTableFilters>(emptyMedicalRepComparisonTableFilters);
   const coverageSplit = buildTrainingManagerCoverageSplit(comparison);
-  const topAreaChartRows = comparison.areaBreakdown.slice(0, 10);
+  const topAreaChartRows = comparison.areaBreakdown.slice(0, 8);
   const coachingMonthChartRows = comparison.coachingMonthBreakdown;
 
   const filteredAreaBreakdown = useMemo(
