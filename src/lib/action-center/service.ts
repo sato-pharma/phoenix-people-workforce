@@ -409,5 +409,7 @@ export async function getAwaitingMyActionItems(
   }
 
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
-  return items;
+  // Never surface a requester's own submission in their own action inbox — the CEO
+  // role can submit requests and those should only appear in "My Requests", not here.
+  return items.filter((item) => !sameHrId(item.employeeHrId, access.hrId));
 }

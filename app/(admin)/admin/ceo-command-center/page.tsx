@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
+import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import {
@@ -22,9 +23,6 @@ export default async function CeoCommandPage() {
     redirect("/employee-portals");
   }
 
-  // CEO + Super Admin (or system) only. The CEO lands here; Super Admin can open it for
-  // review. Anyone else with admin access falls back to the generic command center.
-  // Mirrors the server gate elsewhere — sidebar visibility is never the security boundary.
   const allowed = access.role === "CEO" || canAccessSystemAdministratorWorkspace(access);
   if (!allowed) {
     redirect("/admin");
@@ -75,11 +73,26 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
+  const welcome = access.role === "CEO"
+    ? {
+        fullName: "Dr. Anwar Gaweesh",
+        roleLabel: "Chief Executive Officer",
+        hrId: access.hrId,
+        imageUrl: null,
+      }
+    : {
+        fullName: viewer.displayName,
+        roleLabel: viewer.roleLabel,
+        hrId: access.hrId,
+        imageUrl: null,
+      };
+
   return (
-    <CeoCommandCenter
-      data={result.data}
-      welcome={{ fullName: viewer.displayName, roleLabel: viewer.roleLabel, hrId: access.hrId }}
-      access={access}
-    />
+    <>
+      <CeoCommandCenter data={result.data} welcome={welcome} access={access} />
+      <Suspense fallback={<CeoPhaseBSkeleton />}>
+        <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} />
+      </Suspense>
+    </>
   );
 }

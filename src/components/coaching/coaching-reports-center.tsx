@@ -525,56 +525,57 @@ export function CoachingReportsCenter({
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto max-h-[72vh]">
-            <table className="min-w-[1180px] w-full border-collapse text-left">
-              <thead className="sticky top-0 z-10 bg-slate-900">
-                <tr className="border-b border-slate-700 text-[11px] font-black uppercase tracking-[0.14em] text-slate-300">
-                  <th className="px-5 py-3">Report Number</th>
-                  <th className="px-5 py-3">Medical Rep</th>
-                  <th className="px-5 py-3">HR ID</th>
-                  <th className="px-5 py-3">Coach</th>
-                  <th className="px-5 py-3">Line</th>
-                  <th className="px-5 py-3">Area</th>
-                  <th className="px-5 py-3">Team</th>
-                  <th className="px-5 py-3">Coaching Date</th>
-                  <th className="px-5 py-3">Final Score</th>
-                  <th className="px-5 py-3">Performance Zone</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Acknowledgment</th>
-                  <th className="px-5 py-3">Actions</th>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead className="bg-[#F8FAFC]">
+                <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                  <th className="px-4 py-3">Report #</th>
+                  <th className="px-4 py-3">Medical Rep</th>
+                  <th className="px-4 py-3">Coach</th>
+                  <th className="px-4 py-3">Org</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Zone</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Ack</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {reports.map((report) => (
                   <tr className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]" key={report.reportId}>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       <span className="font-black text-[#0F172A]">{report.reportNumber}</span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</td>
-                    <td className="px-5 py-4 font-mono text-xs font-black text-[#475569]">{report.medicalRepHrId}</td>
-                    <td className="px-5 py-4 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</td>
-                    <td className="px-5 py-4 text-[#475569]">{report.lineName || "Not assigned"}</td>
-                    <td className="px-5 py-4 text-[#475569]">{report.areaName || "Not assigned"}</td>
-                    <td className="px-5 py-4 text-[#475569]">{report.teamName || "Not assigned"}</td>
-                    <td className="px-5 py-4 text-[#475569]">{formatDate(report.coachingDate)}</td>
-                    <td className="px-5 py-4 font-black text-[#0F172A]">{formatPercent(report.finalScorePercent)}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</div>
+                      <div className="font-mono text-[11px] text-[#94A3B8]">{report.medicalRepHrId}</div>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</td>
+                    <td className="px-4 py-3 text-xs text-[#475569]">
+                      <div>{report.lineName || "—"}</div>
+                      {report.areaName ? <div className="text-[#94A3B8]">{report.areaName}</div> : null}
+                      {report.teamName ? <div className="text-[#94A3B8]">{report.teamName}</div> : null}
+                    </td>
+                    <td className="px-4 py-3 text-[#475569]">{formatDate(report.coachingDate)}</td>
+                    <td className="px-4 py-3 font-black text-[#0F172A]">{formatPercent(report.finalScorePercent)}</td>
+                    <td className="px-4 py-3">
                       <Badge className={zoneClassName(report.performanceZone)}>{zoneLabel(report.performanceZone)}</Badge>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       <Badge className={report.acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}>
-                        {report.acknowledged ? "Acknowledged" : "Pending"}
+                        {report.acknowledged ? "Ack" : "Pend"}
                       </Badge>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">
                       <Link
-                        className="inline-flex items-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
+                        className="inline-flex items-center gap-2 border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
                         href={detailHrefFor(detailHrefBase, report.reportId)}
                       >
-                        View Report
+                        View
                         <ArrowUpRight className="h-3.5 w-3.5" />
                       </Link>
                     </td>

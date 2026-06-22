@@ -169,24 +169,31 @@ export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
 
 async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id", query: string) {
   const supabase = getSupabaseAdmin();
-  const initialResult = await supabase
+  const base = supabase
     .from("salary_records")
     .select("id,batch_id,employee_code,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
-    .in("salary_batches.status", publishedPayslipStatuses)
-    .ilike(column, `%${query}%`)
-    .limit(120);
+    .in("salary_batches.status", publishedPayslipStatuses);
+
+  // ID columns require exact match — ilike on hr_id would match A-5, A-50, A-51, A-500, etc.
+  const initialResult = await (column === "full_name"
+    ? base.ilike(column, `%${query}%`)
+    : base.eq(column, query)
+  ).limit(120);
   let data: unknown[] | null = initialResult.data;
   let error: unknown = initialResult.error;
 
   if (error && isMissingColumn(error, "employee_code")) {
     if (column === "employee_code") return [];
 
-    const fallbackResult = await supabase
+    const fallbackBase = supabase
       .from("salary_records")
       .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
-      .in("salary_batches.status", publishedPayslipStatuses)
-      .ilike(column, `%${query}%`)
-      .limit(120);
+      .in("salary_batches.status", publishedPayslipStatuses);
+
+    const fallbackResult = await (column === "full_name"
+      ? fallbackBase.ilike(column, `%${query}%`)
+      : fallbackBase.eq(column, query)
+    ).limit(120);
     data = fallbackResult.data;
     error = fallbackResult.error;
   }
