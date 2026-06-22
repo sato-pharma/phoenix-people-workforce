@@ -4655,7 +4655,10 @@ export async function getEmployeePortalVacancies(
       isNsm ||
       currentRole === "Product Manager" ||
       currentRole === "Group Product Manager";
-    if (!isDsm && !isLineScoped) return null;
+    // Training Manager and Marketing Manager see all company vacancies.
+    const isCompanyWide =
+      currentRole === "Training Manager" || currentRole === "Marketing Manager";
+    if (!isDsm && !isLineScoped && !isCompanyWide) return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -4681,14 +4684,16 @@ export async function getEmployeePortalVacancies(
 
       if (isDsm && currentUser.hrId) {
         query = query.ilike("manager_hr_id", currentUser.hrId);
-      } else if (typeof currentEmployee.lineId === "number") {
+      } else if (isLineScoped && typeof currentEmployee.lineId === "number") {
         query = query.eq("line_id", currentEmployee.lineId);
       }
+      // isCompanyWide: no filter — fetch all open vacancies
 
       return query;
     });
 
     const scopedRows = vacancyRows.filter((row) => {
+      if (isCompanyWide) return true;
       if (isLineScoped) {
         if (typeof currentEmployee.lineId === "number") {
           return row.line_id === currentEmployee.lineId;
