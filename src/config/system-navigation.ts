@@ -180,6 +180,16 @@ const adminNavigationSectionSeeds = [
     label: "Marketing & ROI",
   },
   {
+    id: "workspace-sales-intelligence",
+    items: [
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
+      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Monthly Sales Closing", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
+      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
+    ],
+    label: "Sales Intelligence",
+  },
+  {
     id: "workspace-payroll",
     items: [
       { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
@@ -420,16 +430,16 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-sales-intelligence",
     items: [
-      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Sales Operations",
   },
   {
     id: "coaching",
     items: [
-      { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Coaching",
   },
@@ -516,7 +526,7 @@ const employeePortalNavigationSectionSeeds = [
           "Super Admin",
         ],
       },
-      { href: "/employee-portals/roi", icon: Target, label: "ROI Dashboard", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/roi", icon: Target, label: "ROI Dashboard", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Marketing Requests",
   },
