@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Activity,
   ArrowRight,
@@ -9,8 +9,6 @@ import {
   ClipboardCheck,
   HeartPulse,
   Megaphone,
-  TrendingDown,
-  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
@@ -19,7 +17,6 @@ import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
 import type {
   CeoAttentionTone,
   CeoCommandCenterData,
@@ -206,144 +203,37 @@ function PerfCard({
   );
 }
 
-// ── Skeleton for deferred cards ───────────────────────────────────────────────
+// ── Quick-link card (instant — no data fetch) ─────────────────────────────────
 
-function PerfCardSkeleton({ title }: { title: string }) {
+function QuickLinkCard({
+  title,
+  icon,
+  headline,
+  sub,
+  href,
+}: {
+  title: string;
+  icon: ReactNode;
+  headline: string;
+  sub: string;
+  href: string;
+}) {
   return (
-    <div className="flex flex-col border border-slate-200 bg-white">
+    <Link href={href} className="group flex flex-col border border-slate-200 bg-white hover:border-orange-300">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+        <span className="text-orange-400">{icon}</span>
         <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">{title}</span>
       </div>
-      <div className="border-b border-slate-100 px-4 py-4">
-        <div className="h-8 w-36 animate-pulse bg-slate-100" />
-        <div className="mt-2 h-3 w-24 animate-pulse bg-slate-100" />
-      </div>
-      <div className="flex-1 space-y-3 px-4 py-4">
-        <div className="h-16 w-full animate-pulse bg-slate-100" />
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-3 w-full animate-pulse bg-slate-100" style={{ opacity: 1 - i * 0.2 }} />
-          ))}
+      <div className="flex flex-1 flex-col items-start justify-between gap-6 px-4 py-5">
+        <div>
+          <p className="text-[28px] font-black leading-none tracking-tight text-slate-900">Open →</p>
+          <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{headline}</p>
+        </div>
+        <div className="border border-slate-200 px-3 py-2 text-xs text-slate-500 group-hover:border-orange-300 group-hover:text-orange-700">
+          {sub}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Deferred sales cards ──────────────────────────────────────────────────────
-
-async function DeferredSalesCards({ access }: { access: AccessContext }) {
-  const { weekly, marketing } = await getCeoSalesDeferred(access);
-  return (
-    <>
-      {/* Weekly Sales */}
-      <PerfCard
-        title="Weekly Sales"
-        icon={<Activity className="h-3.5 w-3.5" />}
-        headline={weekly ? egp(weekly.salesValue) : "—"}
-        headlineSub={weekly?.weekStart ? `Week of ${weekly.weekStart}` : "This week"}
-        badge={
-          weekly && !weekly.wowPriorMissing && weekly.wowPct !== null ? (
-            <span
-              className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[10px] font-black ${
-                weekly.wowPct >= 0
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "border-rose-300 bg-rose-50 text-rose-700"
-              }`}
-            >
-              {weekly.wowPct >= 0 ? (
-                <TrendingUp aria-hidden="true" className="h-3 w-3" />
-              ) : (
-                <TrendingDown aria-hidden="true" className="h-3 w-3" />
-              )}
-              {pct(Math.abs(weekly.wowPct), 1)} WoW
-            </span>
-          ) : null
-        }
-      >
-        <div className="space-y-5">
-          <AreaSparkline
-            points={(weekly?.trend ?? []).map((p) => ({ label: p.label, value: p.value }))}
-            stroke="#F97316"
-            gradId="weekly-grad"
-          />
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
-            <CeoTopMoversTable
-              movers={weekly?.topRegions ?? []}
-              title="Weekly Top Regions"
-              exportTitle="Weekly Sales — Top Regions"
-              subtitle={weekly?.weekStart ? `Week of ${weekly.weekStart}` : undefined}
-              labelHeader="Region"
-              empty="No weekly data yet."
-            />
-          </div>
-        </div>
-      </PerfCard>
-
-      {/* Marketing ROI */}
-      <PerfCard
-        title="Marketing ROI"
-        icon={<Megaphone className="h-3.5 w-3.5" />}
-        headline={marketing ? pct(marketing.roiCoverage * 100, 0) : "—"}
-        headlineSub="ROI coverage rate"
-        badge={
-          marketing && marketing.actionRequired > 0 ? (
-            <span className="inline-flex items-center gap-1 border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700">
-              {n(marketing.actionRequired)} require action
-            </span>
-          ) : null
-        }
-      >
-        {marketing ? (
-          <div className="space-y-3">
-            {/* ROI progress bar */}
-            <div>
-              <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                <span>Coverage</span>
-                <span className="font-bold">{pct(marketing.roiCoverage * 100, 1)}</span>
-              </div>
-              <div className="h-2 w-full bg-slate-100">
-                <div
-                  className="h-full bg-gradient-to-r from-orange-500 to-amber-400"
-                  style={{ width: `${Math.min(100, marketing.roiCoverage * 100)}%` }}
-                />
-              </div>
-            </div>
-            {/* Key stats grid */}
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "Requests", value: n(marketing.requestCount) },
-                { label: "Paid", value: n(marketing.paidRequests) },
-                { label: "Total spend", value: egp(marketing.totalCost) },
-                { label: "Attributed", value: egp(marketing.attributedSalesValue) },
-              ].map(({ label, value }) => (
-                <div key={label} className="border border-slate-100 bg-slate-50 px-2.5 py-2">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                  <p className="text-sm font-black text-slate-900">{value}</p>
-                </div>
-              ))}
-            </div>
-            {/* Spend at risk */}
-            {marketing.spendAtRisk > 0 ? (
-              <div className="border border-rose-200 bg-rose-50 px-3 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-rose-500">Spend at risk</p>
-                <p className="text-base font-black text-rose-700">{egp(marketing.spendAtRisk)}</p>
-              </div>
-            ) : null}
-            {marketing.topRisk ? (
-              <p className="text-[10px] text-slate-500">
-                Top risk:{" "}
-                <span className="font-semibold text-slate-700">{marketing.topRisk.customer}</span>{" "}
-                <span className="text-slate-400">({marketing.topRisk.code})</span>
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400">Marketing ROI is unavailable right now.</p>
-        )}
-      </PerfCard>
-    </>
+    </Link>
   );
 }
 
@@ -485,7 +375,7 @@ export function CeoCommandCenter({
       {/* ── Sales performance ─────────────────────────────────────────────── */}
       <SectionShell
         title="Sales & marketing performance"
-        description="Source of Sales (monthly), Weekly Sales, and Marketing ROI — confidential products included."
+        description="Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
       >
         <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
           {/* SoS — immediate */}
@@ -522,17 +412,23 @@ export function CeoCommandCenter({
             </div>
           </PerfCard>
 
-          {/* Weekly + Marketing — deferred */}
-          <Suspense
-            fallback={
-              <>
-                <PerfCardSkeleton title="Weekly Sales" />
-                <PerfCardSkeleton title="Marketing ROI" />
-              </>
-            }
-          >
-            <DeferredSalesCards access={access} />
-          </Suspense>
+          {/* Weekly Sales — instant link card */}
+          <QuickLinkCard
+            title="Weekly Sales"
+            icon={<Activity className="h-3.5 w-3.5" />}
+            headline="7-week trend + region breakdown"
+            sub="Click to open Weekly Sales"
+            href="/sales/weekly"
+          />
+
+          {/* Marketing ROI — instant link card */}
+          <QuickLinkCard
+            title="Marketing ROI"
+            icon={<Megaphone className="h-3.5 w-3.5" />}
+            headline="Coverage, spend at risk, top risk accounts"
+            sub="Click to open ROI Tracking"
+            href="/admin/marketing-requests/roi-tracking"
+          />
         </div>
       </SectionShell>
 

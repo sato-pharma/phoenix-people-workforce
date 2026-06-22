@@ -6,8 +6,6 @@ import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/servic
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
-import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
-import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import {
   getSalesMarketingDashboardSnapshot,
   parseSalesMarketingDashboardFilters,
@@ -21,8 +19,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * renders the hero + SoS card + partial attention queue in ~1-2s. Heavy admin
  * aggregators (getAdminCommandCenterData, getOverviewDashboard) have been moved to
  * `getCeoLandingDeferred` so they no longer block first paint.
- *
- * `getCeoSalesDeferred` carries Weekly Sales + Marketing ROI (heavy, ~15s each).
  *
  * `getCeoLandingDeferred` (Phase B) carries everything else: health breakdown, trends,
  * risk signals, double-visit, expense, attendance, ROI signal, and monthly SoS tables.
@@ -84,29 +80,6 @@ export type CeoCommandCenterData = {
   };
 };
 
-export type CeoSalesDeferredData = {
-  dataUnavailable: string[];
-  weekly: {
-    weekStart: string | null;
-    salesValue: number;
-    salesUnits: number;
-    wowPct: number | null;
-    wowPriorMissing: boolean;
-    trend: CeoTopMover[];
-    topRegions: CeoTopMover[];
-  } | null;
-  marketing: {
-    totalCost: number;
-    attributedSalesValue: number;
-    roiCoverage: number;
-    actionRequired: number;
-    spendAtRisk: number;
-    requestCount: number;
-    paidRequests: number;
-    behindRequests: number;
-    topRisk: { customer: string; code: string; action: string } | null;
-  } | null;
-};
 
 function topMoversFromSos(
   groups: Array<{ label: string; totalValue: number }> | undefined,
@@ -270,58 +243,6 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     // Trends rendered in Phase B
     trends: { sales: [], financial: [], hireExit: [] },
   };
-}
-
-/**
- * The two heavy Sales aggregators (Weekly Sales + Marketing ROI, ~15s each against prod),
- * loaded separately so the page streams them behind a Suspense boundary.
- */
-export async function getCeoSalesDeferred(access: AccessContext): Promise<CeoSalesDeferredData> {
-  const dataUnavailable: string[] = [];
-
-  const [weeklyR, marketingR] = await Promise.allSettled([
-    resolveWeeklyAccessScope(access).then((accessScope) => loadWeeklyDashboard({ accessScope })),
-    getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
-  ]);
-
-  const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : null;
-  if (!weekly) dataUnavailable.push("Weekly Sales");
-  const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
-  if (!marketing) dataUnavailable.push("Marketing ROI");
-
-  const weeklyOut = weekly
-    ? {
-        weekStart: weekly.weekStart,
-        salesValue: weekly.kpis.salesValue,
-        salesUnits: weekly.kpis.salesUnits,
-        wowPct: weekly.compare.salesValue.pct,
-        wowPriorMissing: weekly.compare.salesValue.prior === null,
-        trend: (weekly.trend ?? []).map((point) => ({ label: point.weekStart, value: point.salesValue })),
-        topRegions: [...(weekly.regions ?? [])]
-          .sort((a, b) => b.salesValue - a.salesValue)
-          .slice(0, 5)
-          .map((region) => ({ label: region.name, value: region.salesValue })),
-      }
-    : null;
-
-  const topRisk = marketing?.decisionSummary.topRiskRequest ?? null;
-  const marketingOut = marketing
-    ? {
-        totalCost: marketing.summary.totalMarketingCost,
-        attributedSalesValue: marketing.summary.actualAttributedSalesValue,
-        roiCoverage: marketing.summary.actualRoiCoverage,
-        actionRequired: marketing.summary.actionRequiredRequests,
-        spendAtRisk: marketing.summary.spendAtRisk,
-        requestCount: marketing.summary.marketingRequestCount,
-        paidRequests: marketing.summary.paidRequestCount,
-        behindRequests: marketing.summary.behindRequests,
-        topRisk: topRisk
-          ? { customer: topRisk.customerName, code: topRisk.requestCode, action: topRisk.recommendedAction }
-          : null,
-      }
-    : null;
-
-  return { dataUnavailable, weekly: weeklyOut, marketing: marketingOut };
 }
 
 // ── Phase B: landing-page deferred data ──────────────────────────────────────
