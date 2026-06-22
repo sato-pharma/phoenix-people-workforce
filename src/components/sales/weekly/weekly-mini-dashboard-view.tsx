@@ -112,6 +112,15 @@ export function WeeklyMiniDashboardView({
     );
   }
 
+  if (data?.scopeEmpty) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center shadow-sm">
+        <p className="text-sm font-semibold text-amber-800">Your product scope hasn&apos;t been configured yet.</p>
+        <p className="mt-1 text-xs text-amber-700">Contact your system administrator to assign your product codes in the Weekly Sales settings.</p>
+      </div>
+    );
+  }
+
   if (!data || (!data.weekStart && data.availableWeeks.length === 0)) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600 shadow-sm">
@@ -153,7 +162,7 @@ export function WeeklyMiniDashboardView({
         <KpiCard delta={data.compare.stockUnits} icon={<Store className="h-4 w-4" />} label="Stock Units" value={num(data.kpis.stockUnits)} />
       </div>
 
-      {trend.length > 1 ? (
+      {trend.length >= 1 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <p className="mb-3 text-sm font-black text-slate-800">Weekly sales value trend</p>
           <SafeResponsiveContainer minHeight={240}>

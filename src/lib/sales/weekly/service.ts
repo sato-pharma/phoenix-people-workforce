@@ -577,6 +577,13 @@ export async function loadWeeklyDashboard(filters?: {
 
   if (availableWeeks.length === 0) return empty();
 
+  // PM/GPM with no product codes assigned in weekly_sales_product_scope: flag it explicitly so
+  // the UI can show a clear "contact admin" message rather than a silently empty dashboard.
+  const scope = filters?.accessScope;
+  if (scope?.tier === "product" && scope.productCodes.size === 0) {
+    return { ...empty(), scopeEmpty: true };
+  }
+
   // Fetch validated fact rows (paged) and aggregate in memory — volume is small (hundreds/week).
   // Narrow to batch_id (the FK, always populated) rather than week_start on the rows table
   // (nullable; may differ from the batch's canonical date for multi-date uploads). Filter to the
@@ -699,15 +706,19 @@ export async function loadWeeklyDashboard(filters?: {
     .sort((left, right) => right.stockUnits - left.stockUnits);
 
   const trendWeeks = [...availableWeeks].sort(); // ascending for charting
-  const trend = trendWeeks.map((week) => {
+  // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
+  // Checking rows.length avoids falsely dropping weeks where returns exceed sales (net-negative
+  // salesValue/salesUnits) which a >0 value filter would incorrectly discard.
+  const trend = trendWeeks.flatMap((week) => {
     const rows = scopedRows.filter((row) => row.weekStart === week);
+    if (rows.length === 0) return [];
     const distMap = new Map<string, { name: string; value: number }>();
     for (const row of rows) {
       const entry = distMap.get(row.distributorCode);
       if (entry) entry.value += row.salesValue;
       else distMap.set(row.distributorCode, { name: row.distributorName, value: row.salesValue });
     }
-    return {
+    return [{
       weekStart: week,
       salesValue: Number(sum(rows, (row) => row.salesValue).toFixed(2)),
       salesUnits: Number(sum(rows, (row) => row.netQty).toFixed(2)),
@@ -717,7 +728,7 @@ export async function loadWeeklyDashboard(filters?: {
         distributorName: d.name,
         salesValue: Number(d.value.toFixed(2)),
       })),
-    };
+    }];
   });
 
   return {
