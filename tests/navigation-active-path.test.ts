@@ -262,6 +262,13 @@ export function runNavigationActivePathTests() {
     ],
     "A-9 / Marketing Manager must not see admin authority modules or /admin duplicates of its workspace",
   );
+  // Executive oversight: the Marketing Manager now sees the company-wide field/commercial report
+  // surfaces (read-only) that mirror PM/GPM/TM data.
+  assertIncludesAll(
+    marketingManagerAdmin,
+    ["/coaching", "/coaching/analytics", "/admin/double-visit-analytics", "/organogram", "/probation", "/reports/vacancies"],
+    "Executive Marketing Manager sees company-wide field/commercial reports",
+  );
 
   const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
   assertIncludesAll(

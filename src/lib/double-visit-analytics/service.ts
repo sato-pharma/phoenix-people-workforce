@@ -240,7 +240,9 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     access.role === "Super Admin" ||
     access.role === "National Sales Manager" ||
     access.role === "SFE Manager" ||
-    access.role === "Training Manager"
+    access.role === "Training Manager" ||
+    // Marketing Manager: executive company-wide READ oversight of double-visit analytics.
+    access.role === "Marketing Manager"
   ) {
     return { all: true as const };
   }

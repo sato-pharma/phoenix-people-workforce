@@ -16,10 +16,12 @@ function source(relPath: string): string {
 }
 
 /**
- * Marketing Manager = company-wide MARKETING + COMMERCIAL oversight, with NO field-management
- * tools and NO HR authority. This suite pins that identity end to end: effective permissions,
- * commercial scope, marketing record visibility, weekly-sales tier, approver robustness, the ROI
- * dashboard line-scoping, and navigation. It guards every dimension raised in the role remediation.
+ * Marketing Manager = company-wide MARKETING + COMMERCIAL executive. It additionally holds
+ * company-wide READ-ONLY oversight of the field/commercial reports PM/GPM/TM see (coaching,
+ * double-visit, organogram, vacancies, probation), but NO write authority on coaching and NO HR
+ * authority. This suite pins that identity end to end: effective permissions, commercial + report
+ * scope, marketing record visibility, weekly-sales tier, approver robustness, the ROI dashboard
+ * line-scoping, and navigation. It guards every dimension raised in the role remediation.
  */
 export async function runMarketingManagerRoleTests() {
   const mm = createAccessContext({ hrId: "A-9", role: "Marketing Manager" });
@@ -45,9 +47,7 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(await canAccess(mm, "report_it", "create"), true);
   assert.equal(await canAccess(mm, "support_requests", "create"), true, "MM can raise support requests");
 
-  // ── Matrix honesty: denied (boundary-stripped or never granted) ─────────────────────────────
-  // These were previously DECLARED in the matrix but silently stripped by the hard boundary; the
-  // declarations are now removed so the matrix reads as the true effective access. Behaviour pinned:
+  // ── HR authority stays DENIED (hard boundary holds, even for the executive role) ─────────────
   assert.equal(await canAccess(mm, "support_requests", "read"), false, "MM is a sender, not HR support staff");
   assert.equal(await canAccess(mm, "employees", "read"), false, "MM holds no employee-directory authority");
   assert.equal(await canAccess(mm, "employee_documents", "read"), false);
@@ -55,19 +55,48 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(await canAccess(mm, "recruitment", "read"), false);
   assert.equal(await canAccess(mm, "recruitment", "update"), false);
   assert.equal(await canAccess(mm, "candidates", "read"), false);
-  // No field-management tools (deliberately narrow — marketing + commercial only):
-  assert.equal(await canAccess(mm, "coaching", "read"), false, "MM is not a field coach role");
-  assert.equal(await canAccess(mm, "double_visit_analytics", "read"), false);
-  assert.equal(await canAccess(mm, "team", "read"), false);
-  // Org-management visibility granted so MM sees Team Operations workspace items:
-  assert.equal(await canAccess(mm, "organogram", "read"), true, "MM now has organogram read");
-  assert.equal(await canAccess(mm, "probation", "read"), true, "MM now has probation read");
-  assert.equal(await canAccess(mm, "vacancies", "read"), true, "MM now has vacancies read");
+
+  // ── Executive READ oversight: mirrors PM/GPM/TM report data (company-wide, VIEW-only) ────────
+  assert.equal(await canAccess(mm, "coaching", "read"), true, "MM has company-wide coaching VIEW");
+  assert.equal(await canAccess(mm, "coaching", "create"), false, "MM coaching is read-only (no write)");
+  assert.equal(await canAccess(mm, "coaching", "update"), false, "MM coaching is read-only (no write)");
+  assert.equal(await canAccess(mm, "double_visit_analytics", "read"), true, "MM reads double-visit analytics");
+  assert.equal(await canAccess(mm, "double_visit_analytics", "export"), true);
+  assert.equal(await canAccess(mm, "team", "read"), true, "MM has team read");
+  assert.equal(await canAccess(mm, "organogram", "read"), true, "MM has organogram read");
+  assert.equal(await canAccess(mm, "probation", "read"), true, "MM has probation read");
+  assert.equal(await canAccess(mm, "vacancies", "read"), true, "MM has vacancies read");
 
   // ── Per-domain scope: commercial = COMPANY, financial/HR = SELF ─────────────────────────────
   assert.equal(getSalesScope(mm), "COMPANY", "MM sees company-wide monthly sales + ROI dashboard");
   assert.equal(getPayrollScope(mm), "SELF", "MM payroll/payslips stay self-scoped (intentional)");
   assert.equal(getExpensesScope(mm), "SELF", "MM expenses stay self-scoped (intentional)");
+
+  // ── New report scope is COMPANY-WIDE (executive), source-pinned so refactors can't regress ───
+  const coachingService = source("src/lib/coaching/service.ts");
+  assert.match(
+    coachingService,
+    /coachingOversightRoles = new Set<[^>]*>\(\[[\s\S]{0,160}"Marketing Manager"/,
+    "coachingOversightRoles must include Marketing Manager (company-wide coaching VIEW)",
+  );
+  const probationService = source("src/lib/probation/service.ts");
+  assert.match(
+    probationService,
+    /canViewAllProbation[\s\S]{0,260}access\.role === "Marketing Manager"/,
+    "canViewAllProbation must admit Marketing Manager (company-wide probation VIEW)",
+  );
+  const organogramService = source("src/lib/reports/organogram.ts");
+  assert.match(
+    organogramService,
+    /canAccessCompanyOrganogram[\s\S]{0,600}access\.role === "Marketing Manager"/,
+    "canAccessCompanyOrganogram must admit Marketing Manager (company-wide organogram + vacancies)",
+  );
+  const doubleVisitService = source("src/lib/double-visit-analytics/service.ts");
+  assert.match(
+    doubleVisitService,
+    /resolveDoubleVisitAccessScope[\s\S]{0,600}access\.role === "Marketing Manager"/,
+    "resolveDoubleVisitAccessScope must admit Marketing Manager (company-wide double-visit VIEW)",
+  );
 
   // ── Navigation / landing ────────────────────────────────────────────────────────────────────
   assert.equal(resolveNavigationMode(mm), "admin", "MM is an admin-shell account, never the portal");
