@@ -1,3 +1,5 @@
+"use client";
+
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 
