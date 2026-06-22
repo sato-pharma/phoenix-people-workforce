@@ -1,35 +1,32 @@
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
   BarChart3,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   HeartPulse,
-  Layers,
   Megaphone,
-  TrendingDown,
-  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
+import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
+import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { getCeoSalesDeferred } from "@/lib/ceo/command-center";
 import type {
   CeoAttentionTone,
   CeoCommandCenterData,
-  CeoTopMover,
 } from "@/lib/ceo/command-center";
 
 export type CeoWelcomeProfile = {
   fullName: string;
   roleLabel: string;
   hrId: string | null;
+  imageUrl?: string | null;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -49,10 +46,6 @@ function pct(value: number, decimals = 0) {
   return `${(Number.isFinite(value) ? value : 0).toFixed(decimals)}%`;
 }
 
-function firstNameFrom(full: string) {
-  return (full || "").trim().split(/\s+/)[0] || "there";
-}
-
 // ── Attention tone mapping ────────────────────────────────────────────────────
 
 const toneStyles: Record<CeoAttentionTone, { border: string; badge: string; text: string; label: string }> = {
@@ -61,52 +54,9 @@ const toneStyles: Record<CeoAttentionTone, { border: string; badge: string; text
   blue:  { border: "border-l-blue-400",   badge: "bg-blue-400 text-white",    text: "text-blue-700",   label: "INFO"    },
 };
 
-// ── HealthGauge ───────────────────────────────────────────────────────────────
-
-function HealthGauge({ score }: { score: number }) {
-  const clamped = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
-  const dash = (clamped / 100) * circumference;
-  const color = clamped >= 75 ? "#10B981" : clamped >= 50 ? "#F59E0B" : "#F43F5E";
-  const label = clamped >= 75 ? "Strong" : clamped >= 50 ? "Moderate" : "Needs attention";
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative flex h-[144px] w-[144px] items-center justify-center">
-        <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
-          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="14" />
-          <circle
-            cx="70" cy="70" r={radius}
-            fill="none" stroke={color} strokeWidth="14"
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${circumference - dash}`}
-          />
-        </svg>
-        <div className="absolute flex flex-col items-center leading-none">
-          <span className="text-[42px] font-black tracking-tight text-white">{Math.round(clamped)}</span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-slate-400">/ 100</span>
-        </div>
-      </div>
-      <span className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color }}>{label}</span>
-    </div>
-  );
-}
-
-// ── Hero metric tile (dark glass) ─────────────────────────────────────────────
-
-function HeroMetricTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="flex min-w-[120px] flex-col gap-0.5 border border-white/10 bg-white/[0.06] px-4 py-3 backdrop-blur">
-      <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</span>
-      <span className="text-xl font-black tracking-tight text-white">{value}</span>
-      {sub ? <span className="text-[10px] text-slate-400">{sub}</span> : null}
-    </div>
-  );
-}
-
 // ── Area sparkline ────────────────────────────────────────────────────────────
 
-function AreaSparkline({
+export function AreaSparkline({
   points,
   stroke = "#F97316",
   gradId,
@@ -157,46 +107,9 @@ function AreaSparkline({
   );
 }
 
-// ── Ranked mover list ─────────────────────────────────────────────────────────
-
-function RankedMoverList({
-  movers,
-  empty,
-  format,
-}: {
-  movers: CeoTopMover[];
-  empty: string;
-  format?: (v: number) => string;
-}) {
-  if (!movers.length) return <p className="text-xs text-slate-400">{empty}</p>;
-  const fmt = format ?? egp;
-  const top = movers[0]?.value || 1;
-  return (
-    <ul className="space-y-2.5">
-      {movers.map((mover, i) => (
-        <li key={mover.label} className="flex items-center gap-2.5">
-          <span className="w-5 shrink-0 text-center text-[10px] font-black text-slate-300">#{i + 1}</span>
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate text-[11px] font-semibold text-slate-700">{mover.label}</span>
-              <span className="shrink-0 text-[11px] font-black text-slate-900">{fmt(mover.value)}</span>
-            </div>
-            <div className="h-1 w-full bg-slate-100">
-              <div
-                className="h-full bg-gradient-to-r from-orange-500 to-amber-400"
-                style={{ width: `${Math.max(4, (mover.value / top) * 100)}%` }}
-              />
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 // ── Two-series bar chart ──────────────────────────────────────────────────────
 
-function TwoSeriesBars({
+export function TwoSeriesBars({
   data,
   colorA,
   colorB,
@@ -230,7 +143,7 @@ function TwoSeriesBars({
 
 // ── Section shell ─────────────────────────────────────────────────────────────
 
-function SectionShell({
+export function SectionShell({
   title,
   description,
   children,
@@ -290,137 +203,37 @@ function PerfCard({
   );
 }
 
-// ── Skeleton for deferred cards ───────────────────────────────────────────────
+// ── Quick-link card (instant — no data fetch) ─────────────────────────────────
 
-function PerfCardSkeleton({ title }: { title: string }) {
+function QuickLinkCard({
+  title,
+  icon,
+  headline,
+  sub,
+  href,
+}: {
+  title: string;
+  icon: ReactNode;
+  headline: string;
+  sub: string;
+  href: string;
+}) {
   return (
-    <div className="flex flex-col border border-slate-200 bg-white">
+    <Link href={href} className="group flex flex-col border border-slate-200 bg-white hover:border-orange-300">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+        <span className="text-orange-400">{icon}</span>
         <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">{title}</span>
       </div>
-      <div className="border-b border-slate-100 px-4 py-4">
-        <div className="h-8 w-36 animate-pulse bg-slate-100" />
-        <div className="mt-2 h-3 w-24 animate-pulse bg-slate-100" />
-      </div>
-      <div className="flex-1 space-y-3 px-4 py-4">
-        <div className="h-16 w-full animate-pulse bg-slate-100" />
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-3 w-full animate-pulse bg-slate-100" style={{ opacity: 1 - i * 0.2 }} />
-          ))}
+      <div className="flex flex-1 flex-col items-start justify-between gap-6 px-4 py-5">
+        <div>
+          <p className="text-[28px] font-black leading-none tracking-tight text-slate-900">Open →</p>
+          <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{headline}</p>
+        </div>
+        <div className="border border-slate-200 px-3 py-2 text-xs text-slate-500 group-hover:border-orange-300 group-hover:text-orange-700">
+          {sub}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Deferred sales cards ──────────────────────────────────────────────────────
-
-async function DeferredSalesCards({ access }: { access: AccessContext }) {
-  const { weekly, marketing } = await getCeoSalesDeferred(access);
-  return (
-    <>
-      {/* Weekly Sales */}
-      <PerfCard
-        title="Weekly Sales"
-        icon={<Activity className="h-3.5 w-3.5" />}
-        headline={weekly ? egp(weekly.salesValue) : "—"}
-        headlineSub={weekly?.weekStart ? `Week of ${weekly.weekStart}` : "This week"}
-        badge={
-          weekly && !weekly.wowPriorMissing && weekly.wowPct !== null ? (
-            <span
-              className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[10px] font-black ${
-                weekly.wowPct >= 0
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "border-rose-300 bg-rose-50 text-rose-700"
-              }`}
-            >
-              {weekly.wowPct >= 0 ? (
-                <TrendingUp aria-hidden="true" className="h-3 w-3" />
-              ) : (
-                <TrendingDown aria-hidden="true" className="h-3 w-3" />
-              )}
-              {pct(Math.abs(weekly.wowPct), 1)} WoW
-            </span>
-          ) : null
-        }
-      >
-        <div className="space-y-4">
-          <AreaSparkline
-            points={(weekly?.trend ?? []).map((p) => ({ label: p.label, value: p.value }))}
-            stroke="#F97316"
-            gradId="weekly-grad"
-          />
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
-            <RankedMoverList movers={weekly?.topRegions ?? []} empty="No weekly data yet." />
-          </div>
-        </div>
-      </PerfCard>
-
-      {/* Marketing ROI */}
-      <PerfCard
-        title="Marketing ROI"
-        icon={<Megaphone className="h-3.5 w-3.5" />}
-        headline={marketing ? pct(marketing.roiCoverage * 100, 0) : "—"}
-        headlineSub="ROI coverage rate"
-        badge={
-          marketing && marketing.actionRequired > 0 ? (
-            <span className="inline-flex items-center gap-1 border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700">
-              {n(marketing.actionRequired)} require action
-            </span>
-          ) : null
-        }
-      >
-        {marketing ? (
-          <div className="space-y-3">
-            {/* ROI progress bar */}
-            <div>
-              <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                <span>Coverage</span>
-                <span className="font-bold">{pct(marketing.roiCoverage * 100, 1)}</span>
-              </div>
-              <div className="h-2 w-full bg-slate-100">
-                <div
-                  className="h-full bg-gradient-to-r from-orange-500 to-amber-400"
-                  style={{ width: `${Math.min(100, marketing.roiCoverage * 100)}%` }}
-                />
-              </div>
-            </div>
-            {/* Key stats grid */}
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "Requests", value: n(marketing.requestCount) },
-                { label: "Paid", value: n(marketing.paidRequests) },
-                { label: "Total spend", value: egp(marketing.totalCost) },
-                { label: "Attributed", value: egp(marketing.attributedSalesValue) },
-              ].map(({ label, value }) => (
-                <div key={label} className="border border-slate-100 bg-slate-50 px-2.5 py-2">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                  <p className="text-sm font-black text-slate-900">{value}</p>
-                </div>
-              ))}
-            </div>
-            {/* Spend at risk */}
-            {marketing.spendAtRisk > 0 ? (
-              <div className="border border-rose-200 bg-rose-50 px-3 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-rose-500">Spend at risk</p>
-                <p className="text-base font-black text-rose-700">{egp(marketing.spendAtRisk)}</p>
-              </div>
-            ) : null}
-            {marketing.topRisk ? (
-              <p className="text-[10px] text-slate-500">
-                Top risk:{" "}
-                <span className="font-semibold text-slate-700">{marketing.topRisk.customer}</span>{" "}
-                <span className="text-slate-400">({marketing.topRisk.code})</span>
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400">Marketing ROI is unavailable right now.</p>
-        )}
-      </PerfCard>
-    </>
+    </Link>
   );
 }
 
@@ -428,93 +241,37 @@ async function DeferredSalesCards({ access }: { access: AccessContext }) {
 
 export function CeoCommandCenter({
   data,
-  welcome,
+  welcome: _welcome,
   access,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
 }) {
-  const { health, headcount, payroll, attention, approvals, sos, trends } = data;
+  const { attention, approvals, sos } = data;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(data.generatedAt));
 
   const totalApprovals = approvals.leavePending + approvals.plansPending;
-  const totalAttention = attention.length + (totalApprovals > 0 ? 1 : 0);
   const allClear = attention.length === 0 && totalApprovals === 0;
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      {/* ── Hero ────────────────────────────────────────────────────────────── */}
       <AdminHeroFrame>
-        <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
-          {/* Left: identity + context chips */}
-          <div className="min-w-0 space-y-4">
-            <div className="inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
-              <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-              CEO Command Center
-            </div>
-            <div>
-              <h1 className="text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl lg:text-[44px]">
-                {firstNameFrom(welcome.fullName)}, here&rsquo;s your company.
-              </h1>
-              <p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">
-                Company-wide health, what needs your decision, and full sales performance — confidential products included.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[10px]">
-              <span className="inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">
-                <Layers aria-hidden="true" className="h-3 w-3" />
-                {n(headcount.uniqueLines)} product lines · {n(headcount.uniqueAreas)} areas
-              </span>
-              <span className="inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">
-                <Activity aria-hidden="true" className="h-3 w-3" />
-                {generatedLabel}
-              </span>
-              {totalAttention > 0 ? (
-                <span className="inline-flex items-center gap-1.5 border border-rose-400/40 bg-rose-500/15 px-3 py-1 text-rose-100">
-                  <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-                  {totalAttention} item{totalAttention !== 1 ? "s" : ""} need your attention
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
-                  <CheckCircle2 aria-hidden="true" className="h-3 w-3" />
-                  All clear
-                </span>
-              )}
-              {data.dataUnavailable.length > 0 ? (
-                <span className="inline-flex items-center gap-1.5 border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-amber-100">
-                  <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-                  {data.dataUnavailable.length} source{data.dataUnavailable.length !== 1 ? "s" : ""} unavailable
-                </span>
-              ) : null}
-            </div>
+        <div className="p-5 sm:p-6 lg:p-8">
+          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
+            <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
+            CEO Command Center
           </div>
-
-          {/* Right: Health gauge + 3 quick KPI tiles */}
-          <div className="flex flex-col items-center gap-4 lg:items-end">
-            <HealthGauge score={health.score} />
-            <div className="flex gap-2">
-              <HeroMetricTile
-                label="Active staff"
-                value={n(headcount.active)}
-                sub={headcount.vacancies ? `${n(headcount.vacancies)} vacancies` : undefined}
-              />
-              <HeroMetricTile
-                label="Net payroll"
-                value={payroll.available ? egp(payroll.net) : "—"}
-                sub={payroll.available ? payroll.batchLabel : "Restricted"}
-              />
-              <HeroMetricTile
-                label="Monthly SoS"
-                value={sos ? egp(sos.totalValue) : "—"}
-                sub={sos?.period ?? "No data"}
-              />
-            </div>
-          </div>
+          <CeoHeroIdentity
+            fullName={_welcome.fullName}
+            roleLabel={_welcome.roleLabel}
+            imageUrl={_welcome.imageUrl}
+          />
         </div>
       </AdminHeroFrame>
 
@@ -618,7 +375,7 @@ export function CeoCommandCenter({
       {/* ── Sales performance ─────────────────────────────────────────────── */}
       <SectionShell
         title="Sales & marketing performance"
-        description="Source of Sales (monthly), Weekly Sales, and Marketing ROI — confidential products included."
+        description="Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
       >
         <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
           {/* SoS — immediate */}
@@ -629,125 +386,49 @@ export function CeoCommandCenter({
             headlineSub={sos?.period ? `Monthly · ${sos.period}` : "Monthly"}
             badge={sos ? <span className="text-[10px] text-slate-400">{n(sos.totalQty)} units</span> : null}
           >
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
-                <RankedMoverList movers={sos?.topLines ?? []} empty="No monthly sales loaded yet." />
+                <CeoTopMoversTable
+                  movers={sos?.topLines ?? []}
+                  title="SoS Top Lines"
+                  exportTitle="Source of Sales — Top Lines"
+                  subtitle={sos?.period ?? undefined}
+                  labelHeader="Product Line"
+                  empty="No monthly sales loaded yet."
+                />
               </div>
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
-                <RankedMoverList movers={sos?.topRegions ?? []} empty="—" />
+                <CeoTopMoversTable
+                  movers={sos?.topRegions ?? []}
+                  title="SoS Top Regions"
+                  exportTitle="Source of Sales — Top Regions"
+                  subtitle={sos?.period ?? undefined}
+                  labelHeader="Region"
+                  empty="No regional sales data yet."
+                />
               </div>
             </div>
           </PerfCard>
 
-          {/* Weekly + Marketing — deferred */}
-          <Suspense
-            fallback={
-              <>
-                <PerfCardSkeleton title="Weekly Sales" />
-                <PerfCardSkeleton title="Marketing ROI" />
-              </>
-            }
-          >
-            <DeferredSalesCards access={access} />
-          </Suspense>
-        </div>
-      </SectionShell>
+          {/* Weekly Sales — instant link card */}
+          <QuickLinkCard
+            title="Weekly Sales"
+            icon={<Activity className="h-3.5 w-3.5" />}
+            headline="7-week trend + region breakdown"
+            sub="Click to open Weekly Sales"
+            href="/sales/weekly"
+          />
 
-      {/* ── Company health breakdown ──────────────────────────────────────── */}
-      <SectionShell
-        title="Company health breakdown"
-        description="Weighted signal across sales achievement, attendance, employee linkage, and data coverage."
-      >
-        <div className="grid divide-x divide-slate-200 sm:grid-cols-4">
-          {[
-            { label: "Sales achievement", value: health.salesAchievementRate, target: 0.9, color: "#F97316" },
-            { label: "Attendance readiness", value: health.attendanceReadinessRate, target: 1, color: "#3B82F6" },
-            { label: "Employee linkage", value: health.employeeHealthRate, target: 1, color: "#10B981" },
-            { label: "Sales linkage rate", value: health.salesLinkageRate, target: 1, color: "#8B5CF6" },
-          ].map(({ label, value, target, color }) => {
-            const pctVal = Math.round(Math.min(1, value / target) * 100);
-            const statusColor = pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
-            return (
-              <div key={label} className="flex flex-col gap-3 px-5 py-5">
-                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-                <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
-                  {pctVal}%
-                </p>
-                <div className="h-1.5 w-full bg-slate-100">
-                  <div
-                    className="h-full transition-all"
-                    style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionShell>
-
-      {/* ── Trends ────────────────────────────────────────────────────────── */}
-      <SectionShell
-        title="Trends"
-        description="Sales value, people cost, and headcount movement over recent periods."
-      >
-        <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
-          {/* Sales trend */}
-          <div className="px-5 py-5">
-            <div className="mb-1 flex items-baseline justify-between">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Monthly Sales</p>
-              {trends.sales.length > 0 ? (
-                <p className="text-xs font-bold text-slate-900">
-                  {egp(trends.sales[trends.sales.length - 1]?.sales ?? 0)}
-                </p>
-              ) : null}
-            </div>
-            <AreaSparkline
-              points={trends.sales.map((p) => ({ label: p.label, value: p.sales }))}
-              stroke="#F97316"
-              gradId="trend-sales-grad"
-            />
-            <p className="mt-2 text-[9px] text-slate-400">Latest {trends.sales.length} periods</p>
-          </div>
-
-          {/* People cost trend */}
-          <div className="px-5 py-5">
-            <div className="mb-1 flex items-baseline justify-between">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
-              {trends.financial.length > 0 ? (
-                <p className="text-xs font-bold text-slate-900">
-                  {egp(trends.financial[trends.financial.length - 1]?.cost ?? 0)}
-                </p>
-              ) : null}
-            </div>
-            <AreaSparkline
-              points={trends.financial.map((p) => ({ label: p.label, value: p.cost }))}
-              stroke="#8B5CF6"
-              gradId="trend-cost-grad"
-            />
-            <p className="mt-2 text-[9px] text-slate-400">Latest {trends.financial.length} periods</p>
-          </div>
-
-          {/* Hires vs exits */}
-          <div className="px-5 py-5">
-            <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">
-              Headcount movement
-            </p>
-            <TwoSeriesBars
-              data={trends.hireExit.map((p) => ({ label: p.label, a: p.hires, b: p.exits }))}
-              colorA="#10B981"
-              colorB="#F43F5E"
-            />
-            <div className="mt-2 flex items-center gap-4 text-[9px] text-slate-400">
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 bg-emerald-500" /> Hires
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 bg-rose-500" /> Exits
-              </span>
-            </div>
-          </div>
+          {/* Marketing ROI — instant link card */}
+          <QuickLinkCard
+            title="Marketing ROI"
+            icon={<Megaphone className="h-3.5 w-3.5" />}
+            headline="Coverage, spend at risk, top risk accounts"
+            sub="Click to open ROI Tracking"
+            href="/admin/marketing-requests/roi-tracking"
+          />
         </div>
       </SectionShell>
 

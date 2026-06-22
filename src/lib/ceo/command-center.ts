@@ -1,32 +1,29 @@
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
-import { getAdminCommandCenterData } from "@/lib/admin/command-center";
-import { createAccessContext, type AccessContext } from "@/lib/auth/permissions";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { getOverviewDashboard } from "@/lib/overview/service";
-import { getProbationRows } from "@/lib/probation/service";
-import { getVacancyReport } from "@/lib/reports/vacancies";
+import { type AccessContext } from "@/lib/auth/permissions";
+import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
+import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
+import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
-import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
-import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import {
   getSalesMarketingDashboardSnapshot,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
-import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * Bespoke executive data layer for the CEO Command Center, split for streaming.
  *
- * `getCeoCommandCenterData` is the FAST executive summary (health, headcount, payroll,
- * attention, approvals, Source of Sales, trends) — every source resolves in a few
- * seconds. `getCeoSalesDeferred` carries the two heavy aggregators (Weekly Sales and
- * Marketing ROI, ~15s each against prod) so the page can render the summary immediately
- * and stream those cards in behind a Suspense boundary instead of blocking ~16s on them.
+ * `getCeoCommandCenterData` is the FAST executive summary — lean queries only,
+ * renders the hero + SoS card + partial attention queue in ~1-2s. Heavy admin
+ * aggregators (getAdminCommandCenterData, getOverviewDashboard) have been moved to
+ * `getCeoLandingDeferred` so they no longer block first paint.
  *
- * Both run their sources via allSettled so one slow/failing domain degrades to a
- * labelled "unavailable" rather than blanking the page. CEO/Super Admin see confidential
- * products (LA003/LA004/SS001) across Sales — the page is gated to them.
+ * `getCeoLandingDeferred` (Phase B) carries everything else: health breakdown, trends,
+ * risk signals, double-visit, expense, attendance, ROI signal, and monthly SoS tables.
+ *
+ * All sources run via allSettled so one slow/failing domain degrades to "unavailable".
  */
 
 export type CeoTopMover = { label: string; value: number };
@@ -43,17 +40,17 @@ export type CeoCommandCenterData = {
   generatedAt: string;
   dataUnavailable: string[];
   health: {
-    score: number; // 0..100
-    employeeHealthRate: number; // 0..1
-    salesLinkageRate: number; // 0..1
-    attendanceReadinessRate: number; // 0..1
-    salesAchievementRate: number; // 0..1
+    score: number;
+    employeeHealthRate: number;
+    salesLinkageRate: number;
+    attendanceReadinessRate: number;
+    salesAchievementRate: number;
   };
   headcount: {
     active: number;
     total: number;
     vacancies: number;
-    attritionRate30d: number; // percentage
+    attritionRate30d: number;
     uniqueLines: number;
     uniqueAreas: number;
   };
@@ -73,6 +70,8 @@ export type CeoCommandCenterData = {
     totalQty: number;
     topLines: CeoTopMover[];
     topRegions: CeoTopMover[];
+    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
+    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
   } | null;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
@@ -81,34 +80,6 @@ export type CeoCommandCenterData = {
   };
 };
 
-export type CeoSalesDeferredData = {
-  dataUnavailable: string[];
-  weekly: {
-    weekStart: string | null;
-    salesValue: number;
-    salesUnits: number;
-    wowPct: number | null;
-    wowPriorMissing: boolean;
-    trend: CeoTopMover[];
-    topRegions: CeoTopMover[];
-  } | null;
-  marketing: {
-    totalCost: number;
-    attributedSalesValue: number;
-    roiCoverage: number; // 0..1 fraction
-    actionRequired: number;
-    spendAtRisk: number;
-    requestCount: number;
-    paidRequests: number;
-    behindRequests: number;
-    topRisk: { customer: string; code: string; action: string } | null;
-  } | null;
-};
-
-function clamp01(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
-}
 
 function topMoversFromSos(
   groups: Array<{ label: string; totalValue: number }> | undefined,
@@ -119,114 +90,108 @@ function topMoversFromSos(
     .map((group) => ({ label: group.label, value: group.totalValue }));
 }
 
+// ── Lean CEO-specific data helpers ───────────────────────────────────────────
+// These are fast targeted queries (no full employee directory, no payroll loops).
+
+async function getCeoHeadcountData() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("employment_status, line_name, area_name, manager_hr_id");
+  if (error || !data) return null;
+  const active = data.filter((e) =>
+    ["active", "on_leave"].includes(String(e.employment_status ?? "").toLowerCase()),
+  );
+  return {
+    activeCount: active.length,
+    uniqueLines: new Set(active.map((e) => e.line_name).filter(Boolean)).size,
+    uniqueAreas: new Set(active.map((e) => e.area_name).filter(Boolean)).size,
+    withManagerCount: active.filter((e) => e.manager_hr_id).length,
+  };
+}
+
+async function getCeoOpenVacancyCount(): Promise<number> {
+  const { count, error } = await getSupabaseAdmin()
+    .from("position_vacancies")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "open");
+  return error ? 0 : (count ?? 0);
+}
+
+async function getCeoProbationCounts(): Promise<{ overdue: number; dueSoon: number }> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_evaluations")
+    .select("decision, probation_end_date")
+    .not("decision", "in", "(pass,terminate)");
+  if (error || !data) return { overdue: 0, dueSoon: 0 };
+  const now = Date.now();
+  const MS_PER_DAY = 86_400_000;
+  let overdue = 0;
+  let dueSoon = 0;
+  for (const row of data) {
+    if (!row.probation_end_date) continue;
+    const daysRemaining = Math.floor((new Date(row.probation_end_date).getTime() - now) / MS_PER_DAY);
+    if (daysRemaining < 0) overdue++;
+    else if (daysRemaining <= 30) dueSoon++;
+  }
+  return { overdue, dueSoon };
+}
+
+async function getCeoPendingPlansCount(): Promise<number> {
+  const { count, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "manager_approved");
+  return error ? 0 : (count ?? 0);
+}
+
+// ── Fast path: main CEO data (hero + SoS + lean attention) ──────────────────
+
 export async function getCeoCommandCenterData(access: AccessContext): Promise<CeoCommandCenterData> {
   const dataUnavailable: string[] = [];
   const canRestricted = canViewRestrictedProducts(access.role);
 
-  // The CEO command center is gated to CEO + Super Admin and shows COMPANY-WIDE
-  // executive figures. Headcount / vacancies / probation must NOT be narrowed by the
-  // CEO's self-only employee-row visibility — that restriction protects the salary-bearing
-  // employee master, not aggregate counts (same reason the organogram is unfiltered for the
-  // CEO). So pull people/org figures from company-wide sources: the unfiltered directory
-  // rows + vacancy report, and probation via an elevated read.
-  const companyView = createAccessContext({ hrId: access.hrId, role: "Super Admin" });
+  const [sosR, leaveR, headcountR, openVacancyR, probationCountsR, pendingPlansR] =
+    await Promise.allSettled([
+      loadSourceOfSalesDashboard(null, canRestricted),
+      getAwaitingMyActionItems(access, "admin"),
+      getCeoHeadcountData(),
+      getCeoOpenVacancyCount(),
+      getCeoProbationCounts(),
+      getCeoPendingPlansCount(),
+    ]);
 
-  const [adminR, overviewR, sosR, leaveR, plansR, probationR, directoryR, vacancyR] = await Promise.allSettled([
-    getAdminCommandCenterData(access),
-    getOverviewDashboard(access),
-    loadSourceOfSalesDashboard(null, canRestricted),
-    getAwaitingMyActionItems(access, "admin"),
-    getEmployeePlansWorkspace(access),
-    getProbationRows(companyView),
-    getEmployeeDirectoryRows(),
-    getVacancyReport(),
-  ]);
-
-  const admin = adminR.status === "fulfilled" ? adminR.value : null;
-  if (!admin) dataUnavailable.push("Executive signals");
-  const overview = overviewR.status === "fulfilled" ? overviewR.value : null;
-  if (!overview) dataUnavailable.push("Overview trends");
   const sos = sosR.status === "fulfilled" ? sosR.value : null;
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
   const leaveItems = leaveR.status === "fulfilled" ? leaveR.value : null;
   if (!leaveItems) dataUnavailable.push("Pending leave approvals");
-  const plans = plansR.status === "fulfilled" ? plansR.value : null;
-  if (!plans) dataUnavailable.push("Pending plan approvals");
-  const probationRows = probationR.status === "fulfilled" ? probationR.value : null;
-  if (!probationRows) dataUnavailable.push("Probation");
-  const directoryRows = directoryR.status === "fulfilled" ? directoryR.value : null;
-  if (!directoryRows) dataUnavailable.push("Headcount");
-  const vacancyReport = vacancyR.status === "fulfilled" ? vacancyR.value : null;
-  if (!vacancyReport) dataUnavailable.push("Vacancies");
-  if (admin?.dataUnavailable?.length) dataUnavailable.push(...admin.dataUnavailable);
+  const headcount = headcountR.status === "fulfilled" ? headcountR.value : null;
+  if (!headcount) dataUnavailable.push("Headcount");
+  const openVacancies = openVacancyR.status === "fulfilled" ? openVacancyR.value : 0;
+  const probationCounts = probationCountsR.status === "fulfilled" ? probationCountsR.value : { overdue: 0, dueSoon: 0 };
+  const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : 0;
 
-  // Company-wide headcount + structure from the unfiltered directory (not access-scoped).
-  const activeStaff = (directoryRows ?? []).filter((row) =>
-    ["active", "on_leave"].includes(String(row.employmentStatus ?? "active").toLowerCase()),
-  );
-  const activeHeadcount = activeStaff.length;
-  const openVacancies = vacancyReport?.summary.openVacancies ?? 0;
-  const uniqueLines = new Set(activeStaff.map((row) => row.lineName).filter(Boolean)).size;
-  const uniqueAreas = new Set(activeStaff.map((row) => row.areaName).filter(Boolean)).size;
-  // Company "health" proxy (admin.health.employeeHealthRate is CEO-self-only → bogus 100%).
-  const companyEmployeeHealthRate = activeHeadcount
-    ? activeStaff.filter((row) => row.managerHrId).length / activeHeadcount
-    : 0;
+  const activeHeadcount = headcount?.activeCount ?? 0;
+  const uniqueLines = headcount?.uniqueLines ?? 0;
+  const uniqueAreas = headcount?.uniqueAreas ?? 0;
+  const companyEmployeeHealthRate = activeHeadcount ? (headcount?.withManagerCount ?? 0) / activeHeadcount : 0;
+  const probationOverdue = probationCounts.overdue;
+  const probationDueSoon = probationCounts.dueSoon;
 
-  const exec = admin?.overview.executive;
-  const risk = admin?.overview.risk;
-  // Probation, computed from the real rows (the platform's default risk metric only
-  // counts the next 0–15 days and drops past-due cases — surface overdue + due-30d here).
-  const openProbation = (probationRows ?? []).filter(
-    (row) => row.workflow?.decision !== "pass" && row.workflow?.decision !== "terminate",
-  );
-  const probationOverdue = openProbation.filter(
-    (row) => typeof row.days_remaining === "number" && row.days_remaining < 0,
-  ).length;
-  const probationDueSoon = openProbation.filter(
-    (row) => typeof row.days_remaining === "number" && row.days_remaining >= 0 && row.days_remaining <= 30,
-  ).length;
+  // Health score is computed in Phase B with accurate rates; fast path uses 0 defaults.
+  const score = 0;
 
-  // ── Company health score (transparent weighted blend of real rates) ──────────
-  const employeeHealthRate = companyEmployeeHealthRate;
-  const salesLinkageRate = admin?.health.salesLinkageRate ?? 0;
-  const attendanceReadinessRate = admin?.health.attendanceReadinessRate ?? 0;
-  const salesAchievementRate = overview?.sales.achievementRate ?? admin?.overview.sales.achievementRate ?? 0;
-  const score = Math.round(
-    (clamp01(salesAchievementRate / 0.9) * 0.3 +
-      clamp01(attendanceReadinessRate) * 0.2 +
-      clamp01(employeeHealthRate) * 0.25 +
-      clamp01(salesLinkageRate) * 0.15 +
-      clamp01(1 - Math.min(1, dataUnavailable.length * 0.08)) * 0.1) *
-      100,
-  );
-
-  // ── Attention queue (only surfaces items that actually need the CEO's eye) ────
+  // Fast attention queue — only lean items (probation + leave).
+  // Phase B adds the fuller risk signals (resignations, contracts, coaching, flags).
   const attention: CeoAttentionItem[] = [];
-  if (risk?.expiringContracts) {
-    attention.push({ key: "contracts", label: "Contracts expiring soon", count: risk.expiringContracts, href: "/contracts", tone: "blue" });
-  }
   if (probationOverdue) {
     attention.push({ key: "probationOverdue", label: "Probation decisions overdue", count: probationOverdue, href: "/probation", tone: "rose" });
   }
   if (probationDueSoon) {
     attention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationDueSoon, href: "/probation", tone: "amber" });
   }
-  if (exec?.pendingResignations) {
-    attention.push({ key: "resignations", label: "Pending resignations", count: exec.pendingResignations, href: "/resignations", tone: "rose" });
-  }
-  if (exec?.overdueLeaveSla) {
-    attention.push({ key: "leaveSla", label: "Overdue leave approvals", count: exec.overdueLeaveSla, href: "/admin/action-center", tone: "rose" });
-  }
-  if (admin?.unresolvedSalaryFlags) {
-    attention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: admin.unresolvedSalaryFlags, href: "/payroll", tone: "rose" });
-  }
-  if (exec?.coachingRedZone) {
-    attention.push({ key: "coaching", label: "Coaching red-zone reps", count: exec.coachingRedZone, href: "/coaching", tone: "amber" });
-  }
 
   const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : 0;
-  const plansPending = plans?.summary.ceoPending ?? 0;
 
   const sosOut = sos
     ? {
@@ -235,94 +200,356 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         totalQty: sos.totals.totalQty,
         topLines: topMoversFromSos(sos.byLine),
         topRegions: topMoversFromSos(sos.byRegion),
+        byRegion: [...sos.byRegion].sort((a, b) => b.totalValue - a.totalValue).map((r) => ({
+          label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
+        })),
+        byProduct: [...(sos.byProduct ?? [])].sort((a, b) => b.totalValue - a.totalValue).map((p) => ({
+          label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
+        })),
       }
     : null;
 
   return {
-    generatedAt: admin?.generatedAt ?? new Date().toISOString(),
+    generatedAt: new Date().toISOString(),
     dataUnavailable: Array.from(new Set(dataUnavailable)),
+    // Health rates are 0 in fast path — Phase B renders accurate values
     health: {
       score,
-      employeeHealthRate,
-      salesLinkageRate,
-      attendanceReadinessRate,
-      salesAchievementRate,
+      employeeHealthRate: companyEmployeeHealthRate,
+      salesLinkageRate: 0,
+      attendanceReadinessRate: 0,
+      salesAchievementRate: 0,
     },
     headcount: {
       active: activeHeadcount,
       total: activeHeadcount,
       vacancies: openVacancies,
-      attritionRate30d: exec?.attritionRate30d ?? 0,
+      attritionRate30d: 0,
       uniqueLines,
       uniqueAreas,
     },
+    // Payroll rendered in Phase B; fast path carries zero defaults
     payroll: {
-      batchLabel: admin?.overview.payroll.batchLabel ?? "—",
-      gross: admin?.overview.payroll.gross ?? 0,
-      net: admin?.overview.payroll.net ?? 0,
-      flags: admin?.overview.payroll.flags ?? 0,
-      unresolvedSalaryFlags: admin?.unresolvedSalaryFlags ?? 0,
-      available: admin?.access.showFinancialModules ?? false,
+      batchLabel: "—",
+      gross: 0,
+      net: 0,
+      flags: 0,
+      unresolvedSalaryFlags: 0,
+      available: false,
     },
     attention,
     approvals: { leavePending, plansPending },
     sos: sosOut,
-    trends: {
-      sales: (overview?.sales.trend ?? []).map((point) => ({ label: point.period, sales: point.sales, target: point.target })),
-      financial: (overview?.financial.trend ?? []).map((point) => ({ label: point.month, revenue: point.revenue, cost: point.cost })),
-      hireExit: (overview?.hr.hireExitTrend ?? []).map((point) => ({ label: point.m, hires: point.h, exits: point.e })),
-    },
+    // Trends rendered in Phase B
+    trends: { sales: [], financial: [], hireExit: [] },
   };
 }
 
-/**
- * The two heavy Sales aggregators (Weekly Sales + Marketing ROI, ~15s each against prod),
- * loaded separately so the page streams them behind a Suspense boundary.
- */
-export async function getCeoSalesDeferred(access: AccessContext): Promise<CeoSalesDeferredData> {
+// ── Phase B: landing-page deferred data ──────────────────────────────────────
+// Loads heavy executive widgets behind a second Suspense boundary.
+// getAdminCommandCenterData + getOverviewDashboard have been REPLACED with
+// getCeoAdminSignals() — 6 lean COUNT queries that complete in <500ms each.
+
+const SIGNAL_MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+async function getCeoAdminSignals(): Promise<CeoAdminSignals> {
+  const supabase = getSupabaseAdmin();
+  const today = new Date().toISOString().slice(0, 10);
+  const in30Days = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+
+  const [resignationsR, leavePendingR, contractsActiveR, coachingR, flagsR, batchR] =
+    await Promise.allSettled([
+      supabase
+        .from("employee_resignations")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["submitted", "under_review"]),
+      supabase
+        .from("v2_vacation_requests")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["pending_manager", "pending_hr"]),
+      // Fetch active contracts expiring in 30 days — small result set, filter in-memory
+      supabase
+        .from("employee_contracts")
+        .select("contract_renewal_date")
+        .eq("status", "active")
+        .lte("contract_renewal_date", in30Days)
+        .gte("contract_renewal_date", today),
+      supabase
+        .from("coaching_reports_summary")
+        .select("id", { count: "exact", head: true })
+        .eq("performance_zone", "red"),
+      supabase
+        .from("salary_flags")
+        .select("id", { count: "exact", head: true }),
+      supabase
+        .from("salary_batches")
+        .select("month, year")
+        .in("status", ["approved", "locked", "part1_paid", "part2_ready"])
+        .order("year", { ascending: false })
+        .order("month", { ascending: false })
+        .limit(1),
+    ]);
+
+  const pendingResignations =
+    resignationsR.status === "fulfilled" ? (resignationsR.value.count ?? 0) : 0;
+  const overdueLeaveSla =
+    leavePendingR.status === "fulfilled" ? (leavePendingR.value.count ?? 0) : 0;
+  const expiringContracts =
+    contractsActiveR.status === "fulfilled"
+      ? (contractsActiveR.value.data?.length ?? 0)
+      : 0;
+  const coachingRedZone =
+    coachingR.status === "fulfilled" ? (coachingR.value.count ?? 0) : 0;
+  const unresolvedSalaryFlags =
+    flagsR.status === "fulfilled" ? (flagsR.value.count ?? 0) : 0;
+  const latestBatch =
+    batchR.status === "fulfilled" ? (batchR.value.data?.[0] ?? null) : null;
+
+  const signalAttention: CeoAttentionItem[] = [];
+  if (expiringContracts > 0) {
+    signalAttention.push({ key: "contracts", label: "Contracts expiring soon", count: expiringContracts, href: "/contracts", tone: "blue" });
+  }
+  if (pendingResignations > 0) {
+    signalAttention.push({ key: "resignations", label: "Pending resignations", count: pendingResignations, href: "/resignations", tone: "rose" });
+  }
+  if (overdueLeaveSla > 0) {
+    signalAttention.push({ key: "leaveSla", label: "Pending leave approvals", count: overdueLeaveSla, href: "/admin/action-center", tone: "rose" });
+  }
+  if (unresolvedSalaryFlags > 0) {
+    signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/payroll", tone: "rose" });
+  }
+  if (coachingRedZone > 0) {
+    signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: coachingRedZone, href: "/coaching", tone: "amber" });
+  }
+
+  const monthNum = latestBatch ? Number((latestBatch as { month: unknown }).month) : 0;
+  const batchLabel =
+    latestBatch && monthNum >= 1 && monthNum <= 12
+      ? `${SIGNAL_MONTH_LABELS[monthNum - 1]} ${(latestBatch as { year: unknown }).year}`
+      : "—";
+
+  return {
+    attention: signalAttention,
+    health: { salesLinkageRate: 0, attendanceReadinessRate: 0, salesAchievementRate: 0, employeeHealthRate: 0 },
+    trends: { sales: [], financial: [], hireExit: [] },
+    payroll: { batchLabel, gross: 0, net: 0, unresolvedSalaryFlags },
+  };
+}
+
+export type CeoDvManagerRow = {
+  managerHrId: string;
+  managerName: string;
+  role: string | null;
+  roleCode: string | null;
+  lineName: string | null;
+  distinctMrs: number;
+  overFocusedMrCount: number;
+  neglectedMrCount: number | null;
+  neglectIndex: number | null;
+  teamMrCount: number | null;
+  daysSinceLastDv: number | null;
+  coveragePct: number | null;
+};
+
+export type CeoRoiSignal = {
+  startedStrong: number;
+  startedWeak: number;
+  stillZero: number;
+  lastPeriod: string | null;
+  trend: Array<{ period: string; onTrack: number; behind: number; noData: number }>;
+};
+
+export type CeoAdminSignals = {
+  attention: CeoAttentionItem[];
+  health: {
+    salesLinkageRate: number;
+    attendanceReadinessRate: number;
+    salesAchievementRate: number;
+    employeeHealthRate: number;
+  };
+  trends: {
+    sales: Array<{ label: string; sales: number; target: number }>;
+    financial: Array<{ label: string; revenue: number; cost: number }>;
+    hireExit: Array<{ label: string; hires: number; exits: number }>;
+  };
+  payroll: {
+    batchLabel: string;
+    gross: number;
+    net: number;
+    unresolvedSalaryFlags: number;
+  };
+};
+
+export type CeoLandingDeferredData = {
+  dataUnavailable: string[];
+  doubleVisit: {
+    managerRows: CeoDvManagerRow[];
+    dateFrom: string;
+    dateTo: string;
+  } | null;
+  expense: {
+    totalAmount: number;
+    approvedPct: number;
+    highRiskCount: number | null;
+    windowLabel: string;
+    byRegion: Array<{ label: string; amount: number }>;
+    topSpenders: Array<{ label: string; amount: number }>;
+  } | null;
+  roiSignal: CeoRoiSignal | null;
+  attendance: {
+    todayIsWorkingDay: boolean;
+    todayAbsentees: Array<{ hrId: string; name: string; department: string }>;
+    weeklyTrend: Array<{ isoWeek: string; lateRate: number; absenceRate: number }>;
+    chronicLate: Array<{ hrId: string; name: string; lateDays: number; lateRate: number }>;
+  } | null;
+  managersOnLeave: Array<{ name: string; hrId: string; role: string }> | null;
+  adminSignals: CeoAdminSignals | null;
+};
+
+export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoLandingDeferredData> {
   const dataUnavailable: string[] = [];
 
-  const [weeklyR, marketingR] = await Promise.allSettled([
-    resolveWeeklyAccessScope(access).then((accessScope) => loadWeeklyDashboard({ accessScope })),
+  // Run all heavy sources concurrently. SoS is NOT re-fetched here — the fast path
+  // already loads it and passes byRegion/byProduct via sosPrefetched prop on the page.
+  // getCeoAdminSignals() replaces the old getAdminCommandCenterData + getOverviewDashboard
+  // with 6 lean COUNT queries (<500ms each vs 15–30s for the old aggregators).
+  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR] = await Promise.allSettled([
+    getDoubleVisitDashboardData({ access }),
+    getOutstationExpenseCommandData(access, { preset: "30d" }),
+    getAttendanceAnalytics(),
     getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
+    getCeoAdminSignals(),
   ]);
 
-  const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : null;
-  if (!weekly) dataUnavailable.push("Weekly Sales");
+  const dv = dvR.status === "fulfilled" ? dvR.value : null;
+  if (!dv) dataUnavailable.push("Double-Visit Intelligence");
+  const expense = expenseR.status === "fulfilled" ? expenseR.value : null;
+  if (!expense) dataUnavailable.push("Expense Snapshot");
+  const attendance = attendanceR.status === "fulfilled" ? attendanceR.value : null;
+  if (!attendance) dataUnavailable.push("Attendance Analytics");
   const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
-  if (!marketing) dataUnavailable.push("Marketing ROI");
+  if (!marketing) dataUnavailable.push("ROI Signal");
+  const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
 
-  const weeklyOut = weekly
+  // Double-visit manager rows
+  const dvOut = dv
     ? {
-        weekStart: weekly.weekStart,
-        salesValue: weekly.kpis.salesValue,
-        salesUnits: weekly.kpis.salesUnits,
-        wowPct: weekly.compare.salesValue.pct,
-        wowPriorMissing: weekly.compare.salesValue.prior === null,
-        trend: (weekly.trend ?? []).map((point) => ({ label: point.weekStart, value: point.salesValue })),
-        topRegions: [...(weekly.regions ?? [])]
-          .sort((a, b) => b.salesValue - a.salesValue)
+        managerRows: dv.managerSummaries.map((s) => ({
+          managerHrId: s.managerHrId,
+          managerName: s.managerName,
+          role: s.role ?? null,
+          roleCode: s.roleCode ?? null,
+          lineName: s.lineName ?? null,
+          distinctMrs: s.distinctMrs,
+          overFocusedMrCount: s.overFocusedMrCount,
+          neglectedMrCount: s.neglectedMrCount ?? null,
+          neglectIndex:
+            s.neglectedMrCount != null && s.teamMrCount
+              ? Math.round((s.neglectedMrCount / s.teamMrCount) * 100) / 100
+              : null,
+          teamMrCount: s.teamMrCount ?? null,
+          daysSinceLastDv: s.daysSinceLastDv ?? null,
+          coveragePct: s.coveragePct ?? null,
+        })),
+        dateFrom: dv.dateFrom,
+        dateTo: dv.dateTo,
+      }
+    : null;
+
+  // Managers on leave today — derive from DV manager list + leave map
+  let managersOnLeave: CeoLandingDeferredData["managersOnLeave"] = null;
+  if (dv && dv.managerSummaries.length > 0) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const hrIds = dv.managerSummaries.map((s) => s.managerHrId).filter(Boolean);
+    try {
+      const leaveMap = await getApprovedLeaveDayMap({
+        dateFromIso: todayIso,
+        dateToIso: todayIso,
+        employeeHrIds: hrIds,
+      });
+      managersOnLeave = dv.managerSummaries
+        .filter((s) => {
+          const key = s.managerHrId.toUpperCase();
+          for (const [k, dates] of leaveMap) {
+            if (k.toUpperCase() === key && dates.has(todayIso)) return true;
+          }
+          return false;
+        })
+        .map((s) => ({
+          hrId: s.managerHrId,
+          name: s.managerName,
+          role: s.role ?? s.roleCode ?? "Manager",
+        }));
+    } catch {
+      managersOnLeave = [];
+    }
+  }
+
+  // Expense snippet
+  const expenseOut = expense
+    ? {
+        totalAmount: expense.kpis.totalAmount,
+        approvedPct:
+          expense.kpis.totalAmount > 0 ? expense.kpis.approvedAmount / expense.kpis.totalAmount : 0,
+        highRiskCount: expense.kpis.highRiskRows,
+        windowLabel: expense.windowLabel,
+        byRegion: expense.breakdowns.byRegion.slice(0, 7).map((r) => ({ label: r.key, amount: r.total })),
+        topSpenders: expense.leaderboards.topSpenders
           .slice(0, 5)
-          .map((region) => ({ label: region.name, value: region.salesValue })),
+          .map((s) => ({ label: s.name, amount: s.total })),
       }
     : null;
 
-  const topRisk = marketing?.decisionSummary.topRiskRequest ?? null;
-  const marketingOut = marketing
+  // ROI signal — bucket by most recent period's counts
+  const roiSignalOut: CeoRoiSignal | null = marketing
+    ? (() => {
+        const trend = marketing.roiTrend ?? [];
+        const last = trend.length > 0 ? trend[trend.length - 1] : null;
+        return {
+          startedStrong: last?.onTrackCount ?? 0,
+          startedWeak: last?.behindCount ?? 0,
+          stillZero: last?.noDataCount ?? 0,
+          lastPeriod: last?.period ?? null,
+          trend: trend.slice(-6).map((p) => ({
+            period: p.period,
+            onTrack: p.onTrackCount,
+            behind: p.behindCount,
+            noData: p.noDataCount,
+          })),
+        };
+      })()
+    : null;
+
+  // Attendance
+  const attendanceOut = attendance
     ? {
-        totalCost: marketing.summary.totalMarketingCost,
-        attributedSalesValue: marketing.summary.actualAttributedSalesValue,
-        roiCoverage: marketing.summary.actualRoiCoverage,
-        actionRequired: marketing.summary.actionRequiredRequests,
-        spendAtRisk: marketing.summary.spendAtRisk,
-        requestCount: marketing.summary.marketingRequestCount,
-        paidRequests: marketing.summary.paidRequestCount,
-        behindRequests: marketing.summary.behindRequests,
-        topRisk: topRisk
-          ? { customer: topRisk.customerName, code: topRisk.requestCode, action: topRisk.recommendedAction }
-          : null,
+        todayIsWorkingDay: attendance.today.isWorkingDay,
+        todayAbsentees: attendance.today.absentees.map((a) => ({
+          hrId: a.employeeHrId,
+          name: a.employeeName,
+          department: a.department,
+        })),
+        weeklyTrend: attendance.weeklyTrend.slice(-7).map((w) => ({
+          isoWeek: w.isoWeek,
+          lateRate: w.lateRate,
+          absenceRate: w.absenceRate,
+        })),
+        chronicLate: attendance.chronicLate.slice(0, 10).map((c) => ({
+          hrId: c.employeeHrId,
+          name: c.employeeName,
+          lateDays: c.lateDays,
+          lateRate: c.lateRate,
+        })),
       }
     : null;
 
-  return { dataUnavailable, weekly: weeklyOut, marketing: marketingOut };
+  return {
+    dataUnavailable,
+    doubleVisit: dvOut,
+    expense: expenseOut,
+    roiSignal: roiSignalOut,
+    attendance: attendanceOut,
+    managersOnLeave,
+    adminSignals,
+  };
 }

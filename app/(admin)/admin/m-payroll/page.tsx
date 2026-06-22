@@ -237,4 +237,3 @@ export default async function MPayrollPage({
     </div>
   );
 }
-
