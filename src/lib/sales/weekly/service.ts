@@ -524,6 +524,19 @@ function mergeThinWeeks(raw: TrendPoint[], minDays = 5): TrendPoint[] {
   return result;
 }
 
+function computeWeekGroups(weeks: string[], minDays = 5): { canonical: string; members: string[] }[] {
+  const sorted = [...weeks].filter(Boolean).sort();
+  if (!sorted.length) return [];
+  const groups: { canonical: string; members: string[] }[] = [{ canonical: sorted[0], members: [sorted[0]] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const lastGroup = groups[groups.length - 1];
+    const lastMember = lastGroup.members[lastGroup.members.length - 1];
+    if (daysBetweenWeeks(lastMember, sorted[i]) < minDays) { lastGroup.members.push(sorted[i]); }
+    else { groups.push({ canonical: sorted[i], members: [sorted[i]] }); }
+  }
+  return groups;
+}
+
 export async function loadWeeklyDashboard(filters?: {
   weekStart?: string | null;
   weekStarts?: string[] | null;
@@ -559,9 +572,14 @@ export async function loadWeeklyDashboard(filters?: {
   if (batchesResult.error) throw new SalesWorkflowError("load_failed", batchesResult.error.message, 500);
   const batches = batchesResult.data ?? [];
 
-  const availableWeeks = [...new Set(batches.map((batch) => String(batch.week_start)).filter(Boolean))].sort(
+  const rawAvailableWeeks = [...new Set(batches.map((batch) => String(batch.week_start)).filter(Boolean))].sort(
     (left, right) => right.localeCompare(left),
   );
+  const weekGroups = computeWeekGroups(rawAvailableWeeks);
+  const weekGroupMap = new Map<string, string[]>(weekGroups.map((g) => [g.canonical, g.members]));
+  const memberToCanonical = new Map<string, string>();
+  for (const g of weekGroups) for (const m of g.members) memberToCanonical.set(m, g.canonical);
+  const availableWeeks = weekGroups.map((g) => g.canonical).reverse();
   const availableWeekSet = new Set(availableWeeks);
   const distributors: WeeklyDistributorOption[] = [
     ...new Map(batches.map((batch) => [String(batch.distributor_code), String(batch.distributor_name)])).entries(),
@@ -578,11 +596,18 @@ export async function loadWeeklyDashboard(filters?: {
   const region = resolveMultiFilter(filters?.regionCodes, filters?.regionCode, filters?.regionFilterMode, normalizeCode);
   const product = resolveMultiFilter(filters?.productCodes, filters?.productCode, filters?.productFilterMode, normalizeCode);
   const line = resolveMultiFilter(filters?.lineCodes, filters?.line, filters?.lineFilterMode, normalizeComparableLine);
-  const requestedWeekSet = new Set(normalizeWeekList(filters?.weekStarts).filter((week) => availableWeekSet.has(week)));
+  const requestedWeekSet = new Set(
+    normalizeWeekList(filters?.weekStarts)
+      .map((w) => memberToCanonical.get(w) ?? w)
+      .filter((w) => availableWeekSet.has(w)),
+  );
   const requestedWeeks = availableWeeks.filter((week) => requestedWeekSet.has(week));
   const allWeeksRequested = filters?.allWeeks === true;
-  const requestedSingleWeek = normalizeText(filters?.weekStart);
-  const selectedWeeks = allWeeksRequested
+  const rawRequestedSingle = normalizeText(filters?.weekStart);
+  const requestedSingleWeek = rawRequestedSingle
+    ? (memberToCanonical.get(rawRequestedSingle) ?? (availableWeekSet.has(rawRequestedSingle) ? rawRequestedSingle : null))
+    : null;
+  const selectedCanonicals = allWeeksRequested
     ? [...availableWeeks]
     : requestedWeeks.length > 0
       ? requestedWeeks
@@ -591,13 +616,16 @@ export async function loadWeeklyDashboard(filters?: {
         : availableWeeks.length > 0
           ? [availableWeeks[0]]
           : [];
-  const priorWeek = selectedWeeks.length > 0 ? availableWeeks.find((week) => week < selectedWeeks[0]) ?? null : null;
-  const selectedWeekAnchor = selectedWeeks.length > 0 ? selectedWeeks[0] : null;
+  const selectedWeeks = selectedCanonicals.flatMap((can) => weekGroupMap.get(can) ?? [can]);
+  const selectedWeekAnchor = selectedCanonicals.length > 0 ? selectedCanonicals[0] : null;
   const selectedWeekSet = new Set(selectedWeeks);
+  const priorCanonical =
+    selectedCanonicals.length > 0 ? availableWeeks.find((w) => w < selectedCanonicals[0]) ?? null : null;
+  const priorWeekSet = new Set(priorCanonical ? (weekGroupMap.get(priorCanonical) ?? [priorCanonical]) : []);
 
   const appliedFilters: WeeklyDashboard["appliedFilters"] = {
     weekStart: selectedWeekAnchor,
-    weekStarts: selectedWeeks,
+    weekStarts: selectedCanonicals,
     allWeeks: allWeeksRequested,
     distributorCode: distributor.single,
     regionCode: region.single,
@@ -615,7 +643,7 @@ export async function loadWeeklyDashboard(filters?: {
 
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
-    priorWeekStart: priorWeek,
+    priorWeekStart: priorCanonical,
     availableWeeks,
     availableLines: [],
     availableRegions: [],
@@ -656,13 +684,13 @@ export async function loadWeeklyDashboard(filters?: {
     filters?.accessScope?.tier === "product" &&
     (filters.accessScope as Extract<WeeklyAccessScope, { tier: "product" }>).productCodes.size > 0;
   // Widen to 8 recent weeks so the trend chart always has enough points for merging.
-  const recentWeekSet = new Set(availableWeeks.slice(0, 8)); // availableWeeks is newest-first
+  const recentWeekSet = new Set(availableWeeks.slice(0, 8).flatMap((can) => weekGroupMap.get(can) ?? [can]));
   const batchIdsForRows = allWeeksRequested || scopeIsBoundedProduct
     ? [...batches.map((b) => String(b.id))]
     : batches
         .filter((b) => {
           const ws = String(b.week_start ?? "");
-          return selectedWeekSet.has(ws) || ws === priorWeek || recentWeekSet.has(ws);
+          return selectedWeekSet.has(ws) || priorWeekSet.has(ws) || recentWeekSet.has(ws);
         })
         .map((b) => String(b.id));
   const validIds = new Set(batchIdsForRows);
@@ -745,7 +773,7 @@ export async function loadWeeklyDashboard(filters?: {
   );
 
   const weekRows = scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
-  const priorRows = priorWeek ? scopedRows.filter((row) => row.weekStart === priorWeek) : [];
+  const priorRows = priorCanonical ? scopedRows.filter((row) => priorWeekSet.has(row.weekStart)) : [];
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
@@ -773,7 +801,7 @@ export async function loadWeeklyDashboard(filters?: {
     }))
     .sort((left, right) => right.stockUnits - left.stockUnits);
 
-  const trendWeeks = [...availableWeeks].sort(); // ascending for charting
+  const trendWeeks = [...rawAvailableWeeks].sort();
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
   // Checking rows.length avoids falsely dropping weeks where returns exceed sales (net-negative
   // salesValue/salesUnits) which a >0 value filter would incorrectly discard.
@@ -802,7 +830,7 @@ export async function loadWeeklyDashboard(filters?: {
 
   return {
     weekStart: selectedWeekAnchor,
-    priorWeekStart: priorWeek,
+    priorWeekStart: priorCanonical,
     availableWeeks,
     availableLines,
     availableRegions,
@@ -819,9 +847,9 @@ export async function loadWeeklyDashboard(filters?: {
       distributorCount: new Set(weekRows.map((row) => row.distributorCode)).size,
     },
     compare: {
-      salesValue: delta(sum(weekRows, (row) => row.salesValue), priorWeek ? sum(priorRows, (row) => row.salesValue) : null),
-      salesUnits: delta(sum(weekRows, (row) => row.netQty), priorWeek ? sum(priorRows, (row) => row.netQty) : null),
-      stockUnits: delta(sum(weekRows, (row) => row.stockQty), priorWeek ? sum(priorRows, (row) => row.stockQty) : null),
+      salesValue: delta(sum(weekRows, (row) => row.salesValue), priorCanonical ? sum(priorRows, (row) => row.salesValue) : null),
+      salesUnits: delta(sum(weekRows, (row) => row.netQty), priorCanonical ? sum(priorRows, (row) => row.netQty) : null),
+      stockUnits: delta(sum(weekRows, (row) => row.stockQty), priorCanonical ? sum(priorRows, (row) => row.stockQty) : null),
     },
     regions: rank(weekRows, (row) => row.regionCode, (row) => row.regionName),
     products: rank(weekRows, (row) => row.productCode, (row) => row.productName),

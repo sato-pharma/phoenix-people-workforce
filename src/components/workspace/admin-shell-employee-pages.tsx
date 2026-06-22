@@ -135,10 +135,7 @@ function WorkspaceFrame({
       <AdminPageHero
         badges={
           badges ?? (
-            <>
-              <AdminInsightChip>Employee scope</AdminInsightChip>
-              <AdminInsightChip tone="orange">Admin shell</AdminInsightChip>
-            </>
+            <AdminInsightChip tone="orange">Admin shell</AdminInsightChip>
           )
         }
         description={description}
