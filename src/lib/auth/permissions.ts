@@ -588,6 +588,8 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     support_requests: ["read", "create"],
     team: ["read"],
+    vacancies: ["read"],
+    organogram: ["read"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
