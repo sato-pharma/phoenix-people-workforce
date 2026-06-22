@@ -420,8 +420,8 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-sales-intelligence",
     items: [
-      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"] },
     ],
     label: "Sales Operations",
   },
