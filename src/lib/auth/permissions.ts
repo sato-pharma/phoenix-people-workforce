@@ -1037,6 +1037,7 @@ export function getExpensesScope(
     case "Training Manager":
       return "LINE";
     case "SFE Manager":
+    case "Marketing Manager":
     case "CEO":
     case "Finance Manager":
     case "Marketing Manager":
