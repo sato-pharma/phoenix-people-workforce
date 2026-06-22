@@ -226,7 +226,7 @@ export async function getOutstationExpenseCommandData(
       ? employeeByHrId.get(normalizeHrIdForAccess(expense.hrId) ?? "") ?? null
       : null;
 
-    const region = directoryRow?.areaName ?? request?.employeeArea ?? request?.toArea ?? null;
+    const region = directoryRow?.areaName ?? directoryRow?.regionName ?? request?.employeeArea ?? request?.toArea ?? null;
     const line = directoryRow?.lineName ?? request?.employeeLine ?? null;
     const city = request?.toCity ?? null;
 

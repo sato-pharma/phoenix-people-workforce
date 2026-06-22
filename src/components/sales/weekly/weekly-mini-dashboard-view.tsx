@@ -65,7 +65,11 @@ export function WeeklyMiniDashboardView({
   const [data, setData] = useState<WeeklyDashboard | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
-  const [week, setWeek] = useState<string>(initial?.weekStart ?? "");
+  // If SSR returned no weekStart, fall back to the first available week so the
+  // client-side fetch fires immediately without waiting for a user selection.
+  const [week, setWeek] = useState<string>(
+    initial?.weekStart || initial?.availableWeeks?.[0] || "",
+  );
 
   useEffect(() => {
     if (!week) return;
