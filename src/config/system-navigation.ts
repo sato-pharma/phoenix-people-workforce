@@ -127,7 +127,7 @@ function withModuleIds(
 }
 
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
-const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager", "CEO"] as const satisfies readonly PhoenixRole[];
+const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
 
 export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
@@ -268,6 +268,7 @@ const adminNavigationSectionSeeds = [
     id: "payroll",
     items: [
       { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, exact: true },
+      { href: "/admin/m.payroll", icon: FileSpreadsheet, label: "M.payroll", permissions: [{ resource: "payroll" }], roles: ["CEO"] },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin"] },
     ],
     label: "Payroll Management",

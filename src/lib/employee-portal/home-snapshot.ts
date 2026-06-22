@@ -5,17 +5,33 @@ import { getEmployeePortalShellData, type EmployeePortalShellData } from "@/lib/
 
 export type PortalHomeSnapshot = {
   shell: EmployeePortalShellData;
+  role: string;
   pendingVacationCount: number;
   pendingExcuseCount: number;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
+  mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
 };
 
 export async function getPortalHomeSnapshot(access: AccessContext): Promise<PortalHomeSnapshot> {
   const shell = await getEmployeePortalShellData(access);
   const hrId = normalizeHrId(access.hrId) ?? "";
+  const role = access.role ?? "";
   const today = new Date().toISOString().slice(0, 10);
   const supabase = getSupabaseAdmin();
+  const isMr = role.toLowerCase() === "medical rep";
+
+  // Start MR sales query immediately so it runs in parallel with the batch below.
+  const now = new Date();
+  const mrSalesPromise =
+    isMr && hrId
+      ? supabase
+          .from("v_employee_portal_sales")
+          .select("sales_value, target_value")
+          .or(`hr_id.ilike.${hrId},employee_hr_id.ilike.${hrId}`)
+          .eq("year", now.getFullYear())
+          .eq("month", now.getMonth() + 1)
+      : Promise.resolve(null);
 
   // All three fire in parallel: pending leave count, pending excuse count, latest payroll batch.
   const [vacationResult, excuseResult, batchResult] = await Promise.allSettled([
@@ -62,14 +78,34 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     }
   }
 
+  // Resolve MR achievement (null for all other roles).
+  let mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = null;
+  try {
+    const mrResult = await mrSalesPromise;
+    if (mrResult && "data" in mrResult && Array.isArray(mrResult.data) && mrResult.data.length > 0) {
+      const rows = mrResult.data as Array<{ sales_value?: number | null; target_value?: number | null }>;
+      const totalSales = rows.reduce((s, r) => s + Number(r.sales_value ?? 0), 0);
+      const totalTarget = rows.reduce((s, r) => s + Number(r.target_value ?? 0), 0);
+      mrSalesAchievement = {
+        achievementPercent: totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0,
+        salesValue: totalSales,
+        targetValue: totalTarget,
+      };
+    }
+  } catch {
+    // null on failure — non-fatal
+  }
+
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
 
   return {
     shell,
+    role,
     pendingVacationCount,
     pendingExcuseCount,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
+    mrSalesAchievement,
   };
 }
