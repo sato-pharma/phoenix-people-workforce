@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
+import { PrivateCalendarsFilterMap } from "@/components/admin/private-calendars-filter-map";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+import { canUsePrivateCalendarAdminSurface } from "@/lib/private-calendar/service";
+import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,21 +15,21 @@ export default async function AdminPrivateCalendarsPage() {
   }
 
   const now = new Date();
-  const workspace = await getPrivateCalendarWorkspace({
+  const workspace = await getSharedPlanningCalendarWorkspace(
     access,
-    month: now.getUTCMonth() + 1,
-    viewMode: "team",
-    year: now.getUTCFullYear(),
-  });
+    now.getUTCFullYear(),
+    now.getUTCMonth() + 1,
+  );
 
   return (
     <div className="space-y-6">
       <PremiumHero
         kicker="Private Calendars"
-        title="Employee Private Calendars"
-        subtitle="Read-only monthly attendance, vacation, excuse, and plan view for authorized HR and executive users."
+        title="Shared Planning Filter Map"
+        subtitle="Filter by name, region, line, title, and date period for Head Office + NSM/PM/TM/GPM planning data."
       />
-      <PrivateCalendar initialWorkspace={workspace} />
+      <PrivateCalendarsFilterMap initialWorkspace={workspace} />
     </div>
   );
 }
+
