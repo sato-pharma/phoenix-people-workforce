@@ -1037,6 +1037,7 @@ export function getExpensesScope(
     case "SFE Manager":
     case "CEO":
     case "Finance Manager":
+    case "Marketing Manager":
     case "Super Admin":
       return "COMPANY";
     default:

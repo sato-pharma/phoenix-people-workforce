@@ -70,7 +70,7 @@ export async function runMarketingManagerRoleTests() {
   // ── Per-domain scope: commercial = COMPANY, financial/HR = SELF ─────────────────────────────
   assert.equal(getSalesScope(mm), "COMPANY", "MM sees company-wide monthly sales + ROI dashboard");
   assert.equal(getPayrollScope(mm), "SELF", "MM payroll/payslips stay self-scoped (intentional)");
-  assert.equal(getExpensesScope(mm), "SELF", "MM expenses stay self-scoped (intentional)");
+  assert.equal(getExpensesScope(mm), "COMPANY", "MM sees company-wide expenses (manages PM/GPM/TM team)");
 
   // ── New report scope is COMPANY-WIDE (executive), source-pinned so refactors can't regress ───
   const coachingService = source("src/lib/coaching/service.ts");

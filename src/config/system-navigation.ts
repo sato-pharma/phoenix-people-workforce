@@ -141,7 +141,7 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }] },
-      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Marketing ROI & Customer Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }] },
@@ -157,15 +157,20 @@ const adminNavigationSectionSeeds = [
       { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
       { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/deductions", icon: ReceiptText, label: "Deductions", moduleId: "admin.workspace.deductions", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "My Attendance", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "My Workspace",
   },
   {
+    id: "workspace-mm-command",
+    items: [
+      { href: "/workspace/marketing-requests/overview", icon: Sparkles, label: "Command Center", moduleId: "admin.workspace.mm_command_center", roles: ["Marketing Manager"], exact: true },
+    ],
+    label: "",
+  },
+  {
     id: "workspace-marketing-requests",
     items: [
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Marketing Manager"] },
       { href: "/workspace/marketing-requests/overview", icon: LayoutDashboard, label: "Overview", moduleId: "admin.workspace.marketing_overview", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
       { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
       { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
@@ -175,10 +180,20 @@ const adminNavigationSectionSeeds = [
     label: "Marketing & ROI",
   },
   {
+    id: "workspace-payroll",
+    items: [
+      { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/deductions", icon: ReceiptText, label: "Deductions", moduleId: "admin.workspace.deductions", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
+    ],
+    label: "Payroll",
+  },
+  {
     id: "workspace-leave-management",
     items: [
       { href: "/workspace/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", moduleId: "admin.workspace.vacation_request", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", moduleId: "admin.workspace.vacation_report", permissions: [{ resource: "leave", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "My Attendance", moduleId: "admin.workspace.fingerprint_report", permissions: [{ resource: "attendance", action: "read" }], roles: adminShellEmployeeRoles },
+      { href: "/workspace/excuses", icon: CalendarClock, label: "Excuses", moduleId: "admin.workspace.excuses", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "Leave Management",
   },
@@ -289,7 +304,7 @@ const adminNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales Dashboard", permissions: [{ resource: "sales" }], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales", permissions: [{ resource: "sales" }] },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "Monthly Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }] },
       { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
