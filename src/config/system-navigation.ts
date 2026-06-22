@@ -182,6 +182,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-sales-intelligence",
     items: [
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
       { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Monthly Sales Closing", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
