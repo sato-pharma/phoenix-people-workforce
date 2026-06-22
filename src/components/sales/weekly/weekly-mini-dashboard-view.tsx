@@ -162,7 +162,7 @@ export function WeeklyMiniDashboardView({
         <KpiCard delta={data.compare.stockUnits} icon={<Store className="h-4 w-4" />} label="Stock Units" value={num(data.kpis.stockUnits)} />
       </div>
 
-      {trend.length >= 1 ? (
+      {trend.length >= 4 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <p className="mb-3 text-sm font-black text-slate-800">Weekly sales value trend</p>
           <SafeResponsiveContainer minHeight={240}>
