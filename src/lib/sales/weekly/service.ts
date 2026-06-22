@@ -467,6 +467,63 @@ function rankBranches(rows: FactRow[]): WeeklyBranchComparisonRow[] {
     );
 }
 
+// ── Trend helpers ────────────────────────────────────────────────────────────────────────────────
+
+type TrendPoint = {
+  weekStart: string;
+  salesValue: number;
+  salesUnits: number;
+  stockUnits: number;
+  byDistributor: { distributorCode: string; distributorName: string; salesValue: number }[];
+};
+
+function daysBetweenWeeks(a: string, b: string): number {
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
+}
+
+function absorbTrendPoint(base: TrendPoint, thin: TrendPoint): TrendPoint {
+  const distMap = new Map<string, { distributorName: string; salesValue: number }>();
+  for (const d of [...base.byDistributor, ...thin.byDistributor]) {
+    const ex = distMap.get(d.distributorCode);
+    if (ex) ex.salesValue += d.salesValue;
+    else distMap.set(d.distributorCode, { distributorName: d.distributorName, salesValue: d.salesValue });
+  }
+  return {
+    weekStart: base.weekStart,
+    salesValue: Number((base.salesValue + thin.salesValue).toFixed(2)),
+    salesUnits: Number((base.salesUnits + thin.salesUnits).toFixed(2)),
+    stockUnits: Number((base.stockUnits + thin.stockUnits).toFixed(2)),
+    byDistributor: [...distMap.entries()].map(([distributorCode, d]) => ({
+      distributorCode,
+      distributorName: d.distributorName,
+      salesValue: Number(d.salesValue.toFixed(2)),
+    })),
+  };
+}
+
+function mergeThinWeeks(raw: TrendPoint[], minDays = 5): TrendPoint[] {
+  if (raw.length <= 1) return raw;
+  const working = [...raw];
+  const result: TrendPoint[] = [];
+  for (let i = 0; i < working.length; i++) {
+    const point = working[i];
+    const next = working[i + 1];
+    const coverage = next ? daysBetweenWeeks(point.weekStart, next.weekStart) : 7;
+    if (coverage < minDays) {
+      if (result.length > 0) {
+        result[result.length - 1] = absorbTrendPoint(result[result.length - 1], point);
+      } else if (next) {
+        working[i + 1] = absorbTrendPoint(next, point);
+      } else {
+        result.push(point);
+      }
+    } else {
+      result.push(point);
+    }
+  }
+  return result;
+}
+
 export async function loadWeeklyDashboard(filters?: {
   weekStart?: string | null;
   weekStarts?: string[] | null;
@@ -575,26 +632,37 @@ export async function loadWeeklyDashboard(filters?: {
     trend: [],
   });
 
-  if (availableWeeks.length === 0) return empty();
-
   // PM/GPM with no product codes assigned in weekly_sales_product_scope: flag it explicitly so
   // the UI can show a clear "contact admin" message rather than a silently empty dashboard.
+  // Must come BEFORE the availableWeeks guard so the flag is set even when no batches exist yet.
   const scope = filters?.accessScope;
   if (scope?.tier === "product" && scope.productCodes.size === 0) {
     return { ...empty(), scopeEmpty: true };
   }
+
+  if (availableWeeks.length === 0) return empty();
 
   // Fetch validated fact rows (paged) and aggregate in memory — volume is small (hundreds/week).
   // Narrow to batch_id (the FK, always populated) rather than week_start on the rows table
   // (nullable; may differ from the batch's canonical date for multi-date uploads). Filter to the
   // batches covering the selected week(s) + prior week so we skip irrelevant history, OR to all
   // validated batches when allWeeks is requested.
-  const batchIdsForRows = allWeeksRequested
+  //
+  // Exception: product-scoped users (PM/GPM) get ALL historical batches so the trend chart covers
+  // the full available history rather than just the selected + prior week. Their product universe is
+  // small (2–4 codes, ~hundreds of rows) so loading all history is safe. Full/territory scopes are
+  // kept at the 2-week window because their row counts can be orders of magnitude larger.
+  const scopeIsBoundedProduct =
+    filters?.accessScope?.tier === "product" &&
+    (filters.accessScope as Extract<WeeklyAccessScope, { tier: "product" }>).productCodes.size > 0;
+  // Widen to 8 recent weeks so the trend chart always has enough points for merging.
+  const recentWeekSet = new Set(availableWeeks.slice(0, 8)); // availableWeeks is newest-first
+  const batchIdsForRows = allWeeksRequested || scopeIsBoundedProduct
     ? [...batches.map((b) => String(b.id))]
     : batches
         .filter((b) => {
           const ws = String(b.week_start ?? "");
-          return selectedWeekSet.has(ws) || ws === priorWeek;
+          return selectedWeekSet.has(ws) || ws === priorWeek || recentWeekSet.has(ws);
         })
         .map((b) => String(b.id));
   const validIds = new Set(batchIdsForRows);
@@ -709,7 +777,7 @@ export async function loadWeeklyDashboard(filters?: {
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
   // Checking rows.length avoids falsely dropping weeks where returns exceed sales (net-negative
   // salesValue/salesUnits) which a >0 value filter would incorrectly discard.
-  const trend = trendWeeks.flatMap((week) => {
+  const rawTrend = trendWeeks.flatMap((week) => {
     const rows = scopedRows.filter((row) => row.weekStart === week);
     if (rows.length === 0) return [];
     const distMap = new Map<string, { name: string; value: number }>();
@@ -730,6 +798,7 @@ export async function loadWeeklyDashboard(filters?: {
       })),
     }];
   });
+  const trend = mergeThinWeeks(rawTrend);
 
   return {
     weekStart: selectedWeekAnchor,

@@ -193,11 +193,7 @@ export function getVacationBalancePeriod(input: {
   }
 
   return {
-    entitlementDays: calculateMonthlyAccruedEntitlement({
-      annualEntitlementDays: standardAnnualEntitlementDays,
-      periodStart,
-      referenceDate,
-    }),
+    entitlementDays: standardAnnualEntitlementDays,
     periodEnd,
     periodStart,
   };

@@ -68,7 +68,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   // Training Manager
-  { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
+  { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
+  { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"] },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"] },
   // Marketing Requests
@@ -82,7 +83,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Vacation", fullLabel: "Vacation Request", href: "/leave-management/vacation-request", icon: CalendarDays },
   { label: "Leave", fullLabel: "Vacation Report", href: "/leave-management/vacation-report", icon: FileText },
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
-  { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab"] },
+  { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab", "showReportItDashboardTab"] },
   // Team Performance
   { label: "Team", fullLabel: "Team Performance", href: "/employee-portals/team-performance", icon: Trophy, flags: ["showTeamPerformanceTab"] },
   { label: "MRs", fullLabel: "MRs Performance", href: "/employee-portals/med-reps-performance", icon: ChartColumnBig, flags: ["showMedRepsPerformanceTab"] },

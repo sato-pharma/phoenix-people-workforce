@@ -220,13 +220,13 @@ export function resolveEmployeePortalNavVisibility(
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
-    showReportItTab: isA3Account || isProductManager || isGroupProductManager,
-    showReportItDashboardTab: false,
+    showReportItTab: isA3Account,
+    showReportItDashboardTab: isProductManager || isGroupProductManager || isTrainingManager,
     showOrganogramTab:
-      showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
+      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showPlansTab: isA3Account || showPlansTab,
     showProbationTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showSupportTab: true,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
@@ -235,13 +235,13 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showFingerprintReportTab: hasDeviceMapping === true || isProductManager || isGroupProductManager,
     showRoiIntelligenceTab: showSalesIntelligence,
     showMiniWeeklySalesTab: showSalesIntelligence,
     showMiniMonthlySalesTab: showSalesIntelligence,
     showCoachingAnalyticsTab: showSalesIntelligence,
-    showDoubleVisitAnalyticsTab: showSalesIntelligence,
+    showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     showActionsTab: !isTrainingManager,
     showAttendanceTab: true,
   };
