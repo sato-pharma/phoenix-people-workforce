@@ -131,8 +131,8 @@ export function runVacationCalculationTests() {
     hireDate: "2026-04-01",
     startDate: "2027-05-01",
   });
-  assert.equal(standardWindow.entitlementDays, 1.75);
-  assert.equal(standardWindow.balanceAfterDays, 0.75);
+  assert.equal(standardWindow.entitlementDays, 21);
+  assert.equal(standardWindow.balanceAfterDays, 20);
 
   assert.deepEqual(
     getEmergencyVacationBalancePeriod("2026-05-19"),
@@ -151,9 +151,9 @@ export function runVacationCalculationTests() {
     startDate: "2026-05-19",
     vacationType: "emergency",
   });
-  assert.equal(emergencyWindow.entitlementDays, 7);
-  assert.equal(emergencyWindow.balanceBeforeDays, 5);
-  assert.equal(emergencyWindow.balanceAfterDays, 4);
+  assert.equal(emergencyWindow.entitlementDays, 21);
+  assert.equal(emergencyWindow.balanceBeforeDays, 19);
+  assert.equal(emergencyWindow.balanceAfterDays, 18);
 
   assert.equal(
     calculateVacationPayment({

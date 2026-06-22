@@ -203,15 +203,15 @@ export function runCoachingAnalyticsTests() {
 
   const adminAnalyticsPageSource = readFileSync("app/(admin)/coaching/analytics/page.tsx", "utf8");
   const dashboardSource = readFileSync("src/components/coaching/coaching-analytics-dashboard.tsx", "utf8");
-  const portalTrainingManagerSource = readFileSync("app/employee-portals/training-manager/page.tsx", "utf8");
+  const portalTmCoachingSource = readFileSync("app/employee-portals/training-manager/coaching/page.tsx", "utf8");
   assert.match(adminAnalyticsPageSource, /buildCoachingReportAnalytics/);
-  assert.match(portalTrainingManagerSource, /buildCoachingReportAnalytics/);
+  assert.match(portalTmCoachingSource, /buildCoachingReportAnalytics/);
   assert.doesNotMatch(adminAnalyticsPageSource, /function buildAnalytics/);
-  assert.doesNotMatch(portalTrainingManagerSource, /function buildAnalytics/);
+  assert.doesNotMatch(portalTmCoachingSource, /function buildAnalytics/);
   assert.match(adminAnalyticsPageSource, /initialReportFilters = \{ year: currentYear \}/);
   assert.match(adminAnalyticsPageSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
-  assert.match(portalTrainingManagerSource, /initialReportFilters = \{ year: currentYear \}/);
-  assert.match(portalTrainingManagerSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
+  assert.match(portalTmCoachingSource, /initialReportFilters = \{ year: currentYear \}/);
+  assert.match(portalTmCoachingSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
   assert.match(dashboardSource, /Coverage by Coaching Month/);
   assert.match(dashboardSource, /coachingMonthBreakdown/);
   assert.doesNotMatch(dashboardSource, /Coverage by Hiring Year/);

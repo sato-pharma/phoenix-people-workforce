@@ -174,7 +174,8 @@ function buildEmployeePortalSections({
     {
       title: "Training Manager",
       items: [
-        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
         ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
         ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
       ],
@@ -211,14 +212,6 @@ function buildEmployeePortalSections({
       items: [
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
-      ],
-    },
-    {
-      title: "Pharmacovigilance",
-      items: [
-        ...(showReportItDashboardTab
-          ? [{ href: "/employee-portals/report-it", label: "Reports Dashboard", icon: ChartColumnBig }]
-          : []),
       ],
     },
     {
@@ -264,8 +257,16 @@ function buildEmployeePortalSections({
       title: "Expenses",
       items: [
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
-        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Command Center", icon: CircleDollarSign }] : []),
+        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
         ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: Send }] : []),
+      ],
+    },
+    {
+      title: "Pharmacovigilance",
+      items: [
+        ...(showReportItDashboardTab
+          ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }]
+          : []),
       ],
     },
     {
