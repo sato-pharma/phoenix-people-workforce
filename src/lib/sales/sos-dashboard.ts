@@ -106,6 +106,18 @@ function share(value: number, total: number): number {
   return total > 0 ? value / total : 0;
 }
 
+async function safeRpcAll<T>(
+  label: string,
+  supplier: () => Promise<T[]>,
+): Promise<T[]> {
+  try {
+    return await supplier();
+  } catch (error) {
+    console.warn(`[sales dashboard] Non-blocking RPC failed: ${label}`, error);
+    return [];
+  }
+}
+
 export async function getSosDashboard(
   filters: SosDashboardFilters,
   accessContext: AccessContext,
@@ -184,19 +196,35 @@ export async function getSosDashboard(
   // re-running the heavy per-distributor/product aggregate once per window month. The old pattern
   // fired ~6 heavy aggregates concurrently, saturated the DB (16–26s each) and timed the page out.
   const excludeCodes = canSeeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES];
-  const [detailRows, trendResult, brickRaw, customerRaw] = await Promise.all([
+  const trendResultPromise = safeRpcAll(
+    "phx_exec_sos_trend",
+    () =>
+      (async () => {
+        const response = await supabase.rpc("phx_exec_sos_trend", {
+          p_areas: filters.areas ?? [],
+          p_distributors: filters.distributors ?? [],
+          p_exclude_codes: excludeCodes,
+          p_lines: filters.line ? [filters.line] : [],
+          p_periods: windowPeriods,
+          p_products: filters.products ?? [],
+          p_regions: filters.regions ?? [],
+        });
+        if (response.error) throw response.error;
+        return (response.data ?? []) as Array<Record<string, unknown>>;
+      })(),
+  );
+
+  const [detailRows, trendRowsRaw, brickRaw, customerRaw] = await Promise.all([
     rpcAll(supabase, "phx_exec_distributor_product", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
-    supabase.rpc("phx_exec_sos_trend", {
-      p_areas: filters.areas ?? [],
-      p_distributors: filters.distributors ?? [],
-      p_exclude_codes: excludeCodes,
-      p_lines: filters.line ? [filters.line] : [],
-      p_periods: windowPeriods,
-      p_products: filters.products ?? [],
-      p_regions: filters.regions ?? [],
-    }),
-    rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
-    rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
+    trendResultPromise,
+    safeRpcAll(
+      "phx_exec_brick",
+      () => rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
+    ),
+    safeRpcAll(
+      "phx_exec_customers",
+      () => rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
+    ),
   ]);
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
@@ -247,7 +275,7 @@ export async function getSosDashboard(
   // restricted-stripped in SQL). The SELECTED period reuses the detail totals so the last point
   // always matches the KPI summary exactly. Non-fatal: a trend failure never blocks the dashboard.
   const trendByPeriod = new Map<string, { units: number; value: number }>();
-  const trendRows = (trendResult.error ? [] : trendResult.data ?? []) as Array<Record<string, unknown>>;
+  const trendRows = trendRowsRaw as Array<Record<string, unknown>>;
   for (const row of trendRows) {
     trendByPeriod.set(String(row.period ?? ""), { units: Number(row.units ?? 0), value: Number(row.value ?? 0) });
   }

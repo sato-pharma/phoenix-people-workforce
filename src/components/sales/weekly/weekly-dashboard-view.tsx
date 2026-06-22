@@ -909,8 +909,8 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
     return { average, selectedCount: selectedPoints.length, highlightTotal };
   }, [trend, selectedSet]);
 
-  // Short/empty trend has nothing meaningful to plot.
-  if (trend.length < 2) return null;
+  // Need at least 4 distinct merged weeks for a meaningful trend.
+  if (trend.length < 4) return null;
 
   const hasOther = chartData.some((d) => d.vOther !== null);
 

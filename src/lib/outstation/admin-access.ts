@@ -18,8 +18,14 @@ export const executionOnlyOutstationRoles: ReadonlyArray<PhoenixRole> = [
   "CEO",
 ];
 
-export function canUseAdminOutstationWorkspace(access: AccessContext) {
-  return access.scope === "system" || adminOutstationRoles.has(access.role);
+export function canUseAdminOutstationWorkspace(
+  access: AccessContext,
+  action: PermissionAction = "approve",
+) {
+  if (access.scope === "system") return true;
+  if (adminOutstationRoles.has(access.role)) return true;
+  if (action === "read" && executionOnlyOutstationRoles.includes(access.role)) return true;
+  return false;
 }
 
 export async function assertOutstationAdminAccess(
@@ -28,13 +34,11 @@ export async function assertOutstationAdminAccess(
 ) {
   await assertPermission(access, "outstation", action);
 
-  // CEO and Finance Manager are read-only observers — they can view the dashboard
-  // but must never gain approval authority (enforced by executionOnlyOutstationRoles).
-  const isReadOnly = action === "read";
-  const isExecutionOnly = executionOnlyOutstationRoles.includes(access.role);
-  if (!canUseAdminOutstationWorkspace(access) && !(isReadOnly && isExecutionOnly)) {
+  if (!canUseAdminOutstationWorkspace(access, action)) {
     throw new Error(
-      "Forbidden: only HR Manager (Super Admin) can access admin outstation expenses.",
+      action === "approve"
+        ? "Forbidden: only HR Manager (Super Admin) can access admin outstation expenses."
+        : "Forbidden: only HR Manager (Super Admin) and approved read-only finance roles can access this admin workspace.",
     );
   }
 }

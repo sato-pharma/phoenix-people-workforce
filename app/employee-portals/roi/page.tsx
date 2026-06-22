@@ -1,16 +1,19 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
+import { DashboardSkeleton } from "@/components/employee-portal/skeleton-templates";
 import { SalesMarketingIntelligenceDashboard } from "@/components/sales-marketing-intelligence/sales-marketing-intelligence-dashboard";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import type { SalesMarketingDashboardSnapshot } from "@/lib/sales-marketing-intelligence/types";
+import type { AccessContext } from "@/lib/auth/permissions";
+import type { SalesMarketingDashboardFilters, SalesMarketingDashboardSnapshot } from "@/lib/sales-marketing-intelligence/types";
 import {
   canAccessSalesMarketingIntelligence,
-  getSalesMarketingDashboardSnapshot,
+  getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
 
@@ -19,9 +22,44 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // Sales Intelligence section is Product / Group Product Managers only. Line scope is
-// applied inside getSalesMarketingDashboardSnapshot (resolveDashboardLineScope); the
+// applied inside getSalesMarketingDashboard (resolveDashboardLineScope); the
 // service also strips confidential products for non-CEO/Super-Admin viewers.
 const ROI_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager"]);
+
+// Inner async component — loads data after the portal shell streams to the client.
+async function RoiDashboardContent({
+  access,
+  filters,
+}: {
+  access: AccessContext;
+  filters: SalesMarketingDashboardFilters;
+}) {
+  let snapshot: SalesMarketingDashboardSnapshot | null = null;
+  let loadError: string | null = null;
+  try {
+    snapshot = await getSalesMarketingDashboard(access, filters);
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "Failed to load ROI intelligence.";
+  }
+
+  if (snapshot) {
+    return (
+      <SalesMarketingIntelligenceDashboard
+        basePath="/employee-portals/roi"
+        chrome="portal"
+        filters={filters}
+        snapshot={snapshot}
+      />
+    );
+  }
+
+  return (
+    <EmployeePortalEmptyState
+      message={loadError ?? "No marketing ROI data is available for your line yet."}
+      title="ROI data unavailable"
+    />
+  );
+}
 
 export default async function PortalRoiIntelligencePage({
   searchParams,
@@ -36,14 +74,6 @@ export default async function PortalRoiIntelligencePage({
 
   const filters = parseSalesMarketingDashboardFilters(await searchParams);
 
-  let snapshot: SalesMarketingDashboardSnapshot | null = null;
-  let loadError: string | null = null;
-  try {
-    snapshot = await getSalesMarketingDashboardSnapshot(access, filters);
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Failed to load ROI intelligence.";
-  }
-
   return (
     <EmployeePortalPageShell
       badge="Sales Intelligence"
@@ -51,19 +81,9 @@ export default async function PortalRoiIntelligencePage({
       errorBoundaryTitle="ROI Intelligence unavailable"
       title="ROI Intelligence"
     >
-      {snapshot ? (
-        <SalesMarketingIntelligenceDashboard
-          basePath="/employee-portals/roi"
-          chrome="portal"
-          filters={filters}
-          snapshot={snapshot}
-        />
-      ) : (
-        <EmployeePortalEmptyState
-          message={loadError ?? "No marketing ROI data is available for your line yet."}
-          title="ROI data unavailable"
-        />
-      )}
+      <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={2} />}>
+        <RoiDashboardContent access={access} filters={filters} />
+      </Suspense>
     </EmployeePortalPageShell>
   );
 }

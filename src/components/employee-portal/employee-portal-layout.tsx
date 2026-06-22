@@ -38,7 +38,6 @@ import {
   WalletCards,
   UserCog,
   Inbox,
-  ScanLine,
   Target,
   CalendarRange,
   ChartNoAxesColumnIncreasing,
@@ -122,12 +121,12 @@ type EmployeePortalNavSection = {
 
 function sectionRailIcon(title: string): typeof Activity {
   if (title === "My Workspace") return Home;
-  if (title === "Marketing Requests") return BriefcaseBusiness;
+  if (title === "Marketing & ROI") return BriefcaseBusiness;
   if (title === "Leave Management") return CalendarDays;
   if (title === "Team Performance") return Users;
   if (title === "Team Operations") return BriefcaseBusiness;
   if (title === "Expenses") return FileText;
-  if (title === "Support") return Headphones;
+  if (title === "Support" || title === "HR Support") return Headphones;
   if (title === "Pharmacovigilance") return FileText;
   if (title === "Sales Intelligence") return Target;
   return Activity;
@@ -168,12 +167,15 @@ function buildEmployeePortalSections({
   showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
+  showActionsTab = false,
+  showAttendanceTab: _showAttendanceTab = false,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
       title: "Training Manager",
       items: [
-        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
         ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
         ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
       ],
@@ -181,8 +183,8 @@ function buildEmployeePortalSections({
     {
       title: "My Workspace",
       items: [
-        ...(showDashboardTab ? [{ href: "/employee-portals", label: "My Dashboard", icon: Home }] : []),
-        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "My Performance", icon: LineChartIcon }] : []),
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/actions", label: "Actions", icon: Inbox }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
@@ -200,6 +202,7 @@ function buildEmployeePortalSections({
     {
       title: "Sales Operations",
       items: [
+        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "Sales Dashboard", icon: LineChartIcon }] : []),
         ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: ChartNoAxesColumnIncreasing }] : []),
         ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales Closing", icon: CalendarRange }] : []),
       ],
@@ -212,16 +215,7 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Pharmacovigilance",
-      items: [
-        ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
-        ...(showReportItDashboardTab
-          ? [{ href: "/employee-portals/report-it", label: "Reports Dashboard", icon: ChartColumnBig }]
-          : []),
-      ],
-    },
-    {
-      title: "Marketing Requests",
+      title: "Marketing & ROI",
       items: [
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
@@ -238,7 +232,7 @@ function buildEmployeePortalSections({
         { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
         { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
-        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Fingerprint Report", icon: ScanLine }] : []),
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
       ],
     },
     {
@@ -268,8 +262,17 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Support",
+      title: "Pharmacovigilance",
       items: [
+        ...(showReportItDashboardTab
+          ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }]
+          : []),
+      ],
+    },
+    {
+      title: "HR Support",
+      items: [
+        ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
         ...(showSupportTab ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones }] : []),
       ],
     },

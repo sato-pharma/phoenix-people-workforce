@@ -1,4 +1,6 @@
-﻿import { forbiddenError } from "@/lib/http/api-errors";
+﻿import { unstable_cache } from "next/cache.js";
+
+import { forbiddenError } from "@/lib/http/api-errors";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -578,6 +580,69 @@ function stripRestrictedFromMarketingSnapshot(
   };
 }
 
+// Cached wrapper for the heavy marketing ROI RPC. Cache key = ['smi-rpc'] plus
+// the serialized params object (Next.js appends it automatically). TTL = 300s.
+// Arrays are pre-sorted by callers so the same logical query always maps to the
+// same key regardless of insertion order. Tag 'smi-dashboard' is revalidated by
+// SoS import paths after each validated upload so the cache clears promptly.
+const cachedRpcCall = unstable_cache(
+  async (params: {
+    role: string;
+    effectiveLines: string[];
+    excludeCodes: string[];
+    filters: SalesMarketingDashboardFilters;
+  }) => {
+    const supabase = getSupabaseAdmin({ requestTimeoutMs: 50000 });
+    const result = await supabase.rpc("phx_marketing_roi_customer_dashboard", {
+      p_attribution_qualities: params.filters.attributionQualities,
+      p_customer_search: params.filters.customerSearch || null,
+      p_distributor_codes: params.filters.distributors,
+      p_exclude_codes: params.excludeCodes,
+      p_from_month: params.filters.fromMonth || null,
+      p_limit: params.filters.limit,
+      p_lines: params.effectiveLines,
+      p_product_codes: params.filters.products,
+      p_regions: params.filters.regions,
+      p_roi_statuses: params.filters.roiStatuses,
+      p_to_month: params.filters.toMonth || null,
+    });
+    if (result.error) throw result.error;
+    return result.data;
+  },
+  ["smi-rpc"],
+  { revalidate: 300, tags: ["smi-dashboard"] },
+);
+
+// Fast variant — reads from pre-computed fact tables (PR 4 migration).
+// Same caching strategy; p_distributors / p_products instead of the original param names.
+const cachedFastRpcCall = unstable_cache(
+  async (params: {
+    role: string;
+    effectiveLines: string[];
+    excludeCodes: string[];
+    filters: SalesMarketingDashboardFilters;
+  }) => {
+    const supabase = getSupabaseAdmin({ requestTimeoutMs: 10000 });
+    const result = await supabase.rpc("phx_marketing_roi_fast", {
+      p_attribution_qualities: params.filters.attributionQualities,
+      p_customer_search: params.filters.customerSearch || null,
+      p_distributors: params.filters.distributors,
+      p_exclude_codes: params.excludeCodes,
+      p_from_month: params.filters.fromMonth || null,
+      p_limit: params.filters.limit,
+      p_lines: params.effectiveLines,
+      p_products: params.filters.products,
+      p_regions: params.filters.regions,
+      p_roi_statuses: params.filters.roiStatuses,
+      p_to_month: params.filters.toMonth || null,
+    });
+    if (result.error) throw result.error;
+    return result.data;
+  },
+  ["smi-fast-rpc"],
+  { revalidate: 300, tags: ["smi-dashboard"] },
+);
+
 export async function getSalesMarketingDashboardSnapshot(
   access: AccessContext,
   filters: SalesMarketingDashboardFilters = defaultFilters,
@@ -586,27 +651,28 @@ export async function getSalesMarketingDashboardSnapshot(
 
   const lineScope = await resolveDashboardLineScope(access);
   const effectiveLines = mergeLineFilter(filters.lines, lineScope);
+  const excludeCodes = resolveMarketingExcludeCodes(access.role);
 
-  const supabase = getSupabaseAdmin({ requestTimeoutMs: 50000 });
-  const result = await supabase.rpc("phx_marketing_roi_customer_dashboard", {
-    p_attribution_qualities: filters.attributionQualities,
-    p_customer_search: filters.customerSearch || null,
-    p_distributor_codes: filters.distributors,
-    p_exclude_codes: resolveMarketingExcludeCodes(access.role),
-    p_from_month: filters.fromMonth || null,
-    p_limit: filters.limit,
-    p_lines: effectiveLines,
-    p_product_codes: filters.products,
-    p_regions: filters.regions,
-    p_roi_statuses: filters.roiStatuses,
-    p_to_month: filters.toMonth || null,
+  // Sort all arrays before caching so the same logical query always hits the same cache key
+  // regardless of the order URL params arrive in.
+  const stableFilters: SalesMarketingDashboardFilters = {
+    ...filters,
+    attributionQualities: [...filters.attributionQualities].sort(),
+    distributors: [...filters.distributors].sort(),
+    lines: [...filters.lines].sort(),
+    products: [...filters.products].sort(),
+    regions: [...filters.regions].sort(),
+    roiStatuses: [...filters.roiStatuses].sort(),
+  };
+
+  const rawData = await cachedRpcCall({
+    role: access.role,
+    effectiveLines: [...effectiveLines].sort(),
+    excludeCodes: [...excludeCodes].sort(),
+    filters: stableFilters,
   });
 
-  if (result.error) {
-    throw result.error;
-  }
-
-  const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(result.data), filters.lines, lineScope);
+  const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(rawData), filters.lines, lineScope);
   // Line-bounded viewers must only be offered THEIR line's products in the filter dropdown — the
   // RPC returns the full catalog, so we scope it here to match the already line-scoped data.
   const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
@@ -617,4 +683,60 @@ export async function getSalesMarketingDashboardSnapshot(
   // filter here as defense in depth — a future RPC edit or new entrypoint cannot leak them.
   if (canViewRestrictedProducts(access.role)) return snapshot;
   return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
+}
+
+/**
+ * Fast variant of getSalesMarketingDashboardSnapshot. Reads from the pre-computed
+ * marketing_roi_*_facts tables (populated by phx_refresh_marketing_roi_facts) instead
+ * of re-running the live 40-CTE query on every request. Returns the same snapshot shape.
+ *
+ * Enable with NEXT_PUBLIC_SMI_USE_FACT_TABLES=true. The original function remains
+ * available as fallback; call getSalesMarketingDashboard() from pages — not this directly.
+ */
+async function getSalesMarketingDashboardFast(
+  access: AccessContext,
+  filters: SalesMarketingDashboardFilters = defaultFilters,
+): Promise<SalesMarketingDashboardSnapshot> {
+  assertSalesMarketingIntelligenceAccess(access);
+
+  const lineScope = await resolveDashboardLineScope(access);
+  const effectiveLines = mergeLineFilter(filters.lines, lineScope);
+  const excludeCodes = resolveMarketingExcludeCodes(access.role);
+
+  const stableFilters: SalesMarketingDashboardFilters = {
+    ...filters,
+    attributionQualities: [...filters.attributionQualities].sort(),
+    distributors: [...filters.distributors].sort(),
+    lines: [...filters.lines].sort(),
+    products: [...filters.products].sort(),
+    regions: [...filters.regions].sort(),
+    roiStatuses: [...filters.roiStatuses].sort(),
+  };
+
+  const rawData = await cachedFastRpcCall({
+    role: access.role,
+    effectiveLines: [...effectiveLines].sort(),
+    excludeCodes: [...excludeCodes].sort(),
+    filters: stableFilters,
+  });
+
+  const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(rawData), filters.lines, lineScope);
+  const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
+  if (canViewRestrictedProducts(access.role)) return snapshot;
+  return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
+}
+
+/**
+ * Primary entry point for both dashboard pages. When NEXT_PUBLIC_SMI_USE_FACT_TABLES=true
+ * it calls the fast pre-computed RPC; otherwise falls back to the original live query.
+ * The flag can be toggled without a code change or redeploy (env-var only).
+ */
+export async function getSalesMarketingDashboard(
+  access: AccessContext,
+  filters: SalesMarketingDashboardFilters = defaultFilters,
+): Promise<SalesMarketingDashboardSnapshot> {
+  if (process.env.NEXT_PUBLIC_SMI_USE_FACT_TABLES === "true") {
+    return getSalesMarketingDashboardFast(access, filters);
+  }
+  return getSalesMarketingDashboardSnapshot(access, filters);
 }

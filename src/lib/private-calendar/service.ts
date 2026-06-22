@@ -350,7 +350,7 @@ export async function getPrivateCalendarWorkspace(input: {
     loadAttendancePolicyScheduleRows(),
   ]);
 
-  const items = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
+  const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
     ...attendance.items,
     ...vacations.items,
     ...excuses.items,
@@ -359,6 +359,18 @@ export async function getPrivateCalendarWorkspace(input: {
     ...doubleVisits.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
+
+  // Suppress FP attendance on days where a DV or Single Visit plan exists — the
+  // field record is the authoritative attendance proof for that day.
+  const fieldVisitDates = new Set<string>();
+  for (const item of allItems) {
+    if (item.source === "double_visit" || (item.source === "plan" && item.title.startsWith("Single Visit"))) {
+      fieldVisitDates.add(item.startDate);
+    }
+  }
+  const items = fieldVisitDates.size > 0
+    ? allItems.filter((item) => item.source !== "attendance" || !fieldVisitDates.has(item.startDate))
+    : allItems;
   const mappedScopeEmployees = scopeEmployees.map(mapPrivateCalendarEmployee);
   const exceptions = derivePrivateCalendarExceptions({
     employees: mappedScopeEmployees,

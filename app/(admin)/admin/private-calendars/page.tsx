@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
 import { PremiumHero } from "@/components/ui/premium-hero";
+import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -305,3 +305,4 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
     </div>
   );
 }
+

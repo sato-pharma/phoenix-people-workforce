@@ -500,6 +500,20 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
       .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
   );
 
+  // Pre-compute the viewer's full upward manager chain so we can exclude them
+  // in LINE scope. Without this, a TM/PM/GPM/NSM would see their own manager's
+  // leave data because the manager shares the same product line + department.
+  const viewerManagerIds = new Set<string>();
+  if (scope === "LINE") {
+    let mgr: EmployeeDirectoryRow | undefined = currentEmployee;
+    for (let depth = 0; depth < 12 && mgr?.managerHrId; depth++) {
+      const mgrId = canonicalHrId(mgr.managerHrId);
+      if (!mgrId || viewerManagerIds.has(mgrId)) break;
+      viewerManagerIds.add(mgrId);
+      mgr = employeeByHrId.get(mgrId);
+    }
+  }
+
   return employees.filter((employee) => {
     const employeeHrId = canonicalHrId(employee.hrId);
     if (employeeHrId === viewerHrId) return true;
@@ -532,6 +546,9 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
       // who merely share the same product line, and symmetrically keeps Marketing
       // roles within their own department. See
       // src/lib/workforce/hierarchy-resolver.ts.
+      // Upward hierarchy (managers of the viewer) are excluded — employees must
+      // never see their manager's leave data regardless of line/department match.
+      if (employeeHrId && viewerManagerIds.has(employeeHrId)) return false;
       return (
         employeeLineMatches(employee, currentEmployee) &&
         sameWorkforceDepartment(currentEmployee, employee)

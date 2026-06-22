@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import {
   CalendarCheck,
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   Fingerprint,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
+import { EmployeeExcusesWorkspace } from "@/components/employee-portal/employee-excuses-workspace";
 import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-analytics";
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
@@ -86,6 +88,7 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
+import { excuseErrorMessage, getExcuseWorkspace, isExcusesSchemaMissing } from "@/lib/excuses/service";
 import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
@@ -773,6 +776,36 @@ export async function WorkspaceContactSupportPage() {
       title="Request Support"
     >
       <ContactHRSupportPage data={data} />
+    </WorkspaceFrame>
+  );
+}
+
+export async function WorkspaceExcusesPage() {
+  const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
+  let data = null;
+  let errorMessage: string | null = null;
+  try {
+    data = await getExcuseWorkspace(access);
+  } catch (error) {
+    logPortalFailure({ route: "/workspace/excuses", module: "excuses", role: access.role, hrId: access.hrId }, error);
+    if (isExcusesSchemaMissing(error)) {
+      errorMessage = "Excuse database tables are not deployed yet. Run the latest Supabase migration.";
+    } else if (excuseErrorMessage(error).toLowerCase().startsWith("forbidden:")) {
+      errorMessage = "Excuses are available for Head Office employees and selected management roles.";
+    } else {
+      errorMessage = excuseErrorMessage(error) || "Unable to load excuses.";
+    }
+  }
+  if (!data) {
+    return <WorkspaceUnavailable message={errorMessage ?? "Unable to load excuses."} title="Excuses Unavailable" />;
+  }
+  return (
+    <WorkspaceFrame
+      description="Submit a morning or afternoon 2-hour excuse, send it to your direct manager, and track monthly usage."
+      icon={<CalendarClock className="h-3.5 w-3.5" />}
+      title="Excuses"
+    >
+      <EmployeeExcusesWorkspace initialData={data} />
     </WorkspaceFrame>
   );
 }

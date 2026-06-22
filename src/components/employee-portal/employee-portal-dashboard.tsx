@@ -574,7 +574,7 @@ export function SalesAchievementRing({
 
   return (
     <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement — This Month</p>
       <div className="mt-4 flex flex-col items-center">
         <div className="relative flex aspect-square h-[clamp(200px,62vw,280px)] w-[clamp(200px,62vw,280px)] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
           <div className="flex aspect-square h-[clamp(168px,52vw,236px)] w-[clamp(168px,52vw,236px)] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
@@ -1311,7 +1311,7 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
 
   const cards: Array<{ label: string; value: string; note: string; accent: MetricAccent }> = [
     {
-      label: "Achievement",
+      label: "Semester Achievement",
       value: `${achievementPercent.toFixed(1)}%`,
       note: achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)}% to threshold`,
       accent: achievementPercent >= 100 ? "green" : achievementPercent >= 90 ? "amber" : "orange",

@@ -9,18 +9,12 @@ import { useEffect, useState } from "react";
  * stable placeholder on the server to avoid hydration mismatch, then hydrates to live.
  */
 export function CeoHeroClock() {
-  const [now, setNow] = useState<Date | null>(null);
+  // Lazy initializer: null on the server (avoids hydration mismatch), new Date() on the client.
+  const [now, setNow] = useState<Date | null>(() => (typeof window === "undefined" ? null : new Date()));
 
   useEffect(() => {
-    const tick = () => setNow(new Date());
-    // First paint after mount (async, so no synchronous setState in the effect body),
-    // then tick every second. Keeps the SSR placeholder until the client hydrates.
-    const raf = requestAnimationFrame(tick);
-    const id = setInterval(tick, 1000);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearInterval(id);
-    };
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   const dateStr = now

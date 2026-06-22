@@ -588,15 +588,19 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read", "export"],
     support_requests: ["read", "create"],
     team: ["read"],
+    vacancies: ["read"],
+    organogram: ["read"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
   // Marketing Manager = company-wide MARKETING + COMMERCIAL oversight. It owns the Marketing
-  // Review approval step and needs full visibility of marketing requests, sales, and ROI — but
-  // deliberately holds NO field-management tools (coaching, double_visit_analytics, organogram,
-  // vacancies, probation, team) and NO HR authority (employees/employee_documents/offers/
-  // recruitment/candidates are denied by the hard boundary anyway). Only grants that survive the
-  // hard boundary are declared here, so this matrix reads as the role's true effective access.
+  // Review approval step and needs full visibility of marketing requests, sales, and ROI. As an
+  // EXECUTIVE marketing role it ALSO holds company-wide READ-ONLY oversight of the field/commercial
+  // reports that Product/Group-Product/Training Managers see — coaching, double_visit_analytics,
+  // organogram, vacancies, probation, team — VIEW ONLY (no coaching write: canManageCoachingReports
+  // still excludes it). It holds NO HR authority: employees/employee_documents/offers/recruitment/
+  // candidates stay denied by the hard boundary. Only grants that survive the hard boundary are
+  // declared here, so this matrix reads as the role's true effective access.
   "Marketing Manager": {
     attendance: ["read"],
     overview: [],
@@ -611,6 +615,12 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["create"],
     weekly_plans: ["read", "create", "update", "approve"],
     report_it: ["read", "create"],
+    coaching: ["read"],
+    double_visit_analytics: ["read", "export"],
+    team: ["read"],
+    vacancies: ["read"],
+    probation: ["read"],
+    organogram: ["read"],
   },
   Manager: {
     attendance: ["read", "create", "update", "delete", "export"],
@@ -1027,8 +1037,10 @@ export function getExpensesScope(
     case "Training Manager":
       return "LINE";
     case "SFE Manager":
+    case "Marketing Manager":
     case "CEO":
     case "Finance Manager":
+    case "Marketing Manager":
     case "Super Admin":
       return "COMPANY";
     default:

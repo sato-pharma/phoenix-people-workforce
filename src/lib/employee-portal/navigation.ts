@@ -39,6 +39,8 @@ export type EmployeePortalNavVisibility = {
   showMiniMonthlySalesTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
+  showActionsTab?: boolean;
+  showAttendanceTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -92,8 +94,6 @@ const marketingRequestRoles = new Set<PhoenixRole>([
 ]);
 
 const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
-  "Product Manager",
-  "Group Product Manager",
   "Training Manager",
   "Marketing Manager",
 ]);
@@ -221,12 +221,12 @@ export function resolveEmployeePortalNavVisibility(
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
     showReportItTab: isA3Account,
-    showReportItDashboardTab: false,
+    showReportItDashboardTab: isProductManager || isGroupProductManager || isTrainingManager,
     showOrganogramTab:
-      showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
+      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showPlansTab: isA3Account || showPlansTab,
     showProbationTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showSupportTab: true,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
@@ -235,12 +235,14 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager,
-    showFingerprintReportTab: hasDeviceMapping === true,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
+    showFingerprintReportTab: hasDeviceMapping === true || isProductManager || isGroupProductManager,
     showRoiIntelligenceTab: showSalesIntelligence,
     showMiniWeeklySalesTab: showSalesIntelligence,
     showMiniMonthlySalesTab: showSalesIntelligence,
     showCoachingAnalyticsTab: showSalesIntelligence,
-    showDoubleVisitAnalyticsTab: showSalesIntelligence,
+    showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
+    showActionsTab: !isTrainingManager,
+    showAttendanceTab: true,
   };
 }

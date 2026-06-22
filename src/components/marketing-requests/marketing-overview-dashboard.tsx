@@ -1,10 +1,16 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  Activity,
+  BriefcaseBusiness,
   ChartColumnBig,
+  ChartNoAxesColumnIncreasing,
+  ClipboardCheck,
+  Hourglass,
   Inbox,
   Megaphone,
   MessageSquareText,
+  Network,
   PlusCircle,
   RotateCcw,
   ShieldCheck,
@@ -124,6 +130,65 @@ export function MarketingOverviewDashboard({
     },
   ];
 
+  // Executive oversight surfaces — company-wide READ reports the Marketing Manager now sees
+  // (mirrors PM/GPM/TM data). Pure links, so a slow/empty report never blocks this landing.
+  const reportLinks: QuickAction[] = [
+    {
+      description: "Company monthly sales by brick & region.",
+      href: "/sales/monthly-dashboard",
+      icon: <Network className="h-4 w-4" />,
+      label: "Source of Sales",
+    },
+    {
+      description: "Company sales performance overview.",
+      href: "/sales",
+      icon: <ChartNoAxesColumnIncreasing className="h-4 w-4" />,
+      label: "Sales Dashboard",
+    },
+    {
+      description: "Weekly sales trend & breakdowns.",
+      href: "/sales/weekly/dashboard",
+      icon: <ChartColumnBig className="h-4 w-4" />,
+      label: "Weekly Sales",
+    },
+    {
+      description: "Company coaching reports (view).",
+      href: "/coaching",
+      icon: <ClipboardCheck className="h-4 w-4" />,
+      label: "Field Coaching",
+    },
+    {
+      description: "Coaching trends across the company.",
+      href: "/coaching/analytics",
+      icon: <ChartColumnBig className="h-4 w-4" />,
+      label: "Coaching Analytics",
+    },
+    {
+      description: "Double-visit coverage & quality.",
+      href: "/admin/double-visit-analytics",
+      icon: <Activity className="h-4 w-4" />,
+      label: "Double-Visit Analytics",
+    },
+    {
+      description: "Company reporting structure.",
+      href: "/workspace/organogram",
+      icon: <Network className="h-4 w-4" />,
+      label: "Organogram",
+    },
+    {
+      description: "Open seats across the company.",
+      href: "/workspace/vacancies",
+      icon: <BriefcaseBusiness className="h-4 w-4" />,
+      label: "Vacancies",
+    },
+    {
+      description: "Probation tracker (view).",
+      href: "/workspace/probation",
+      icon: <Hourglass className="h-4 w-4" />,
+      label: "Probation",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       {/* ---- KPI cards ------------------------------------------------------------------------ */}
@@ -163,6 +228,30 @@ export function MarketingOverviewDashboard({
             </span>
           </Link>
         ))}
+      </div>
+
+      {/* ---- Executive reports & intelligence ------------------------------------------------- */}
+      <div>
+        <h2 className="mb-3 text-[12px] font-black uppercase tracking-[0.16em] text-slate-500">
+          Executive reports &amp; intelligence
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {reportLinks.map((action) => (
+            <Link
+              className="group flex items-start gap-3 rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-300/80 hover:shadow-[0_16px_32px_rgba(15,23,42,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+              href={action.href}
+              key={action.label}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 text-white ring-1 ring-slate-900/10">
+                {action.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-black tracking-tight text-slate-900">{action.label}</span>
+                <span className="mt-0.5 block text-[11px] font-medium leading-4 text-slate-500">{action.description}</span>
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* ---- Pending your approval (preview) -------------------------------------------------- */}
