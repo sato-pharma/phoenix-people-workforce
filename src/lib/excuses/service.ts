@@ -167,6 +167,7 @@ const EXCUSE_ELIGIBLE_ROLES = new Set([
   "Product Manager",
   "Group Product Manager",
   "Training Manager",
+  "Marketing Manager",
 ]);
 
 function canUseExcuses(access: AccessContext, employee: EmployeeDirectoryRow) {
