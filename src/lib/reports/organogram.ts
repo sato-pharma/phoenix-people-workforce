@@ -65,7 +65,10 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
   return (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "CEO"
+    access.role === "CEO" ||
+    // Marketing Manager is an executive marketing role with company-wide READ oversight of the
+    // org structure + vacancies (this gate covers both organogram and the vacancy report).
+    access.role === "Marketing Manager"
   );
 }
 
