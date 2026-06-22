@@ -58,7 +58,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlansTab"] },
   { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
   { label: "Actions", fullLabel: "Actions", href: "/employee-portals/actions", icon: Inbox, flags: ["showActionsTab"] },
-  { label: "Payslips", fullLabel: "Payslips", href: "/payslips", icon: FileText },
+  { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
   // Sales Intelligence (Product / Group Product Managers)
@@ -80,8 +80,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },
   { label: "ROI", fullLabel: "ROI Tracking", href: "/employee-portals/marketing-requests/roi-tracking", icon: ChartColumnBig, flags: ["showMarketingRoiTrackingTab"] },
   // Leave Management
-  { label: "Vacation", fullLabel: "Vacation Request", href: "/leave-management/vacation-request", icon: CalendarDays },
-  { label: "Leave", fullLabel: "Vacation Report", href: "/leave-management/vacation-report", icon: FileText },
+  { label: "Vacation", fullLabel: "Vacation Request", href: "/employee-portals/vacation-request", icon: CalendarDays },
+  { label: "Leave", fullLabel: "Vacation Report", href: "/employee-portals/vacation-report", icon: FileText },
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab", "showReportItDashboardTab"] },
   // Team Performance

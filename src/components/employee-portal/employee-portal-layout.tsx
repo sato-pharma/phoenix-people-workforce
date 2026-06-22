@@ -195,7 +195,7 @@ function buildEmployeePortalSections({
     {
       title: "Payroll",
       items: [
-        { href: "/payslips", label: "Payslips", icon: FileText },
+        { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
       ],
     },
@@ -229,8 +229,8 @@ function buildEmployeePortalSections({
     {
       title: "Leave Management",
       items: [
-        { href: "/leave-management/vacation-request", label: "Vacation Request", icon: CalendarDays },
-        { href: "/leave-management/vacation-report", label: "Vacation Report", icon: FileText },
+        { href: "/employee-portals/vacation-request", label: "Vacation Request", icon: CalendarDays },
+        { href: "/employee-portals/vacation-report", label: "Vacation Report", icon: FileText },
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
         ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
       ],
