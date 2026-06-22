@@ -4,12 +4,10 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
-  CalendarOff,
   CheckCircle2,
   Clock,
   DollarSign,
   ExternalLink,
-  MapPin,
   ShieldCheck,
   TrendingDown,
   TrendingUp,
@@ -19,7 +17,9 @@ import {
 } from "lucide-react";
 
 import { AreaSparkline, TwoSeriesBars } from "@/components/admin/ceo-command-center";
+import { CeoAttendanceTables } from "@/components/admin/ceo-attendance-tables";
 import { CeoDvTable } from "@/components/admin/ceo-dv-table";
+import { CeoExpenseTables } from "@/components/admin/ceo-expense-tables";
 import { CeoSosTables } from "@/components/admin/ceo-sos-tables";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone } from "@/lib/ceo/command-center";
@@ -267,40 +267,13 @@ function ExpenseSnippet({
           <p className="text-[10px] text-slate-400">trips flagged</p>
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {data.byRegion.length > 0 && (
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">By Region</p>
-            <div className="space-y-1">
-              {data.byRegion.map((r) => (
-                <div key={r.label} className="flex items-center justify-between gap-2 border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                    <span className="truncate text-[11px] font-semibold text-slate-700">{r.label}</span>
-                  </div>
-                  <span className="shrink-0 text-[11px] font-black text-slate-900">{egp(r.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {data.topSpenders.length > 0 && (
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Top Spenders</p>
-            <div className="space-y-1">
-              {data.topSpenders.map((s, i) => (
-                <div key={s.label} className="flex items-center justify-between gap-2 border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-black text-slate-300">#{i + 1}</span>
-                    <span className="truncate text-[11px] font-semibold text-slate-700">{s.label}</span>
-                  </div>
-                  <span className="shrink-0 text-[11px] font-black text-slate-900">{egp(s.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      {(data.byRegion.length > 0 || data.topSpenders.length > 0) && (
+        <CeoExpenseTables
+          byRegion={data.byRegion}
+          topSpenders={data.topSpenders}
+          windowLabel={data.windowLabel}
+        />
+      )}
     </div>
   );
 }
@@ -391,36 +364,14 @@ function AttendanceWidget({
           <p className={`mt-0.5 text-2xl font-black ${(managersOnLeave?.length ?? 0) > 0 ? "text-amber-700" : "text-slate-400"}`}>{managersOnLeave?.length ?? 0}</p>
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {(managersOnLeave?.length ?? 0) > 0 && (
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1.5"><CalendarOff className="h-3 w-3 text-amber-500" />Managers on leave today</p>
-            <div className="space-y-1">
-              {managersOnLeave!.map((m) => (
-                <div key={m.hrId} className="flex items-center gap-2 border border-amber-100 bg-amber-50 px-2.5 py-1.5">
-                  <span className="border border-amber-300 bg-white px-1.5 py-0.5 text-[9px] font-bold text-amber-700">{m.role}</span>
-                  <span className="text-[11px] font-semibold text-slate-800">{m.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {data.todayAbsentees.length > 0 && (
-          <div>
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1.5"><Users className="h-3 w-3 text-rose-500" />Absent today {data.todayAbsentees.length > 6 ? `(showing 6 of ${data.todayAbsentees.length})` : ""}</p>
-            <div className="space-y-1">
-              {data.todayAbsentees.slice(0, 6).map((a) => (
-                <div key={a.hrId} className="flex items-center justify-between border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-                  <span className="text-[11px] font-semibold text-slate-800">{a.name}</span>
-                  <span className="text-[10px] text-slate-400">{a.department}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <CeoAttendanceTables
+        managersOnLeave={managersOnLeave ?? []}
+        absentees={data.todayAbsentees}
+        allAbsenteesCount={data.todayAbsentees.length}
+        chronicLate={data.chronicLate}
+      />
       {data.weeklyTrend.length > 0 && (
-        <div>
+        <div className="px-5 pb-5">
           <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Late rate — 7-week trend</p>
           <div className="flex items-end gap-1.5 h-14">
             {data.weeklyTrend.map((w) => (
@@ -435,23 +386,7 @@ function AttendanceWidget({
           <p className="mt-1 text-[9px] text-slate-400">Latest: {data.weeklyTrend[data.weeklyTrend.length - 1]?.lateRate.toFixed(1) ?? "—"}% late rate</p>
         </div>
       )}
-      {data.chronicLate.length > 0 && (
-        <div>
-          <p className="mb-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Chronic late (30-day window)</p>
-          <div className="space-y-1">
-            {data.chronicLate.slice(0, 6).map((c) => (
-              <div key={c.hrId} className="flex items-center justify-between border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-                <span className="text-[11px] font-semibold text-slate-800">{c.name}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-slate-500">{c.lateDays} days late</span>
-                  <span className={`text-[11px] font-bold ${c.lateRate >= 50 ? "text-rose-700" : c.lateRate >= 30 ? "text-amber-700" : "text-slate-600"}`}>{c.lateRate.toFixed(0)}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="flex gap-2">
+      <div className="flex gap-2 px-5 pb-5">
         <Link href="/attendance/analytics" className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700">
           Full Attendance <ExternalLink className="h-3 w-3" />
         </Link>
