@@ -24,7 +24,7 @@ export const maxDuration = 60;
 // Sales Intelligence section is Product / Group Product Managers only. Line scope is
 // applied inside getSalesMarketingDashboard (resolveDashboardLineScope); the
 // service also strips confidential products for non-CEO/Super-Admin viewers.
-const ROI_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager"]);
+const ROI_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
 
 // Inner async component — loads data after the portal shell streams to the client.
 async function RoiDashboardContent({

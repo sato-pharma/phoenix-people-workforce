@@ -194,10 +194,11 @@ export function resolveEmployeePortalNavVisibility(
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
   const baseShowIncentiveTab = !isTrainingManager && resolvedRole !== "Marketing Manager";
-  // Product / Group Product Managers get the line/product-scoped Sales Intelligence
-  // analytics surfaces. Each page enforces its own server-side scope; the sidebar
-  // visibility just mirrors that access.
-  const showSalesIntelligence = isProductManager || isGroupProductManager;
+  const isMarketingManager = resolvedRole === "Marketing Manager";
+  // Product / Group Product Managers (and their line manager, Marketing Manager) get the
+  // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
+  // server-side scope; the sidebar visibility just mirrors that access.
+  const showSalesIntelligence = isProductManager || isGroupProductManager || isMarketingManager;
   const showFieldSalesTabs = showSalesIntelligence || isNationalSalesManager || isDistrictManager || resolvedRole === "Regional Manager" || isMedicalRep;
 
   return {
