@@ -69,8 +69,15 @@ export function allowedPhoenixOrigins() {
     ? normalizeOrigin(`https://${process.env.VERCEL_URL.trim()}`)
     : null;
 
+  // VERCEL_BRANCH_URL is the stable branch-alias URL (differs from VERCEL_URL which is
+  // per-deployment). Branch preview URLs don't match VERCEL_URL, so without this the
+  // CSRF middleware and login rejectUntrustedForwardedOrigin both block preview logins.
+  const vercelBranchUrl = process.env.VERCEL_BRANCH_URL?.trim()
+    ? normalizeOrigin(`https://${process.env.VERCEL_BRANCH_URL.trim()}`)
+    : null;
+
   return new Set(
-    [productionOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, ...configured]
+    [productionOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, vercelBranchUrl, ...configured]
       .map((origin) => normalizeOrigin(origin))
       .filter((origin): origin is string => Boolean(origin)),
   );
