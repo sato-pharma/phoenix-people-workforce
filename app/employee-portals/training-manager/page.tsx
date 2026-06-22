@@ -55,7 +55,7 @@ export default async function TrainingManagerOverviewPage() {
         <div className="flex items-center gap-3 border border-orange-200 bg-orange-50 px-5 py-3.5">
           <Layers className="h-4 w-4 shrink-0 text-orange-600" />
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">Product Line</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">Business Line</p>
             <p className="truncate font-bold text-slate-900">{shell.employee.line}</p>
           </div>
         </div>
