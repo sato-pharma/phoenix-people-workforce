@@ -605,7 +605,7 @@ export function PersonalExpenseWorkloadDashboard({
   submitExpenseHref = "/employee-portals/submit-expense",
 }: {
   adminKeyCards?: WorkloadAdminKeyCards | null;
-  data: MedicalRepPortalData;
+  data: Pick<MedicalRepPortalData, "workload">;
   showHero?: boolean;
   submitExpenseHref?: string;
 }) {
