@@ -2319,7 +2319,6 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
   const batchesResult = await supabase
     .from("source_of_sales_import_batches")
     .select("*")
-    .eq("status", "validated")
     .eq("period", selectedPeriod)
     .order("created_at", { ascending: false });
 
