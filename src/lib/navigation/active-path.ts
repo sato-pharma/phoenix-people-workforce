@@ -63,25 +63,32 @@ export function getSections(
   lookup: PermissionLookup,
   role?: PhoenixRole,
   moduleIds?: ModuleIdLookup,
+  isSystemAdministratorWorkspace = false,
 ): NavigationSection[] {
-  const visible = sections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter(
-        (item) =>
-          permissionAllowed(lookup, item.permissions) &&
-          roleAllowed(role, item.roles) &&
-          moduleIdAllowed(moduleIds, item) &&
-          (mode === "admin" || roleNotExcluded(role, item.excludedRoles)),
-      ),
-    }))
-    .filter((section) => section.items.length > 0);
+  const visible = isSystemAdministratorWorkspace
+    ? sections.map((section) => ({ ...section, items: [...section.items] }))
+    : sections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter(
+            (item) =>
+              permissionAllowed(lookup, item.permissions) &&
+              roleAllowed(role, item.roles) &&
+              moduleIdAllowed(moduleIds, item) &&
+              (mode === "admin" || roleNotExcluded(role, item.excludedRoles)),
+          ),
+        }))
+        .filter((section) => section.items.length > 0);
 
   // When an explicit, ordered module list is supplied (a Modules Control assignment
   // for this user/role/position/line), honor that order so admins can curate BOTH
   // which items appear AND the sequence — items within a section, and the sections
   // themselves (a section sorts by its earliest-ranked item). Without an assignment
   // (moduleIds null/empty) the natural config order is preserved for everyone else.
+  if (isSystemAdministratorWorkspace) {
+    return visible.filter((section) => section.items.length > 0);
+  }
+
   if (Array.isArray(moduleIds) && moduleIds.length > 0) {
     const orderRank = new Map(moduleIds.map((moduleId, index) => [moduleId, index] as const));
     const rankOf = (item: NavigationSectionItem) =>

@@ -54,6 +54,7 @@ export async function AppShell({
     console.error("[modules-control] effective sidebar lookup failed", error);
     return null;
   });
+  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const permissionLookup: PermissionLookup = {};
   for (const resource of permissionResources) {
@@ -73,6 +74,7 @@ export async function AppShell({
         <DocumentTitleSync mode={resolvedNavigationMode} />
         <CommandPalette
           currentRole={access.role}
+          isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           effectiveModuleIds={effectiveModuleIds}
           navigationMode={resolvedNavigationMode}
           permissionLookup={permissionLookup}
@@ -80,6 +82,7 @@ export async function AppShell({
         <div className="flex min-h-screen">
           <Sidebar
             currentRole={access.role}
+            isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
             effectiveModuleIds={effectiveModuleIds}
             navigationMode={resolvedNavigationMode}
             permissionLookup={permissionLookup}
