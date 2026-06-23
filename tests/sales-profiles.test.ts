@@ -31,9 +31,12 @@ function profileInvariants() {
 
 // Every weekly-applicable distributor must also have a monthly raw profile (the same distributor is
 // uploaded monthly and weekly through the one connected module).
+// Exception: weeklyOnly distributors use a layout (e.g. transposed matrix) that has no monthly
+// flat-file equivalent and are therefore exempt from this check.
 function weeklyDistributorsHaveProfiles() {
   const profileCodes = new Set(RAW_DISTRIBUTOR_PROFILES.map((p) => p.distributorCode.toUpperCase()));
   for (const w of WEEKLY_DISTRIBUTORS) {
+    if (w.weeklyOnly) continue;
     assert.ok(profileCodes.has(w.code.toUpperCase()), `weekly distributor ${w.code} has no monthly profile`);
   }
 }

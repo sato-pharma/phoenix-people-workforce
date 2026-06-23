@@ -231,6 +231,37 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
     ],
   },
+  // POS / POS Purchasing Sales — single matrix sheet "Purchasing Sales Data", header row 1.
+  // Unique interleaved layout: every product occupies TWO consecutive rows — the first row holds
+  // quantities per channel (col 4 onwards), the second row holds the corresponding EGP values
+  // (ignored by the adapter; factory_price is used instead). Returns are encoded as negative
+  // quantities in the qty row. The "Total" column and "Total Bonus" column at the right edge are
+  // detected dynamically and excluded from the channel matrix scan.
+  {
+    code: "POS",
+    name: "POS Purchasing Sales",
+    splitFiles: false,
+    sheets: [
+      {
+        role: "combined",
+        sheetName: "Purchasing Sales Data",
+        sheetIncludes: "Purchasing",
+        headerRowNumber: 1,
+        formField: "file",
+        fields: [
+          { field: "itemName", label: "Product name (Arabic)", columnIndex: 2, expectedHeaderHint: "product name — Arabic (col B)", role: "context" },
+          { field: "itemCode", label: "Product code", columnIndex: 3, expectedHeaderHint: "Product Code", role: "key" },
+          { field: "bonusQty", label: "Total bonus units", columnIndex: 109, expectedHeaderHint: "Total Bonus", role: "value" },
+        ],
+        matrix: {
+          kind: "branch-headers",
+          firstColumn: 4,
+          stopAtHeaderPattern: "^total$",
+          note: "Each customer / channel is a column header (cols 4 onward). The adapter reads the qty row for each product and skips the immediately following value row. The 'Total' and 'Total Bonus' columns at the right edge are excluded automatically.",
+        },
+      },
+    ],
+  },
   // PS / Overseas — TWO matrix files, header row 1 (parser.ts adaptPS ~:499-617)
   {
     code: "PS",
