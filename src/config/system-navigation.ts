@@ -402,7 +402,6 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/actions", icon: Inbox, label: "Actions", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }], exact: true },
-      { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
@@ -431,8 +430,9 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-sales-intelligence",
     items: [
-      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"] },
-      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"] },
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
+      { href: "/employee-portals/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
     ],
     label: "Sales Operations",
   },
