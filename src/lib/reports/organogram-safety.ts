@@ -186,8 +186,7 @@ function exactEmployeeFilledSlotKey(row: OrganogramReportRow) {
   const hasTeamContext = Boolean(slotPart(row.teamId, row.teamName));
   const broadArea =
     isCairoMarketName(row.areaName) ||
-    normalizeText(row.areaName) === "greater cairo" ||
-    normalizeText(row.regionName) === "greater cairo";
+    isCairoMarketName(row.regionName);
 
   // A broad Cairo manager slot without team context is not unique enough to
   // prove that an active manager fills the exact vacancy box.
