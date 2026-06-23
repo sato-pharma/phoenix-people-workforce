@@ -524,10 +524,17 @@ function mergeThinWeeks(raw: TrendPoint[], minDays = 5): TrendPoint[] {
   return result;
 }
 
-function computeWeekGroups(weeks: string[]): { canonical: string; members: string[] }[] {
-  // Each unique upload date is its own group — no merging. This lets users filter on any individual
-  // uploaded sheet (or any combination) via the week picker + distributor filter.
-  return [...weeks].filter(Boolean).sort().map((w) => ({ canonical: w, members: [w] }));
+function computeWeekGroups(weeks: string[], minDays = 5): { canonical: string; members: string[] }[] {
+  const sorted = [...weeks].filter(Boolean).sort();
+  if (!sorted.length) return [];
+  const groups: { canonical: string; members: string[] }[] = [{ canonical: sorted[0], members: [sorted[0]] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const lastGroup = groups[groups.length - 1];
+    const lastMember = lastGroup.members[lastGroup.members.length - 1];
+    if (daysBetweenWeeks(lastMember, sorted[i]) < minDays) { lastGroup.members.push(sorted[i]); }
+    else { groups.push({ canonical: sorted[i], members: [sorted[i]] }); }
+  }
+  return groups;
 }
 
 export async function loadWeeklyDashboard(filters?: {
