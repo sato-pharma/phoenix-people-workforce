@@ -21,10 +21,12 @@ export function CommandPalette({
   permissionLookup,
   effectiveModuleIds,
   currentRole,
+  isSystemAdministratorWorkspace = false,
 }: {
   effectiveModuleIds?: readonly string[] | null;
   navigationMode: NavigationMode;
   permissionLookup: PermissionLookup;
+  isSystemAdministratorWorkspace?: boolean;
   currentRole?: PhoenixRole;
 }) {
   const router = useRouter();
@@ -39,11 +41,18 @@ export function CommandPalette({
 
   const items = useMemo<PaletteItem[]>(
     () =>
-      getSections(getNavigationSections(navigationMode), navigationMode, permissionLookup, currentRole, effectiveModuleIds)
+      getSections(
+        getNavigationSections(navigationMode),
+        navigationMode,
+        permissionLookup,
+        currentRole,
+        effectiveModuleIds,
+        isSystemAdministratorWorkspace,
+      )
         .flatMap((section) =>
           section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
         ),
-    [currentRole, effectiveModuleIds, navigationMode, permissionLookup],
+    [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, navigationMode, permissionLookup],
   );
 
   const filtered = useMemo(() => {

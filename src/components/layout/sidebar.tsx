@@ -319,12 +319,14 @@ function SidebarNav({
   onNavigate,
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   effectiveModuleIds,
+  isSystemAdministratorWorkspace = false,
   currentRole,
   rail = false,
   scrollable = true,
 }: {
   currentRole?: PhoenixRole;
   effectiveModuleIds?: readonly string[] | null;
+  isSystemAdministratorWorkspace?: boolean;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
@@ -335,8 +337,16 @@ function SidebarNav({
 }) {
   const isAdmin = mode === "admin";
   const sections = useMemo(
-    () => getSections(getNavigationSections(mode), mode, permissionLookup, currentRole, effectiveModuleIds),
-    [currentRole, effectiveModuleIds, mode, permissionLookup],
+    () =>
+      getSections(
+        getNavigationSections(mode),
+        mode,
+        permissionLookup,
+        currentRole,
+        effectiveModuleIds,
+        isSystemAdministratorWorkspace,
+      ),
+    [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, mode, permissionLookup],
   );
   const pathname = usePathname();
   const navInstanceId = useId();
@@ -787,10 +797,12 @@ export function Sidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   effectiveModuleIds,
+  isSystemAdministratorWorkspace = false,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
   effectiveModuleIds?: readonly string[] | null;
+  isSystemAdministratorWorkspace?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
 }) {
@@ -830,6 +842,7 @@ export function Sidebar({
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
           currentRole={currentRole}
+          isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           effectiveModuleIds={effectiveModuleIds}
           mode={navigationMode}
           permissionLookup={permissionLookup}
@@ -847,10 +860,12 @@ export function MobileSidebar({
   open,
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
+  isSystemAdministratorWorkspace = false,
   effectiveModuleIds,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
+  isSystemAdministratorWorkspace?: boolean;
   effectiveModuleIds?: readonly string[] | null;
   onClose: () => void;
   open: boolean;
@@ -903,6 +918,7 @@ export function MobileSidebar({
           <SidebarIntro mode={navigationMode} />
           <SidebarNav
             currentRole={currentRole}
+            isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
             effectiveModuleIds={effectiveModuleIds}
             mode={navigationMode}
             onNavigate={onClose}

@@ -21,6 +21,7 @@ export function Topbar({
   effectiveModuleIds,
   viewer,
   currentRole,
+  scope,
 }: {
   currentRole?: PhoenixRole;
   effectiveModuleIds?: readonly string[] | null;
@@ -48,6 +49,7 @@ export function Topbar({
       <MobileSidebar
         navigationMode={navigationMode}
         currentRole={currentRole}
+        isSystemAdministratorWorkspace={scope === "system" || currentRole === "Super Admin"}
         effectiveModuleIds={effectiveModuleIds}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
