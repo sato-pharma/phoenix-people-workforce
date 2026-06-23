@@ -147,7 +147,7 @@ async function loadEmployeeByHrId(hrId: string | null | undefined) {
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id,full_name,work_email")
-    .eq("hr_id", normalized)
+    .eq("hr_id", normalized.toUpperCase())
     .maybeSingle();
 
   if (error) throw error;
@@ -187,7 +187,7 @@ async function loadAuthUserByAccess(access: AccessContext) {
   const { data, error } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,name,email,auth_email,role,is_active")
-    .eq("hr_id", hrId)
+    .eq("hr_id", hrId.toUpperCase())
     .maybeSingle();
 
   if (error) throw error;
