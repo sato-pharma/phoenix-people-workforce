@@ -40,6 +40,7 @@ import {
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { getActiveHref, getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
 
 // ── Shared admin palette — matches the top navigation bar exactly ────────────
@@ -204,35 +205,12 @@ function writePins(key: string, hrefs: string[]) {
 }
 
 // ── Pending-count badge for the Action Center nav item ───────────────────────
+// All polling, visibility refresh, inFlight dedup, and browser notifications
+// are owned by the module-level singleton in nav-badge-store. Multiple mounts
+// of this component (pinned + section, mobile + desktop) share one fetch loop.
 function NavBadge({ src }: { src: string }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
-  const prevCountRef = useRef<number | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      void globalThis
-        .fetch(src)
-        .then((r) => r.json())
-        .then((d: { count?: number }) => {
-          if (cancelled || typeof d.count !== "number") return;
-          setCount(d.count);
-          if (prevCountRef.current !== null && d.count > prevCountRef.current && "Notification" in window) {
-            if (Notification.permission === "default") {
-              void Notification.requestPermission();
-            } else if (Notification.permission === "granted") {
-              new Notification("Action Center", { body: "New items are awaiting your approval.", icon: "/favicon.ico" });
-            }
-          }
-          prevCountRef.current = d.count;
-        })
-        .catch(() => {});
-    };
-    load();
-    const id = setInterval(load, 30_000);
-    const onVisible = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
-  }, [src]);
+  useEffect(() => subscribeNavBadge(src, setCount), [src]);
   if (!count) return null;
   return (
     <span className="ml-auto min-w-[20px] rounded-full bg-orange-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white">
