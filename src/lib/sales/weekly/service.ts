@@ -696,6 +696,7 @@ export async function loadWeeklyDashboard(filters?: {
           return selectedWeekSet.has(ws) || priorWeekSet.has(ws) || recentWeekSet.has(ws);
         })
         .map((b) => String(b.id));
+  if (batchIdsForRows.length === 0) return empty();
   const validIds = new Set(batchIdsForRows);
   const allRows: FactRow[] = [];
   const pageSize = 1000;
