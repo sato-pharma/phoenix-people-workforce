@@ -134,6 +134,11 @@ export function WeeklyUploadWorkspace({
   const [filterDistributor, setFilterDistributor] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("");
 
+  // Multi-select + per-row download
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingMulti, setDownloadingMulti] = useState(false);
+
   const uploadPeriods = useMemo(
     () => [...new Set(batches.map((b) => b.weekStart).filter((w): w is string => Boolean(w)))].sort().reverse(),
     [batches],
@@ -156,6 +161,67 @@ export function WeeklyUploadWorkspace({
     [batches, filterDistributor, filterPeriod],
   );
   const filtersActive = Boolean(filterDistributor || filterPeriod);
+
+  const allFilteredSelected =
+    filteredBatches.length > 0 && filteredBatches.every((b) => selectedIds.has(b.id));
+
+  function toggleAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filteredBatches.forEach((b) => next.delete(b.id));
+      else filteredBatches.forEach((b) => next.add(b.id));
+      return next;
+    });
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function triggerDownload(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleSingleDownload(batch: WeeklyBatch) {
+    setDownloadingId(batch.id);
+    try {
+      const params = new URLSearchParams({ distributor: batch.distributorCode, week: batch.weekStart ?? "" });
+      const res = await fetch(`/api/sales/weekly/export?${params.toString()}`);
+      if (!res.ok) throw new Error("Export failed.");
+      triggerDownload(await res.blob(), `phoenix-weekly_${batch.weekStart ?? "no-date"}_${batch.distributorCode}.xlsx`);
+    } catch {
+      alert("Download failed. Please try again.");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  async function handleMultiDownload() {
+    setDownloadingMulti(true);
+    try {
+      const res = await fetch("/api/sales/weekly/export-batches", {
+        body: JSON.stringify({ batchIds: [...selectedIds] }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Export failed.");
+      triggerDownload(await res.blob(), `phoenix-weekly-combined_${selectedIds.size}-batches.xlsx`);
+    } catch {
+      alert("Download failed. Please try again.");
+    } finally {
+      setDownloadingMulti(false);
+    }
+  }
 
   const isPS = distributorCode === "PS";
   const needsPeriodDate = distributorCode !== "IS-S";
@@ -492,10 +558,42 @@ export function WeeklyUploadWorkspace({
             </span>
           </div>
         </div>
+
+        {/* Multi-select action bar */}
+        {selectedIds.size > 0 && (
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#020617] px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-white transition hover:bg-[#1E293B] disabled:opacity-60"
+              disabled={downloadingMulti}
+              onClick={handleMultiDownload}
+              type="button"
+            >
+              {downloadingMulti ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Download {selectedIds.size} selected
+            </button>
+            <button
+              className="text-[11px] text-[#94A3B8] transition hover:text-[#0F172A]"
+              onClick={() => setSelectedIds(new Set())}
+              type="button"
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
+
         <div className={`overflow-x-auto ${card}`}>
           <table className="w-full text-sm">
             <thead className={darkHead}>
               <tr>
+                <th className="px-3 py-2">
+                  <input
+                    aria-label="Select all"
+                    checked={allFilteredSelected}
+                    className="accent-[#F97316]"
+                    onChange={toggleAll}
+                    type="checkbox"
+                  />
+                </th>
                 <th className="px-3 py-2">Period</th>
                 <th className="px-3 py-2">Distributor</th>
                 <th className="px-3 py-2">Status</th>
@@ -509,13 +607,22 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {filteredBatches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={8}>
+                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={9}>
                     {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
                   </td>
                 </tr>
               )}
               {filteredBatches.map((batch) => (
                 <tr className="border-t border-[#FFE8D6]" key={batch.id}>
+                  <td className="px-3 py-2">
+                    <input
+                      aria-label={`Select ${batch.distributorName} ${batch.weekStart ?? ""}`}
+                      checked={selectedIds.has(batch.id)}
+                      className="accent-[#F97316]"
+                      onChange={() => toggleOne(batch.id)}
+                      type="checkbox"
+                    />
+                  </td>
                   <td className="px-3 py-2 font-bold text-[#0F172A]">{batch.weekStart ?? "—"}</td>
                   <td className="px-3 py-2">{batch.distributorName}</td>
                   <td className="px-3 py-2">
@@ -528,14 +635,27 @@ export function WeeklyUploadWorkspace({
                   <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalSalesValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      aria-label="Delete upload"
-                      className="inline-flex text-[#94A3B8] transition hover:text-rose-600"
-                      onClick={() => handleDelete(batch.id)}
-                      type="button"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="inline-flex items-center gap-2">
+                      <button
+                        aria-label="Download XLSX report"
+                        className="inline-flex text-[#94A3B8] transition hover:text-[#F97316] disabled:opacity-40"
+                        disabled={downloadingId === batch.id}
+                        onClick={() => handleSingleDownload(batch)}
+                        type="button"
+                      >
+                        {downloadingId === batch.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Download className="h-4 w-4" />}
+                      </button>
+                      <button
+                        aria-label="Delete upload"
+                        className="inline-flex text-[#94A3B8] transition hover:text-rose-600"
+                        onClick={() => handleDelete(batch.id)}
+                        type="button"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
