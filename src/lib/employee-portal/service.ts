@@ -360,7 +360,7 @@ async function fetchEmployeeSalaryStructure(hrId: string) {
   const { data } = await getSupabaseAdmin()
     .from("employee_salary_structure")
     .select("base_salary,cost_of_living,fuel_allowance,social_insurance,income_taxes")
-    .eq("employee_hr_id", hrId)
+    .eq("employee_hr_id", hrId.toUpperCase())
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -876,8 +876,8 @@ function mapDocument(row: Record<string, unknown>, index: number): EmployeePorta
 async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocument[]> {
   const supabase = getSupabaseAdmin();
   const queries = [
-    () => supabase.from("employee_documents").select("*").eq("employee_hr_id", hrId).order("created_at", { ascending: false }),
-    () => supabase.from("employee_documents").select("*").eq("hr_id", hrId).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("employee_hr_id", hrId.toUpperCase()).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("hr_id", hrId.toUpperCase()).order("created_at", { ascending: false }),
   ];
 
   for (const runQuery of queries) {
