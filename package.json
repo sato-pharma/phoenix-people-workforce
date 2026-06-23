@@ -20,7 +20,7 @@
     "security:rls-static": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-rls-static.ts",
     "security:preflight:local": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-preflight-local.ts",
     "check:edit": "npm run typecheck",
-    "check:harden": "npm run check:routes && npm run check:migrations && npm run lint && npm run typecheck && npm run test && npm run build",
+    "check:harden": "npm run check:routes && npm run check:migrations && npm run lint && npx next typegen && npm run typecheck && npm run test && npm run build",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",
     "db:rls:check-local-prereqs": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/check-local-rls-prereqs.ts",
     "db:rls:bootstrap-sandbox": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/bootstrap-phoenix-sandbox.ts",
@@ -67,7 +67,7 @@
     "sync:main": "node scripts/sync-main.mjs",
     "launch-desk:verify": "node scripts/verify-launch-desk-stream.mjs",
     "coverage": "c8 --reporter=text --reporter=html --reporter=json node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
-    "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "ci": "npm run check:routes && npm run check:migrations && npm run lint && npx next typegen && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@openai/agents": "^0.11.8",
