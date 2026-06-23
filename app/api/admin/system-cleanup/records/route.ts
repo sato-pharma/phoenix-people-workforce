@@ -14,6 +14,9 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: "cleanup_records_failed", message }, { status: 500 });
 }
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const access = await resolveAccessContext(request);

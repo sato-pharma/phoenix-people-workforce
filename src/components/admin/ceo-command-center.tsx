@@ -42,9 +42,6 @@ function n(value: number) {
   return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "0";
 }
 
-function pct(value: number, decimals = 0) {
-  return `${(Number.isFinite(value) ? value : 0).toFixed(decimals)}%`;
-}
 
 // ── Attention tone mapping ────────────────────────────────────────────────────
 
@@ -242,7 +239,7 @@ function QuickLinkCard({
 export function CeoCommandCenter({
   data,
   welcome: _welcome,
-  access,
+  access: _access,
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
