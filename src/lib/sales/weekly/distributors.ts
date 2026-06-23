@@ -10,12 +10,16 @@ export type WeeklyDistributorDef = {
   cadence: WeeklyCadence;
   /** PS ships separate sales + stock matrix files; everyone else ships one combined workbook. */
   separateSalesStockFiles?: boolean;
+  /** true for distributors with NO monthly flat-file equivalent (e.g. POS uses a transposed matrix
+   *  layout parsed only by the weekly adapter; there is no separate monthly import for it). */
+  weeklyOnly?: boolean;
 };
 
 export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   { code: "IS", name: "Ibn Sina", cadence: "weekly" },
   { code: "IS-S", name: "Ibn Sina Sato", cadence: "weekly" },
   { code: "PS", name: "Overseas", cadence: "weekly", separateSalesStockFiles: true },
+  { code: "POS", name: "POS Purchasing Sales", cadence: "weekly", weeklyOnly: true },
   { code: "EG", name: "EGD", cadence: "twice-monthly" },
   { code: "RM", name: "RAMCO", cadence: "twice-monthly" },
   { code: "SF", name: "Sofico", cadence: "twice-monthly" },

@@ -165,6 +165,9 @@ type WeeklyObservation = {
   posColumnHeaderRaw?: string;
   /** PS unallocated reconciliation row — bypasses branch mapping, region left empty */
   unallocated?: boolean;
+  /** POS only: per-product total bonus (free) units. Never priced. Carried on a dedicated synthetic
+   *  unallocated observation (qty=0) so it doesn't inflate sales numbers. */
+  bonusQty?: number;
 };
 
 type AdapterContext = {
@@ -676,6 +679,123 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
   return { observations, sheetDates, sheetName: names.join(" + ") || "Overseas", blockingReasons };
 }
 
+// POS (POS Purchasing Sales) — single matrix sheet "Purchasing Sales Data".
+// Unique interleaved layout: every product occupies two consecutive rows.
+//   Qty row  : col1=company (first product only, ignored) | col2=product name (Arabic) |
+//              col3=product code | col4..N=qty per channel | colN+1=Total | colN+2=Total Bonus
+//   Value row: col2 empty, col3 empty, col4..N=EGP values (ignored — factory_price used instead)
+// Returns are negative quantities in the qty row; the adapter splits them into separate observations.
+// No date column → periodDate is always required on upload.
+function adaptPOS(ctx: AdapterContext): AdapterResult {
+  const workbook = ctx.workbooks[0];
+  const observations: WeeklyObservation[] = [];
+  const sheetDates = new Set<string>();
+  const blockingReasons: string[] = [];
+
+  const combinedC = contractSheet(ctx.contract, "combined");
+
+  const sheet =
+    findSheet(workbook, { name: "Purchasing Sales Data", includes: "Purchasing" }) ??
+    workbook.worksheets[0];
+  if (!sheet) {
+    blockingReasons.push(
+      "POS Purchasing Sales: could not find the data sheet. Expected a sheet named 'Purchasing Sales Data'.",
+    );
+    return { observations, sheetDates, sheetName: "POS Purchasing Sales", blockingReasons };
+  }
+
+  // Read channel names from the header row (row 1). Scan from firstColumn until we hit
+  // "Total" (case-insensitive) or an empty cell — both signal the end of the channel block.
+  const headerRow = sheet.getRow(headerRowOf(combinedC, 1));
+  const channelFirst = combinedC?.matrix?.firstColumn ?? 4;
+  const totalStop = stopRegex(combinedC?.matrix?.stopAtHeaderPattern, /^total$/i);
+
+  let lastChannelCol = channelFirst - 1;
+  for (let col = channelFirst; col <= 300; col += 1) {
+    const hdr = cellText(at(headerRow, col));
+    if (!hdr) break;
+    if (totalStop.test(hdr)) break;
+    lastChannelCol = col;
+  }
+
+  if (lastChannelCol < channelFirst) {
+    blockingReasons.push(
+      "POS Purchasing Sales: no channel columns found in the header row. The file may be in an unexpected format.",
+    );
+    return { observations, sheetDates, sheetName: sheet.name, blockingReasons };
+  }
+
+  const itemNameCol = colOf(combinedC, "itemName", 2);
+  const itemCodeCol = colOf(combinedC, "itemCode", 3);
+  const bonusCol   = colOf(combinedC, "bonusQty", 109);
+
+  // Iterate data rows. Qty rows have a non-empty product name in itemNameCol; value rows do not.
+  // We also stop on the "Total Units" / "Total Values" summary rows at the bottom.
+  for (let r = dataStartRow(combinedC, 2); r <= sheet.rowCount; r += 1) {
+    const row = sheet.getRow(r);
+    const productName = cellText(at(row, itemNameCol));
+    const productCode = cellText(at(row, itemCodeCol));
+
+    // Value row (empty name) or sentinel summary row → skip.
+    if (!productName) continue;
+    if (/^total/i.test(productName.trim())) continue;
+
+    // Qty row: iterate every channel column and emit an observation for each non-zero cell.
+    for (let col = channelFirst; col <= lastChannelCol; col += 1) {
+      const channelName = cellText(at(headerRow, col));
+      if (!channelName) continue;
+      const qty = cellNumber(at(row, col));
+      if (qty === 0) continue;
+
+      if (qty > 0) {
+        observations.push({
+          side: "sales",
+          sourceRowNumber: r,
+          rawItemCode: productCode,
+          rawItemName: productName,
+          rawBranchCode: channelName,
+          rawBranchName: channelName,
+          branchFileType: "sales",
+          qty,
+        });
+      } else {
+        // Negative qty → return (e.g. Mina Al-Basal −3, Beheira −4).
+        observations.push({
+          side: "return",
+          sourceRowNumber: r,
+          rawItemCode: productCode,
+          rawItemName: productName,
+          rawBranchCode: channelName,
+          rawBranchName: channelName,
+          branchFileType: "sales",
+          qty: Math.abs(qty),
+        });
+      }
+    }
+
+    // "Total Bonus" column: per-product free units. Emit as a dedicated unallocated observation
+    // (qty: 0 so sales are not inflated; bonusQty carries the value). Region mapping is bypassed
+    // via unallocated: true — same pattern as PS's unallocated reconciliation rows.
+    const bonusUnits = cellNumber(at(row, bonusCol));
+    if (bonusUnits > 0) {
+      observations.push({
+        side: "sales",
+        sourceRowNumber: r,
+        rawItemCode: productCode,
+        rawItemName: productName,
+        rawBranchCode: "POS_BONUS_TOTAL",
+        rawBranchName: "POS Bonus (product total)",
+        branchFileType: "sales",
+        qty: 0,
+        bonusQty: bonusUnits,
+        unallocated: true,
+      });
+    }
+  }
+
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons };
+}
+
 // SF (Sofico) — single "Sheet1" workbook. Per-customer invoice detail rows (one invoice line per
 // row). Header row 1, data row 2+. col4=ItemID (Sofico product code, not the master — alias key),
 // col5=ItemName (product display name), col12=State (branch numeric ID, e.g. "2" / "11"),
@@ -905,6 +1025,7 @@ type Agg = {
   grossSalesQty: number;
   returnQty: number;
   stockQty: number;
+  bonusQty: number;
   /** sum of distributor-stated authoritative net (e.g. RM col15) when the source provides it */
   authoritativeNet: number;
   /** true once any sales observation carried an authoritative net → use it as the net of record */
@@ -995,7 +1116,9 @@ export async function parseWeeklyWorkbookBuffer(input: {
                 ? adaptIS(ctx)
                 : canonicalCode === "SF"
                   ? adaptSF(ctx)
-                  : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
+                  : canonicalCode === "POS"
+                    ? adaptPOS(ctx)
+                    : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
     }
   } catch (error) {
     return {
@@ -1058,6 +1181,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
         grossSalesQty: 0,
         returnQty: 0,
         stockQty: 0,
+        bonusQty: 0,
         authoritativeNet: 0,
         hasAuthoritativeNet: false,
         sourceRowNumber: obs.sourceRowNumber,
@@ -1081,6 +1205,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
       }
     } else if (obs.side === "return") agg.returnQty += obs.qty;
     else agg.stockQty += obs.qty;
+
+    if (obs.bonusQty != null && obs.bonusQty > 0) agg.bonusQty += obs.bonusQty;
 
     // No-alias is a soft warning — row stored as-is and auto-heals when the alias is added.
     // Bad master data (no price / no line) and unmapped region are hard failures that block the batch.
@@ -1157,7 +1283,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
       salesQty: grossForDisplay,
       returnQty: returnForDisplay,
       netQty,
-      bonusQty: 0,
+      bonusQty: Number(agg.bonusQty.toFixed(6)),
       salesValue,
       stockQty: Number(agg.stockQty.toFixed(6)),
       validationState,
@@ -1174,6 +1300,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
         returnQty: String(returnForDisplay),
         netQty: String(netQty),
         stockQty: String(Number(agg.stockQty.toFixed(6))),
+        bonusQty: String(Number(agg.bonusQty.toFixed(6))),
         sourceRowNumber: String(agg.sourceRowNumber),
         ...(agg.hasAuthoritativeNet
           ? {
