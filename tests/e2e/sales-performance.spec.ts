@@ -12,7 +12,7 @@ const BASE_URL = "http://localhost:3000/dev/employee-portals/sales";
 
 test.describe("Sales Performance Page", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   });
 
   // ─── Page load ──────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ test.describe("Sales Performance Page", () => {
 
   test("mobile card view appears on small screens", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
     // KPI cards should still be visible
     await expect(page.getByText("Total Sales")).toBeVisible();
@@ -193,7 +193,7 @@ test.describe("Sales Performance Page", () => {
 
   test("mobile card view shows sort control", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
 
     // The mobile sort dropdown should be visible
     await expect(page.getByText("Sort by")).toBeVisible();
@@ -206,7 +206,7 @@ test.describe("Sales Performance Page", () => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
 
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await expect(page.getByText("Sales Performance")).toBeVisible();
 
     // No unhandled page errors
