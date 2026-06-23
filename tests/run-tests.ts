@@ -237,6 +237,7 @@ import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
+import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -487,3 +488,4 @@ await runTest("activity tracking", runActivityTrackingTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("world room realtime session", runWorldRoomRealtimeTests);
+await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
