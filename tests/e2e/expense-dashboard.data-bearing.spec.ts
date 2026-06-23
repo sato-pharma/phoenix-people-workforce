@@ -22,7 +22,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/expense-dashboard";
 
 test.describe("Expense Dashboard — data-bearing user", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     // Wait for the actual dashboard (not the empty-state) to render.
     // The KPI cards only appear when there are expense rows linked.
     await expect(
