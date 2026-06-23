@@ -238,6 +238,7 @@ import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
+import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -489,3 +490,4 @@ await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("world room realtime session", runWorldRoomRealtimeTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
+await runTest("nav-badge store", runNavBadgeStoreTests);
