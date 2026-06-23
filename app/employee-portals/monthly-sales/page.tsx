@@ -19,7 +19,7 @@ export const maxDuration = 60;
 // viewer's line from their HR_ID, scopes columns to their assigned products, and strips
 // confidential products. Unlike /employee-portals/monthly-closing this view is LIVE — it is not
 // gated behind the admin "publish" step, so PM/GPM always see current Source-of-Sales numbers.
-const MONTHLY_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep"]);
+const MONTHLY_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"]);
 
 export default async function PortalMonthlySalesPage({
   searchParams,

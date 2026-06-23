@@ -63,6 +63,10 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
+  "SFE Manager",
+  "CEO",
+  "Super Admin",
   "Medical Rep",
 ]);
 

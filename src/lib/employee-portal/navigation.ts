@@ -199,7 +199,10 @@ export function resolveEmployeePortalNavVisibility(
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
   const showSalesIntelligence = isProductManager || isGroupProductManager || isMarketingManager;
-  const showFieldSalesTabs = showSalesIntelligence || isNationalSalesManager || isDistrictManager || resolvedRole === "Regional Manager" || isMedicalRep;
+  const isSfeManager = resolvedRole === "SFE Manager";
+  const isCeo = resolvedRole === "CEO";
+  const isSuperAdmin = resolvedRole === "Super Admin";
+  const showFieldSalesTabs = showSalesIntelligence || isNationalSalesManager || isDistrictManager || resolvedRole === "Regional Manager" || isMedicalRep || isSfeManager || isCeo || isSuperAdmin;
 
   return {
     showDashboardTab: !isTrainingManager,
