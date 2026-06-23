@@ -641,10 +641,13 @@ export async function loadWeeklyDashboard(filters?: {
     lineFilterMode: line.mode,
   };
 
+  const weekGroupMembersObj = Object.fromEntries(weekGroupMap);
+
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
     availableWeeks,
+    weekGroupMembers: weekGroupMembersObj,
     availableLines: [],
     availableRegions: [],
     availableProducts: [],
@@ -832,6 +835,7 @@ export async function loadWeeklyDashboard(filters?: {
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
     availableWeeks,
+    weekGroupMembers: weekGroupMembersObj,
     availableLines,
     availableRegions,
     availableProducts,

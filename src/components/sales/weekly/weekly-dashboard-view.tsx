@@ -276,6 +276,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           <WeekDropdown
             allWeeks={filters.allWeeks}
             availableWeeks={data.availableWeeks}
+            weekGroupMembers={data.weekGroupMembers}
             selectedTitle={selectedWeekTitle}
             selectedWeeks={filters.weeks}
             summary={filterWeekLabel}
@@ -386,9 +387,16 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   );
 }
 
+function weekGroupLabel(canonical: string, members: string[]): string {
+  if (members.length <= 1) return `Week of ${canonical}`;
+  const last = members[members.length - 1];
+  return `Period ${canonical} – ${last}`;
+}
+
 function WeekDropdown({
   allWeeks,
   availableWeeks,
+  weekGroupMembers,
   selectedTitle,
   selectedWeeks,
   summary,
@@ -397,6 +405,7 @@ function WeekDropdown({
 }: {
   allWeeks: boolean;
   availableWeeks: string[];
+  weekGroupMembers: Record<string, string[]>;
   selectedTitle: string;
   selectedWeeks: string[];
   summary: string;
@@ -434,7 +443,7 @@ function WeekDropdown({
                 type="checkbox"
                 onChange={(event) => onWeekChange(week, event.target.checked)}
               />
-              <span>Week of {week}</span>
+              <span>{weekGroupLabel(week, weekGroupMembers[week] ?? [week])}</span>
             </label>
           ))}
         </div>

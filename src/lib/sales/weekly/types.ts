@@ -217,6 +217,8 @@ export type WeeklyDashboard = {
   weekStart: string | null;
   priorWeekStart: string | null;
   availableWeeks: string[];
+  /** Maps each canonical week date to all member dates in that group (for range labels in the UI). */
+  weekGroupMembers: Record<string, string[]>;
   availableLines: string[];
   /** Stable filter-option universes (scoped by week + distributor only, so multi-select never collapses). */
   availableRegions: WeeklyDistributorOption[];
