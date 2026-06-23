@@ -27,11 +27,19 @@ const NAV_COLOR = "FF1D4ED8";
 
 // ── live readers (all paginated past PostgREST's 1000-row cap) ──
 
-async function selectAll(supabase: SupabaseAdmin, table: string, columns: string, order?: string): Promise<Row[]> {
+async function selectAll(
+  supabase: SupabaseAdmin,
+  table: string,
+  columns: string,
+  order?: string,
+  inFilter?: { column: string; values: string[] },
+): Promise<Row[]> {
   const pageSize = 1000;
   // One exact-count head request, then fetch all pages CONCURRENTLY (bounded) — far faster than the
   // sequential cursor walk for big tables (import_rows can be tens of thousands of rows = dozens of pages).
-  const head = await supabase.from(table).select(columns, { count: "exact", head: true });
+  let headQuery = supabase.from(table).select(columns, { count: "exact", head: true });
+  if (inFilter && inFilter.values.length > 0) headQuery = headQuery.in(inFilter.column, inFilter.values);
+  const head = await headQuery;
   if (head.error) return []; // tolerate a missing/empty table
   const total = head.count ?? 0;
   if (total === 0) return [];
@@ -46,6 +54,7 @@ async function selectAll(supabase: SupabaseAdmin, table: string, columns: string
     const fetched = await Promise.all(slice.map(async (from) => {
       let query = supabase.from(table).select(columns).range(from, from + pageSize - 1);
       if (order) query = query.order(order, { ascending: true });
+      if (inFilter && inFilter.values.length > 0) query = query.in(inFilter.column, inFilter.values);
       const result = await query;
       return result.error ? [] : ((result.data ?? []) as unknown as Row[]);
     }));
@@ -54,10 +63,18 @@ async function selectAll(supabase: SupabaseAdmin, table: string, columns: string
   return pages.flat();
 }
 
+// Module-level cache for alias maps — these are structurally stable (same column headers appear in
+// every batch for the same distributor) so rebuilding on every workbook download wastes ~600ms.
+let _aliasCache: { ts: number; product: Map<string, Set<string>>; territory: Map<string, Set<string>> } | null = null;
+const _ALIAS_CACHE_TTL = 5 * 60 * 1000;
+
 // Infer WHICH distributor each alias came from by matching the alias text against the original raw
 // columns preserved in import_rows.raw_row (e.g. PS "Mat. Code"/"Sal. Dist. Desc.", IS "Item Code"/
 // "Territory Name"). Read-only; pages with bounded memory (processes + discards each batch of pages).
 async function buildAliasDistributorMaps(supabase: SupabaseAdmin): Promise<{ product: Map<string, Set<string>>; territory: Map<string, Set<string>> }> {
+  if (_aliasCache && Date.now() - _aliasCache.ts < _ALIAS_CACHE_TTL) {
+    return { product: _aliasCache.product, territory: _aliasCache.territory };
+  }
   const product = new Map<string, Set<string>>();
   const territory = new Map<string, Set<string>>();
   const profileByCode = new Map(RAW_DISTRIBUTOR_PROFILES.map((p) => [p.distributorCode.toUpperCase(), p]));
@@ -95,6 +112,7 @@ async function buildAliasDistributorMaps(supabase: SupabaseAdmin): Promise<{ pro
       }
     }
   }
+  _aliasCache = { ts: Date.now(), product, territory };
   return { product, territory };
 }
 
@@ -155,6 +173,14 @@ export async function buildMasterWorkbookBuffer(
   const includeRestricted = options?.includeRestricted ?? false;
   const supabase = getSupabaseAdmin();
 
+  // Pre-fetch validated batch IDs so the heavy import_rows scan is restricted to validated batches
+  // only (uses the existing batch_id B-tree index instead of a 410MB full table scan).
+  const { data: batchIdData } = await supabase
+    .from("source_of_sales_import_batches")
+    .select("id")
+    .eq("status", "validated");
+  const validatedBatchIds = (batchIdData ?? []).map((b) => String(b.id));
+
   const [
     regions, areas, blocks, bricks, productsAll,
     productAliasesAll, territoryAliases, customerMap, importRowsAll, batches, aliasDist,
@@ -172,6 +198,7 @@ export async function buildMasterWorkbookBuffer(
       "source_of_sales_import_rows",
       "id,batch_id,distributor_code,invoice_period,region_code,region_name,area_code,area_name,block_code,brick_id,product_code,product_name,official_line,qty,bonus_qty,value,client_code,client_name,client_address,is_direct,validation_state,validation_issues",
       "id",
+      validatedBatchIds.length > 0 ? { column: "batch_id", values: validatedBatchIds } : undefined,
     ),
     selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period"),
     buildAliasDistributorMaps(supabase),

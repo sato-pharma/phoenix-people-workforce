@@ -1,3 +1,4 @@
+import { asyncPool } from "@/lib/utils/async-pool";
 import { normalizeRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
@@ -696,48 +697,96 @@ export async function loadWeeklyDashboard(filters?: {
           return selectedWeekSet.has(ws) || priorWeekSet.has(ws) || recentWeekSet.has(ws);
         })
         .map((b) => String(b.id));
+  if (batchIdsForRows.length === 0) return empty();
+  const CONCURRENCY = 6;
   const validIds = new Set(batchIdsForRows);
   const allRows: FactRow[] = [];
   const pageSize = 1000;
-  let from = 0;
-  for (;;) {
-    let query = supabase
-      .from("weekly_sales_rows")
-      .select(
-        "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
-      )
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    // batch_id narrowing is safe: options (weeks, distributors) come from the batch list, not
-    // these rows, so filtering here never collapses the filter dropdowns.
-    // Region/product/line stay IN MEMORY so exclude-mode and full option lists remain correct.
-    if (batchIdsForRows.length > 0) query = query.in("batch_id", batchIdsForRows);
-    if (distributor.has && distributor.mode === "include") query = query.in("distributor_code", [...distributor.set]);
-    const page = await query;
-    if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
-    const data = page.data ?? [];
-    for (const row of data) {
-      if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
-      allRows.push({
-        weekStart: String(row.week_start ?? ""),
-        distributorCode: String(row.distributor_code ?? ""),
-        distributorName: String(row.distributor_name ?? ""),
-        regionCode: String(row.region_code ?? ""),
-        regionName: String(row.region_name ?? ""),
-        branchCode: String(row.branch_code ?? ""),
-        branchName: String(row.branch_name ?? ""),
-        productCode: String(row.product_code ?? ""),
-        productName: String(row.product_name ?? ""),
-        officialLine: String(row.official_line ?? ""),
-        salesValue: Number(row.sales_value ?? 0),
-        salesQty: Number(row.sales_qty ?? 0),
-        netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
-        stockQty: Number(row.stock_qty ?? 0),
-      });
-    }
-    if (data.length < pageSize) break;
-    from += pageSize;
+
+  const fetchStart = Date.now();
+  // batch_id narrowing is safe: options (weeks, distributors) come from the batch list, not
+  // these rows, so filtering here never collapses the filter dropdowns.
+  // Region/product/line stay IN MEMORY so exclude-mode and full option lists remain correct.
+  // Page 0 uses count:exact so remaining page offsets can be issued concurrently.
+  let p0Query = supabase
+    .from("weekly_sales_rows")
+    .select(
+      "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+      { count: "exact" },
+    )
+    .order("id", { ascending: true })
+    .range(0, pageSize - 1);
+  if (batchIdsForRows.length > 0) p0Query = p0Query.in("batch_id", batchIdsForRows);
+  if (distributor.has && distributor.mode === "include") p0Query = p0Query.in("distributor_code", [...distributor.set]);
+  const firstPage = await p0Query;
+  if (firstPage.error) throw new SalesWorkflowError("load_failed", firstPage.error.message, 500);
+  const totalCount = firstPage.count ?? (firstPage.data?.length ?? 0);
+  for (const row of firstPage.data ?? []) {
+    if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
+    allRows.push({
+      weekStart: String(row.week_start ?? ""),
+      distributorCode: String(row.distributor_code ?? ""),
+      distributorName: String(row.distributor_name ?? ""),
+      regionCode: String(row.region_code ?? ""),
+      regionName: String(row.region_name ?? ""),
+      branchCode: String(row.branch_code ?? ""),
+      branchName: String(row.branch_name ?? ""),
+      productCode: String(row.product_code ?? ""),
+      productName: String(row.product_name ?? ""),
+      officialLine: String(row.official_line ?? ""),
+      salesValue: Number(row.sales_value ?? 0),
+      salesQty: Number(row.sales_qty ?? 0),
+      netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
+      stockQty: Number(row.stock_qty ?? 0),
+    });
   }
+  const remainingFroms: number[] = [];
+  for (let from = pageSize; from < totalCount; from += pageSize) remainingFroms.push(from);
+  if (remainingFroms.length > 0) {
+    const pages = await asyncPool(CONCURRENCY, remainingFroms, async (from) => {
+      let q = supabase
+        .from("weekly_sales_rows")
+        .select(
+          "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+        )
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (batchIdsForRows.length > 0) q = q.in("batch_id", batchIdsForRows);
+      if (distributor.has && distributor.mode === "include") q = q.in("distributor_code", [...distributor.set]);
+      const page = await q;
+      if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
+      return page.data ?? [];
+    });
+    for (const pageData of pages) {
+      for (const row of pageData) {
+        if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
+        allRows.push({
+          weekStart: String(row.week_start ?? ""),
+          distributorCode: String(row.distributor_code ?? ""),
+          distributorName: String(row.distributor_name ?? ""),
+          regionCode: String(row.region_code ?? ""),
+          regionName: String(row.region_name ?? ""),
+          branchCode: String(row.branch_code ?? ""),
+          branchName: String(row.branch_name ?? ""),
+          productCode: String(row.product_code ?? ""),
+          productName: String(row.product_name ?? ""),
+          officialLine: String(row.official_line ?? ""),
+          salesValue: Number(row.sales_value ?? 0),
+          salesQty: Number(row.sales_qty ?? 0),
+          netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
+          stockQty: Number(row.stock_qty ?? 0),
+        });
+      }
+    }
+  }
+  console.info(JSON.stringify({
+    event: "weekly_sales_rows_fetch",
+    totalRows: allRows.length,
+    totalPages: 1 + remainingFroms.length,
+    concurrency: CONCURRENCY,
+    fetchMs: Date.now() - fetchStart,
+    batchCount: batchIdsForRows.length,
+  }));
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.

@@ -25,7 +25,7 @@ const BASE_URL = "http://localhost:3000/employee-portals";
 
 test.describe("Command palette", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   });
 
   test("opens with Ctrl/Cmd+K, focuses input, filters, and closes on Escape", async ({ page }) => {

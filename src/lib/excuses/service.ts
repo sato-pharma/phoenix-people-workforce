@@ -243,7 +243,7 @@ export async function getExcuseWorkspace(
   access: AccessContext,
 ): Promise<EmployeeExcuseWorkspaceData> {
   const { employee } = await loadEligibleEmployee(access);
-  const employeeHrId = normalizeHrId(employee.hrId) ?? employee.hrId;
+  const employeeHrId = employee.hrId;
   const requests = await fetchEmployeeExcuseRequests(employeeHrId);
 
   return {
@@ -599,8 +599,7 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
   if (!isSystemActor) {
     const actorHrId = resolveEmployeeIdentityId(access);
     if (!actorHrId) return [];
-    const normalized = normalizeHrId(actorHrId) ?? actorHrId;
-    query = query.eq("manager_hr_id", normalized);
+    query = query.eq("manager_hr_id", actorHrId.toUpperCase());
   }
 
   const { data, error } = await query;

@@ -23,7 +23,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/expense-dashboard";
 
 test.describe("Expense Dashboard", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     // Wait for either the hero (data present) or the empty state to render
     await expect(
       page

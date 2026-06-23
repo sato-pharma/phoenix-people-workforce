@@ -25,7 +25,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/med-reps-performance";
 
 test.describe("Medical Reps Performance", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await expect(
       page.getByText(/Medical Reps Performance|Performance Data Unavailable/i).first(),
     ).toBeVisible({ timeout: 15_000 });

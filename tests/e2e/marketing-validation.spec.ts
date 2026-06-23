@@ -22,7 +22,7 @@ test.describe("Marketing Validation Workspace", () => {
     // Grant geolocation permissions and mock position
     await page.context().grantPermissions(["geolocation"]);
     await page.context().setGeolocation({ latitude: 30.0444, longitude: 31.2357 });
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   });
 
   // ─── Page Load ──────────────────────────────────────────────────────
