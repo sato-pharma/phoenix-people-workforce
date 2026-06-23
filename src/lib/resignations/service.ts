@@ -1282,12 +1282,13 @@ async function updateEmployeeResignationDatesFallback(
 }
 
 async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hrId: string) {
+  const dbHrId = hrId.trim().toUpperCase();
   const joinedResult = await supabase
     .from("employees")
     .select(
       "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
     )
-    .eq("hr_id", hrId)
+    .eq("hr_id", dbHrId)
     .maybeSingle();
 
   let data: unknown | null = joinedResult.data;
@@ -1297,7 +1298,7 @@ async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hr
     const fallbackResult = await supabase
       .from("employees")
       .select("hr_id,full_name,job_title,employment_status,created_at,updated_at,resignation_date,last_working_date")
-      .eq("hr_id", hrId)
+      .eq("hr_id", dbHrId)
       .maybeSingle();
 
     data = fallbackResult.data;

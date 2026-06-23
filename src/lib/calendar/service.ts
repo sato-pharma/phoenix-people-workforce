@@ -176,11 +176,12 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
 async function loadLeaveItems(access: AccessContext, start: string, end: string): Promise<CalendarItem[]> {
   const viewerHrId = normalizeHrId(access.hrId);
   if (!viewerHrId) return [];
+  const dbHrId = String(access.hrId ?? "").trim().toUpperCase();
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("v2_vacation_requests")
       .select("id,employee_hr_id,start_date,end_date,type,status")
-      .eq("employee_hr_id", viewerHrId)
+      .eq("employee_hr_id", dbHrId)
       .eq("status", "approved")
       .lte("start_date", end)
       .gte("end_date", start)
@@ -210,12 +211,13 @@ async function loadLeaveItems(access: AccessContext, start: string, end: string)
 async function loadPlanItems(access: AccessContext, start: string, end: string): Promise<CalendarItem[]> {
   const viewerHrId = normalizeHrId(access.hrId);
   if (!viewerHrId) return [];
+  const dbHrId = String(access.hrId ?? "").trim().toUpperCase();
   try {
     const supabase = getSupabaseAdmin();
     const { data: headers, error: headerError } = await supabase
       .from("employee_plan_headers")
       .select("id")
-      .eq("employee_hr_id", viewerHrId)
+      .eq("employee_hr_id", dbHrId)
       .limit(50);
     if (headerError) throw headerError;
     const ids = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);

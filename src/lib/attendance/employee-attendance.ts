@@ -198,7 +198,7 @@ export async function assertCanViewEmployeeAttendance(
   const { data } = await supabase
     .from("employees")
     .select("manager_hr_id")
-    .eq("hr_id", target)
+    .eq("hr_id", target.toUpperCase())
     .maybeSingle();
   const managerHrId = (data as { manager_hr_id: string | null } | null)?.manager_hr_id ?? null;
   if (!canViewEmployeeAttendanceReport(context, { hrId: target, managerHrId })) {
@@ -219,7 +219,7 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
   const { data, error } = await supabase
     .from("employees")
     .select("hr_id, full_name, job_title, employment_status, manager_hr_id")
-    .eq("manager_hr_id", normalized);
+    .eq("manager_hr_id", normalized.toUpperCase());
   if (error || !data) return [];
 
   const deviceMapped = await loadActiveDeviceMappedHrIds();

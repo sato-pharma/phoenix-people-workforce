@@ -21,7 +21,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/submit-expense";
 
 test.describe("Submit Expense", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await expect(
       page.locator("h1").filter({ hasText: /Submit Expense/i }).first(),
     ).toBeVisible({ timeout: 20_000 });

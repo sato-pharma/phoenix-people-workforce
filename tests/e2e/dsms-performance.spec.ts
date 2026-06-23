@@ -23,7 +23,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/dsms-performance";
 
 test.describe("DSMs Performance", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     // Target the h1 heading specifically — sidebar also contains "DSMs Performance" as a hidden span
     await expect(
       page.locator("h1").filter({ hasText: /DSMs Performance/i }).first(),

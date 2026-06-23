@@ -29,7 +29,7 @@ const BASE_URL = `http://localhost:3000/employee-portals/coaching/${REPORT_ID}`;
 
 test.describe("Employee Coaching Report Review", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     // Wait for hydration — skeleton disappears and real content appears
     await expect(
       page.getByText(/Field Coaching Review|Coaching Access Unavailable/i).first(),

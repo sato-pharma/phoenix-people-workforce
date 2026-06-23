@@ -31,7 +31,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/coaching";
 
 test.describe("Employee Coaching Reports", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   });
 
   // ─── Page Load ──────────────────────────────────────────────────────

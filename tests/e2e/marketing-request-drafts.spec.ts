@@ -33,7 +33,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/marketing-requests";
 
 test.describe("Marketing Request Drafts Workspace", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   });
 
   // ─── Page Load ──────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ const BASE_URL = "http://localhost:3000/employee-portals/organogram";
 
 test.describe("Organogram", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await expect(
       page.locator("h1").filter({ hasText: /Organogram/i }).first(),
     ).toBeVisible({ timeout: 15_000 });
