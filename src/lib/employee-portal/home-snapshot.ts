@@ -35,24 +35,30 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
 
   // All three fire in parallel: pending leave count, pending excuse count, latest payroll batch.
   const [vacationResult, excuseResult, batchResult] = await Promise.allSettled([
-    supabase
-      .from("v2_vacation_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", hrId.toUpperCase())
-      .in("status", ["pending_manager", "pending_hr"]),
-    supabase
-      .from("v2_excuse_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", hrId.toUpperCase())
-      .eq("status", "pending_manager"),
-    supabase
-      .from("salary_batches")
-      .select("id, year, month")
-      .in("status", ["approved", "locked"])
-      .order("year", { ascending: false })
-      .order("month", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    Promise.resolve(
+      supabase
+        .from("v2_vacation_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("employee_hr_id", hrId.toUpperCase())
+        .in("status", ["pending_manager", "pending_hr"]),
+    ),
+    Promise.resolve(
+      supabase
+        .from("v2_excuse_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("employee_hr_id", hrId.toUpperCase())
+        .eq("status", "pending_manager"),
+    ),
+    Promise.resolve(
+      supabase
+        .from("salary_batches")
+        .select("id, year, month")
+        .in("status", ["approved", "locked"])
+        .order("year", { ascending: false })
+        .order("month", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ),
   ]);
 
   const pendingVacationCount =
