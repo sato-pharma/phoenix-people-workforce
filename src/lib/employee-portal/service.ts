@@ -3589,15 +3589,19 @@ export async function getMedicalRepPortalData(
   const latestTrend = salesTrend[salesTrend.length - 1] ?? null;
   const previousTrend = salesTrend[salesTrend.length - 2] ?? null;
 
-  // Use summary totals if available, otherwise fall back to trend aggregation
-  const overviewSales = salesDashboard?.summary?.totalApprovedSales ?? 
+  // All-time totals kept for the "All-time" dashboard lens and reach-target widget.
+  const overviewSales = salesDashboard?.summary?.totalApprovedSales ??
     allTimeTrend.reduce((sum, point) => sum + Number((point as Record<string, unknown>).sales ?? 0), 0);
-  const overviewTarget = salesDashboard?.summary?.totalApprovedTarget ?? 
+  const overviewTarget = salesDashboard?.summary?.totalApprovedTarget ??
     allTimeTrend.reduce((sum, point) => sum + Number((point as Record<string, unknown>).target ?? 0), 0);
 
+  // Semester achievement: computed from the last 6 periods (salesTrend), NOT all-time totals,
+  // so the incentive tab matches the old sales queue achievement % for the relevant periods.
+  const semesterSales = salesTrend.reduce((sum, p) => sum + p.sales, 0);
+  const semesterTarget = salesTrend.reduce((sum, p) => sum + p.target, 0);
   const overviewAchievementPercent =
-    overviewTarget > 0
-      ? (overviewSales / overviewTarget) * 100
+    semesterTarget > 0
+      ? (semesterSales / semesterTarget) * 100
       : Number(base.sales.achievementRate ?? 0) * 100;
   const growthVsLastMonthPercent =
     latestTrend && previousTrend && previousTrend.sales > 0
