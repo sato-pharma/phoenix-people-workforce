@@ -701,8 +701,8 @@ export async function getCoachingReports(filters: CoachingReportFilters, access:
     .from("coaching_reports_summary")
     .select("*");
 
-  if (filters.medicalRepHrId) query = query.ilike("medical_rep_hr_id", String(filters.medicalRepHrId));
-  if (filters.coachHrId) query = query.ilike("coach_hr_id", String(filters.coachHrId));
+  if (filters.medicalRepHrId) query = query.eq("medical_rep_hr_id", String(filters.medicalRepHrId).toUpperCase());
+  if (filters.coachHrId) query = query.eq("coach_hr_id", String(filters.coachHrId).toUpperCase());
   if (filters.lineId) query = query.eq("line_id", Number(filters.lineId));
   if (filters.areaId) query = query.eq("area_id", Number(filters.areaId));
   if (filters.teamId) query = query.eq("team_id", Number(filters.teamId));
@@ -743,7 +743,7 @@ export async function getCoachingQuarterlySummary(filters: Pick<CoachingReportFi
     .order("year", { ascending: false })
     .order("quarter", { ascending: false });
 
-  if (filters.medicalRepHrId) query = query.ilike("medical_rep_hr_id", String(filters.medicalRepHrId));
+  if (filters.medicalRepHrId) query = query.eq("medical_rep_hr_id", String(filters.medicalRepHrId).toUpperCase());
   if (filters.year) query = query.eq("year", Number(filters.year));
   if (filters.quarter) query = query.eq("quarter", Number(filters.quarter));
 

@@ -28,7 +28,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
       ? supabase
           .from("v_employee_portal_sales")
           .select("sales_value, target_value")
-          .or(`hr_id.ilike.${hrId},employee_hr_id.ilike.${hrId}`)
+          .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
           .eq("year", now.getFullYear())
           .eq("month", now.getMonth() + 1)
       : Promise.resolve(null);
@@ -38,12 +38,12 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     supabase
       .from("v2_vacation_requests")
       .select("id", { count: "exact", head: true })
-      .ilike("employee_hr_id", hrId)
+      .eq("employee_hr_id", hrId)
       .in("status", ["pending_manager", "pending_hr"]),
     supabase
       .from("v2_excuse_requests")
       .select("id", { count: "exact", head: true })
-      .ilike("employee_hr_id", hrId)
+      .eq("employee_hr_id", hrId)
       .eq("status", "pending_manager"),
     supabase
       .from("salary_batches")
@@ -68,7 +68,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
       .from("salary_records")
       .select("net_salary")
       .eq("batch_id", batch.id)
-      .ilike("hr_id", hrId)
+      .eq("hr_id", hrId)
       .maybeSingle();
     if (record?.net_salary) {
       latestPayslip = {

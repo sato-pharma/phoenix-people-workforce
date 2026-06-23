@@ -591,7 +591,7 @@ export async function getMyResignations(access: AccessContext): Promise<Resignat
   const { data, error } = await supabase
     .from("employee_resignations")
     .select("*")
-    .ilike("employee_hr_id", hrId)
+    .eq("employee_hr_id", hrId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((row) => mapResignation(row as ResignationRow));
@@ -900,7 +900,7 @@ async function normalizeTerminalEmployeeLifecycleFlags(
         payroll_eligible: false,
         updated_at: new Date().toISOString(),
       })
-      .ilike("hr_id", employeeHrId)
+      .eq("hr_id", employeeHrId)
       .in("employment_status", ["resigned", "terminated", "inactive"]);
 
     if (error && !isMissingSchemaMessage(error)) {
@@ -1287,7 +1287,7 @@ async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hr
     .select(
       "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
     )
-    .ilike("hr_id", hrId)
+    .eq("hr_id", hrId)
     .maybeSingle();
 
   let data: unknown | null = joinedResult.data;
@@ -1297,7 +1297,7 @@ async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hr
     const fallbackResult = await supabase
       .from("employees")
       .select("hr_id,full_name,job_title,employment_status,created_at,updated_at,resignation_date,last_working_date")
-      .ilike("hr_id", hrId)
+      .eq("hr_id", hrId)
       .maybeSingle();
 
     data = fallbackResult.data;

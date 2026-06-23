@@ -167,7 +167,7 @@ export async function uploadEmployeePhoto(
   const { data: existing, error: lookupError } = await supabase
     .from("employees")
     .select("hr_id, photo_path")
-    .ilike("hr_id", hrId)
+    .eq("hr_id", hrId.toUpperCase())
     .limit(1)
     .maybeSingle();
   if (lookupError) throw new Error(`Unable to load employee: ${lookupError.message}`);
@@ -182,7 +182,7 @@ export async function uploadEmployeePhoto(
   const { error: updateError } = await supabase
     .from("employees")
     .update({ photo_path: path, photo_updated_at: new Date().toISOString() })
-    .ilike("hr_id", hrId);
+    .eq("hr_id", hrId.toUpperCase());
   if (updateError) {
     await supabase.storage.from(EMPLOYEE_PHOTOS_BUCKET).remove([path]).catch(() => {});
     throw new Error(`Unable to update employee photo: ${updateError.message}`);
@@ -204,7 +204,7 @@ export async function clearEmployeePhoto(hrId: string): Promise<void> {
   const { data: existing, error: lookupError } = await supabase
     .from("employees")
     .select("photo_path")
-    .ilike("hr_id", hrId)
+    .eq("hr_id", hrId.toUpperCase())
     .limit(1)
     .maybeSingle();
   if (lookupError) throw new Error(`Unable to load employee: ${lookupError.message}`);
@@ -214,7 +214,7 @@ export async function clearEmployeePhoto(hrId: string): Promise<void> {
   const { error: updateError } = await supabase
     .from("employees")
     .update({ photo_path: null, photo_updated_at: new Date().toISOString() })
-    .ilike("hr_id", hrId);
+    .eq("hr_id", hrId.toUpperCase());
   if (updateError) throw new Error(`Unable to clear employee photo: ${updateError.message}`);
 
   if (previousPath) {

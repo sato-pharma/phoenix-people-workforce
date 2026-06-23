@@ -1893,7 +1893,7 @@ async function approvedPaidDaysInPeriod(input: {
   let query = getSupabaseAdmin()
     .from(vacationRequestsTable)
     .select("id,duration_days,paid_duration_days,payment_status")
-    .ilike("employee_hr_id", input.employeeHrId)
+    .eq("employee_hr_id", input.employeeHrId.toUpperCase())
     .eq("status", "approved")
     .gte("start_date", input.periodStart)
     .lt("start_date", input.periodEnd);
@@ -3447,8 +3447,8 @@ function applyVacationReportDatabaseFilters(
   if (filters.status && filters.status !== "all") scopedQuery = scopedQuery.eq("status", filters.status);
   if (filters.paymentStatus && filters.paymentStatus !== "all") scopedQuery = scopedQuery.eq("payment_status", filters.paymentStatus);
   if (filters.vacationType && filters.vacationType !== "all") scopedQuery = scopedQuery.eq("vacation_type", filters.vacationType);
-  if (filters.employee) scopedQuery = scopedQuery.ilike("employee_hr_id", filters.employee);
-  if (filters.manager) scopedQuery = scopedQuery.ilike("manager_hr_id", filters.manager);
+  if (filters.employee) scopedQuery = scopedQuery.eq("employee_hr_id", filters.employee.toUpperCase());
+  if (filters.manager) scopedQuery = scopedQuery.eq("manager_hr_id", filters.manager.toUpperCase());
   if (filters.department) scopedQuery = scopedQuery.eq("department_name", filters.department);
   if (filters.line) scopedQuery = scopedQuery.eq("line_name", filters.line);
   if (filters.dateFrom) scopedQuery = scopedQuery.gte("start_date", filters.dateFrom);

@@ -185,6 +185,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     supabase
       .from("employees")
       .select("hr_id,full_name,job_title")
+      .not("employment_status", "in", "(resigned,terminated,inactive)")
       .order("full_name"),
     loadActiveDeviceMappedHrIds(),
   ]);

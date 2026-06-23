@@ -116,6 +116,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
     supabase
       .from("employees")
       .select("hr_id,full_name")
+      .not("employment_status", "in", "(resigned,terminated,inactive)")
       .order("full_name", { ascending: true }),
     supabase
       .from("attendance_raw_punches")

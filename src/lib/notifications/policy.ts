@@ -240,7 +240,7 @@ async function authUserByHrId(hrId: string | null | undefined): Promise<AuthReci
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,name,auth_email,role,is_active,line,manager_hr_id")
-      .ilike("hr_id", normalized)
+      .eq("hr_id", normalized)
       .eq("is_active", true)
       .limit(1)
       .maybeSingle();
@@ -261,7 +261,7 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
       getSupabaseAdmin()
       .from("employees")
         .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
-      .ilike("hr_id", normalized)
+      .eq("hr_id", normalized)
       .limit(1)
         .maybeSingle(),
       authUserByHrId(normalized),
@@ -322,7 +322,7 @@ async function managerFor(hrId: string | null | undefined) {
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
       .select("manager_hr_id")
-      .ilike("hr_id", employee.hrId)
+      .eq("hr_id", employee.hrId)
       .maybeSingle();
     if (error) throw error;
     const managerHrId = (data as { manager_hr_id?: string | null } | null)?.manager_hr_id;

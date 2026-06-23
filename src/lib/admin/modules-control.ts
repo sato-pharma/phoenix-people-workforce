@@ -617,7 +617,7 @@ async function lookupUserForAccess(access: AccessContext) {
     const { data, error } = await supabase
       .from("app_auth_users")
       .select("login_id,hr_id,role,line,is_active")
-      .ilike("hr_id", access.hrId)
+      .eq("hr_id", access.hrId)
       .maybeSingle();
     if (error) throw error;
     if (data) return data as Record<string, unknown>;
@@ -631,7 +631,7 @@ async function lookupEmployeePosition(hrId: string | null | undefined) {
   const { data, error } = await supabase
     .from("employees")
     .select("job_title,line_id,position_id,lines(name),positions(title)")
-    .ilike("hr_id", hrId)
+    .eq("hr_id", String(hrId).toUpperCase())
     .maybeSingle();
   if (error) {
     return { line: null, positionTitle: null };

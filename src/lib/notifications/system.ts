@@ -420,7 +420,7 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     const { data, error } = userId
       ? await query.ilike("login_id", userId).maybeSingle()
       : hrId
-        ? await query.ilike("hr_id", hrId).maybeSingle()
+        ? await query.eq("hr_id", hrId).maybeSingle()
         : { data: null, error: null };
 
     if (error) throw error;
@@ -436,7 +436,7 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
         const { data: employee } = await supabase
           .from("employees")
           .select("work_email")
-          .ilike("hr_id", resolvedHrId)
+          .eq("hr_id", resolvedHrId)
           .maybeSingle();
         workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
       } catch (employeeError) {
@@ -487,7 +487,7 @@ async function loadPreferences(input: CreateSystemNotificationInput): Promise<Lo
       .select("email_enabled,in_app_enabled,telegram_enabled,preferred_channel,module_preferences,quiet_hours_start,quiet_hours_end")
       .limit(1);
     if (userId) query = query.ilike("user_id", userId);
-    else if (hrId) query = query.ilike("hr_id", hrId);
+    else if (hrId) query = query.eq("hr_id", hrId);
     else return defaults;
 
     const { data, error } = await query.maybeSingle();
@@ -520,7 +520,7 @@ async function loadTelegramConnection(input: CreateSystemNotificationInput) {
       .order("created_at", { ascending: false })
       .limit(1);
     if (userId) query = query.ilike("user_id", userId);
-    else if (hrId) query = query.ilike("hr_id", hrId);
+    else if (hrId) query = query.eq("hr_id", hrId);
     else return null;
 
     const { data, error } = await query.maybeSingle();

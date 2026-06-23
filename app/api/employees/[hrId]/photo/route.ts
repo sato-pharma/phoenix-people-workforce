@@ -39,7 +39,7 @@ async function assertCanManageTargetPhoto(request: Request, hrId: string) {
   const { data: target } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id, manager_hr_id")
-    .ilike("hr_id", hrId)
+    .eq("hr_id", hrId.toUpperCase())
     .limit(1)
     .maybeSingle();
   if (!target) throw new Error(`Employee ${hrId} was not found.`);

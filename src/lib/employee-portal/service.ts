@@ -360,7 +360,7 @@ async function fetchEmployeeSalaryStructure(hrId: string) {
   const { data } = await getSupabaseAdmin()
     .from("employee_salary_structure")
     .select("base_salary,cost_of_living,fuel_allowance,social_insurance,income_taxes")
-    .ilike("employee_hr_id", hrId)
+    .eq("employee_hr_id", hrId)
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -876,8 +876,8 @@ function mapDocument(row: Record<string, unknown>, index: number): EmployeePorta
 async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocument[]> {
   const supabase = getSupabaseAdmin();
   const queries = [
-    () => supabase.from("employee_documents").select("*").ilike("employee_hr_id", hrId).order("created_at", { ascending: false }),
-    () => supabase.from("employee_documents").select("*").ilike("hr_id", hrId).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("employee_hr_id", hrId).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("hr_id", hrId).order("created_at", { ascending: false }),
   ];
 
   for (const runQuery of queries) {
@@ -1241,17 +1241,13 @@ async function fetchPortalSalesRecords(
       
       if (queryHrIds.length > 0) {
         if (queryHrIds.length === 1) {
-          const singleHrId = queryHrIds[0];
-          // For managers, we want to see records where they are the employee OR the manager
-          q = q.or(`hr_id.ilike.${singleHrId},manager_hr_id.ilike.${singleHrId}`);
+          const singleHrId = queryHrIds[0].toUpperCase();
+          q = q.or(`hr_id.eq.${singleHrId},manager_hr_id.eq.${singleHrId}`);
         } else {
-          // Use ilike OR for each ID — .in() is case-sensitive but HR IDs may be stored uppercase
-          // We check both hr_id (employee) and manager_hr_id to ensure managers see their team's data
-          const orConditions = queryHrIds.flatMap((id: string) => [
-            `hr_id.ilike.${id}`,
-            `manager_hr_id.ilike.${id}`
-          ]);
-          q = q.or(orConditions.join(","));
+          // HR IDs are always stored uppercase — use IN instead of per-ID ILIKE ORs
+          const upperIds = queryHrIds.map((id: string) => id.toUpperCase());
+          const idList = upperIds.join(",");
+          q = q.or(`hr_id.in.(${idList}),manager_hr_id.in.(${idList})`);
         }
       }
 
@@ -2951,7 +2947,7 @@ async function fetchOpenVacancySummaryForScope({
         .eq("status", "open");
 
       if (isTeamWorkforceRole(role) && currentUser.hrId) {
-        query = query.ilike("manager_hr_id", currentUser.hrId);
+        query = query.eq("manager_hr_id", currentUser.hrId);
       } else if (isLineWorkforceRole(role) && typeof employee.lineId === "number") {
         query = query.eq("line_id", employee.lineId);
       }
@@ -4687,7 +4683,7 @@ export async function getEmployeePortalVacancies(
         .order("created_at", { ascending: false });
 
       if (isDsm && currentUser.hrId) {
-        query = query.ilike("manager_hr_id", currentUser.hrId);
+        query = query.eq("manager_hr_id", currentUser.hrId);
       } else if (isLineScoped && typeof currentEmployee.lineId === "number") {
         query = query.eq("line_id", currentEmployee.lineId);
       }

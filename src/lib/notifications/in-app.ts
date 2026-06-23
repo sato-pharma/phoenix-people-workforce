@@ -186,7 +186,7 @@ export async function listInAppNotificationsForViewer(
     const employeeResult = await supabase
       .from("notification_events")
       .select(selectColumns)
-      .ilike("employee_hr_id", employeeHrId)
+      .eq("employee_hr_id", employeeHrId.toUpperCase())
       .in("category", allowedCategories)
       .order("created_at", { ascending: false })
       .limit(boundedLimit);

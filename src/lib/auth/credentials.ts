@@ -63,7 +63,7 @@ async function findActiveAuthUserRow(identifierInput: string): Promise<AppAuthUs
   const hrLookup = await supabase
     .from("app_auth_users")
     .select(baseQuery)
-    .ilike("hr_id", identifier)
+    .eq("hr_id", identifier.toUpperCase())
     .eq("is_active", true)
     .maybeSingle();
 
