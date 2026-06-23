@@ -11,6 +11,9 @@ import {
   isContractRenewalValidationError,
 } from "@/lib/contracts/service";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const csrfError = assertSameOriginMutation(request);

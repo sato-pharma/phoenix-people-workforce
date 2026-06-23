@@ -67,6 +67,7 @@ export function CeoHeroIdentity({
         {/* Main frame — square, no rounded corners, 2px orange ring */}
         <div className="flex h-[108px] w-[108px] items-center justify-center border-2 border-orange-400 bg-slate-800 sm:h-[128px] sm:w-[128px]">
           {showPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={imageUrl!}
               alt={fullName}

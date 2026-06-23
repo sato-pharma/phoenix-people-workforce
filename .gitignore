@@ -68,3 +68,5 @@ desktop.ini
 # Local-only throwaway tooling/scratch (screenshots, scratch git objects)
 .playwright-cli/
 .alt-git-objects/
+
+.vercel

@@ -8,6 +8,9 @@ import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const csrfError = assertSameOriginMutation(request);

@@ -12,6 +12,9 @@ import {
 } from "@/lib/contracts/service";
 import type { ContractRenewalAction } from "@/lib/contracts/types";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

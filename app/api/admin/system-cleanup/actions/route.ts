@@ -29,6 +29,9 @@ function errorCode(status: number) {
   return "cleanup_action_failed";
 }
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   const csrfError = assertSameOriginMutation(request);
   if (csrfError) return csrfError;
