@@ -529,7 +529,7 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
   const { data, error } = await supabase
     .from("employee_locations")
     .select("*")
-    .ilike("employee_hr_id", employeeHrId)
+    .eq("employee_hr_id", employeeHrId)
     .maybeSingle();
 
   if (error) {
@@ -577,7 +577,7 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
           residence_longitude: geocoded.lng,
           updated_at: new Date().toISOString(),
         })
-        .ilike("employee_hr_id", employeeHrId);
+        .eq("employee_hr_id", employeeHrId);
       residence.residenceLatitude = geocoded.lat;
       residence.residenceLongitude = geocoded.lng;
       residence.geocodeStatus = "success";
@@ -661,7 +661,7 @@ async function getLatestValidationSignal(employeeHrId: string): Promise<Validati
   const { data, error } = await supabase
     .from("outstation_location_audit_logs")
     .select("captured_latitude,captured_longitude,previous_captured_at,created_at")
-    .ilike("employee_hr_id", employeeHrId)
+    .eq("employee_hr_id", employeeHrId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -686,7 +686,7 @@ async function getCachedRoute(params: {
   const { data, error } = await supabase
     .from("outstation_expense_requests")
     .select("distance_km,duration_minutes,route_polyline")
-    .ilike("employee_hr_id", params.employeeHrId)
+    .eq("employee_hr_id", params.employeeHrId)
     .eq("residence_latitude", roundCoordinate(params.residenceLatitude))
     .eq("residence_longitude", roundCoordinate(params.residenceLongitude))
     .eq("captured_latitude", roundCoordinate(params.capturedLatitude))
@@ -1734,7 +1734,7 @@ export async function listMedicalRepExpenseRequests(access: AccessContext) {
   const { data, error } = await supabase
     .from("outstation_expense_requests")
     .select("*")
-    .ilike("employee_hr_id", identity.employeeHrId)
+    .eq("employee_hr_id", identity.employeeHrId)
     .order("created_at", { ascending: false });
 
   if (error) {

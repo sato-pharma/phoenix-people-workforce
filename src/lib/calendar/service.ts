@@ -180,7 +180,7 @@ async function loadLeaveItems(access: AccessContext, start: string, end: string)
     const { data, error } = await getSupabaseAdmin()
       .from("v2_vacation_requests")
       .select("id,employee_hr_id,start_date,end_date,type,status")
-      .ilike("employee_hr_id", viewerHrId)
+      .eq("employee_hr_id", viewerHrId)
       .eq("status", "approved")
       .lte("start_date", end)
       .gte("end_date", start)
@@ -215,7 +215,7 @@ async function loadPlanItems(access: AccessContext, start: string, end: string):
     const { data: headers, error: headerError } = await supabase
       .from("employee_plan_headers")
       .select("id")
-      .ilike("employee_hr_id", viewerHrId)
+      .eq("employee_hr_id", viewerHrId)
       .limit(50);
     if (headerError) throw headerError;
     const ids = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);

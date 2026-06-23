@@ -216,7 +216,7 @@ async function fetchEmployeeExcuseRequests(employeeHrId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
     .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
-    .ilike("employee_hr_id", employeeHrId)
+    .eq("employee_hr_id", employeeHrId)
     .order("excuse_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);
@@ -600,7 +600,7 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
     const actorHrId = resolveEmployeeIdentityId(access);
     if (!actorHrId) return [];
     const normalized = normalizeHrId(actorHrId) ?? actorHrId;
-    query = query.ilike("manager_hr_id", normalized);
+    query = query.eq("manager_hr_id", normalized);
   }
 
   const { data, error } = await query;

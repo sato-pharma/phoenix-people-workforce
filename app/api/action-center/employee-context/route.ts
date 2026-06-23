@@ -32,14 +32,14 @@ export async function GET(request: Request) {
       supabase
         .from("v2_vacation_requests")
         .select("vacation_type, start_date, end_date, manager_decision, hr_decision")
-        .ilike("employee_hr_id", hrId)
+        .eq("employee_hr_id", hrId.toUpperCase())
         .in("status", ["approved", "rejected"])
         .order("created_at", { ascending: false })
         .limit(6),
       supabase
         .from("v2_excuse_requests")
         .select("excuse_date, excuse_type, status")
-        .ilike("employee_hr_id", hrId)
+        .eq("employee_hr_id", hrId.toUpperCase())
         .in("status", ["approved", "rejected"])
         .order("created_at", { ascending: false })
         .limit(6),

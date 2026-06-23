@@ -1224,7 +1224,7 @@ async function loadEmployeeBaseSalary(employeeCode: string): Promise<number | nu
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
     .select("base_salary")
-    .ilike("hr_id", employeeCode)
+    .eq("hr_id", employeeCode.toUpperCase())
     .limit(1);
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] as { base_salary?: unknown } | undefined : undefined;

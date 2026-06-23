@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("employees")
       .select("hr_id, full_name, job_title, employment_status")
-      .ilike("hr_id", hrId)
+      .eq("hr_id", hrId.toUpperCase())
       .maybeSingle();
 
     if (error) {

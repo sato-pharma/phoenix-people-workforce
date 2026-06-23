@@ -961,7 +961,7 @@ async function authRoleForHrId(hrId: string | null | undefined): Promise<Phoenix
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("role")
-    .ilike("hr_id", normalized)
+    .eq("hr_id", normalized)
     .maybeSingle();
   if (error || !data) return null;
   const role = (data as { role?: string | null }).role;

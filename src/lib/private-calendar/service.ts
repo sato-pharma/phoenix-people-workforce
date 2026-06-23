@@ -215,7 +215,7 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
       .order("start_date", { ascending: true })
       .limit(100);
     query = normalizedHrIds.length === 1
-      ? query.ilike("employee_hr_id", normalizedHrIds[0])
+      ? query.eq("employee_hr_id", normalizedHrIds[0].toUpperCase())
       : query.in("employee_hr_id", normalizedHrIds);
     const { data, error } = await query;
     if (error) throw error;
@@ -239,7 +239,7 @@ async function loadExcuseItems(employeeHrIds: string[], start: string, end: stri
       .order("excuse_date", { ascending: true })
       .limit(100);
     query = normalizedHrIds.length === 1
-      ? query.ilike("employee_hr_id", normalizedHrIds[0])
+      ? query.eq("employee_hr_id", normalizedHrIds[0].toUpperCase())
       : query.in("employee_hr_id", normalizedHrIds);
     const { data, error } = await query;
     if (error) throw error;
@@ -264,7 +264,7 @@ async function loadPlanItems(employeeHrIds: string[], start: string, end: string
       .order("period_start_date", { ascending: true })
       .limit(1000);
     headersQuery = normalizedHrIds.length === 1
-      ? headersQuery.ilike("employee_hr_id", normalizedHrIds[0])
+      ? headersQuery.eq("employee_hr_id", normalizedHrIds[0])
       : headersQuery.in("employee_hr_id", normalizedHrIds);
     const { data: headersData, error: headersError } = await headersQuery;
     if (headersError) throw headersError;

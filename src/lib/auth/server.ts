@@ -456,7 +456,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
     const { data } = await supabase
       .from("app_auth_users")
       .select("login_id, hr_id, role, is_active, session_version, name")
-      .ilike("hr_id", access.hrId)
+      .eq("hr_id", access.hrId)
       .maybeSingle();
     row = (data as SessionUserRow | null) ?? null;
   }
