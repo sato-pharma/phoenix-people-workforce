@@ -198,8 +198,31 @@ function exactEmployeeFilledSlotKey(row: OrganogramReportRow) {
   return slotKey;
 }
 
+// For broad-area Cairo manager vacancies (no team context → exact slot key unavailable),
+// build a softer match key: level + RSM manager + line. Used to suppress vacancies when
+// an active employee already covers that same combination.
+function softManagerLineKey(row: OrganogramReportRow): string | null {
+  const level = classifyOrganogramStructureLevel(row);
+  if (!level || level === "medicalRep") return null;
+
+  const hasTeamContext = Boolean(slotPart(row.teamId, row.teamName));
+  const broadArea =
+    isCairoMarketName(row.areaName) ||
+    normalizeText(row.areaName) === "greater cairo" ||
+    normalizeText(row.regionName) === "greater cairo";
+
+  if (hasTeamContext || !broadArea) return null;
+
+  const manager = normalizeCode(row.managerHrId);
+  const line = slotPart(row.lineId, row.lineName);
+  if (!manager || !line) return null;
+
+  return `soft|level:${level}|manager:${manager}|line:${line}`;
+}
+
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
   const filledSlots = new Set<string>();
+  const softFilledCounts = new Map<string, number>();
 
   for (const row of rows) {
     if (row.type !== "employee") continue;
@@ -207,12 +230,18 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     if (!level) continue;
 
     const slotKey = exactEmployeeFilledSlotKey(row);
-    if (!slotKey) continue;
+    if (slotKey) {
+      filledSlots.add(slotKey);
+    }
 
-    filledSlots.add(slotKey);
+    const softKey = softManagerLineKey(row);
+    if (softKey) {
+      softFilledCounts.set(softKey, (softFilledCounts.get(softKey) ?? 0) + 1);
+    }
   }
 
   const seenOpenVacancySlots = new Set<string>();
+  const softSuppressedCounts = new Map<string, number>();
 
   return rows.filter((row) => {
     if (row.type !== "vacancy") return true;
@@ -224,6 +253,22 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
 
     const slotKey = exactEmployeeFilledSlotKey(row);
     if (slotKey && filledSlots.has(slotKey)) return false;
+
+    // For broad Cairo manager vacancies where exact slot matching is unavailable,
+    // suppress vacancies up to the count of active employees at the same level/RSM/line.
+    // This handles the case where a resigned Cairo DSM was replaced but the vacancy row
+    // was never explicitly closed in the DB.
+    if (!slotKey) {
+      const softKey = softManagerLineKey(row);
+      if (softKey) {
+        const actualCount = softFilledCounts.get(softKey) ?? 0;
+        const suppressedSoFar = softSuppressedCounts.get(softKey) ?? 0;
+        if (suppressedSoFar < actualCount) {
+          softSuppressedCounts.set(softKey, suppressedSoFar + 1);
+          return false;
+        }
+      }
+    }
 
     const vacancyCodeKey = normalizeCode(row.vacancyCode ?? row.hrId);
     if (vacancyCodeKey) {

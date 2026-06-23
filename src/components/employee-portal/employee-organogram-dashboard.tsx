@@ -275,8 +275,38 @@ function buildOrganogramLanes(rows: OrganogramRow[]) {
     .filter((r) => isRegionalSalesManager(r))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
+  const managerHrIdsOfNonManagers = new Set(
+    rows
+      .filter(
+        (r) =>
+          r.type === "employee" &&
+          r.managerHrId &&
+          !isChiefExecutive(r) &&
+          !isNationalSalesManager(r) &&
+          !isRegionalSalesManager(r) &&
+          !isDistrictSalesManager(r),
+      )
+      .map((r) => normalizeHrIdKey(r.managerHrId))
+      .filter(Boolean),
+  );
+  const actingDsmHrIds = new Set(
+    rows
+      .filter(
+        (r) =>
+          r.type === "employee" &&
+          isMedicalRep(r) &&
+          managerHrIdsOfNonManagers.has(normalizeHrIdKey(r.hrId)),
+      )
+      .map((r) => normalizeHrIdKey(r.hrId))
+      .filter(Boolean),
+  );
+
   const dsmRows = rows
-    .filter((r) => isDistrictSalesManager(r))
+    .filter(
+      (r) =>
+        isDistrictSalesManager(r) ||
+        (r.type === "employee" && actingDsmHrIds.has(normalizeHrIdKey(r.hrId))),
+    )
     .sort((a, b) =>
       a.type === b.type ? a.fullName.localeCompare(b.fullName) : a.type === "employee" ? -1 : 1,
     );
@@ -285,7 +315,12 @@ function buildOrganogramLanes(rows: OrganogramRow[]) {
   const dsmNameKeys = new Set(dsmRows.map((r) => normalizeNameKey(r.fullName)));
 
   const teamRows = rows.filter(
-    (r) => !isChiefExecutive(r) && !isNationalSalesManager(r) && !isRegionalSalesManager(r) && !isDistrictSalesManager(r),
+    (r) =>
+      !isChiefExecutive(r) &&
+      !isNationalSalesManager(r) &&
+      !isRegionalSalesManager(r) &&
+      !isDistrictSalesManager(r) &&
+      !(r.type === "employee" && actingDsmHrIds.has(normalizeHrIdKey(r.hrId))),
   );
 
   const assignedToDsm = new Set<string>();

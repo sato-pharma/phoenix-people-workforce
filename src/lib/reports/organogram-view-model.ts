@@ -321,8 +321,39 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
   const rsmRows = rows
     .filter((row) => isRegionalSalesManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
+  // Detect MedRep employees who have direct reports among non-manager rows.
+  // They are filling a DSM role temporarily (acting DSM) and get their own lane.
+  const managerHrIdsOfNonManagers = new Set(
+    rows
+      .filter(
+        (row) =>
+          row.type === "employee" &&
+          row.managerHrId &&
+          !isChiefExecutive(row) &&
+          !isNationalSalesManager(row) &&
+          !isRegionalSalesManager(row) &&
+          !isDistrictSalesManager(row),
+      )
+      .map((row) => normalizeHrIdKey(row.managerHrId))
+      .filter(Boolean),
+  );
+  const actingDsmHrIds = new Set(
+    rows
+      .filter(
+        (row) =>
+          row.type === "employee" &&
+          isMedicalRep(row) &&
+          managerHrIdsOfNonManagers.has(normalizeHrIdKey(row.hrId)),
+      )
+      .map((row) => normalizeHrIdKey(row.hrId))
+      .filter(Boolean),
+  );
   const dsmRows = rows
-    .filter((row) => isDistrictSalesManager(row))
+    .filter(
+      (row) =>
+        isDistrictSalesManager(row) ||
+        (row.type === "employee" && actingDsmHrIds.has(normalizeHrIdKey(row.hrId))),
+    )
     .sort((left, right) =>
       left.type === right.type
         ? left.fullName.localeCompare(right.fullName)
@@ -337,7 +368,8 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       !isChiefExecutive(row) &&
       !isNationalSalesManager(row) &&
       !isRegionalSalesManager(row) &&
-      !isDistrictSalesManager(row),
+      !isDistrictSalesManager(row) &&
+      !(row.type === "employee" && actingDsmHrIds.has(normalizeHrIdKey(row.hrId))),
   );
   const assignedToDsm = new Set<string>();
   const dsmGroups: ManagerLane[] = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
