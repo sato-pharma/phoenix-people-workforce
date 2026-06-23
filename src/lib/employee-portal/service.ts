@@ -1978,14 +1978,10 @@ export async function getEmployeePortalData(
   }
 
   const [payroll, sales, expenses, expenseReports, documents, notifications] = await Promise.all([
-    prefetched?.payroll ?? getEmployeePortalPayrollDashboard(currentHrId),
-    prefetched?.sales ?? getScopedEmployeePortalSalesDashboard({
-      line: salesLineFilter,
-      salesScope,
-      targetSalesHrIds,
-    }),
-    prefetched?.expenses ?? listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
-    prefetched?.expenseReports ?? listPayrollExpenseReports({ ...access, hrId: currentHrId }),
+    prefetched?.payroll != null ? Promise.resolve(prefetched.payroll) : getEmployeePortalPayrollDashboard(currentHrId),
+    prefetched?.sales != null ? Promise.resolve(prefetched.sales) : getScopedEmployeePortalSalesDashboard({ line: salesLineFilter, salesScope, targetSalesHrIds }),
+    prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+    prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     listEmployeeDocuments(currentHrId),
     fetchPortalNotifications(currentHrId),
   ]);
