@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildEmployeePlansPdf, buildEmployeePlansWorkbook } from "@/lib/weekly-planning/export";
 import { getEmployeePlansWorkspace, type EmployeePlan } from "@/lib/weekly-planning/service";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +54,7 @@ function scopeLabel(scope: string, planId: string | null) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:weekly-plans" });
     const url = new URL(request.url);
     const format = url.searchParams.get("format") === "pdf" ? "pdf" : "xlsx";
     const planId = url.searchParams.get("planId");
@@ -97,6 +100,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return jsonError(error);
   }
 }

@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { systemIdentity } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
 
 export const runtime = "nodejs";
@@ -15,6 +17,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:customer-map-validation" });
     const distributor = new URL(request.url).searchParams.get("distributor") ?? "";
     const filtered = distributor && distributor !== "ALL" ? distributor : "";
     const rows = await listCustomerMap(filtered ? { distributorCode: filtered } : undefined);
@@ -38,6 +41,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Export failed." }, { status: 500 });
   }

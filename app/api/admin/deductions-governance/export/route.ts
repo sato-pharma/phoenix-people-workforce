@@ -14,6 +14,8 @@ import type {
   DeductionMonthlySummaryLine,
 } from "@/lib/deductions-governance/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -165,6 +167,7 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:deductions" });
     const body = await request.json().catch(() => ({}));
     const summary = await resolveSummary({
       access,
@@ -214,6 +217,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return jsonError(error, "Deductions export failed.");
   }
 }

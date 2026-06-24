@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { buildMasterWorkbookBuffer } from "@/lib/sales/master-workbook";
@@ -16,6 +18,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:master-workbook" });
 
     // Confidential products (LA003 / LA004) are included in the export only for CEO / Super Admin.
     const buffer = await buildMasterWorkbookBuffer({
@@ -31,6 +34,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     }

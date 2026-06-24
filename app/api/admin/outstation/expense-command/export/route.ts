@@ -10,6 +10,8 @@ import {
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +41,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:outstation" });
     const filters = parseExpenseFiltersFromSearchParams(new URL(request.url).searchParams);
     const data = await getOutstationExpenseCommandData(access, filters);
 
@@ -87,6 +90,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
