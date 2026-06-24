@@ -110,7 +110,7 @@ const vacationReportSource = readFileSync(
   "utf8",
 );
 const vacationLayoutSource = readFileSync(
-  new URL("../app/leave-management/layout.tsx", import.meta.url),
+  new URL("../app/(admin)/layout.tsx", import.meta.url),
   "utf8",
 );
 

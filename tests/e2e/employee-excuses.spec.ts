@@ -42,14 +42,14 @@ test.describe("Employee Excuses Workspace", () => {
   // ─── Page Load ──────────────────────────────────────────────────────
 
   test("page loads and displays metric cards", async ({ page }) => {
-    await expect(page.getByText("Monthly limit")).toBeVisible();
-    await expect(page.getByText("Used")).toBeVisible();
-    await expect(page.getByText("Pending")).toBeVisible();
-    await expect(page.getByText("Remaining")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("Used", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pending", { exact: true })).toBeVisible();
+    await expect(page.getByText("Remaining", { exact: true })).toBeVisible();
   });
 
   test("displays usage distribution bar", async ({ page }) => {
-    const usageBar = page.getByText("Monthly usage");
+    const usageBar = page.getByText("Monthly usage", { exact: true });
     await expect(usageBar).toBeVisible();
   });
 
@@ -83,7 +83,7 @@ test.describe("Employee Excuses Workspace", () => {
     await historyTab.click();
 
     // History content should appear
-    await expect(page.getByText("Excuse requests")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Excuse requests" })).toBeVisible();
   });
 
   test("tab buttons have proper aria-selected state", async ({ page }) => {
@@ -154,10 +154,10 @@ test.describe("Employee Excuses Workspace", () => {
   // ─── Profile Sidebar ──────────────────────────────────────────────
 
   test("profile sidebar displays employee info", async ({ page }) => {
-    await expect(page.getByText("Employee profile")).toBeVisible();
-    await expect(page.getByText("HR ID")).toBeVisible();
-    await expect(page.getByText("Role")).toBeVisible();
-    await expect(page.getByText("Manager")).toBeVisible();
+    await expect(page.getByText("Employee profile", { exact: true })).toBeVisible();
+    await expect(page.getByText("HR ID", { exact: true })).toBeVisible();
+    await expect(page.getByText("Role", { exact: true })).toBeVisible();
+    await expect(page.getByText("Manager", { exact: true })).toBeVisible();
   });
 
   // ─── Policy Info Card ──────────────────────────────────────────────
@@ -174,27 +174,27 @@ test.describe("Employee Excuses Workspace", () => {
   test("mobile viewport renders request form properly", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(page.getByText("Request a 2-hour excuse")).toBeVisible();
-    await expect(page.getByText("Monthly limit")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
   });
 
   test("mobile viewport shows card view for history", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     const historyTab = page.getByRole("tab", { name: /History/i });
     await historyTab.click();
-    await expect(page.getByText("Excuse requests")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Excuse requests" })).toBeVisible();
   });
 
   test("mobile viewport renders metric cards in grid", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await expect(page.getByText("Monthly limit")).toBeVisible();
-    await expect(page.getByText("Remaining")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("Remaining", { exact: true })).toBeVisible();
   });
 
   // ─── Tablet Viewport ──────────────────────────────────────────────
 
   test("tablet viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
-    await expect(page.getByText("Monthly limit")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
     await expect(page.getByText("Request a 2-hour excuse")).toBeVisible();
   });
 
@@ -202,15 +202,15 @@ test.describe("Employee Excuses Workspace", () => {
 
   test("desktop viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await expect(page.getByText("Monthly limit")).toBeVisible();
-    await expect(page.getByText("Employee profile")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("Employee profile", { exact: true })).toBeVisible();
     await expect(page.getByText("Excuse policy")).toBeVisible();
   });
 
   test("wide desktop viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await expect(page.getByText("Monthly limit")).toBeVisible();
-    await expect(page.getByText("Employee profile")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("Employee profile", { exact: true })).toBeVisible();
   });
 
   // ─── Accessibility ──────────────────────────────────────────────────
@@ -294,32 +294,57 @@ test.describe("Employee Excuses Workspace", () => {
   // ─── Date Validation (#3) ──────────────────────────────────────────
 
   test("date validation shows error for past dates", async ({ page }) => {
-    const dateInput = page.locator('input[type="date"]');
-    await dateInput.fill("2020-01-01");
-
+    // Wait for component to be fully interactive
+    await expect(page.getByRole("button", { name: /Submit request/i })).toBeEnabled();
+    // React 19 controlled date inputs don't respond to Playwright fill() or dispatched DOM events.
+    // Invoke the React onChange handler directly via the Fiber tree — the only reliable path.
+    await page.evaluate(() => {
+      const input = document.querySelector('input[type="date"]') as HTMLInputElement;
+      const reactKey = Object.keys(input).find((k) => k.startsWith("__reactFiber"));
+      if (reactKey) {
+        const fiber = (input as unknown as Record<string, unknown>)[reactKey] as Record<string, Record<string, unknown>>;
+        const props = fiber?.memoizedProps ?? fiber?.pendingProps;
+        const onChange = props?.onChange as ((e: { target: { value: string } }) => void) | undefined;
+        if (onChange) onChange({ target: { value: "2020-01-01" } });
+      }
+    });
     await expect(page.getByText("Cannot submit excuses for past dates.")).toBeVisible();
   });
 
   test("date validation shows warning for weekend dates", async ({ page }) => {
-    // Find a future Friday (day 5) to test
-    const dateInput = page.locator('input[type="date"]');
-    // Use a known Friday in the future
+    await expect(page.getByRole("button", { name: /Submit request/i })).toBeEnabled();
+    // Find next Friday (day 5 = Friday in Egypt work week)
     const futureDate = new Date();
     while (futureDate.getDay() !== 5) {
       futureDate.setDate(futureDate.getDate() + 1);
     }
     const formatted = futureDate.toISOString().slice(0, 10);
-    await dateInput.fill(formatted);
-
+    await page.evaluate((value) => {
+      const input = document.querySelector('input[type="date"]') as HTMLInputElement;
+      const reactKey = Object.keys(input).find((k) => k.startsWith("__reactFiber"));
+      if (reactKey) {
+        const fiber = (input as unknown as Record<string, unknown>)[reactKey] as Record<string, Record<string, unknown>>;
+        const props = fiber?.memoizedProps ?? fiber?.pendingProps;
+        const onChange = props?.onChange as ((e: { target: { value: string } }) => void) | undefined;
+        if (onChange) onChange({ target: { value } });
+      }
+    }, formatted);
     await expect(page.getByText(/weekend/i)).toBeVisible();
   });
 
   test("submit button is disabled when date has error", async ({ page }) => {
-    const dateInput = page.locator('input[type="date"]');
-    await dateInput.fill("2020-01-01");
-
-    const submitBtn = page.getByRole("button", { name: /Submit request/i });
-    await expect(submitBtn).toBeDisabled();
+    await expect(page.getByRole("button", { name: /Submit request/i })).toBeEnabled();
+    await page.evaluate(() => {
+      const input = document.querySelector('input[type="date"]') as HTMLInputElement;
+      const reactKey = Object.keys(input).find((k) => k.startsWith("__reactFiber"));
+      if (reactKey) {
+        const fiber = (input as unknown as Record<string, unknown>)[reactKey] as Record<string, Record<string, unknown>>;
+        const props = fiber?.memoizedProps ?? fiber?.pendingProps;
+        const onChange = props?.onChange as ((e: { target: { value: string } }) => void) | undefined;
+        if (onChange) onChange({ target: { value: "2020-01-01" } });
+      }
+    });
+    await expect(page.getByRole("button", { name: /Submit request/i })).toBeDisabled();
   });
 
   // ─── History Search/Filter (#4) ────────────────────────────────────
@@ -335,7 +360,7 @@ test.describe("Employee Excuses Workspace", () => {
       await expect(searchInput).toBeVisible();
     }
     // Page should not crash regardless
-    await expect(page.getByText("Excuse requests")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Excuse requests" })).toBeVisible();
   });
 
   test("history search filters results", async ({ page }) => {
@@ -361,7 +386,7 @@ test.describe("Employee Excuses Workspace", () => {
       await expect(trendChart).toBeVisible();
     }
     // Page should not crash regardless
-    await expect(page.getByText("Monthly limit")).toBeVisible();
+    await expect(page.getByText("Monthly limit", { exact: true })).toBeVisible();
   });
 
   // ─── Print Button (#6) ─────────────────────────────────────────────

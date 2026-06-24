@@ -1,56 +1,57 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * E2E tests for the global Command Palette (Ctrl/⌘-K).
+ * E2E tests for portal navigation search.
  *
- * The palette is mounted in the shared AppShell, so it is available in both the
- * admin surface and the employee portal. The default auth state signs in as an
- * NSM who lands in the employee portal, so these tests exercise it there.
+ * The default auth state (a-12, NSM) lands in the employee portal.
+ * The employee portal has an inline search input in the topbar — NOT
+ * the admin AppShell command palette dialog (which is only for admin roles).
  *
  * Covers:
- * - Opens via Ctrl/⌘-K, input is focused
- * - Lists permission-gated navigation destinations
- * - Filters as you type
- * - Escape closes it
- * - Opens via the top search button
+ * - Search input is visible in the topbar
+ * - Typing into search opens a results listbox
+ * - Results filter to match the search term
+ * - Escape closes the search dropdown
  *
  * Run with:  npx playwright test tests/e2e/command-palette.spec.ts
- *
- * NOTE: A data-health `?view=` deep-link test belongs here too, but it requires
- * an admin-authenticated project (the default NSM cannot open /admin/data-health).
- * Track that as a follow-up once an admin storageState project exists.
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals";
 
-test.describe("Command palette", () => {
+test.describe("Portal navigation search", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    await page.locator("h1").first().waitFor({ timeout: 30_000 });
   });
 
-  test("opens with Ctrl/Cmd+K, focuses input, filters, and closes on Escape", async ({ page }) => {
-    await page.keyboard.press("Control+k");
+  test("search input is visible in the topbar", async ({ page }) => {
+    const searchInput = page.locator('input[aria-label="Search"]');
+    await expect(searchInput).toBeVisible();
+    await expect(searchInput).toHaveAttribute("placeholder", /Search portal pages/i);
+  });
 
-    const dialog = page.getByRole("dialog", { name: /command palette/i });
-    await expect(dialog).toBeVisible({ timeout: 10_000 });
+  test("typing into search opens results dropdown", async ({ page }) => {
+    const searchInput = page.locator('input[aria-label="Search"]');
+    await searchInput.fill("vacation");
+    const listbox = page.locator('[role="listbox"]');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+    await expect(listbox.locator('[role="option"]').first()).toBeVisible();
+  });
 
-    const input = dialog.getByPlaceholder(/jump to a page or module/i);
-    await expect(input).toBeFocused();
+  test("results filter to match the search term", async ({ page }) => {
+    const searchInput = page.locator('input[aria-label="Search"]');
+    await searchInput.fill("vacation");
+    const listbox = page.locator('[role="listbox"]');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+    await expect(listbox.getByText(/vacation/i).first()).toBeVisible();
+  });
 
-    // Lists at least one navigation destination the signed-in user can open.
-    await expect(dialog.getByRole("listitem").first()).toBeVisible();
-
-    // Filtering narrows the list.
-    await input.fill("vacation");
-    await expect(dialog.getByText(/vacation/i).first()).toBeVisible();
-
-    // Escape closes it.
+  test("Escape closes the search dropdown", async ({ page }) => {
+    const searchInput = page.locator('input[aria-label="Search"]');
+    await searchInput.fill("vacation");
+    const listbox = page.locator('[role="listbox"]');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
     await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-  });
-
-  test("opens via the top search button", async ({ page }) => {
-    await page.getByRole("button", { name: /open command palette/i }).first().click();
-    await expect(page.getByRole("dialog", { name: /command palette/i })).toBeVisible({ timeout: 10_000 });
+    await expect(listbox).toBeHidden();
   });
 });
