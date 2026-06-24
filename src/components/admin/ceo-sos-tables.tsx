@@ -204,7 +204,7 @@ export function CeoSosTables({
         </div>
         {period ? <span className="text-[10px] text-slate-400">Period: {period}</span> : null}
         <Link
-          href="/sales"
+          href="/sales/monthly-dashboard"
           className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"
         >
           Full SoS <ExternalLink className="h-3 w-3" />

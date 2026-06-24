@@ -91,7 +91,7 @@ export function runSalesSourceOfTruthTests() {
   assert.match(employeePortalSource, /buildPortalSalesDashboardMetrics/);
 
   const salesPageSource = readFileSync("app/(admin)/sales/page.tsx", "utf8");
-  assert.match(salesPageSource, /getSalesDashboard/);
+  assert.match(salesPageSource, /getSosDashboard/);
   const portalSalesPageSource = readFileSync("app/employee-portals/sales/page.tsx", "utf8");
   assert.match(portalSalesPageSource, /getSalesDashboard/);
 

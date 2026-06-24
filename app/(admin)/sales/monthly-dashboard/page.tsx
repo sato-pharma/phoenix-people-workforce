@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { SosDashboard } from "@/components/sales/sos-dashboard";
+import { MonthlySalesDashboard } from "@/components/sales/monthly-sales-dashboard";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getSosDashboard, type SosDashboardData } from "@/lib/sales/sos-dashboard";
+import { getSalesDashboard } from "@/lib/sales/service";
+import type { SalesDashboardData } from "@/lib/sales/types";
 
 export const dynamic = "force-dynamic";
 // Safety net: the Source-of-Sales aggregation can take a few seconds on large months; give the
@@ -24,8 +25,8 @@ export default async function SourceOfSalesDashboardPage() {
     <Suspense
       fallback={
         <AppRouteLoadingState
-          title="Loading Source of Sales"
-          description="Aggregating distributor invoices by channel, region, product, customer, and trend."
+          title="Loading Source of Sales Dashboard"
+          description="Preparing approved sales, targets, channel mix, territories and trends."
         />
       }
     >
@@ -35,14 +36,14 @@ export default async function SourceOfSalesDashboardPage() {
 }
 
 async function SosDashboardContent({ accessContext }: { accessContext: AccessContext }) {
-  let initialData: SosDashboardData | null = null;
+  let initialData: SalesDashboardData | null = null;
   let initialError: string | null = null;
 
   try {
-    initialData = await getSosDashboard({}, accessContext);
+    initialData = await getSalesDashboard({}, accessContext);
   } catch (error) {
-    initialError = error instanceof Error ? error.message : "Failed to load source-of-sales dashboard.";
+    initialError = error instanceof Error ? error.message : "Failed to load Source of Sales dashboard.";
   }
 
-  return <SosDashboard initialData={initialData} initialError={initialError} />;
+  return <MonthlySalesDashboard initialData={initialData} initialError={initialError} />;
 }
