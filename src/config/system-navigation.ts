@@ -182,9 +182,9 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-sales-intelligence",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
+      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
     ],
@@ -312,8 +312,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "M.Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },

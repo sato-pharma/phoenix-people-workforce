@@ -1,19 +1,20 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { SosDashboard } from "@/components/sales/sos-dashboard";
+import { MonthlySalesDashboard } from "@/components/sales/monthly-sales-dashboard";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getSosDashboard, type SosDashboardData } from "@/lib/sales/sos-dashboard";
+import { getSalesDashboard } from "@/lib/sales/service";
+import type { SalesDashboardData } from "@/lib/sales/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export default async function SalesPage() {
+export default async function SourceOfSalesDashboardPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/monthly-sales");
   }
 
   await assertPermission(accessContext, "sales", "read");
@@ -22,25 +23,25 @@ export default async function SalesPage() {
     <Suspense
       fallback={
         <AppRouteLoadingState
-          title="Loading M.Closing Dashboard"
-          description="Preparing monthly closing data from the Sales Queue pipeline."
+          title="Loading Source of Sales Dashboard"
+          description="Preparing approved sales, targets, channel mix, territories and trends."
         />
       }
     >
-      <SalesContent accessContext={accessContext} />
+      <SosDashboardContent accessContext={accessContext} />
     </Suspense>
   );
 }
 
-async function SalesContent({ accessContext }: { accessContext: AccessContext }) {
-  let initialData: SosDashboardData | null = null;
+async function SosDashboardContent({ accessContext }: { accessContext: AccessContext }) {
+  let initialData: SalesDashboardData | null = null;
   let initialError: string | null = null;
 
   try {
-    initialData = await getSosDashboard({}, accessContext);
+    initialData = await getSalesDashboard({}, accessContext);
   } catch (error) {
-    initialError = error instanceof Error ? error.message : "Failed to load M.Closing dashboard.";
+    initialError = error instanceof Error ? error.message : "Failed to load Source of Sales dashboard.";
   }
 
-  return <SosDashboard initialData={initialData} initialError={initialError} />;
+  return <MonthlySalesDashboard initialData={initialData} initialError={initialError} />;
 }
