@@ -570,7 +570,11 @@ export function SalesMarketingIntelligenceDashboard({
           icon={<Target className="h-4 w-4" />}
           title="Marketing ROI & Customer Intelligence"
         />
-      ) : null}
+      ) : (
+        <div className="flex justify-end">
+          <RoiRefreshPanel generatedAt={snapshot.generatedAt} showRefreshButton={false} />
+        </div>
+      )}
 
       <DashboardFilters basePath={basePath} chrome={chrome} filters={filters} snapshot={snapshot} />
 
