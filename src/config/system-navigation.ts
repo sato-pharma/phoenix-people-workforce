@@ -182,9 +182,9 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-sales-intelligence",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Monthly Closing", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
+      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
     ],
@@ -312,8 +312,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "Monthly Closing", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", permissions: [{ resource: "sales" }], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
@@ -330,7 +330,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-weekly-module",
     items: [
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }] },
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }] },
       { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
       // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
       // the single Weekly Mapping workspace (old routes redirect here).
