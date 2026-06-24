@@ -2879,7 +2879,9 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   } else if (nextStatus === "pending_hr") {
     // Management complete → pending HR acknowledgement. (PR3 refines role/stage notification copy
     // and adds the "now it's your turn" nudge for the next management approver.)
-    void dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    try {
+      await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated });
+    } catch (error) {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
@@ -2887,7 +2889,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
         message: vacationErrorMessage(error),
         requestId: updated.id,
       }).catch(() => undefined);
-    });
+    }
   }
 
   invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
@@ -3042,7 +3044,9 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     // Direct manager approved a NON-final step → hand off to HR final review. Previously
     // this fired no notification at all (dispatchVacationManagerReview was dead `void`
     // code), so HR/the employee were never told the request had advanced. Best-effort.
-    void dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    try {
+      await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated });
+    } catch (error) {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
@@ -3050,7 +3054,7 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
         message: vacationErrorMessage(error),
         requestId: updated.id,
       }).catch(() => undefined);
-    });
+    }
   }
 
   invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);
