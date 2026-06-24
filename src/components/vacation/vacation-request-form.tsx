@@ -97,6 +97,7 @@ type QueuedVacationSubmission = {
 
 type QueuedVacationPayload = {
   dayPart: VacationDayPart;
+  employeeNote?: string;
   endDate: string;
   otherReason?: string;
   startDate: string;
@@ -1156,6 +1157,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
   const [compensatoryManager1, setCompensatoryManager1] = useState("");
   const [compensatoryManager2, setCompensatoryManager2] = useState("");
   const [compensatoryPhoto, setCompensatoryPhoto] = useState<File | null>(null);
+  const [employeeNote, setEmployeeNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [error, setError] = useState(initialError);
@@ -1203,6 +1205,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     const formData = new FormData();
     formData.append("dayPart", dayPart);
     formData.append("endDate", endDate);
+    if (employeeNote.trim()) formData.append("employeeNote", employeeNote.trim());
     formData.append("startDate", startDate);
     formData.append("vacationType", vacationType);
     if (vacationType === "other") {
@@ -1226,6 +1229,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     if (vacationType === "sick" || vacationType === "compensatory") return null;
     return {
       dayPart,
+      employeeNote: employeeNote.trim() || undefined,
       endDate,
       otherReason: vacationType === "other" ? otherReason : undefined,
       startDate,
@@ -1696,6 +1700,20 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                     ) : null}
                   </div>
                 ) : null}
+                {/* Optional employee note */}
+                <label className="space-y-1.5 sm:col-span-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
+                  <textarea
+                    className="min-h-16 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    maxLength={500}
+                    placeholder="Any context for your manager — travel plans, coverage arrangements, etc."
+                    value={employeeNote}
+                    onChange={(event) => setEmployeeNote(event.target.value)}
+                  />
+                  {employeeNote.length > 0 && (
+                    <p className="text-[11px] font-medium text-slate-400">{employeeNote.length}/500</p>
+                  )}
+                </label>
               </div>
 
               {/* Submit area */}
