@@ -136,9 +136,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "viewAs is required" }, { status: 400 });
     }
 
+    const url = new URL(request.url);
+    const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit") ?? "50")), 200);
+    const offset = Math.max(0, Number(url.searchParams.get("offset") ?? "0"));
+
     const viewAccess: AccessContext = { ...access, hrId: viewAs };
-    const items = await fetchAllItems(viewAccess);
-    return NextResponse.json({ items });
+    const allItems = await fetchAllItems(viewAccess);
+    const total = allItems.length;
+    const page = allItems.slice(offset, offset + limit);
+    return NextResponse.json({ items: page, total, limit, offset });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to fetch hub data" },

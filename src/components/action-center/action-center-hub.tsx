@@ -638,6 +638,9 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const [activeModule, setActiveModule] = useState<ActionHubModule | "all">(initialModule ?? "all");
   const [activeFilter, setActiveFilter] = useState<"all" | "overdue" | "high">("all");
   const [viewAsItems, setViewAsItems] = useState<ActionHubItem[] | null>(null);
+  const [viewAsOffset, setViewAsOffset] = useState(0);
+  const [viewAsTotal, setViewAsTotal] = useState(0);
+  const VIEW_AS_LIMIT = 50;
 
   const allItems = useMemo(() => viewAsItems ?? initialData.items, [initialData, viewAsItems]);
 
@@ -750,25 +753,51 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       .catch(() => {});
   }, [canViewAs, managers]);
 
-  // Fetch view-as items when a manager is selected
+  // Fetch view-as items when a manager is selected (always resets to page 0)
   useEffect(() => {
     let cancelled = false;
     async function loadViewAs() {
-      if (!viewAsHrId) { setViewAsItems(null); return; }
+      if (!viewAsHrId) {
+        setViewAsItems(null);
+        setViewAsOffset(0);
+        setViewAsTotal(0);
+        return;
+      }
+      setViewAsOffset(0);
       setViewAsLoading(true);
       try {
-        const r = await fetch(`/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}`);
-        const d = (await r.json()) as { items?: ActionHubItem[] };
-        if (!cancelled && Array.isArray(d.items)) setViewAsItems(d.items);
+        const r = await fetch(
+          `/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=0`,
+        );
+        const d = (await r.json()) as { items?: ActionHubItem[]; total?: number };
+        if (cancelled) return;
+        if (Array.isArray(d.items)) setViewAsItems(d.items);
+        if (typeof d.total === "number") setViewAsTotal(d.total);
+        setViewAsLoading(false);
       } catch {
-        // ignore
-      } finally {
         if (!cancelled) setViewAsLoading(false);
       }
     }
     void loadViewAs();
     return () => { cancelled = true; };
   }, [viewAsHrId]);
+
+  const loadMoreViewAs = useCallback(() => {
+    if (!viewAsHrId || viewAsLoading) return;
+    const nextOffset = viewAsOffset + VIEW_AS_LIMIT;
+    setViewAsLoading(true);
+    fetch(`/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=${nextOffset}`)
+      .then((r) => r.json())
+      .then((d: { items?: ActionHubItem[]; total?: number }) => {
+        if (Array.isArray(d.items)) {
+          setViewAsItems((prev) => [...(prev ?? []), ...d.items!]);
+          setViewAsOffset(nextOffset);
+        }
+        if (typeof d.total === "number") setViewAsTotal(d.total);
+        setViewAsLoading(false);
+      })
+      .catch(() => setViewAsLoading(false));
+  }, [viewAsHrId, viewAsOffset, viewAsLoading]);
 
   // Keyboard shortcuts
   const approveRef = useRef<(() => void) | null>(null);
@@ -1175,6 +1204,17 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                     );
                   })}
                 </ul>
+              )}
+              {viewAsItems !== null && viewAsItems.length < viewAsTotal && (
+                <div className="border-t border-[#EEF2F7] px-4 py-3">
+                  <button
+                    onClick={loadMoreViewAs}
+                    disabled={viewAsLoading}
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {viewAsLoading ? "Loading…" : `Load more (${viewAsTotal - viewAsItems.length} remaining)`}
+                  </button>
+                </div>
               )}
             </div>
 

@@ -698,6 +698,25 @@ export async function listSalaryBatches(): Promise<SalaryBatch[]> {
     .map((row) => mapBatch(row as Record<string, unknown>));
 }
 
+export async function findSalaryBatchByPeriodAndHash(
+  month: number,
+  year: number,
+  hash: string,
+): Promise<SalaryBatch | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("salary_batches")
+    .select("*")
+    .eq("month", month)
+    .eq("year", year)
+    .eq("file_content_hash", hash)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapBatch(data as Record<string, unknown>) : null;
+}
+
 export async function findSalaryBatchForPeriod(month: number, year: number): Promise<SalaryBatch | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1094,6 +1113,7 @@ export async function getSalaryBatchById(batchId: string): Promise<SalaryBatch |
 }
 
 type CreateSalaryBatchInput = {
+  fileContentHash?: string | null;
   fileName: string;
   month: number;
   records: SalaryValidationRow[];
@@ -1251,6 +1271,19 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
     throw new PayrollConflictError(payrollPeriodConflictForBatch(existingPeriodBatch).message);
   }
 
+  if (input.fileContentHash) {
+    const existingHashBatch = await findSalaryBatchByPeriodAndHash(
+      input.month,
+      input.year,
+      input.fileContentHash,
+    );
+    if (existingHashBatch) {
+      throw new PayrollConflictError(
+        "This exact file has already been uploaded for this payroll period.",
+      );
+    }
+  }
+
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const recordPayloads = input.records.map((row) =>
@@ -1264,6 +1297,7 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
     "phx_create_salary_batch",
     {
       p_created_at: now,
+      p_file_content_hash: input.fileContentHash ?? null,
       p_file_name: input.fileName,
       p_flags: flagPayloads,
       p_month: input.month,

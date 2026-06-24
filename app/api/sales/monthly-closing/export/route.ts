@@ -5,6 +5,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadMonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import { buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
 import { loadMonthlyClosing } from "@/lib/sales/monthly-distributor-import";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,7 @@ export async function POST(request: Request) {
       );
     }
     await assertPermission(access, "sales", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:monthly-closing" });
 
     const body = (await request.json().catch(() => ({}))) as { line?: string | null; period?: string | null };
 
@@ -42,6 +45,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { success: false, error: error instanceof Error ? error.message : "Forbidden." },
