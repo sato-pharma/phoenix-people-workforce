@@ -141,6 +141,7 @@ function normalRowsStillMapByEmployeeHrId() {
   assert.equal(link.linkStatus, "linked", "normal rows should still link by exact HR ID");
   assert.equal(link.employeeHrId, "B-187", "normal HR IDs should be preserved after linking");
   assert.equal(link.employeeCrmId, "CRM-187", "employee details should still hydrate from directory");
+  assert.equal(link.managerHrId, "B-100", "linked MR rows should carry their manager HR ID for DSM linkage");
   assert.doesNotMatch(link.diagnostics.join("\n"), /no employee matched/i, "valid HR IDs must not get missing employee warnings");
 }
 
