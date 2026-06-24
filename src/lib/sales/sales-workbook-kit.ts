@@ -205,9 +205,9 @@ export function writeTable(
 }
 
 // Brand band at the top of a report sheet.
-// Row 1: black fill, large orange title.
+// Row 1: black fill, bold title.
 // Row 2: black fill, muted italic subtitle.
-// Row 3: amber fill, two-line slogan (SFE DEPARTMENT / Where Your Achievement Belongs).
+// Row 3: premium accent divider with a bold amber lead.
 export function bandHeader(sheet: ExcelJS.Worksheet, cols: number, title: string, subtitle: string) {
   const existingViews = sheet.views as ExcelJS.WorksheetView[];
   sheet.views = existingViews.length > 0
@@ -217,31 +217,41 @@ export function bandHeader(sheet: ExcelJS.Worksheet, cols: number, title: string
   sheet.mergeCells(1, 1, 1, cols);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = `${systemIdentity.appName} — ${title}`;
-  titleCell.font = { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 16 };
+  titleCell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 16 };
   titleCell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   titleCell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  titleCell.border = { bottom: { style: "medium", color: { argb: ORANGE } } };
   sheet.getRow(1).height = 36;
 
   sheet.mergeCells(2, 1, 2, cols);
   const sub = sheet.getCell(2, 1);
   sub.value = subtitle;
-  sub.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 10 };
-  sub.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sub.font = { color: { argb: WHITE }, italic: true, name: "Calibri", size: 10 };
+  sub.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sub.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
   sheet.getRow(2).height = 18;
 
-  // Row 3 — amber slogan band: two lines, centred, clearly visible.
-  sheet.mergeCells(3, 1, 3, cols);
-  const sloganCell = sheet.getCell(3, 1);
-  sloganCell.value = {
-    richText: [
-      { font: { bold: true, color: { argb: "FFD97706" }, name: "Calibri", size: 12 }, text: "SFE DEPARTMENT\n" },
-      { font: { italic: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "Where Your Achievement Belongs" },
-    ],
-  } as ExcelJS.CellRichTextValue;
-  sloganCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  sloganCell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
-  sheet.getRow(3).height = 42;
+  const leadSpan = Math.max(1, Math.min(cols, Math.ceil(cols * 0.45)));
+  if (leadSpan < cols) {
+    sheet.mergeCells(3, 1, 3, leadSpan);
+    const accentLead = sheet.getCell(3, 1);
+    accentLead.value = "";
+    accentLead.font = { color: { argb: WHITE }, name: "Calibri", size: 8 };
+    accentLead.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+    accentLead.alignment = { horizontal: "left", vertical: "middle" };
+
+    sheet.mergeCells(3, leadSpan + 1, 3, cols);
+    const accentTail = sheet.getCell(3, leadSpan + 1);
+    accentTail.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  } else {
+    sheet.mergeCells(3, 1, 3, cols);
+    const accentLead = sheet.getCell(3, 1);
+    accentLead.value = "";
+    accentLead.font = { color: { argb: WHITE }, name: "Calibri", size: 8 };
+    accentLead.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+    accentLead.alignment = { horizontal: "left", vertical: "middle" };
+  }
+  sheet.getRow(3).height = 6;
 }
 
 export function leaderText(leader: { distributorName: string; share: number } | null) {
