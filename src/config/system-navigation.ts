@@ -141,7 +141,7 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Sales & Marketing Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
@@ -159,13 +159,6 @@ const adminNavigationSectionSeeds = [
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "My Workspace",
-  },
-  {
-    id: "workspace-mm-command",
-    items: [
-      { href: "/workspace/marketing-requests/overview", icon: Sparkles, label: "Command Center", moduleId: "admin.workspace.mm_command_center", roles: ["Marketing Manager"], exact: true },
-    ],
-    label: "",
   },
   {
     id: "workspace-marketing-requests",
@@ -186,7 +179,7 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
       { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
     ],
     label: "Sales Intelligence",
   },
@@ -396,13 +389,6 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
     ],
     label: "Pharmacovigilance",
-  },
-  {
-    id: "request-hr-support",
-    items: [
-      { href: "/workspace/contact-hr-support", icon: LifeBuoy, label: "Request HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
-    ],
-    label: "Support",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
