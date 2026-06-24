@@ -65,6 +65,13 @@ function assertExcludesAll(actual: readonly string[], expected: readonly string[
   }
 }
 
+function assertNoDuplicateHrefs(actual: readonly string[], expected: readonly string[], message: string) {
+  for (const href of expected) {
+    const count = actual.filter((candidate) => candidate === href).length;
+    assert.equal(count, 1, `${message}: expected exactly one ${href}, found ${count}`);
+  }
+}
+
 export function runNavigationActivePathTests() {
   // ── isActivePath: default prefix matching ──────────────────────────────────
   assert.equal(isActivePath("/employees", item("/employees"), null), true);
@@ -146,7 +153,7 @@ export function runNavigationActivePathTests() {
     ["/sales"],
   );
 
-  // excludedRoles only applies in employee-portal mode.
+  // excludedRoles applies in both navigation modes (admin and employee-portal alike).
   const tmPortal = getSections(sections, "employee-portal", {}, "Training Manager");
   assert.equal(
     tmPortal.find((s) => s.id === "b"),
@@ -155,9 +162,9 @@ export function runNavigationActivePathTests() {
   );
   const tmAdmin = getSections(sections, "admin", {}, "Training Manager");
   assert.equal(
-    tmAdmin.find((s) => s.id === "b")?.items.length,
-    1,
-    "admin mode: excludedRoles ignored, item retained",
+    tmAdmin.find((s) => s.id === "b"),
+    undefined,
+    "admin mode: excludedRoles also drops the item, emptying section b",
   );
 
   // ── getSections: an explicit ordered moduleIds list drives item + section order ─
@@ -243,8 +250,8 @@ export function runNavigationActivePathTests() {
   // org-wide /admin duplicates of the same modules.
   assertIncludesAll(
     marketingManagerAdmin,
-    ["/workspace/plans", "/workspace/marketing-requests"],
-    "Marketing Manager plans + marketing requests live in the /workspace home",
+    ["/workspace/plans", "/workspace/marketing-requests", "/workspace/organogram", "/workspace/probation", "/workspace/vacancies"],
+    "Marketing Manager plans + marketing requests + team-operations reports live in the /workspace home",
   );
   assertExcludesAll(
     marketingManagerAdmin,
@@ -256,6 +263,11 @@ export function runNavigationActivePathTests() {
       "/workspace/incentive",
       "/leave-management/vacation-request",
       "/leave-management/vacation-report",
+      // Generic /admin duplicates of the dedicated workspace-team-operations reports (different
+      // href, same underlying report) — Marketing Manager must only see the /workspace/* versions.
+      "/organogram",
+      "/probation",
+      "/reports/vacancies",
       ...sensitiveHrHrefs,
       ...systemAdministratorOnlyHrefs,
       "/payroll",
@@ -266,8 +278,23 @@ export function runNavigationActivePathTests() {
   // surfaces (read-only) that mirror PM/GPM/TM data.
   assertIncludesAll(
     marketingManagerAdmin,
-    ["/coaching", "/coaching/analytics", "/admin/double-visit-analytics", "/organogram", "/probation", "/reports/vacancies"],
+    ["/coaching", "/coaching/analytics", "/admin/double-visit-analytics"],
     "Executive Marketing Manager sees company-wide field/commercial reports",
+  );
+  // Regression guard: items that exist both under the dedicated workspace-sales-intelligence
+  // section and a generic org-wide section (same href) must render exactly once, not twice under
+  // two different sidebar section headers.
+  assertNoDuplicateHrefs(
+    marketingManagerAdmin,
+    [
+      "/admin/sales-marketing-intelligence",
+      "/sales",
+      "/sales/monthly-dashboard",
+      "/sales/weekly/dashboard",
+      "/coaching/analytics",
+      "/admin/double-visit-analytics",
+    ],
+    "Marketing Manager sidebar item must not be duplicated across two sections",
   );
 
   const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
