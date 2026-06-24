@@ -164,6 +164,7 @@ export function runWorkforceClassificationTests() {
   assert.equal(vacancyCodeInLookupColumn.owner_manager_hr_id, "B-200");
   assert.equal(vacancyCodeInLookupColumn.include_in_vacancy_dashboard, true);
 
+
   const lineLevel = classifySalesOwnership(
     {
       employeeHrId: null,
