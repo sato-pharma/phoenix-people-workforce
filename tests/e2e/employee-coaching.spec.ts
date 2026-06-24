@@ -38,7 +38,7 @@ test.describe("Employee Coaching Reports", () => {
 
   test("page loads and displays metric cards", async ({ page }) => {
     await expect(page.getByText("Completed")).toBeVisible();
-    await expect(page.getByText("Avg Score")).toBeVisible();
+    await expect(page.getByText("Avg Score").first()).toBeVisible();
     await expect(page.getByText("Pending Ack")).toBeVisible();
     await expect(page.getByText("Score Range")).toBeVisible();
   });
@@ -243,7 +243,7 @@ test.describe("Employee Coaching Reports", () => {
   test("mobile metric cards render in 2-column grid", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(page.getByText("Completed")).toBeVisible();
-    await expect(page.getByText("Avg Score")).toBeVisible();
+    await expect(page.getByText("Avg Score").first()).toBeVisible();
   });
 
   test("mobile card view shows report details", async ({ page }) => {
@@ -267,7 +267,7 @@ test.describe("Employee Coaching Reports", () => {
   test("tablet viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await expect(page.getByText("Completed")).toBeVisible();
-    await expect(page.getByText("Avg Score")).toBeVisible();
+    await expect(page.getByText("Avg Score").first()).toBeVisible();
   });
 
   // ─── Desktop Viewport ──────────────────────────────────────────────
@@ -275,13 +275,13 @@ test.describe("Employee Coaching Reports", () => {
   test("desktop viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page.getByText("Completed")).toBeVisible();
-    await expect(page.getByText("Avg Score")).toBeVisible();
+    await expect(page.getByText("Avg Score").first()).toBeVisible();
   });
 
   test("wide desktop viewport renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await expect(page.getByText("Completed")).toBeVisible();
-    await expect(page.getByText("Avg Score")).toBeVisible();
+    await expect(page.getByText("Avg Score").first()).toBeVisible();
   });
 
   // ─── Accessibility ──────────────────────────────────────────────────
@@ -355,17 +355,17 @@ test.describe("Employee Coaching Reports", () => {
   // ─── No Text Truncation on Metric Cards ──────────────────────────
 
   test("no text overflow with ellipsis on metric cards", async ({ page }) => {
-    const overflowElements = await page.evaluate(() => {
-      const elements = document.querySelectorAll("[class*='truncate']");
+    // Scope to MetricCard containers only — coaching table rows legitimately truncate
+    // employee names and are not metric cards.
+    const truncatedInCards = await page.evaluate(() => {
+      const cards = document.querySelectorAll('[role="group"][aria-label]');
       let count = 0;
-      for (const el of elements) {
-        if (!el.closest("[aria-expanded]") && !el.closest("[aria-haspopup]")) {
-          count++;
-        }
+      for (const card of cards) {
+        count += card.querySelectorAll("[class*='truncate']").length;
       }
       return count;
     });
-    expect(overflowElements).toBe(0);
+    expect(truncatedInCards).toBe(0);
   });
 
   // ─── No Rounded Corners on Major Elements ──────────────────────

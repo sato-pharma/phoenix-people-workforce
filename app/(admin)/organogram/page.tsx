@@ -1,5 +1,4 @@
-﻿import { AppShell } from "@/components/layout/app-shell";
-import { OrganogramReport } from "@/components/reports/organogram-report";
+﻿import { OrganogramReport } from "@/components/reports/organogram-report";
 import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -65,11 +64,9 @@ export default async function OrganogramPage() {
   }
 
   return (
-    <AppShell contentWidth="full" navigationMode="admin">
-      <OrganogramReport
-        initialError={initialError}
-        initialReport={initialReport}
-      />
-    </AppShell>
+    <OrganogramReport
+      initialError={initialError}
+      initialReport={initialReport}
+    />
   );
 }

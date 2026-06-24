@@ -20,7 +20,7 @@ function collectSourceFiles(root: string): string[] {
 export function runEmployeePortalNavigationTests() {
   const employeePortalSource = [
     ...collectSourceFiles("app/employee-portals"),
-    ...collectSourceFiles("app/leave-management"),
+    ...collectSourceFiles("app/(admin)/leave-management"),
     ...collectSourceFiles("src/components/employee-portal"),
     ...collectSourceFiles("src/components/vacation"),
     "app/payslips/page.tsx",

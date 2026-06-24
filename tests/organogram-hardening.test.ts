@@ -387,7 +387,7 @@ export function runOrganogramHardeningTests() {
   const organogramApiSource = readFileSync("app/api/reports/organogram/route.ts", "utf8");
   const vacancyApiSource = readFileSync("app/api/reports/vacancies/route.ts", "utf8");
   const portalPageSource = readFileSync("app/employee-portals/organogram/page.tsx", "utf8");
-  const adminPageSource = readFileSync("app/organogram/page.tsx", "utf8");
+  const adminPageSource = readFileSync("app/(admin)/organogram/page.tsx", "utf8");
   const sharedViewModelSource = readFileSync("src/lib/reports/organogram-view-model.ts", "utf8");
   const vacancyReportSource = readFileSync("src/lib/reports/vacancies.ts", "utf8");
   const resignationServiceSource = readFileSync("src/lib/resignations/service.ts", "utf8");

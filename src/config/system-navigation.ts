@@ -310,11 +310,10 @@ const adminNavigationSectionSeeds = [
     label: "Outstation Expenses",
   },
   {
-    id: "sales-operations",
+    id: "sales-source-of-sales",
     items: [
       { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], exact: true },
       { href: "/sales/monthly-dashboard", icon: Network, label: "Monthly Closing", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }] },
-      { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
@@ -322,18 +321,31 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/missing-data", icon: TriangleAlert, label: "Missing Data", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/diagnostics", icon: Stethoscope, label: "Sales Diagnostics", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Data Entry", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
+    ],
+    label: "Source of Sales",
+  },
+  {
+    id: "sales-weekly-module",
+    items: [
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }] },
+      { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
       // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
       // the single Weekly Mapping workspace (old routes redirect here).
       { href: "/sales/weekly/mapping", icon: Tags, label: "Weekly Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
       { href: "/sales/weekly/distributor-editor", icon: Columns3, label: "Weekly Distributor Column Editor", permissions: [{ action: "import", resource: "weekly_sales" }] },
       { href: "/sales/weekly/assignments", icon: UsersRound, label: "Weekly Product Access", permissions: [{ action: "update", resource: "weekly_sales" }] },
     ],
-    label: "Sales Operations",
+    label: "Weekly Sales",
+  },
+  {
+    id: "sales-queue-module",
+    items: [
+      { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Sales Queue",
   },
   {
     id: "field-coaching",
