@@ -266,6 +266,7 @@ export type VacationRequestRecord = VacationBalanceSnapshot & {
   managerName: string | null;
   managerOfManagerHrId: string | null;
   managerOfManagerName: string | null;
+  employeeNote: string | null;
   notes: string | null;
   startDate: string;
   status: VacationRequestStatus;

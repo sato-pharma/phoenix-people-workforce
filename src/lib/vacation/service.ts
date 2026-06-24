@@ -159,6 +159,7 @@ type VacationRequestDbRow = {
   manager_name: string | null;
   manager_of_manager_hr_id: string | null;
   manager_of_manager_name: string | null;
+  employee_note?: string | null;
   notes?: string | null;
   payment_status: string | null;
   paid_duration_days?: number | string | null;
@@ -282,6 +283,7 @@ type CreateVacationRequestInput = Omit<VacationRequestInput, "dayPart" | "endDat
   compensatoryManager1?: unknown;
   compensatoryManager2?: unknown;
   dayPart: unknown;
+  employeeNote?: unknown;
   endDate: unknown;
   otherReason?: unknown;
   sickAttachment?: VacationAttachmentUpload | null;
@@ -1050,6 +1052,7 @@ function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationR
     managerName: row.manager_name,
     managerOfManagerHrId: row.manager_of_manager_hr_id,
     managerOfManagerName: row.manager_of_manager_name,
+    employeeNote: row.employee_note ?? null,
     notes: row.notes ?? null,
     paymentStatus: normalizeVacationPaymentStatus(row.payment_status) ?? "unpaid",
     paidDurationDays: row.paid_duration_days == null
@@ -1783,6 +1786,7 @@ async function dispatchVacationSubmitted(input: {
         { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
         { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
         { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+        ...(input.request.employeeNote ? [{ label: "Note", value: input.request.employeeNote }] : []),
         { label: "Status", value: "Pending manager decision" },
         { label: "Action", value: "Review request" },
       ],
@@ -2201,6 +2205,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     validateSickAttachment(input.sickAttachment);
   }
   const otherReason = vacationType === "other" ? validateOtherReason(input) : null;
+  const employeeNote = nullableText(input.employeeNote);
   const compensatoryDetails = vacationType === "compensatory" ? validateCompensatoryDetails(input) : null;
 
   const { directory, employee } = await getCurrentEmployee(access);
@@ -2288,6 +2293,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
       day_part: dayPart,
       department_name: employee.departmentName,
       duration_days: durationDays,
+      employee_note: employeeNote,
       employee_hire_date: employee.hireDate,
       employee_hr_id: employee.hrId,
       employee_name: employee.fullName,

@@ -77,6 +77,7 @@ export async function POST(request: Request) {
             compensatoryManager1: formText(body, "compensatoryManager1"),
             compensatoryManager2: formText(body, "compensatoryManager2"),
             dayPart: formText(body, "dayPart"),
+            employeeNote: formText(body, "employeeNote"),
             endDate: formText(body, "endDate"),
             otherReason: formText(body, "otherReason"),
             sickAttachment: isFormFile(sickDocument)
@@ -97,6 +98,7 @@ export async function POST(request: Request) {
             compensatoryManager1: body.compensatoryManager1,
             compensatoryManager2: body.compensatoryManager2,
             dayPart: body.dayPart,
+            employeeNote: body.employeeNote,
             endDate: body.endDate,
             otherReason: body.otherReason,
             startDate: body.startDate,
