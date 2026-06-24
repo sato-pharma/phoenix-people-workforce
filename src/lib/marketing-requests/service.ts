@@ -517,7 +517,7 @@ const approvedMarketingRequestStatuses: MarketingRequest["status"][] = [
 ];
 
 const marketingFinanceEvidenceBucket = "marketing-finance-evidence";
-const marketingFinanceEvidenceMaxBytes = 5 * 1024 * 1024;
+const marketingFinanceEvidenceMaxBytes = 4 * 1024 * 1024;
 const marketingFinanceEvidenceContentTypes = new Set([
   "application/pdf",
   "image/jpeg",
@@ -4276,7 +4276,7 @@ export async function uploadMarketingFinanceEvidence(params: {
   }
   if (!params.file || params.file.size <= 0) throw validationError("Evidence file is required.");
   if (params.file.size > marketingFinanceEvidenceMaxBytes) {
-    throw validationError("Evidence file must be 5 MB or smaller.");
+    throw validationError("Evidence file must be 4 MB or smaller.");
   }
   if (!marketingFinanceEvidenceContentTypes.has(params.file.type)) {
     throw validationError("Evidence file must be JPG, PNG, WEBP, or PDF.");

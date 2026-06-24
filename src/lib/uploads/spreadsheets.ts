@@ -19,7 +19,7 @@ type SpreadsheetValidationResult =
       status: number;
     };
 
-export const MAX_SPREADSHEET_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_SPREADSHEET_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export const excelSpreadsheetValidation = {
   allowedExtensions: [".xls", ".xlsx"],

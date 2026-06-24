@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_salary_file",
       emptyMessage: "Salary file is empty.",
       tooLargeError: "salary_file_too_large",
-      tooLargeMessage: "Salary file exceeds the 10MB upload limit.",
+      tooLargeMessage: "Salary file exceeds the 4 MB upload limit.",
       unsupportedError: "unsupported_salary_file_type",
       unsupportedMessage: "Upload an Excel salary file in .xls or .xlsx format.",
     });
