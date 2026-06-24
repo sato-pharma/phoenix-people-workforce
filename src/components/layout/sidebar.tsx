@@ -164,7 +164,16 @@ function writePref(key: string, value: unknown) {
 }
 
 function useBooleanPref(key: string): boolean {
-  const snapshot = useSyncExternalStore(subscribePrefs, () => readPref(key), () => "");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
+  const snapshot = useSyncExternalStore(
+    subscribePrefs,
+    () => (hydrated ? readPref(key) : ""),
+    () => "",
+  );
   return snapshot === "true";
 }
 
@@ -653,6 +662,11 @@ function SidebarNav({
   scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
+  const [isClientReady, setIsClientReady] = useState(false);
+  useEffect(() => {
+    setIsClientReady(true);
+  }, []);
+
   const sections = useMemo(
     () =>
       getSections(
@@ -693,7 +707,11 @@ function SidebarNav({
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
 
   const collapsedKey = collapsedStorageKey(mode);
-  const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "");
+  const collapsedSnapshot = useSyncExternalStore(
+    subscribeCollapsed,
+    () => (isClientReady ? readCollapsedSnapshot(collapsedKey) : ""),
+    () => "",
+  );
   const collapsedSectionIds = useMemo(() => {
     const next = parseCollapsedIds(collapsedSnapshot, new Set(sectionIds));
     if (activeSectionId) next.delete(activeSectionId);
@@ -710,7 +728,11 @@ function SidebarNav({
 
   // ── Pinned favourites ──────────────────────────────────────────────────────
   const pinsKey = pinsStorageKey(mode);
-  const pinsSnapshot = useSyncExternalStore(subscribePins, () => readPinsSnapshot(pinsKey), () => "[]");
+  const pinsSnapshot = useSyncExternalStore(
+    subscribePins,
+    () => (isClientReady ? readPinsSnapshot(pinsKey) : "[]"),
+    () => "[]",
+  );
   const pinnedHrefs = useMemo(() => parsePins(pinsSnapshot), [pinsSnapshot]);
   const pinnedSet = useMemo(() => new Set(pinnedHrefs), [pinnedHrefs]);
   const itemByHref = useMemo(() => {
@@ -735,8 +757,16 @@ function SidebarNav({
   // ── Drag-and-drop order ────────────────────────────────────────────────────
   const secOrderKey = sectionOrderKey(mode);
   const itemOrdKey = itemOrderKey(mode);
-  const secOrderSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(secOrderKey), () => "null");
-  const itemOrdSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(itemOrdKey), () => "null");
+  const secOrderSnapshot = useSyncExternalStore(
+    subscribeOrder,
+    () => (isClientReady ? readOrderSnapshot(secOrderKey) : "null"),
+    () => "null",
+  );
+  const itemOrdSnapshot = useSyncExternalStore(
+    subscribeOrder,
+    () => (isClientReady ? readOrderSnapshot(itemOrdKey) : "null"),
+    () => "null",
+  );
 
   const savedSectionOrder = useMemo(() => parseSectionOrder(secOrderSnapshot), [secOrderSnapshot]);
   const savedItemOrder = useMemo(() => parseItemOrder(itemOrdSnapshot), [itemOrdSnapshot]);

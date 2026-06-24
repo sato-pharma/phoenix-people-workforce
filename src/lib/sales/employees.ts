@@ -2,6 +2,7 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalSalesLine, isSalesOthersBucket } from "@/lib/sales/others";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
+import { isSalesVacancyAreaCode } from "@/lib/workforce-classification";
 import type { EmployeeDirectoryRow, SalesLinkStatus, SalesRecordInput } from "@/lib/sales/types";
 
 type LinkResult = {
@@ -329,6 +330,19 @@ export function linkSalesRecordAgainstDirectory(
     };
   }
 
+  if (rawHrId && isSalesVacancyAreaCode(rawHrId)) {
+    return {
+      employeeHrId: rawHrId,
+      employeeCrmId: source.employeeCrmId ?? null,
+      employeeLookupKey: source.employeeLookupKey ?? null,
+      employeeName: source.employeeName ?? null,
+      linkStatus: "unlinked",
+      linkConfidence: 0,
+      line: source.line ?? null,
+      diagnostics: [`Vacant area code "${rawHrId}" is counted as vacant territory sales, not MR personal sales.`],
+    };
+  }
+
   const withMatchedEmployee = (match: EmployeeDirectoryRow, confidence: number): LinkResult => {
     const mismatch = lineMismatchMessage(source.line, match.line);
     if (mismatch) diagnostics.push(`WARN: ${mismatch}`);
@@ -483,7 +497,7 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
 
   importableRecords.forEach((record) => {
     const mrId = compact(record.employeeHrId);
-    if (mrId && !isSalesOthersBucket(record)) {
+    if (mrId && !isSalesOthersBucket(record) && !isSalesVacancyAreaCode(mrId)) {
       mrCandidates.set(mrId, { label: labelByHrId(mrId, record.employeeName || record.employeeLookupKey), line: record.line });
     }
 
