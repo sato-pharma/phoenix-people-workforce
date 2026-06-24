@@ -13,6 +13,16 @@ export type WeeklyDistributorDef = {
   /** true for distributors with NO monthly flat-file equivalent (e.g. POS uses a transposed matrix
    *  layout parsed only by the weekly adapter; there is no separate monthly import for it). */
   weeklyOnly?: boolean;
+  /** true when the adapter matches columns by HEADER NAME instead of a fixed position (e.g. Direct's
+   *  hand-coded sheet). These distributors are intentionally exempt from column-contract.ts — a
+   *  positional contract would misdescribe the parser and the AI pre-verify would flag false "drift"
+   *  whenever the operator's columns aren't in the exact reference order. */
+  headerNameMatched?: boolean;
+  /** true when the monthly counterpart is imported via a coded system channel (DIRECT_TEMPLATE /
+   *  isCodedSystemChannel in monthly-distributor-import.ts) rather than through the normalizer
+   *  RAW_DISTRIBUTOR_PROFILES path. These distributors are NOT weeklyOnly (they do have a monthly
+   *  import) but also do not appear in RAW_DISTRIBUTOR_PROFILES. */
+  monthlyCoded?: boolean;
 };
 
 export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
@@ -23,6 +33,13 @@ export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   { code: "EG", name: "EGD", cadence: "twice-monthly" },
   { code: "RM", name: "RAMCO", cadence: "twice-monthly" },
   { code: "SF", name: "Sofico", cadence: "twice-monthly" },
+  // Direct (company) channel — hand-coded sheet (Distrub ID / Region ID / Product ID / Qty / Invoice
+  // Date / Value / Pharmacy Name), mirrors the monthly Direct template (monthly-distributor-import.ts
+  // DIRECT_TEMPLATE). No branch/area: region-only, with a "NATIONAL" sentinel bucket. Value is read
+  // straight from the sheet's own Value column (never recomputed from factory price). Has no monthly
+  // flat-file equivalent of its own raw-export kind, but DOES have a monthly Direct counterpart — kept
+  // out of weeklyOnly since that flag means "no monthly import at all" (POS-only today).
+  { code: "Direct", name: "Direct (Company)", cadence: "weekly", headerNameMatched: true, monthlyCoded: true },
 ];
 
 export function weeklyDistributorByCode(code: string | null | undefined): WeeklyDistributorDef | undefined {

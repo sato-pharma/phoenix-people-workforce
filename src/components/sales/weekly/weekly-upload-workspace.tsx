@@ -355,6 +355,13 @@ export function WeeklyUploadWorkspace({
           Upload a distributor&apos;s raw weekly Sales &amp; Stock file. The system maps it to your products and regions,
           nets returns out of sales, and recomputes value as net × factory price. Nothing is stored until you confirm.
         </p>
+        {distributorCode === "Direct" && (
+          <p className="mt-2 text-sm font-medium text-[#9A3412]">
+            Direct (Company) is different: it&apos;s a hand-coded sheet (Distrub ID / Region ID / Product ID / Qty /
+            Invoice Date / Value / Pharmacy Name), region-only (no area/brick), and the Value column is stored
+            exactly as written on the sheet — never recomputed from factory price.
+          </p>
+        )}
       </header>
 
       {pageError && (

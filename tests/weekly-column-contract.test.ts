@@ -7,8 +7,10 @@ import { WEEKLY_DISTRIBUTORS } from "../src/lib/sales/weekly/distributors.ts";
 // The contract MIRRORS the parser.ts adapters — if it goes stale the AI verification "verifies"
 // against a false promise, so these invariants must hold for every distributor we ingest.
 export function runWeeklyColumnContractTests() {
-  // 1. Every registered distributor has a contract.
+  // 1. Every registered distributor has a contract, except header-name-matched ones (e.g. Direct),
+  //    which have no fixed column position for a positional contract to mirror.
   for (const distributor of WEEKLY_DISTRIBUTORS) {
+    if (distributor.headerNameMatched) continue;
     const contract = weeklyContractByCode(distributor.code);
     assert.ok(contract, `Missing column contract for distributor ${distributor.code}`);
     assert.equal(contract!.code, distributor.code, `Contract code mismatch for ${distributor.code}`);
@@ -26,8 +28,9 @@ export function runWeeklyColumnContractTests() {
   const psFormFields = new Set(ps.sheets.map((sheet) => sheet.formField));
   assert.ok(psFormFields.has("salesFile") && psFormFields.has("stockFile"), "PS must read both salesFile and stockFile");
 
-  // 3. Field + matrix invariants per sheet.
+  // 3. Field + matrix invariants per sheet (skips header-name-matched distributors — see #1).
   for (const distributor of WEEKLY_DISTRIBUTORS) {
+    if (distributor.headerNameMatched) continue;
     const contract = weeklyContractByCode(distributor.code)!;
     const splitFiles = contract.splitFiles;
     for (const sheet of contract.sheets) {
