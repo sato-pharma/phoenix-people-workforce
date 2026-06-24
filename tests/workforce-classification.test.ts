@@ -130,6 +130,40 @@ export function runWorkforceClassificationTests() {
   assert.equal(vacant.include_in_vacancy_dashboard, true);
   assert.equal(vacant.is_exception, false);
 
+  const vacancyCodeInHrColumn = classifySalesOwnership(
+    {
+      employeeHrId: "V-AF",
+      line: "Pedia",
+      managerHrId: "B-200",
+      territory: "AF Vacant Area",
+      salesValue: 225,
+    },
+    context,
+  );
+  assert.equal(vacancyCodeInHrColumn.classification, "vacant_territory_sales");
+  assert.equal(vacancyCodeInHrColumn.owner_employee_hr_id, null);
+  assert.equal(vacancyCodeInHrColumn.owner_manager_hr_id, "B-200");
+  assert.equal(vacancyCodeInHrColumn.include_in_employee_total, false);
+  assert.equal(vacancyCodeInHrColumn.include_in_manager_total, true);
+  assert.equal(vacancyCodeInHrColumn.include_in_vacancy_dashboard, true);
+  assert.equal(vacancyCodeInHrColumn.is_exception, false);
+
+  const vacancyCodeInLookupColumn = classifySalesOwnership(
+    {
+      employeeHrId: null,
+      employeeLookupKey: "V-AF",
+      line: "Pedia",
+      managerHrId: "B-200",
+      territory: "AF Vacant Area",
+      salesValue: 225,
+    },
+    context,
+  );
+  assert.equal(vacancyCodeInLookupColumn.classification, "vacant_territory_sales");
+  assert.equal(vacancyCodeInLookupColumn.owner_employee_hr_id, null);
+  assert.equal(vacancyCodeInLookupColumn.owner_manager_hr_id, "B-200");
+  assert.equal(vacancyCodeInLookupColumn.include_in_vacancy_dashboard, true);
+
   const lineLevel = classifySalesOwnership(
     {
       employeeHrId: null,
@@ -244,4 +278,3 @@ export function runWorkforceClassificationTests() {
     null,
   );
 }
-

@@ -236,6 +236,11 @@ function textContainsAny(value: unknown, tokens: string[]) {
   return Boolean(text && tokens.some((token) => text.includes(token)));
 }
 
+function isSalesVacancyAreaCode(value: unknown) {
+  const text = normalize(value).replace(/[_\s]+/g, "-");
+  return /^v-[a-z0-9][a-z0-9-]*$/.test(text) || /^vac-[a-z0-9][a-z0-9-]*$/.test(text);
+}
+
 function explicitNodeType(employee: EmployeeNodeInput): EmployeeNodeType | null {
   const raw = [
     getText(employee, ["nodeType", "node_type"]),
@@ -445,6 +450,13 @@ function hasExplicitVacancySignal(record: SalesOwnershipRecord, context: SalesOw
   if (explicit === true) return true;
 
   if (getText(record, ["vacancyId", "vacancy_id", "vacancyCode", "vacancy_code"])) return true;
+  if (
+    [
+      getText(record, ["employeeHrId", "employee_hr_id"]),
+      getText(record, ["employeeLookupKey", "employee_lookup_key"]),
+      getText(record, ["employeeName", "employee_name"]),
+    ].some(isSalesVacancyAreaCode)
+  ) return true;
 
   const vacancyText = [
     getText(record, ["employeeLookupKey", "employee_lookup_key"]),
@@ -677,6 +689,29 @@ export function classifySalesOwnership(
 
     const resolved = resolveEmployeeFromAlternateKeys(record, indexed);
     if (resolved) return classifyResolvedEmployeeSales(record, indexed, resolved, "resolved");
+
+    if (hasExplicitVacancySignal(record, indexed)) {
+      const manager = managerHrId ? lookupEmployee(indexed.employeeByHrId, managerHrId) : null;
+      const ownerLineId = inferLineId(record, indexed, [manager]);
+      const ownerAreaId = inferAreaId(record, indexed, [manager]);
+      const ownerLineKey = inferLineKey(record, [manager]);
+
+      return result({
+        classification: "vacant_territory_sales",
+        include_in_company_total: true,
+        include_in_employee_total: false,
+        include_in_line_total: ownerLineId !== null || Boolean(ownerLineKey),
+        include_in_manager_total: Boolean(managerHrId),
+        include_in_vacancy_dashboard: true,
+        lineKey: ownerLineKey,
+        owner_area_id: ownerAreaId,
+        owner_employee_hr_id: null,
+        owner_line_id: ownerLineId,
+        owner_manager_hr_id: managerHrId,
+        owner_nsm_hr_id: inferNsmHrId(manager),
+        reason: "Employee HR ID carries an explicit vacancy signal.",
+      });
+    }
 
     return result({
       classification: "unresolved_sales_exception",
