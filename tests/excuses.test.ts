@@ -127,6 +127,21 @@ export async function runExcusesTests() {
     /notifyDecisionRecipients[\s\S]*templateContext: \{[\s\S]*excuseDate:[\s\S]*excuseType:[\s\S]*status:/,
     "the employee decision email must supply excuseDate/excuseType/status tokens",
   );
+  assert.doesNotMatch(
+    serviceSource,
+    /void notify(?:ManagerOfExcuse|DecisionRecipients)[\s\S]*?catch\(\(\) => undefined\)/,
+    "excuse notifications must be awaited so API responses cannot return before delivery rows are created",
+  );
+  assert.match(
+    serviceSource,
+    /await notifyManagerOfExcuse\(\{ directory, employee, manager, request, type: "submitted" \}\)/,
+    "new excuse submissions must wait for manager and HR notification fan-out",
+  );
+  assert.match(
+    serviceSource,
+    /await notifyDecisionRecipients\(\{/,
+    "manager decisions must wait for employee and HR notification fan-out",
+  );
 
   // --- Return and resubmit state machine ------------------------------------------------
   assert.match(serviceSource, /returned_to_employee/, "excuses must support the returned_to_employee status");
@@ -154,6 +169,11 @@ export async function runExcusesTests() {
     serviceSource,
     /occurrenceKey: now/,
     "resubmission notification idempotency must include a fresh occurrence key",
+  );
+  assert.match(
+    serviceSource,
+    /await notifyManagerOfExcuse\(\{[\s\S]*occurrenceKey: now[\s\S]*type: "resubmitted"[\s\S]*\}\)/,
+    "returned excuse resubmissions must wait for fresh manager and HR notification fan-out",
   );
 
   // --- Telegram governance: both singular and plural module names must be allowed -------

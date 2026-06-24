@@ -588,7 +588,7 @@ export async function createExcuseRequest(
 
   if (tokenError) throw tokenError;
 
-  void notifyManagerOfExcuse({ directory, employee, manager, request, type: "submitted" }).catch(() => undefined);
+  await notifyManagerOfExcuse({ directory, employee, manager, request, type: "submitted" });
 
   return {
     request,
@@ -666,13 +666,13 @@ export async function decideExcuseRequestByToken(input: {
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
   const directory = await getEmployeeDirectory();
-  void notifyDecisionRecipients({
+  await notifyDecisionRecipients({
     directory,
     request: {
       ...request,
       employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
     },
-  }).catch(() => undefined);
+  });
 
   return request;
 }
@@ -763,13 +763,13 @@ export async function decideExcuseRequestAsManager(
   });
 
   const directory = await getEmployeeDirectory();
-  void notifyDecisionRecipients({
+  await notifyDecisionRecipients({
     directory,
     request: {
       ...request,
       employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
     },
-  }).catch(() => undefined);
+  });
 
   return request;
 }
@@ -857,14 +857,14 @@ export async function resubmitExcuseRequest(
     summary: "Returned excuse request resubmitted to direct manager",
   });
 
-  void notifyManagerOfExcuse({
+  await notifyManagerOfExcuse({
     directory,
     employee,
     manager,
     occurrenceKey: now,
     request,
     type: "resubmitted",
-  }).catch(() => undefined);
+  });
 
   return {
     request,
