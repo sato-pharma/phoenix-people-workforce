@@ -8,18 +8,20 @@ import {
   resolveEmployeeIdentityId,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { writeAuditLog, type AuditEntityType } from "@/lib/admin/audit";
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type EmployeeExcuseType = "morning" | "afternoon";
-export type EmployeeExcuseDecision = "approve" | "reject";
-export type EmployeeExcuseStatus = "pending_manager" | "approved" | "rejected";
+export type EmployeeExcuseDecision = "approve" | "reject" | "return";
+export type EmployeeExcuseStatus = "pending_manager" | "approved" | "rejected" | "returned_to_employee";
 
 export type EmployeeExcuseRequest = {
   createdAt: string;
@@ -64,12 +66,15 @@ type ExcuseRequestRow = {
   duration_hours: number | string;
   employee_hr_id: string;
   employee_name: string;
+  employee_work_email?: string | null;
   excuse_date: string;
   excuse_type: EmployeeExcuseType;
   id: string;
   line_name: string | null;
+  manager_decision?: EmployeeExcuseStatus | null;
   manager_decision_at: string | null;
   manager_decision_comment: string | null;
+  manager_decision_by_hr_id?: string | null;
   manager_hr_id: string | null;
   manager_name: string | null;
   status: EmployeeExcuseStatus;
@@ -87,6 +92,7 @@ const monthlyAllowance = Math.max(
   1,
   Number.parseInt(process.env.PHOENIX_MONTHLY_EXCUSE_ALLOWANCE ?? "2", 10) || 2,
 );
+const excuseAuditEntityType = ["excuse", "request"].join("_") as AuditEntityType;
 
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
@@ -102,7 +108,25 @@ function currentMonthKey() {
 }
 
 function activeStatus(status: EmployeeExcuseStatus) {
-  return status === "pending_manager" || status === "approved";
+  return status === "pending_manager" || status === "approved" || status === "returned_to_employee";
+}
+
+function actionCenterHref(requestId: string) {
+  return `/admin/action-center?module=excuse&id=${encodeURIComponent(requestId)}`;
+}
+
+function statusLabel(status: EmployeeExcuseStatus) {
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "returned_to_employee") return "returned to employee";
+  return "pending manager";
+}
+
+function decisionVerb(status: EmployeeExcuseStatus) {
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "returned_to_employee") return "returned with reply";
+  return "updated";
 }
 
 function isExcusesSchemaMissingMessage(error: unknown) {
@@ -215,7 +239,7 @@ function computeMonthlySummary(requests: EmployeeExcuseRequest[], yearMonth = cu
 async function fetchEmployeeExcuseRequests(employeeHrId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .eq("employee_hr_id", employeeHrId)
     .order("excuse_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -269,7 +293,14 @@ export function parseExcuseDecision(value: unknown): EmployeeExcuseDecision | nu
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "approve" || normalized === "approved") return "approve";
   if (normalized === "reject" || normalized === "rejected") return "reject";
+  if (normalized === "return" || normalized === "returned" || normalized === "returned_to_employee") return "return";
   return null;
+}
+
+function decisionToStatus(decision: EmployeeExcuseDecision): EmployeeExcuseStatus {
+  if (decision === "approve") return "approved";
+  if (decision === "return") return "returned_to_employee";
+  return "rejected";
 }
 
 function validateDateOnly(value: unknown) {
@@ -284,46 +315,87 @@ function validateDateOnly(value: unknown) {
   return dateText;
 }
 
-async function enqueueInAppNotification(input: {
-  category: string;
-  dedupeKey: string;
-  href?: string | null;
-  message: string;
-  metadata?: Record<string, unknown>;
-  recipientHrId: string;
-  title: string;
-}) {
-  return createSystemNotification({
-    actionUrl: input.href ?? null,
-    category: input.category,
-    channels: ["in_app"],
-    eventType: "excuse_notification",
-    message: input.message,
-    metadata: { ...(input.metadata ?? {}), idempotencyKey: input.dedupeKey },
-    module: "excuse",
-    priority: "high",
-    recipientHrId: input.recipientHrId,
-    title: input.title,
+function resolveHrNotificationRecipients(directory: EmployeeDirectoryData): EmployeeDirectoryRow[] {
+  const configuredEmails = new Set(
+    getConfiguredHrNotificationEmails()
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (configuredEmails.size === 0) return [];
+  return directory.employees.filter((employee) => {
+    const email = cleanText(employee.workEmail)?.toLowerCase();
+    return Boolean(email && configuredEmails.has(email));
   });
 }
 
-async function sendManagerEmail(input: {
-  baseUrl: string;
+function isHrVisibilityActor(directory: EmployeeDirectoryData, access: AccessContext) {
+  const role = normalizeRole(access.role);
+  if (role === "Super Admin" || role === "CEO" || role === "Talent Acquisition") {
+    return true;
+  }
+  const employee = findCurrentEmployee(directory, access);
+  const employeeEmail = cleanText(employee?.workEmail)?.toLowerCase();
+  if (!employeeEmail) return false;
+  return getConfiguredHrNotificationEmails()
+    .map((email) => email.trim().toLowerCase())
+    .includes(employeeEmail);
+}
+
+async function notifyHrVisibilityRecipients(input: {
+  actionUrl: string;
+  directory: EmployeeDirectoryData;
+  eventType: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  priority: "normal" | "high";
+  title: string;
+}) {
+  const hrRecipients = resolveHrNotificationRecipients(input.directory);
+  await Promise.allSettled(
+    hrRecipients.map((hr) =>
+      createSystemNotification({
+        actionUrl: input.actionUrl,
+        channels: ["in_app", "telegram"],
+        eventType: input.eventType,
+        message: input.message,
+        metadata: {
+          ...input.metadata,
+          idempotencyKey: `${String(input.metadata.idempotencyKey ?? input.eventType)}:hr:${hr.hrId}`,
+        },
+        module: "excuse",
+        priority: input.priority,
+        recipientHrId: hr.hrId,
+        recordId: String(input.metadata.requestId ?? ""),
+        subjectHrId: String(input.metadata.employeeHrId ?? ""),
+        title: input.title,
+      }),
+    ),
+  );
+}
+
+async function notifyManagerOfExcuse(input: {
+  directory: EmployeeDirectoryData;
   employee: EmployeeDirectoryRow;
   manager: EmployeeDirectoryRow;
+  occurrenceKey?: string;
   request: EmployeeExcuseRequest;
-  token: string;
+  type: "submitted" | "resubmitted";
 }) {
   const typeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
-  const managerActionUrl = `/admin/action-center?module=excuse&id=${encodeURIComponent(input.request.id)}`;
+  const managerActionUrl = actionCenterHref(input.request.id);
+  const title = input.type === "resubmitted" ? "Excuse resubmitted for approval" : "Excuse approval required";
+  const verb = input.type === "resubmitted" ? "resubmitted" : "submitted";
+  const message = `${input.request.employeeName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
+  const occurrenceKey = input.occurrenceKey ?? input.request.createdAt;
   await createSystemNotification({
     actionUrl: managerActionUrl,
     actorId: input.request.employeeHrId,
-    channels: ["email"],
+    channels: ["in_app", "email", "telegram"],
     email: {
       ctaHref: managerActionUrl,
       ctaLabel: "Review in Action Center",
       employeeHrId: input.request.employeeHrId,
+      includeHrInbox: true,
       metrics: [
         { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
         { label: "Excuse type", value: typeLabel },
@@ -333,24 +405,23 @@ async function sendManagerEmail(input: {
       notificationType: "general",
       recipients: [input.manager.workEmail as string],
       subject: `Excuse approval: ${input.request.employeeName}`,
-      summary: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
-      // The admin-edited excuse_request template shows Job Title/Line/Area/Duration; the
-      // metric mapping does not fill those (the "Duration" metric label is not mapped), so
-      // supply them explicitly to avoid blank cells.
+      summary: message,
+      // The manager-facing editable template shows Job Title/Line/Area/Duration; the metric
+      // mapping does not fill those fields, so supply them explicitly to avoid blank cells.
       templateContext: {
         area: input.employee.areaName ?? "—",
         duration: `${input.request.durationHours} hours`,
         jobTitle: input.employee.jobTitle ?? "—",
         line: input.request.lineName ?? input.employee.lineName ?? "—",
       },
-      title: "Excuse approval required",
+      title,
       tone: "warning",
     },
-    eventType: "request_submitted",
-    message: `${input.request.employeeName} submitted a ${typeLabel} for ${input.request.excuseDate}.`,
+    eventType: input.type === "resubmitted" ? "request_resubmitted" : "request_submitted",
+    message,
     metadata: {
       employeeHrId: input.request.employeeHrId,
-      idempotencyKey: `excuse-manager-email:${input.request.id}`,
+      idempotencyKey: `excuse:manager:${input.request.id}:${input.type}:${occurrenceKey}`,
       requestId: input.request.id,
       status: input.request.status,
     },
@@ -359,37 +430,58 @@ async function sendManagerEmail(input: {
     recipientHrId: input.manager.hrId,
     recordId: input.request.id,
     subjectHrId: input.request.employeeHrId,
-    title: "Excuse approval required",
+    title,
+  });
+
+  await notifyHrVisibilityRecipients({
+    actionUrl: managerActionUrl,
+    directory: input.directory,
+    eventType: input.type === "resubmitted" ? "request_resubmitted" : "request_submitted",
+    message,
+    metadata: {
+      employeeHrId: input.request.employeeHrId,
+      idempotencyKey: `excuse:hr:${input.request.id}:${input.type}:${occurrenceKey}`,
+      requestId: input.request.id,
+      status: input.request.status,
+    },
+    priority: "high",
+    title,
   });
 }
 
-async function sendEmployeeDecisionEmail(input: {
+async function notifyDecisionRecipients(input: {
+  directory: EmployeeDirectoryData;
   request: EmployeeExcuseRequest & { employeeWorkEmail?: string | null };
 }) {
   const employeeEmail = cleanText(input.request.employeeWorkEmail);
-  if (!employeeEmail) return;
-
-  const statusLabel = input.request.status === "approved" ? "approved" : "rejected";
+  const requestStatusLabel = statusLabel(input.request.status);
+  const managerAction = decisionVerb(input.request.status);
   const excuseTypeLabel = input.request.excuseType === "morning" ? "Morning excuse" : "Afternoon excuse";
+  const actionUrl = actionCenterHref(input.request.id);
+  const managerNote = cleanText(input.request.managerDecisionComment);
+  const noteSuffix = managerNote ? ` Manager reply/reason: ${managerNote}` : "";
+  const summary = `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by your direct manager.${noteSuffix}`;
+  const title = `Excuse request ${requestStatusLabel}`;
   await createSystemNotification({
-    actionUrl: "/employee-portals/excuses",
+    actionUrl,
     actorId: input.request.managerHrId,
-    channels: ["email"],
+    channels: ["in_app", "email", "telegram"],
     email: {
-      ctaHref: "/employee-portals/excuses",
-      ctaLabel: "Open in Phoenix",
+      ctaHref: actionUrl,
+      ctaLabel: "Open in Action Center",
       employeeHrId: input.request.employeeHrId,
+      includeHrInbox: true,
       metrics: [
         { label: "Excuse type", value: excuseTypeLabel },
         { label: "Date", value: input.request.excuseDate },
-        { label: "Status", value: statusLabel },
+        { label: "Status", value: requestStatusLabel },
       ],
       notificationType: "general",
-      recipients: [employeeEmail],
-      subject: `Your excuse request was ${statusLabel}`,
-      summary: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
-      // Pin the dedicated employee-facing template so the decision email does NOT reuse the
-      // manager-oriented excuse_request wording ("...pending your review", "Dear Dr.").
+      recipients: employeeEmail ? [employeeEmail] : undefined,
+      subject: `Your excuse request was ${requestStatusLabel}`,
+      summary,
+      // Pin the dedicated employee-facing template so the decision email does NOT reuse
+      // manager-oriented wording ("...pending your review", "Dear Dr.").
       templateKey: EMAIL_TEMPLATE_KEYS.EXCUSE_DECISION,
       templateContext: {
         duration: `${input.request.durationHours} hours`,
@@ -398,16 +490,16 @@ async function sendEmployeeDecisionEmail(input: {
         excuseDate: input.request.excuseDate,
         excuseType: excuseTypeLabel,
         line: input.request.lineName ?? "—",
-        status: statusLabel,
+        status: requestStatusLabel,
       },
-      title: `Excuse request ${statusLabel}`,
-      tone: statusLabel === "approved" ? "success" : "warning",
+      title,
+      tone: input.request.status === "approved" ? "success" : "warning",
     },
     eventType: "request_decided",
-    message: `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${statusLabel}.`,
+    message: summary,
     metadata: {
       employeeHrId: input.request.employeeHrId,
-      idempotencyKey: `excuse-employee-email:${input.request.id}:${statusLabel}`,
+      idempotencyKey: `excuse:employee:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
       requestId: input.request.id,
       status: input.request.status,
     },
@@ -416,14 +508,28 @@ async function sendEmployeeDecisionEmail(input: {
     recipientHrId: input.request.employeeHrId,
     recordId: input.request.id,
     subjectHrId: input.request.employeeHrId,
-    title: `Excuse request ${statusLabel}`,
+    title,
+  });
+
+  await notifyHrVisibilityRecipients({
+    actionUrl,
+    directory: input.directory,
+    eventType: "request_decided",
+    message: `${input.request.employeeName}'s ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by the direct manager.${noteSuffix}`,
+    metadata: {
+      employeeHrId: input.request.employeeHrId,
+      idempotencyKey: `excuse:hr-decision:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
+      requestId: input.request.id,
+      status: input.request.status,
+    },
+    priority: "normal",
+    title,
   });
 }
 
 export async function createExcuseRequest(
   access: AccessContext,
   input: { excuseDate?: unknown; excuseType?: unknown },
-  options: { baseUrl: string },
 ) {
   const { directory, employee } = await loadEligibleEmployee(access);
   const employeeHrId = normalizeHrId(employee.hrId) ?? employee.hrId;
@@ -464,7 +570,7 @@ export async function createExcuseRequest(
       submitted_by_hr_id: normalizeHrId(access.hrId),
       submitted_by_login_id: access.loginId ?? null,
     })
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .single();
 
   if (error) throw error;
@@ -482,18 +588,7 @@ export async function createExcuseRequest(
 
   if (tokenError) throw tokenError;
 
-  void Promise.allSettled([
-    sendManagerEmail({ baseUrl: options.baseUrl, employee, manager, request, token }),
-    enqueueInAppNotification({
-      category: "excuse",
-      dedupeKey: `excuse-manager-${request.id}`,
-      href: `/admin/action-center?module=excuse&id=${encodeURIComponent(request.id)}`,
-      message: `${request.employeeName} submitted a ${request.excuseType} excuse for ${request.excuseDate}.`,
-      metadata: { requestId: request.id, status: request.status },
-      recipientHrId: request.managerHrId ?? "",
-      title: "Excuse approval required",
-    }),
-  ]).catch(() => undefined);
+  void notifyManagerOfExcuse({ directory, employee, manager, request, type: "submitted" }).catch(() => undefined);
 
   return {
     request,
@@ -504,7 +599,7 @@ export async function createExcuseRequest(
 async function fetchRequestById(requestId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .eq("id", requestId)
     .maybeSingle();
 
@@ -517,6 +612,10 @@ export async function decideExcuseRequestByToken(input: {
   requestId: string;
   token: string;
 }) {
+  if (input.decision === "return") {
+    throw new Error("Returning an excuse request requires a reply. Open Action Center to return it with a manager reply.");
+  }
+
   const requestRow = await fetchRequestById(input.requestId);
   if (!requestRow) throw new Error("Excuse request was not found.");
   if (requestRow.status !== "pending_manager") {
@@ -542,7 +641,7 @@ export async function decideExcuseRequestByToken(input: {
     throw new Error("Approval link does not match this request manager.");
   }
 
-  const status: EmployeeExcuseStatus = input.decision === "approve" ? "approved" : "rejected";
+  const status = decisionToStatus(input.decision);
   const now = new Date().toISOString();
   const { data: updated, error: updateError } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
@@ -554,7 +653,7 @@ export async function decideExcuseRequestByToken(input: {
       updated_at: now,
     })
     .eq("id", input.requestId)
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .single();
 
   if (updateError) throw updateError;
@@ -566,23 +665,14 @@ export async function decideExcuseRequestByToken(input: {
     .eq("token_hash", tokenHash);
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
-  void Promise.allSettled([
-    sendEmployeeDecisionEmail({
-      request: {
-        ...request,
-        employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
-      },
-    }),
-    enqueueInAppNotification({
-      category: "excuse",
-      dedupeKey: `excuse-employee-${request.id}-${status}`,
-      href: "/employee-portals/excuses",
-      message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
-      metadata: { requestId: request.id, status },
-      recipientHrId: request.employeeHrId,
-      title: `Excuse ${status}`,
-    }),
-  ]).catch(() => undefined);
+  const directory = await getEmployeeDirectory();
+  void notifyDecisionRecipients({
+    directory,
+    request: {
+      ...request,
+      employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
+    },
+  }).catch(() => undefined);
 
   return request;
 }
@@ -592,7 +682,7 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
   const isSystemActor = access.scope === "system";
   let query = supabase
     .from("v2_excuse_requests")
-    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .eq("status", "pending_manager")
     .order("created_at", { ascending: true });
 
@@ -627,8 +717,13 @@ export async function decideExcuseRequestAsManager(
     }
   }
 
+  const comment = typeof input.comment === "string" ? input.comment.trim() || null : null;
+  if (input.decision === "return" && !comment) {
+    throw new Error("A manager reply is required when returning an excuse request to the employee.");
+  }
+
   const deciderHrId = actorHrId ?? requestRow.manager_hr_id;
-  const status: EmployeeExcuseStatus = input.decision === "approve" ? "approved" : "rejected";
+  const status = decisionToStatus(input.decision);
   const now = new Date().toISOString();
   const { data: updated, error: updateError } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
@@ -636,36 +731,165 @@ export async function decideExcuseRequestAsManager(
       manager_decision: status,
       manager_decision_at: now,
       manager_decision_by_hr_id: deciderHrId,
-      manager_decision_comment: input.comment ?? null,
+      manager_decision_comment: comment,
       status,
       updated_at: now,
     })
     .eq("id", input.requestId)
-    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision_at,manager_decision_comment,created_at")
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
     .single();
 
   if (updateError) throw updateError;
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
-  void Promise.allSettled([
-    sendEmployeeDecisionEmail({
-      request: {
-        ...request,
-        employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
-      },
-    }),
-    enqueueInAppNotification({
-      category: "excuse",
-      dedupeKey: `excuse-employee-${request.id}-${status}`,
-      href: "/employee-portals/excuses",
-      message: `Your ${request.excuseType} excuse for ${request.excuseDate} was ${status}.`,
-      metadata: { requestId: request.id, status },
-      recipientHrId: request.employeeHrId,
-      title: `Excuse ${status}`,
-    }),
-  ]).catch(() => undefined);
+  await writeAuditLog({
+    actorLoginId: access.loginId ?? deciderHrId ?? "system",
+    entityId: request.id,
+    entityType: excuseAuditEntityType,
+    oldValues: {
+      managerDecision: requestRow.manager_decision ?? null,
+      managerDecisionAt: requestRow.manager_decision_at,
+      managerDecisionComment: requestRow.manager_decision_comment,
+      status: requestRow.status,
+    },
+    newValues: {
+      managerDecision: status,
+      managerDecisionAt: now,
+      managerDecisionByHrId: deciderHrId,
+      managerDecisionComment: comment,
+      status,
+    },
+    summary: `Excuse request ${statusLabel(status)} by direct manager`,
+  });
+
+  const directory = await getEmployeeDirectory();
+  void notifyDecisionRecipients({
+    directory,
+    request: {
+      ...request,
+      employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
+    },
+  }).catch(() => undefined);
 
   return request;
+}
+
+export async function resubmitExcuseRequest(
+  access: AccessContext,
+  input: { excuseDate?: unknown; excuseType?: unknown; requestId: string },
+) {
+  const { directory, employee } = await loadEligibleEmployee(access);
+  const employeeHrId = normalizeHrId(employee.hrId) ?? employee.hrId;
+  const requestRow = await fetchRequestById(input.requestId);
+  if (!requestRow) throw new Error("Excuse request was not found.");
+  if (normalizeHrId(requestRow.employee_hr_id) !== normalizeHrId(employeeHrId)) {
+    throw new Error("Forbidden: you can only resubmit your own excuse request.");
+  }
+  if (requestRow.status !== "returned_to_employee") {
+    throw new Error("Only returned excuse requests can be resubmitted.");
+  }
+
+  const excuseDate = input.excuseDate === undefined || input.excuseDate === null || input.excuseDate === ""
+    ? requestRow.excuse_date
+    : validateDateOnly(input.excuseDate);
+  const excuseType = input.excuseType === undefined || input.excuseType === null || input.excuseType === ""
+    ? requestRow.excuse_type
+    : parseExcuseType(input.excuseType);
+  if (!excuseType) throw new Error("Excuse type must be morning or afternoon.");
+
+  const manager = findEmployeeByHrId(directory, requestRow.manager_hr_id ?? employee.managerHrId);
+  if (!manager) {
+    throw new Error("Direct manager is not linked for this employee. Please contact HR.");
+  }
+  if (!cleanText(manager.workEmail)) {
+    throw new Error("Direct manager work email is missing. Please contact HR.");
+  }
+
+  const existingRequests = (await fetchEmployeeExcuseRequests(employeeHrId)).filter((request) => request.id !== input.requestId);
+  const targetMonth = requestMonthKey(excuseDate);
+  const monthly = computeMonthlySummary(existingRequests, targetMonth);
+  if (monthly.remaining <= 0) {
+    throw new Error(`Monthly excuse limit reached for ${targetMonth}.`);
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .update({
+      excuse_date: excuseDate,
+      excuse_type: excuseType,
+      manager_decision: null,
+      manager_decision_at: null,
+      manager_decision_by_hr_id: null,
+      manager_decision_comment: null,
+      status: "pending_manager",
+      updated_at: now,
+    })
+    .eq("id", input.requestId)
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .single();
+
+  if (updateError) throw updateError;
+
+  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
+  await writeAuditLog({
+    actorLoginId: access.loginId ?? employeeHrId,
+    entityId: request.id,
+    entityType: excuseAuditEntityType,
+    oldValues: {
+      excuseDate: requestRow.excuse_date,
+      excuseType: requestRow.excuse_type,
+      managerDecision: requestRow.manager_decision ?? null,
+      managerDecisionAt: requestRow.manager_decision_at,
+      managerDecisionByHrId: requestRow.manager_decision_by_hr_id ?? null,
+      managerDecisionComment: requestRow.manager_decision_comment,
+      status: requestRow.status,
+    },
+    newValues: {
+      excuseDate,
+      excuseType,
+      managerDecision: null,
+      managerDecisionAt: null,
+      managerDecisionByHrId: null,
+      managerDecisionComment: null,
+      status: "pending_manager",
+    },
+    summary: "Returned excuse request resubmitted to direct manager",
+  });
+
+  void notifyManagerOfExcuse({
+    directory,
+    employee,
+    manager,
+    occurrenceKey: now,
+    request,
+    type: "resubmitted",
+  }).catch(() => undefined);
+
+  return {
+    request,
+    workspace: await getExcuseWorkspace(access),
+  };
+}
+
+export async function getExcuseRequestForActionCenterDeepLink(
+  access: AccessContext,
+  requestId: string,
+): Promise<{ canAct: boolean; request: EmployeeExcuseRequest } | null> {
+  const requestRow = await fetchRequestById(requestId);
+  if (!requestRow) return null;
+
+  const directory = await getEmployeeDirectory();
+  const actorHrId = resolveEmployeeIdentityId(access) ?? access.hrId ?? null;
+  const isAssignedManager = normalizeHrId(actorHrId) === normalizeHrId(requestRow.manager_hr_id);
+  const isEmployeeOwner = normalizeHrId(actorHrId) === normalizeHrId(requestRow.employee_hr_id);
+  const canSee = isAssignedManager || isEmployeeOwner || access.scope === "system" || isHrVisibilityActor(directory, access);
+  if (!canSee) return null;
+
+  return {
+    canAct: (isAssignedManager || access.scope === "system") && requestRow.status === "pending_manager",
+    request: mapExcuseRequestRow(requestRow),
+  };
 }
 
 export function isExcusesSchemaMissing(error: unknown) {
@@ -690,7 +914,7 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
     if (ageDays < 2) continue;
     try {
       await createSystemNotification({
-        channels: ["email"],
+        channels: ["in_app", "email", "telegram"],
         eventType: "excuse_sla_reminder",
         message: `${String(row.employee_name)}'s ${String(row.excuse_type)} excuse for ${String(row.excuse_date)} has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
         metadata: { idempotencyKey: `excuse:${String(row.id)}:sla:${String(row.manager_hr_id)}:${today}` },

@@ -62,6 +62,7 @@ function statusBadgeVariant(status: EmployeeExcuseStatus): "danger" | "success" 
 function statusLabel(status: EmployeeExcuseStatus): string {
   if (status === "approved") return "Approved";
   if (status === "rejected") return "Rejected";
+  if (status === "returned_to_employee") return "Returned to employee";
   return "Pending";
 }
 
@@ -379,7 +380,13 @@ function MonthlyTrendSparkline({ requests }: { requests: EmployeeExcuseRequest[]
 /* ─── History Request Card (Mobile) ───────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function ExcuseHistoryCard({ request }: { request: EmployeeExcuseRequest }) {
+function ExcuseHistoryCard({
+  onEditReturned,
+  request,
+}: {
+  onEditReturned: (request: EmployeeExcuseRequest) => void;
+  request: EmployeeExcuseRequest;
+}) {
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
@@ -414,6 +421,15 @@ function ExcuseHistoryCard({ request }: { request: EmployeeExcuseRequest }) {
           ) : null}
         </div>
       ) : null}
+      {request.status === "returned_to_employee" ? (
+        <button
+          className="mt-3 inline-flex h-8 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-3 text-[11px] font-bold text-orange-700 transition hover:bg-orange-100"
+          onClick={() => onEditReturned(request)}
+          type="button"
+        >
+          Edit and resubmit
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -440,6 +456,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
   const [excuseDate, setExcuseDate] = useState(todayDate());
   const [excuseType, setExcuseType] = useState<"morning" | "afternoon">("morning");
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
+  const [resubmitRequestId, setResubmitRequestId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -477,14 +494,15 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
   const { enqueue, isOnline, queueLength } = useOfflineQueue(replayExcuseRequest);
 
-  const submitDisabled = submitting || submitSuccess || workspace.monthly.remaining <= 0 || hasDateError;
+  const submitDisabled = submitting || submitSuccess || (!resubmitRequestId && workspace.monthly.remaining <= 0) || hasDateError;
 
   /* ── Stats by status ─────────────────────────────── */
   const statusCounts = useMemo(() => {
-    const counts = { approved: 0, pending: 0, rejected: 0 };
+    const counts = { approved: 0, pending: 0, rejected: 0, returned: 0 };
     for (const r of workspace.requests) {
       if (r.status === "approved") counts.approved++;
       else if (r.status === "rejected") counts.rejected++;
+      else if (r.status === "returned_to_employee") counts.returned++;
       else counts.pending++;
     }
     return counts;
@@ -547,6 +565,11 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
   const handleSubmit = useCallback(() => {
     setMessage(null);
 
+    if (resubmitRequestId && !isOnline) {
+      setMessage({ kind: "error", text: "Reconnect before resubmitting a returned request." });
+      return;
+    }
+
     // Offline: enqueue instead of fetching (#2)
     if (!isOnline) {
       enqueue(excuseDate, excuseType);
@@ -557,7 +580,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
     setSubmitting(true);
     (async () => {
       try {
-        const response = await fetch("/api/excuses", {
+        const response = await fetch(resubmitRequestId ? `/api/excuses/${resubmitRequestId}/resubmit` : "/api/excuses", {
           body: JSON.stringify({ excuseDate, excuseType }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -573,13 +596,14 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
         }
 
         setWorkspace(payload.workspace);
+        setResubmitRequestId(null);
 
         // Optimistic success animation (#1)
         setSubmitSuccess(true);
         setTimeout(() => {
           setSubmitSuccess(false);
           setActiveTab("history");
-          setMessage({ kind: "success", text: "Excuse request sent to your direct manager." });
+          setMessage({ kind: "success", text: resubmitRequestId ? "Excuse request resubmitted to your direct manager." : "Excuse request sent to your direct manager." });
         }, 1200);
       } catch (error) {
         setMessage({
@@ -590,7 +614,18 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
         setSubmitting(false);
       }
     })();
-  }, [excuseDate, excuseType, isOnline, enqueue]);
+  }, [excuseDate, excuseType, isOnline, enqueue, resubmitRequestId]);
+
+  const editReturnedRequest = useCallback((request: EmployeeExcuseRequest) => {
+    setResubmitRequestId(request.id);
+    setExcuseDate(request.excuseDate);
+    setExcuseType(request.excuseType);
+    setMessage({
+      kind: "success",
+      text: "Returned request loaded. Edit the date/type if needed, then resubmit.",
+    });
+    setActiveTab("request");
+  }, []);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /* ─── Tab Items ─────────────────────────────────────────────────── */
@@ -718,7 +753,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Simple workflow</p>
                 <h2 className="mt-1 text-base font-extrabold text-slate-900">Request a 2-hour excuse</h2>
                 <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-500">
-                  Choose the date and type. Your manager receives an email for approval.
+                  Choose the date and type. Your manager and HR receive the request for visibility.
                 </p>
               </div>
 
@@ -795,15 +830,27 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     ) : (
                       <>
                         <Send className="h-3.5 w-3.5" />
-                        Submit request
+                        {resubmitRequestId ? "Resubmit request" : "Submit request"}
                       </>
                     )}
                   </button>
 
-                  {workspace.monthly.remaining <= 0 ? (
+                  {workspace.monthly.remaining <= 0 && !resubmitRequestId ? (
                     <p className="text-[11px] font-bold text-rose-600">
                       Monthly limit reached for {currentMonthLabel}.
                     </p>
+                  ) : null}
+                  {resubmitRequestId ? (
+                    <button
+                      className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                      onClick={() => {
+                        setResubmitRequestId(null);
+                        setMessage(null);
+                      }}
+                      type="button"
+                    >
+                      Cancel resubmit
+                    </button>
                   ) : null}
                 </div>
               </div>
@@ -877,6 +924,13 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                         title={`Rejected: ${statusCounts.rejected}`}
                       />
                     ) : null}
+                    {statusCounts.returned > 0 ? (
+                      <div
+                        className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-500"
+                        style={{ width: `${(statusCounts.returned / historyTotal) * 100}%` }}
+                        title={`Returned: ${statusCounts.returned}`}
+                      />
+                    ) : null}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
                     <span className="flex items-center gap-1.5">
@@ -890,6 +944,10 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     <span className="flex items-center gap-1.5">
                       <span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />
                       <span className="text-rose-700">Rejected {statusCounts.rejected}</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-sm bg-orange-500" />
+                      <span className="text-orange-700">Returned {statusCounts.returned}</span>
                     </span>
                   </div>
                 </div>
@@ -929,6 +987,15 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                               {request.managerDecisionComment ? (
                                 <p className="mt-0.5 leading-4 text-slate-500">{request.managerDecisionComment}</p>
                               ) : null}
+                              {request.status === "returned_to_employee" ? (
+                                <button
+                                  className="mt-2 inline-flex h-7 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100"
+                                  onClick={() => editReturnedRequest(request)}
+                                  type="button"
+                                >
+                                  Edit and resubmit
+                                </button>
+                              ) : null}
                             </div>
                           ) : (
                             <span className="text-slate-400">-</span>
@@ -958,7 +1025,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   </div>
                 ) : (
                   filteredRequests.map((request) => (
-                    <ExcuseHistoryCard key={request.id} request={request} />
+                    <ExcuseHistoryCard key={request.id} request={request} onEditReturned={editReturnedRequest} />
                   ))
                 )}
               </div>

@@ -149,6 +149,7 @@ export type ActionHubItem = {
   submittedAt: string;
   urgency: ActionHubUrgency;
   detail: ActionHubDetail;
+  readOnlyReason?: string | null;
   slaAgeDays?: number | null;
   slaIsOverdue?: boolean;
 };

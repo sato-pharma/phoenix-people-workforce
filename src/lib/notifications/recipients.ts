@@ -35,6 +35,13 @@ export const PERSONAL_BELL_CATEGORIES = [
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);
 
+export function getConfiguredHrNotificationEmails() {
+  return String(process.env.HR_NOTIFICATION_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
 /** True when a notification category is a current/supported personal-bell category. */
 export function isPersonalBellCategory(category: string | null | undefined): boolean {
   return personalBellCategorySet.has(String(category ?? "").trim().toLowerCase());

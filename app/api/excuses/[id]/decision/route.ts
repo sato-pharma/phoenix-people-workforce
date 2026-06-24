@@ -93,7 +93,7 @@ export async function POST(
     const decision = parseExcuseDecision(body.decision);
     if (!decision) {
       return NextResponse.json(
-        { error: "invalid_decision", message: "Decision must be 'approve' or 'reject'.", success: false },
+        { error: "invalid_decision", message: "Decision must be 'approve', 'reject', or 'return'.", success: false },
         { status: 400 },
       );
     }

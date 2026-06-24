@@ -16,6 +16,7 @@ export type AuditEntityType =
   | "deduction_summary"
   | "double_visit_import"
   | "employee_resignation"
+  | "excuse_request"
   | "field_workforce_compliance_import"
   | "marketing_request"
   | "module_control_assignment"
