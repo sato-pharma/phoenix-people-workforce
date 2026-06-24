@@ -489,8 +489,8 @@ export function MonthlySalesDashboard({
       <AdminPageHero
         eyebrow="Sales Intelligence"
         icon={<CalendarRange className="h-4 w-4" />}
-        title="Monthly Sales Dashboard"
-        description="Approved monthly sales, targets, channel mix, territories and trends - fully filterable across every dimension."
+        title="Source of Sales Dashboard"
+        description="Approved Source of Sales data — targets, channel mix, territories and trends, fully filterable across every dimension."
         badges={
           <>
             <AdminInsightChip tone="orange">
