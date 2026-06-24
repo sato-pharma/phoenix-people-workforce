@@ -75,7 +75,7 @@ export function getSections(
               permissionAllowed(lookup, item.permissions) &&
               roleAllowed(role, item.roles) &&
               moduleIdAllowed(moduleIds, item) &&
-              (mode === "admin" || roleNotExcluded(role, item.excludedRoles)),
+              roleNotExcluded(role, item.excludedRoles),
           ),
         }))
         .filter((section) => section.items.length > 0);
