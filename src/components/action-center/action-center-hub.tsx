@@ -756,18 +756,29 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   // Fetch view-as items when a manager is selected (always resets to page 0)
   useEffect(() => {
     let cancelled = false;
-    if (!viewAsHrId) { setViewAsItems(null); setViewAsOffset(0); setViewAsTotal(0); return; }
-    setViewAsOffset(0);
-    setViewAsLoading(true);
-    fetch(`/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=0`)
-      .then((r) => r.json())
-      .then((d: { items?: ActionHubItem[]; total?: number }) => {
+    async function loadViewAs() {
+      if (!viewAsHrId) {
+        setViewAsItems(null);
+        setViewAsOffset(0);
+        setViewAsTotal(0);
+        return;
+      }
+      setViewAsOffset(0);
+      setViewAsLoading(true);
+      try {
+        const r = await fetch(
+          `/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=0`,
+        );
+        const d = (await r.json()) as { items?: ActionHubItem[]; total?: number };
         if (cancelled) return;
         if (Array.isArray(d.items)) setViewAsItems(d.items);
         if (typeof d.total === "number") setViewAsTotal(d.total);
         setViewAsLoading(false);
-      })
-      .catch(() => { if (!cancelled) setViewAsLoading(false); });
+      } catch {
+        if (!cancelled) setViewAsLoading(false);
+      }
+    }
+    void loadViewAs();
     return () => { cancelled = true; };
   }, [viewAsHrId]);
 
