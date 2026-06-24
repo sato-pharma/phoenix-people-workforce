@@ -137,22 +137,26 @@ export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
 };
 
 const adminNavigationSectionSeeds = [
+  // ── Tier 1: Executive overview ────────────────────────────────────────────────
+  // Items ordered: primary dashboard → intelligence → monitoring → audit → admin tools → destructive
   {
     id: "command-center",
     items: [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }] },
-      { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       // Marketing Manager uses the dedicated "ROI Dashboard" entry in workspace-marketing-requests
       // (same href, moduleId admin.workspace.roi_dashboard_mm) instead of this generic duplicate.
       { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Sales & Marketing Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
-      { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/data-backup", icon: Download, label: "Data Backup", roles: ["Super Admin"] },
+      { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
+      { href: "/admin/data-backup", icon: Download, label: "Data Backup", roles: ["Super Admin"] },
+      { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
     ],
     label: "Command Center",
   },
+
+  // ── Tier 2: Personal workspace (admin-shell employee roles) ──────────────────
   {
     id: "workspace-my-workspace",
     items: [
@@ -163,29 +167,6 @@ const adminNavigationSectionSeeds = [
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "My Workspace",
-  },
-  {
-    id: "workspace-marketing-requests",
-    items: [
-      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Marketing Manager"] },
-      { href: "/workspace/marketing-requests/overview", icon: LayoutDashboard, label: "Overview", moduleId: "admin.workspace.marketing_overview", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
-      { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
-      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
-      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
-      { href: "/workspace/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.workspace.roi_tracking", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
-    ],
-    label: "Marketing & ROI",
-  },
-  {
-    id: "workspace-sales-intelligence",
-    items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
-      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
-    ],
-    label: "Sales Intelligence",
   },
   {
     id: "workspace-payroll",
@@ -208,9 +189,9 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-team-operations",
     items: [
+      { href: "/workspace/organogram", icon: Network, label: "Organogram", moduleId: "admin.workspace.organogram", permissions: [{ resource: "organogram", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/vacancies", icon: BriefcaseBusiness, label: "Vacancies", moduleId: "admin.workspace.vacancies", permissions: [{ resource: "vacancies", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/probation", icon: Hourglass, label: "Probation Tracker", moduleId: "admin.workspace.probation_tracker", permissions: [{ resource: "probation", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/organogram", icon: Network, label: "Organogram", moduleId: "admin.workspace.organogram", permissions: [{ resource: "organogram", action: "read" }], roles: adminShellEmployeeRoles },
     ],
     label: "Team Operations",
   },
@@ -229,6 +210,32 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Support",
   },
+
+  // ── Tier 3: Role-specific workspaces (Marketing Manager / SFE) ───────────────
+  {
+    id: "workspace-marketing-requests",
+    items: [
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Marketing Manager"] },
+      { href: "/workspace/marketing-requests/overview", icon: LayoutDashboard, label: "Overview", moduleId: "admin.workspace.marketing_overview", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
+      { href: "/workspace/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.workspace.customer_validation", roles: ["SFE Manager", "Marketing Manager"] },
+      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.marketing_requests", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"], exact: true },
+      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.approval_inbox", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
+      { href: "/workspace/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.workspace.roi_tracking", roles: ["SFE Manager", "Marketing Manager", "Finance Manager", "Financial Advisor"] },
+    ],
+    label: "Marketing & ROI",
+  },
+  {
+    id: "workspace-sales-intelligence",
+    items: [
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
+      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
+    ],
+    label: "Sales Intelligence",
+  },
+
+  // ── Tier 4: HR & People ───────────────────────────────────────────────────────
+  // Items ordered: time-sensitive actions → headcount records → lifecycle events → compliance
   {
     id: "people-management",
     items: [
@@ -238,10 +245,10 @@ const adminNavigationSectionSeeds = [
       // /workspace/organogram, /workspace/probation, /workspace/vacancies entries for the
       // admin-shell-employee Marketing Manager (same underlying report, different href).
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }], excludedRoles: ["Marketing Manager"] },
       { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
       { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
-      { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }], excludedRoles: ["Marketing Manager"] },
       // Org-wide plans review for Super Admin only. CEO uses the Company Calendar + Private Calendars.
       { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["Super Admin"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
@@ -259,17 +266,18 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Recruitment & Hiring",
   },
+  // Items ordered: reporting views → calendar references → admin config
   {
     id: "attendance-management",
     items: [
       { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "My Attendance", permissions: [{ resource: "employees" }] },
       { href: "/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
       { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "employees" }] },
-      { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
+      { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
       { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
-      { href: "/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
     ],
     label: "Attendance Management",
   },
@@ -297,33 +305,50 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Payroll Management",
   },
+
+  // ── Tier 5: Field operations ──────────────────────────────────────────────────
+  // Items ordered: overview → active queue → data entry → historical → config
   {
     id: "expenses-outstation",
     items: [
-      { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Outstation Expenses", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles },
-      { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Historical Upload", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles, exact: true },
+      { href: "/admin/outstation/expense-command", icon: Radar, label: "Expense Command Center", permissions: [{ resource: "outstation", action: "read" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
       { href: "/admin/outstation/expense-command?tab=queue", icon: MapPinned, label: "Expense Requests", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager"], activeTab: "queue" },
       { href: "/admin/outstation/expense-command?tab=queue&action=create-manager-expense", icon: PlusCircle, label: "Add Manual Expense", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager"], activeTab: "create-manager-expense" },
+      { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Outstation Expenses", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles },
+      { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Historical Upload", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles, exact: true },
       { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }], roles: ["Super Admin", "Finance Manager"] },
-      { href: "/admin/outstation/expense-command", icon: Radar, label: "Expense Command Center", permissions: [{ resource: "outstation", action: "read" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
     ],
     label: "Outstation Expenses",
   },
   {
+    id: "field-coaching",
+    items: [
+      { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
+      // Coaching Analytics / Double Visit Analytics duplicate the workspace-sales-intelligence
+      // entries (same href) for the admin-shell-employee Marketing Manager.
+      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
+      { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
+    ],
+    label: "Field Coaching",
+  },
+
+  // ── Tier 6: Sales operations ──────────────────────────────────────────────────
+  // Items ordered: dashboards → data entry → upload → data management → QA/diagnostics
+  {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "M.Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Data Entry", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/distributor-profiles", icon: Tags, label: "Distributor Column Editor", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/missing-data", icon: TriangleAlert, label: "Missing Data", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/normalizer", icon: Sparkles, label: "Source Normalizer", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/diagnostics", icon: Stethoscope, label: "Sales Diagnostics", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Data Entry", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
     ],
     label: "Source of Sales",
   },
@@ -347,19 +372,8 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Sales Queue",
   },
-  {
-    id: "field-coaching",
-    items: [
-      { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
-      // Coaching Analytics / Double Visit Analytics duplicate the workspace-sales-intelligence
-      // entries (same href) for the admin-shell-employee Marketing Manager.
-      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
-      { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
-    ],
-    label: "Field Coaching",
-  },
+
+  // ── Tier 7: Marketing ─────────────────────────────────────────────────────────
   {
     id: "marketing-requests",
     items: [
@@ -368,25 +382,28 @@ const adminNavigationSectionSeeds = [
       // GPM use the employee portal. So these admin workflow links are Super-Admin-only in practice.
       // ROI Dashboard is a READ-ONLY executive report, so it also surfaces to the CEO (the oversight
       // audience the report is built for; the page guard admits the company-oversight roles too).
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["Super Admin", "CEO"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["Super Admin"], exact: true },
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["Super Admin", "CEO"] },
+      { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
     ],
     label: "Marketing Requests",
   },
+
+  // ── Tier 8: System administration ────────────────────────────────────────────
+  // Items ordered: access control → system config → communication tools
   {
     id: "access-communication",
     items: [
       { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }], excludedRoles: ["CEO"] },
       { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
+      { href: "/admin/workflow-control", icon: Settings2, label: "Workflow Control", permissions: [{ resource: "workflow_registry" }], roles: ["Super Admin"] },
       { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
       { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
       { href: "/admin/notifications/telegram", icon: Send, label: "Telegram", permissions: [{ resource: "communication" }] },
       { href: "/admin/notifications/telegram/templates", icon: MessageSquareText, label: "Telegram Templates", permissions: [{ resource: "communication" }] },
-      { href: "/admin/workflow-control", icon: Settings2, label: "Workflow Control", permissions: [{ resource: "workflow_registry" }], roles: ["Super Admin"] },
       { href: "/workspace/contact-hr-support", icon: LifeBuoy, label: "Request HR Support", permissions: [{ resource: "support_requests", action: "create" }], roles: ["CEO"] },
     ],
     label: "Access & Communication",
