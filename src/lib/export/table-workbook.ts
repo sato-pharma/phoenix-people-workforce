@@ -57,21 +57,22 @@ export async function buildPhoenixTableWorkbook(input: BuildTableWorkbookInput) 
 
   const colCount = Math.max(1, input.columns.length);
 
-  // Row 1 — title band (black with orange title)
+  // Row 1 — title band (black, white title, orange bottom-border accent)
   sheet.mergeCells(1, 1, 1, colCount);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = input.title;
-  titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: ORANGE } };
+  titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: WHITE } };
   titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
-  sheet.getRow(1).height = 30;
+  titleCell.border = { bottom: { style: "medium", color: { argb: ORANGE } } };
+  sheet.getRow(1).height = 36;
 
   // Row 2 — subtitle band
   sheet.mergeCells(2, 1, 2, colCount);
   const subCell = sheet.getCell(2, 1);
   subCell.value = input.subtitle ?? `Phoenix Workforce · exported ${new Date().toLocaleString("en-GB")}`;
-  subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: MUTED } };
-  subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: WHITE } };
+  subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
   subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
   sheet.getRow(2).height = 18;
 
