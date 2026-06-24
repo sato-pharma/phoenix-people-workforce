@@ -53,6 +53,47 @@ $$;
 revoke all on function public.analytics_sos_by_period(text, text, text, text, text[], text[], text[]) from public, anon, authenticated, analytics_readonly;
 grant  execute on function public.analytics_sos_by_period(text, text, text, text, text[], text[], text[]) to service_role;
 
+-- ── SoS by line ──────────────────────────────────────────────────────────────
+
+create or replace function public.analytics_sos_by_line(
+  p_period      text    default null,
+  p_period_from text    default null,
+  p_period_to   text    default null,
+  p_channel     text    default null,
+  p_distributors text[] default null,
+  p_regions     text[]  default null
+)
+returns table (
+  period  text,
+  year    integer,
+  month   integer,
+  line    text,
+  channel text,
+  units   numeric,
+  value   numeric
+)
+language sql
+stable
+security definer
+set search_path = analytics, public
+as $$
+  select period, year, month, line, channel,
+         sum(units) as units,
+         sum(value) as value
+  from   analytics.sos_fact
+  where  (p_period is null      or period = p_period)
+    and  (p_period_from is null or period >= p_period_from)
+    and  (p_period_to   is null or period <= p_period_to)
+    and  (p_channel is null     or channel = p_channel)
+    and  (p_distributors is null or distributor_code = any(p_distributors))
+    and  (p_regions is null     or region_code = any(p_regions))
+  group by period, year, month, line, channel
+  order by period, value desc;
+$$;
+
+revoke all on function public.analytics_sos_by_line(text, text, text, text, text[], text[]) from public, anon, authenticated, analytics_readonly;
+grant  execute on function public.analytics_sos_by_line(text, text, text, text, text[], text[]) to service_role;
+
 -- ── SoS by area ──────────────────────────────────────────────────────────────
 
 create or replace function public.analytics_sos_by_area(

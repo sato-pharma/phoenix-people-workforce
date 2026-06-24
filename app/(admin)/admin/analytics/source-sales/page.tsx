@@ -7,7 +7,7 @@ import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-stat
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { loadAnalyticsDimensions, loadSosByPeriod, loadSosByArea, loadSosByProduct } from "@/lib/analytics/service";
+import { loadSosByPeriod, loadSosByArea, loadSosByProduct } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
 
@@ -19,13 +19,7 @@ function fmt(n: number): string {
   return n.toLocaleString("en-EG", { maximumFractionDigits: 0 });
 }
 
-function fmtPct(n: number | null): string {
-  if (n == null) return "—";
-  return `${n.toFixed(1)}%`;
-}
-
 async function SosDashboardContent({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
-  const access = await resolveAccessContextFromPage();
   const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
 
   const sosFilters = {

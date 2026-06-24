@@ -186,6 +186,38 @@ export type SosFilters = {
   channel?: string | null;
 };
 
+export type SosByLineRow = {
+  period: string;
+  year: number;
+  month: number;
+  line: string;
+  channel: string;
+  units: number;
+  value: number;
+};
+
+export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLineRow[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.rpc("analytics_sos_by_line" as never, {
+    p_period:      filters.period      ?? null,
+    p_period_from: filters.periodFrom  ?? null,
+    p_period_to:   filters.periodTo    ?? null,
+    p_channel:     filters.channel     ?? null,
+    p_distributors: filters.distributors?.length ? filters.distributors : null,
+    p_regions:     filters.regions?.length     ? filters.regions     : null,
+  } as never);
+  if (error) throw new Error(`SoS by line: ${error.message}`);
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    period:  s(r.period),
+    year:    n(r.year),
+    month:   n(r.month),
+    line:    s(r.line),
+    channel: s(r.channel),
+    units:   n(r.units),
+    value:   n(r.value),
+  }));
+}
+
 export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiRow[]> {
   const db = getSupabaseAdmin();
   // Query the analytics view via raw SQL through RPC or direct admin select.
