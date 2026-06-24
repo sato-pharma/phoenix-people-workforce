@@ -85,7 +85,7 @@ function buildSummarySheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard, ge
   const filterLabel = labelFilters(data.appliedFilters);
   bandHeader(sheet, COLS, "Weekly Sales Report", filterLabel);
 
-  // Generated-at row (row 4 — row 3 is now the slogan from bandHeader)
+  // Generated-at row (row 4 sits under the premium header divider)
   sheet.mergeCells(4, 1, 4, COLS);
   const genCell = sheet.getCell(4, 1);
   genCell.value = `Generated: ${generatedAt}`;
