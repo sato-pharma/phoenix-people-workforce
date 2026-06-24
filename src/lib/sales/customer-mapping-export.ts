@@ -11,6 +11,12 @@ import type { ConsolidatedCustomer, CustomerMappingRow } from "@/lib/sales/custo
 const BLACK = "FF000000";
 const WHITE = "FFFFFFFF";
 const ORANGE_SOFT = "FFFFF7ED";
+const ORANGE_LINE = "FFF8B56B";
+
+function gridBorder(): ExcelJS.Borders {
+  const side = { style: "thin" as const, color: { argb: ORANGE_LINE } };
+  return { top: side, left: side, bottom: side, right: side } as ExcelJS.Borders;
+}
 
 type Column = { header: string; key: string; numeric?: boolean; text?: boolean; width: number };
 
@@ -57,6 +63,7 @@ function writeGrid(sheet: ExcelJS.Worksheet, columns: Column[], records: Record<
     cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 11 };
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
     cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = gridBorder();
   });
   headerRow.height = 20;
 
@@ -74,6 +81,7 @@ function writeGrid(sheet: ExcelJS.Worksheet, columns: Column[], records: Record<
         cell.alignment = { horizontal: "left" };
       }
       cell.font = { name: "Calibri", size: 10.5 };
+      cell.border = gridBorder();
       if (rowIndex % 2 === 1) cell.fill = { fgColor: { argb: ORANGE_SOFT }, pattern: "solid", type: "pattern" };
     });
   });

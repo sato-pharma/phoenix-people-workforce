@@ -20,7 +20,6 @@ const ORANGE_SOFT = "FFFFF7ED";
 const ORANGE_LINE = "FFF8B56B";
 const WHITE = "FFFFFFFF";
 const SLATE = "FF334155";
-const MUTED = "FF94A3B8";
 const LOCKED_FILL = "FFF1F5F9";
 const COMPUTED_FILL = "FFEFF6FF";
 
@@ -129,15 +128,16 @@ export async function buildMasterWorkbook(
   const colCount = Math.max(1, renderColumns.length);
   const editableLabels = def.columns.filter((column) => !column.locked).map((column) => column.label);
 
-  // Row 1 — title band
+  // Row 1 — title band (black, white title, orange bottom-border accent)
   sheet.mergeCells(1, 1, 1, colCount);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = def.title;
-  titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: ORANGE } };
+  titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: WHITE } };
   titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
+  titleCell.border = { bottom: { style: "medium", color: { argb: ORANGE } } };
   titleCell.protection = { locked: true };
-  sheet.getRow(1).height = 30;
+  sheet.getRow(1).height = 36;
 
   // Row 2 — subtitle band
   sheet.mergeCells(2, 1, 2, colCount);
@@ -145,8 +145,8 @@ export async function buildMasterWorkbook(
   subCell.value = editableLabels.length > 0
     ? `Editable: ${editableLabels.join(", ")}. Name columns auto-fill from codes; all other columns are locked. Exported ${new Date().toLocaleString("en-GB")}.`
     : `All columns are locked (add new rows only). Exported ${new Date().toLocaleString("en-GB")}.`;
-  subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: MUTED } };
-  subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: WHITE } };
+  subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
   subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
   subCell.protection = { locked: true };
   sheet.getRow(2).height = 18;
