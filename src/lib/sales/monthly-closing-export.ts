@@ -241,31 +241,42 @@ function bandHeader(sheet: ExcelJS.Worksheet, line: string | null, period: strin
   sheet.mergeCells(1, 1, 1, cols);
   const title = sheet.getCell(1, 1);
   title.value = `${systemIdentity.appName} — Monthly Closing`;
-  title.font = { bold: true, color: { argb: ORANGE }, name: "Calibri", size: 16 };
+  title.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 16 };
   title.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
   title.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  title.border = { bottom: { style: "medium", color: { argb: ORANGE } } };
   sheet.getRow(1).height = 36;
 
   sheet.mergeCells(2, 1, 2, cols);
   const sub = sheet.getCell(2, 1);
   sub.value = `${subtitle}  ·  Line: ${line ?? "—"}  ·  Month: ${period ?? "—"}  ·  Values in EGP (live formulas)`;
-  sub.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 10 };
-  sub.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+  sub.font = { color: { argb: WHITE }, italic: true, name: "Calibri", size: 10 };
+  sub.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
   sub.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
   sheet.getRow(2).height = 18;
 
-  // Row 3 — amber slogan band: two lines, centred, clearly visible.
-  sheet.mergeCells(3, 1, 3, cols);
-  const sloganCell = sheet.getCell(3, 1);
-  sloganCell.value = {
-    richText: [
-      { font: { bold: true, color: { argb: "FFD97706" }, name: "Calibri", size: 12 }, text: "SFE DEPARTMENT\n" },
-      { font: { italic: true, color: { argb: ORANGE }, name: "Calibri", size: 10.5 }, text: "Where Your Achievement Belongs" },
-    ],
-  } as ExcelJS.CellRichTextValue;
-  sloganCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  sloganCell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
-  sheet.getRow(3).height = 42;
+  // Row 3 — premium divider with a bold amber lead.
+  const leadSpan = Math.max(1, Math.min(cols, Math.ceil(cols * 0.45)));
+  if (leadSpan < cols) {
+    sheet.mergeCells(3, 1, 3, leadSpan);
+    const accentLead = sheet.getCell(3, 1);
+    accentLead.value = "";
+    accentLead.font = { color: { argb: WHITE }, name: "Calibri", size: 8 };
+    accentLead.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+    accentLead.alignment = { horizontal: "left", vertical: "middle" };
+
+    sheet.mergeCells(3, leadSpan + 1, 3, cols);
+    const accentTail = sheet.getCell(3, leadSpan + 1);
+    accentTail.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+  } else {
+    sheet.mergeCells(3, 1, 3, cols);
+    const accentLead = sheet.getCell(3, 1);
+    accentLead.value = "";
+    accentLead.font = { color: { argb: WHITE }, name: "Calibri", size: 8 };
+    accentLead.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+    accentLead.alignment = { horizontal: "left", vertical: "middle" };
+  }
+  sheet.getRow(3).height = 8;
 }
 
 function leaderText(leader: { distributorName: string; share: number } | null) {
