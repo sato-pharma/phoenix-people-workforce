@@ -1681,6 +1681,7 @@ export async function cleanupOldNotificationData(): Promise<{
       .from(notificationOutboxTable)
       .delete()
       .in("status", ["failed", "skipped"])
+      .not("updated_at", "is", null)
       .lt("updated_at", thresholdIso)
       .select("id");
 
