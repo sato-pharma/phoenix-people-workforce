@@ -372,6 +372,18 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Sales Queue",
   },
+  {
+    id: "sales-analytics",
+    items: [
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Analytics Hub", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      { href: "/admin/analytics/source-sales", icon: ChartColumnBig, label: "SoS Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      { href: "/admin/analytics/monthly-closing", icon: CalendarRange, label: "Closing Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] },
+      { href: "/admin/analytics/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Analytics", permissions: [{ resource: "weekly_sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      { href: "/admin/analytics/executive-comparison", icon: ChartColumnBig, label: "Executive Comparison", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      { href: "/admin/analytics/reconciliation", icon: ChartColumnBig, label: "Reconciliation", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+    ],
+    label: "Sales Analytics",
+  },
 
   // ── Tier 7: Marketing ─────────────────────────────────────────────────────────
   {
