@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { supersedeExistingSalesBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 export type SalesDistributorOption = {
@@ -2565,27 +2566,15 @@ export async function persistDistributorSalesUpload(
 
   const supabase = getSupabaseAdmin();
 
-  // Guardrail: never silently double-count. If this upload validates and a VALIDATED batch for the
-  // same distributor + period already exists, block it with a clear message — the user deletes the
-  // existing sheet first (matching the normal delete-then-re-upload flow). Blocked batches don't
-  // count in dashboards, so they are intentionally not treated as duplicates here.
+  // Guardrail: never silently double-count. If this upload validates, any existing batch (validated
+  // or blocked) for the same distributor + period is superseded — deleted, audit-logged, and its
+  // dependent rows/rollups cleaned up via cascade — so the new batch is the only one left standing.
   if (result.status === "validated" && result.period) {
-    const existing = await supabase
-      .from("source_of_sales_import_batches")
-      .select("file_name")
-      .eq("distributor_code", result.distributor.code)
-      .eq("period", result.period)
-      .eq("status", "validated")
-      .limit(1)
-      .maybeSingle();
-    if (!existing.error && existing.data) {
-      const existingName = String(existing.data.file_name ?? "an earlier sheet");
-      throw new SalesWorkflowError(
-        "duplicate_sales_batch",
-        `A validated ${result.distributor.name} sheet for ${result.period} is already uploaded (${existingName}). Delete it first, then re-upload — this prevents the month's totals from being double-counted.`,
-        409,
-      );
-    }
+    await supersedeExistingSalesBatches({
+      distributorCode: result.distributor.code,
+      period: result.period,
+      actorLoginId: uploadedBy,
+    });
   }
 
   const batchInsert = await supabase

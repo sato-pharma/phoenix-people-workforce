@@ -10,6 +10,7 @@ import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { supersedeExistingSalesBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
@@ -322,6 +323,17 @@ export async function persistNormalizedBatch(input: {
   for (let i = 0; i < summaries.length; i += 500) {
     const { error } = await supabase.from("source_of_sales_import_summaries").insert(summaries.slice(i, i + 500));
     if (error) throw error;
+  }
+
+  // Supersede any other existing batch (validated or blocked) for this distributor + period before
+  // this one becomes the validated batch, so re-uploading a month replaces rather than double-counts.
+  if (period) {
+    await supersedeExistingSalesBatches({
+      distributorCode: input.distributorCode,
+      period,
+      excludeBatchId: batchId,
+      actorLoginId: input.uploadedBy,
+    });
   }
 
   const finalized = await supabase
