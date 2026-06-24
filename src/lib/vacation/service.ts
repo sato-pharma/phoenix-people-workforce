@@ -2368,7 +2368,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     requestId: request.id,
   });
 
-  await dispatchVacationSubmitted({ approvalRecipients, directory, policyWarnings, request }).catch(async (error) => {
+  void dispatchVacationSubmitted({ approvalRecipients, directory, policyWarnings, request }).catch(async (error) => {
     await insertVacationEvent({
       actorHrId: employee.hrId,
       actorLoginId: access.loginId,
@@ -2867,7 +2867,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   });
 
   if (isFinal) {
-    await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    void dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
@@ -2879,7 +2879,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   } else if (nextStatus === "pending_hr") {
     // Management complete → pending HR acknowledgement. (PR3 refines role/stage notification copy
     // and adds the "now it's your turn" nudge for the next management approver.)
-    await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    void dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
@@ -3029,7 +3029,7 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   });
 
   if (isFinalDecision) {
-    await dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    void dispatchVacationDecision({ decision: input.decision, directory, request: updated }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
@@ -3042,7 +3042,7 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     // Direct manager approved a NON-final step → hand off to HR final review. Previously
     // this fired no notification at all (dispatchVacationManagerReview was dead `void`
     // code), so HR/the employee were never told the request had advanced. Best-effort.
-    await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
+    void dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }).catch(async (error) => {
       await insertVacationEvent({
         actorHrId: input.actorHrId,
         actorLoginId: input.actorLoginId,
