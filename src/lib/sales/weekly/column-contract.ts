@@ -154,8 +154,8 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
         matrix: {
           kind: "branch-headers",
           firstColumn: 6,
-          lastColumn: 18,
-          note: "Branch stock totals sit in columns 6–18 (header 'إجمالى <branch>'). Columns 19+ (tenders / key accounts / wholesale) are intentionally ignored.",
+          stopAtHeaderPattern: "^(الإجمالى|الاجمالى|الإجمالي|الاجمالي)$",
+          note: "Branch stock totals start at column 6 (header 'إجمالى <branch>') and run until the grand total column (الإجمالى), which is not included. Columns after the total are ignored.",
         },
       },
     ],
