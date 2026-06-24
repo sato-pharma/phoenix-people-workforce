@@ -490,6 +490,7 @@ function SortableSectionBlock({
   section,
   sensors,
   sectionDragging,
+  transitionsReady,
 }: {
   activeHref: string | null;
   collapsedSectionIds: Set<string>;
@@ -506,6 +507,7 @@ function SortableSectionBlock({
   section: NavigationSection;
   sensors: ReturnType<typeof useSensors>;
   sectionDragging: boolean;
+  transitionsReady: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: section.id,
@@ -572,7 +574,8 @@ function SortableSectionBlock({
           >
             <ChevronRight
               className={cn(
-                "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
+                "h-3.5 w-3.5 shrink-0 ease-out",
+                transitionsReady && "transition-transform duration-300",
                 isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
                 !collapsed && "rotate-90",
               )}
@@ -593,7 +596,8 @@ function SortableSectionBlock({
       <div
         aria-hidden={collapsed}
         className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "grid ease-[cubic-bezier(0.22,1,0.36,1)]",
+          transitionsReady && "transition-[grid-template-rows,opacity] duration-300",
           collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
         )}
         id={sectionContentId}
@@ -669,6 +673,17 @@ function SidebarNav({
   const [searchQuery, setSearchQuery] = useState("");
   const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
   const [sectionDragging, setSectionDragging] = useState(false);
+
+  // Collapsed-section state is read from localStorage, which isn't available during
+  // SSR/hydration. Without this, the very first client render briefly shows the wrong
+  // open/closed state and then animates into the real one — every persisted section
+  // visibly "bounces" on load. Suppress the collapse transition until one frame after
+  // mount, by which point the real localStorage snapshot has already been applied.
+  const [transitionsReady, setTransitionsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setTransitionsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const query = isAdmin && !rail ? searchQuery.trim().toLowerCase() : "";
 
@@ -965,6 +980,7 @@ function SidebarNav({
                 section={section}
                 sectionDragging={sectionDragging}
                 sensors={sensors}
+                transitionsReady={transitionsReady}
               />
             ))}
           </SortableContext>
@@ -1137,10 +1153,20 @@ export function Sidebar({
   const [rail, toggleRail] = useSidebarRail(navigationMode);
   const railActive = isAdmin && rail;
 
+  // Same hydration-flash issue as the collapsed sections below: the rail preference
+  // comes from localStorage, so the very first client render can briefly show the
+  // wrong width and then animate to the real one. Suppress that one transition.
+  const [transitionsReady, setTransitionsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setTransitionsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   return (
     <aside
       className={cn(
-        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
+        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col lg:flex",
+        transitionsReady && "transition-[width] duration-200",
         isAdmin
           ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
           : "border-r border-[#E2E8F0] bg-white",
