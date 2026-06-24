@@ -312,8 +312,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", permissions: [{ resource: "sales" }], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "M.Closing Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "Source of Sales Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Data & Profiles", permissions: [{ action: "import", resource: "sales" }] },
@@ -330,7 +330,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-weekly-module",
     items: [
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }] },
+      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }], excludedRoles: ["Marketing Manager"] },
       { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
       // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
       // the single Weekly Mapping workspace (old routes redirect here).
@@ -442,9 +442,9 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "employee-sales-intelligence",
     items: [
-      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
-      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Monthly Sales Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
-      { href: "/employee-portals/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
+      { href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
+      { href: "/employee-portals/monthly-sales", icon: CalendarRange, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
+      { href: "/employee-portals/monthly-closing", icon: ChartColumnBig, label: "M.Closing Dashboard", permissions: [{ resource: "sales" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"] },
     ],
     label: "Sales Operations",
   },
