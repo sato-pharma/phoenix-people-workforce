@@ -58,7 +58,7 @@ function salesUploadCommitDurationIsConfigured() {
 function vacantAreaCodesDoNotBecomeMissingEmployeeWarnings() {
   const link = linkSalesRecordAgainstDirectory(
     {
-      employeeHrId: "V-AF-1",
+      employeeHrId: "V-AF",
       employeeLookupKey: "Ahmed.Nashaat",
       employeeName: "Ahmed.Nashaat",
       line: "Anti Inf",
@@ -80,7 +80,8 @@ function vacantAreaCodesDoNotBecomeMissingEmployeeWarnings() {
   assert.equal(link.linkStatus, "unlinked", "vacant areas remain unlinked at MR level");
   assert.equal(link.employeeHrId, null, "V-AF codes must not be saved as employee HR IDs");
   assert.equal(link.managerHrId, "B-175", "matched vacancy should carry manager HR ID for manager/territory attribution");
-  assert.match(diagnostics, /Vacancy area code "V-AF-1" matched open vacancy/, "vacancy code should produce a vacancy diagnostic");
+  assert.equal(link.employeeLookupKey, "V-AF", "vacancy code should be preserved as a non-login lookup signal");
+  assert.match(diagnostics, /Vacancy area code "V-AF" matched open vacancy/, "vacancy code should produce a vacancy diagnostic");
   assert.doesNotMatch(diagnostics, /no employee matched/i, "vacancy codes must not produce missing employee warnings");
 }
 
@@ -105,7 +106,7 @@ function vacantAreaCodesWinOverOthersBucket() {
     ],
   );
 
-  assert.equal(link.employeeLookupKey, "Others", "display value can stay as uploaded");
+  assert.equal(link.employeeLookupKey, "V-AF-9", "vacancy code should win over aggregate display values");
   assert.equal(link.employeeName, "Others", "display name can stay as uploaded");
   assert.equal(link.managerHrId, "B-200", "V-AF codes must be treated as vacancies even when the display name is Others");
 }

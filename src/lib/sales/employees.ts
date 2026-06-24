@@ -120,7 +120,7 @@ function makeNoMatchMessage(label: string, value: string) {
 }
 
 function isVacantAreaCode(value: unknown) {
-  return /^v-[a-z]{1,6}-\d+$/i.test(compact(value));
+  return /^v-[a-z0-9]{1,8}(?:-\d+)?$/i.test(compact(value));
 }
 
 function normalizedAreaKey(value: unknown) {
@@ -370,7 +370,7 @@ export function linkSalesRecordAgainstDirectory(
       return {
         employeeHrId: null,
         employeeCrmId: source.employeeCrmId ?? null,
-        employeeLookupKey: source.employeeLookupKey ?? rawHrId,
+        employeeLookupKey: rawHrId,
         employeeName: source.employeeName ?? rawHrId,
         linkStatus: "unlinked",
         linkConfidence: vacancy ? 0.75 : 0,
