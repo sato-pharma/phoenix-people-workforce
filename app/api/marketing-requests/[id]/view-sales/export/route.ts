@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMarketingRoiViewSalesWorkbook } from "@/lib/export/marketing-roi-workbook";
 import { getMarketingRequestViewSales, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
 
@@ -37,6 +39,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:marketing:view-sales" });
     const url = new URL(request.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
@@ -70,6 +73,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     const { code, message, status } = exportApiError(error);
     return NextResponse.json({ error: code, message }, { status });
   }

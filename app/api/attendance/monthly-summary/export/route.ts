@@ -5,6 +5,8 @@ import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendan
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +27,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:attendance:monthly-summary" });
 
     const url = new URL(request.url);
     const month = resolveSummaryMonth(url.searchParams.get("month") ?? undefined);
@@ -39,6 +42,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return apiResponse(error, "Monthly attendance summary export failed.");
   }
 }

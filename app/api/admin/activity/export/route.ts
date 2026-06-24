@@ -5,6 +5,8 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { buildActivityRange, getActivityUserSummaries } from "@/lib/activity/service";
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "unauthenticated", message: "Not authenticated." }, { status: 401 });
     }
     await assertPermission(access, "user_activity", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:activity" });
 
     const url = new URL(request.url);
     const days = Number(url.searchParams.get("days") ?? "7");
@@ -77,6 +80,12 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" }, { status: 403 });
     }
