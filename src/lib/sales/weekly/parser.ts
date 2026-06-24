@@ -379,7 +379,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       // The mapping template uses the numeric code as the join key, so rawBranchCode = col1.
       const branchCode = cellText(at(row, colOf(salesC, "branchCode", 1)));
       const branchName = cellText(at(row, colOf(salesC, "branchName", 2)));
-      if (branchCode && branchName) branchNameToCode.set(branchName, branchCode);
+      if (branchCode && branchName) branchNameToCode.set(branchName.trim(), branchCode.trim());
       const gross = cellNumber(at(row, colOf(salesC, "gross", 11)));
       const ret = Math.abs(cellNumber(at(row, colOf(salesC, "return", 13))));
       const net = cellNumber(at(row, colOf(salesC, "net", 15))); // صافى كمية — authoritative net of record
@@ -422,19 +422,36 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   if (stock) {
     names.push(stock.name);
 
-    // Map col index → { numericCode, arabicName } for the regular branch columns (matrix block 6–18).
     const branchCols = new Map<number, { code: string; name: string }>();
     const stockHeaderRow = stockC?.headerRowNumber === 1 || stockC?.headerRowNumber === 2 ? stockC.headerRowNumber : 2;
     const matrixFirst = stockC?.matrix?.firstColumn ?? 6;
-    const matrixLast = stockC?.matrix?.lastColumn ?? 18;
     const headerRow = stock.getRow(stockHeaderRow);
-    for (let c = matrixFirst; c <= matrixLast; c += 1) {
+    const headerKey = (value: string) => value.replace(/\s+/g, "").trim();
+    const isGrandTotalHeader = (value: string) => {
+      const key = headerKey(value);
+      return key === headerKey("الإجمالى")
+        || key === headerKey("الاجمالى")
+        || key === headerKey("الإجمالي")
+        || key === headerKey("الاجمالي");
+    };
+    const branchNameFromHeader = (value: string): string | null => {
+      const raw = value.trim();
+      if (!raw) return null;
+      if (isGrandTotalHeader(raw)) return null;
+      const match = raw.match(/^(إجمالى|اجمالى|إجمالي|اجمالي)\s*/u);
+      if (!match) return null;
+      const name = raw.slice(match[0].length).trim();
+      return name || null;
+    };
+
+    for (let c = matrixFirst; c <= stock.columnCount; c += 1) {
       const header = cellText(headerRow.getCell(c));
-      // Typical header: "إجمالى شرق" → strip "إجمالى " prefix (with or without trailing space).
-      const arabicName = header.replace(/^إجمالى\s*/u, "").trim();
-      if (!arabicName) continue;
-      const numericCode = branchNameToCode.get(arabicName) ?? arabicName;
-      branchCols.set(c, { code: numericCode, name: arabicName });
+      if (!header.trim()) break;
+      if (isGrandTotalHeader(header)) break;
+      const name = branchNameFromHeader(header);
+      if (!name) break;
+      const mapped = branchNameToCode.get(name.trim());
+      branchCols.set(c, { code: mapped ?? name, name });
     }
 
     for (let r = dataStartRow(stockC, 3); r <= stock.rowCount; r += 1) {
@@ -453,7 +470,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
           rawItemName: itemName,
           rawBranchCode: branch.code,
           rawBranchName: branch.name,
-          branchFileType: "sales", // join on the sales branch mapping (same numeric codes)
+          branchFileType: "sales",
           qty,
         });
       }
