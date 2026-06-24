@@ -24,6 +24,14 @@ type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
 
 const HEADER_FILL = "FF0B0B0B"; // sidebar-black header (matches the admin table design)
 const NAV_COLOR = "FF1D4ED8";
+const ORANGE_LINE = "FFF8B56B";
+const ZEBRA_FILL = "FFFFF7ED";
+const SLATE = "FF334155";
+
+function gridBorder(): ExcelJS.Borders {
+  const side = { style: "thin" as const, color: { argb: ORANGE_LINE } };
+  return { top: side, left: side, bottom: side, right: side } as ExcelJS.Borders;
+}
 
 // ── live readers (all paginated past PostgREST's 1000-row cap) ──
 
@@ -155,10 +163,19 @@ function addSheet(workbook: ExcelJS.Workbook, spec: SheetSpec): void {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = { fgColor: { argb: HEADER_FILL }, pattern: "solid", type: "pattern" };
     cell.alignment = { vertical: "middle" };
+    cell.border = gridBorder();
   });
 
-  // rows 4+: data.
-  for (const r of spec.rows) ws.addRow(r);
+  // rows 4+: data (thin orange grid + zebra striping, matching the rest of the sales export family).
+  spec.rows.forEach((r, rowIndex) => {
+    const row = ws.addRow(r);
+    row.eachCell((cell) => {
+      cell.font = { name: "Calibri", size: 10.5, color: { argb: SLATE } };
+      cell.border = gridBorder();
+      cell.alignment = { vertical: "middle" };
+      if (rowIndex % 2 === 1) cell.fill = { fgColor: { argb: ZEBRA_FILL }, pattern: "solid", type: "pattern" };
+    });
+  });
 
   // column widths from header length (capped), with the Notes/description columns a bit wider.
   spec.headers.forEach((h, i) => {
