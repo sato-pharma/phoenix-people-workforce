@@ -79,7 +79,6 @@ const SALES_DASHBOARD_RECORD_SELECT = [
   "link_status",
   "link_confidence",
 ].join(",");
-const DEFAULT_SALES_DASHBOARD_ACTIVE_BATCH_LIMIT = 24;
 const SALES_DASHBOARD_TRANSACTION_LIMIT = 500;
 
 function toSafeArray<T = unknown>(value: readonly T[] | null | undefined): T[] {
@@ -873,14 +872,7 @@ export async function getSalesDashboard(
   }));
 
   const activeBatches = batches.filter(isActiveSalesImportBatch);
-  const hasDashboardFilter = Object.values(filters).some((value) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined && value !== null && value !== "";
-  });
-  const recordBatches = hasDashboardFilter
-    ? activeBatches
-    : activeBatches.slice(0, DEFAULT_SALES_DASHBOARD_ACTIVE_BATCH_LIMIT);
-  const activeBatchIds = recordBatches.map((batch) => batch.id);
+  const activeBatchIds = activeBatches.map((batch) => batch.id);
 
   if (activeBatchIds.length === 0) {
     // Return empty dashboard if no active batches
@@ -962,7 +954,7 @@ export async function getSalesDashboard(
     records = stripRestrictedRowsByName(records, restrictedNames, (record) => record.product, true);
   }
 
-  const approvedRecords = selectCurrentSalesRecords(records, recordBatches);
+  const approvedRecords = selectCurrentSalesRecords(records, activeBatches);
 
   const productFilter = [...new Set([
     ...toFilterStringList(filters.product),
