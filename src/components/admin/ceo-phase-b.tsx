@@ -400,7 +400,7 @@ function AttendanceWidget({
 const NAV_ITEMS = [
   { href: "/employees",                              icon: Users,        label: "Employees",         sub: "Directory & lifecycle" },
   { href: "/payroll",                                icon: Wallet,       label: "Payroll",            sub: "Salary & flags" },
-  { href: "/sales",                                  icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
+  { href: "/sales/monthly-dashboard",                icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
   { href: "/sales/weekly",                           icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
   { href: "/admin/marketing-requests/roi-tracking",  icon: TrendingUp,   label: "ROI Tracking",       sub: "Marketing investment returns" },
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
@@ -548,7 +548,7 @@ export async function CeoPhaseBWidgets({
         description="Company-wide source of sales — sortable by region or product."
         action={
           <Link
-            href="/sales"
+            href="/sales/monthly-dashboard"
             className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
           >
             Full SoS <ArrowRight className="h-3 w-3" />
