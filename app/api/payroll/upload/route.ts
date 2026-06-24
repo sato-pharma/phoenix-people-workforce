@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -132,7 +134,13 @@ export async function POST(request: Request) {
       (warning) => warning.code !== "employee_not_found",
     );
 
+    const fileBuffer = await file.arrayBuffer();
+    const fileContentHash = createHash("sha256")
+      .update(new Uint8Array(fileBuffer))
+      .digest("hex");
+
     const result = await createSalaryBatch({
+      fileContentHash,
       fileName: file.name,
       month,
       records: validation.rowsToImport,
