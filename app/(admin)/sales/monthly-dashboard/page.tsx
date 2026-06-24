@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { SosDashboard } from "@/components/sales/sos-dashboard";
+import { MonthlySalesDashboard } from "@/components/sales/monthly-sales-dashboard";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getSosDashboard, type SosDashboardData } from "@/lib/sales/sos-dashboard";
+import { getSalesDashboard } from "@/lib/sales/service";
+import type { SalesDashboardData } from "@/lib/sales/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,14 +34,14 @@ export default async function MClosingDashboardPage() {
 }
 
 async function MClosingContent({ accessContext }: { accessContext: AccessContext }) {
-  let initialData: SosDashboardData | null = null;
+  let initialData: SalesDashboardData | null = null;
   let initialError: string | null = null;
 
   try {
-    initialData = await getSosDashboard({}, accessContext);
+    initialData = await getSalesDashboard({}, accessContext);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load M.Closing dashboard.";
   }
 
-  return <SosDashboard initialData={initialData} initialError={initialError} />;
+  return <MonthlySalesDashboard initialData={initialData} initialError={initialError} />;
 }

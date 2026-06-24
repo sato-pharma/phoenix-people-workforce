@@ -149,13 +149,13 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
         formField: "file",
         fields: [
           { field: "itemCode", label: "Product code", columnIndex: 4, expectedHeaderHint: "item / product code", role: "key" },
-          { field: "itemName", label: "Product name", columnIndex: 6, expectedHeaderHint: "إسم الصنف / product name", role: "context" },
+          { field: "itemName", label: "Product name", columnIndex: 5, expectedHeaderHint: "item / product name", role: "context" },
         ],
         matrix: {
           kind: "branch-headers",
-          firstColumn: 7,
+          firstColumn: 6,
           stopAtHeaderPattern: "^(الإجمالى|الاجمالى|الإجمالي|الاجمالي)$",
-          note: "Branch stock totals start at column 7 (first 'إجمالى <branch>' header). Col 6 is the product name. Scan runs until the grand total column (الإجمالى), which is excluded. Special channels (Key Accounts, Wholesale, Tenders, Warehouses) also use the 'إجمالى' prefix and are included when mapped.",
+          note: "Branch stock totals start at column 6 (header 'إجمالى <branch>') and run until the grand total column (الإجمالى), which is excluded. Special channels (Key Accounts, Wholesale, Tenders, Warehouses) also use the 'إجمالى' prefix and are included when mapped.",
         },
       },
     ],
