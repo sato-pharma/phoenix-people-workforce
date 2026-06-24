@@ -3,9 +3,8 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 
 // Shared Phoenix-branded XLSX style for the Marketing ROI exports. Re-exports the proven
-// generic primitives from the sales workbook kit (palette, grid, table writer) — leaving the
-// kit untouched — and adds a NEUTRAL brand band (the kit's bandHeader hardcodes an SFE
-// slogan) plus a Cover / Provenance sheet used by every ROI workbook.
+// generic primitives from the sales workbook kit (palette, grid, table writer) and adds a
+// NEUTRAL brand band plus a Cover / Provenance sheet used by every ROI workbook.
 
 export {
   BLACK,
