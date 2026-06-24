@@ -252,7 +252,7 @@ rta as materialized (
 line_actuals as (
   select line_label,
          sum(actual_sales_value)::numeric as actual_sales_value,
-         sum(actual_sales_units)::numeric as actual_sales_units
+         0::numeric                       as actual_sales_units  -- not tracked at line grain
   from marketing_roi_line_facts
   where (p_from_month is null or p_from_month = '' or period >= p_from_month)
     and (p_to_month   is null or p_to_month   = '' or period <= p_to_month)
@@ -276,7 +276,7 @@ region_actuals as (
   select region_code,
          max(region_name)                 as region_name,
          sum(actual_sales_value)::numeric as actual_sales_value,
-         sum(actual_sales_units)::numeric as actual_sales_units
+         0::numeric                       as actual_sales_units  -- not tracked at region grain
   from marketing_roi_region_facts
   where (p_from_month is null or p_from_month = '' or period >= p_from_month)
     and (p_to_month   is null or p_to_month   = '' or period <= p_to_month)
@@ -288,7 +288,7 @@ distributor_actuals as (
          family_code,
          max(distributor_name)            as distributor_name,
          sum(actual_sales_value)::numeric as actual_sales_value,
-         sum(actual_sales_units)::numeric as actual_sales_units
+         0::numeric                       as actual_sales_units  -- not tracked at distributor grain
   from marketing_roi_distributor_facts
   where (p_from_month is null or p_from_month = '' or period >= p_from_month)
     and (p_to_month   is null or p_to_month   = '' or period <= p_to_month)
@@ -515,22 +515,25 @@ select jsonb_build_object(
     from ds
   ),
   'roiTrend', (
-    select coalesce(
-      jsonb_agg(jsonb_build_object(
-        'period',          pay_month,
-        'requestCount',    count(*)::integer,
-        'marketingCost',   sum(estimated_cost)::numeric,
-        'requiredRoiValue',sum(required_roi_value)::numeric,
-        'expectedRoiValue',sum(expected_roi_value)::numeric,
-        'actualSalesValue',sum(actual_sales_value)::numeric,
-        'coverageGap',     sum(coverage_gap)::numeric,
-        'onTrackCount',    count(*) filter (where actual_roi_status='on_track')::integer,
-        'behindCount',     count(*) filter (where actual_roi_status='behind')::integer,
-        'noDataCount',     count(*) filter (where actual_roi_status='no_data')::integer
-      ) order by pay_month),
-      '[]'::jsonb
-    )
-    from fr group by pay_month
+    select coalesce(jsonb_agg(row_data order by period), '[]'::jsonb)
+    from (
+      select
+        pay_month as period,
+        jsonb_build_object(
+          'period',          pay_month,
+          'requestCount',    count(*)::integer,
+          'marketingCost',   sum(estimated_cost)::numeric,
+          'requiredRoiValue',sum(required_roi_value)::numeric,
+          'expectedRoiValue',sum(expected_roi_value)::numeric,
+          'actualSalesValue',sum(actual_sales_value)::numeric,
+          'coverageGap',     sum(coverage_gap)::numeric,
+          'onTrackCount',    (count(*) filter (where actual_roi_status='on_track'))::integer,
+          'behindCount',     (count(*) filter (where actual_roi_status='behind'))::integer,
+          'noDataCount',     (count(*) filter (where actual_roi_status='no_data'))::integer
+        ) as row_data
+      from fr
+      group by pay_month
+    ) t
   ),
   'lineRoi', (
     select coalesce(
