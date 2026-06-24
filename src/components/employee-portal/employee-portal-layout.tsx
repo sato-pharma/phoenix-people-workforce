@@ -163,7 +163,9 @@ function buildEmployeePortalSections({
   showReportItTab = false,
   showReportItDashboardTab = false,
   showRoiIntelligenceTab = false,
+  showSosDashboardTab = false,
   showMiniWeeklySalesTab = false,
+  showMonthlyClosingTab = false,
   showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
@@ -200,11 +202,11 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Sales Operations",
+      title: "Sales Dashboards",
       items: [
-        ...(showMyPerformanceTab ? [{ href: "/employee-portals/sales", label: "Sales Dashboard", icon: LineChartIcon }] : []),
-        ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: ChartNoAxesColumnIncreasing }] : []),
-        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales Closing", icon: CalendarRange }] : []),
+        ...(showSosDashboardTab ? [{ href: "/employee-portals/sales", label: "Source of Sales", icon: ChartNoAxesColumnIncreasing }] : []),
+        ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
+        ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: LineChartIcon }] : []),
       ],
     },
     {

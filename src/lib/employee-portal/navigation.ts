@@ -35,7 +35,15 @@ export type EmployeePortalNavVisibility = {
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
+  // Three independent sales dashboards — each data source is separate and must
+  // appear as its own sidebar entry (not combined):
+  //   showSosDashboardTab  → /employee-portals/sales         (SoS aggregated)
+  //   showMiniWeeklySalesTab → /employee-portals/weekly-sales   (weekly uploads)
+  //   showMonthlyClosingTab → /employee-portals/monthly-closing (queue-published)
+  showSosDashboardTab?: boolean;
   showMiniWeeklySalesTab?: boolean;
+  showMonthlyClosingTab?: boolean;
+  // Legacy — retained for layout back-compat; no longer drives the monthly sidebar entry
   showMiniMonthlySalesTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
@@ -243,7 +251,9 @@ export function resolveEmployeePortalNavVisibility(
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
     showFingerprintReportTab: hasDeviceMapping === true || isProductManager || isGroupProductManager,
     showRoiIntelligenceTab: showSalesIntelligence,
+    showSosDashboardTab: showFieldSalesTabs,
     showMiniWeeklySalesTab: showFieldSalesTabs,
+    showMonthlyClosingTab: showFieldSalesTabs,
     showMiniMonthlySalesTab: showFieldSalesTabs,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
