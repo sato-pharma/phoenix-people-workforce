@@ -482,7 +482,7 @@ export async function createExcuseRequest(
 
   if (tokenError) throw tokenError;
 
-  await Promise.all([
+  void Promise.allSettled([
     sendManagerEmail({ baseUrl: options.baseUrl, employee, manager, request, token }),
     enqueueInAppNotification({
       category: "excuse",
@@ -493,7 +493,7 @@ export async function createExcuseRequest(
       recipientHrId: request.managerHrId ?? "",
       title: "Excuse approval required",
     }),
-  ]);
+  ]).catch(() => undefined);
 
   return {
     request,
@@ -566,7 +566,7 @@ export async function decideExcuseRequestByToken(input: {
     .eq("token_hash", tokenHash);
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
-  await Promise.all([
+  void Promise.allSettled([
     sendEmployeeDecisionEmail({
       request: {
         ...request,
@@ -582,7 +582,7 @@ export async function decideExcuseRequestByToken(input: {
       recipientHrId: request.employeeHrId,
       title: `Excuse ${status}`,
     }),
-  ]);
+  ]).catch(() => undefined);
 
   return request;
 }
@@ -647,7 +647,7 @@ export async function decideExcuseRequestAsManager(
   if (updateError) throw updateError;
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
-  await Promise.all([
+  void Promise.allSettled([
     sendEmployeeDecisionEmail({
       request: {
         ...request,
@@ -663,7 +663,7 @@ export async function decideExcuseRequestAsManager(
       recipientHrId: request.employeeHrId,
       title: `Excuse ${status}`,
     }),
-  ]);
+  ]).catch(() => undefined);
 
   return request;
 }

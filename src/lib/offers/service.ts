@@ -1796,7 +1796,7 @@ export async function decideOffer(
   });
 
   if (decision === "accepted") {
-    await Promise.all([
+    void Promise.allSettled([
       createSystemNotification({
         actorId: "candidate",
         channels: ["email"],
@@ -1860,9 +1860,9 @@ export async function decideOffer(
         recordId: offer.id,
         title: "Offer accepted",
       }),
-    ]);
+    ]).catch(() => undefined);
   } else {
-    await createSystemNotification({
+    void createSystemNotification({
       actionUrl: "/offers",
       actorId: "candidate",
       email: {
@@ -1891,7 +1891,7 @@ export async function decideOffer(
       priority: "high",
       recordId: offer.id,
       title: "Offer rejected",
-    });
+    }).catch(() => undefined);
   }
 
   invalidateExecutiveDashboardCache("offer candidate decision", ["offers", "recruitment"]);
@@ -1978,7 +1978,7 @@ export async function approveAcceptedOffer(
     throw new Error("Offer approval succeeded but the updated offer could not be reloaded.");
   }
 
-  await createSystemNotification({
+  void createSystemNotification({
     actionUrl: "/employees",
     actorId: approvedByHrId ?? "system",
     email: {
@@ -2010,7 +2010,7 @@ export async function approveAcceptedOffer(
     recordId: offer.id,
     subjectHrId: employeeHrId,
     title: "Hire approved",
-  });
+  }).catch(() => undefined);
   invalidateExecutiveDashboardCache("accepted offer approved", ["offers", "recruitment", "employees", "vacancies", "payroll", "probation"]);
 
   return {
