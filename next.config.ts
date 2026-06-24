@@ -54,6 +54,10 @@ const securityHeaders = [
     : []),
 ];
 
+// Vercel serverless functions enforce a 4.5 MB request body cap that cannot be
+// overridden via Next.js config. Client-side upload limits must stay below this.
+// For uploads > 4 MB, use the signed-URL pattern (see src/lib/uploads/ and the
+// sales-imports Supabase bucket).
 const nextConfig: NextConfig = {
   experimental: {
     // Tree-shake large barrel imports so only the icons/charts/primitives a

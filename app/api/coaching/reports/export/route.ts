@@ -19,6 +19,9 @@ import {
 } from "@/lib/coaching/service";
 import type { CoachingReportFilters } from "@/lib/coaching/types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { NextResponse } from "next/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +51,7 @@ function enforceExportScope(filters: CoachingReportFilters, access: AccessContex
 export async function GET(request: Request) {
   try {
     const access = await requireCoachingPermission(request, "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:coaching:reports" });
     if (isEmployeePortalRole(access.role)) {
       throw new CoachingApiError("forbidden", "Employees must use the employee portal coaching workspace.", 403);
     }
@@ -103,6 +107,12 @@ export async function GET(request: Request) {
       status: 200,
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return jsonError(error, "Failed to export coaching reports.");
   }
 }

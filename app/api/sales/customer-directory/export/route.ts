@@ -3,6 +3,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import { loadCustomerDirectoryRows, type CustomerDirectoryFilters } from "@/lib/sales/customer-directory";
 import { NextResponse } from "next/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
       );
     }
     await assertPermission(access, "sales", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:customer-directory" });
 
     const body = (await request.json().catch(() => ({}))) as CustomerDirectoryFilters;
     const filters: CustomerDirectoryFilters = {
@@ -87,6 +90,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { success: false, error: error instanceof Error ? error.message : "Forbidden." },

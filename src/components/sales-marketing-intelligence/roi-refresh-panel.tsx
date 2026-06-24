@@ -21,9 +21,15 @@ function formatTime(iso: string) {
   });
 }
 
-/** Admin-only "Refresh ROI" panel — shows freshness and triggers a manual full refresh.
- *  Shown only in admin chrome for CEO / Super Admin. */
-export function RoiRefreshPanel({ generatedAt }: { generatedAt: string | null }) {
+/** Shows ROI data freshness. Pass showRefreshButton=false for read-only staleness chip
+ *  (portal users); default true renders the full Refresh button for admins. */
+export function RoiRefreshPanel({
+  generatedAt,
+  showRefreshButton = true,
+}: {
+  generatedAt: string | null;
+  showRefreshButton?: boolean;
+}) {
   const [run, setRun] = useState<RefreshRun | null>(null);
   const [busy, setBusy] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -105,16 +111,18 @@ export function RoiRefreshPanel({ generatedAt }: { generatedAt: string | null })
         </span>
       ) : null}
 
-      <Button
-        disabled={isRunning}
-        size="sm"
-        type="button"
-        variant="outline"
-        onClick={() => void triggerRefresh()}
-      >
-        <RefreshCcw className={`mr-1 h-3.5 w-3.5 ${isRunning ? "animate-spin" : ""}`} />
-        {isRunning ? "Refreshing…" : "Refresh ROI"}
-      </Button>
+      {showRefreshButton && (
+        <Button
+          disabled={isRunning}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={() => void triggerRefresh()}
+        >
+          <RefreshCcw className={`mr-1 h-3.5 w-3.5 ${isRunning ? "animate-spin" : ""}`} />
+          {isRunning ? "Refreshing…" : "Refresh ROI"}
+        </Button>
+      )}
     </div>
   );
 }

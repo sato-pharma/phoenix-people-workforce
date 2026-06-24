@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildDoubleVisitExportWorkbook, getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 
 export const runtime = "nodejs";
@@ -11,6 +13,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "double_visit_analytics", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:double-visit" });
     const url = new URL(request.url);
     const data = await getDoubleVisitDashboardData({
       access,
@@ -27,6 +30,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to export Double Visit Analytics." }, { status: 403 });
     }

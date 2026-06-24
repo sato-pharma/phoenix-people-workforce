@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { getMasterDefinition, requiredReferenceMasters, type MasterKey, type MasterRowRecord } from "@/lib/sales/master-data/definitions";
 import { buildMasterWorkbook } from "@/lib/sales/master-data/export-workbook";
 import { listMasterRows } from "@/lib/sales/master-data/list";
@@ -17,6 +19,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "export");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:database-mapping" });
 
     const { master } = await context.params;
     const definition = getMasterDefinition(master);
@@ -42,6 +45,12 @@ export async function GET(request: Request, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { success: false, error: error instanceof Error ? error.message : "Forbidden." },

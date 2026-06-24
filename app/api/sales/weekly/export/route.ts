@@ -1,5 +1,7 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { buildWeeklyExportWorkbook } from "@/lib/sales/weekly/export-workbook";
@@ -13,6 +15,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:weekly" });
 
     const params = new URL(request.url).searchParams;
     const parseList = (key: string) =>
@@ -86,6 +89,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return new Response(
+        JSON.stringify({ error: "rate_limited", message: error.message }),
+        { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String(error.retryAfterSeconds) } },
+      );
+    }
     if (isForbiddenError(error)) {
       return new Response(JSON.stringify({ error: "Forbidden." }), { status: 403, headers: { "Content-Type": "application/json" } });
     }

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -53,7 +55,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_salary_file",
       emptyMessage: "Salary file is empty.",
       tooLargeError: "salary_file_too_large",
-      tooLargeMessage: "Salary file exceeds the 10MB upload limit.",
+      tooLargeMessage: "Salary file exceeds the 4 MB upload limit.",
       unsupportedError: "unsupported_salary_file_type",
       unsupportedMessage: "Upload an Excel salary file in .xls or .xlsx format.",
     });
@@ -132,7 +134,13 @@ export async function POST(request: Request) {
       (warning) => warning.code !== "employee_not_found",
     );
 
+    const fileBuffer = await file.arrayBuffer();
+    const fileContentHash = createHash("sha256")
+      .update(new Uint8Array(fileBuffer))
+      .digest("hex");
+
     const result = await createSalaryBatch({
+      fileContentHash,
       fileName: file.name,
       month,
       records: validation.rowsToImport,

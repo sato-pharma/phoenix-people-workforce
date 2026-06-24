@@ -6,6 +6,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateFieldWorkforceFinalActionsWorkbook } from "@/lib/field-workforce-compliance/export";
 import { getFieldWorkforceRecommendationsReport } from "@/lib/field-workforce-compliance/recommendations";
 import { toApiError } from "@/lib/http/api-errors";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +43,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "hr_calendar", "read");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:fwc-recommendations" });
 
     const { id } = await context.params;
     const actorLoginId = actorFromAccess(access);
@@ -79,6 +82,12 @@ export async function GET(request: Request, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
     return apiResponse(error, "Field Workforce Compliance final actions export failed.");
   }
 }
