@@ -12,7 +12,16 @@ type LinkResult = {
   linkStatus: SalesLinkStatus;
   linkConfidence: number;
   line?: string | null;
+  managerHrId?: string | null;
   diagnostics: string[];
+};
+
+type VacancyDirectoryRow = {
+  areaName: string | null;
+  lineName: string | null;
+  managerHrId: string | null;
+  status: string | null;
+  vacancyCode: string | null;
 };
 
 function normalize(value: unknown) {
@@ -110,6 +119,55 @@ function makeNoMatchMessage(label: string, value: string) {
   return `${label} "${value}" was provided in the sheet, but no employee matched it.`;
 }
 
+function isVacantAreaCode(value: unknown) {
+  return /^v-[a-z]{1,6}-\d+$/i.test(compact(value));
+}
+
+function normalizedAreaKey(value: unknown) {
+  return normalize(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function looseAreaKey(value: unknown) {
+  return normalizedAreaKey(value)
+    .replace(/q/g, "k")
+    .replace(/[aeiou]/g, "");
+}
+
+function linesCompatible(sourceLine: string | null | undefined, vacancyLine: string | null | undefined) {
+  const source = canonicalSalesLine(sourceLine);
+  const vacancy = canonicalSalesLine(vacancyLine);
+  if (!source || !vacancy) return true;
+  if (source === vacancy) return true;
+  if (source === "anti inf" && vacancy === "anti infective") return true;
+  if (source === "anti infective" && vacancy === "anti inf") return true;
+  return false;
+}
+
+function isOpenVacancy(vacancy: VacancyDirectoryRow) {
+  const status = normalize(vacancy.status);
+  return !status || ["open", "active", "approved"].includes(status);
+}
+
+function matchVacancyForSource(
+  source: { line?: string | null; territory?: string | null },
+  vacancies: VacancyDirectoryRow[],
+) {
+  const sourceArea = normalizedAreaKey(source.territory);
+  if (!sourceArea) return null;
+
+  const compatible = vacancies.filter((vacancy) =>
+    isOpenVacancy(vacancy) && linesCompatible(source.line, vacancy.lineName)
+  );
+
+  const exact = compatible.filter((vacancy) => normalizedAreaKey(vacancy.areaName) === sourceArea);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+
+  const sourceLooseArea = looseAreaKey(source.territory);
+  const loose = compatible.filter((vacancy) => looseAreaKey(vacancy.areaName) === sourceLooseArea);
+  return loose.length === 1 ? loose[0] : null;
+}
+
 function lineMismatchMessage(sourceLine: string | null | undefined, employeeLine: string | null | undefined) {
   const source = compact(sourceLine);
   const employee = compact(employeeLine);
@@ -123,7 +181,15 @@ type DirectoryCache = {
   expiresAt: number;
 };
 
-const directoryMemory = globalThis as typeof globalThis & { __phoenixSalesDirectory?: DirectoryCache };
+type VacancyCache = {
+  rows: VacancyDirectoryRow[];
+  expiresAt: number;
+};
+
+const directoryMemory = globalThis as typeof globalThis & {
+  __phoenixSalesDirectory?: DirectoryCache;
+  __phoenixSalesVacancies?: VacancyCache;
+};
 
 function memoryCache() {
   return directoryMemory.__phoenixSalesDirectory;
@@ -138,6 +204,7 @@ function setMemoryCache(rows: EmployeeDirectoryRow[]) {
 
 export function invalidateSalesDirectoryCache() {
   directoryMemory.__phoenixSalesDirectory = undefined;
+  directoryMemory.__phoenixSalesVacancies = undefined;
 }
 
 async function loadDirectory() {
@@ -192,6 +259,42 @@ async function loadDirectory() {
   return rows;
 }
 
+async function loadVacancies() {
+  const cached = directoryMemory.__phoenixSalesVacancies;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rows;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("position_vacancies")
+    .select("vacancy_code,job_title,status,manager_hr_id,areas(name),lines(name),positions(title)")
+    .eq("status", "open");
+
+  if (error) return [] as VacancyDirectoryRow[];
+
+  const rows = (data ?? [])
+    .filter((row) => {
+      const title = String((row.positions as { title?: unknown } | null)?.title ?? "").toLowerCase();
+      const jobTitle = String((row as { job_title?: unknown }).job_title ?? "").toLowerCase();
+      const combinedTitle = `${title} ${jobTitle}`;
+      return combinedTitle.includes("medical representative") || /\bmr\b/.test(combinedTitle);
+    })
+    .map((row) => ({
+      areaName: (row.areas as { name?: unknown } | null)?.name ? String((row.areas as { name?: unknown }).name) : null,
+      lineName: (row.lines as { name?: unknown } | null)?.name ? String((row.lines as { name?: unknown }).name) : null,
+      managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
+      status: row.status ? String(row.status) : null,
+      vacancyCode: row.vacancy_code ? String(row.vacancy_code) : null,
+    }));
+
+  directoryMemory.__phoenixSalesVacancies = {
+    rows,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+  };
+  return rows;
+}
+
 export function linkSalesRecordAgainstDirectory(
   source: {
     employeeHrId?: string | null;
@@ -200,8 +303,10 @@ export function linkSalesRecordAgainstDirectory(
     employeeName?: string | null;
     line?: string | null;
     managerHrId?: string | null;
+    territory?: string | null;
   },
-  directory: EmployeeDirectoryRow[]
+  directory: EmployeeDirectoryRow[],
+  vacancies: VacancyDirectoryRow[] = [],
 ): LinkResult {
   const hrId = normalize(source.employeeHrId);
   const crmId = normalize(source.employeeCrmId);
@@ -211,7 +316,7 @@ export function linkSalesRecordAgainstDirectory(
   const rawLookup = compact(source.employeeLookupKey);
   const diagnostics: string[] = [];
 
-  if (isSalesOthersBucket(source)) {
+  if (!isVacantAreaCode(source.employeeHrId) && isSalesOthersBucket(source)) {
     return {
       employeeHrId: null,
       employeeCrmId: source.employeeCrmId ?? null,
@@ -260,6 +365,22 @@ export function linkSalesRecordAgainstDirectory(
   if (hrId) {
     const match = directory.find((employee) => normalize(employee.hr_id) === hrId);
     if (match) return withMatchedEmployee(match, 1);
+    if (isVacantAreaCode(rawHrId)) {
+      const vacancy = matchVacancyForSource(source, vacancies);
+      return {
+        employeeHrId: null,
+        employeeCrmId: source.employeeCrmId ?? null,
+        employeeLookupKey: source.employeeLookupKey ?? rawHrId,
+        employeeName: source.employeeName ?? rawHrId,
+        linkStatus: "unlinked",
+        linkConfidence: vacancy ? 0.75 : 0,
+        line: vacancy?.lineName ?? source.line ?? null,
+        managerHrId: vacancy?.managerHrId ?? source.managerHrId ?? null,
+        diagnostics: vacancy
+          ? [`Vacancy area code "${rawHrId}" matched open vacancy ${vacancy.vacancyCode ?? "without code"} for ${compact(vacancy.areaName) || compact(source.territory) || "this territory"}.`]
+          : [`Vacancy area code "${rawHrId}" was provided in the HR ID column. It is treated as a vacant area, not a missing employee.`],
+      };
+    }
     return {
       employeeHrId: source.employeeHrId ?? null,
       employeeCrmId: source.employeeCrmId ?? null,
@@ -326,15 +447,16 @@ export function linkSalesRecordAgainstDirectory(
 }
 
 export async function linkSalesRecords(records: SalesRecordInput[]) {
-  const directory = await loadDirectory();
+  const [directory, vacancies] = await Promise.all([loadDirectory(), loadVacancies()]);
   return records.map((record) => {
-    const link = linkSalesRecordAgainstDirectory(record, directory);
+    const link = linkSalesRecordAgainstDirectory(record, directory, vacancies);
     return {
       ...record,
-      employeeHrId: link.employeeHrId ?? record.employeeHrId ?? null,
-      employeeCrmId: link.employeeCrmId ?? record.employeeCrmId ?? null,
-      employeeLookupKey: link.employeeLookupKey ?? record.employeeLookupKey ?? null,
-      employeeName: link.employeeName ?? record.employeeName ?? null,
+      employeeHrId: link.employeeHrId !== undefined ? link.employeeHrId : record.employeeHrId ?? null,
+      employeeCrmId: link.employeeCrmId !== undefined ? link.employeeCrmId : record.employeeCrmId ?? null,
+      employeeLookupKey: link.employeeLookupKey !== undefined ? link.employeeLookupKey : record.employeeLookupKey ?? null,
+      employeeName: link.employeeName !== undefined ? link.employeeName : record.employeeName ?? null,
+      managerHrId: link.managerHrId !== undefined ? link.managerHrId : record.managerHrId ?? null,
       line: record.line || link.line || "Unassigned",
       linkStatus: link.linkStatus,
       linkConfidence: link.linkConfidence,
