@@ -38,7 +38,6 @@ export async function POST(request: Request) {
         excuseDate: body.excuseDate,
         excuseType: body.excuseType,
       },
-      { baseUrl: new URL(request.url).origin },
     );
 
     return NextResponse.json({ ...result, success: true });

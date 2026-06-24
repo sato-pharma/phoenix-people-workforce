@@ -643,18 +643,23 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const VIEW_AS_LIMIT = 50;
 
   const allItems = useMemo(() => viewAsItems ?? initialData.items, [initialData, viewAsItems]);
+  const initialDeepLinkMissing = Boolean(
+    initialId && !initialData.items.some((item) => item.id === initialId && (initialModule ? item.module === initialModule : true)),
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (initialId) {
       const found = initialData.items.find((item) => item.id === initialId && (initialModule ? item.module === initialModule : true));
-      return found ? found.id : initialData.items[0]?.id ?? null;
+      return found ? found.id : null;
     }
-    return allItems[0]?.id ?? null;
+    return initialData.items[0]?.id ?? null;
   });
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(
+    initialDeepLinkMissing ? "The request from this notification was not found in your current Action Center queue." : null,
+  );
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [detailTab, setDetailTab] = useState<"details" | "context">("details");
@@ -892,8 +897,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     });
   }
 
-  function handleExcuseAction(decision: "approve" | "reject") {
+  function handleExcuseAction(decision: "approve" | "reject" | "return") {
     if (!selected) return;
+    if (selected.readOnlyReason) { setError(selected.readOnlyReason); return; }
+    if (decision === "return" && !comment.trim()) {
+      setError("A manager reply is required when returning an excuse request.");
+      return;
+    }
     void callApi(`/api/excuses/${selected.id}/decision`, { decision, comment: comment.trim() || null });
   }
 
@@ -945,7 +955,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   async function handleBulkApprove() {
     if (bulkSelected.size === 0) return;
     setBulkBusy(true);
-    const toApprove = allItems.filter((i) => bulkSelected.has(i.id));
+    const toApprove = allItems.filter((i) => bulkSelected.has(i.id) && !i.readOnlyReason);
     const results = await Promise.allSettled(
       toApprove.map((item) => {
         if (item.module === "excuse") {
@@ -1025,8 +1035,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             <CheckCircle2 className="h-10 w-10" />
           </div>
           <div>
-            <p className="text-xl font-black tracking-tight text-slate-900">All clear</p>
-            <p className="mt-1.5 max-w-xs text-sm leading-6 text-slate-500">No approvals or reviews waiting on you right now. You&apos;re on top of everything.</p>
+            <p className="text-xl font-black tracking-tight text-slate-900">{notice ? "Request not found" : "All clear"}</p>
+            <p className="mt-1.5 max-w-xs text-sm leading-6 text-slate-500">
+              {notice ?? "No approvals or reviews waiting on you right now. You're on top of everything."}
+            </p>
           </div>
         </div>
       ) : (
@@ -1258,7 +1270,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-300 ring-1 ring-slate-200">
                   <Inbox className="h-6 w-6" />
                 </div>
-                <p className="text-sm font-bold text-slate-500">Select an item to review it</p>
+                <p className="text-sm font-bold text-slate-500">{notice ?? "Select an item to review it"}</p>
                 <p className="text-xs text-slate-400">press <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">j</kbd> / <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">k</kbd> to navigate · <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">?</kbd> for shortcuts</p>
               </div>
             ) : (
@@ -1333,6 +1345,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                         {notice ? (
                           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
                             {notice}
+                          </div>
+                        ) : selected.readOnlyReason ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                            {selected.readOnlyReason}
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -1425,6 +1441,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                   <button disabled={busy} onClick={() => handleExcuseAction("approve")}
                                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
                                     {busy ? "…" : "Approve"}
+                                  </button>
+                                  <button disabled={busy} onClick={() => handleExcuseAction("return")}
+                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
+                                    {busy ? "â€¦" : "Return with reply"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("reject")}
                                     className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">

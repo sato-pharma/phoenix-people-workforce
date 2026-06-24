@@ -22,7 +22,21 @@ const TONE_DOTS: Record<MyRequestStatusTone, string> = {
   neutral: "bg-slate-400",
 };
 
-export function MyRequestsList({ items }: { items: MyRequestItem[] }) {
+type Props = {
+  initialId?: string | null;
+  initialModule?: string | null;
+  items: MyRequestItem[];
+};
+
+function matchesDeepLink(item: MyRequestItem, module: string | null | undefined, id: string | null | undefined) {
+  if (!id) return false;
+  return item.id === id || item.id === `${module ?? item.module}:${id}`;
+}
+
+export function MyRequestsList({ initialId, initialModule, items }: Props) {
+  const linkedItem = initialId ? items.find((item) => matchesDeepLink(item, initialModule, initialId)) ?? null : null;
+  const orderedItems = linkedItem ? [linkedItem, ...items.filter((item) => item.id !== linkedItem.id)] : items;
+
   if (items.length === 0) {
     return (
       <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
@@ -39,10 +53,31 @@ export function MyRequestsList({ items }: { items: MyRequestItem[] }) {
     );
   }
 
+  if (initialId && !linkedItem) {
+    return (
+      <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-500 ring-1 ring-amber-200/70 shadow-[0_12px_30px_rgba(245,158,11,0.12)]">
+          <ClipboardList className="h-9 w-9" />
+        </div>
+        <div>
+          <p className="text-xl font-black tracking-tight text-slate-900">Request not found</p>
+          <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
+            The request from this notification is not available in your current Action Center view.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`overflow-hidden divide-y divide-[#EEF2F7] ${adminPanelClassName}`}>
-      {items.map((item) => (
-        <div key={item.id} className="flex flex-col gap-2 px-4 py-3.5 transition-colors hover:bg-slate-50/70 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+      {orderedItems.map((item) => (
+        <div
+          key={item.id}
+          className={`flex flex-col gap-2 px-4 py-3.5 transition-colors hover:bg-slate-50/70 sm:flex-row sm:items-start sm:justify-between sm:px-5 ${
+            linkedItem?.id === item.id ? "bg-orange-50/70 ring-1 ring-inset ring-orange-200" : ""
+          }`}
+        >
           <div className="min-w-0">
             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
@@ -65,6 +100,14 @@ export function MyRequestsList({ items }: { items: MyRequestItem[] }) {
               <p className="mt-1.5 rounded-r-md border-l-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] italic text-slate-600">
                 &ldquo;{item.decisionNote}&rdquo;
               </p>
+            )}
+            {item.href && (
+              <a
+                className="mt-2 inline-flex rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                href={item.href}
+              >
+                Open request
+              </a>
             )}
           </div>
           <div className="shrink-0 text-[11px] font-medium text-slate-400">

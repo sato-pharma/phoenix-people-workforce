@@ -36,6 +36,7 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: false, genericOnly: false, module: "deductions", notes: "Disabled by default; payroll-adjacent deduction data is sensitive.", optional: false },
   { enabled: true, genericOnly: true, module: "coaching", notes: "Generic only; coaching feedback is sensitive performance data.", optional: false },
   { enabled: true, genericOnly: true, module: "coaching_report", notes: "Generic only; coaching feedback is sensitive performance data.", optional: false },
+  { enabled: true, genericOnly: false, module: "excuse", notes: "Allowed for governed excuse/leave workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "excuses", notes: "Allowed for governed excuse/leave workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "outstation", notes: "Allowed for governed outstation expense workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "weekly_plans", notes: "Allowed for governed weekly plan notifications.", optional: false },

@@ -2,7 +2,12 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
-import { getExcuseWorkspace, getManagerPendingExcuses, type EmployeeExcuseRequest } from "@/lib/excuses/service";
+import {
+  getExcuseRequestForActionCenterDeepLink,
+  getExcuseWorkspace,
+  getManagerPendingExcuses,
+  type EmployeeExcuseRequest,
+} from "@/lib/excuses/service";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
 import {
   getEmployeePlansWorkspace,
@@ -51,7 +56,7 @@ function mapVacation(row: VacationRequestRecord): MyRequestItem {
     statusLabel: humanize(row.status),
     statusTone: toTone(row.status),
     submittedAt: row.createdAt,
-    href: null,
+    href: `/employee-portals/excuses?requestId=${encodeURIComponent(row.id)}`,
     lines: [
       { label: "Type", value: type },
       { label: "From", value: row.startDate },
@@ -74,7 +79,7 @@ function mapExcuse(row: EmployeeExcuseRequest): MyRequestItem {
       { label: "Date", value: row.excuseDate },
       { label: "Duration", value: `${row.durationHours} hours` },
     ],
-    decisionNote: null,
+    decisionNote: row.managerDecisionComment,
   };
 }
 
@@ -257,16 +262,17 @@ function mapResignationItem(record: ResignationRecord): ActionHubItem {
   };
 }
 
-function mapExcuseItem(request: EmployeeExcuseRequest): ActionHubItem {
+function mapExcuseItem(request: EmployeeExcuseRequest, readOnlyReason?: string | null): ActionHubItem {
   return {
     id: request.id,
     module: "excuse",
     employeeName: request.employeeName,
     employeeHrId: request.employeeHrId,
     title: `${request.excuseType === "morning" ? "Morning" : "Afternoon"} Excuse · ${request.excuseDate}`,
-    statusLabel: "Pending review",
+    statusLabel: humanize(request.status),
     submittedAt: request.createdAt,
     urgency: "normal",
+    readOnlyReason: readOnlyReason ?? null,
     detail: {
       module: "excuse",
       excuseType: request.excuseType,
@@ -412,4 +418,18 @@ export async function getAwaitingMyActionItems(
   // Never surface a requester's own submission in their own action inbox — the CEO
   // role can submit requests and those should only appear in "My Requests", not here.
   return items.filter((item) => !sameHrId(item.employeeHrId, access.hrId));
+}
+
+export async function getActionCenterDeepLinkItem(
+  access: AccessContext,
+  module: string | null | undefined,
+  id: string | null | undefined,
+): Promise<ActionHubItem | null> {
+  if (module !== "excuse" || !id) return null;
+  const result = await getExcuseRequestForActionCenterDeepLink(access, id);
+  if (!result) return null;
+  return mapExcuseItem(
+    result.request,
+    result.canAct ? null : "Direct manager owns this approval. HR has visibility only.",
+  );
 }

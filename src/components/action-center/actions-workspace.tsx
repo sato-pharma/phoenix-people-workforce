@@ -90,7 +90,7 @@ export function ActionsWorkspace({
           callerRole={callerRole}
         />
       ) : (
-        <MyRequestsList items={myRequests} />
+        <MyRequestsList items={myRequests} initialModule={initialModule} initialId={initialId} />
       )}
     </div>
   );
