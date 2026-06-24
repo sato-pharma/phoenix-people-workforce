@@ -128,11 +128,31 @@ async function judgeWithAi(
 
 // ── main entry ──────────────────────────────────────────────────────────────────────────────────
 export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<WeeklyVerifyResult> {
+  const distributor = weeklyDistributorByCode(input.distributorCode);
+  if (!distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+
+  // Header-name-matched distributors (e.g. Direct's hand-coded sheet, parser.ts adaptDirect) have no
+  // fixed-position column-contract.ts entry — there is no positional layout for this check to read.
+  // Skip straight to a deterministic "review manually" result instead of throwing "unknown distributor".
+  if (distributor.headerNameMatched) {
+    return {
+      aiNote:
+        `${distributor.name}'s columns are matched by header NAME, not position, so there is no fixed layout to check here. ` +
+        "Confirm the file's headers look right before uploading.",
+      aiUsed: false,
+      columns: [],
+      distributor: { code: distributor.code, name: distributor.name },
+      files: [],
+      matrices: [],
+      verdict: "pass",
+      warnings: [],
+    };
+  }
+
   // Resolve the SAME contract the parser will use (DB override merged over code), so the pre-upload
   // verification reflects exactly which columns the importer will read — never a "green lie".
   const contract = await resolveWeeklyContract(input.distributorCode);
-  const distributor = weeklyDistributorByCode(input.distributorCode);
-  if (!contract || !distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+  if (!contract) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
 
   // Load each provided file into a workbook, keyed by the form field the contract references.
   const sources: Record<string, { buf?: ArrayBuffer | Buffer; name: string }> = {

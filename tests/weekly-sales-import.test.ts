@@ -386,6 +386,48 @@ async function sfWorkbook(opts?: { hasReturn?: boolean }): Promise<ExcelJS.Buffe
   });
 }
 
+// ── Direct (company) channel — hand-coded sheet, headers located BY NAME (deliberately shuffled
+// column order below, to prove the adapter does not assume any fixed position) ───────────────────
+type DirectRow = {
+  distrubId: string;
+  regionId: string;
+  productId: string;
+  productName?: string;
+  qty: number;
+  date: Date;
+  value: number;
+  pharmacyName?: string;
+};
+
+async function directWorkbook(rows: DirectRow[]): Promise<ExcelJS.Buffer> {
+  return bufferOf((wb) => {
+    const sheet = wb.addWorksheet("Direct Orders");
+    // Deliberately out-of-order vs. the monthly template's field-object order.
+    sheet.addRow(["Pharmacy Name", "Distrub ID", "Region ID", "Product ID", "Product", "Qty", "Invoice Date", "Value"]);
+    for (const row of rows) {
+      sheet.addRow([
+        row.pharmacyName ?? "",
+        row.distrubId,
+        row.regionId,
+        row.productId,
+        row.productName ?? "",
+        row.qty,
+        row.date,
+        row.value,
+      ]);
+    }
+  });
+}
+
+async function directWorkbookMissingColumn(): Promise<ExcelJS.Buffer> {
+  return bufferOf((wb) => {
+    const sheet = wb.addWorksheet("Direct Orders");
+    // No "Region ID" header at all.
+    sheet.addRow(["Pharmacy Name", "Distrub ID", "Product ID", "Qty", "Invoice Date", "Value"]);
+    sheet.addRow(["Cairo Pharmacy A", "Direct", "SS001", 10, new Date(Date.UTC(2026, 5, 1)), 500]);
+  });
+}
+
 // ── contract override builder: a minimal EG sales-only workbook with the sales qty at an arbitrary col ──
 async function egQtyAtWorkbook(qtyCol1Based: number): Promise<ExcelJS.Buffer> {
   return bufferOf((wb) => {
@@ -959,6 +1001,116 @@ export async function runWeeklySalesImportTests() {
       assert.equal(alexRet?.salesQty, 10, "SF Alexandria gross stays as SalesQty (10)");
       assert.equal(alexRet?.returnQty, 2, "SF Alexandria return reconciled to gross − net = 10 − 8 = 2");
       assert.equal(alexRet?.salesValue, round2(8 * PRICES.SA001), "SF value = authoritative net * factory_price");
+    }
+  }
+
+  // ════════════ Direct (company) channel ════════════
+  {
+    const d1 = new Date(Date.UTC(2026, 5, 1));
+    // SS001 master price overridden to 0 (like Satoslim in production) to prove Direct's value comes
+    // from the sheet, never from netQty × factory_price (which would be 0 here).
+    const refs = references([{ productCode: "SS001", factoryPrice: 0 }]);
+    // No alias bucket needed — Direct's Product ID is already a master code (directProductLookup).
+    const aliases = aliasIndex("Direct", {});
+    const branch = branchIndex({}); // no branch-region mapping involved at all
+
+    const direct = await parseWeeklyWorkbookBuffer({
+      buffer: await directWorkbook([
+        { distrubId: "Direct", regionId: "CA", productId: "SS001", productName: "SATOSLIM", qty: 10, date: d1, value: 500, pharmacyName: "Cairo Pharmacy A" },
+        { distrubId: "Direct", regionId: "CA", productId: "SS001", productName: "SATOSLIM", qty: 5, date: d1, value: 250, pharmacyName: "Cairo Pharmacy B" },
+        { distrubId: "Direct", regionId: "NATIONAL", productId: "SA001", productName: "SAGINKGO", qty: 3, date: d1, value: 120 },
+      ]),
+      distributorCode: "Direct",
+      distributorName: "Direct (Company)",
+      fileName: "Direct.xlsx",
+      references: refs,
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(direct.ok, true, "Direct parses");
+    if (direct.ok) {
+      assert.equal(direct.result.status, "validated", "Direct validates (single auto-detected date)");
+      assert.equal(direct.result.weekStart, "2026-06-01", "Direct single sheet date auto-used");
+
+      const cairo = direct.rows.find((row) => row.regionCode === "CA");
+      assert.ok(cairo, "Direct Cairo fact row present");
+      assert.equal(cairo?.branchCode, "CA", "Direct branch maps directly to region code");
+      assert.equal(cairo?.regionName, "Cairo", "Direct region name resolved from master");
+      assert.equal(cairo?.branchName, "Direct – Cairo", "Direct branch label is 'Direct – <Region>'");
+      assert.equal(cairo?.netQty, 15, "Direct Cairo qty aggregates across pharmacies (10 + 5)");
+      assert.equal(cairo?.salesValue, 750, "Direct value = sheet Value summed (500 + 250), NOT net * factory_price (0)");
+      assert.equal(cairo?.rawRow.pharmacyNames, "Cairo Pharmacy A, Cairo Pharmacy B", "Direct keeps pharmacy names as audit context");
+
+      const national = direct.rows.find((row) => row.regionCode === "NATIONAL");
+      assert.ok(national, "Direct NATIONAL sentinel fact row present");
+      assert.equal(national?.regionName, "National", "Direct NATIONAL region display name");
+      assert.equal(national?.branchName, "Direct – National", "Direct NATIONAL branch label");
+      assert.equal(national?.netQty, 3, "Direct NATIONAL qty");
+      assert.equal(national?.salesValue, 120, "Direct NATIONAL value = sheet Value (120), not 3 * factory_price (30)");
+    }
+
+    // Distrub ID mismatch → blocked.
+    const mismatched = await parseWeeklyWorkbookBuffer({
+      buffer: await directWorkbook([
+        { distrubId: "SomeOtherCo", regionId: "CA", productId: "SS001", qty: 10, date: d1, value: 500 },
+      ]),
+      distributorCode: "Direct",
+      distributorName: "Direct (Company)",
+      fileName: "Direct.xlsx",
+      references: refs,
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(mismatched.ok, true, "Direct mismatch parses");
+    if (mismatched.ok) assert.equal(mismatched.result.status, "blocked", "Direct blocks when Distrub ID is not 'Direct'");
+
+    // Missing required column → blocked.
+    const missingColumn = await parseWeeklyWorkbookBuffer({
+      buffer: await directWorkbookMissingColumn(),
+      distributorCode: "Direct",
+      distributorName: "Direct (Company)",
+      fileName: "Direct.xlsx",
+      references: refs,
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(missingColumn.ok, true, "Direct missing-column parses");
+    if (missingColumn.ok) assert.equal(missingColumn.result.status, "blocked", "Direct blocks when a required column is absent");
+
+    // Unknown (non-NATIONAL) region code → blocked.
+    const unknownRegion = await parseWeeklyWorkbookBuffer({
+      buffer: await directWorkbook([
+        { distrubId: "Direct", regionId: "ZZ", productId: "SS001", qty: 10, date: d1, value: 500 },
+      ]),
+      distributorCode: "Direct",
+      distributorName: "Direct (Company)",
+      fileName: "Direct.xlsx",
+      references: refs,
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(unknownRegion.ok, true, "Direct unknown-region parses");
+    if (unknownRegion.ok) {
+      assert.equal(unknownRegion.result.status, "blocked", "Direct blocks on a Region ID not in the master region table");
+      assert.ok(unknownRegion.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "Direct region failure recorded");
+    }
+
+    // Unknown Product ID (not an alias miss — Direct has no alias step) → blocked.
+    const unknownProduct = await parseWeeklyWorkbookBuffer({
+      buffer: await directWorkbook([
+        { distrubId: "Direct", regionId: "CA", productId: "NOPE", qty: 10, date: d1, value: 500 },
+      ]),
+      distributorCode: "Direct",
+      distributorName: "Direct (Company)",
+      fileName: "Direct.xlsx",
+      references: refs,
+      aliasIndex: aliases,
+      branchMapIndex: branch,
+    });
+    assert.equal(unknownProduct.ok, true, "Direct unknown-product parses");
+    if (unknownProduct.ok) {
+      assert.equal(unknownProduct.result.status, "blocked", "Direct blocks on a Product ID not in the master product table");
+      assert.ok(unknownProduct.result.issues.some((i) => i.field === "productCode" && i.severity === "failure"), "Direct product failure recorded");
     }
   }
 

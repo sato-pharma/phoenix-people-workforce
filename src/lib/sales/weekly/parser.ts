@@ -168,6 +168,15 @@ type WeeklyObservation = {
   /** POS only: per-product total bonus (free) units. Never priced. Carried on a dedicated synthetic
    *  unallocated observation (qty=0) so it doesn't inflate sales numbers. */
   bonusQty?: number;
+  /** Direct only: raw (unresolved) Region ID text. When set, resolveRegion maps the branch DIRECTLY
+   *  to this region (no branch-region admin mapping involved) — including the "NATIONAL" sentinel. */
+  directRegionCodeRaw?: string;
+  /** Direct only: rawItemCode is already a Source-of-Sales MASTER product code (the operator fills
+   *  the canonical ID by hand) — resolveProduct skips the raw→master alias lookup entirely. */
+  directProductLookup?: boolean;
+  /** Direct only: the sheet's own per-row Value (real per-deal pricing). Summed per aggregate and
+   *  used AS the row's salesValue instead of netQty × factory_price. */
+  sheetValue?: number;
 };
 
 type AdapterContext = {
@@ -867,6 +876,115 @@ function adaptSF(ctx: AdapterContext): AdapterResult {
   return { observations, sheetDates, sheetName: sheet.name, blockingReasons: [] };
 }
 
+// Direct (company) channel — a hand-coded sheet, not a distributor's raw export, so headers are
+// located BY NAME (not fixed position): Distrub ID / Region ID / Product ID / Qty / Invoice Date /
+// Value / Pharmacy Name (+ optional Product name). Mirrors monthly's DIRECT_TEMPLATE exactly
+// (src/lib/sales/monthly-distributor-import.ts) — same header names, region-only geography (no
+// branch/area; "NATIONAL" is a sentinel bucket for orders tied to no region), Product ID already a
+// Source-of-Sales MASTER code (no raw→master alias step), and Value read straight from the sheet
+// rather than recomputed from factory price. branchCode is set to the raw Region ID text so rows
+// aggregate one "branch" per region (decision: branch maps directly to region) — resolveRegion fills
+// in the real region + branchName ("Direct – <Region>") once the code is resolved against the master.
+const DIRECT_HEADER_ALIASES: Record<string, string[]> = {
+  distributorCode: ["Distrub ID"],
+  invoiceDate: ["Invoice Date", "Date", "INVOICE_DATE", "inv_date"],
+  pharmacyName: ["Pharmacy Name"],
+  productCode: ["Product ID"],
+  productName: ["Product"],
+  qty: ["Qty", "Quantity", "QTY_INVOICE", "QTY_PACK", "qnt"],
+  regionCode: ["Region ID"],
+  value: ["Value"],
+};
+const DIRECT_REQUIRED_FIELDS = ["distributorCode", "invoiceDate", "productCode", "qty", "regionCode", "value"];
+
+function findHeaderColumns(headerRow: ExcelJS.Row, lastColumn: number): Map<string, number> {
+  const byText = new Map<string, number>();
+  for (let c = 1; c <= lastColumn; c += 1) {
+    const text = cellText(at(headerRow, c)).trim().toLowerCase();
+    if (text && !byText.has(text)) byText.set(text, c);
+  }
+  const found = new Map<string, number>();
+  for (const [field, aliases] of Object.entries(DIRECT_HEADER_ALIASES)) {
+    for (const alias of aliases) {
+      const col = byText.get(alias.trim().toLowerCase());
+      if (col != null) {
+        found.set(field, col);
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+function adaptDirect(ctx: AdapterContext): AdapterResult {
+  const workbook = ctx.workbooks[0];
+  const sheet = workbook.worksheets[0];
+  const observations: WeeklyObservation[] = [];
+  const sheetDates = new Set<string>();
+  if (!sheet) return { observations, sheetDates, sheetName: "Direct", blockingReasons: [] };
+
+  const headerRow = sheet.getRow(1);
+  const lastColumn = Math.max(sheet.columnCount, 16);
+  const cols = findHeaderColumns(headerRow, lastColumn);
+
+  const missing = DIRECT_REQUIRED_FIELDS.filter((field) => !cols.has(field));
+  if (missing.length > 0) {
+    const labels = missing.map((field) => DIRECT_HEADER_ALIASES[field][0]);
+    return {
+      observations,
+      sheetDates,
+      sheetName: sheet.name,
+      blockingReasons: [`Direct template is missing required column(s): ${labels.join(", ")}.`],
+    };
+  }
+
+  let mismatchedDistributorRows = 0;
+  let firstMismatchRow: number | null = null;
+
+  for (let r = 2; r <= sheet.rowCount; r += 1) {
+    const row = sheet.getRow(r);
+    const productCode = cellText(at(row, cols.get("productCode")!));
+    const regionCode = cellText(at(row, cols.get("regionCode")!));
+    const qtyCell = at(row, cols.get("qty")!);
+    if (!productCode && !regionCode && cellText(qtyCell) === "") continue; // blank row
+
+    const distributorCodeRaw = cellText(at(row, cols.get("distributorCode")!));
+    if (distributorCodeRaw && normalizeCode(distributorCodeRaw) !== "DIRECT") {
+      mismatchedDistributorRows += 1;
+      firstMismatchRow ??= r;
+    }
+
+    const productName = cols.has("productName") ? cellText(at(row, cols.get("productName")!)) : "";
+    const pharmacyName = cols.has("pharmacyName") ? cellText(at(row, cols.get("pharmacyName")!)) : "";
+    const qty = cellNumber(qtyCell);
+    const value = cellNumber(at(row, cols.get("value")!));
+    const dateIso = cellDateIso(at(row, cols.get("invoiceDate")!));
+    if (dateIso) sheetDates.add(dateIso);
+
+    observations.push({
+      branchFileType: "sales",
+      directProductLookup: true,
+      directRegionCodeRaw: regionCode,
+      qty,
+      rawBranchCode: regionCode,
+      rawBranchName: pharmacyName,
+      rawItemCode: productCode,
+      rawItemName: productName,
+      sheetValue: value,
+      side: "sales",
+      sourceRowNumber: r,
+    });
+  }
+
+  const blockingReasons: string[] = [];
+  if (mismatchedDistributorRows > 0) {
+    blockingReasons.push(
+      `${mismatchedDistributorRows} row(s) have a Distrub ID that is not "Direct" (first at row ${firstMismatchRow}). Fix the workbook before importing.`,
+    );
+  }
+
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons };
+}
 
 // ── core: resolve, validate strictly, aggregate by key union, value, summarize ───────────────────
 
@@ -886,6 +1004,44 @@ function resolveProduct(
   aliasBucket: { byCode: Map<string, string>; byName: Map<string, string> } | undefined,
   indexes: WeeklyReferenceIndexes,
 ): ResolvedProduct {
+  // Direct: rawItemCode is already a Source-of-Sales MASTER code (operator fills it by hand, same
+  // convention as monthly's coded sheets) — skip the raw→master alias lookup entirely. A miss here
+  // is a hard failure (typo'd master code), not a soft "no alias yet" warning.
+  if (obs.directProductLookup) {
+    const masterCode = normalizeCode(obs.rawItemCode);
+    const master = masterCode ? indexes.productByCode.get(masterCode) : undefined;
+    if (!master) {
+      return {
+        productCode: obs.rawItemCode || obs.rawItemName || "",
+        productName: obs.rawItemName || obs.rawItemCode || "",
+        officialLine: "",
+        factoryPrice: 0,
+        warning: null,
+        failure: {
+          field: "productCode",
+          message: `Product ID "${obs.rawItemCode || "(blank)"}" is not in the Source of Sales master product table.`,
+        },
+      };
+    }
+    const line = (master.line ?? "").trim();
+    // Direct's value comes straight from the sheet, never from factory price — so an unpriced
+    // master must NOT block here (e.g. Satoslim has factory_price = 0 but a real deal value).
+    const failure: ResolvedProduct["failure"] = line
+      ? null
+      : {
+          field: "officialLine",
+          message: `Master product "${master.productCode}" has no line. Assign a line in Source of Sales, then re-upload.`,
+        };
+    return {
+      productCode: master.productCode.trim(),
+      productName: (master.productName || master.productCode).trim(),
+      officialLine: line,
+      factoryPrice: Number(master.factoryPrice) || 0,
+      warning: null,
+      failure,
+    };
+  }
+
   const codeKey = normalizeCode(obs.rawItemCode);
   const nameKey = normalizeKey(obs.rawItemName);
   let masterCode = (codeKey && aliasBucket?.byCode.get(codeKey)) || (nameKey && aliasBucket?.byName.get(nameKey)) || "";
@@ -955,7 +1111,34 @@ type ResolvedRegion = {
   failure: { field: string; message: string } | null;
 };
 
-function resolveRegion(obs: WeeklyObservation, branchMapIndex: WeeklyBranchRegionIndex): ResolvedRegion {
+function resolveRegion(
+  obs: WeeklyObservation,
+  branchMapIndex: WeeklyBranchRegionIndex,
+  indexes: WeeklyReferenceIndexes,
+): ResolvedRegion {
+  // Direct: the branch IS the region (decision: map directly to region, no branch-region admin
+  // mapping). "NATIONAL" is a sentinel for orders tied to no real region (mirrors monthly's Direct
+  // "National" bucket); any other code must resolve against the master region list.
+  if (obs.directRegionCodeRaw != null) {
+    const raw = normalizeCode(obs.directRegionCodeRaw);
+    if (!raw) {
+      return { regionCode: "", regionName: "", excluded: false, failure: { field: "regionCode", message: "Region ID is required." } };
+    }
+    if (raw === "NATIONAL") {
+      return { regionCode: "NATIONAL", regionName: "National", excluded: false, failure: null };
+    }
+    const name = indexes.regionNameByCode.get(raw);
+    if (!name) {
+      return {
+        regionCode: raw,
+        regionName: raw,
+        excluded: false,
+        failure: { field: "regionCode", message: `Region ID "${raw}" is not in the Source of Sales master region table.` },
+      };
+    }
+    return { regionCode: raw, regionName: name, excluded: false, failure: null };
+  }
+
   // PS unallocated reconciliation rows carry no branch → region left empty, never blocks.
   if (obs.unallocated) {
     return { regionCode: "", regionName: "", excluded: false, failure: null };
@@ -1051,6 +1234,11 @@ type Agg = {
   sourceRowNumber: number;
   unallocated: boolean;
   issues: WeeklyValidationIssue[];
+  /** Direct only: sum of the sheet's own Value column — used AS salesValue instead of netQty × factory_price */
+  sheetValue: number;
+  /** Direct only: distinct Pharmacy Name values folded into this region row — audit context only,
+   *  never a dashboard dimension (branch maps directly to region; see branchName above). */
+  pharmacyNames: Set<string>;
 };
 
 function aggKeyOf(productCode: string, obs: WeeklyObservation): AggKey {
@@ -1136,7 +1324,9 @@ export async function parseWeeklyWorkbookBuffer(input: {
                   ? adaptSF(ctx)
                   : canonicalCode === "POS"
                     ? adaptPOS(ctx)
-                    : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
+                    : canonicalCode === "Direct"
+                      ? adaptDirect(ctx)
+                      : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
     }
   } catch (error) {
     return {
@@ -1178,7 +1368,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
-    const region = resolveRegion(obs, branchMapIndex);
+    const region = resolveRegion(obs, branchMapIndex, indexes);
 
     // Excluded branch → drop the cell from totals entirely (not a failure, no fact row).
     if (region.excluded) continue;
@@ -1194,7 +1384,11 @@ export async function parseWeeklyWorkbookBuffer(input: {
         regionCode: region.regionCode,
         regionName: region.regionName,
         branchCode: obs.rawBranchCode,
-        branchName: obs.rawBranchName || obs.rawBranchCode,
+        // Direct: branch maps directly to region — label it "Direct – <Region>" instead of the
+        // raw Pharmacy Name (kept only in rawRow as audit context, never a dashboard dimension).
+        branchName: obs.directRegionCodeRaw != null
+          ? (region.regionName ? `Direct – ${region.regionName}` : `Direct – ${obs.rawBranchCode}`)
+          : obs.rawBranchName || obs.rawBranchCode,
         itemCode: obs.rawItemCode,
         grossSalesQty: 0,
         returnQty: 0,
@@ -1205,6 +1399,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
         sourceRowNumber: obs.sourceRowNumber,
         unallocated: Boolean(obs.unallocated),
         issues: [],
+        sheetValue: 0,
+        pharmacyNames: new Set<string>(),
       };
       aggregates.set(key, agg);
     }
@@ -1225,6 +1421,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
     else agg.stockQty += obs.qty;
 
     if (obs.bonusQty != null && obs.bonusQty > 0) agg.bonusQty += obs.bonusQty;
+    if (obs.sheetValue != null) agg.sheetValue += obs.sheetValue;
+    if (obs.directRegionCodeRaw != null && obs.rawBranchName) agg.pharmacyNames.add(obs.rawBranchName);
 
     // No-alias is a soft warning — row stored as-is and auto-heals when the alias is added.
     // Bad master data (no price / no line) and unmapped region are hard failures that block the batch.
@@ -1261,6 +1459,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
   const rows: WeeklyParsedRow[] = [];
   let rowNumber = 0;
   const isPS = canonicalCode === "PS";
+  const isDirect = canonicalCode === "Direct";
   for (const agg of aggregates.values()) {
     rowNumber += 1;
     // Net of record: a distributor-stated authoritative net (e.g. RM col15) wins over the computed
@@ -1278,7 +1477,12 @@ export async function parseWeeklyWorkbookBuffer(input: {
       : agg.hasAuthoritativeNet
         ? Number((agg.grossSalesQty - netQty).toFixed(6))
         : Number(agg.returnQty.toFixed(6));
-    const salesValue = Number((netQty * agg.factoryPrice).toFixed(6));
+    // Direct: value is the sheet's own Value column summed per aggregate — never netQty × factory
+    // price (the whole point of the Direct channel is honoring real per-deal pricing, e.g. a
+    // price-0 master product like Satoslim that still carries a real Value on the sheet).
+    const salesValue = isDirect
+      ? Number(agg.sheetValue.toFixed(6))
+      : Number((netQty * agg.factoryPrice).toFixed(6));
     const validationState: WeeklyParsedRow["validationState"] = agg.issues.some((i) => i.severity === "failure")
       ? "failed"
       : agg.issues.length > 0
@@ -1329,6 +1533,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
             }
           : {}),
         ...(agg.unallocated ? { unallocated: "true" } : {}),
+        ...(agg.pharmacyNames.size > 0 ? { pharmacyNames: [...agg.pharmacyNames].slice(0, 20).join(", ") } : {}),
       },
     });
   }
