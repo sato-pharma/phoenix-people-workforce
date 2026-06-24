@@ -166,7 +166,7 @@ function buildEmployeePortalSections({
   showSosDashboardTab = false,
   showMiniWeeklySalesTab = false,
   showMonthlyClosingTab = false,
-  showMiniMonthlySalesTab: _showMiniMonthlySalesTab = false,
+  showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
@@ -207,6 +207,7 @@ function buildEmployeePortalSections({
         ...(showSosDashboardTab ? [{ href: "/employee-portals/sales", label: "Source of Sales", icon: ChartNoAxesColumnIncreasing }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
         ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: LineChartIcon }] : []),
+        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales", icon: CalendarRange }] : []),
       ],
     },
     {
