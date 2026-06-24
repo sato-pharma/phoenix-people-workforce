@@ -7,7 +7,8 @@
 //   • "admin"           → deep-navy "command" chrome that matches the CEO hero
 //                         identity card gradient (#0B1120 → #111C32 → #0A1A3A),
 //                         with a streamlined smart toolkit: module search, grouped
-//                         collapsible sections, and a collapse-to-icon-rail.
+//                         collapsible sections, collapse-to-icon-rail, and
+//                         drag-and-drop reordering of sections and modules.
 //   • "employee-portal" → a calm, light grouped-navigation list.
 //
 // Everything visual lives here; the *data* (links, icons, permissions, roles) is the
@@ -18,9 +19,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   ChevronRight,
+  GripVertical,
   PanelLeftClose,
   PanelLeftOpen,
+  RotateCcw,
   Search,
   ShieldCheck,
   Star,
@@ -29,12 +49,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import {
   getNavigationSections,
   navigationHomePathByMode,
+  type NavigationSection,
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
@@ -44,24 +65,15 @@ import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
 
 // ── Shared admin palette — matches the top navigation bar exactly ────────────
-// The Topbar admin header (topbar.tsx) is a flat pure-black surface
-// (`bg-[#000000]`) with a `#1a1a1a` hairline border. The sidebar reuses the SAME
-// flat black and hairline — no gradient, no decorative glow — so the navbar and
-// sidebar read as one continuous, identically-coloured chrome around the app.
 const ADMIN_SIDEBAR_BG = "bg-[#000000]";
 const ADMIN_SIDEBAR_BORDER = "border-[#1a1a1a]";
 
 // ── Public types ─────────────────────────────────────────────────────────────
-// PermissionLookup and the gating/active-route helpers now live in
-// `@/lib/navigation/active-path` (pure + unit-tested). Re-export the type so
-// existing importers (topbar, app-shell) keep importing it from this module.
 export type { PermissionLookup };
 
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
-// localStorage keys. The collapsed-sections key is versioned: the v2 bump retires
-// pre-accordion "everything expanded" state so existing users get the new compact
-// accordion default instead of their stale all-open layout.
+// localStorage keys
 const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed-v2";
 const COLLAPSED_EVENT = "phoenix-sidebar-collapsed-change";
 const PREFS_EVENT = "phoenix-sidebar-prefs-change";
@@ -88,8 +100,6 @@ function parseCollapsedIds(raw: string, valid: Set<string>) {
   return out;
 }
 
-// Empty string is the "no saved preference yet" sentinel — the nav then defaults to
-// accordion mode (only the active section open) so the list starts compact.
 function readCollapsedSnapshot(key: string) {
   if (typeof window === "undefined") return "";
   try {
@@ -204,10 +214,101 @@ function writePins(key: string, hrefs: string[]) {
   }
 }
 
+// ── Persistence: drag-and-drop order (sections + items per section) ──────────
+const ORDER_EVENT = "phoenix-sidebar-order-change";
+
+function sectionOrderKey(mode: NavigationMode) {
+  return `phoenix-sidebar-section-order:${mode}`;
+}
+
+function itemOrderKey(mode: NavigationMode) {
+  return `phoenix-sidebar-item-order:${mode}`;
+}
+
+function readOrderSnapshot(key: string) {
+  if (typeof window === "undefined") return "null";
+  try {
+    return window.localStorage.getItem(key) ?? "null";
+  } catch {
+    return "null";
+  }
+}
+
+function subscribeOrder(onChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onChange);
+  window.addEventListener(ORDER_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(ORDER_EVENT, onChange);
+  };
+}
+
+function writeOrder(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new Event(ORDER_EVENT));
+  } catch {
+    // Order is optional; storage failures must never block navigation.
+  }
+}
+
+function clearSidebarOrder(mode: NavigationMode) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(sectionOrderKey(mode));
+    window.localStorage.removeItem(itemOrderKey(mode));
+    window.dispatchEvent(new Event(ORDER_EVENT));
+  } catch {}
+}
+
+// Apply a saved order on top of the live array. Items missing from the saved order
+// (newly added sections/modules) are appended at the end so nothing gets lost.
+function applyOrder<T>(items: readonly T[], getId: (item: T) => string, savedOrder: string[] | null): T[] {
+  if (!savedOrder || savedOrder.length === 0) return [...items];
+  const byId = new Map(items.map((item) => [getId(item), item]));
+  const ordered: T[] = [];
+  for (const id of savedOrder) {
+    const item = byId.get(id);
+    if (item !== undefined) {
+      ordered.push(item);
+      byId.delete(id);
+    }
+  }
+  for (const item of byId.values()) ordered.push(item);
+  return ordered;
+}
+
+function parseSectionOrder(raw: string): string[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    if (!parsed.every((v): v is string => typeof v === "string")) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function parseItemOrder(raw: string): Record<string, string[]> | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const record = parsed as Record<string, unknown>;
+    const result: Record<string, string[]> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (Array.isArray(value) && value.every((v): v is string => typeof v === "string")) {
+        result[key] = value;
+      }
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 // ── Pending-count badge for the Action Center nav item ───────────────────────
-// All polling, visibility refresh, inFlight dedup, and browser notifications
-// are owned by the module-level singleton in nav-badge-store. Multiple mounts
-// of this component (pinned + section, mobile + desktop) share one fetch loop.
 function NavBadge({ src }: { src: string }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => subscribeNavBadge(src, setCount), [src]);
@@ -313,7 +414,221 @@ function NavRow({
   );
 }
 
-// ── The navigation brain (search / collapse / rail) ──────────────────────────
+// ── Sortable wrapper for a single nav item (adds drag handle) ─────────────────
+function SortableNavRow({
+  item,
+  active,
+  dark,
+  dragDisabled,
+  onActivate,
+  onTogglePin,
+  pinned,
+}: {
+  item: NavigationSectionItem;
+  active: boolean;
+  dark: boolean;
+  dragDisabled: boolean;
+  onActivate: () => void;
+  onTogglePin: () => void;
+  pinned: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.href,
+    disabled: dragDisabled,
+  });
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform) ?? undefined,
+    transition: transition ?? undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn("group/dnd-row relative", isDragging && "opacity-40")}
+    >
+      {/* Grip handle: appears on hover, overlays the icon box */}
+      {!dragDisabled && (
+        <button
+          aria-label={`Drag to reorder ${item.label}`}
+          className="absolute left-[10px] top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100"
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <NavRow
+        active={active}
+        dark={dark}
+        item={item}
+        onActivate={onActivate}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
+        rail={false}
+      />
+    </div>
+  );
+}
+
+// ── Sortable wrapper for an entire section (header + items) ───────────────────
+function SortableSectionBlock({
+  activeHref,
+  collapsedSectionIds,
+  dragDisabled,
+  isAdmin,
+  itemOrder,
+  navInstanceId,
+  onActivate,
+  onItemReorder,
+  onTogglePin,
+  onToggleSection,
+  pinnedSet,
+  query,
+  section,
+  sensors,
+  sectionDragging,
+}: {
+  activeHref: string | null;
+  collapsedSectionIds: Set<string>;
+  dragDisabled: boolean;
+  isAdmin: boolean;
+  itemOrder: string[] | null;
+  navInstanceId: string;
+  onActivate: (item: NavigationSectionItem) => void;
+  onItemReorder: (newHrefs: string[]) => void;
+  onTogglePin: (href: string) => void;
+  onToggleSection: (id: string) => void;
+  pinnedSet: Set<string>;
+  query: string;
+  section: NavigationSection;
+  sensors: ReturnType<typeof useSensors>;
+  sectionDragging: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: section.id,
+    disabled: dragDisabled,
+  });
+
+  const sectionStyle: CSSProperties = {
+    transform: CSS.Transform.toString(transform) ?? undefined,
+    transition: transition ?? undefined,
+  };
+
+  const hasActive = section.items.some((item) => item.href === activeHref);
+  const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
+  const sectionContentId = `${navInstanceId}-${section.id}-items`;
+
+  const orderedItems = useMemo(
+    () => applyOrder(section.items, (item) => item.href, itemOrder),
+    [section.items, itemOrder],
+  );
+  const itemHrefs = useMemo(() => orderedItems.map((item) => item.href), [orderedItems]);
+
+  function handleItemDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = itemHrefs.findIndex((h) => h === active.id);
+    const newIndex = itemHrefs.findIndex((h) => h === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onItemReorder(arrayMove(itemHrefs, oldIndex, newIndex));
+  }
+
+  return (
+    <div ref={setNodeRef} style={sectionStyle} className={cn(isDragging && "opacity-40")}>
+      {/* Section header — sticky removed while section drag is live to avoid transform+sticky conflict */}
+      <div
+        className={cn(
+          "-mx-3 px-3",
+          sectionDragging ? "z-20" : "sticky top-0 z-20",
+          isAdmin ? "bg-[#000000]" : "bg-white",
+        )}
+      >
+        <div className="group/sec-hdr flex items-center">
+          {/* Section drag handle (admin only) */}
+          {isAdmin && !dragDisabled && (
+            <button
+              aria-label={`Drag to reorder ${section.label} section`}
+              className="flex h-10 w-5 shrink-0 cursor-grab items-center justify-center pl-0.5 text-slate-700 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/sec-hdr:opacity-100"
+              type="button"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            aria-controls={sectionContentId}
+            aria-expanded={!collapsed}
+            className={cn(
+              "group/sec flex flex-1 items-center gap-1.5 pb-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+              isAdmin && !dragDisabled ? "px-1" : "px-1.5",
+              isAdmin ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
+            )}
+            onClick={() => onToggleSection(section.id)}
+            type="button"
+          >
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
+                isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
+                !collapsed && "rotate-90",
+              )}
+            />
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]",
+                isAdmin ? "text-white" : "text-[#0F172A]",
+              )}
+            >
+              {section.label}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Items list with its own inner DndContext for item reordering */}
+      <div
+        aria-hidden={collapsed}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+        )}
+        id={sectionContentId}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <DndContext
+            collisionDetection={closestCenter}
+            id={`${navInstanceId}-items-${section.id}`}
+            sensors={sensors}
+            onDragEnd={handleItemDragEnd}
+          >
+            <SortableContext items={itemHrefs} strategy={verticalListSortingStrategy}>
+              <div className="mt-1.5 space-y-1 px-1">
+                {orderedItems.map((item) => (
+                  <SortableNavRow
+                    key={item.href}
+                    active={item.href === activeHref}
+                    dark={isAdmin}
+                    dragDisabled={dragDisabled || !isAdmin}
+                    item={item}
+                    onActivate={() => onActivate(item)}
+                    onTogglePin={() => onTogglePin(item.href)}
+                    pinned={pinnedSet.has(item.href)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── The navigation brain (search / collapse / rail / drag-and-drop) ───────────
 function SidebarNav({
   mode = "admin",
   onNavigate,
@@ -331,8 +646,6 @@ function SidebarNav({
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
   rail?: boolean;
-  // Desktop sidebar flows with the page (shows every item, no inner scroll); the
-  // mobile drawer is a fixed-height overlay and keeps its own scroll.
   scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
@@ -355,6 +668,7 @@ function SidebarNav({
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
+  const [sectionDragging, setSectionDragging] = useState(false);
 
   const query = isAdmin && !rail ? searchQuery.trim().toLowerCase() : "";
 
@@ -366,9 +680,6 @@ function SidebarNav({
   const collapsedKey = collapsedStorageKey(mode);
   const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "");
   const collapsedSectionIds = useMemo(() => {
-    // Flat scroll (GitHub-style): every section is open by default. Users may still
-    // collapse an individual group and that choice is remembered, but opening one
-    // never auto-collapses the others. The active section is always kept open.
     const next = parseCollapsedIds(collapsedSnapshot, new Set(sectionIds));
     if (activeSectionId) next.delete(activeSectionId);
     return next;
@@ -392,7 +703,6 @@ function SidebarNav({
     for (const section of sections) for (const item of section.items) map.set(item.href, item);
     return map;
   }, [sections]);
-  // Resolve pinned hrefs to live nav items (drops any the user can no longer access).
   const pinnedItems = useMemo(
     () => pinnedHrefs.map((href) => itemByHref.get(href)).filter((item): item is NavigationSectionItem => Boolean(item)),
     [pinnedHrefs, itemByHref],
@@ -407,11 +717,55 @@ function SidebarNav({
     onNavigate?.();
   }
 
+  // ── Drag-and-drop order ────────────────────────────────────────────────────
+  const secOrderKey = sectionOrderKey(mode);
+  const itemOrdKey = itemOrderKey(mode);
+  const secOrderSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(secOrderKey), () => "null");
+  const itemOrdSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(itemOrdKey), () => "null");
+
+  const savedSectionOrder = useMemo(() => parseSectionOrder(secOrderSnapshot), [secOrderSnapshot]);
+  const savedItemOrder = useMemo(() => parseItemOrder(itemOrdSnapshot), [itemOrdSnapshot]);
+
+  const hasCustomOrder = savedSectionOrder !== null || savedItemOrder !== null;
+
+  // Drag is disabled during search (filtered view doesn't make sense to reorder)
+  // and in rail mode. Non-admin surfaces never get drag.
+  const dragDisabled = !isAdmin || !!query || rail;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   const visibleSections = query
     ? sections
         .map((section) => ({ ...section, items: section.items.filter((item) => item.label.toLowerCase().includes(query)) }))
         .filter((section) => section.items.length > 0)
     : sections;
+
+  // Apply saved section order on top of the visible (permission-filtered) sections.
+  // During search, order is bypassed so results are stable.
+  const orderedSections = useMemo(
+    () => (query ? visibleSections : applyOrder(visibleSections, (s) => s.id, savedSectionOrder)),
+    [query, visibleSections, savedSectionOrder],
+  );
+  const orderedSectionIds = useMemo(() => orderedSections.map((s) => s.id), [orderedSections]);
+
+  function handleSectionDragEnd(event: DragEndEvent) {
+    setSectionDragging(false);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = orderedSectionIds.indexOf(active.id as string);
+    const newIndex = orderedSectionIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newOrder = arrayMove(orderedSectionIds, oldIndex, newIndex);
+    writeOrder(secOrderKey, newOrder);
+  }
+
+  function handleItemReorder(sectionId: string, newHrefs: string[]) {
+    const next = { ...(savedItemOrder ?? {}), [sectionId]: newHrefs };
+    writeOrder(itemOrdKey, next);
+  }
 
   // ── Scroll comfort: edge fades, auto-scroll to active, remembered position ──
   const navRef = useRef<HTMLElement | null>(null);
@@ -419,8 +773,6 @@ function SidebarNav({
   const skipInitialActiveScroll = useRef(true);
   const scrollPersistKey = rail ? null : prefKey("scrollpos", mode);
 
-  // Fade only the edge that actually has hidden content (no fade when the list fits
-  // or you're already at an end), so items melt away instead of being hard-cut.
   const updateFades = useCallback(() => {
     const el = navRef.current;
     if (!el) return;
@@ -439,8 +791,6 @@ function SidebarNav({
     }
   }, [scrollPersistKey, updateFades]);
 
-  // First mount: restore the remembered scroll; if none, bring the active item into
-  // view. Then sync the fades.
   useEffect(() => {
     const el = navRef.current;
     if (!el || didRestoreScroll.current) return;
@@ -463,8 +813,6 @@ function SidebarNav({
     updateFades();
   }, [scrollPersistKey, updateFades]);
 
-  // On navigation, scroll the newly-active item into view. Skip the very first run
-  // (the mount effect above handles it, so a remembered scroll position wins).
   useEffect(() => {
     if (skipInitialActiveScroll.current) {
       skipInitialActiveScroll.current = false;
@@ -474,8 +822,6 @@ function SidebarNav({
     updateFades();
   }, [activeHref, updateFades]);
 
-  // Recompute fades when the visible list height changes (open/close, search) or the
-  // window resizes.
   useEffect(() => {
     updateFades();
     window.addEventListener("resize", updateFades);
@@ -558,7 +904,12 @@ function SidebarNav({
         </div>
       )}
 
-      <nav ref={navRef} onScroll={handleNavScroll} className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}>
+      <nav
+        ref={navRef}
+        className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}
+        onScroll={handleNavScroll}
+      >
+        {/* Favourites section — fixed position, never draggable */}
         {!query && pinnedItems.length > 0 && (
           <Fragment>
             <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
@@ -585,75 +936,39 @@ function SidebarNav({
             </div>
           </Fragment>
         )}
-        {visibleSections.map((section) => {
-          const hasActive = section.items.some((item) => item.href === activeHref);
-          const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
-          const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
-          return (
-            <Fragment key={section.id}>
-              <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
-                <button
-                  aria-controls={sectionContentId}
-                  aria-expanded={!collapsed}
-                  className={cn(
-                    // Quiet section headers: separated by whitespace (no per-row
-                    // divider), lighter weight, tight tracking, one muted gray for
-                    // all. Orange is reserved for the active item, not the header.
-                    "group/sec flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
-                    isAdmin ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
-                  )}
-                  onClick={() => toggleSection(section.id)}
-                  type="button"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
-                      isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
-                      !collapsed && "rotate-90",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      // Prominent group titles: normal-case, bold and bright so they
-                      // lead; the menu items below sit quieter beneath them.
-                      "min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]",
-                      isAdmin ? "text-white" : "text-[#0F172A]",
-                    )}
-                  >
-                    {section.label}
-                  </span>
-                </button>
-              </div>
-
-              <div
-                aria-hidden={collapsed}
-                className={cn(
-                  "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                  collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
-                )}
-                id={sectionContentId}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div className="mt-1.5 space-y-1 px-1">
-                    {section.items.map((item) => (
-                      <NavRow
-                        active={item.href === activeHref}
-                        dark={isAdmin}
-                        item={item}
-                        key={`${item.href}-${item.label}`}
-                        onActivate={() => handleActivate(item)}
-                        onTogglePin={() => togglePin(item.href)}
-                        pinned={pinnedSet.has(item.href)}
-                        rail={false}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Fragment>
-          );
-        })}
+        {/* Sections — wrapped in DndContext for section-level reordering */}
+        <DndContext
+          collisionDetection={closestCenter}
+          id={`${navInstanceId}-sections`}
+          sensors={sensors}
+          onDragEnd={handleSectionDragEnd}
+          onDragStart={() => setSectionDragging(true)}
+          onDragCancel={() => setSectionDragging(false)}
+        >
+          <SortableContext items={orderedSectionIds} strategy={verticalListSortingStrategy}>
+            {orderedSections.map((section) => (
+              <SortableSectionBlock
+                key={section.id}
+                activeHref={activeHref}
+                collapsedSectionIds={collapsedSectionIds}
+                dragDisabled={dragDisabled}
+                isAdmin={isAdmin}
+                itemOrder={savedItemOrder?.[section.id] ?? null}
+                navInstanceId={navInstanceId}
+                onActivate={handleActivate}
+                onItemReorder={(newHrefs) => handleItemReorder(section.id, newHrefs)}
+                onTogglePin={togglePin}
+                onToggleSection={toggleSection}
+                pinnedSet={pinnedSet}
+                query={query}
+                section={section}
+                sectionDragging={sectionDragging}
+                sensors={sensors}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {isAdmin && query && visibleSections.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
@@ -664,6 +979,21 @@ function SidebarNav({
               <p className="text-[13px] font-semibold text-slate-100">No modules match</p>
               <p className="mt-1 text-[11px] text-slate-500">Try a different search term.</p>
             </div>
+          </div>
+        )}
+
+        {/* Reset order button — visible only when user has a custom order saved */}
+        {isAdmin && !query && hasCustomOrder && (
+          <div className="mt-4 px-1">
+            <button
+              className="flex w-full items-center gap-2 px-1.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
+              onClick={() => clearSidebarOrder(mode)}
+              title="Reset sidebar to default order"
+              type="button"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset sidebar order
+            </button>
           </div>
         )}
       </nav>
@@ -678,7 +1008,6 @@ function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: Nav
   const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 
   if (rail) {
-    // Admin rail: the phoenix mark on the black chrome — no white background box.
     if (isAdmin) {
       return (
         <Link
@@ -703,8 +1032,6 @@ function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: Nav
     );
   }
 
-  // Admin: a single full lockup image (phoenix emblem + wordmark) on the black
-  // chrome — replaces the icon + "PHOENIX / Workforce · Admin" text block.
   if (isAdmin) {
     return (
       <Link
@@ -813,12 +1140,6 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        // Pinned to the viewport (sticky + full height) so the navigation and the
-        // rail toggle stay visible while the page scrolls; the nav scrolls
-        // internally only when its items exceed the viewport height.
-        // NOTE: do NOT add `relative` here — it overrides `sticky` and the sidebar
-        // scrolls away on long pages. `sticky` already establishes the positioning
-        // context for the absolute rail-toggle button below.
         "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
         isAdmin
           ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
@@ -888,11 +1209,6 @@ export function MobileSidebar({
       />
       <aside
         className={cn(
-          // Full-height left drawer pinned to the fixed overlay's edges. Do NOT add
-          // `relative` in the admin branch below — `cn()`/tailwind-merge treats it as
-          // a conflicting `position` utility and drops this `absolute`, which collapses
-          // the drawer to 0×0 on mobile. The inner `relative z-10` wrapper already
-          // establishes the stacking context for the drawer content.
           "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col shadow-2xl transition-transform duration-200",
           isAdmin ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
           open ? "translate-x-0" : "-translate-x-full",

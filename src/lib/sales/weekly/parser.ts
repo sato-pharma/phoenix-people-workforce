@@ -414,10 +414,11 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
     }
   }
 
-  // STOCK sheet is a wide matrix: one row per product, cols 6-18 are regular branch totals.
-  // Row 2 is the header — each header cell is "إجمالى <branch-name>"; strip the prefix to get the
-  // Arabic branch name, then look up the numeric code we captured from the SALES sheet.
-  // Cols 19+ are tenders / key-accounts / wholesale warehouses — not regular branch inventory.
+  // STOCK sheet is a wide matrix: one row per product; headers run until the grand-total column
+  // (الإجمالى) or the first empty cell. Each header is either "إجمالى <branch-name>" (regular
+  // branches) or a raw channel label (Key Accounts, Wholesale, Tenders, etc.). Strip the "إجمالى"
+  // prefix when present; otherwise use the raw header as the branch key so that any column the
+  // user has mapped is counted, regardless of its header format.
   const stock = findSheet(workbook, { name: "STOCK", includes: "STOCK" });
   if (stock) {
     names.push(stock.name);
@@ -439,9 +440,9 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       if (!raw) return null;
       if (isGrandTotalHeader(raw)) return null;
       const match = raw.match(/^(إجمالى|اجمالى|إجمالي|اجمالي)\s*/u);
-      if (!match) return null;
+      if (!match) return raw; // no prefix → use raw header as the branch key
       const name = raw.slice(match[0].length).trim();
-      return name || null;
+      return name || raw;
     };
 
     for (let c = matrixFirst; c <= stock.columnCount; c += 1) {
