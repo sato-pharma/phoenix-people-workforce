@@ -345,6 +345,7 @@ export function linkSalesRecordAgainstDirectory(
       linkStatus: "linked",
       linkConfidence: confidence,
       line: match.line ?? source.line ?? null,
+      managerHrId: match.manager_hr_id ?? source.managerHrId ?? null,
       diagnostics,
     };
   };
