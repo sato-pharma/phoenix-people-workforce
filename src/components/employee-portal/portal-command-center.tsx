@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Layers,
+  ReceiptText,
   Send,
   Target,
   TrendingUp,
@@ -270,6 +271,213 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
+// --- Medical Rep layout — premium field rep command center ---
+
+function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement } =
+    snapshot;
+  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
+  const probationStatus = shell.hrContract?.probationStatus;
+  const serviceDuration = shell.hrContract?.serviceDurationText;
+  const totalPending = pendingVacationCount + pendingExcuseCount;
+
+  const ach = mrSalesAchievement;
+  const pct = ach ? Math.max(0, Math.round(ach.achievementPercent)) : null;
+
+  const achColor =
+    pct === null ? "text-slate-900" : pct >= 100 ? "text-emerald-600" : pct >= 90 ? "text-amber-600" : "text-orange-500";
+  const barColor =
+    pct === null ? "bg-orange-500" : pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : "bg-orange-500";
+
+  const achStatus =
+    pct === null
+      ? null
+      : pct >= 100
+        ? { label: "Target Hit", cls: "border-emerald-300 bg-emerald-50 text-emerald-700" }
+        : pct >= 90
+          ? { label: "Almost There", cls: "border-amber-300 bg-amber-50 text-amber-700" }
+          : pct >= 70
+            ? { label: "On Track", cls: "border-orange-300 bg-orange-50 text-orange-700" }
+            : { label: "Needs Push", cls: "border-rose-300 bg-rose-50 text-rose-700" };
+
+  const gapToTarget = ach && pct !== null && pct < 100 ? ach.targetValue - ach.salesValue : null;
+  const surplus = ach && pct !== null && pct >= 100 ? ach.salesValue - ach.targetValue : null;
+
+  const now = new Date();
+  const thisMonth = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+
+  const renewalUrgent = daysUntilRenewal !== null && daysUntilRenewal !== undefined && daysUntilRenewal <= 30;
+  const renewalWarning =
+    daysUntilRenewal !== null && daysUntilRenewal !== undefined && daysUntilRenewal > 30 && daysUntilRenewal <= 60;
+
+  return (
+    <div className="mx-auto w-full space-y-4" dir="auto">
+      <IdentityCard data={shell} />
+
+      {/* ─── Achievement Hero ─── */}
+      <div className="overflow-hidden border border-slate-200">
+        <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+            {thisMonth} · Achievement
+          </h2>
+          {achStatus && (
+            <span className={`inline-flex border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${achStatus.cls}`}>
+              {achStatus.label}
+            </span>
+          )}
+        </div>
+        {ach && pct !== null ? (
+          <div className="bg-white px-6 py-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-end gap-3">
+                  <p className={`text-5xl font-black leading-none tabular-nums ${achColor}`}>{pct}%</p>
+                  <p className="mb-1 text-sm text-slate-500">of target</p>
+                </div>
+                {gapToTarget !== null && gapToTarget > 0 && (
+                  <p className="mt-2 text-sm font-medium text-rose-600">
+                    <span className="font-bold">{egp(gapToTarget)}</span> away from your monthly target
+                  </p>
+                )}
+                {surplus !== null && surplus > 0 && (
+                  <p className="mt-2 text-sm font-medium text-emerald-600">
+                    Exceeded target by <span className="font-bold">{egp(surplus)}</span> — excellent work!
+                  </p>
+                )}
+              </div>
+              <Link
+                href="/employee-portals/sales"
+                className="hidden shrink-0 items-center gap-1.5 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:flex"
+              >
+                Full Report <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="mt-4 h-2.5 w-full overflow-hidden bg-slate-100">
+              <div
+                className={`h-full transition-[width] duration-700 ${barColor}`}
+                style={{ width: `${Math.max(3, Math.min(100, pct))}%` }}
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm">
+              <span className="font-semibold text-slate-800">{egp(ach.salesValue)} sold</span>
+              <span className="text-slate-500">target {egp(ach.targetValue)}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-4 bg-white px-6 py-5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-100">
+              <Activity className="h-5 w-5 text-slate-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-600">Sales data not yet uploaded for this month</p>
+              <p className="text-[11px] text-slate-400">Check back once the monthly upload is complete</p>
+            </div>
+            <Link
+              href="/employee-portals/sales"
+              className="hidden shrink-0 items-center gap-1.5 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:flex"
+            >
+              View Dashboard <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* ─── My Status ─── */}
+      <SectionShell title="My Status">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatTile
+            icon={Wallet}
+            headline={latestPayslip ? egp(latestPayslip.netSalary) : "Not yet issued"}
+            sub={latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip"}
+          />
+          <StatTile
+            icon={CalendarDays}
+            headline={leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—"}
+            sub="annual leave entitlement"
+          />
+          {/* Contract tile — color-coded by urgency */}
+          {daysUntilRenewal != null ? (
+            <div className={`overflow-hidden border ${renewalUrgent ? "border-rose-200" : renewalWarning ? "border-amber-200" : "border-slate-200"}`}>
+              <div className={`flex items-center gap-2 px-4 py-2 ${renewalUrgent ? "bg-rose-600" : renewalWarning ? "bg-amber-500" : "bg-slate-900"}`}>
+                <CalendarClock className="h-3.5 w-3.5 text-white/70" />
+              </div>
+              <div className={`px-4 py-4 ${renewalUrgent ? "bg-rose-50" : renewalWarning ? "bg-amber-50" : "bg-white"}`}>
+                <p className={`text-2xl font-bold tracking-tight ${renewalUrgent ? "text-rose-700" : renewalWarning ? "text-amber-700" : "text-slate-900"}`}>
+                  {daysUntilRenewal} days
+                </p>
+                <p className={`mt-1 text-[10px] font-semibold uppercase tracking-widest ${renewalUrgent ? "text-rose-400" : renewalWarning ? "text-amber-400" : "text-slate-400"}`}>
+                  until contract renewal
+                </p>
+              </div>
+            </div>
+          ) : probationStatus === "On Probation" ? (
+            <div className="overflow-hidden border border-amber-200">
+              <div className="flex items-center gap-2 bg-amber-500 px-4 py-2">
+                <ClipboardCheck className="h-3.5 w-3.5 text-white/70" />
+              </div>
+              <div className="bg-amber-50 px-4 py-4">
+                <p className="text-2xl font-bold tracking-tight text-amber-700">On Probation</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-amber-400">
+                  {serviceDuration || "in progress"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <StatTile
+              icon={ClipboardCheck}
+              headline={serviceDuration || "Active"}
+              sub="employment duration"
+            />
+          )}
+        </div>
+      </SectionShell>
+
+      {/* ─── Daily Tools ─── */}
+      <div className="overflow-hidden border border-slate-200">
+        <div className="bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Daily Tools</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
+          <PremiumNavTile
+            href="/employee-portals/coaching"
+            icon={ClipboardCheck}
+            label="My Coaching"
+            description="View & track coaching reports"
+          />
+          <PremiumNavTile
+            href="/employee-portals/expenses"
+            icon={ReceiptText}
+            label="My Expenses"
+            description="Outstation expense tracker"
+          />
+          <PremiumNavTile
+            href="/employee-portals/marketing-requests"
+            icon={Send}
+            label="Marketing Requests"
+            description="Submit & track investments"
+          />
+          <PremiumNavTile
+            href="/employee-portals/weekly-sales"
+            icon={TrendingUp}
+            label="Weekly Sales"
+            description="Distributor performance by week"
+          />
+        </div>
+      </div>
+
+      {/* ─── Pending / All Clear ─── */}
+      {totalPending > 0 ? (
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+      ) : (
+        <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span className="text-sm font-medium text-emerald-800">All clear — nothing needs your attention right now.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
@@ -352,6 +560,8 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
 export function PortalCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const isPmGpm = snapshot.role === "Product Manager" || snapshot.role === "Group Product Manager";
+  const isMr = snapshot.role.toLowerCase() === "medical rep";
   if (isPmGpm) return <PmGpmCommandCenter snapshot={snapshot} />;
+  if (isMr) return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
 }
