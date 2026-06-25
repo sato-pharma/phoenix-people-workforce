@@ -13,7 +13,8 @@
 // cut, not an oversight — see docs/analytics/sales-analytics-model.md).
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { GitCompare } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import type { FilterDescriptor, FilterValues } from "@/lib/analytics/filter-registry";
@@ -26,6 +27,8 @@ type AnalyticsFilterBarProps = {
   basePath: string;
   /** Period-scoped customer options, derived by the page from already-fetched rows. */
   customers?: MultiSelectFilterOption[];
+  /** Show a "Compare" toggle that writes/clears `?compare=1` (gates a comparison table on the page). */
+  comparable?: boolean;
 };
 
 function optionsFor(
@@ -60,13 +63,19 @@ function optionsFor(
   }
 }
 
-export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [] }: AnalyticsFilterBarProps) {
+export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false }: AnalyticsFilterBarProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const debounceRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const descriptorKeys = React.useMemo(() => new Set(descriptors.map((d) => d.key)), [descriptors]);
 
+  // Start from the CURRENT url params (not a blank slate) so page-level flags
+  // outside the filter registry — `compare`, `demo` — survive a filter change
+  // instead of silently disappearing.
   const pushValues = React.useCallback(
     (next: FilterValues) => {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams(searchParams.toString());
+      for (const key of descriptorKeys) params.delete(key);
       for (const [key, value] of Object.entries(next)) {
         if (value === null || value === undefined || value === "") continue;
         if (Array.isArray(value)) {
@@ -77,7 +86,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
       }
       router.push(`${basePath}?${params.toString()}`);
     },
-    [basePath, router],
+    [basePath, router, searchParams, descriptorKeys],
   );
 
   const setValue = React.useCallback(
@@ -94,6 +103,14 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
     },
     [setValue],
   );
+
+  const comparing = searchParams.get("compare") === "1";
+  const toggleCompare = React.useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (comparing) params.delete("compare");
+    else params.set("compare", "1");
+    router.push(`${basePath}?${params.toString()}`);
+  }, [basePath, router, searchParams, comparing]);
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -125,12 +142,15 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           const currentRaw = values[descriptor.key];
           const current = typeof currentRaw === "string" ? currentRaw : "";
           return (
-            <label key={descriptor.key} className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
-              {descriptor.label}
+            <label
+              key={descriptor.key}
+              className="flex h-[58px] min-w-[160px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
+            >
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
               <select
                 value={current}
                 onChange={(event) => setValue(descriptor.key, event.target.value || null)}
-                className="h-9 min-w-[140px] rounded-[6px] border border-border bg-card px-2 text-sm font-medium text-foreground outline-none transition focus:border-orange-300"
+                className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none"
               >
                 <option value="">{descriptor.placeholder ?? "All"}</option>
                 {options.map((option) => (
@@ -147,18 +167,36 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
         const currentRaw = values[descriptor.key];
         const current = typeof currentRaw === "string" ? currentRaw : "";
         return (
-          <label key={descriptor.key} className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
-            {descriptor.label}
+          <label
+            key={descriptor.key}
+            className="flex h-[58px] min-w-[180px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
+          >
+            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
             <input
               type="text"
               defaultValue={current}
               placeholder={descriptor.placeholder}
               onChange={(event) => setDebouncedValue(descriptor.key, event.target.value)}
-              className="h-9 min-w-[160px] rounded-[6px] border border-border bg-card px-2 text-sm font-medium text-foreground outline-none transition focus:border-orange-300"
+              className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"
             />
           </label>
         );
       })}
+      {comparable ? (
+        <button
+          type="button"
+          onClick={toggleCompare}
+          aria-pressed={comparing}
+          className={`ml-auto flex h-[58px] items-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition ${
+            comparing
+              ? "border-[#F97316] bg-[#F97316] text-white"
+              : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]"
+          }`}
+        >
+          <GitCompare className="h-4 w-4" />
+          {comparing ? "Comparing" : "Compare"}
+        </button>
+      ) : null}
     </div>
   );
 }
