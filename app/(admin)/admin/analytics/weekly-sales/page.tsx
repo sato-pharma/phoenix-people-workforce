@@ -6,6 +6,8 @@ import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table"
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
+import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -21,6 +23,7 @@ import { computePeriodDelta, shiftWeek } from "@/lib/analytics/compare";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoWeeklyFact } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
+import { WEEKLY_TABS } from "@/lib/analytics/module-nav-config";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +108,7 @@ async function WeeklyDashboardContent({
         values={filters}
         dimensions={dimensions}
         basePath="/admin/analytics/weekly-sales"
+        comparable
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -114,8 +118,7 @@ async function WeeklyDashboardContent({
         <AnalyticsKpiCard label="Weeks"        value={String(weekCount)} />
       </div>
 
-      <section className="border border-border bg-card p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Value Trend by Week</h2>
+      <AnalyticsSection title="Value Trend by Week">
         {weekTrend.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -125,11 +128,10 @@ async function WeeklyDashboardContent({
             layers={[{ key: "value", name: "Value", type: "line", color: "#F97316" }]}
           />
         )}
-      </section>
+      </AnalyticsSection>
 
       {compareMode && distributorTotals.length >= 2 ? (
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Distributor Comparison</h2>
+        <AnalyticsSection title="Distributor Comparison" count={distributorTotals.length}>
           <AnalyticsDataTable
             searchKeys={["distributorName"]}
             columns={[
@@ -138,11 +140,10 @@ async function WeeklyDashboardContent({
             ]}
             rows={distributorTotals}
           />
-        </section>
+        </AnalyticsSection>
       ) : null}
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Weekly Sales Detail</h2>
+      <AnalyticsSection title="Weekly Sales Detail" count={rows.length}>
         {rows.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -161,9 +162,11 @@ async function WeeklyDashboardContent({
             ]}
             rows={rows}
             totals={{ salesQty: totalQty, salesValue: totalSales, stockQty: totalStock }}
+            exportTitle="Weekly Sales Overview"
+            exportSubtitle="Weekly sell-out and stock detail"
           />
         )}
-      </section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -171,19 +174,26 @@ async function WeeklyDashboardContent({
 export default async function WeeklySalesAnalyticsPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  await assertPermission(access, "sales", "read");
+  await assertPermission(access, "weekly_sales", "read");
 
   const resolvedParams = await searchParams;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Weekly Sales Analytics</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Distributor weekly sell-out and stock by region, branch, product, and line.
-          Stock value is intentionally not tracked — units only.
-        </p>
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Weekly</p>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">Weekly Sales Analytics</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Distributor weekly sell-out and stock by region, branch, product, and line.
+            Stock value is intentionally not tracked — units only.
+          </p>
+        </div>
       </div>
+
+      <AnalyticsModuleNav tabs={WEEKLY_TABS} />
+
       <Suspense fallback={<AppRouteLoadingState />}>
         <WeeklyDashboardContent searchParams={resolvedParams} role={access.role} />
       </Suspense>

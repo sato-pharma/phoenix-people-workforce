@@ -246,46 +246,50 @@ join public.salary_batches b on r.batch_id = b.id
 where b.status = 'approved';
 
 -- View for sales in employee portal (consolidated from phoenix-vacant-area-sales-view.sql)
+-- Only approved, non-replaced batches with non-failed validation — matches /sales/queue.
 drop view if exists public.v_employee_portal_sales;
 create or replace view public.v_employee_portal_sales as
 select
-  id,
-  batch_id,
-  coalesce(employee_hr_id, manager_hr_id) as hr_id,
-  employee_hr_id,
-  employee_name,
-  manager_hr_id,
-  employee_crm_id,
-  employee_lookup_key,
-  line,
-  territory,
-  sales_type,
-  family,
-  product,
-  month,
-  year,
-  factory_price,
-  sales_units,
-  sales_value,
-  target_units,
-  target_value,
+  r.id,
+  r.batch_id,
+  coalesce(r.employee_hr_id, r.manager_hr_id) as hr_id,
+  r.employee_hr_id,
+  r.employee_name,
+  r.manager_hr_id,
+  r.employee_crm_id,
+  r.employee_lookup_key,
+  r.line,
+  r.territory,
+  r.sales_type,
+  r.family,
+  r.product,
+  r.month,
+  r.year,
+  r.factory_price,
+  r.sales_units,
+  r.sales_value,
+  r.target_units,
+  r.target_value,
   case
-    when target_value > 0
-    then round((sales_value / target_value * 100)::numeric, 2)
+    when r.target_value > 0
+    then round((r.sales_value / r.target_value * 100)::numeric, 2)
     else null
   end as achievement_value_percent,
   case
-    when target_units > 0
-    then round((sales_units / target_units * 100)::numeric, 2)
+    when r.target_units > 0
+    then round((r.sales_units / r.target_units * 100)::numeric, 2)
     else null
   end as achievement_units_percent,
-  validation_state,
-  link_status,
-  link_confidence,
-  created_at
-from public.sales_records
-where employee_hr_id is not null
-   or manager_hr_id is not null;
+  r.validation_state,
+  r.link_status,
+  r.link_confidence,
+  r.created_at
+from public.sales_records r
+join public.sales_import_batches b on r.batch_id = b.id
+where (r.employee_hr_id is not null or r.manager_hr_id is not null)
+  and b.status = 'approved'
+  and b.replaced_by_batch_id is null
+  and r.validation_state <> 'failed';
 
 -- Indexes for performance improvements
 create index if not exists sales_records_link_status_idx on public.sales_records (link_status);

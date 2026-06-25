@@ -6,6 +6,8 @@ import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table"
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
+import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -22,6 +24,7 @@ import { formatPctOrDash, safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoClosingByEmployee } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
+import { CLOSING_TABS } from "@/lib/analytics/module-nav-config";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +107,7 @@ async function ClosingDashboardContent({
         values={filters}
         dimensions={dimensions}
         basePath="/admin/analytics/monthly-closing"
+        comparable
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -113,8 +117,7 @@ async function ClosingDashboardContent({
         <AnalyticsKpiCard label="Employees"        value={String(empCount)} />
       </div>
 
-      <section className="border border-border bg-card p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Sales vs Target by Line</h2>
+      <AnalyticsSection title="Sales vs Target by Line">
         {chartData.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -127,11 +130,10 @@ async function ClosingDashboardContent({
             ]}
           />
         )}
-      </section>
+      </AnalyticsSection>
 
       {compareMode && lineTotals.length >= 2 ? (
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Line Comparison</h2>
+        <AnalyticsSection title="Line Comparison" count={lineTotals.length}>
           <AnalyticsDataTable
             searchKeys={["line"]}
             columns={[
@@ -142,11 +144,10 @@ async function ClosingDashboardContent({
             ]}
             rows={lineTotals}
           />
-        </section>
+        </AnalyticsSection>
       ) : null}
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Employee Performance</h2>
+      <AnalyticsSection title="Employee Performance" count={rows.length}>
         {rows.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -165,9 +166,10 @@ async function ClosingDashboardContent({
             ]}
             rows={rows}
             totals={{ salesValue: totalSales, targetValue: totalTarget }}
+            exportTitle="Monthly Closing — Employee Performance"
           />
         )}
-      </section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -181,12 +183,19 @@ export default async function MonthlyClosingAnalyticsPage({ searchParams }: { se
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Monthly Closing Analytics</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Employee-attributed sales vs target. Filter by period, line, employee, territory, or batch.
-        </p>
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Closing</p>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">Monthly Closing Analytics</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Employee-attributed sales vs target. Filter by period, line, employee, territory, or batch.
+          </p>
+        </div>
       </div>
+
+      <AnalyticsModuleNav tabs={CLOSING_TABS} />
+
       <Suspense fallback={<AppRouteLoadingState />}>
         <ClosingDashboardContent searchParams={resolvedParams} role={access.role} />
       </Suspense>

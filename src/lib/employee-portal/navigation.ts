@@ -49,6 +49,7 @@ export type EmployeePortalNavVisibility = {
   showDoubleVisitAnalyticsTab?: boolean;
   showActionsTab?: boolean;
   showAttendanceTab?: boolean;
+  showPrivateCalendarTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -257,7 +258,8 @@ export function resolveEmployeePortalNavVisibility(
     showMiniMonthlySalesTab: showFieldSalesTabs,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
-    showActionsTab: !isTrainingManager,
+    showActionsTab: !isTrainingManager && !isMedicalRep,
     showAttendanceTab: true,
+    showPrivateCalendarTab: !isMedicalRep,
   };
 }

@@ -171,6 +171,7 @@ function buildEmployeePortalSections({
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showAttendanceTab: _showAttendanceTab = false,
+  showPrivateCalendarTab = true,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
@@ -191,7 +192,7 @@ function buildEmployeePortalSections({
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
-        { href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint },
+        ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint }] : []),
       ],
     },
     {
