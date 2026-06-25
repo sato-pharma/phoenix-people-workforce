@@ -688,17 +688,6 @@ function SidebarNav({
   const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
   const [sectionDragging, setSectionDragging] = useState(false);
 
-  // Collapsed-section state is read from localStorage, which isn't available during
-  // SSR/hydration. Without this, the very first client render briefly shows the wrong
-  // open/closed state and then animates into the real one — every persisted section
-  // visibly "bounces" on load. Suppress the collapse transition until one frame after
-  // mount, by which point the real localStorage snapshot has already been applied.
-  const [transitionsReady, setTransitionsReady] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setTransitionsReady(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
   const query = isAdmin && !rail ? searchQuery.trim().toLowerCase() : "";
 
   const activeHref = getActiveHref(pathname, sections, activeTab);
@@ -775,7 +764,8 @@ function SidebarNav({
 
   // Drag is disabled during search (filtered view doesn't make sense to reorder)
   // and in rail mode. Non-admin surfaces never get drag.
-  const dragDisabled = !isAdmin || !!query || rail;
+  // Keep drag interactions off until the client hydrates localStorage-driven prefs.
+  const dragDisabled = !isClientReady || !isAdmin || !!query || rail;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -1010,7 +1000,7 @@ function SidebarNav({
                 section={section}
                 sectionDragging={sectionDragging}
                 sensors={sensors}
-                transitionsReady={transitionsReady}
+                transitionsReady={isClientReady}
               />
             ))}
           </SortableContext>
@@ -1181,16 +1171,17 @@ export function Sidebar({
 }) {
   const isAdmin = navigationMode === "admin";
   const [rail, toggleRail] = useSidebarRail(navigationMode);
+  const pathname = usePathname();
   const railActive = isAdmin && rail;
-
-  // Same hydration-flash issue as the collapsed sections below: the rail preference
-  // comes from localStorage, so the very first client render can briefly show the
-  // wrong width and then animate to the real one. Suppress that one transition.
   const [transitionsReady, setTransitionsReady] = useState(false);
   useEffect(() => {
     const id = requestAnimationFrame(() => setTransitionsReady(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // Same hydration-flash issue as the collapsed sections below: the rail preference
+  // comes from localStorage, so the very first client render can briefly show the
+  // wrong width and then animate to the real one. Suppress that one transition.
 
   return (
     <aside
@@ -1218,6 +1209,7 @@ export function Sidebar({
         <SidebarBrand mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
+          key={pathname}
           currentRole={currentRole}
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           effectiveModuleIds={effectiveModuleIds}

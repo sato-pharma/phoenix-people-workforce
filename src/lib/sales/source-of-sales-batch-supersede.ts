@@ -1,56 +1,45 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// Supersede-on-upload: a new upload for (distributorCode, period) is about to become the single
-// source of truth for that month. Delete any OTHER existing batch row(s) for the same
-// distributor_code + period (regardless of status — validated or blocked) so the new batch is the
-// only one left standing. Cascading FKs (source_of_sales_import_rows, source_of_sales_fact_rollup,
-// source_of_sales_customer_directory_rollup / presence rollup — all `on delete cascade`) clean up
-// every dependent row automatically; nothing else needs to be deleted by hand.
-//
-// Call this AFTER the new upload's own validity is already known (validated, or about to be marked
-// validated) and BEFORE the row that makes it official is written — never before, so an upload that
-// itself turns out blocked/invalid can never destroy a good existing batch.
-export async function supersedeExistingSalesBatches(input: {
+type SupersededBatch = {
+  id: unknown;
+  fileName: unknown;
+  distributorCode: unknown;
+  period: unknown;
+  status: unknown;
+};
+
+// Calls phx_finalize_sos_batch (supabase/migrations/20260625180000_sos_atomic_finalize.sql), the
+// single atomic transaction that supersedes any other batch for this distributor + period,
+// promotes this batch to validated, and refreshes every dependent rollup — then audit-logs
+// whatever the RPC superseded. The RPC itself, not this function, is what makes the supersede +
+// promote + refresh sequence all-or-nothing; this is just the thin caller + audit-log step.
+export async function finalizeSosBatchAndAuditSupersede(input: {
+  batchId: string;
   distributorCode: string;
   period: string;
-  excludeBatchId?: string;
   actorLoginId: string;
-}): Promise<{ deletedCount: number }> {
+}): Promise<{ supersededCount: number; rowCount: number }> {
   const supabase = getSupabaseAdmin();
 
-  let query = supabase
-    .from("source_of_sales_import_batches")
-    .select("id,file_name,distributor_code,period,status")
-    .eq("distributor_code", input.distributorCode)
-    .eq("period", input.period);
-  if (input.excludeBatchId) {
-    query = query.neq("id", input.excludeBatchId);
-  }
-  const existing = await query;
-  if (existing.error) throw existing.error;
+  const finalize = await supabase.rpc("phx_finalize_sos_batch", {
+    p_batch_id: input.batchId,
+    p_distributor_code: input.distributorCode,
+    p_period: input.period,
+  });
+  if (finalize.error) throw finalize.error;
 
-  const rows = (existing.data ?? []) as {
-    id: unknown;
-    file_name: unknown;
-    distributor_code: unknown;
-    period: unknown;
-    status: unknown;
-  }[];
-  if (rows.length === 0) return { deletedCount: 0 };
+  const data = (finalize.data ?? {}) as { supersededBatches?: SupersededBatch[]; rowCount?: number };
+  const superseded = data.supersededBatches ?? [];
 
-  const ids = rows.map((row) => String(row.id));
-  const { error } = await supabase.from("source_of_sales_import_batches").delete().in("id", ids);
-  if (error) throw error;
-
-  for (const row of rows) {
+  for (const row of superseded) {
     await writeAuditLog({
       actorLoginId: input.actorLoginId,
       entityId: String(row.id),
       entityType: "sales_import_batch",
       oldValues: {
-        distributorCode: row.distributor_code,
-        fileName: row.file_name,
+        distributorCode: row.distributorCode,
+        fileName: row.fileName,
         period: row.period,
         source: "source_of_sales",
         status: row.status,
@@ -59,5 +48,20 @@ export async function supersedeExistingSalesBatches(input: {
     });
   }
 
-  return { deletedCount: ids.length };
+  return { supersededCount: superseded.length, rowCount: Number(data.rowCount ?? 0) };
+}
+
+// Maintenance sweep for batches that died mid-pipeline (the request crashed between the row insert
+// and the finalize call, so they never reached 'validated'). Wired into the existing daily
+// notifications cron — never throws, so one bad run never breaks the rest of that cron's work.
+export async function cleanupStalePendingSosBatches(): Promise<number> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.rpc("phx_cleanup_stale_pending_sos_batches");
+    if (error) throw error;
+    return Number(data ?? 0);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "sos_stale_pending_cleanup_failed", error: error instanceof Error ? error.message : String(error) }));
+    return 0;
+  }
 }

@@ -112,7 +112,7 @@ import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
 import { runSalesRoiBatchDedupTests } from "./sales-roi-batch-dedup.test.ts";
-import { runSosBatchSupersedeTests } from "./sos-batch-supersede.test.ts";
+import { runSosAtomicFinalizeTests } from "./sos-atomic-finalize.test.ts";
 import { runSosHeaderAliasesTests } from "./sos-header-aliases.test.ts";
 import { runSosGuardrailsTests } from "./sos-guardrails.test.ts";
 import { runSosWarningCleanupTests } from "./sos-warning-cleanup.test.ts";
@@ -240,6 +240,9 @@ import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
+import { runAnalyticsValidationTests } from "./analytics-validation.test.ts";
+import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.ts";
+import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -368,7 +371,7 @@ await runTest("import coverage aggregation", runImportCoverageTests);
 await runTest("sos header detection", runSosHeaderDetectionTests);
 await runTest("sales strict header conformance + name-first product", runSalesStrictConformanceTests);
 await runTest("sales ROI batch dedup (one validated batch per period)", runSalesRoiBatchDedupTests);
-await runTest("sos batch supersede (replace-not-accumulate on re-upload)", runSosBatchSupersedeTests);
+await runTest("sos atomic finalize (lock + supersede + refresh + reconcile, all-or-nothing)", runSosAtomicFinalizeTests);
 await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
 await runTest("sos warning cleanup", runSosWarningCleanupTests);
@@ -493,3 +496,6 @@ await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("world room realtime session", runWorldRoomRealtimeTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
+await runTest("analytics validation helpers", runAnalyticsValidationTests);
+await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests);
+await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);

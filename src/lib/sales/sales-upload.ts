@@ -236,32 +236,6 @@ export type CommitResult =
   | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview }
   | { status: "blocked_validation"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; validation: ValidationReport };
 
-// Delete PRIOR normalizer batches for the same (distributor, period) so re-uploading a month replaces
-// rather than double-counts. Called BEFORE inserting the replacement (delete-then-insert) so two
-// validated batches for one month never coexist — the DB partial unique index
-// (source_of_sales_one_validated_batch_per_period) is the hard backstop if anything still races past
-// this. Pass keepBatchId to spare a specific batch; omit it to clear all prior batches for the month.
-// Scoped to template_key='normalizer' + a YYYY-MM period, so it can never touch unrelated data.
-// This deliberately removes blocked/incomplete leftovers too, allowing a clean retry after a timeout.
-async function deleteOtherBatchesForPeriod(distributorCode: string, period: string, keepBatchId?: string): Promise<void> {
-  if (!VALID_PERIOD.test(period)) return;
-  const supabase = getSupabaseAdmin();
-  const dist = normalizeCodeKey(distributorCode);
-  const existing = await supabase
-    .from("source_of_sales_import_batches")
-    .select("id")
-    .eq("distributor_code", dist)
-    .eq("period", period)
-    .eq("template_key", "normalizer");
-  if (existing.error) throw existing.error;
-  const ids = (existing.data ?? []).map((r) => String((r as { id: unknown }).id)).filter((id) => id !== keepBatchId);
-  if (ids.length === 0) return;
-  const rowsDel = await supabase.from("source_of_sales_import_rows").delete().in("batch_id", ids);
-  if (rowsDel.error) throw rowsDel.error;
-  const batchDel = await supabase.from("source_of_sales_import_batches").delete().in("id", ids);
-  if (batchDel.error) throw batchDel.error;
-}
-
 // Persist a raw upload. Blocks (persists nothing) when the file can't be used: unmapped rows
 // (exceptions), or any validator error — a duplicate sheet, an unreadable/unrecognized file, or broken
 // geography. Pure data-quality findings are advisory warnings that never block. Never a partial import.
@@ -319,16 +293,13 @@ export async function commitMonthlyUpload(input: {
     return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
   }
 
-  // Replace-not-double-count: remove any prior normalizer batch for this (distributor, month) BEFORE
-  // inserting the replacement. This keeps two validated batches for one month from ever coexisting
-  // and also clears blocked leftovers from interrupted uploads so the retry starts cleanly
-  // (the old insert-then-delete ordering could leave both during a race → ROI/dashboard double-count).
-  // The DB partial unique index (source_of_sales_one_validated_batch_per_period) is the hard backstop:
-  // if a duplicate still races past this delete (or a same-month batch from another template exists),
-  // the insert fails fast with 23505, which we surface as a clear "already imported" 409 rather than
-  // silently double-counting. The upload already passed strict validation above, so an insert failure
-  // here is a rare DB error; the month self-heals on the next re-upload.
-  await deleteOtherBatchesForPeriod(input.distributorCode, period);
+  // Replace-not-double-count: persistNormalizedBatch supersedes any prior batch for this
+  // (distributor, month) atomically as part of finalizing THIS batch (phx_finalize_sos_batch), so
+  // the old good batch is only ever removed once the new one is confirmed validated and rolled up —
+  // never before. The DB partial unique index (source_of_sales_one_validated_batch_per_period)
+  // remains the hard backstop: if a duplicate still races past this (or a same-month batch from
+  // another template exists), the insert fails fast with 23505, surfaced below as a clear
+  // "already imported" 409 rather than silently double-counting.
   let persisted: Awaited<ReturnType<typeof persistNormalizedBatch>>;
   try {
     persisted = await persistNormalizedBatch({
