@@ -7,7 +7,7 @@ import {
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { bridgeEmployeeLineToOfficial, canonicalizeRegionName, isRestrictedProductCode } from "@/lib/sales/access-scope";
-import { getManagerRegionScope, getWeeklyProductScopeCodes, resolveRegionCodesForNames } from "@/lib/sales/weekly/access";
+import { getManagerRegionScope, resolveRegionCodesForNames } from "@/lib/sales/weekly/access";
 import {
   loadMonthlyClosing,
   type MonthlyClosingCell,
@@ -24,14 +24,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // managers and product managers. The viewer NEVER picks a line — it is resolved
 // from their HR_ID. Two scoping tiers:
 //
-//  • territory  — District / Regional / National Sales Manager: their whole line.
-//  • product    — Product / Group Product Manager: their line, filtered down to
-//                 ONLY the products they own (weekly product-scope sheet).
+//  • region     — District / Regional Manager / Medical Rep: bounded to their own region(s).
+//  • line-only  — National Sales Manager, Product Manager, Group Product Manager: their
+//                 whole line, every product, no further narrowing.
 //
 // Visibility is gated by `monthly_closing_publications`: a month appears here
 // only after the admin publishes that (line, period). Restricted products
-// (Lacto Basic) are always stripped — a product manager only ever sees them if
-// they were explicitly assigned, which the seed never does.
+// (Lacto Basic) are always stripped for everyone in the portal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Owner-set expected distributor count for the Monthly Sales Closing completion bar (fixed). */
@@ -70,13 +69,8 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Medical Rep",
 ]);
 
-const PRODUCT_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
-  "Product Manager",
-  "Group Product Manager",
-]);
-
-// Region-scoped roles: bounded to their own region(s). National Sales Manager is intentionally NOT
-// here — an NSM sees the whole line. PM/GPM are product-scoped above.
+// Region-scoped roles: bounded to their own region(s). National Sales Manager, Product Manager,
+// and Group Product Manager are intentionally NOT here — they always see the whole line.
 const REGION_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
   "Regional Manager",
@@ -90,10 +84,8 @@ export function canAccessPortalClosing(access: AccessContext): boolean {
 export type PortalClosingScope = {
   /** Display line resolved from the viewer's employee record (locked, never chosen). */
   line: string | null;
-  /** Allowed product codes for product-scoped roles; null means "the whole line". */
-  productCodes: Set<string> | null;
   /** Allowed SoS region codes for region-scoped roles (DM / RSM / MR); null means "all regions in
-   *  the line" (NSM, or a manager whose region could not be resolved). */
+   *  the line" (NSM, PM, GPM, or a manager whose region could not be resolved). */
   allowedRegionCodes: Set<string> | null;
 };
 
@@ -110,35 +102,30 @@ async function resolveEmployeeGeo(access: AccessContext): Promise<{ line: string
   return { line: match?.lineName?.trim() || null, region: match?.regionName?.trim() || null };
 }
 
-/** Line + region/product scope for the caller. */
+/** Line + region scope for the caller. */
 export async function resolvePortalClosingScope(
   access: AccessContext,
 ): Promise<PortalClosingScope> {
   const { line, region } = await resolveEmployeeGeo(access);
-  const hrKey = canonicalHrIdKey(
-    resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
-  );
-
-  // Product / Group Product Managers: only their assigned products (region not applicable).
-  if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
-    const productCodes = await getWeeklyProductScopeCodes(hrKey);
-    return { line, productCodes, allowedRegionCodes: null };
-  }
 
   // DM / RSM / MR: bounded to their region(s). The explicit territory map is authoritative
   // (e.g. RSM PD-0001 -> AB+D1+D2, each DM -> his region); else fall back to auto region-name
   // resolution from the viewer's own region.
   if (REGION_SCOPED_CLOSING_ROLES.has(access.role)) {
+    const hrKey = canonicalHrIdKey(
+      resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
+    );
     const explicit = await getManagerRegionScope(hrKey);
     const resolved =
       explicit ?? (await resolveRegionCodesForNames(region ? new Set([canonicalizeRegionName(region)]) : null));
     // Region-scoped roles MUST be bounded: if neither the explicit map nor the region name resolved
     // (null), fail closed (empty set => no regions) rather than fall open to the whole line.
-    return { line, productCodes: null, allowedRegionCodes: resolved ?? new Set() };
+    return { line, allowedRegionCodes: resolved ?? new Set() };
   }
 
-  // National Sales Manager (and any other allowed role) — the whole line.
-  return { line, productCodes: null, allowedRegionCodes: null };
+  // National Sales Manager, Product Manager, Group Product Manager (and any other allowed role)
+  // — the whole line, every product.
+  return { line, allowedRegionCodes: null };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -170,53 +157,9 @@ function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
 }
 
 /**
- * Filter a closing matrix down to a set of product codes, recomputing every
- * row total / subtotal / grand total from the surviving columns. Restricted
- * products are always dropped. Pure — no IO.
- */
-export function scopeMatrixToProducts(
-  matrix: MonthlyClosingMatrix,
-  codes: Set<string>,
-): MonthlyClosingMatrix {
-  const allowed = new Set([...codes].map((code) => code.trim().toUpperCase()));
-  const keep: number[] = [];
-  matrix.columns.forEach((column, index) => {
-    const code = column.productCode.trim().toUpperCase();
-    if (allowed.has(code) && !isRestrictedProductCode(column.productCode)) {
-      keep.push(index);
-    }
-  });
-
-  const pick = (cells: MonthlyClosingCell[]) =>
-    keep.map((index) => cells[index]).filter((cell): cell is MonthlyClosingCell => Boolean(cell));
-
-  const scopeSubtotal = <T extends { cells: MonthlyClosingCell[]; rowTotal: MonthlyClosingCell }>(
-    row: T,
-  ): T => {
-    const cells = pick(row.cells);
-    return { ...row, cells, rowTotal: sumCells(cells) };
-  };
-
-  return {
-    ...matrix,
-    columns: keep.map((index) => matrix.columns[index]),
-    regions: matrix.regions.map((region) => ({
-      ...region,
-      areas: region.areas.map(scopeSubtotal),
-      subtotal: scopeSubtotal(region.subtotal),
-    })),
-    grandTotal: scopeSubtotal(matrix.grandTotal),
-    directNational: matrix.directNational ? scopeSubtotal(matrix.directNational) : matrix.directNational,
-    companyTotal: matrix.companyTotal ? scopeSubtotal(matrix.companyTotal) : matrix.companyTotal,
-  };
-}
-
-/**
  * Drop the confidential product columns (LA003 / LA004) from a closing matrix, recomputing every
  * row total / subtotal / grand total from the surviving columns. Always applied in the portal:
- * no portal role (DM / RM / NSM / PM / GPM) may ever see these products. Territory roles get
- * `productCodes = null` and so skip `scopeMatrixToProducts`, which is why this guard is needed.
- * Pure — no IO.
+ * no portal role (DM / RM / NSM / PM / GPM) may ever see these products. Pure — no IO.
  */
 export function stripRestrictedColumns(matrix: MonthlyClosingMatrix): MonthlyClosingMatrix {
   const keep: number[] = [];
@@ -330,14 +273,9 @@ export async function loadPortalMonthlyClosing(input: {
     availableLines: [scope.line],
     availablePeriods: publishedPeriods,
   };
-  // Always strip confidential products first; territory roles (productCodes === null) would
-  // otherwise see the raw matrix including LA003 / LA004. Then apply product scope (PM/GPM) OR
-  // region scope (DM/RSM/MR) — the two are disjoint by role and order-independent (columns vs rows).
+  // Always strip confidential products first, then apply region scope (DM/RSM/MR) if any.
   const safe = stripRestrictedColumns(locked);
-  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = scope.allowedRegionCodes
-    ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
-    : productScoped;
+  const matrix = scope.allowedRegionCodes ? scopeMatrixToRegions(safe, scope.allowedRegionCodes) : safe;
 
   return {
     matrix,
@@ -352,8 +290,8 @@ export async function loadPortalMonthlyClosing(input: {
  * Live (NOT publish-gated) monthly closing for the portal Sales Intelligence section.
  * Mirrors loadPortalMonthlyClosing but offers every VALIDATED month for the viewer's line
  * straight from the working closing matrix — there is no publication gate, so PM/GPM always
- * see current numbers. Line is resolved from the viewer (never chosen), products are scoped to
- * the viewer's assignment, and confidential products are always stripped.
+ * see current numbers. Line is resolved from the viewer (never chosen), and confidential
+ * products are always stripped.
  */
 export async function loadPortalLiveMonthly(input: {
   access: AccessContext;
@@ -379,10 +317,7 @@ export async function loadPortalLiveMonthly(input: {
 
   const locked: MonthlyClosingMatrix = { ...raw, availableLines: [scope.line] };
   const safe = stripRestrictedColumns(locked);
-  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = scope.allowedRegionCodes
-    ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
-    : productScoped;
+  const matrix = scope.allowedRegionCodes ? scopeMatrixToRegions(safe, scope.allowedRegionCodes) : safe;
 
   return {
     matrix,
@@ -421,10 +356,7 @@ export async function loadPortalClosingTrend(input: {
     periods.map(async (period) => {
       const raw = await loadMonthlyClosing({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
-      const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-      const matrix = scope.allowedRegionCodes
-        ? scopeMatrixToRegions(productScoped, scope.allowedRegionCodes)
-        : productScoped;
+      const matrix = scope.allowedRegionCodes ? scopeMatrixToRegions(safe, scope.allowedRegionCodes) : safe;
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),

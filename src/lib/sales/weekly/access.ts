@@ -20,11 +20,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //  • full      — the whole company. Exception HR_IDs and CEO/Super Admin see EVERYTHING
 //                including the confidential Lacto Basic products (LA003/LA004); SFE Manager
 //                sees everything EXCEPT those.
-//  • product   — Product / Group Product / Marketing Managers see ONLY the product codes
-//                explicitly assigned to them in `weekly_sales_product_scope` (by HR_ID).
-//                Line is ignored entirely; an empty assignment set means they see nothing.
+//  • product   — any role with an explicit curated assignment in `weekly_sales_product_scope`
+//                (by HR_ID) sees ONLY those product codes, line ignored. Product / Group
+//                Product Manager are NEVER bounded this way (see territory below) — this tier
+//                is reserved for an opt-in curated list on some other role.
 //  • territory — sales-field roles (District / Regional / National Sales Manager, Medical
-//                Rep) reuse the monthly sales scope: bounded to their own line and/or region.
+//                Rep) AND Product / Group Product Manager reuse the monthly sales scope:
+//                bounded to their own line and/or region. PM/GPM always see their whole line
+//                with no region restriction (mirrors National Sales Manager).
 //
 // Confidential products are stripped for every tier except a full-access viewer who is
 // allowed to reveal them — mirroring the locked rule in `access-scope.ts`.
@@ -35,12 +38,6 @@ export const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
   ["admin-hr", "b-10", "aa"].map((id) => canonicalHrIdKey(id)).filter((id): id is string => Boolean(id)),
 );
 
-/** Roles scoped by their explicit product assignments (line ignored). */
-const PRODUCT_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
-  "Product Manager",
-  "Group Product Manager",
-]);
-
 /** Sales-field roles scoped to their own line/region via the shared monthly sales scope. */
 const TERRITORY_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
@@ -48,6 +45,9 @@ const TERRITORY_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "National Sales Manager",
   "Medical Rep",
 ]);
+
+/** Product / Group Product Manager: always their whole line, never the curated product sheet. */
+const LINE_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set(["Product Manager", "Group Product Manager"]);
 
 export type WeeklyAccessScope =
   | { tier: "full"; canViewRestricted: boolean }
@@ -141,13 +141,18 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   // 2. Company executives keep full access (CEO/Super Admin reveal restricted products).
   if (ctx.role === "Super Admin" || ctx.role === "CEO") return { tier: "full", canViewRestricted: true };
 
-  // 3. The product-scope sheet is the source of truth: anyone with an explicit assignment is bounded
-  // to exactly those products — regardless of role (e.g. an SFE Manager who owns a curated list).
+  // 3. Product / Group Product Manager always see their whole product line — the curated
+  // product-scope sheet (step 4) is never consulted for these two roles.
+  if (LINE_SCOPED_ROLES.has(ctx.role)) {
+    const scope = await resolveSalesAccessScope(ctx);
+    if (scope.canViewAllSales) return { tier: "full", canViewRestricted: scope.canViewRestrictedProducts };
+    return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes: null };
+  }
+
+  // 4. The product-scope sheet is the source of truth for any OTHER role with an explicit
+  // assignment — bounded to exactly those products (e.g. an SFE Manager who owns a curated list).
   const assignedCodes = await getWeeklyProductScopeCodes(hrKey);
   if (assignedCodes.size > 0) return { tier: "product", productCodes: assignedCodes };
-
-  // 4. Product roles without an assignment yet see nothing (fail closed).
-  if (PRODUCT_SCOPED_ROLES.has(ctx.role)) return { tier: "product", productCodes: new Set() };
 
   // 5. Sales-field roles — reuse the monthly line/region scope. Region codes come from the explicit
   // territory map first (authoritative; e.g. RSM PD-0001 -> AB+D1+D2, each DM -> his region), else
@@ -166,7 +171,7 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
 
   // 6. Company-wide commercial oversight (SFE Manager + Marketing Manager) without a curated list
   // keeps full access minus the confidential Lacto Basic. An explicit product-scope assignment in
-  // step 3 still narrows either of them, which is the correct opt-in override.
+  // step 4 still narrows either of them, which is the correct opt-in override.
   if (ctx.role === "SFE Manager" || ctx.role === "Marketing Manager") {
     return { tier: "full", canViewRestricted: false };
   }
