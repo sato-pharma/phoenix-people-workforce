@@ -283,13 +283,12 @@ export function runNavigationActivePathTests() {
   );
   // Regression guard: items that exist both under the dedicated workspace-sales-intelligence
   // section and a generic org-wide section (same href) must render exactly once, not twice under
-  // two different sidebar section headers.
+  // two different sidebar section headers. (/sales and /sales/monthly-dashboard were retired when
+  // the custom dashboards were replaced by Metabase-backed /admin/analytics/* pages.)
   assertNoDuplicateHrefs(
     marketingManagerAdmin,
     [
       "/admin/sales-marketing-intelligence",
-      "/sales",
-      "/sales/monthly-dashboard",
       "/sales/weekly/dashboard",
       "/coaching/analytics",
       "/admin/double-visit-analytics",
@@ -320,7 +319,7 @@ export function runNavigationActivePathTests() {
     [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
     "Super Admin must see full governance modules",
   );
-  assertIncludesAll(superAdminAuthorityNav, ["/sales"], "Sales Dashboard must stay visible in sales navigation");
+  assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");
   assertExcludesAll(
     superAdminAuthorityNav,
     ["/sales/import"],

@@ -1025,7 +1025,7 @@ function IncentiveSimulatorCard({
   });
   const calculatedBasicSalary = salaryReference.basicSalary;
   const simNetSalary = salaryReference.netSalary;
-  const [simAchievement, setSimAchievement] = useState(data.sales.overviewAchievementPercent || 100);
+  const [simAchievement, setSimAchievement] = useState(data.sales.overviewAchievementPercent);
 
   const calc = calculateIncentive2026({
     basicSalary: calculatedBasicSalary,

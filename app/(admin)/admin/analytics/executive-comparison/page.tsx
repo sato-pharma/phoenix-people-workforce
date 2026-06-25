@@ -1,0 +1,223 @@
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+
+import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
+import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
+import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
+import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
+import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import {
+  loadAnalyticsDimensions,
+  loadSosByLine,
+  loadSosByProduct,
+  loadSosByArea,
+  type AnalyticsDimensions,
+  type SosByLineRow,
+  type SosByProductRow,
+  type SosByAreaRow,
+} from "@/lib/analytics/service";
+import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
+import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { safeDividePct } from "@/lib/analytics/validation";
+import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
+import { demoAnalyticsDimensions, demoSosByArea, demoSosByLine, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
+import { StackedChart } from "@/components/charts/stacked-chart";
+
+export const dynamic = "force-dynamic";
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+const DONUT_COLORS = ["#F97316", "#0F172A", "#0EA5E9", "#10B981", "#8B5CF6", "#EF4444"];
+
+function fmt(n: number): string {
+  return n.toLocaleString("en-EG", { maximumFractionDigits: 0 });
+}
+
+async function ExecComparisonContent({
+  searchParams,
+  role,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+  role: PhoenixRole;
+}) {
+  const demo = isAnalyticsDemoMode(searchParams);
+  const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
+
+  const sosFilters = {
+    periodFrom:   typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
+    periodTo:     typeof filters.periodTo    === "string" ? filters.periodTo    : null,
+    lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
+    regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
+    distributors: Array.isArray(filters.distributors)  ? filters.distributors  : [],
+  };
+
+  let byLine: SosByLineRow[];
+  let byProduct: SosByProductRow[];
+  let byArea: SosByAreaRow[];
+  let dimensions: AnalyticsDimensions;
+
+  if (demo) {
+    byLine = demoSosByLine();
+    byProduct = demoSosByProduct();
+    byArea = demoSosByArea();
+    dimensions = demoAnalyticsDimensions();
+  } else {
+    [byLine, byProduct, byArea, dimensions] = await Promise.all([
+      loadSosByLine(sosFilters).catch(() => []),
+      loadSosByProduct(sosFilters).catch(() => []),
+      loadSosByArea(sosFilters).catch(() => []),
+      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+    ]);
+  }
+
+  const grandTotal = byLine.reduce((s, r) => s + r.value, 0);
+
+  // Aggregate line totals across periods
+  const lineMap = new Map<string, { value: number; units: number }>();
+  for (const r of byLine) {
+    const cur = lineMap.get(r.line) ?? { value: 0, units: 0 };
+    lineMap.set(r.line, { value: cur.value + r.value, units: cur.units + r.units });
+  }
+  const lineRanked = [...lineMap.entries()]
+    .map(([line, totals]) => ({ line, ...totals, sharePct: safeDividePct(totals.value, grandTotal) }))
+    .sort((a, b) => b.value - a.value);
+
+  // Aggregate product totals
+  const prodMap = new Map<string, { productName: string; family: string; line: string; value: number; units: number }>();
+  for (const r of byProduct) {
+    const cur = prodMap.get(r.productCode) ?? { productName: r.productName, family: r.family, line: r.line, value: 0, units: 0 };
+    prodMap.set(r.productCode, { ...cur, value: cur.value + r.value, units: cur.units + r.units });
+  }
+  const productRanked = [...prodMap.values()]
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 30)
+    .map((p) => ({ ...p, sharePct: safeDividePct(p.value, grandTotal) }));
+
+  // Aggregate region totals
+  const regionMap = new Map<string, { regionName: string; value: number; units: number }>();
+  for (const r of byArea) {
+    const cur = regionMap.get(r.regionCode) ?? { regionName: r.regionName, value: 0, units: 0 };
+    regionMap.set(r.regionCode, { ...cur, value: cur.value + r.value, units: cur.units + r.units });
+  }
+  const regionRanked = [...regionMap.values()]
+    .sort((a, b) => b.value - a.value)
+    .map((r) => ({ ...r, sharePct: safeDividePct(r.value, grandTotal) }));
+
+  const lineDonutData = lineRanked.slice(0, 6).map((row, i) => ({
+    name: row.line,
+    value: row.value,
+    color: DONUT_COLORS[i % DONUT_COLORS.length],
+  }));
+  const regionDonutData = regionRanked.slice(0, 6).map((row, i) => ({
+    name: row.regionName,
+    value: row.value,
+    color: DONUT_COLORS[i % DONUT_COLORS.length],
+  }));
+
+  return (
+    <div className="space-y-6">
+      {demo ? <AnalyticsDemoBanner /> : null}
+
+      <AnalyticsFilterBar
+        descriptors={EXECUTIVE_FILTERS}
+        values={filters}
+        dimensions={dimensions}
+        basePath="/admin/analytics/executive-comparison"
+      />
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <AnalyticsKpiCard label="Grand Total Value" value={fmt(grandTotal)} prefix="EGP" />
+        <AnalyticsKpiCard label="Lines"    value={String(lineRanked.length)} />
+        <AnalyticsKpiCard label="Products" value={String(productRanked.length)} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section className="border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Line Share</h2>
+          {lineDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={lineDonutData} tooltipPrefix="EGP " />}
+        </section>
+        <section className="border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Region Share</h2>
+          {regionDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={regionDonutData} tooltipPrefix="EGP " />}
+        </section>
+      </div>
+
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Line Contribution Ranking</h2>
+        {lineRanked.length === 0 ? <AnalyticsEmptyState /> : (
+          <AnalyticsDataTable
+            searchKeys={["line"]}
+            columns={[
+              { key: "line",     label: "Line",    sortable: true },
+              { key: "units",    label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",    label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct", label: "Share %", align: "right", sortable: true, formatKind: "percent" },
+            ]}
+            rows={lineRanked}
+            totals={{ units: byLine.reduce((s, r) => s + r.units, 0), value: grandTotal }}
+          />
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Product Contribution (Top 30)</h2>
+        {productRanked.length === 0 ? <AnalyticsEmptyState /> : (
+          <AnalyticsDataTable
+            searchKeys={["productName", "family", "line"]}
+            columns={[
+              { key: "line",        label: "Line",    sortable: true },
+              { key: "family",      label: "Family",  sortable: true },
+              { key: "productName", label: "Product", sortable: true },
+              { key: "units",       label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",       label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct",    label: "Share %", align: "right", sortable: true, formatKind: "percent" },
+            ]}
+            rows={productRanked}
+          />
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Region Contribution Ranking</h2>
+        {regionRanked.length === 0 ? <AnalyticsEmptyState /> : (
+          <AnalyticsDataTable
+            searchKeys={["regionName"]}
+            columns={[
+              { key: "regionName", label: "Region",  sortable: true },
+              { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct",   label: "Share %", align: "right", sortable: true, formatKind: "percent" },
+            ]}
+            rows={regionRanked}
+            totals={{ value: grandTotal }}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default async function ExecutiveComparisonPage({ searchParams }: { searchParams: SearchParams }) {
+  const access = await resolveAccessContextFromPage();
+  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
+  await assertPermission(access, "sales", "read");
+
+  const resolvedParams = await searchParams;
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-foreground">Executive Comparison</h1>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
+        </p>
+      </div>
+      <Suspense fallback={<AppRouteLoadingState />}>
+        <ExecComparisonContent searchParams={resolvedParams} role={access.role} />
+      </Suspense>
+    </div>
+  );
+}

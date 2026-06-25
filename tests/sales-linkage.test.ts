@@ -37,9 +37,10 @@ function consumersShareTheEngine() {
 
 function normalizerCommitsAreFinalizedAtomically() {
   const service = read("../src/lib/sales/normalizer/service.ts");
-  assert.match(service, /status: "blocked"/, "normalizer imports must start blocked until child rows are persisted");
+  assert.match(service, /status: "pending"/, "normalizer imports must start pending (invisible to every rollup) until child rows are persisted");
   assert.match(service, /status: "validated"/, "normalizer imports must finalize to validated after all rows are persisted");
-  assert.match(service, /blocking_reasons: \[IMPORT_FINALIZING_REASON\]/, "blocked in-flight imports must carry a retry-safe reason");
+  assert.match(service, /blocking_reasons: \[IMPORT_FINALIZING_REASON\]/, "pending in-flight imports must carry a retry-safe reason");
+  assert.match(service, /finalizeSosBatchAndAuditSupersede/, "finalize must run through the atomic phx_finalize_sos_batch RPC, not a separate supersede + update + refresh sequence");
   const upload = read("../src/lib/sales/sales-upload.ts");
   assert.match(upload, /\.eq\("status", "validated"\)/, "duplicate/prior-period checks must only use finalized batches");
 }

@@ -236,7 +236,7 @@ function textContainsAny(value: unknown, tokens: string[]) {
   return Boolean(text && tokens.some((token) => text.includes(token)));
 }
 
-function isSalesVacancyAreaCode(value: unknown) {
+export function isSalesVacancyAreaCode(value: unknown) {
   const text = normalize(value).replace(/[_\s]+/g, "-");
   return /^v-[a-z0-9][a-z0-9-]*$/.test(text) || /^vac-[a-z0-9][a-z0-9-]*$/.test(text);
 }
@@ -459,6 +459,7 @@ function hasExplicitVacancySignal(record: SalesOwnershipRecord, context: SalesOw
   ) return true;
 
   const vacancyText = [
+    getText(record, ["employeeHrId", "employee_hr_id"]),
     getText(record, ["employeeLookupKey", "employee_lookup_key"]),
     getText(record, ["employeeName", "employee_name"]),
     getText(record, ["territoryStatus", "territory_status"]),
