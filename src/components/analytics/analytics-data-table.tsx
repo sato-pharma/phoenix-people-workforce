@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Columns3 } from "lucide-react";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 
 // formatKind (not a function) so column configs stay serializable across the
 // server/client boundary — these tables are rendered from Server Component
@@ -38,6 +40,8 @@ type Props<T extends Record<string, unknown>> = {
   searchKeys?: (keyof T)[];
   caption?: string;
   totals?: Partial<Record<keyof T, number>>;
+  exportTitle?: string;
+  exportSubtitle?: string;
 };
 
 type SortDir = "asc" | "desc" | null;
@@ -49,6 +53,8 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
   searchKeys = [],
   caption,
   totals,
+  exportTitle,
+  exportSubtitle,
 }: Props<T>) {
   const [sortKey, setSortKey] = useState<keyof T | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
@@ -92,6 +98,18 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
     });
   }, [filtered, sortKey, sortDir]);
 
+  const exportColumns = useMemo<ExportColumn[]>(
+    () => visibleColumns.map((col) => ({ key: String(col.key), label: col.label, numeric: col.align === "right" })),
+    [visibleColumns],
+  );
+
+  const exportRows = useMemo<ExportRow[]>(
+    () => sorted.map((row) =>
+      Object.fromEntries(visibleColumns.map((col) => [String(col.key), row[col.key] as string | number | null | undefined]))
+    ),
+    [sorted, visibleColumns],
+  );
+
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageRows = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
@@ -123,6 +141,17 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
                 onChange={(e) => { setQuery(e.target.value); setPage(0); }}
                 placeholder="Search…"
                 className="h-8 border border-border bg-background px-2 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            )}
+            {exportTitle && (
+              <ExportXlsxButton
+                columns={exportColumns}
+                rows={exportRows}
+                title={exportTitle}
+                subtitle={exportSubtitle}
+                sheetName={exportTitle.slice(0, 31)}
+                label="Export"
+                className="h-8"
               />
             )}
             {columns.length > 1 && (

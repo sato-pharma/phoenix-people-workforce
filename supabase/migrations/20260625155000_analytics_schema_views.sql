@@ -177,7 +177,7 @@ group by
   f.period, f.distributor_code, d.distributor_name,
   f.official_line, f.region_code, ar.region_name,
   f.area_code, ar.area_name, f.brick_id,
-  f.product_code, p.product_name, p.family, p.family_code,
+  f.product_code, f.product_name, p.product_name, p.family, p.family_code,
   f.is_direct;
 
 grant select on analytics.sos_fact to analytics_readonly;
@@ -221,7 +221,7 @@ group by
   f.period, f.distributor_code, d.distributor_name,
   f.official_line, f.region_code, ar.region_name,
   f.area_code, ar.area_name, f.brick_id,
-  f.product_code, p.product_name, p.family, p.family_code,
+  f.product_code, f.product_name, p.product_name, p.family, p.family_code,
   f.is_direct;
 
 grant select on analytics.sos_fact_all to analytics_readonly;

@@ -6,6 +6,7 @@ import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table"
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -89,8 +90,7 @@ async function ReconciliationContent({
         <AnalyticsKpiCard label="Target Total"  value={fmt(totalTarget)}  prefix="EGP" />
       </div>
 
-      <section className="border border-border bg-card p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">SoS vs Closing vs Weekly by Period</h2>
+      <AnalyticsSection title="SoS vs Closing vs Weekly by Period">
         {chartData.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -104,7 +104,7 @@ async function ReconciliationContent({
             ]}
           />
         )}
-      </section>
+      </AnalyticsSection>
 
       <div className="border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1">
         <p className="font-semibold">Cross-source comparison notes</p>
@@ -117,8 +117,7 @@ async function ReconciliationContent({
         </ul>
       </div>
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Period × Line Reconciliation</h2>
+      <AnalyticsSection title="Period × Line Reconciliation" count={rows.length}>
         {rows.length === 0 ? (
           <AnalyticsEmptyState message="No data available. Real sales data must be uploaded first." />
         ) : (
@@ -135,9 +134,11 @@ async function ReconciliationContent({
               { key: "closingVsSosGapPct",    label: "Close vs SoS %",  align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={rows}
+            exportTitle="Cross-Source Reconciliation"
+            exportSubtitle="SoS vs Closing vs Weekly by period and line"
           />
         )}
-      </section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -151,13 +152,18 @@ export default async function ReconciliationPage({ searchParams }: { searchParam
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Cross-Source Reconciliation</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Align Source of Sales, Monthly Closing, and Weekly Sales on the same period × line grain.
-          Identify gaps and validate pipeline consistency.
-        </p>
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Recon</p>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">Cross-Source Reconciliation</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Align Source of Sales, Monthly Closing, and Weekly Sales on the same period × line grain.
+            Identify gaps and validate pipeline consistency.
+          </p>
+        </div>
       </div>
+
       <Suspense fallback={<AppRouteLoadingState />}>
         <ReconciliationContent searchParams={resolvedParams} role={access.role} />
       </Suspense>
