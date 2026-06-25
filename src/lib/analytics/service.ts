@@ -127,16 +127,16 @@ export type CrossSourceRow = {
 
 export async function loadAnalyticsDimensions(role: PhoenixRole): Promise<AnalyticsDimensions> {
   const db = getSupabaseAdmin();
+  const analytics = db.schema("analytics");
   const includeRestricted = canViewRestrictedProducts(role);
+  const productDimensionView = includeRestricted ? "dim_products_all" : "dim_products";
 
   const [periods, weeks, distributors, areas, products] = await Promise.all([
-    db.from("analytics" as never).select("period,year,month,period_label").order("period", { ascending: false }).limit(36),
-    db.from("analytics" as never).select("week_start,year,month,iso_week,week_label").order("week_start", { ascending: false }).limit(52),
-    db.from("analytics" as never).select("distributor_code,distributor_name").order("distributor_name"),
-    db.from("analytics" as never).select("area_code,area_name,region_code,region_name").order("region_name"),
-    includeRestricted
-      ? db.from("analytics" as never).select("product_code,product_name,line,family").order("product_name")
-      : db.from("analytics" as never).select("product_code,product_name,line,family").order("product_name"),
+    analytics.from("dim_periods" as never).select("period,year,month,period_label").order("period", { ascending: false }).limit(36),
+    analytics.from("dim_weeks" as never).select("week_start,year,month,iso_week,week_label").order("week_start", { ascending: false }).limit(52),
+    analytics.from("dim_distributors" as never).select("distributor_code,distributor_name").order("distributor_name"),
+    analytics.from("dim_areas" as never).select("area_code,area_name,region_code,region_name").order("region_name"),
+    analytics.from(productDimensionView as never).select("product_code,product_name,line,family").order("product_name"),
   ] as const);
 
   // Extract distinct lines and families from products
@@ -215,8 +215,13 @@ export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLine
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
     p_channel:     filters.channel     ?? null,
+    p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
+    p_areas:       filters.areas?.length       ? filters.areas       : null,
+    p_products:    filters.products?.length    ? filters.products    : null,
+    p_families:    filters.families?.length    ? filters.families    : null,
+    p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by line: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
@@ -245,6 +250,10 @@ export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiR
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
+    p_areas:       filters.areas?.length       ? filters.areas       : null,
+    p_products:    filters.products?.length    ? filters.products    : null,
+    p_families:    filters.families?.length    ? filters.families    : null,
+    p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by period: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosKpiRow);
@@ -261,6 +270,9 @@ export async function loadSosByArea(filters: SosFilters = {}): Promise<SosByArea
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
     p_areas:       filters.areas?.length       ? filters.areas       : null,
+    p_products:    filters.products?.length    ? filters.products    : null,
+    p_families:    filters.families?.length    ? filters.families    : null,
+    p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by area: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaRow);
@@ -275,8 +287,11 @@ export async function loadSosByProduct(filters: SosFilters = {}): Promise<SosByP
     p_channel:     filters.channel     ?? null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
+    p_regions:     filters.regions?.length     ? filters.regions     : null,
+    p_areas:       filters.areas?.length       ? filters.areas       : null,
     p_products:    filters.products?.length    ? filters.products    : null,
     p_families:    filters.families?.length    ? filters.families    : null,
+    p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by product: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosProductRow);
@@ -318,6 +333,8 @@ export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promi
     p_period_from:  filters.periodFrom  ?? null,
     p_period_to:    filters.periodTo    ?? null,
     p_lines:        filters.lines?.length    ? filters.lines    : null,
+    p_products:     filters.products?.length ? filters.products : null,
+    p_families:     filters.families?.length ? filters.families : null,
     p_employee_hr_id: filters.employeeHrId ?? null,
     p_territory:    filters.territory   ?? null,
     p_batch_status: filters.batchStatus?.length ? filters.batchStatus : null,

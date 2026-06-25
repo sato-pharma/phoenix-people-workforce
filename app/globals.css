@@ -4,6 +4,22 @@
 @import "shadcn/tailwind.css";
 @config "../tailwind.config.ts";
 
+/* Self-hosted elegant script face used for the employee identity banner name.
+   Self-hosted (served from 'self') so it stays within the app CSP, which does
+   not allow fonts.googleapis.com for stylesheets. */
+@font-face {
+  font-family: "Great Vibes";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/great-vibes.woff2") format("woff2");
+}
+
+/* ── Employee identity banner ──────────────────────────────────────────────
+   A premium hero that mirrors the brand banner artwork and scales every
+   element proportionally with its own width via container query units. These
+   live as plain CSS (not Tailwind utilities) because Tailwind v4 does not
+   infer `cqw`/aspect-ratio arbitrary values as lengths. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
