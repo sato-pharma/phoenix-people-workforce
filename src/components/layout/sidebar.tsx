@@ -164,7 +164,17 @@ function writePref(key: string, value: unknown) {
 }
 
 function useBooleanPref(key: string): boolean {
-  const snapshot = useSyncExternalStore(subscribePrefs, () => readPref(key), () => "");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHydrated(true);
+  }, []);
+
+  const snapshot = useSyncExternalStore(
+    subscribePrefs,
+    () => (hydrated ? readPref(key) : ""),
+    () => "",
+  );
   return snapshot === "true";
 }
 
@@ -490,6 +500,7 @@ function SortableSectionBlock({
   section,
   sensors,
   sectionDragging,
+  transitionsReady,
 }: {
   activeHref: string | null;
   collapsedSectionIds: Set<string>;
@@ -506,6 +517,7 @@ function SortableSectionBlock({
   section: NavigationSection;
   sensors: ReturnType<typeof useSensors>;
   sectionDragging: boolean;
+  transitionsReady: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: section.id,
@@ -572,7 +584,8 @@ function SortableSectionBlock({
           >
             <ChevronRight
               className={cn(
-                "h-3.5 w-3.5 shrink-0 transition-transform duration-300 ease-out",
+                "h-3.5 w-3.5 shrink-0 ease-out",
+                transitionsReady && "transition-transform duration-300",
                 isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
                 !collapsed && "rotate-90",
               )}
@@ -593,7 +606,8 @@ function SortableSectionBlock({
       <div
         aria-hidden={collapsed}
         className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "grid ease-[cubic-bezier(0.22,1,0.36,1)]",
+          transitionsReady && "transition-[grid-template-rows,opacity] duration-300",
           collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
         )}
         id={sectionContentId}
@@ -649,6 +663,12 @@ function SidebarNav({
   scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
+  const [isClientReady, setIsClientReady] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsClientReady(true);
+  }, []);
+
   const sections = useMemo(
     () =>
       getSections(
@@ -678,7 +698,11 @@ function SidebarNav({
   const activeSectionId = sections.find((section) => section.items.some((item) => item.href === activeHref))?.id ?? null;
 
   const collapsedKey = collapsedStorageKey(mode);
-  const collapsedSnapshot = useSyncExternalStore(subscribeCollapsed, () => readCollapsedSnapshot(collapsedKey), () => "");
+  const collapsedSnapshot = useSyncExternalStore(
+    subscribeCollapsed,
+    () => (isClientReady ? readCollapsedSnapshot(collapsedKey) : ""),
+    () => "",
+  );
   const collapsedSectionIds = useMemo(() => {
     const next = parseCollapsedIds(collapsedSnapshot, new Set(sectionIds));
     if (activeSectionId) next.delete(activeSectionId);
@@ -695,7 +719,11 @@ function SidebarNav({
 
   // ── Pinned favourites ──────────────────────────────────────────────────────
   const pinsKey = pinsStorageKey(mode);
-  const pinsSnapshot = useSyncExternalStore(subscribePins, () => readPinsSnapshot(pinsKey), () => "[]");
+  const pinsSnapshot = useSyncExternalStore(
+    subscribePins,
+    () => (isClientReady ? readPinsSnapshot(pinsKey) : "[]"),
+    () => "[]",
+  );
   const pinnedHrefs = useMemo(() => parsePins(pinsSnapshot), [pinsSnapshot]);
   const pinnedSet = useMemo(() => new Set(pinnedHrefs), [pinnedHrefs]);
   const itemByHref = useMemo(() => {
@@ -720,8 +748,16 @@ function SidebarNav({
   // ── Drag-and-drop order ────────────────────────────────────────────────────
   const secOrderKey = sectionOrderKey(mode);
   const itemOrdKey = itemOrderKey(mode);
-  const secOrderSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(secOrderKey), () => "null");
-  const itemOrdSnapshot = useSyncExternalStore(subscribeOrder, () => readOrderSnapshot(itemOrdKey), () => "null");
+  const secOrderSnapshot = useSyncExternalStore(
+    subscribeOrder,
+    () => (isClientReady ? readOrderSnapshot(secOrderKey) : "null"),
+    () => "null",
+  );
+  const itemOrdSnapshot = useSyncExternalStore(
+    subscribeOrder,
+    () => (isClientReady ? readOrderSnapshot(itemOrdKey) : "null"),
+    () => "null",
+  );
 
   const savedSectionOrder = useMemo(() => parseSectionOrder(secOrderSnapshot), [secOrderSnapshot]);
   const savedItemOrder = useMemo(() => parseItemOrder(itemOrdSnapshot), [itemOrdSnapshot]);
@@ -730,7 +766,8 @@ function SidebarNav({
 
   // Drag is disabled during search (filtered view doesn't make sense to reorder)
   // and in rail mode. Non-admin surfaces never get drag.
-  const dragDisabled = !isAdmin || !!query || rail;
+  // Keep drag interactions off until the client hydrates localStorage-driven prefs.
+  const dragDisabled = !isClientReady || !isAdmin || !!query || rail;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -965,6 +1002,7 @@ function SidebarNav({
                 section={section}
                 sectionDragging={sectionDragging}
                 sensors={sensors}
+                transitionsReady={isClientReady}
               />
             ))}
           </SortableContext>
@@ -1135,12 +1173,23 @@ export function Sidebar({
 }) {
   const isAdmin = navigationMode === "admin";
   const [rail, toggleRail] = useSidebarRail(navigationMode);
+  const pathname = usePathname();
   const railActive = isAdmin && rail;
+  const [transitionsReady, setTransitionsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setTransitionsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // Same hydration-flash issue as the collapsed sections below: the rail preference
+  // comes from localStorage, so the very first client render can briefly show the
+  // wrong width and then animate to the real one. Suppress that one transition.
 
   return (
     <aside
       className={cn(
-        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col transition-[width] duration-200 lg:flex",
+        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col lg:flex",
+        transitionsReady && "transition-[width] duration-200",
         isAdmin
           ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
           : "border-r border-[#E2E8F0] bg-white",
@@ -1162,6 +1211,7 @@ export function Sidebar({
         <SidebarBrand mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
+          key={pathname}
           currentRole={currentRole}
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           effectiveModuleIds={effectiveModuleIds}

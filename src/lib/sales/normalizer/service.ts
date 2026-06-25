@@ -10,6 +10,7 @@ import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
@@ -292,7 +293,7 @@ export async function persistNormalizedBatch(input: {
       file_name: input.fileName,
       sheet_name: "Coded",
       period,
-      status: "blocked",
+      status: "pending",
       total_rows: rows.length,
       importable_rows: rows.length,
       failed_rows: 0,
@@ -324,29 +325,31 @@ export async function persistNormalizedBatch(input: {
     if (error) throw error;
   }
 
-  const finalized = await supabase
-    .from("source_of_sales_import_batches")
-    .update({ status: "validated", blocking_reasons: [] })
-    .eq("id", batchId);
-  if (finalized.error) throw finalized.error;
-
-  // Keep the pre-aggregated fact rollup in sync so the executive / sales-intelligence
-  // dashboards (which read the rollup instead of live-scanning the 410 MB raw table)
-  // reflect this batch immediately. Idempotent (delete-then-insert this batch), so a
-  // failed refresh fails the commit and self-heals on retry. This must run after
-  // finalization because the rollup RPC intentionally reads only validated batches.
-  const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
-  if (rollupRefresh.error) throw rollupRefresh.error;
-
-  // Keep the customer-directory rollup in sync alongside the fact rollup (same batch,
-  // same idempotent, validated-only semantics) so customer-mapping views reflect this import.
-  const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
-  if (customerRollupRefresh.error) throw customerRollupRefresh.error;
-
-  // Refresh the pre-computed Marketing ROI fact tables so the fast dashboard path reflects
-  // this batch immediately. Advisory-lock protected — a 'skipped' run self-heals on next import.
-  const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
-  if (roiRefresh.error) throw roiRefresh.error;
+  // Promote this batch to validated, supersede any other batch for this distributor + period, and
+  // refresh every dependent rollup — all inside ONE atomic transaction (phx_finalize_sos_batch), so
+  // a failure anywhere leaves the previous good batch untouched instead of deleting it up front.
+  if (period) {
+    await finalizeSosBatchAndAuditSupersede({
+      batchId,
+      distributorCode: input.distributorCode,
+      period,
+      actorLoginId: input.uploadedBy,
+    });
+  } else {
+    // Defensive fallback when no single period could be resolved — nothing sensible to
+    // dedupe/lock on without a period key, so promote directly and refresh individually.
+    const finalized = await supabase
+      .from("source_of_sales_import_batches")
+      .update({ status: "validated", blocking_reasons: [] })
+      .eq("id", batchId);
+    if (finalized.error) throw finalized.error;
+    const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
+    if (rollupRefresh.error) throw rollupRefresh.error;
+    const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
+    if (customerRollupRefresh.error) throw customerRollupRefresh.error;
+    const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
+    if (roiRefresh.error) throw roiRefresh.error;
+  }
 
   return { batchId, period, importedRows: rows.length };
 }

@@ -2,6 +2,7 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalSalesLine, isSalesOthersBucket } from "@/lib/sales/others";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
+import { isSalesVacancyAreaCode } from "@/lib/workforce-classification";
 import type { EmployeeDirectoryRow, SalesLinkStatus, SalesRecordInput } from "@/lib/sales/types";
 
 type LinkResult = {
@@ -483,7 +484,7 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
 
   importableRecords.forEach((record) => {
     const mrId = compact(record.employeeHrId);
-    if (mrId && !isSalesOthersBucket(record)) {
+    if (mrId && !isSalesOthersBucket(record) && !isSalesVacancyAreaCode(mrId)) {
       mrCandidates.set(mrId, { label: labelByHrId(mrId, record.employeeName || record.employeeLookupKey), line: record.line });
     }
 

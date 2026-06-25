@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 export type SalesDistributorOption = {
@@ -2565,29 +2566,11 @@ export async function persistDistributorSalesUpload(
 
   const supabase = getSupabaseAdmin();
 
-  // Guardrail: never silently double-count. If this upload validates and a VALIDATED batch for the
-  // same distributor + period already exists, block it with a clear message — the user deletes the
-  // existing sheet first (matching the normal delete-then-re-upload flow). Blocked batches don't
-  // count in dashboards, so they are intentionally not treated as duplicates here.
-  if (result.status === "validated" && result.period) {
-    const existing = await supabase
-      .from("source_of_sales_import_batches")
-      .select("file_name")
-      .eq("distributor_code", result.distributor.code)
-      .eq("period", result.period)
-      .eq("status", "validated")
-      .limit(1)
-      .maybeSingle();
-    if (!existing.error && existing.data) {
-      const existingName = String(existing.data.file_name ?? "an earlier sheet");
-      throw new SalesWorkflowError(
-        "duplicate_sales_batch",
-        `A validated ${result.distributor.name} sheet for ${result.period} is already uploaded (${existingName}). Delete it first, then re-upload — this prevents the month's totals from being double-counted.`,
-        409,
-      );
-    }
-  }
-
+  // A batch that will become validated is inserted as 'pending' first — invisible to every
+  // rollup/refresh function and to the one-validated-batch-per-period index — so the old good
+  // batch for this distributor + period is only ever superseded inside the SAME atomic
+  // transaction that finishes validating this one (phx_finalize_sos_batch below). A bad upload
+  // can never destroy a previously-good batch.
   const batchInsert = await supabase
     .from("source_of_sales_import_batches")
     .insert({
@@ -2597,7 +2580,7 @@ export async function persistDistributorSalesUpload(
       file_name: result.fileName,
       sheet_name: result.sheetName,
       period: result.period,
-      status: result.status,
+      status: result.status === "validated" ? "pending" : result.status,
       total_rows: result.rowCount,
       importable_rows: result.importableRows,
       failed_rows: result.failedRows,
@@ -2622,21 +2605,29 @@ export async function persistDistributorSalesUpload(
     if (error) throw error;
   }
 
-  // Keep the pre-aggregated fact rollup in sync (executive / sales-intelligence
-  // dashboards read the rollup, not the raw table). Idempotent and a no-op for a
-  // non-validated batch (the refresh only aggregates validated batches).
-  const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
-  if (rollupRefresh.error) throw rollupRefresh.error;
-
-  // Keep the customer-directory rollup in sync alongside the fact rollup (same batch,
-  // same idempotent, validated-only semantics) so customer-mapping views reflect this import.
-  const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
-  if (customerRollupRefresh.error) throw customerRollupRefresh.error;
-
-  // Refresh the pre-computed Marketing ROI fact tables so the fast dashboard path reflects
-  // this batch immediately. Advisory-lock protected — a 'skipped' run self-heals on next import.
-  const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
-  if (roiRefresh.error) throw roiRefresh.error;
+  if (result.status === "validated" && result.period) {
+    await finalizeSosBatchAndAuditSupersede({
+      batchId,
+      distributorCode: result.distributor.code,
+      period: result.period,
+      actorLoginId: uploadedBy,
+    });
+  } else if (result.status === "validated") {
+    // Defensive fallback for a validated batch with no resolvable single period (e.g. a
+    // multi-period sheet) — nothing sensible to dedupe/lock on without a period key, so promote
+    // directly and refresh each rollup individually, exactly as before atomic finalize existed.
+    const promote = await supabase
+      .from("source_of_sales_import_batches")
+      .update({ status: "validated", blocking_reasons: [] })
+      .eq("id", batchId);
+    if (promote.error) throw promote.error;
+    const rollupRefresh = await supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId });
+    if (rollupRefresh.error) throw rollupRefresh.error;
+    const customerRollupRefresh = await supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId });
+    if (customerRollupRefresh.error) throw customerRollupRefresh.error;
+    const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
+    if (roiRefresh.error) throw roiRefresh.error;
+  }
 
   return {
     ...result,
