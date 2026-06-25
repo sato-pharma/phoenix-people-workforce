@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { linkSalesRecordAgainstDirectory } from "../src/lib/sales/employees.ts";
+import { hasLineMatch, linkSalesRecordAgainstDirectory } from "../src/lib/sales/employees.ts";
 
 // G7 — linkage gate: a structural guard that the Sales module stays ONE engine. Every recognition
 // consumer must route through src/lib/sales/recognize.ts (directly or via the analyze/commit service
@@ -112,6 +112,39 @@ function vacantAreaCodesWinOverOthersBucket() {
   assert.equal(link.managerHrId, "B-200", "V-AF codes must be treated as vacancies even when the display name is Others");
 }
 
+function vacancyPlaceholdersDoNotPersistAsManagers() {
+  const vacancyManager = linkSalesRecordAgainstDirectory(
+    {
+      employeeHrId: "V-AF-8",
+      employeeLookupKey: "Cairo DM",
+      employeeName: "Cairo DM",
+      line: "Anti infective",
+      managerHrId: "V-AF-19",
+      territory: "Cairo Others",
+    },
+    [],
+    [],
+  );
+
+  const dashManager = linkSalesRecordAgainstDirectory(
+    {
+      employeeHrId: "V-AF-13",
+      employeeLookupKey: "Others",
+      employeeName: "Others",
+      line: "Anti infective",
+      managerHrId: "-",
+      territory: "Qal",
+    },
+    [],
+    [],
+  );
+
+  assert.equal(vacancyManager.managerHrId, null, "vacancy codes in the manager column must not hit the sales_records.manager_hr_id FK");
+  assert.equal(dashManager.managerHrId, null, "dash placeholders in the manager column must not hit the sales_records.manager_hr_id FK");
+  assert.match(vacancyManager.diagnostics.join("\n"), /not stored as a manager employee ID/);
+  assert.match(dashManager.diagnostics.join("\n"), /not stored as a manager employee ID/);
+}
+
 function normalRowsStillMapByEmployeeHrId() {
   const link = linkSalesRecordAgainstDirectory(
     {
@@ -146,6 +179,38 @@ function normalRowsStillMapByEmployeeHrId() {
   assert.doesNotMatch(link.diagnostics.join("\n"), /no employee matched/i, "valid HR IDs must not get missing employee warnings");
 }
 
+function abbreviatedAntiInfectiveLineStillMatches() {
+  const employee = {
+    area: "Sohag 2",
+    crm_id: "CRM-187",
+    crm_username: "rep.one",
+    employment_status: "Active",
+    full_name: "Rep One",
+    hr_id: "B-187",
+    job_title: "Medical Representative",
+    line: "Anti infective",
+    manager_hr_id: "B-100",
+    position_title: "Medical Representative",
+    region: "Cairo",
+  };
+
+  assert.equal(
+    hasLineMatch(employee, "Anti Inf"),
+    true,
+    "sheet rows using the abbreviated 'Anti Inf' line must match employees stored under the full 'Anti infective' line",
+  );
+  assert.equal(
+    hasLineMatch(employee, "Anti infective"),
+    true,
+    "exact line matches must still pass",
+  );
+  assert.equal(
+    hasLineMatch(employee, "CNS"),
+    false,
+    "genuinely different lines must still be flagged as a mismatch",
+  );
+}
+
 export function runSalesLinkageTests() {
   singleEngineSource();
   consumersShareTheEngine();
@@ -153,5 +218,7 @@ export function runSalesLinkageTests() {
   salesUploadCommitDurationIsConfigured();
   vacantAreaCodesDoNotBecomeMissingEmployeeWarnings();
   vacantAreaCodesWinOverOthersBucket();
+  vacancyPlaceholdersDoNotPersistAsManagers();
   normalRowsStillMapByEmployeeHrId();
+  abbreviatedAntiInfectiveLineStillMatches();
 }
