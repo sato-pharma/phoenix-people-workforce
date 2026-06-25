@@ -68,6 +68,7 @@ import {
 } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -486,14 +487,22 @@ function isSameLine(employee: EmployeeDirectoryRow, owner: EmployeeDirectoryRow)
   return Boolean(employeeLine && ownerLine && employeeLine === ownerLine);
 }
 
-async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | null) {
+// Training Manager has org-wide training oversight (see canSeeEmployee in
+// permissions.ts) so, unlike PM/GPM/NSM, their Double Visit medical-rep pool
+// must span every line rather than just the line on their own employee row.
+function isOrgWidePlanningEmployee(employee: EmployeeDirectoryRow | null, fallbackRole?: PhoenixRole) {
+  if (fallbackRole === "Training Manager") return true;
+  return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "Training Manager";
+}
+
+async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | null, orgWide = false) {
   if (!employee) return [];
   const directory = await getEmployeeDirectory();
   return directory.employees
     .filter((candidate) => candidate.hrId !== employee.hrId)
     .filter(isActiveEmployee)
     .filter(isMedicalRepEmployee)
-    .filter((candidate) => isSameLine(candidate, employee))
+    .filter((candidate) => orgWide || isSameLine(candidate, employee))
     .map((candidate) => ({
       areaName: candidate.areaName,
       fullName: candidate.fullName,
@@ -548,6 +557,7 @@ type PlanningMedicalRepOption = {
   areaName?: string | null;
   fullName: string;
   hrId: string;
+  lineName?: string | null;
 };
 
 function isVacantMedicalRepOption(rep: PlanningMedicalRepOption) {
@@ -555,11 +565,18 @@ function isVacantMedicalRepOption(rep: PlanningMedicalRepOption) {
   return /\bvacan(t|cy)\b/.test(text);
 }
 
+// Within a single line an area maps to exactly one rep, so the historical
+// behaviour of taking the first non-vacant match is safe. Once an org-wide
+// caller (Training Manager) supplies reps from every line, the same area can
+// have one rep per line; auto-fill only when that's still unambiguous and
+// otherwise require the caller to send an explicit doubleVisitMedicalRepHrId
+// (the client resolves this once both Line and Area are picked).
 function autoMedicalRepForArea(options: PlanningMedicalRepOption[], area: string | null) {
   if (!area) return null;
-  return options
-    .filter((rep) => normalizedName(rep.areaName) === normalizedName(area))
-    .find((rep) => !isVacantMedicalRepOption(rep)) ?? null;
+  const candidates = options.filter(
+    (rep) => normalizedName(rep.areaName) === normalizedName(area) && !isVacantMedicalRepOption(rep),
+  );
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 function validActivityType(value: string): EmployeePlanActivityType {
@@ -1158,7 +1175,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
-  const medicalRepOptions = await medicalRepOptionsForEmployee(employee);
+  const medicalRepOptions = await medicalRepOptionsForEmployee(employee, isOrgWidePlanningEmployee(employee, access.role));
   const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
 
   try {
@@ -1435,7 +1452,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
     input.items,
     period.periodStartDate,
     period.periodEndDate,
-    await medicalRepOptionsForEmployee(employee),
+    await medicalRepOptionsForEmployee(employee, isOrgWidePlanningEmployee(employee, access.role)),
     { submit: Boolean(input.submit) },
   );
 
@@ -1508,7 +1525,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       input.items,
       existing.period_start_date,
       existing.period_end_date,
-      await medicalRepOptionsForEmployee(owner),
+      await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
       { submit: Boolean(input.submit) },
     );
     const { data, error } = await getSupabaseAdmin()
@@ -1564,7 +1581,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       input.items,
       existing.period_start_date,
       existing.period_end_date,
-      await medicalRepOptionsForEmployee(owner),
+      await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
       { submit: Boolean(input.submit) },
     ),
     planId: existing.id,

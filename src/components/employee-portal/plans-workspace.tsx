@@ -45,6 +45,11 @@ type PlansWorkspaceProps = {
 
 type DraftItem = EmployeePlanItemInput & {
   key: string;
+  // Client-only disambiguation axis: only meaningful for org-wide roles (e.g.
+  // Training Manager) whose medicalRepOptions span more than one line. Never
+  // sent to the server - the resolved doubleVisitMedicalRepHrId carries the
+  // outcome instead.
+  lineFilter?: string | null;
   returnNotes?: EmployeePlan["items"][number]["returnNotes"];
 };
 
@@ -310,6 +315,7 @@ function createDraftRow(activityDate: string, index: number, keySeed = "row"): D
     doubleVisitMedicalRepName: "",
     endTime: "",
     key: `${keySeed}-${activityDate}-${index}`,
+    lineFilter: "",
     locationText: "",
     notes: "",
     objective: "",
@@ -350,7 +356,8 @@ function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
   return selectedDays.map((date, index) => createDraftRow(date, index));
 }
 
-function draftRowsFromPlan(plan: EmployeePlan): DraftItem[] {
+function draftRowsFromPlan(plan: EmployeePlan, medicalRepOptions: MedicalRepOption[]): DraftItem[] {
+  const repByHrId = new Map(medicalRepOptions.map((rep) => [rep.hrId, rep]));
   return plan.items.map((item, index) => ({
     activityDate: item.activityDate,
     activityTitle: item.activityTitle,
@@ -361,6 +368,7 @@ function draftRowsFromPlan(plan: EmployeePlan): DraftItem[] {
     doubleVisitMedicalRepName: item.doubleVisitMedicalRepName ?? "",
     endTime: item.endTime ?? "",
     key: item.id,
+    lineFilter: (item.doubleVisitMedicalRepHrId && repByHrId.get(item.doubleVisitMedicalRepHrId)?.lineName) || "",
     locationText: item.locationText ?? "",
     notes: item.notes,
     objective: item.objective ?? "",
@@ -376,7 +384,7 @@ function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): E
     group.rows.forEach((row, slotIndex) => {
       const rule = activityRule(row.activityType, row.activityTitle);
       const region = canonicalRegion(row.locationText) || row.locationText || "";
-      const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+      const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
       const medicalRepHrId = row.doubleVisitMedicalRepHrId || autoRep?.hrId || "";
       const medicalRepName = row.doubleVisitMedicalRepName || autoRep?.fullName || "";
       result.push({
@@ -409,7 +417,9 @@ function validateDraftRow(row: DraftItem, medicalRepOptions: MedicalRepOption[] 
   if (rule.requiresArea && !String(row.area ?? "").trim()) {
     issues.push(`${label}: ${rule.label} needs an area.`);
   }
-  if (rule.requiresRep && !autoRepForArea(medicalRepOptions, row.area ?? "")) {
+  if (rule.requiresRep && needsLineSelection(medicalRepOptions) && !String(row.lineFilter ?? "").trim()) {
+    issues.push(`${label}: ${rule.label} needs a line selected first.`);
+  } else if (rule.requiresRep && !autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter)) {
     issues.push(`${label}: ${rule.label} needs an assigned Medical Rep for the selected area.`);
   }
   return issues;
@@ -439,15 +449,42 @@ function isVacantMedicalRep(rep: MedicalRepOption) {
   return /\bvacan(t|cy)\b/.test(text);
 }
 
-function eligibleRepsForArea(options: MedicalRepOption[], area: string): MedicalRepOption[] {
+// Line is a client-only disambiguation axis (see DraftItem.lineFilter): most
+// roles only ever see one line's reps, so `line` is omitted and this behaves
+// exactly as before. Org-wide roles (Training Manager) see every line's reps,
+// so when an area is staffed by more than one line and no line was chosen
+// yet, we deliberately return no match rather than guessing - the caller
+// (validateDraftRow) surfaces that as "needs a line selected first".
+function eligibleRepsForArea(options: MedicalRepOption[], area: string, line?: string | null): MedicalRepOption[] {
   if (!area) return [];
-  return options
+  const matches = options
     .filter((rep) => rep.areaName?.toLowerCase() === area.toLowerCase())
     .filter((rep) => !isVacantMedicalRep(rep));
+  if (line) {
+    return matches.filter((rep) => (rep.lineName ?? "").toLowerCase() === line.toLowerCase());
+  }
+  const distinctLines = new Set(matches.map((rep) => (rep.lineName ?? "").toLowerCase()));
+  return distinctLines.size > 1 ? [] : matches;
 }
 
-function autoRepForArea(options: MedicalRepOption[], area: string): MedicalRepOption | null {
-  return eligibleRepsForArea(options, area)[0] ?? null;
+function autoRepForArea(options: MedicalRepOption[], area: string, line?: string | null): MedicalRepOption | null {
+  return eligibleRepsForArea(options, area, line)[0] ?? null;
+}
+
+function lineOptionsFromReps(options: MedicalRepOption[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const rep of options) {
+    const name = (rep.lineName ?? "").trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    result.push(name);
+  }
+  return result.sort((a, b) => a.localeCompare(b));
+}
+
+function needsLineSelection(options: MedicalRepOption[]): boolean {
+  return lineOptionsFromReps(options).length > 1;
 }
 
 function areasForRegion(options: MedicalRepOption[], region: string, requireAssignedRep = false): string[] {
@@ -574,7 +611,9 @@ export function PlansWorkspace({
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(initialSelectedPlan?.id ?? null);
   const [rows, setRows] = useState<DraftItem[]>(() =>
-    initialSelectedPlan ? draftRowsFromPlan(initialSelectedPlan) : defaultRows(initialKind, initialAnchorDate),
+    initialSelectedPlan
+      ? draftRowsFromPlan(initialSelectedPlan, initialWorkspace.medicalRepOptions)
+      : defaultRows(initialKind, initialAnchorDate),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -676,13 +715,15 @@ export function PlansWorkspace({
   const needsAssignedRep = rows.some((row) => activityRule(row.activityType, row.activityTitle).requiresRep);
   const noSameLineReps = needsAssignedRep && workspace.medicalRepOptions.filter((rep) => !isVacantMedicalRep(rep)).length === 0;
   const noPlanRows = rows.length === 0;
+  const lineOptions = useMemo(() => lineOptionsFromReps(workspace.medicalRepOptions), [workspace.medicalRepOptions]);
+  const tableNeedsLine = lineOptions.length > 1;
   const submitBlocked = !canEdit || submitValidationIssues.length > 0 || noSameLineReps || noPlanRows;
   const rowConflictWarning = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of rows) {
       const rule = activityRule(row.activityType, row.activityTitle);
       if (!rule.requiresRep) continue;
-      const autoRep = autoRepForArea(workspace.medicalRepOptions, row.area ?? "");
+      const autoRep = autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter);
       const warning = sameLineBookingWarning({
         activityDate: row.activityDate,
         bookings: sameLineBookings,
@@ -754,7 +795,7 @@ export function PlansWorkspace({
               ? canonicalRegion(row.locationText)
               : "";
           const area = rule.showArea && canonicalRegion(locationText) ? row.area : "";
-          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, area ?? "") : null;
+          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, area ?? "", row.lineFilter) : null;
           return {
             ...row,
             activityTitle: nextActivity.activityTitle,
@@ -777,7 +818,7 @@ export function PlansWorkspace({
         }
         if (field === "area") {
           const rule = activityRule(row.activityType, row.activityTitle);
-          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, value) : null;
+          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, value, row.lineFilter) : null;
           return {
             ...row,
             area: value,
@@ -786,6 +827,22 @@ export function PlansWorkspace({
           };
         }
         return { ...row, [field]: value };
+      }),
+    );
+  }
+
+  function updateRowLine(key: string, value: string) {
+    setRows((current) =>
+      current.map((row) => {
+        if (row.key !== key) return row;
+        const rule = activityRule(row.activityType, row.activityTitle);
+        const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", value) : null;
+        return {
+          ...row,
+          doubleVisitMedicalRepHrId: rule.requiresRep ? autoRep?.hrId ?? "" : "",
+          doubleVisitMedicalRepName: rule.requiresRep ? autoRep?.fullName ?? "" : "",
+          lineFilter: value,
+        };
       }),
     );
   }
@@ -927,7 +984,7 @@ export function PlansWorkspace({
     setActiveKind(target.planKind);
     setAnchorDate(target.periodStartDate);
     setSheetKey(null);
-    setRows(draftRowsFromPlan(target));
+    setRows(draftRowsFromPlan(target, workspace.medicalRepOptions));
   }
 
   function startNewPlan(kind: EmployeePlanKind = activeKind) {
@@ -1205,6 +1262,7 @@ export function PlansWorkspace({
               onDayNote={(value) => updateDayNotes(sheetRow.activityDate, value)}
               onDelete={() => deleteRow(sheetRow.key)}
               onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
+              onUpdateLine={(value) => updateRowLine(sheetRow.key, value)}
               dayMode={sheetGroup?.mode ?? "full"}
               dayNote={sheetGroup?.dayNote ?? sheetRow.notes ?? ""}
               conflictWarning={rowConflictWarning.get(sheetRow.key) ?? null}
@@ -1468,8 +1526,9 @@ export function PlansWorkspace({
                         {group.rows.map((row, slotIndex) => {
                           const rule = activityRule(row.activityType, row.activityTitle);
                           const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "", rule.requiresRep);
-                          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "") : null;
+                          const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter) : null;
                           const currentRegionOptions = regionOptions(row.locationText);
+                          const showLineSelect = tableNeedsLine && rule.showRep;
 
                           return (
                             <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`} key={row.key}>
@@ -1533,6 +1592,21 @@ export function PlansWorkspace({
                                 </SearchableSelect>
                               </td>
                               <td className="px-3 py-3">
+                                {showLineSelect ? (
+                                  <SearchableSelect
+                                    className={`${tableSelectClass} mb-1.5`}
+                                    disabled={!canEdit}
+                                    onChange={(e) => updateRowLine(row.key, e.target.value)}
+                                    value={row.lineFilter ?? ""}
+                                  >
+                                    <option value="">Select line</option>
+                                    {lineOptions.map((line) => (
+                                      <option key={line} value={line}>
+                                        {line}
+                                      </option>
+                                    ))}
+                                  </SearchableSelect>
+                                ) : null}
                                 {rule.showTrainingFormat ? (
                                   <SearchableSelect
                                     className={tableSelectClass}
@@ -1593,7 +1667,11 @@ export function PlansWorkspace({
                               <td className="px-3 py-3">
                                 {rule.showRep ? (
                                   <DisabledFieldText>
-                                    {row.area ? autoRep?.fullName ?? "No assigned rep" : "Select area first"}
+                                    {!row.area
+                                      ? "Select area first"
+                                      : showLineSelect && !row.lineFilter
+                                        ? "Select line first"
+                                        : autoRep?.fullName ?? "No assigned rep"}
                                   </DisabledFieldText>
                                 ) : (
                                   <DisabledFieldText>Not required</DisabledFieldText>
@@ -1834,7 +1912,7 @@ function MobileDayCard({
 }) {
   const rule = activityRule(row.activityType, row.activityTitle);
   const selectedRep = medicalRepOptions.find((rep) => rep.hrId === row.doubleVisitMedicalRepHrId);
-  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const repName = row.doubleVisitMedicalRepName || selectedRep?.fullName || autoRep?.fullName || "";
   const needsRep = rule.requiresRep && !autoRep;
   const hasReturnNotes = Boolean(row.returnNotes?.length);
@@ -1928,6 +2006,7 @@ function RowEditSheet({
   onDayNote,
   onDelete,
   onUpdate,
+  onUpdateLine,
   row,
 }: {
   canEdit: boolean;
@@ -1940,12 +2019,15 @@ function RowEditSheet({
   onDayNote: (value: string) => void;
   onDelete: () => void;
   onUpdate: (field: keyof EmployeePlanItemInput, value: string) => void;
+  onUpdateLine: (value: string) => void;
   row: DraftItem;
 }) {
   const rule = activityRule(row.activityType, row.activityTitle);
   const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "", rule.requiresRep);
-  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "") : null;
+  const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const currentRegionOptions = regionOptions(row.locationText);
+  const lineOptions = lineOptionsFromReps(medicalRepOptions);
+  const showLine = needsLineSelection(medicalRepOptions) && rule.showRep;
   const rowWarnings = validateDraftRow(row, medicalRepOptions);
 
   return (
@@ -2003,6 +2085,24 @@ function RowEditSheet({
               ))}
             </SearchableSelect>
           </Field>
+
+          {showLine ? (
+            <Field label="Line">
+              <SearchableSelect
+                className={mobileField}
+                disabled={!canEdit}
+                onChange={(e) => onUpdateLine(e.target.value)}
+                value={row.lineFilter ?? ""}
+              >
+                <option value="">Select line</option>
+                {lineOptions.map((line) => (
+                  <option key={line} value={line}>
+                    {line}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </Field>
+          ) : null}
 
           {rule.showTrainingFormat ? (
             <Field label="Training Format">
@@ -2063,9 +2163,13 @@ function RowEditSheet({
           ) : null}
 
           {rule.showRep ? (
-            <Field label="Medical Rep (same line)">
+            <Field label={showLine ? "Medical Rep" : "Medical Rep (same line)"}>
               <DisabledFieldText>
-                {row.area ? autoRep?.fullName ?? "No assigned rep" : "Select area first"}
+                {!row.area
+                  ? "Select area first"
+                  : showLine && !row.lineFilter
+                    ? "Select line first"
+                    : autoRep?.fullName ?? "No assigned rep"}
               </DisabledFieldText>
             </Field>
           ) : null}
