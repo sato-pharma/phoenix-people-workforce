@@ -1235,11 +1235,28 @@ export async function createSalesImport(payload: SalesImportPayload) {
 
   const existingResult = await supabase
     .from("sales_import_batches")
-    .select("id")
+    .select("id,status")
     .eq("duplicate_hash", payload.batch.duplicateHash)
-    .maybeSingle();
+    .not("status", "in", "(replaced,rejected)");
 
-  const isDuplicate = Boolean(existingResult.data);
+  if (existingResult.error) {
+    throw existingResult.error;
+  }
+
+  let isDuplicate = false;
+  for (const existingBatch of existingResult.data ?? []) {
+    const existingRecords = await supabase
+      .from("sales_records")
+      .select("id", { count: "exact", head: true })
+      .eq("batch_id", existingBatch.id);
+    if (existingRecords.error) {
+      throw existingRecords.error;
+    }
+    if ((existingRecords.count ?? 0) > 0) {
+      isDuplicate = true;
+      break;
+    }
+  }
 
   const batchInsert = await supabase.from("sales_import_batches").insert({
     id: payload.batch.id,
@@ -1294,11 +1311,17 @@ export async function createSalesImport(payload: SalesImportPayload) {
       link_confidence: record.linkConfidence ?? 0,
     }));
 
-    for (let i = 0; i < recordInserts.length; i += 500) {
-      const recordInsert = await supabase.from("sales_records").insert(recordInserts.slice(i, i + 500));
-      if (recordInsert.error) {
-        throw recordInsert.error;
+    try {
+      for (let i = 0; i < recordInserts.length; i += 500) {
+        const recordInsert = await supabase.from("sales_records").insert(recordInserts.slice(i, i + 500));
+        if (recordInsert.error) {
+          throw recordInsert.error;
+        }
       }
+    } catch (error) {
+      await supabase.from("sales_records").delete().eq("batch_id", payload.batch.id);
+      await supabase.from("sales_import_batches").delete().eq("id", payload.batch.id);
+      throw error;
     }
   }
 
