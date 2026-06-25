@@ -112,6 +112,39 @@ function vacantAreaCodesWinOverOthersBucket() {
   assert.equal(link.managerHrId, "B-200", "V-AF codes must be treated as vacancies even when the display name is Others");
 }
 
+function vacancyPlaceholdersDoNotPersistAsManagers() {
+  const vacancyManager = linkSalesRecordAgainstDirectory(
+    {
+      employeeHrId: "V-AF-8",
+      employeeLookupKey: "Cairo DM",
+      employeeName: "Cairo DM",
+      line: "Anti infective",
+      managerHrId: "V-AF-19",
+      territory: "Cairo Others",
+    },
+    [],
+    [],
+  );
+
+  const dashManager = linkSalesRecordAgainstDirectory(
+    {
+      employeeHrId: "V-AF-13",
+      employeeLookupKey: "Others",
+      employeeName: "Others",
+      line: "Anti infective",
+      managerHrId: "-",
+      territory: "Qal",
+    },
+    [],
+    [],
+  );
+
+  assert.equal(vacancyManager.managerHrId, null, "vacancy codes in the manager column must not hit the sales_records.manager_hr_id FK");
+  assert.equal(dashManager.managerHrId, null, "dash placeholders in the manager column must not hit the sales_records.manager_hr_id FK");
+  assert.match(vacancyManager.diagnostics.join("\n"), /not stored as a manager employee ID/);
+  assert.match(dashManager.diagnostics.join("\n"), /not stored as a manager employee ID/);
+}
+
 function normalRowsStillMapByEmployeeHrId() {
   const link = linkSalesRecordAgainstDirectory(
     {
@@ -153,5 +186,6 @@ export function runSalesLinkageTests() {
   salesUploadCommitDurationIsConfigured();
   vacantAreaCodesDoNotBecomeMissingEmployeeWarnings();
   vacantAreaCodesWinOverOthersBucket();
+  vacancyPlaceholdersDoNotPersistAsManagers();
   normalRowsStillMapByEmployeeHrId();
 }

@@ -120,6 +120,33 @@ function makeNoMatchMessage(label: string, value: string) {
   return `${label} "${value}" was provided in the sheet, but no employee matched it.`;
 }
 
+function isPlaceholderHrId(value: unknown) {
+  const normalized = normalize(value);
+  return !normalized || normalized === "-" || normalized === "n/a" || normalized === "na" || normalized === "none";
+}
+
+function resolvePersistableManagerHrId(
+  value: string | null | undefined,
+  directory: EmployeeDirectoryRow[],
+  diagnostics: string[],
+) {
+  const managerHrId = compact(value);
+  if (!managerHrId) return null;
+
+  if (isPlaceholderHrId(managerHrId) || isVacantAreaCode(managerHrId)) {
+    diagnostics.push(`Manager HR ID "${managerHrId}" is a vacancy/placeholder value, so it was not stored as a manager employee ID.`);
+    return null;
+  }
+
+  const match = directory.find((employee) => normalize(employee.hr_id) === normalize(managerHrId));
+  if (!match) {
+    diagnostics.push(`Manager HR ID "${managerHrId}" was not found in the employee directory, so it was not stored.`);
+    return null;
+  }
+
+  return match.hr_id;
+}
+
 function isVacantAreaCode(value: unknown) {
   return /^v-[a-z0-9]{1,8}(?:-\d+)?$/i.test(compact(value));
 }
@@ -346,7 +373,7 @@ export function linkSalesRecordAgainstDirectory(
       linkStatus: "linked",
       linkConfidence: confidence,
       line: match.line ?? source.line ?? null,
-      managerHrId: match.manager_hr_id ?? source.managerHrId ?? null,
+      managerHrId: match.manager_hr_id ?? resolvePersistableManagerHrId(source.managerHrId, directory, diagnostics),
       diagnostics,
     };
   };
@@ -369,6 +396,7 @@ export function linkSalesRecordAgainstDirectory(
     if (match) return withMatchedEmployee(match, 1);
     if (isVacantAreaCode(rawHrId)) {
       const vacancy = matchVacancyForSource(source, vacancies);
+      const managerHrId = vacancy?.managerHrId ?? resolvePersistableManagerHrId(source.managerHrId, directory, diagnostics);
       return {
         employeeHrId: null,
         employeeCrmId: source.employeeCrmId ?? null,
@@ -377,10 +405,13 @@ export function linkSalesRecordAgainstDirectory(
         linkStatus: "unlinked",
         linkConfidence: vacancy ? 0.75 : 0,
         line: vacancy?.lineName ?? source.line ?? null,
-        managerHrId: vacancy?.managerHrId ?? source.managerHrId ?? null,
-        diagnostics: vacancy
-          ? [`Vacancy area code "${rawHrId}" matched open vacancy ${vacancy.vacancyCode ?? "without code"} for ${compact(vacancy.areaName) || compact(source.territory) || "this territory"}.`]
-          : [`Vacancy area code "${rawHrId}" was provided in the HR ID column. It is treated as a vacant area, not a missing employee.`],
+        managerHrId,
+        diagnostics: [
+          ...diagnostics,
+          vacancy
+            ? `Vacancy area code "${rawHrId}" matched open vacancy ${vacancy.vacancyCode ?? "without code"} for ${compact(vacancy.areaName) || compact(source.territory) || "this territory"}.`
+            : `Vacancy area code "${rawHrId}" was provided in the HR ID column. It is treated as a vacant area, not a missing employee.`,
+        ],
       };
     }
     return {
@@ -391,7 +422,8 @@ export function linkSalesRecordAgainstDirectory(
       linkStatus: "unlinked",
       linkConfidence: 0,
       line: source.line ?? null,
-      diagnostics: [makeNoMatchMessage("HR ID", rawHrId)],
+      managerHrId: resolvePersistableManagerHrId(source.managerHrId, directory, diagnostics),
+      diagnostics: [...diagnostics, makeNoMatchMessage("HR ID", rawHrId)],
     };
   }
 
@@ -404,7 +436,8 @@ export function linkSalesRecordAgainstDirectory(
       linkStatus: "unlinked",
       linkConfidence: 0,
       line: source.line ?? null,
-      diagnostics: ["No MR HR ID was provided. This area stays unlinked at MR level and is counted under the manager HR ID."],
+      managerHrId: resolvePersistableManagerHrId(source.managerHrId, directory, diagnostics),
+      diagnostics: [...diagnostics, "No MR HR ID was provided. This area stays unlinked at MR level and is counted under the manager HR ID."],
     };
   }
 
@@ -444,6 +477,7 @@ export function linkSalesRecordAgainstDirectory(
     linkStatus: "unlinked",
     linkConfidence: 0,
     line: source.line ?? null,
+    managerHrId: resolvePersistableManagerHrId(source.managerHrId, directory, diagnostics),
     diagnostics,
   };
 }
@@ -458,7 +492,7 @@ export async function linkSalesRecords(records: SalesRecordInput[]) {
       employeeCrmId: link.employeeCrmId !== undefined ? link.employeeCrmId : record.employeeCrmId ?? null,
       employeeLookupKey: link.employeeLookupKey !== undefined ? link.employeeLookupKey : record.employeeLookupKey ?? null,
       employeeName: link.employeeName !== undefined ? link.employeeName : record.employeeName ?? null,
-      managerHrId: link.managerHrId !== undefined ? link.managerHrId : record.managerHrId ?? null,
+      managerHrId: link.managerHrId ?? null,
       line: record.line || link.line || "Unassigned",
       linkStatus: link.linkStatus,
       linkConfidence: link.linkConfidence,
