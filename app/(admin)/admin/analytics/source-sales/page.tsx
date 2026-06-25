@@ -6,6 +6,8 @@ import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table"
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
+import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -37,6 +39,7 @@ import {
 } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
 import { StackedChart } from "@/components/charts/stacked-chart";
+import { SOS_TABS } from "@/lib/analytics/module-nav-config";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +146,7 @@ async function SosDashboardContent({
         dimensions={dimensions}
         basePath="/admin/analytics/source-sales"
         customers={customerOptions}
+        comparable
       />
 
       {/* KPI bar */}
@@ -155,8 +159,7 @@ async function SosDashboardContent({
 
       {/* Trend + contribution charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Value Trend by Period</h2>
+        <AnalyticsSection title="Value Trend by Period">
           {trendChartData.length === 0 ? (
             <AnalyticsEmptyState />
           ) : (
@@ -166,20 +169,18 @@ async function SosDashboardContent({
               layers={[{ key: "value", name: "Value", type: "line", color: "#F97316" }]}
             />
           )}
-        </section>
-        <section className="border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Line Contribution</h2>
+        </AnalyticsSection>
+        <AnalyticsSection title="Line Contribution">
           {lineDonutData.length === 0 ? (
             <AnalyticsEmptyState />
           ) : (
             <StackedChart data={lineDonutData} tooltipPrefix="EGP " />
           )}
-        </section>
+        </AnalyticsSection>
       </div>
 
       {compareMode && lineTotals.length >= 2 ? (
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Line Comparison</h2>
+        <AnalyticsSection title="Line Comparison" count={lineTotals.length}>
           <AnalyticsDataTable
             searchKeys={["line"]}
             columns={[
@@ -189,12 +190,10 @@ async function SosDashboardContent({
             ]}
             rows={lineTotals}
           />
-        </section>
+        </AnalyticsSection>
       ) : null}
 
-      {/* By Period table */}
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Trend by Period</h2>
+      <AnalyticsSection title="Trend by Period" count={byPeriod.length}>
         {byPeriod.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -210,13 +209,12 @@ async function SosDashboardContent({
             ]}
             rows={byPeriod}
             totals={{ units: totalUnits, value: totalValue }}
+            exportTitle="SoS Trend by Period"
           />
         )}
-      </section>
+      </AnalyticsSection>
 
-      {/* By Area table */}
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">By Region / Area</h2>
+      <AnalyticsSection title="By Region / Area" count={byArea.length}>
         {byArea.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -231,13 +229,12 @@ async function SosDashboardContent({
               { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
             ]}
             rows={byArea}
+            exportTitle="SoS By Region/Area"
           />
         )}
-      </section>
+      </AnalyticsSection>
 
-      {/* By Product table */}
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">By Product</h2>
+      <AnalyticsSection title="By Product" count={byProduct.length}>
         {byProduct.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -253,13 +250,12 @@ async function SosDashboardContent({
               { key: "value",       label: "Value",  align: "right", sortable: true, formatKind: "number" },
             ]}
             rows={byProduct}
+            exportTitle="SoS By Product"
           />
         )}
-      </section>
+      </AnalyticsSection>
 
-      {/* By Customer (presence) table */}
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Customer Presence</h2>
+      <AnalyticsSection title="Customer Presence" count={byCustomer.length}>
         {byCustomer.length === 0 ? (
           <AnalyticsEmptyState message="No customer presence data for the current filters." />
         ) : (
@@ -273,9 +269,10 @@ async function SosDashboardContent({
               { key: "activeBatches",  label: "Active Batches", align: "right", sortable: true, formatKind: "number" },
             ]}
             rows={byCustomer}
+            exportTitle="SoS Customer Presence"
           />
         )}
-      </section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -289,13 +286,19 @@ export default async function SourceSalesAnalyticsPage({ searchParams }: { searc
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Source of Sales Analytics</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Distributor invoice aggregates — bricks, areas, regions, products, families, lines, distributors.
-          Confidential products excluded unless you have CEO / Super Admin access.
-        </p>
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">Source of Sales Analytics</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Distributor invoice aggregates — bricks, areas, regions, products, families, lines, distributors.
+            Confidential products excluded unless you have CEO / Super Admin access.
+          </p>
+        </div>
       </div>
+
+      <AnalyticsModuleNav tabs={SOS_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
         <SosDashboardContent searchParams={resolvedParams} role={access.role} />

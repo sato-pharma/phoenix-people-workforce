@@ -6,6 +6,7 @@ import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table"
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
+import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -135,18 +136,15 @@ async function ExecComparisonContent({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Line Share</h2>
+        <AnalyticsSection title="Line Share">
           {lineDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={lineDonutData} tooltipPrefix="EGP " />}
-        </section>
-        <section className="border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Region Share</h2>
+        </AnalyticsSection>
+        <AnalyticsSection title="Region Share">
           {regionDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={regionDonutData} tooltipPrefix="EGP " />}
-        </section>
+        </AnalyticsSection>
       </div>
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Line Contribution Ranking</h2>
+      <AnalyticsSection title="Line Contribution Ranking" count={lineRanked.length}>
         {lineRanked.length === 0 ? <AnalyticsEmptyState /> : (
           <AnalyticsDataTable
             searchKeys={["line"]}
@@ -158,12 +156,13 @@ async function ExecComparisonContent({
             ]}
             rows={lineRanked}
             totals={{ units: byLine.reduce((s, r) => s + r.units, 0), value: grandTotal }}
+            exportTitle="Executive Comparison — Line Ranking"
+            exportSubtitle="Cross-period line contribution and share"
           />
         )}
-      </section>
+      </AnalyticsSection>
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Product Contribution (Top 30)</h2>
+      <AnalyticsSection title="Product Contribution (Top 30)" count={productRanked.length}>
         {productRanked.length === 0 ? <AnalyticsEmptyState /> : (
           <AnalyticsDataTable
             searchKeys={["productName", "family", "line"]}
@@ -176,12 +175,13 @@ async function ExecComparisonContent({
               { key: "sharePct",    label: "Share %", align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={productRanked}
+            exportTitle="Executive Comparison — Top Products"
+            exportSubtitle="Top 30 products by contribution"
           />
         )}
-      </section>
+      </AnalyticsSection>
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Region Contribution Ranking</h2>
+      <AnalyticsSection title="Region Contribution Ranking" count={regionRanked.length}>
         {regionRanked.length === 0 ? <AnalyticsEmptyState /> : (
           <AnalyticsDataTable
             searchKeys={["regionName"]}
@@ -193,9 +193,11 @@ async function ExecComparisonContent({
             ]}
             rows={regionRanked}
             totals={{ value: grandTotal }}
+            exportTitle="Executive Comparison — Region Ranking"
+            exportSubtitle="Cross-period region contribution and share"
           />
         )}
-      </section>
+      </AnalyticsSection>
     </div>
   );
 }
@@ -209,12 +211,17 @@ export default async function ExecutiveComparisonPage({ searchParams }: { search
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Executive Comparison</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
-        </p>
+      <div className="flex items-center gap-3 border-b border-border pb-5">
+        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Exec</p>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">Executive Comparison</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
+          </p>
+        </div>
       </div>
+
       <Suspense fallback={<AppRouteLoadingState />}>
         <ExecComparisonContent searchParams={resolvedParams} role={access.role} />
       </Suspense>
