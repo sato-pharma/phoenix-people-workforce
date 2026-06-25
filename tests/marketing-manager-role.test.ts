@@ -132,22 +132,22 @@ export async function runMarketingManagerRoleTests() {
   const weeklyAccess = source("src/lib/sales/weekly/access.ts");
   assert.match(
     weeklyAccess,
-    /const PRODUCT_SCOPED_ROLES[\s\S]{0,160}\]\)/,
-    "PRODUCT_SCOPED_ROLES block must exist",
+    /ctx\.role === "SFE Manager" \|\| ctx\.role === "Marketing Manager"[\s\S]{0,120}tier: "full", canViewRestricted: false/,
+    "Marketing Manager must get full weekly access minus restricted products",
   );
-  const productScopedBlock = weeklyAccess.slice(
-    weeklyAccess.indexOf("PRODUCT_SCOPED_ROLES"),
-    weeklyAccess.indexOf("PRODUCT_SCOPED_ROLES") + 200,
-  );
-  assert.doesNotMatch(
-    productScopedBlock,
-    /Marketing Manager/,
-    "Marketing Manager must NOT be product-scoped for weekly sales",
+
+  // 3b. Weekly sales: Product / Group Product Manager are line-scoped (their whole line), never
+  // narrowed by the per-person weekly_sales_product_scope sheet — that table is opt-in for OTHER
+  // roles only (e.g. a curated SFE Manager list).
+  assert.match(
+    weeklyAccess,
+    /const LINE_SCOPED_ROLES[\s\S]{0,40}"Product Manager"[\s\S]{0,40}"Group Product Manager"/,
+    "PM/GPM must be in LINE_SCOPED_ROLES (whole line, not the curated product sheet)",
   );
   assert.match(
     weeklyAccess,
-    /ctx\.role === "SFE Manager" \|\| ctx\.role === "Marketing Manager"[\s\S]{0,120}tier: "full", canViewRestricted: false/,
-    "Marketing Manager must get full weekly access minus restricted products",
+    /LINE_SCOPED_ROLES\.has\(ctx\.role\)[\s\S]{0,300}tier: "territory", allowedLineNames: scope\.allowedLineNames, allowedRegionCodes: null/,
+    "PM/GPM must resolve to the territory tier bounded to their line with no region restriction",
   );
 
   // 4. Marketing ROI dashboard is line-scoped per role (closes PM/GPM/NSM company-wide over-exposure).
@@ -161,5 +161,14 @@ export async function runMarketingManagerRoleTests() {
     intelligenceService,
     /p_lines: (?:params\.)?effectiveLines/,
     "ROI dashboard must inject the role-derived line filter into the RPC",
+  );
+
+  // 5. Monthly Sales portal: Product / Group Product Manager are NEVER product-scoped — they see
+  // their whole line, same as National Sales Manager.
+  const monthlyClosingPortal = source("src/lib/sales/monthly-closing-portal.ts");
+  assert.doesNotMatch(
+    monthlyClosingPortal,
+    /PRODUCT_SCOPED_CLOSING_ROLES/,
+    "Monthly Sales portal must not product-scope any role (PM/GPM see their whole line)",
   );
 }
