@@ -233,6 +233,8 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
+// --- Medical Rep layout — premium field rep command center ---
+
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement } =
     snapshot;
@@ -408,7 +410,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 <CalendarClock className="h-3.5 w-3.5 text-white/70" />
               </div>
               <div className={`px-4 py-4 ${renewalUrgent ? "bg-rose-50" : renewalWarning ? "bg-amber-50" : "bg-white"}`}>
-                <p className={`text-2xl font-bold ${renewalUrgent ? "text-rose-700" : renewalWarning ? "text-amber-700" : "text-slate-900"}`}>
+                <p className={`text-2xl font-bold tracking-tight ${renewalUrgent ? "text-rose-700" : renewalWarning ? "text-amber-700" : "text-slate-900"}`}>
                   {daysUntilRenewal} days
                 </p>
                 <p className={`mt-1 text-[10px] font-semibold uppercase tracking-widest ${renewalUrgent ? "text-rose-400" : renewalWarning ? "text-amber-400" : "text-slate-400"}`}>
@@ -422,14 +424,18 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 <ClipboardCheck className="h-3.5 w-3.5 text-white/70" />
               </div>
               <div className="bg-amber-50 px-4 py-4">
-                <p className="text-2xl font-bold text-amber-700">On Probation</p>
+                <p className="text-2xl font-bold tracking-tight text-amber-700">On Probation</p>
                 <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-amber-400">
                   {serviceDuration || "in progress"}
                 </p>
               </div>
             </div>
           ) : (
-            <StatTile icon={ClipboardCheck} headline={serviceDuration || "Active"} sub="employment duration" />
+            <StatTile
+              icon={ClipboardCheck}
+              headline={serviceDuration || "Active"}
+              sub="employment duration"
+            />
           )}
         </div>
       </SectionShell>
@@ -448,17 +454,20 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         </div>
       </div>
 
+>>>>>>> origin/main
       {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-800">All clear - nothing needs your attention right now.</span>
+          <span className="text-sm font-medium text-emerald-800">All clear — nothing needs your attention right now.</span>
         </div>
       )}
     </div>
   );
 }
+
+// --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement } =
