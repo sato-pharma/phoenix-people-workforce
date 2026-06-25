@@ -18,7 +18,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -42,6 +42,14 @@ import {
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pct = (value: number) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+const compactNumber = (value: number) => {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return `${Math.round(value)}`;
+};
+const truncateLabel = (value: string, max = 18) => (value.length > max ? `${value.slice(0, max - 1)}...` : value);
+const CHART_COLORS = ["#F97316", "#2563EB", "#0F766E", "#7C3AED", "#DC2626", "#64748B", "#CA8A04"];
 
 type WeeklyFilters = {
   weeks: string[];
@@ -369,6 +377,8 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
             <Kpi icon={<Store className="h-4 w-4" />} label="Branches" value={num(data.kpis.branchCount)} sub={`${data.kpis.regionCount} regions - ${data.kpis.productCount} products`} />
           </div>
 
+          <DashboardCharts data={data} />
+
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             <RankTable title="By region (all distributors)" rows={data.regions} />
             <RankTable title="By product" rows={data.products} />
@@ -495,6 +505,165 @@ function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: nu
       {delta.pct == null ? "-" : pct(delta.pct)}
       <span className="font-medium text-[#94A3B8]">vs {format ? format(delta.prior) : delta.prior}</span>
     </div>
+  );
+}
+
+function DashboardCharts({ data }: { data: WeeklyDashboard }) {
+  const branchRows = data.branchBreakdown.slice(0, 10);
+  const stockRiskRows = data.zeroSalesBranches.slice(0, 8);
+  return (
+    <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <HorizontalValueChart rows={data.regions.slice(0, 8)} title="Regional sales value" />
+      <ProductMixChart rows={data.products} />
+      <BranchSalesStockChart rows={branchRows} />
+      <ZeroSalesStockChart rows={stockRiskRows} />
+    </section>
+  );
+}
+
+function ChartPanel({
+  children,
+  meta,
+  title,
+}: {
+  children: React.ReactNode;
+  meta?: string;
+  title: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+        <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">{title}</span>
+        {meta ? <span className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{meta}</span> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyChart({ label }: { label: string }) {
+  return (
+    <div className="flex h-[260px] items-center justify-center px-4 text-center text-sm font-semibold text-[#94A3B8]">
+      {label}
+    </div>
+  );
+}
+
+function HorizontalValueChart({ rows, title }: { rows: WeeklyRanked[]; title: string }) {
+  const chartRows = rows.map((row) => ({
+    ...row,
+    label: truncateLabel(row.name || row.code, 22),
+  }));
+  return (
+    <ChartPanel meta={`${chartRows.length} rows`} title={title}>
+      {chartRows.length === 0 ? (
+        <EmptyChart label="No sales rows for this filter." />
+      ) : (
+        <div className="h-[300px] min-w-0 px-2 py-3">
+          <ResponsiveContainer height="100%" width="100%">
+            <BarChart data={chartRows} layout="vertical" margin={{ bottom: 4, left: 8, right: 18, top: 6 }}>
+              <CartesianGrid horizontal={false} stroke="#E2E8F0" strokeDasharray="4 8" />
+              <XAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} type="number" />
+              <YAxis axisLine={false} dataKey="label" tick={{ fill: "#334155", fontSize: 10, fontWeight: 700 }} tickLine={false} type="category" width={112} />
+              <Tooltip formatter={(value) => money(Number(value))} labelFormatter={(_, payload) => payload?.[0]?.payload?.name ?? ""} />
+              <Bar dataKey="salesValue" fill="#F97316" radius={[0, 5, 5, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </ChartPanel>
+  );
+}
+
+function ProductMixChart({ rows }: { rows: WeeklyRanked[] }) {
+  const top = rows.slice(0, 6);
+  const restValue = rows.slice(6).reduce((total, row) => total + row.salesValue, 0);
+  const chartRows = restValue > 0 ? [...top, { code: "OTHER", name: "Other products", salesValue: restValue, salesUnits: 0, stockUnits: 0, share: 0 }] : top;
+  return (
+    <ChartPanel meta={`${rows.length} products`} title="Product mix">
+      {chartRows.length === 0 ? (
+        <EmptyChart label="No product sales for this filter." />
+      ) : (
+        <div className="grid min-h-[300px] grid-cols-1 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+          <div className="h-[260px] min-w-0">
+            <ResponsiveContainer height="100%" width="100%">
+              <PieChart>
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Pie cx="50%" cy="50%" data={chartRows} dataKey="salesValue" innerRadius="56%" nameKey="name" outerRadius="82%" paddingAngle={2}>
+                  {chartRows.map((row, index) => (
+                    <Cell fill={CHART_COLORS[index % CHART_COLORS.length]} key={row.code} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex flex-col justify-center gap-2">
+            {chartRows.map((row, index) => (
+              <div className="flex items-center justify-between gap-2 text-xs" key={row.code}>
+                <span className="flex min-w-0 items-center gap-2 font-bold text-[#334155]">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
+                  <span className="truncate">{row.name}</span>
+                </span>
+                <span className="shrink-0 tabular-nums font-black text-[#0F172A]">{compactNumber(row.salesValue)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </ChartPanel>
+  );
+}
+
+function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
+  const chartRows = rows.map((row) => ({
+    ...row,
+    label: truncateLabel(row.name || row.code, 18),
+  }));
+  return (
+    <ChartPanel meta={`${chartRows.length} branches`} title="Branch sales vs stock">
+      {chartRows.length === 0 ? (
+        <EmptyChart label="No branch rows for this filter." />
+      ) : (
+        <div className="h-[300px] min-w-0 px-2 py-3">
+          <ResponsiveContainer height="100%" width="100%">
+            <BarChart data={chartRows} margin={{ bottom: 22, left: -8, right: 14, top: 8 }}>
+              <CartesianGrid stroke="#E2E8F0" strokeDasharray="4 8" vertical={false} />
+              <XAxis axisLine={false} dataKey="label" interval={0} tick={{ fill: "#64748B", fontSize: 9, fontWeight: 700 }} tickLine={false} />
+              <YAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} width={46} />
+              <Tooltip formatter={(value, name) => [num(Number(value)), name === "salesUnits" ? "Sales units" : "Stock units"]} labelFormatter={(_, payload) => payload?.[0]?.payload?.name ?? ""} />
+              <Bar dataKey="salesUnits" fill="#F97316" radius={[5, 5, 0, 0]} />
+              <Bar dataKey="stockUnits" fill="#2563EB" radius={[5, 5, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </ChartPanel>
+  );
+}
+
+function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
+  const chartRows = rows.map((row) => ({
+    ...row,
+    label: truncateLabel(row.branchName || row.branchCode, 22),
+  }));
+  return (
+    <ChartPanel meta={`${chartRows.length} branches`} title="Stock with zero sales">
+      {chartRows.length === 0 ? (
+        <EmptyChart label="No stock-on-hand zero-sales branches for this filter." />
+      ) : (
+        <div className="h-[300px] min-w-0 px-2 py-3">
+          <ResponsiveContainer height="100%" width="100%">
+            <BarChart data={chartRows} layout="vertical" margin={{ bottom: 4, left: 8, right: 18, top: 6 }}>
+              <CartesianGrid horizontal={false} stroke="#E2E8F0" strokeDasharray="4 8" />
+              <XAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} type="number" />
+              <YAxis axisLine={false} dataKey="label" tick={{ fill: "#334155", fontSize: 10, fontWeight: 700 }} tickLine={false} type="category" width={112} />
+              <Tooltip formatter={(value) => [num(Number(value)), "Stock units"]} labelFormatter={(_, payload) => payload?.[0]?.payload?.branchName ?? ""} />
+              <Bar dataKey="stockUnits" fill="#0F766E" radius={[0, 5, 5, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </ChartPanel>
   );
 }
 
