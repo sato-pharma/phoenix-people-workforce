@@ -51,6 +51,8 @@ async function ClosingDashboardContent({
     periodFrom:   typeof filters.periodFrom   === "string" ? filters.periodFrom   : null,
     periodTo:     typeof filters.periodTo     === "string" ? filters.periodTo     : null,
     lines:        Array.isArray(filters.lines)             ? filters.lines         : [],
+    products:     Array.isArray(filters.products)          ? filters.products      : [],
+    families:     Array.isArray(filters.families)          ? filters.families      : [],
     employeeHrId: typeof filters.employeeHrId === "string" ? filters.employeeHrId : null,
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
     batchStatus:  Array.isArray(filters.batchStatus)        ? filters.batchStatus  : [],
