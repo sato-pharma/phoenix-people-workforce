@@ -102,12 +102,9 @@ function hasNsmRole(employee: EmployeeDirectoryRow | undefined) {
   return Boolean(title && (/\bnsm\b/.test(title) || title.includes("national sales manager")));
 }
 
-function hasLineMatch(employee: EmployeeDirectoryRow | undefined, line: string | null | undefined) {
+export function hasLineMatch(employee: EmployeeDirectoryRow | undefined, line: string | null | undefined) {
   if (salesRoleOverrideForHrId(employee?.hr_id)) return true;
-  const sourceLine = canonicalSalesLine(line);
-  const employeeLine = canonicalSalesLine(employee?.line);
-  if (!sourceLine || !employeeLine) return true;
-  return sourceLine === employeeLine;
+  return linesCompatible(line, employee?.line);
 }
 
 function roleMismatchLabel(label: string, employee: EmployeeDirectoryRow | undefined, expectedRole: string, line?: string | null) {
