@@ -166,6 +166,7 @@ function writePref(key: string, value: unknown) {
 function useBooleanPref(key: string): boolean {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, []);
 
@@ -664,6 +665,7 @@ function SidebarNav({
   const isAdmin = mode === "admin";
   const [isClientReady, setIsClientReady] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsClientReady(true);
   }, []);
 
