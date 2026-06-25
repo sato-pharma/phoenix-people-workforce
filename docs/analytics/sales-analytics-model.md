@@ -1,5 +1,17 @@
 # Sales Analytics Data Model
 
+## Schema verification checklist (read this before editing analytics SQL)
+
+Before assuming a table's schema from `supabase/migrations/`, also check the loose root scripts
+in `supabase/*.sql` (e.g. `supabase/phoenix-sales-manager-hr-id.sql` holds the REAL, currently-applied
+`sales_records` / `sales_import_batches` / `sales_targets` / `sales_target_batches` schema — the
+migrations-folder version (`20260502000001_legacy_sales_payroll_branch_baseline.sql`) is a
+`create table if not exists` no-op against an already-existing table with a thinner legacy column
+set). A prior audit got this wrong by only grepping `supabase/migrations/` and flagged the
+`analytics.closing_fact` view's `territory`/`family`/`sales_type`/`sales_units`/`target_units`/
+`validation_state` column references as a "critical schema mismatch" — they are correct. Always
+grep BOTH locations for `create table.*<table_name>` before concluding a column doesn't exist.
+
 ## Three pipelines — three source families
 
 ### 1. Source of Sales (SoS)

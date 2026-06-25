@@ -67,6 +67,17 @@ export type SosByProductRow = {
   value: number;
 };
 
+export type SosByCustomerRow = {
+  period: string;
+  year: number;
+  month: number;
+  clientCode: string;
+  line: string;
+  regionCode: string;
+  regionName: string;
+  activeBatches: number;
+};
+
 export type ClosingByEmployeeRow = {
   period: string;
   line: string;
@@ -184,6 +195,7 @@ export type SosFilters = {
   products?: string[];
   families?: string[];
   channel?: string | null;
+  clientCodes?: string[];
 };
 
 export type SosByLineRow = {
@@ -270,6 +282,20 @@ export async function loadSosByProduct(filters: SosFilters = {}): Promise<SosByP
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosProductRow);
 }
 
+export async function loadSosByCustomer(filters: SosFilters = {}): Promise<SosByCustomerRow[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.rpc("analytics_sos_by_customer" as never, {
+    p_period:       filters.period      ?? null,
+    p_period_from:  filters.periodFrom  ?? null,
+    p_period_to:    filters.periodTo    ?? null,
+    p_lines:        filters.lines?.length       ? filters.lines       : null,
+    p_regions:      filters.regions?.length     ? filters.regions     : null,
+    p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
+  } as never);
+  if (error) throw new Error(`SoS by customer: ${error.message}`);
+  return ((data ?? []) as Record<string, unknown>[]).map(mapSosCustomerRow);
+}
+
 // ── Monthly closing loaders ───────────────────────────────────────────────────
 
 export type ClosingFilters = {
@@ -281,6 +307,8 @@ export type ClosingFilters = {
   families?: string[];
   employeeHrId?: string | null;
   territory?: string | null;
+  batchStatus?: string[];
+  batchId?: string | null;
 };
 
 export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promise<ClosingByEmployeeRow[]> {
@@ -292,6 +320,8 @@ export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promi
     p_lines:        filters.lines?.length    ? filters.lines    : null,
     p_employee_hr_id: filters.employeeHrId ?? null,
     p_territory:    filters.territory   ?? null,
+    p_batch_status: filters.batchStatus?.length ? filters.batchStatus : null,
+    p_batch_id:     filters.batchId     ?? null,
   } as never);
   if (error) throw new Error(`Closing by employee: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapClosingEmployeeRow);
@@ -378,6 +408,19 @@ function mapSosProductRow(r: Record<string, unknown>): SosByProductRow {
     channel:     s(r.channel),
     units:       n(r.units),
     value:       n(r.value),
+  };
+}
+
+function mapSosCustomerRow(r: Record<string, unknown>): SosByCustomerRow {
+  return {
+    period:        s(r.period),
+    year:          n(r.year),
+    month:         n(r.month),
+    clientCode:    s(r.client_code),
+    line:          s(r.line),
+    regionCode:    s(r.region_code),
+    regionName:    s(r.region_name),
+    activeBatches: n(r.active_batches),
   };
 }
 

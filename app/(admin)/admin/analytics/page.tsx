@@ -4,6 +4,7 @@ import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight } from
 
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 
 export const dynamic = "force-dynamic";
 
@@ -66,14 +67,19 @@ export default async function AnalyticsHubPage() {
     redirect("/employee-portals");
   }
   await assertPermission(access, "sales", "read");
+  const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Sales Analytics</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Enterprise BI foundation — three sales pipelines, unified dimension filters, comparison mode.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Sales Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Enterprise BI foundation — three sales pipelines, unified dimension filters, comparison mode.
+            Add <code>?demo=1</code> to any dashboard to preview it with fake sample data.
+          </p>
+        </div>
+        {canOpenMetabase ? <OpenInMetabaseLink /> : null}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

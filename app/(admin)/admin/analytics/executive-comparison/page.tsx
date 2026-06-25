@@ -4,22 +4,46 @@ import { Suspense } from "react";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
+import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
+import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { loadSosByLine, loadSosByProduct, loadSosByArea } from "@/lib/analytics/service";
+import {
+  loadAnalyticsDimensions,
+  loadSosByLine,
+  loadSosByProduct,
+  loadSosByArea,
+  type AnalyticsDimensions,
+  type SosByLineRow,
+  type SosByProductRow,
+  type SosByAreaRow,
+} from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { safeDividePct } from "@/lib/analytics/validation";
+import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
+import { demoAnalyticsDimensions, demoSosByArea, demoSosByLine, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
+import { StackedChart } from "@/components/charts/stacked-chart";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
+const DONUT_COLORS = ["#F97316", "#0F172A", "#0EA5E9", "#10B981", "#8B5CF6", "#EF4444"];
+
 function fmt(n: number): string {
   return n.toLocaleString("en-EG", { maximumFractionDigits: 0 });
 }
 
-async function ExecComparisonContent({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+async function ExecComparisonContent({
+  searchParams,
+  role,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+  role: PhoenixRole;
+}) {
+  const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
 
   const sosFilters = {
@@ -30,11 +54,24 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
     distributors: Array.isArray(filters.distributors)  ? filters.distributors  : [],
   };
 
-  const [byLine, byProduct, byArea] = await Promise.all([
-    loadSosByLine(sosFilters).catch(() => []),
-    loadSosByProduct(sosFilters).catch(() => []),
-    loadSosByArea(sosFilters).catch(() => []),
-  ]);
+  let byLine: SosByLineRow[];
+  let byProduct: SosByProductRow[];
+  let byArea: SosByAreaRow[];
+  let dimensions: AnalyticsDimensions;
+
+  if (demo) {
+    byLine = demoSosByLine();
+    byProduct = demoSosByProduct();
+    byArea = demoSosByArea();
+    dimensions = demoAnalyticsDimensions();
+  } else {
+    [byLine, byProduct, byArea, dimensions] = await Promise.all([
+      loadSosByLine(sosFilters).catch(() => []),
+      loadSosByProduct(sosFilters).catch(() => []),
+      loadSosByArea(sosFilters).catch(() => []),
+      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+    ]);
+  }
 
   const grandTotal = byLine.reduce((s, r) => s + r.value, 0);
 
@@ -45,7 +82,7 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
     lineMap.set(r.line, { value: cur.value + r.value, units: cur.units + r.units });
   }
   const lineRanked = [...lineMap.entries()]
-    .map(([line, totals]) => ({ line, ...totals, sharePct: grandTotal > 0 ? (totals.value / grandTotal) * 100 : 0 }))
+    .map(([line, totals]) => ({ line, ...totals, sharePct: safeDividePct(totals.value, grandTotal) }))
     .sort((a, b) => b.value - a.value);
 
   // Aggregate product totals
@@ -57,7 +94,7 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
   const productRanked = [...prodMap.values()]
     .sort((a, b) => b.value - a.value)
     .slice(0, 30)
-    .map((p) => ({ ...p, sharePct: grandTotal > 0 ? (p.value / grandTotal) * 100 : 0 }));
+    .map((p) => ({ ...p, sharePct: safeDividePct(p.value, grandTotal) }));
 
   // Aggregate region totals
   const regionMap = new Map<string, { regionName: string; value: number; units: number }>();
@@ -67,14 +104,45 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
   }
   const regionRanked = [...regionMap.values()]
     .sort((a, b) => b.value - a.value)
-    .map((r) => ({ ...r, sharePct: grandTotal > 0 ? (r.value / grandTotal) * 100 : 0 }));
+    .map((r) => ({ ...r, sharePct: safeDividePct(r.value, grandTotal) }));
+
+  const lineDonutData = lineRanked.slice(0, 6).map((row, i) => ({
+    name: row.line,
+    value: row.value,
+    color: DONUT_COLORS[i % DONUT_COLORS.length],
+  }));
+  const regionDonutData = regionRanked.slice(0, 6).map((row, i) => ({
+    name: row.regionName,
+    value: row.value,
+    color: DONUT_COLORS[i % DONUT_COLORS.length],
+  }));
 
   return (
     <div className="space-y-6">
+      {demo ? <AnalyticsDemoBanner /> : null}
+
+      <AnalyticsFilterBar
+        descriptors={EXECUTIVE_FILTERS}
+        values={filters}
+        dimensions={dimensions}
+        basePath="/admin/analytics/executive-comparison"
+      />
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <AnalyticsKpiCard label="Grand Total Value" value={fmt(grandTotal)} prefix="EGP" />
         <AnalyticsKpiCard label="Lines"    value={String(lineRanked.length)} />
         <AnalyticsKpiCard label="Products" value={String(productRanked.length)} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section className="border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Line Share</h2>
+          {lineDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={lineDonutData} tooltipPrefix="EGP " />}
+        </section>
+        <section className="border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-3">Region Share</h2>
+          {regionDonutData.length === 0 ? <AnalyticsEmptyState /> : <StackedChart data={regionDonutData} tooltipPrefix="EGP " />}
+        </section>
       </div>
 
       <section>
@@ -84,9 +152,9 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
             searchKeys={["line"]}
             columns={[
               { key: "line",     label: "Line",    sortable: true },
-              { key: "units",    label: "Units",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "value",    label: "Value",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "sharePct", label: "Share %", align: "right", sortable: true, format: (v) => `${Number(v).toFixed(1)}%` },
+              { key: "units",    label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",    label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct", label: "Share %", align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={lineRanked}
             totals={{ units: byLine.reduce((s, r) => s + r.units, 0), value: grandTotal }}
@@ -103,9 +171,9 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
               { key: "line",        label: "Line",    sortable: true },
               { key: "family",      label: "Family",  sortable: true },
               { key: "productName", label: "Product", sortable: true },
-              { key: "units",       label: "Units",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "value",       label: "Value",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "sharePct",    label: "Share %", align: "right", sortable: true, format: (v) => `${Number(v).toFixed(1)}%` },
+              { key: "units",       label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",       label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct",    label: "Share %", align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={productRanked}
           />
@@ -119,9 +187,9 @@ async function ExecComparisonContent({ searchParams }: { searchParams: Record<st
             searchKeys={["regionName"]}
             columns={[
               { key: "regionName", label: "Region",  sortable: true },
-              { key: "units",      label: "Units",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "value",      label: "Value",   align: "right", sortable: true, format: (v) => fmt(Number(v)) },
-              { key: "sharePct",   label: "Share %", align: "right", sortable: true, format: (v) => `${Number(v).toFixed(1)}%` },
+              { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "sharePct",   label: "Share %", align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={regionRanked}
             totals={{ value: grandTotal }}
@@ -148,7 +216,7 @@ export default async function ExecutiveComparisonPage({ searchParams }: { search
         </p>
       </div>
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ExecComparisonContent searchParams={resolvedParams} />
+        <ExecComparisonContent searchParams={resolvedParams} role={access.role} />
       </Suspense>
     </div>
   );

@@ -20,7 +20,9 @@ export type FilterSource =
   | "regions"         // loaded from analytics.dim_areas (distinct regions)
   | "areas"           // loaded from analytics.dim_areas
   | "employees"       // loaded from employee directory
-  | "territories";    // distinct territories from closing_fact
+  | "territories"     // distinct territories from closing_fact
+  | "customers"        // loaded from analytics.sos_by_customer (period-scoped)
+  | "batchStatuses";   // static: staged/approved/rejected (closing batches only)
 
 export type FilterDescriptor = {
   key: string;
@@ -51,6 +53,15 @@ export function getFilterArray(filters: FilterValues, key: string): string[] {
   if (Array.isArray(v)) return v;
   if (typeof v === "string" && v) return [v];
   return [];
+}
+
+// Include/exclude mode for a multi-select filter, read from a parallel `${key}Mode`
+// URL param. All analytics RPCs only support include-style `= any(array)` filtering
+// today, so every filter ships in "include" mode this pass — this helper exists so
+// the filter bar and registry agree on the convention if exclude mode is added later.
+export function getFilterMode(filters: FilterValues, key: string): "include" | "exclude" {
+  const v = filters[`${key}Mode`];
+  return v === "exclude" ? "exclude" : "include";
 }
 
 // ── Parse URL search params into FilterValues ─────────────────────────────────

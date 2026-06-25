@@ -8,6 +8,7 @@ import {
 } from "@/lib/notifications/email";
 import { processDeferredDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
+import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 
 export async function runScheduledNotificationProcessing(limit = 10) {
   const reaped = await reapStaleProcessingOutboxRows();
@@ -16,6 +17,8 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const attendanceAgent = await runAttendanceIngestionAlert();
   // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
   const exitedDeductions = await supersedeExitedEmployeeDeductionCandidates();
+  // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
+  const staleSosBatches = await cleanupStalePendingSosBatches();
   const outbox = await processNotificationOutbox(limit);
   const deferred = await processDeferredDeliveryRetries(limit);
   const telegram = await processTelegramDeliveryRetries(limit);
@@ -27,5 +30,5 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   if (inactiveUsers.length) {
     console.info(`[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`);
   }
-  return { activityRetention, attendanceAgent, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, telegram };
+  return { activityRetention, attendanceAgent, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, staleSosBatches, telegram };
 }

@@ -155,6 +155,44 @@ export const TERRITORY_FILTER: FilterDescriptor = {
   pipeline: "closing",
 };
 
+// ── Customer (SoS only — presence, not invoice rows) ─────────────────────────
+
+export const CUSTOMER_FILTER: FilterDescriptor = {
+  key: "clientCodes",
+  label: "Customer",
+  type: "multi-select",
+  source: "customers",
+  multiple: true,
+  placeholder: "All customers",
+  pipeline: "sos",
+};
+
+// ── Batch (closing only — real workflow states: staged/approved/rejected) ────
+
+export const BATCH_STATUS_FILTER: FilterDescriptor = {
+  key: "batchStatus",
+  label: "Batch Status",
+  type: "multi-select",
+  source: "batchStatuses",
+  multiple: true,
+  staticOptions: [
+    { value: "staged", label: "Staged" },
+    { value: "approved", label: "Approved" },
+    { value: "rejected", label: "Rejected" },
+  ],
+  placeholder: "All statuses",
+  pipeline: "closing",
+};
+
+export const BATCH_ID_FILTER: FilterDescriptor = {
+  key: "batchId",
+  label: "Batch",
+  type: "text-search",
+  source: "static",
+  placeholder: "Batch UUID",
+  pipeline: "closing",
+};
+
 // ── Pre-built sets per dashboard ──────────────────────────────────────────────
 
 export const SOS_FILTERS: FilterDescriptor[] = [
@@ -169,6 +207,7 @@ export const SOS_FILTERS: FilterDescriptor[] = [
   PRODUCT_FILTER,
   FAMILY_FILTER,
   CHANNEL_FILTER,
+  CUSTOMER_FILTER,
 ];
 
 export const CLOSING_FILTERS: FilterDescriptor[] = [
@@ -181,6 +220,8 @@ export const CLOSING_FILTERS: FilterDescriptor[] = [
   FAMILY_FILTER,
   EMPLOYEE_FILTER,
   TERRITORY_FILTER,
+  BATCH_STATUS_FILTER,
+  BATCH_ID_FILTER,
 ];
 
 export const WEEKLY_FILTERS: FilterDescriptor[] = [
