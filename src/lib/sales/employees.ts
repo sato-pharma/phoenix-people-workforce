@@ -330,19 +330,6 @@ export function linkSalesRecordAgainstDirectory(
     };
   }
 
-  if (rawHrId && isSalesVacancyAreaCode(rawHrId)) {
-    return {
-      employeeHrId: rawHrId,
-      employeeCrmId: source.employeeCrmId ?? null,
-      employeeLookupKey: source.employeeLookupKey ?? null,
-      employeeName: source.employeeName ?? null,
-      linkStatus: "unlinked",
-      linkConfidence: 0,
-      line: source.line ?? null,
-      diagnostics: [`Vacant area code "${rawHrId}" is counted as vacant territory sales, not MR personal sales.`],
-    };
-  }
-
   const withMatchedEmployee = (match: EmployeeDirectoryRow, confidence: number): LinkResult => {
     const mismatch = lineMismatchMessage(source.line, match.line);
     if (mismatch) diagnostics.push(`WARN: ${mismatch}`);
