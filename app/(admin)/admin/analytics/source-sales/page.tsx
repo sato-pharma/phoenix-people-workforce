@@ -189,6 +189,8 @@ async function SosDashboardContent({
               { key: "value", label: "Value", align: "right", sortable: true, formatKind: "number" },
             ]}
             rows={lineTotals}
+            exportTitle="SoS — Line Comparison"
+            exportSubtitle="Units and value by line, current filter selection"
           />
         </AnalyticsSection>
       ) : null}

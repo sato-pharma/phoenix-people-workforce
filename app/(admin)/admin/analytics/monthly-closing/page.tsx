@@ -145,6 +145,8 @@ async function ClosingDashboardContent({
               { key: "achievementPct", label: "Achiev %",   align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={lineTotals}
+            exportTitle="Closing — Line Comparison"
+            exportSubtitle="Sales vs target by line, current filter selection"
           />
         </AnalyticsSection>
       ) : null}

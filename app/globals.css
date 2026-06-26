@@ -15,11 +15,14 @@
   src: url("/fonts/great-vibes.woff2") format("woff2");
 }
 
-/* ── Employee identity banner ──────────────────────────────────────────────
-   A premium hero that mirrors the brand banner artwork and scales every
-   element proportionally with its own width via container query units. These
-   live as plain CSS (not Tailwind utilities) because Tailwind v4 does not
-   infer `cqw`/aspect-ratio arbitrary values as lengths. */
+@font-face {
+  font-family: "Pinyon Script";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/pinyon-script.woff2") format("woff2");
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
