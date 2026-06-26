@@ -1,3 +1,6 @@
+"use client";
+
+import { useRef, useEffect, useState } from "react";
 import { EmployeePortrait } from "./EmployeePortrait";
 import type { PhoenixSignatureCardProps } from "./types";
 
@@ -13,10 +16,22 @@ export function PhoenixSignatureCard({
   name,
   title,
   photoSrc,
+  prefix,
   className = "",
 }: PhoenixSignatureCardProps) {
   const titleLabel = title.trim().toUpperCase() || "PHOENIX WORKFORCE";
-  const sigName = signatureNameFor(name);
+  const sigName = prefix ? `${prefix} ${signatureNameFor(name)}` : signatureNameFor(name);
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [nameWidth, setNameWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!nameRef.current) return;
+    const measure = () => setNameWidth(nameRef.current!.offsetWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(nameRef.current);
+    return () => ro.disconnect();
+  }, [sigName]);
 
   return (
     <section
@@ -39,10 +54,10 @@ export function PhoenixSignatureCard({
         style={{ right: "-2%", top: "-15%", height: "145%", width: "auto", opacity: 1, zIndex: 0 }}
       />
 
-      {/* Photo — left */}
+      {/* Photo — left, top-anchored so only bottom extends */}
       <div
-        className="absolute z-10 -translate-y-1/2"
-        style={{ left: "3.5%", top: "46%", width: "13.5%" }}
+        className="absolute z-10"
+        style={{ left: "4.25%", top: "5%", width: "15.5%" }}
       >
         <EmployeePortrait src={photoSrc} alt={`${name} portrait`} name={name} />
       </div>
@@ -50,27 +65,39 @@ export function PhoenixSignatureCard({
       {/* Vertical divider */}
       <div
         className="absolute z-10"
-        style={{ left: "25%", top: "8%", bottom: "28%", width: "1px", background: "linear-gradient(180deg, transparent, #e0d0bc 20%, #e0d0bc 80%, transparent)" }}
+        style={{ left: "24%", top: "8%", bottom: "28%", width: "1px", background: "linear-gradient(180deg, transparent, #e0d0bc 20%, #e0d0bc 80%, transparent)" }}
       />
 
       {/* Content — name, title, signature */}
       <div
         className="absolute z-10 -translate-y-1/2 flex flex-col justify-center"
-        style={{ left: "27%", top: "42%", right: "8%" }}
+        style={{ left: "26%", top: "42%", right: "4%" }}
       >
         <p
           className="italic font-medium text-[#2a3a5c]"
-          style={{
-            fontFamily: '"Great Vibes", "Segoe Script", "Dancing Script", cursive',
-            fontSize: "clamp(1.1rem, 3.8cqw, 4.2rem)",
-            lineHeight: 1.1,
-          }}
+          style={{ fontFamily: '"Pinyon Script", cursive', fontSize: "clamp(1.1rem, 3.8cqw, 4.2rem)", lineHeight: 1.1 }}
         >
-          {sigName}
+          <span ref={nameRef} style={{ display: "inline" }}>{sigName}</span>
         </p>
+        {/* Decorative orange line — same width as name */}
+        <div
+          className="flex items-center"
+          style={{ marginTop: "clamp(3px,0.55cqw,8px)", width: nameWidth ? `${nameWidth}px` : "auto" }}
+        >
+          <div className="flex-1 h-px" style={{ background: "#f47b20" }} />
+          <div className="rounded-full mx-[clamp(3px,0.3cqw,5px)]" style={{ width: "clamp(5px,0.55cqw,8px)", height: "clamp(5px,0.55cqw,8px)", background: "#f47b20" }} />
+          <div className="h-px" style={{ width: "22%", background: "rgba(244,123,32,0.5)" }} />
+        </div>
+        {/* Title centered under name */}
         <p
-          className="uppercase font-bold tracking-widest"
-          style={{ color: "#f47b20", fontSize: "clamp(0.38rem, 1.05cqw, 1.15rem)", letterSpacing: "clamp(0.06rem,0.28cqw,0.36rem)", marginTop: "clamp(2px,0.5cqw,7px)" }}
+          className="uppercase font-bold tracking-widest text-center"
+          style={{
+            color: "#f47b20",
+            fontSize: "clamp(0.38rem, 1.05cqw, 1.15rem)",
+            letterSpacing: "clamp(0.06rem,0.28cqw,0.36rem)",
+            marginTop: "clamp(3px,0.55cqw,8px)",
+            width: nameWidth ? `${nameWidth}px` : "auto",
+          }}
         >
           {titleLabel}
         </p>

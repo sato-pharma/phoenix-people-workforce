@@ -21,11 +21,15 @@ type EmployeePortraitProps = {
 export function EmployeePortrait({ src, alt, name }: EmployeePortraitProps) {
   return (
     <div
-      className="relative z-20 w-full overflow-hidden border-[#f47b20] bg-white shadow-[0_14px_34px_rgba(15,35,55,0.18)]"
+      className="relative z-20 w-full overflow-hidden bg-white"
       style={{
         aspectRatio: "0.785 / 1",
-        borderRadius: "clamp(12px, 1.28cqw, 20px)",
-        borderWidth: "clamp(1px, 0.17cqw, 3px)",
+        borderRadius: "clamp(10px, 1.1cqw, 18px)",
+        border: "clamp(2px,0.25cqw,4px) solid transparent",
+        backgroundImage: "linear-gradient(#fff,#fff), linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70%, #f9c06a)",
+        backgroundOrigin: "border-box",
+        backgroundClip: "padding-box, border-box",
+        boxShadow: "0 0 0 clamp(2px,0.28cqw,5px) rgba(244,123,32,0.18), 0 0 clamp(12px,1.8cqw,26px) clamp(3px,0.6cqw,8px) rgba(244,123,32,0.4), 0 0 clamp(28px,3.5cqw,50px) clamp(5px,0.9cqw,13px) rgba(255,150,40,0.2), 0 12px 30px rgba(15,35,55,0.2)",
       }}
     >
       <div
