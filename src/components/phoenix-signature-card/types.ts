@@ -3,5 +3,6 @@ export type PhoenixSignatureCardProps = {
   title: string;
   photoSrc: string | null;
   logoSrc: string;
+  prefix?: string;
   className?: string;
 };

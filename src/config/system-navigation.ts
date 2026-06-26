@@ -227,7 +227,9 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-sales-intelligence",
     items: [
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
+      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "M.Closing Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
     ],
@@ -339,6 +341,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "M.Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Data Entry", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
@@ -371,18 +375,6 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/queue", icon: ClipboardList, label: "Sales Queue", permissions: [{ action: "import", resource: "sales" }] },
     ],
     label: "Sales Queue",
-  },
-  {
-    id: "sales-analytics",
-    items: [
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Analytics Hub", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/source-sales", icon: ChartColumnBig, label: "SoS Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/monthly-closing", icon: CalendarRange, label: "Closing Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] },
-      { href: "/admin/analytics/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Analytics", permissions: [{ resource: "weekly_sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/executive-comparison", icon: ChartColumnBig, label: "Executive Comparison", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/analytics/reconciliation", icon: ChartColumnBig, label: "Reconciliation", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-    ],
-    label: "Sales Analytics",
   },
 
   // ── Tier 7: Marketing ─────────────────────────────────────────────────────────

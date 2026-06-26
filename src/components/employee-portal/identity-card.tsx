@@ -1,8 +1,24 @@
 "use client";
 
-import { PhoenixSignatureCard } from "@/components/phoenix-signature-card/PhoenixSignatureCard";
+import dynamic from "next/dynamic";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import type { PhoenixSignatureCardProps } from "@/components/phoenix-signature-card/types";
+
+const PhoenixSignatureCard = dynamic<PhoenixSignatureCardProps>(
+  () => import("@/components/phoenix-signature-card/PhoenixSignatureCard").then((m) => m.PhoenixSignatureCard),
+  { ssr: false }
+);
+
+const MANAGER_KEYWORDS = [
+  "manager", "director", "head", "ceo", "president",
+  "gpm", "nsm", "sfe", "finance", "hr specialist", "super admin",
+];
+
+function isManagerOrAbove(roleLabel: string) {
+  const lower = roleLabel.toLowerCase();
+  return MANAGER_KEYWORDS.some((kw) => lower.includes(kw));
+}
 
 function displaySignatureName(name: string) {
   const parts = name.split(/\s+/).filter(Boolean);
@@ -23,6 +39,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
       title={roleLabel}
       photoSrc={profileImage}
       logoSrc="/brand/phoenix-camera-watermark.png"
+      prefix={isManagerOrAbove(roleLabel) ? "Dr." : undefined}
     />
   );
 }

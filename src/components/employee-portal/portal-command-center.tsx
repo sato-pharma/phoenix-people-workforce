@@ -10,11 +10,13 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Layers,
+  MapPin,
   ReceiptText,
   Send,
   Target,
   TrendingUp,
   Trophy,
+  User,
   Wallet,
 } from "lucide-react";
 
@@ -168,65 +170,154 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const { shell, pendingVacationCount, pendingExcuseCount } = snapshot;
   const lineName = shell.employee.line;
   const totalPending = pendingVacationCount + pendingExcuseCount;
+  const hireDate = shell.hrContract.hireDate;
+  const manager = shell.employee.manager;
+  const area = shell.employee.area;
+  const dept = shell.employee.department ?? "";
+  const isSales = dept.toLowerCase().includes("sales");
+  const hireDateLabel = hireDate
+    ? new Date(hireDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : null;
 
   return (
-    <div className="mx-auto w-full space-y-4" dir="auto">
+    <div className="mx-auto w-full space-y-3" dir="auto">
       <IdentityCard data={shell} />
 
-      {lineName && (
-        <div className="flex items-center gap-3 border border-orange-200 bg-orange-50 px-5 py-3.5">
-          <Layers className="h-4 w-4 shrink-0 text-orange-600" />
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">Product Line</p>
-            <p className="truncate font-bold text-slate-900">{lineName}</p>
+      {/* ── PROFILE INTEL ─────────────────────────────────────────── */}
+      {(lineName || hireDateLabel || manager || (isSales && area)) && (
+        <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
+          {/* subtle grid */}
+          <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
+          {/* top orange line */}
+          <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+          <div className="relative flex flex-wrap">
+            {lineName && (
+              <div className="group flex min-w-[160px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-7 py-5">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-3 w-3 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Product Line</span>
+                </div>
+                <span className="text-base font-black text-white">{lineName}</span>
+              </div>
+            )}
+            {hireDateLabel && (
+              <div className="group flex min-w-[160px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-7 py-5">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-3 w-3 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Joined</span>
+                </div>
+                <span className="text-base font-black text-white">{hireDateLabel}</span>
+              </div>
+            )}
+            {manager && (
+              <div className="group flex min-w-[200px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-7 py-5">
+                <div className="flex items-center gap-2">
+                  <User className="h-3 w-3 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Reports To</span>
+                </div>
+                <span className="text-base font-black text-white">{manager}</span>
+              </div>
+            )}
+            {isSales && area && (
+              <div className="group flex min-w-[140px] flex-1 flex-col gap-1 px-7 py-5">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-3 w-3 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Area</span>
+                </div>
+                <span className="text-base font-black text-white">{area}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Sales Intelligence</h2>
+      {/* ── SALES INTELLIGENCE ────────────────────────────────────── */}
+      <div className="overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
+        {/* header */}
+        <div className="relative flex items-center justify-between bg-[#0b1f3a] px-6 py-4">
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-[#f47b20]/60 via-[#f47b20]/20 to-transparent" />
+          <div className="flex items-center gap-3">
+            <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
+            <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Sales Intelligence</h2>
+          </div>
+          <TrendingUp className="h-4 w-4 text-[#f47b20]/60" />
         </div>
-        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
-          <PremiumNavTile
-            href="/employee-portals/weekly-sales"
-            icon={TrendingUp}
-            label="Weekly Sales"
-            description="Distributor performance week by week"
-          />
-          <PremiumNavTile
-            href="/employee-portals/monthly-sales"
-            icon={BarChart3}
-            label="Monthly Closing"
-            description="17-distributor closing progress"
-          />
-          <PremiumNavTile
-            href="/employee-portals/sales"
-            icon={Activity}
-            label="Sales Dashboard"
-            description="Monthly target vs actual achievement"
-          />
+        {/* 3 cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3">
+          {([
+            { href: "/employee-portals/weekly-sales", icon: TrendingUp, label: "Weekly Sales", sub: "Distributor performance week by week", primary: true },
+            { href: "/employee-portals/monthly-sales", icon: BarChart3, label: "Monthly Closing", sub: "17-distributor closing progress", primary: false },
+            { href: "/employee-portals/sales", icon: Activity, label: "Sales Dashboard", sub: "Monthly target vs actual achievement", primary: false },
+          ] as const).map(({ href, icon: Icon, label, sub, primary }) => (
+            <Link key={href} href={href}
+              className="group relative flex flex-col gap-3 overflow-hidden border-r border-b border-slate-100 bg-white p-6 last:border-r-0 transition-all duration-200 hover:bg-[#0b1f3a] sm:border-b-0"
+            >
+              <div className="absolute inset-x-0 top-0 h-0 bg-[#f47b20] transition-all duration-300 group-hover:h-[3px]" />
+              <div className={`flex h-11 w-11 items-center justify-center transition-colors duration-200 ${primary ? "bg-[#f47b20]" : "border border-slate-200 bg-slate-50 group-hover:border-[#f47b20]/40 group-hover:bg-[#f47b20]/10"}`}>
+                <Icon className={`h-5 w-5 transition-colors ${primary ? "text-white" : "text-slate-400 group-hover:text-[#f47b20]"}`} />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-900 transition-colors group-hover:text-white">{label}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500 transition-colors group-hover:text-slate-400">{sub}</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#f47b20] opacity-0 transition-all duration-200 group-hover:opacity-100">
+                Open <ArrowRight className="h-3 w-3" />
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
 
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Marketing Tools</h2>
+      {/* ── MARKETING & WORKSPACE ─────────────────────────────────── */}
+      <div className="overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
+        <div className="relative flex items-center justify-between bg-[#0b1f3a] px-6 py-4">
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-[#f47b20]/60 via-[#f47b20]/20 to-transparent" />
+          <div className="flex items-center gap-3">
+            <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
+            <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Marketing &amp; Workspace</h2>
+          </div>
+          <Send className="h-4 w-4 text-[#f47b20]/60" />
         </div>
         <div className="divide-y divide-slate-100 bg-white">
-          <MarketingToolRow href="/employee-portals/plans" icon={CalendarDays} label="My Plans" sub="Weekly and monthly field activity planning" />
-          <MarketingToolRow href="/employee-portals/marketing-requests" icon={Send} label="Marketing Requests" sub="Submit and track promotional investments" />
-          <MarketingToolRow href="/employee-portals/roi" icon={Target} label="ROI Intelligence" sub="Measure return on marketing spend" />
-          <MarketingToolRow href="/employee-portals/coaching-analytics" icon={ChartColumnBig} label="Coaching Analytics" sub="Team coaching performance overview" />
+          {([
+            { href: "/employee-portals/plans", icon: CalendarDays, label: "My Plans", sub: "Weekly and monthly field activity planning", num: "01" },
+            { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing Requests", sub: "Submit and track promotional investments", num: "02" },
+            { href: "/employee-portals/roi", icon: Target, label: "ROI Intelligence", sub: "Measure return on marketing spend", num: "03" },
+            { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", sub: "Team coaching performance overview", num: "04" },
+          ] as const).map(({ href, icon: Icon, label, sub, num }) => (
+            <Link key={href} href={href}
+              className="group relative flex items-center gap-5 overflow-hidden px-6 py-4 transition-all duration-150 hover:bg-[#fdf5ee]"
+            >
+              <div className="absolute inset-y-0 left-0 w-0 bg-[#f47b20] transition-all duration-200 group-hover:w-[3px]" />
+              <span className="w-6 shrink-0 text-[11px] font-black tabular-nums text-[#f47b20]/40 transition-colors group-hover:text-[#f47b20]">{num}</span>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 transition-all duration-150 group-hover:border-[#f47b20]/40 group-hover:bg-[#f47b20]/8">
+                <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f47b20]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-900">{label}</p>
+                <p className="text-[11px] text-slate-500">{sub}</p>
+              </div>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-all duration-150 group-hover:translate-x-1 group-hover:text-[#f47b20]" />
+            </Link>
+          ))}
         </div>
       </div>
 
+      {/* ── STATUS ────────────────────────────────────────────────── */}
       {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       ) : (
-        <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-800">All clear - nothing needs your attention right now.</span>
+        <div className="relative overflow-hidden bg-[#0a2018] px-6 py-5 shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
+          <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-emerald-500/30 bg-emerald-500/10">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-500">All Clear</p>
+              <p className="mt-0.5 text-sm font-medium text-emerald-300/80">Nothing needs your attention right now.</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
