@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { NextRequest } from "next/server";
 
 import {
   clearSessionActivity,
@@ -30,6 +31,7 @@ import {
   trustedOriginForRedirect,
 } from "../src/lib/security/origins.ts";
 import { systemDeployment } from "../src/config/system-settings.ts";
+import { isPreviewBuilderLoginRequest } from "../proxy.ts";
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -374,6 +376,53 @@ export async function runAuthSessionTests() {
     "https://phoenix-workforce-team.vercel.app",
     "login redirects from the team preview alias must stay on that alias",
   );
+
+  const originalBuilderAllowedOrigins = process.env.PHOENIX_ALLOWED_ORIGINS;
+  try {
+    process.env.PHOENIX_ALLOWED_ORIGINS = "https://builder.io";
+
+    const builderLoginRequest = new NextRequest("https://phoenix-workforce.vercel.app/api/auth/login", {
+      headers: {
+        origin: "https://builder.io",
+        referer: "https://builder.io/app/projects/0ae41ba2cad449c8bf70/vast-cruiser-5ct7suka",
+        "x-forwarded-host": "phoenix-workforce.vercel.app",
+        "x-forwarded-proto": "https",
+      },
+      method: "POST",
+    });
+
+    assert.equal(
+      isPreviewBuilderLoginRequest(builderLoginRequest),
+      true,
+      "Builder.io may submit login only when explicitly allow-listed",
+    );
+    assert.equal(
+      rejectUntrustedForwardedOrigin(builderLoginRequest),
+      null,
+      "Builder.io login origin must pass when it is explicitly allow-listed",
+    );
+
+    delete process.env.PHOENIX_ALLOWED_ORIGINS;
+    assert.equal(
+      isPreviewBuilderLoginRequest(builderLoginRequest),
+      false,
+      "Builder.io login CSRF exception must not apply without the preview allow-list env",
+    );
+
+    process.env.PHOENIX_ALLOWED_ORIGINS = "https://builder.io";
+    const builderHeartbeatRequest = new NextRequest("https://phoenix-workforce.vercel.app/api/auth/heartbeat", {
+      headers: { origin: "https://builder.io" },
+      method: "POST",
+    });
+    assert.equal(
+      isPreviewBuilderLoginRequest(builderHeartbeatRequest),
+      false,
+      "Builder.io CSRF exception must stay scoped to the login endpoint",
+    );
+  } finally {
+    if (originalBuilderAllowedOrigins === undefined) delete process.env.PHOENIX_ALLOWED_ORIGINS;
+    else process.env.PHOENIX_ALLOWED_ORIGINS = originalBuilderAllowedOrigins;
+  }
 
   const guest = createAccessContext({ source: "guest" });
   assert.equal(guest.scope, "none", "guest context must have no scope");

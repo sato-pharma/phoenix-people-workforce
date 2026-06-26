@@ -18,6 +18,7 @@ function source(path: string) {
  */
 export function runOriginConfigSingleSourceTests() {
   const origins = source("../src/lib/security/origins.ts");
+  const nextConfig = source("../next.config.ts");
 
   // The allowlist must DERIVE the production + working-preview origins from system-settings.
   assert.match(
@@ -49,5 +50,21 @@ export function runOriginConfigSingleSourceTests() {
     isAllowedPhoenixOrigin(systemDeployment.workingPreviewUrl),
     true,
     "the configured working-preview URL must be an allowed Phoenix origin",
+  );
+
+  assert.match(
+    nextConfig,
+    /process\.env\.PHOENIX_ALLOWED_ORIGINS/,
+    "Builder iframe support must be scoped to the configured Phoenix origin allow-list",
+  );
+  assert.match(
+    nextConfig,
+    /const isBuilderPreviewEnabled = configuredPhoenixOrigins\(\)\.has\(builderPreviewOrigin\)/,
+    "Builder iframe support must be enabled only by the preview-scoped allow-list env",
+  );
+  assert.match(
+    nextConfig,
+    /frame-ancestors 'self' \$\{builderPreviewOrigin\}/,
+    "Builder iframe support must use CSP frame-ancestors only when enabled",
   );
 }
