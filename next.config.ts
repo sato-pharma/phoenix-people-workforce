@@ -2,6 +2,26 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const isProduction = process.env.NODE_ENV === "production";
+const builderPreviewOrigin = "https://builder.io";
+function configuredPhoenixOrigins() {
+  return new Set(
+    String(process.env.PHOENIX_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => {
+        try {
+          return new URL(origin.trim()).origin;
+        } catch {
+          return null;
+        }
+      })
+      .filter((origin): origin is string => Boolean(origin)),
+  );
+}
+
+const isBuilderPreviewEnabled = configuredPhoenixOrigins().has(builderPreviewOrigin);
+const frameAncestorsPolicy = isBuilderPreviewEnabled
+  ? `frame-ancestors 'self' ${builderPreviewOrigin}`
+  : "frame-ancestors 'none'";
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -15,7 +35,7 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'none'",
+  frameAncestorsPolicy,
   ...(isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
@@ -32,10 +52,14 @@ const securityHeaders = [
     key: "X-Content-Type-Options",
     value: "nosniff",
   },
-  {
-    key: "X-Frame-Options",
-    value: "DENY",
-  },
+  ...(isBuilderPreviewEnabled
+    ? []
+    : [
+        {
+          key: "X-Frame-Options",
+          value: "DENY",
+        },
+      ]),
   {
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(self), payment=()",

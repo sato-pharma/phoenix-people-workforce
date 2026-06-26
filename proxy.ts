@@ -4,6 +4,12 @@ import {
   isSameOriginMutationRequest,
   requiresCsrfProtection,
 } from "@/lib/security/csrf";
+import {
+  isAllowedPhoenixOrigin,
+  normalizeOrigin,
+} from "@/lib/security/origins";
+
+const builderPreviewOrigin = "https://builder.io";
 
 const previewReadOnlyAllowedMutationPaths = new Set([
   "/api/admin/email-composer/preview",
@@ -48,6 +54,21 @@ function isPreviewReadOnlyBlockedMutation(request: NextRequest) {
     !isPreviewEmailTemplateMutationPath(request.nextUrl.pathname);
 }
 
+export function isPreviewBuilderLoginRequest(request: NextRequest) {
+  if (
+    request.method.toUpperCase() !== "POST" ||
+    request.nextUrl.pathname !== "/api/auth/login" ||
+    !isAllowedPhoenixOrigin(builderPreviewOrigin)
+  ) {
+    return false;
+  }
+
+  const originHeader = normalizeOrigin(request.headers.get("origin"));
+  const refererOrigin = normalizeOrigin(request.headers.get("referer"));
+
+  return originHeader === builderPreviewOrigin || refererOrigin === builderPreviewOrigin;
+}
+
 export function proxy(request: NextRequest) {
   if (isPreviewReadOnlyBlockedMutation(request)) {
     return NextResponse.json(
@@ -57,6 +78,10 @@ export function proxy(request: NextRequest) {
       },
       { status: 403 },
     );
+  }
+
+  if (isPreviewBuilderLoginRequest(request)) {
+    return NextResponse.next();
   }
 
   if (
