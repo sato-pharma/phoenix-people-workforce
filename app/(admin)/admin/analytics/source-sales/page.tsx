@@ -14,16 +14,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   loadAnalyticsDimensions,
   loadSosByPeriod,
-  loadSosByArea,
-  loadSosByProduct,
   loadSosByLine,
-  loadSosByCustomer,
   type AnalyticsDimensions,
   type SosKpiRow,
-  type SosByAreaRow,
-  type SosByProductRow,
   type SosByLineRow,
-  type SosByCustomerRow,
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
@@ -31,11 +25,8 @@ import { computePeriodDelta, shiftPeriod } from "@/lib/analytics/compare";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import {
   demoAnalyticsDimensions,
-  demoSosByArea,
-  demoSosByCustomer,
   demoSosByLine,
   demoSosByPeriod,
-  demoSosByProduct,
 } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
 import { StackedChart } from "@/components/charts/stacked-chart";
@@ -78,27 +69,18 @@ async function SosDashboardContent({
   };
 
   let byPeriod: SosKpiRow[];
-  let byArea: SosByAreaRow[];
-  let byProduct: SosByProductRow[];
   let byLine: SosByLineRow[];
-  let byCustomer: SosByCustomerRow[];
   let dimensions: AnalyticsDimensions;
   let priorTotal: number | null = null;
 
   if (demo) {
     byPeriod = demoSosByPeriod();
-    byArea = demoSosByArea();
-    byProduct = demoSosByProduct();
     byLine = demoSosByLine();
-    byCustomer = demoSosByCustomer();
     dimensions = demoAnalyticsDimensions();
   } else {
-    [byPeriod, byArea, byProduct, byLine, byCustomer, dimensions] = await Promise.all([
+    [byPeriod, byLine, dimensions] = await Promise.all([
       loadSosByPeriod(sosFilters).catch(() => []),
-      loadSosByArea(sosFilters).catch(() => []),
-      loadSosByProduct(sosFilters).catch(() => []),
       loadSosByLine(sosFilters).catch(() => []),
-      loadSosByCustomer(sosFilters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
@@ -112,7 +94,6 @@ async function SosDashboardContent({
   const totalValue   = byPeriod.reduce((s, r) => s + r.value, 0);
   const totalUnits   = byPeriod.reduce((s, r) => s + r.units, 0);
   const periodCount  = new Set(byPeriod.map((r) => r.period)).size;
-  const productCount = new Set(byProduct.map((r) => r.productCode)).size;
   const delta = computePeriodDelta(totalValue, priorTotal);
 
   // Line totals across the filtered range — feeds both the contribution donut
@@ -133,9 +114,6 @@ async function SosDashboardContent({
 
   const trendChartData = byPeriod.map((r) => ({ period: r.period, value: r.value }));
 
-  const customerOptions = [...new Map(byCustomer.map((c) => [c.clientCode, c.clientCode])).keys()]
-    .map((code) => ({ code, label: code }));
-
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
@@ -145,16 +123,14 @@ async function SosDashboardContent({
         values={filters}
         dimensions={dimensions}
         basePath="/admin/analytics/source-sales"
-        customers={customerOptions}
         comparable
       />
 
       {/* KPI bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <AnalyticsKpiCard label="Total Value" value={fmt(totalValue)} prefix="EGP" growth={delta.pct} />
         <AnalyticsKpiCard label="Total Units"  value={fmt(totalUnits)} />
         <AnalyticsKpiCard label="Periods"      value={String(periodCount)} />
-        <AnalyticsKpiCard label="Products"     value={String(productCount)} />
       </div>
 
       {/* Trend + contribution charts */}
@@ -212,66 +188,6 @@ async function SosDashboardContent({
             rows={byPeriod}
             totals={{ units: totalUnits, value: totalValue }}
             exportTitle="SoS Trend by Period"
-          />
-        )}
-      </AnalyticsSection>
-
-      <AnalyticsSection title="By Region / Area" count={byArea.length}>
-        {byArea.length === 0 ? (
-          <AnalyticsEmptyState />
-        ) : (
-          <AnalyticsDataTable
-            searchKeys={["regionName", "areaName"]}
-            columns={[
-              { key: "period",     label: "Period",  sortable: true },
-              { key: "regionName", label: "Region",  sortable: true },
-              { key: "areaName",   label: "Area",    sortable: true },
-              { key: "channel",    label: "Channel" },
-              { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
-              { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
-            ]}
-            rows={byArea}
-            exportTitle="SoS By Region/Area"
-          />
-        )}
-      </AnalyticsSection>
-
-      <AnalyticsSection title="By Product" count={byProduct.length}>
-        {byProduct.length === 0 ? (
-          <AnalyticsEmptyState />
-        ) : (
-          <AnalyticsDataTable
-            searchKeys={["productName", "family", "line"]}
-            columns={[
-              { key: "period",      label: "Period",   sortable: true },
-              { key: "line",        label: "Line",     sortable: true },
-              { key: "family",      label: "Family",   sortable: true },
-              { key: "productName", label: "Product",  sortable: true },
-              { key: "channel",     label: "Channel" },
-              { key: "units",       label: "Units",  align: "right", sortable: true, formatKind: "number" },
-              { key: "value",       label: "Value",  align: "right", sortable: true, formatKind: "number" },
-            ]}
-            rows={byProduct}
-            exportTitle="SoS By Product"
-          />
-        )}
-      </AnalyticsSection>
-
-      <AnalyticsSection title="Customer Presence" count={byCustomer.length}>
-        {byCustomer.length === 0 ? (
-          <AnalyticsEmptyState message="No customer presence data for the current filters." />
-        ) : (
-          <AnalyticsDataTable
-            searchKeys={["clientCode", "regionName", "line"]}
-            columns={[
-              { key: "period",        label: "Period",        sortable: true },
-              { key: "clientCode",     label: "Customer Code", sortable: true },
-              { key: "line",           label: "Line",          sortable: true },
-              { key: "regionName",     label: "Region",        sortable: true },
-              { key: "activeBatches",  label: "Active Batches", align: "right", sortable: true, formatKind: "number" },
-            ]}
-            rows={byCustomer}
-            exportTitle="SoS Customer Presence"
           />
         )}
       </AnalyticsSection>
