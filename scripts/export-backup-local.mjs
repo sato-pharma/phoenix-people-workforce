@@ -7,7 +7,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
-import { createWriteStream, mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { resolve, join } from "path";
 import { config } from "dotenv";
 

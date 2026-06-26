@@ -7,7 +7,7 @@
  */
 
 import ExcelJS from "exceljs";
-import { readFileSync, readdirSync, mkdirSync } from "fs";
+import { readFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 
 const MODULE_COLORS = {
