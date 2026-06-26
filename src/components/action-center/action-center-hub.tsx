@@ -1444,7 +1444,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("return")}
                                     className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
-                                    {busy ? "â€¦" : "Return with reply"}
+                                    {busy ? "…" : "Return with reply"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("reject")}
                                     className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50">
