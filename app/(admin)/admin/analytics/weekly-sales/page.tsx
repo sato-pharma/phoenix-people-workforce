@@ -139,6 +139,8 @@ async function WeeklyDashboardContent({
               { key: "salesValue",      label: "Value",       align: "right", sortable: true, formatKind: "number" },
             ]}
             rows={distributorTotals}
+            exportTitle="Weekly — Distributor Comparison"
+            exportSubtitle="Value by distributor, current filter selection"
           />
         </AnalyticsSection>
       ) : null}
