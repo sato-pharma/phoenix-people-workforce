@@ -12,7 +12,10 @@
 --      source_of_sales_products by product_name — so product_code is available for
 --      RPC filtering without a re-import.
 --
--- All CREATE OR REPLACE VIEW — idempotent.
+-- All CREATE OR REPLACE VIEW — idempotent. New columns (client_code, product_code) are
+-- appended at the end of each SELECT list rather than inserted mid-list: Postgres refuses
+-- CREATE OR REPLACE VIEW if it would rename/reposition an existing output column, so any
+-- new column must come after every column that existed in the prior version of the view.
 
 begin;
 
@@ -45,7 +48,6 @@ select
   f.area_code,
   coalesce(ar.area_name,   f.area_code)               as area_name,
   f.brick_id,
-  f.client_code,
   f.product_code,
   coalesce(p.product_name, f.product_name)            as product_name,
   coalesce(p.family,       '')                        as family,
@@ -57,7 +59,8 @@ select
   sum(case
         when f.is_direct then f.direct_value
         else f.effective_units * coalesce(p.factory_price, 0)
-      end)                                            as value
+      end)                                            as value,
+  f.client_code
 from public.source_of_sales_fact_rollup f
 join public.source_of_sales_import_batches b
   on b.id = f.batch_id and b.status = 'validated'
@@ -93,7 +96,6 @@ select
   f.area_code,
   coalesce(ar.area_name,   f.area_code)               as area_name,
   f.brick_id,
-  f.client_code,
   f.product_code,
   coalesce(p.product_name, f.product_name)            as product_name,
   coalesce(p.family,       '')                        as family,
@@ -105,7 +107,8 @@ select
   sum(case
         when f.is_direct then f.direct_value
         else f.effective_units * coalesce(p.factory_price, 0)
-      end)                                            as value
+      end)                                            as value,
+  f.client_code
 from public.source_of_sales_fact_rollup f
 join public.source_of_sales_import_batches b
   on b.id = f.batch_id and b.status = 'validated'
@@ -142,7 +145,6 @@ select
   r.manager_hr_id,
   r.territory,
   r.sales_type,
-  p.product_code,
   r.product,
   r.family,
   r.sales_units,
@@ -155,7 +157,8 @@ select
     when r.target_value > 0
     then round((r.sales_value / r.target_value * 100)::numeric, 2)
     else null
-  end as achievement_pct
+  end as achievement_pct,
+  p.product_code
 from public.sales_records r
 left join public.sales_import_batches b on b.id = r.batch_id
 left join lateral (
