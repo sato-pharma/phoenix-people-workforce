@@ -53,6 +53,46 @@ export async function runExcusesTests() {
 
   // --- State-machine + authorization invariants (source-asserted) ------------------------
   const serviceSource = readFileSync("src/lib/excuses/service.ts", "utf8");
+  assert.match(
+    serviceSource,
+    /import \{ hrIdLookupKeys, resolveStoredHrId \} from "@\/lib\/hr-id"/,
+    "excuses must use the shared HR_ID lookup/storage helpers",
+  );
+  assert.match(
+    serviceSource,
+    /const employeeHrKeys = hrIdLookupKeys\(employeeHrId\)[\s\S]*\.in\("employee_hr_id", employeeHrKeys\)/,
+    "employee excuse history must match A-8/a-8/canonical HR_ID dialects",
+  );
+  assert.match(
+    serviceSource,
+    /query = query\.in\("manager_hr_id", hrIdLookupKeys\(actorHrId\)\)/,
+    "manager pending excuses must match A-9/a-9/canonical HR_ID dialects",
+  );
+  assert.match(
+    serviceSource,
+    /employee_hr_id: employeeHrId/,
+    "new excuse requests must store the employee-master HR_ID casing",
+  );
+  assert.match(
+    serviceSource,
+    /manager_hr_id: managerHrId/,
+    "new excuse requests must store the manager's employee-master HR_ID casing",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /\.eq\("employee_hr_id", employeeHrId\)/,
+    "employee excuse reads must never rely on a single exact HR_ID casing",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /manager_hr_id: normalizeHrId\(employee\.managerHrId\)/,
+    "new excuse requests must not store lower-cased normalized manager HR_IDs",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /submitted_by_hr_id: normalizeHrId\(access\.hrId\)/,
+    "new excuse requests must not store lower-cased normalized submitter HR_IDs",
+  );
   // Only a pending request can be decided — guards against double-approval.
   assert.match(
     serviceSource,

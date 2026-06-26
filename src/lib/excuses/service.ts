@@ -15,6 +15,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -156,6 +157,14 @@ function findEmployeeByHrId(
   );
 }
 
+function employeeRowByHrId(directory: EmployeeDirectoryData) {
+  return new Map(
+    directory.employees
+      .map((employee) => [normalizeHrId(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+}
+
 function findCurrentEmployee(directory: EmployeeDirectoryData, access: AccessContext) {
   const candidates = Array.from(
     new Set(
@@ -237,10 +246,13 @@ function computeMonthlySummary(requests: EmployeeExcuseRequest[], yearMonth = cu
 }
 
 async function fetchEmployeeExcuseRequests(employeeHrId: string) {
+  const employeeHrKeys = hrIdLookupKeys(employeeHrId);
+  if (employeeHrKeys.length === 0) return [];
+
   const { data, error } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
     .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
-    .eq("employee_hr_id", employeeHrId)
+    .in("employee_hr_id", employeeHrKeys)
     .order("excuse_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);
@@ -532,7 +544,8 @@ export async function createExcuseRequest(
   input: { excuseDate?: unknown; excuseType?: unknown },
 ) {
   const { directory, employee } = await loadEligibleEmployee(access);
-  const employeeHrId = normalizeHrId(employee.hrId) ?? employee.hrId;
+  const byHrId = employeeRowByHrId(directory);
+  const employeeHrId = resolveStoredHrId(employee.hrId, byHrId) ?? employee.hrId;
   const excuseDate = validateDateOnly(input.excuseDate);
   const excuseType = parseExcuseType(input.excuseType);
   if (!excuseType) throw new Error("Excuse type must be morning or afternoon.");
@@ -544,6 +557,11 @@ export async function createExcuseRequest(
   if (!cleanText(manager.workEmail)) {
     throw new Error("Direct manager work email is missing. Please contact HR.");
   }
+  const managerHrId = resolveStoredHrId(manager.hrId, byHrId) ?? manager.hrId;
+  const submittedByHrId =
+    resolveStoredHrId(access.hrId, byHrId) ??
+    resolveStoredHrId(access.loginId, byHrId) ??
+    employeeHrId;
 
   const existingRequests = await fetchEmployeeExcuseRequests(employeeHrId);
   const targetMonth = requestMonthKey(excuseDate);
@@ -563,11 +581,11 @@ export async function createExcuseRequest(
       excuse_date: excuseDate,
       excuse_type: excuseType,
       line_name: employee.lineName,
-      manager_hr_id: normalizeHrId(employee.managerHrId),
+      manager_hr_id: managerHrId,
       manager_name: manager.fullName,
       manager_work_email: manager.workEmail,
       status: "pending_manager",
-      submitted_by_hr_id: normalizeHrId(access.hrId),
+      submitted_by_hr_id: submittedByHrId,
       submitted_by_login_id: access.loginId ?? null,
     })
     .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
@@ -689,7 +707,7 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
   if (!isSystemActor) {
     const actorHrId = resolveEmployeeIdentityId(access);
     if (!actorHrId) return [];
-    query = query.eq("manager_hr_id", actorHrId.toUpperCase());
+    query = query.in("manager_hr_id", hrIdLookupKeys(actorHrId));
   }
 
   const { data, error } = await query;
@@ -723,6 +741,8 @@ export async function decideExcuseRequestAsManager(
   }
 
   const deciderHrId = actorHrId ?? requestRow.manager_hr_id;
+  const directory = await getEmployeeDirectory();
+  const storedDeciderHrId = resolveStoredHrId(deciderHrId, employeeRowByHrId(directory)) ?? deciderHrId;
   const status = decisionToStatus(input.decision);
   const now = new Date().toISOString();
   const { data: updated, error: updateError } = await getSupabaseAdmin()
@@ -730,7 +750,7 @@ export async function decideExcuseRequestAsManager(
     .update({
       manager_decision: status,
       manager_decision_at: now,
-      manager_decision_by_hr_id: deciderHrId,
+      manager_decision_by_hr_id: storedDeciderHrId,
       manager_decision_comment: comment,
       status,
       updated_at: now,
@@ -743,7 +763,7 @@ export async function decideExcuseRequestAsManager(
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
   await writeAuditLog({
-    actorLoginId: access.loginId ?? deciderHrId ?? "system",
+    actorLoginId: access.loginId ?? storedDeciderHrId ?? "system",
     entityId: request.id,
     entityType: excuseAuditEntityType,
     oldValues: {
@@ -755,14 +775,13 @@ export async function decideExcuseRequestAsManager(
     newValues: {
       managerDecision: status,
       managerDecisionAt: now,
-      managerDecisionByHrId: deciderHrId,
+      managerDecisionByHrId: storedDeciderHrId,
       managerDecisionComment: comment,
       status,
     },
     summary: `Excuse request ${statusLabel(status)} by direct manager`,
   });
 
-  const directory = await getEmployeeDirectory();
   await notifyDecisionRecipients({
     directory,
     request: {
@@ -779,7 +798,8 @@ export async function resubmitExcuseRequest(
   input: { excuseDate?: unknown; excuseType?: unknown; requestId: string },
 ) {
   const { directory, employee } = await loadEligibleEmployee(access);
-  const employeeHrId = normalizeHrId(employee.hrId) ?? employee.hrId;
+  const byHrId = employeeRowByHrId(directory);
+  const employeeHrId = resolveStoredHrId(employee.hrId, byHrId) ?? employee.hrId;
   const requestRow = await fetchRequestById(input.requestId);
   if (!requestRow) throw new Error("Excuse request was not found.");
   if (normalizeHrId(requestRow.employee_hr_id) !== normalizeHrId(employeeHrId)) {
@@ -804,6 +824,7 @@ export async function resubmitExcuseRequest(
   if (!cleanText(manager.workEmail)) {
     throw new Error("Direct manager work email is missing. Please contact HR.");
   }
+  const managerHrId = resolveStoredHrId(manager.hrId, byHrId) ?? manager.hrId;
 
   const existingRequests = (await fetchEmployeeExcuseRequests(employeeHrId)).filter((request) => request.id !== input.requestId);
   const targetMonth = requestMonthKey(excuseDate);
@@ -816,8 +837,12 @@ export async function resubmitExcuseRequest(
   const { data: updated, error: updateError } = await getSupabaseAdmin()
     .from("v2_excuse_requests")
     .update({
+      employee_hr_id: employeeHrId,
       excuse_date: excuseDate,
       excuse_type: excuseType,
+      manager_hr_id: managerHrId,
+      manager_name: manager.fullName,
+      manager_work_email: manager.workEmail,
       manager_decision: null,
       manager_decision_at: null,
       manager_decision_by_hr_id: null,

@@ -194,6 +194,35 @@ export function runPrivateCalendarTests() {
   });
 
   const serviceSource = readFileSync("src/lib/private-calendar/service.ts", "utf8");
+  const excuseLoaderSource = serviceSource.slice(
+    serviceSource.indexOf("async function loadExcuseItems"),
+    serviceSource.indexOf("async function loadPlanItems"),
+  );
+  assert.match(
+    serviceSource,
+    /import \{ hrIdLookupKeys \} from "@\/lib\/hr-id"/,
+    "private calendar must use the shared HR_ID lookup helper",
+  );
+  assert.match(
+    serviceSource,
+    /function expandHrIdLookupKeys/,
+    "private calendar must expand employee HR_ID filters into known casing dialects",
+  );
+  assert.equal(
+    serviceSource.match(/\.in\("employee_hr_id", employeeHrKeys\)/g)?.length,
+    3,
+    "vacation, excuse, and plan private-calendar loaders must use expanded employee HR_ID keys",
+  );
+  assert.match(
+    excuseLoaderSource,
+    /\.in\("employee_hr_id", employeeHrKeys\)/,
+    "approved excuse calendar reads must match A-8/a-8/canonical HR_ID dialects",
+  );
+  assert.doesNotMatch(
+    excuseLoaderSource,
+    /toUpperCase\(\)/,
+    "approved excuse calendar reads must not use uppercase-only HR_ID matching",
+  );
   assert.match(serviceSource, /\.eq\("status", "approved"\)/, "vacation and excuse loaders must only read approved rows");
   assert.match(serviceSource, /sharedPlanningCalendarStatuses/, "plan loader must use submitted-or-approved planning statuses");
   assert.match(serviceSource, /canReadPrivateCalendarEmployee/, "service must enforce server-side employee scope");

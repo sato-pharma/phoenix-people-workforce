@@ -11,7 +11,7 @@ import {
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { EmailTemplateContext } from "@/lib/email-templates/service";
-import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
+import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -705,10 +705,7 @@ export function resolveStoredEmployeeHrId(
   value: string | null | undefined,
   byHrId?: Map<string, EmployeeDirectoryRow>,
 ): string | null {
-  const key = normalizeHrId(value);
-  if (!key) return null;
-  const stored = byHrId?.get(key)?.hrId;
-  return (stored ? String(stored) : null) ?? canonicalHrIdForDisplay(value);
+  return resolveStoredHrId(value, byHrId);
 }
 
 function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {

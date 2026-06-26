@@ -27,6 +27,21 @@ export function hrIdLookupKeys(value: string | null | undefined) {
   return Array.from(new Set(keys));
 }
 
+export type StoredHrIdDirectoryEntry = {
+  hrId: string | null | undefined;
+};
+
+export function resolveStoredHrId(
+  value: string | null | undefined,
+  byHrId?: Map<string, StoredHrIdDirectoryEntry>,
+): string | null {
+  const canonical = canonicalHrIdKey(value);
+  if (!canonical) return null;
+
+  const stored = byHrId?.get(canonical)?.hrId;
+  return (stored ? String(stored) : null) ?? canonicalHrIdForDisplay(value);
+}
+
 export function formatHrIdForDisplay(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
   return trimmed ? trimmed.toUpperCase() : null;
