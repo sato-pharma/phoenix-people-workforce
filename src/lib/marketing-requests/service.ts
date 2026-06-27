@@ -445,6 +445,8 @@ export type MarketingRequestDraftWorkspace = {
 };
 
 export type MarketingApproverInboxRow = {
+  allowReject: boolean;
+  allowReturn: boolean;
   currentStepName: string;
   customerName: string;
   decisionLabels: MarketingDecisionLabels;
@@ -3951,6 +3953,8 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
   const buildRow = (step: MarketingRequestApprovalStep, request: MarketingRequest): MarketingApproverInboxRow => ({
+    allowReject: step.allowReject,
+    allowReturn: step.allowReturn,
     currentStepName: step.stepName,
     customerName: customerNameById.get(request.customerId) ?? request.customerId,
     decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),

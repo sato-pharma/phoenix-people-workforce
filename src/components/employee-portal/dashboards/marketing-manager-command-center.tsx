@@ -2,13 +2,11 @@ import { Suspense } from "react";
 import Link from "next/link";
 import {
   Activity,
-  ArrowRight,
   BarChart3,
   CalendarClock,
   CalendarDays,
   ChartColumnBig,
   ClipboardCheck,
-  Clock,
   Inbox,
   Network,
   ShieldCheck,
@@ -34,6 +32,7 @@ import {
   MmRoiSection,
   MmSectionSkeleton,
 } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { MmInboxClient } from "@/components/employee-portal/dashboards/mm-inbox-client";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 
@@ -48,23 +47,6 @@ function ageInDays(iso: string | null, now: number): number | null {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;
   return Math.max(0, Math.floor((now - t) / 86_400_000));
-}
-
-/** SLA aging pill: calm under 3 days, amber 3–6, rose (breach) at 7+. */
-function AgeBadge({ days }: { days: number | null }) {
-  if (days == null) return <span className="shrink-0 text-[11px] font-medium text-slate-400 whitespace-nowrap">no date</span>;
-  const tone =
-    days >= 7
-      ? "bg-rose-100 text-rose-700"
-      : days >= 3
-        ? "bg-amber-100 text-amber-700"
-        : "bg-slate-100 text-slate-600";
-  return (
-    <span className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${tone}`}>
-      <Clock className="h-3 w-3" />
-      {days}d
-    </span>
-  );
 }
 
 const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; description: string }> = [
@@ -82,17 +64,9 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
-  // Inbox aging: surface the OLDEST waiting decision first — that is the real triage cue for an
-  // approver (an SLA breach blocks the whole chain). Sort oldest-first, undated rows last.
   // `asOf` is server-stamped in the snapshot so we never call Date.now() during render.
   const now = mmOverview?.asOf ?? 0;
-  const pendingForMe = mmOverview
-    ? [...mmOverview.topPendingForMe].sort((a, b) => {
-        const at = a.submittedAt ? new Date(a.submittedAt).getTime() : Number.POSITIVE_INFINITY;
-        const bt = b.submittedAt ? new Date(b.submittedAt).getTime() : Number.POSITIVE_INFINITY;
-        return at - bt;
-      })
-    : [];
+  const pendingForMe = mmOverview?.topPendingForMe ?? [];
   const oldestAge = pendingForMe.reduce<number>((max, row) => {
     const d = ageInDays(row.submittedAt, now);
     return d != null && d > max ? d : max;
@@ -153,39 +127,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
 
-      <div className="overflow-hidden border border-slate-200">
-        <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
-          {hasAwaiting && oldestAge > 0 ? (
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">oldest {oldestAge}d waiting</span>
-          ) : (
-            <div className="h-1.5 w-12 bg-orange-500" />
-          )}
-        </div>
-        {mmOverview && pendingForMe.length > 0 ? (
-          <div className="divide-y divide-slate-100 bg-white">
-            {pendingForMe.map((row) => (
-              <Link
-                key={row.id}
-                href="/employee-portals/marketing-requests/inbox"
-                className="group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-orange-50"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">
-                    {row.requestCode} · {row.requesterName}
-                  </p>
-                  <p className="text-[11px] text-slate-500 whitespace-nowrap">{row.requestType}</p>
-                </div>
-                <AgeBadge days={ageInDays(row.submittedAt, now)} />
-                <span className="shrink-0 text-sm font-bold text-slate-700 whitespace-nowrap">{egp(row.estimatedCost)}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-orange-500" />
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="bg-white px-5 py-6 text-sm text-slate-500">No pending marketing approvals. You&apos;re all caught up.</p>
-        )}
-      </div>
+      <MmInboxClient rows={pendingForMe} now={now} />
 
       {access ? (
         <>
