@@ -13,8 +13,11 @@ import {
   ReferenceLine,
 } from "recharts";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
 import { formatEmployeeDisplayName } from "@/lib/utils";
+
+const LEADERBOARD_PAGE_SIZE = 25;
 
 type AchievementChartDatum = {
   achievementPercent: number;
@@ -431,11 +434,21 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[] }) {
+  const [page, setPage] = useState(0);
+
+  const [prevMembers, setPrevMembers] = useState(members);
+  if (members !== prevMembers) {
+    setPrevMembers(members);
+    setPage(0);
+  }
+
+  const pageMembers = members.slice(page * LEADERBOARD_PAGE_SIZE, (page + 1) * LEADERBOARD_PAGE_SIZE);
+
   return (
     <div className="min-w-0">
       {/* Mobile card view */}
-      <div className="grid gap-2.5 md:hidden">
-        {members.map((member) => {
+      <div className="grid gap-2.5 sm:hidden">
+        {pageMembers.map((member) => {
           const gap = Math.max(0, member.totalTarget - member.totalSales);
           const color = achievementColor(member.achievementPercent, member.position === 1);
           const progressWidth = Math.min(100, Math.max(0, member.achievementPercent));
@@ -516,7 +529,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
             </tr>
           </thead>
           <tbody>
-            {members.map((member) => {
+            {pageMembers.map((member) => {
               const gap = Math.max(0, member.totalTarget - member.totalSales);
               const color = achievementColor(member.achievementPercent, member.position === 1);
               return (
@@ -557,6 +570,13 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
           </tbody>
         </table>
       </div>
+
+      <PaginationControls
+        onPageChange={setPage}
+        page={page}
+        pageSize={LEADERBOARD_PAGE_SIZE}
+        total={members.length}
+      />
     </div>
   );
 }

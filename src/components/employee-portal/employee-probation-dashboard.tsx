@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
@@ -53,6 +54,7 @@ type ActionFormState = {
 /* ------------------------------------------------------------------ */
 
 const ALL_VALUE = "__all__";
+const PROBATION_PAGE_SIZE = 25;
 
 const inputClassName =
   "w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
@@ -170,6 +172,15 @@ export function EmployeeProbationDashboard({
         return a.days_remaining - b.days_remaining; // days-asc default
       });
   }, [areaFilter, jobFilter, lineFilter, query, rows, sortBy, trafficFilter]);
+
+  /* Pagination */
+  const [page, setPage] = useState(0);
+  const [prevFilteredRows, setPrevFilteredRows] = useState(filteredRows);
+  if (filteredRows !== prevFilteredRows) {
+    setPrevFilteredRows(filteredRows);
+    setPage(0);
+  }
+  const pageRows = filteredRows.slice(page * PROBATION_PAGE_SIZE, (page + 1) * PROBATION_PAGE_SIZE);
 
   /* Summary */
   const summary = useMemo(
@@ -573,7 +584,7 @@ export function EmployeeProbationDashboard({
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => {
+                pageRows.map((row) => {
                   const traffic = classifyProbationTrafficStatus(row.days_remaining);
                   const progress = calculateProbationProgress(row.days_remaining);
                   const colors = zoneColor(traffic);
@@ -703,7 +714,7 @@ export function EmployeeProbationDashboard({
               No probation records match the current filters.
             </div>
           ) : (
-            filteredRows.map((row) => {
+            pageRows.map((row) => {
               const traffic = classifyProbationTrafficStatus(row.days_remaining);
               const progress = calculateProbationProgress(row.days_remaining);
               const colors = zoneColor(traffic);
@@ -800,6 +811,13 @@ export function EmployeeProbationDashboard({
           )}
         </Card>
       </div>
+
+      <PaginationControls
+        onPageChange={setPage}
+        page={page}
+        pageSize={PROBATION_PAGE_SIZE}
+        total={filteredRows.length}
+      />
 
       {/* ---- Workflow Action Form ---- */}
       {selectedAction && (

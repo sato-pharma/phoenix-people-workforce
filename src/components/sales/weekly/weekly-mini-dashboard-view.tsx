@@ -131,6 +131,7 @@ export function WeeklyMiniDashboardView({
 
   const products = [...data.products].sort((a, b) => b.salesValue - a.salesValue);
   const branches = [...data.branchBreakdown].sort((a, b) => b.salesValue - a.salesValue).slice(0, 12);
+  const zeroSalesBranches = [...data.zeroSalesBranches].sort((a, b) => b.stockUnits - a.stockUnits).slice(0, 20);
 
   return (
     <div className="space-y-5">
@@ -251,7 +252,14 @@ export function WeeklyMiniDashboardView({
 
       {data.zeroSalesBranches.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <p className="border-b border-slate-100 px-4 py-3 text-sm font-black text-slate-800">Branches with stock, no sales</p>
+          <p className="border-b border-slate-100 px-4 py-3 text-sm font-black text-slate-800">
+            Branches with stock, no sales
+            {data.zeroSalesBranches.length > zeroSalesBranches.length ? (
+              <span className="ml-2 text-xs font-semibold text-slate-400">
+                Top {zeroSalesBranches.length} of {data.zeroSalesBranches.length}, by stock
+              </span>
+            ) : null}
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -262,7 +270,7 @@ export function WeeklyMiniDashboardView({
                 </tr>
               </thead>
               <tbody>
-                {data.zeroSalesBranches.map((branch) => (
+                {zeroSalesBranches.map((branch) => (
                   <tr className="border-b border-orange-50 last:border-0" key={`${branch.branchCode}-${branch.regionName}`}>
                     <td className="px-4 py-2.5 font-semibold text-slate-800">{branch.branchName}</td>
                     <td className="px-4 py-2.5 text-slate-600">{branch.regionName}</td>
