@@ -236,7 +236,11 @@ grant  execute on function public.analytics_sos_by_product(text, text, text, tex
 
 -- ── closing_fact_all_statuses — add product_code lateral join ─────────────────
 
-create or replace view analytics.closing_fact_all_statuses as
+-- DROP + CREATE (not CREATE OR REPLACE): some environments already have this
+-- view with product_code in the old mid-list position from a prior ad-hoc
+-- apply; CREATE OR REPLACE VIEW cannot reposition an existing column.
+drop view if exists analytics.closing_fact_all_statuses cascade;
+create view analytics.closing_fact_all_statuses as
 select
   r.year,
   r.month,

@@ -26,6 +26,7 @@ CREATE INDEX IF NOT EXISTS sos_coverage_dist_date_idx
 ALTER TABLE sos_import_coverage_snapshots ENABLE ROW LEVEL SECURITY;
 
 -- All access goes through service_role (bypasses RLS). Direct anon/authenticated access is denied.
+DROP POLICY IF EXISTS "sos_coverage_no_direct_access" ON sos_import_coverage_snapshots;
 CREATE POLICY "sos_coverage_no_direct_access"
   ON sos_import_coverage_snapshots FOR ALL
   USING (false)
