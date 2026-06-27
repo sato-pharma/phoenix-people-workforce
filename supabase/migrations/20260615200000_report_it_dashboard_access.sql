@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS report_it_dashboard_access (
 
 -- Service role reads this via getSupabaseAdmin(); deny all browser-level access.
 ALTER TABLE report_it_dashboard_access ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "deny_all" ON report_it_dashboard_access;
 CREATE POLICY "deny_all" ON report_it_dashboard_access USING (false);
 
 -- Grant A-3 (Samaa Mosaad Khalil) dashboard access.

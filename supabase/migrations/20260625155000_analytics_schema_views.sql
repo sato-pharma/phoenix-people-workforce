@@ -134,7 +134,14 @@ grant select on analytics.dim_areas to analytics_readonly;
 
 -- Core SoS fact — by period × distributor × line × region × area × brick × product
 -- Excludes confidential products. Joins factory_price live.
-create or replace view analytics.sos_fact as
+-- DROP + CREATE (not CREATE OR REPLACE): some environments already have a later,
+-- wider version of this view (extra columns from a subsequent delta migration
+-- applied out of order). CREATE OR REPLACE VIEW cannot narrow an existing view's
+-- column set, so this drops and rebuilds it fresh to guarantee this migration's
+-- shape, regardless of what shape was already there. CASCADE takes the sos_by_*
+-- views with it; they are all recreated later in this same file.
+drop view if exists analytics.sos_fact cascade;
+create view analytics.sos_fact as
 select
   f.period,
   left(f.period, 4)::integer                          as year,
@@ -183,7 +190,9 @@ group by
 grant select on analytics.sos_fact to analytics_readonly;
 
 -- Same view WITH confidential products (CEO/admin only)
-create or replace view analytics.sos_fact_all as
+-- DROP + CREATE for the same reason as sos_fact above.
+drop view if exists analytics.sos_fact_all cascade;
+create view analytics.sos_fact_all as
 select
   f.period,
   left(f.period, 4)::integer                          as year,
@@ -351,7 +360,10 @@ grant select on analytics.sos_by_customer to analytics_readonly;
 
 -- Monthly closing fact — employee-attributed, target vs actual
 -- Excludes confidential products by name (legacy pipeline has no product_code column).
-create or replace view analytics.closing_fact as
+-- DROP + CREATE for the same reason as sos_fact above (a later delta migration
+-- widens this view with a product_code column on some environments already).
+drop view if exists analytics.closing_fact cascade;
+create view analytics.closing_fact as
 select
   r.year,
   r.month,

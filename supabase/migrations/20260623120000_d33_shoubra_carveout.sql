@@ -23,51 +23,49 @@
 --
 -- Idempotent (ON CONFLICT guards). Transaction-wrapped.
 --
--- NOTE FOR PRODUCTION APPLY: production source_of_sales_areas has no region_name;
--- production _blocks has no block_name / normalized_block_name / area_name / region_name;
--- production _bricks has no block_name / area_name / region_name.
--- Apply the stripped prod-adapted variant below, NOT this file directly.
+-- PROD-ADAPTED: production source_of_sales_areas has no region_name; production
+-- _blocks has no block_name / normalized_block_name / area_name / region_name;
+-- production _bricks has no block_name / area_name / region_name. This version
+-- writes only the columns common to every environment (description /
+-- normalized_description carry the human-readable name on _blocks, matching
+-- how existing rows on that table already work). Confirmed against production:
+-- steps 1-3 were already applied manually with this exact reduced column set
+-- (area D33 / block B302 / all 9 bricks already match); only step 5 (region
+-- aliases) was missing there. Re-running steps 1-4 here is a harmless no-op.
 
 begin;
 
 -- 1) New area D33 "Shoubra el Khema" under D3
 insert into public.source_of_sales_areas
-  (area_code, area_name, normalized_area_name, region_code, region_name, description, active,
+  (area_code, area_name, normalized_area_name, region_code, description, active,
    source_file, source_sheet, effective_from)
 values
-  ('D33', 'Shoubra el Khema', 'shoubra el khema', 'D3', 'Delta (3)',
+  ('D33', 'Shoubra el Khema', 'shoubra el khema', 'D3',
    'Shoubra el Khema + Shoubra Masr', true,
    'manual:d33_shoubra_carveout', 'Areas', date '2026-06-01')
 on conflict (area_code) do update set
   region_code          = 'D3',
-  region_name          = 'Delta (3)',
   active               = true,
   updated_at           = now();
 
 -- 2) New block B302 "Shoubra el Khema" under D33
 insert into public.source_of_sales_blocks
-  (block_code, block_name, normalized_block_name, area_code, area_name,
-   region_code, region_name, description, active, source_file, source_sheet)
+  (block_code, area_code, region_code, description, normalized_description,
+   active, source_file, source_sheet)
 values
-  ('B302', 'Shoubra el Khema', 'shoubra el khema', 'D33', 'Shoubra el Khema',
-   'D3', 'Delta (3)', 'Shoubra el Khema + Shoubra Masr', true,
-   'manual:d33_shoubra_carveout', 'Blocks')
+  ('B302', 'D33', 'D3', 'Shoubra el Khema + Shoubra Masr', 'shoubra el khema shoubra masr',
+   true, 'manual:d33_shoubra_carveout', 'Blocks')
 on conflict (block_code) do update set
   area_code            = 'D33',
-  area_name            = 'Shoubra el Khema',
   region_code          = 'D3',
-  region_name          = 'Delta (3)',
   active               = true,
   updated_at           = now();
 
 -- 3) Move the 9 Shoubra bricks CA6/CA → D33/B302/D3
 update public.source_of_sales_bricks
 set block_code         = 'B302',
-    block_name         = 'Shoubra el Khema',
     area_code          = 'D33',
-    area_name          = 'Shoubra el Khema',
     region_code        = 'D3',
-    region_name        = 'Delta (3)',
     source_area_code   = coalesce(source_area_code,   'CA6'),
     source_region_code = coalesce(source_region_code, 'CA'),
     updated_at         = now()

@@ -40,11 +40,15 @@ update public.coaching_reports
 set max_score = 100
 where max_score <> 100;
 
--- 4) Tighten the per-item score range to 1-5.
+-- 4) Tighten the per-item score range. Widened to 0-5 (not 1-5) to match
+-- 20260619034021_coaching_score_zero_min.sql, which immediately follows this
+-- migration and relaxes the same constraint to allow zero-scores. Going straight
+-- to 0-5 here avoids a spurious failure on environments that are catching up both
+-- migrations together against live data already written under the 0-5 rule.
 alter table public.coaching_score_items
   drop constraint if exists coaching_score_items_score_check;
 alter table public.coaching_score_items
-  add constraint coaching_score_items_score_check check (score between 1 and 5);
+  add constraint coaching_score_items_score_check check (score between 0 and 5);
 
 -- 5) New reports default to a max score of 100.
 alter table public.coaching_reports
