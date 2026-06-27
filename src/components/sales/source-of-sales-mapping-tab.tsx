@@ -769,9 +769,15 @@ function MappingCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  function openWithPos() {
+  // When closed: show matched name (or raw value if no match). When open: show search query.
+  const displayValue = open
+    ? searchQuery
+    : (options.find((o) => o.code === value)?.name ?? value);
+
+  function openDropdown() {
     if (disabled) return;
     if (inputRef.current) {
       const r = inputRef.current.getBoundingClientRect();
@@ -780,8 +786,7 @@ function MappingCombobox({
     setOpen(true);
   }
 
-
-  const q = value.toLowerCase();
+  const q = searchQuery.toLowerCase();
   const filtered = q
     ? options.filter((o) => o.code.toLowerCase().includes(q) || o.name.toLowerCase().includes(q)).slice(0, 25)
     : options.slice(0, 25);
@@ -793,10 +798,10 @@ function MappingCombobox({
         disabled={disabled}
         className="h-9 w-full rounded-lg border border-[#E2E8F0] px-2 text-sm focus:border-[#FDBA74] focus:outline-none"
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onChange={(e) => { onChange(e.target.value); openWithPos(); }}
-        onFocus={openWithPos}
+        onChange={(e) => { setSearchQuery(e.target.value); onChange(e.target.value); openDropdown(); }}
+        onFocus={() => { setSearchQuery(""); openDropdown(); }}
         placeholder={placeholder}
-        value={value}
+        value={displayValue}
       />
       {open && filtered.length > 0 && pos && (
         <div
@@ -805,7 +810,7 @@ function MappingCombobox({
         >
           {filtered.map((o) => (
             <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
+              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
               key={o.code}
               onMouseDown={() => {
                 if (disabled) return;
@@ -814,8 +819,8 @@ function MappingCombobox({
               }}
               type="button"
             >
-              <span className="shrink-0 font-mono text-xs font-bold text-[#F97316]">{o.code}</span>
-              <span className="truncate text-xs text-[#64748B]">{o.name}</span>
+              <span className="truncate text-xs font-semibold text-[#0F172A]">{o.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-[#94A3B8]">{o.code}</span>
             </button>
           ))}
         </div>
@@ -851,7 +856,7 @@ function UnknownTable({
 }) {
   const label = kind === "product" ? "products" : kind === "territory" ? "areas" : "customers";
   const rawLabel = kind === "product" ? "item" : kind === "territory" ? "area" : "customer code";
-  const codeLabel = kind === "product" ? "Product ID" : "Brick ID";
+  const codeLabel = kind === "product" ? "Product" : "Brick";
   return (
     <div className="rounded-2xl border border-[#E2E8F0]">
       <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-2.5">

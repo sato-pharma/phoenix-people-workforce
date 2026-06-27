@@ -229,7 +229,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const s = preview?.summary;
   const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
-  const brickOptions = references.bricks.map((b) => ({ label: `${b.id} — ${b.name}`, value: b.id }));
+  const brickOptions = references.bricks.map((b) => ({ label: b.name, value: b.id }));
   const selectClass = "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
 
   return (

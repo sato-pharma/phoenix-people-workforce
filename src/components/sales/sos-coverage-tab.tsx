@@ -286,7 +286,7 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
                       >
                         <option value="">Select a brick…</option>
                         {bricks.map((b) => (
-                          <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                          <option key={b.id} value={b.id}>{b.name}</option>
                         ))}
                       </SearchableSelect>
                     )}
