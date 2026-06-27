@@ -6,12 +6,15 @@ import { MessageSquare, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import type {
   DeductionComment,
   DeductionMonthlySummaryLine,
   DeductionPayrollColumn,
 } from "@/lib/deductions-governance/types";
 import { cn } from "@/lib/utils";
+
+const DEDUCTION_LINES_PAGE_SIZE = 25;
 
 type DeductionsPortalWorkspaceProps = {
   comments: DeductionComment[];
@@ -68,6 +71,14 @@ export function DeductionsPortalWorkspace({
   const [messageByCandidate, setMessageByCandidate] = useState<Record<string, string>>({});
   const [localComments, setLocalComments] = useState<DeductionComment[]>(comments);
   const commentsByCandidate = useMemo(() => groupComments(localComments), [localComments]);
+
+  const [page, setPage] = useState(0);
+  const [prevLines, setPrevLines] = useState(lines);
+  if (lines !== prevLines) {
+    setPrevLines(lines);
+    setPage(0);
+  }
+  const pageLines = lines.slice(page * DEDUCTION_LINES_PAGE_SIZE, (page + 1) * DEDUCTION_LINES_PAGE_SIZE);
 
   const totals = useMemo(() => {
     return lines.reduce(
@@ -152,7 +163,7 @@ export function DeductionsPortalWorkspace({
       </div>
 
       <div className="space-y-3">
-        {lines.map((line) => {
+        {pageLines.map((line) => {
           const canComment = Boolean(ownCompactHrId && line.employeeHrIdCompact === ownCompactHrId);
           const candidateComments = canComment
             ? commentsByCandidate.get(line.candidateId) ?? []
@@ -265,6 +276,13 @@ export function DeductionsPortalWorkspace({
           );
         })}
       </div>
+
+      <PaginationControls
+        onPageChange={setPage}
+        page={page}
+        pageSize={DEDUCTION_LINES_PAGE_SIZE}
+        total={lines.length}
+      />
     </div>
   );
 }

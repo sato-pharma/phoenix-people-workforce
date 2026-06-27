@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
-import { Card } from "@/components/ui/card";
 import {
+  EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -68,16 +68,10 @@ export default async function EmployeePortalSubmitExpensePage() {
 
   if (portalDataResult.status === "rejected") {
     return (
-      <div className="min-h-screen bg-[#f7f8fb] p-4">
-        <div className="mx-auto w-full max-w-[1200px]">
-          <Card className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-            <p className="text-lg font-semibold text-slate-900">Portal Unavailable</p>
-            <p className="mt-2 text-sm text-slate-600">
-              Unable to load your employee profile. Please contact HR to activate portal access.
-            </p>
-          </Card>
-        </div>
-      </div>
+      <EmployeePortalEmptyState
+        message="Unable to load your employee profile. Please contact HR to activate portal access."
+        title="Portal Unavailable"
+      />
     );
   }
 

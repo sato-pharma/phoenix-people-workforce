@@ -12,6 +12,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import type {
   CoachingPerformanceZone,
   CoachingReportStatus,
@@ -246,6 +247,8 @@ function detailHrefFor(base: string, reportId: string) {
   return `${base.replace(/\/+$/g, "")}/${reportId}`;
 }
 
+const REPORTS_PAGE_SIZE = 25;
+
 export function CoachingReportsCenter({
   canCreate,
   canExport,
@@ -264,6 +267,15 @@ export function CoachingReportsCenter({
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(0);
+
+  const [prevReports, setPrevReports] = useState(reports);
+  if (reports !== prevReports) {
+    setPrevReports(reports);
+    setPage(0);
+  }
+
+  const pageReports = reports.slice(page * REPORTS_PAGE_SIZE, (page + 1) * REPORTS_PAGE_SIZE);
 
   const years = useMemo(() => {
     const values = new Set(reports.map((report) => String(report.coachingYear)).filter(Boolean));
@@ -525,7 +537,8 @@ export function CoachingReportsCenter({
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-left">
               <thead className="bg-[#F8FAFC]">
                 <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
@@ -542,7 +555,7 @@ export function CoachingReportsCenter({
                 </tr>
               </thead>
               <tbody>
-                {reports.map((report) => (
+                {pageReports.map((report) => (
                   <tr className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]" key={report.reportId}>
                     <td className="px-4 py-3">
                       <span className="font-black text-[#0F172A]">{report.reportNumber}</span>
@@ -584,6 +597,58 @@ export function CoachingReportsCenter({
               </tbody>
             </table>
           </div>
+
+          <div className="space-y-3 p-4 md:hidden">
+            {pageReports.map((report) => (
+              <div className="border border-[#E2E8F0] bg-white p-4 shadow-sm" key={`${report.reportId}-mobile`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-black text-[#0F172A]">{report.reportNumber}</p>
+                    <p className="mt-1 truncate font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</p>
+                    <p className="font-mono text-[11px] text-[#94A3B8]">{report.medicalRepHrId}</p>
+                  </div>
+                  <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <p className="text-[#64748B]">
+                    Coach: <span className="font-bold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</span>
+                  </p>
+                  <p className="text-[#64748B]">
+                    Date: <span className="font-bold text-[#0F172A]">{formatDate(report.coachingDate)}</span>
+                  </p>
+                  <p className="text-[#64748B]">
+                    Score: <span className="font-bold text-[#0F172A]">{formatPercent(report.finalScorePercent)}</span>
+                  </p>
+                  <p className="text-[#64748B]">
+                    Org: <span className="font-bold text-[#0F172A]">{report.lineName || "—"}</span>
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge className={zoneClassName(report.performanceZone)}>{zoneLabel(report.performanceZone)}</Badge>
+                    <Badge className={report.acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}>
+                      {report.acknowledged ? "Ack" : "Pend"}
+                    </Badge>
+                  </div>
+                  <Link
+                    className="inline-flex items-center gap-2 border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
+                    href={detailHrefFor(detailHrefBase, report.reportId)}
+                  >
+                    View
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <PaginationControls
+            onPageChange={setPage}
+            page={page}
+            pageSize={REPORTS_PAGE_SIZE}
+            total={reports.length}
+          />
+          </>
         )}
       </Card>
     </div>
