@@ -344,6 +344,7 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     permission_admin: ["read"],
+    probation: ["read"],
     workflow_registry: ["read"],
     payslips: ["read", "export"],
     // SoD: read/export only — deduction decisions belong to the governance actors.

@@ -10,6 +10,8 @@ import {
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
 import {
+  canReadAllProbation,
+  canViewAllProbation,
   getProbationRows,
   isProbationAdministrator,
   isProbationSchemaMissing,
@@ -45,9 +47,10 @@ export default async function ProbationPage() {
     redirect("/employee-portals/probation");
   }
 
-  if (!isProbationAdministrator(access)) {
+  if (!canReadAllProbation(access)) {
     redirect("/employee-portals");
   }
+  const canAdminister = isProbationAdministrator(access);
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
@@ -59,7 +62,13 @@ export default async function ProbationPage() {
 
   return (
     <ProbationTracker
-      capabilities={{ canCreate: true, canExport: true, canManageWorkflow: true, canSubmitManagerFeedback: true, viewerMode: "hr" }}
+      capabilities={{
+        canCreate: canAdminister,
+        canExport: canViewAllProbation(access),
+        canManageWorkflow: canAdminister,
+        canSubmitManagerFeedback: canAdminister,
+        viewerMode: "hr",
+      }}
       initialData={initialData}
       initialError={initialError}
     />

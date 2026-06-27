@@ -4,11 +4,15 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
+  BriefcaseBusiness,
+  Building2,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   HeartPulse,
+  MapPinned,
   Megaphone,
+  ShieldCheck,
   Users,
   Wallet,
 } from "lucide-react";
@@ -40,6 +44,42 @@ function egp(value: number) {
 
 function n(value: number) {
   return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "0";
+}
+
+function pct(value: number) {
+  return `${Math.round(Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100)}%`;
+}
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  sub,
+  tone = "slate",
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  tone?: "slate" | "emerald" | "amber" | "rose";
+}) {
+  const toneClass = {
+    amber: "text-amber-700",
+    emerald: "text-emerald-700",
+    rose: "text-rose-700",
+    slate: "text-slate-900",
+  }[tone];
+
+  return (
+    <div className="min-h-32 border border-slate-200 bg-white px-4 py-4">
+      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+        <span className="text-orange-600">{icon}</span>
+        {label}
+      </div>
+      <p className={`mt-4 text-3xl font-black leading-none ${toneClass}`}>{value}</p>
+      <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
+    </div>
+  );
 }
 
 
@@ -245,7 +285,7 @@ export function CeoCommandCenter({
   welcome: CeoWelcomeProfile;
   access: AccessContext;
 }) {
-  const { attention, approvals, sos } = data;
+  const { attention, approvals, headcount, health, payroll, sos } = data;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -271,6 +311,67 @@ export function CeoCommandCenter({
           />
         </div>
       </AdminHeroFrame>
+
+      <SectionShell
+        title="Workforce & payroll snapshot"
+        description="Company-level totals from CEO-safe aggregate loaders."
+      >
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricTile
+            icon={<Users className="h-3.5 w-3.5" />}
+            label="Active employees"
+            value={n(headcount.active)}
+            sub="Active and on leave"
+            tone={headcount.active > 0 ? "emerald" : "amber"}
+          />
+          <MetricTile
+            icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
+            label="Total structure"
+            value={n(headcount.total)}
+            sub="Employees plus vacancies"
+          />
+          <MetricTile
+            icon={<Building2 className="h-3.5 w-3.5" />}
+            label="Vacancies"
+            value={n(headcount.vacancies)}
+            sub="Open positions"
+            tone={headcount.vacancies > 0 ? "amber" : "emerald"}
+          />
+          <MetricTile
+            icon={<ShieldCheck className="h-3.5 w-3.5" />}
+            label="Employee health"
+            value={pct(health.employeeHealthRate)}
+            sub="Active/total quality"
+            tone={health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
+          />
+          <MetricTile
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            label="Lines"
+            value={n(headcount.uniqueLines)}
+            sub="Lookup-backed count"
+          />
+          <MetricTile
+            icon={<MapPinned className="h-3.5 w-3.5" />}
+            label="Areas"
+            value={n(headcount.uniqueAreas)}
+            sub="Lookup-backed count"
+          />
+          <MetricTile
+            icon={<Wallet className="h-3.5 w-3.5" />}
+            label="Net payroll"
+            value={egp(payroll.net)}
+            sub={payroll.batchLabel}
+            tone={payroll.available ? "slate" : "amber"}
+          />
+          <MetricTile
+            icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+            label="Salary flags"
+            value={n(payroll.unresolvedSalaryFlags)}
+            sub="Unresolved payroll risks"
+            tone={payroll.unresolvedSalaryFlags > 0 ? "rose" : "emerald"}
+          />
+        </div>
+      </SectionShell>
 
       {/* ── Attention & approvals ─────────────────────────────────────────── */}
       <SectionShell

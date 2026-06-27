@@ -120,6 +120,10 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(ceo, "recruitment", "read"), false, "CEO must not see HR recruitment");
   assert.equal(await canAccess(ceo, "candidates", "read"), false, "CEO must not see candidate PII");
   assert.equal(await canAccess(ceo, "offers", "read"), false, "CEO must not see HR offer lifecycle");
+  assert.equal(await canAccess(ceo, "probation", "read"), true, "CEO can read probation risk aggregates and read-only page");
+  assert.equal(await canAccess(ceo, "probation", "create"), false, "CEO must not create probation reviews");
+  assert.equal(await canAccess(ceo, "probation", "update"), false, "CEO must not update probation workflow");
+  assert.equal(await canAccess(ceo, "probation", "approve"), false, "CEO must not approve probation decisions");
 
   const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "Talent Acquisition"]);
   for (const role of phoenixRoles) {

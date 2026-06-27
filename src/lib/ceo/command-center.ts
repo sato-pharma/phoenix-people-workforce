@@ -1,9 +1,15 @@
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+import { getSalaryFlags } from "@/lib/admin/service";
 import { type AccessContext } from "@/lib/auth/permissions";
 import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
+import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
+import { getCoachingReports } from "@/lib/coaching/service";
+import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
+import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
+import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import {
@@ -11,6 +17,7 @@ import {
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getVacationReportData } from "@/lib/vacation/service";
 
 /**
  * Bespoke executive data layer for the CEO Command Center, split for streaming.
@@ -93,44 +100,35 @@ function topMoversFromSos(
 // ── Lean CEO-specific data helpers ───────────────────────────────────────────
 // These are fast targeted queries (no full employee directory, no payroll loops).
 
-async function getCeoHeadcountData() {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("employment_status, line_name, area_name, manager_hr_id");
-  if (error || !data) return null;
-  const active = data.filter((e) =>
-    ["active", "on_leave"].includes(String(e.employment_status ?? "").toLowerCase()),
-  );
-  return {
-    activeCount: active.length,
-    uniqueLines: new Set(active.map((e) => e.line_name).filter(Boolean)).size,
-    uniqueAreas: new Set(active.map((e) => e.area_name).filter(Boolean)).size,
-    withManagerCount: active.filter((e) => e.manager_hr_id).length,
-  };
+function safeRate(value: number) {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
 }
 
-async function getCeoOpenVacancyCount(): Promise<number> {
-  const { count, error } = await getSupabaseAdmin()
-    .from("position_vacancies")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "open");
-  return error ? 0 : (count ?? 0);
+function healthScore(health: CeoAdminSignals["health"]) {
+  const values = [
+    health.employeeHealthRate,
+    health.salesLinkageRate,
+    health.attendanceReadinessRate,
+    health.salesAchievementRate,
+  ].map(safeRate);
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100);
 }
 
-async function getCeoProbationCounts(): Promise<{ overdue: number; dueSoon: number }> {
+async function getCeoProbationCounts(_access: AccessContext): Promise<{ overdue: number; dueSoon: number }> {
   const { data, error } = await getSupabaseAdmin()
     .from("probation_evaluations")
-    .select("decision, probation_end_date")
-    .not("decision", "in", "(pass,terminate)");
-  if (error || !data) return { overdue: 0, dueSoon: 0 };
+    .select("decision, probation_end_date");
+  if (error) throw error;
+
   const now = Date.now();
-  const MS_PER_DAY = 86_400_000;
+  const msPerDay = 86_400_000;
   let overdue = 0;
   let dueSoon = 0;
-  for (const row of data) {
+  for (const row of data ?? []) {
+    const decision = row.decision ?? null;
+    if (decision === "pass" || decision === "terminate") continue;
     if (!row.probation_end_date) continue;
-    const daysRemaining = Math.floor((new Date(row.probation_end_date).getTime() - now) / MS_PER_DAY);
+    const daysRemaining = Math.floor((new Date(row.probation_end_date).getTime() - now) / msPerDay);
     if (daysRemaining < 0) overdue++;
     else if (daysRemaining <= 30) dueSoon++;
   }
@@ -145,19 +143,65 @@ async function getCeoPendingPlansCount(): Promise<number> {
   return error ? 0 : (count ?? 0);
 }
 
+function buildCeoHealth(
+  platformMetrics: PlatformMetrics | null,
+  salesLinkageRate: number,
+): CeoAdminSignals["health"] {
+  return {
+    attendanceReadinessRate: safeRate(platformMetrics?.attendance.mappingReadinessRate ?? 0),
+    employeeHealthRate: safeRate(platformMetrics?.workforce.employeeHealthRate ?? 0),
+    salesAchievementRate: safeRate(platformMetrics?.sales.achievementRate ?? 0),
+    salesLinkageRate: safeRate(salesLinkageRate),
+  };
+}
+
+function buildCeoTrends(
+  platformMetrics: PlatformMetrics | null,
+  sos: CeoCommandCenterData["sos"] | null,
+  departuresLast30d: number,
+): CeoCommandCenterData["trends"] {
+  const salesValue = sos?.totalValue ?? platformMetrics?.sales.salesValue ?? 0;
+  const targetValue = platformMetrics?.sales.targetValue ?? 0;
+  const payrollCost = platformMetrics?.payroll.gross ?? 0;
+  const payrollLabel = platformMetrics?.payroll.batchLabel && platformMetrics.payroll.batchLabel !== "No batch"
+    ? platformMetrics.payroll.batchLabel
+    : "Current";
+  const periodLabel = sos?.period ?? payrollLabel;
+
+  return {
+    sales: salesValue > 0 || targetValue > 0
+      ? [{ label: periodLabel, sales: salesValue, target: targetValue }]
+      : [],
+    financial: salesValue > 0 || payrollCost > 0
+      ? [{ label: payrollLabel, revenue: salesValue, cost: payrollCost }]
+      : [],
+    hireExit: departuresLast30d > 0 || (platformMetrics?.recruitment.acceptedToEmployeeConversions ?? 0) > 0
+      ? [{
+          label: "Current",
+          hires: platformMetrics?.recruitment.acceptedToEmployeeConversions ?? 0,
+          exits: departuresLast30d,
+        }]
+      : [],
+  };
+}
+
 // ── Fast path: main CEO data (hero + SoS + lean attention) ──────────────────
 
 export async function getCeoCommandCenterData(access: AccessContext): Promise<CeoCommandCenterData> {
   const dataUnavailable: string[] = [];
   const canRestricted = canViewRestrictedProducts(access.role);
+  const platformPromise = getPlatformMetrics(access);
+  const adminSignalsPromise = platformPromise.then(
+    (platformMetrics) => getCeoAdminSignals(access, platformMetrics),
+    () => getCeoAdminSignals(access),
+  );
 
-  const [sosR, leaveR, headcountR, openVacancyR, probationCountsR, pendingPlansR] =
+  const [sosR, leaveR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
       loadSourceOfSalesDashboard(null, canRestricted),
       getAwaitingMyActionItems(access, "admin"),
-      getCeoHeadcountData(),
-      getCeoOpenVacancyCount(),
-      getCeoProbationCounts(),
+      platformPromise,
+      adminSignalsPromise,
       getCeoPendingPlansCount(),
     ]);
 
@@ -165,31 +209,12 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
   const leaveItems = leaveR.status === "fulfilled" ? leaveR.value : null;
   if (!leaveItems) dataUnavailable.push("Pending leave approvals");
-  const headcount = headcountR.status === "fulfilled" ? headcountR.value : null;
-  if (!headcount) dataUnavailable.push("Headcount");
-  const openVacancies = openVacancyR.status === "fulfilled" ? openVacancyR.value : 0;
-  const probationCounts = probationCountsR.status === "fulfilled" ? probationCountsR.value : { overdue: 0, dueSoon: 0 };
+  const platformMetrics = platformR.status === "fulfilled" ? platformR.value : null;
+  if (!platformMetrics) dataUnavailable.push("Platform company metrics");
+  if (platformMetrics?.dataUnavailable.length) dataUnavailable.push(...platformMetrics.dataUnavailable);
+  const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
+  if (!adminSignals) dataUnavailable.push("Executive risk signals");
   const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : 0;
-
-  const activeHeadcount = headcount?.activeCount ?? 0;
-  const uniqueLines = headcount?.uniqueLines ?? 0;
-  const uniqueAreas = headcount?.uniqueAreas ?? 0;
-  const companyEmployeeHealthRate = activeHeadcount ? (headcount?.withManagerCount ?? 0) / activeHeadcount : 0;
-  const probationOverdue = probationCounts.overdue;
-  const probationDueSoon = probationCounts.dueSoon;
-
-  // Health score is computed in Phase B with accurate rates; fast path uses 0 defaults.
-  const score = 0;
-
-  // Fast attention queue — only lean items (probation + leave).
-  // Phase B adds the fuller risk signals (resignations, contracts, coaching, flags).
-  const attention: CeoAttentionItem[] = [];
-  if (probationOverdue) {
-    attention.push({ key: "probationOverdue", label: "Probation decisions overdue", count: probationOverdue, href: "/probation", tone: "rose" });
-  }
-  if (probationDueSoon) {
-    attention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationDueSoon, href: "/probation", tone: "amber" });
-  }
 
   const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : 0;
 
@@ -208,106 +233,104 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         })),
       }
     : null;
+  const workforce = platformMetrics?.workforce;
+  const platformPayroll = platformMetrics?.payroll;
+  const fallbackHealth = buildCeoHealth(platformMetrics, platformMetrics?.sales.dataQualityRate ?? 0);
+  const health = adminSignals?.health ?? fallbackHealth;
+  const trends = adminSignals?.trends ?? buildCeoTrends(platformMetrics, sosOut, 0);
 
   return {
     generatedAt: new Date().toISOString(),
     dataUnavailable: Array.from(new Set(dataUnavailable)),
-    // Health rates are 0 in fast path — Phase B renders accurate values
     health: {
-      score,
-      employeeHealthRate: companyEmployeeHealthRate,
-      salesLinkageRate: 0,
-      attendanceReadinessRate: 0,
-      salesAchievementRate: 0,
+      score: healthScore(health),
+      ...health,
     },
     headcount: {
-      active: activeHeadcount,
-      total: activeHeadcount,
-      vacancies: openVacancies,
+      active: workforce?.activeEmployees ?? 0,
+      total: workforce?.totalStructure ?? workforce?.totalEmployees ?? 0,
+      vacancies: workforce?.openVacancies ?? 0,
       attritionRate30d: 0,
-      uniqueLines,
-      uniqueAreas,
+      uniqueLines: workforce?.uniqueLines ?? 0,
+      uniqueAreas: workforce?.uniqueAreas ?? 0,
     },
-    // Payroll rendered in Phase B; fast path carries zero defaults
     payroll: {
-      batchLabel: "—",
-      gross: 0,
-      net: 0,
-      flags: 0,
-      unresolvedSalaryFlags: 0,
-      available: false,
+      batchLabel: platformPayroll?.batchLabel ?? "No batch",
+      gross: platformPayroll?.gross ?? 0,
+      net: platformPayroll?.net ?? 0,
+      flags: platformPayroll?.flags ?? 0,
+      unresolvedSalaryFlags: adminSignals?.payroll.unresolvedSalaryFlags ?? platformPayroll?.flags ?? 0,
+      available: Boolean(platformPayroll && (platformPayroll.gross > 0 || platformPayroll.net > 0 || platformPayroll.employees > 0)),
     },
-    attention,
+    attention: adminSignals?.attention ?? [],
     approvals: { leavePending, plansPending },
     sos: sosOut,
-    // Trends rendered in Phase B
-    trends: { sales: [], financial: [], hireExit: [] },
+    trends,
   };
 }
 
 // ── Phase B: landing-page deferred data ──────────────────────────────────────
 // Loads heavy executive widgets behind a second Suspense boundary.
 // getAdminCommandCenterData + getOverviewDashboard have been REPLACED with
-// getCeoAdminSignals() — 6 lean COUNT queries that complete in <500ms each.
+// getCeoAdminSignals() composes the same service-level aggregate sources used by platform/admin metrics.
 
-const SIGNAL_MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+async function getCeoAdminSignals(access: AccessContext, platformMetrics?: PlatformMetrics): Promise<CeoAdminSignals> {
+  const resolvedPlatformMetrics = platformMetrics ?? await getPlatformMetrics(access);
 
-async function getCeoAdminSignals(): Promise<CeoAdminSignals> {
-  const supabase = getSupabaseAdmin();
-  const today = new Date().toISOString().slice(0, 10);
-  const in30Days = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
-
-  const [resignationsR, leavePendingR, contractsActiveR, coachingR, flagsR, batchR] =
+  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR] =
     await Promise.allSettled([
-      supabase
-        .from("employee_resignations")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["submitted", "under_review"]),
-      supabase
-        .from("v2_vacation_requests")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["pending_manager", "pending_hr"]),
-      // Fetch active contracts expiring in 30 days — small result set, filter in-memory
-      supabase
-        .from("employee_contracts")
-        .select("contract_renewal_date")
-        .eq("status", "active")
-        .lte("contract_renewal_date", in30Days)
-        .gte("contract_renewal_date", today),
-      supabase
-        .from("coaching_reports_summary")
-        .select("id", { count: "exact", head: true })
-        .eq("performance_zone", "red"),
-      supabase
-        .from("salary_flags")
-        .select("id", { count: "exact", head: true }),
-      supabase
-        .from("salary_batches")
-        .select("month, year")
-        .in("status", ["approved", "locked", "part1_paid", "part2_ready"])
-        .order("year", { ascending: false })
-        .order("month", { ascending: false })
-        .limit(1),
+      getResignationsDashboardData(),
+      getVacationReportData(access, { status: "all" }),
+      getContractRenewalDashboardData(access),
+      getCeoProbationCounts(access),
+      getCoachingReports({}, access).then(buildCoachingReportAnalytics),
+      getSalaryFlags(),
     ]);
 
+  const daysFromNow = (iso: string | null | undefined): number | null => {
+    if (!iso) return null;
+    const time = new Date(iso).getTime();
+    if (!Number.isFinite(time)) return null;
+    return Math.floor((time - Date.now()) / 86_400_000);
+  };
   const pendingResignations =
-    resignationsR.status === "fulfilled" ? (resignationsR.value.count ?? 0) : 0;
+    resignationsR.status === "fulfilled" ? resignationsR.value.summary.pending : 0;
+  const departuresLast30d =
+    resignationsR.status === "fulfilled"
+      ? resignationsR.value.records.filter((record) => {
+          const delta = daysFromNow(record.effectiveDate);
+          return delta !== null && delta <= 0 && delta >= -30;
+        }).length
+      : 0;
   const overdueLeaveSla =
-    leavePendingR.status === "fulfilled" ? (leavePendingR.value.count ?? 0) : 0;
+    leavePendingR.status === "fulfilled"
+      ? leavePendingR.value.dashboard.overdueBySla.total || leavePendingR.value.dashboard.pendingByStage.total
+      : 0;
   const expiringContracts =
     contractsActiveR.status === "fulfilled"
-      ? (contractsActiveR.value.data?.length ?? 0)
-      : 0;
+      ? contractsActiveR.value.rows.filter((row) => {
+          const delta = daysFromNow(row.contract_renewal_date);
+          return delta !== null && delta >= 0 && delta <= 30;
+        }).length
+      : resolvedPlatformMetrics.lifecycleRisk.expiringContracts;
+  const probationCounts =
+    probationCountsR.status === "fulfilled" ? probationCountsR.value : { overdue: 0, dueSoon: 0 };
   const coachingRedZone =
-    coachingR.status === "fulfilled" ? (coachingR.value.count ?? 0) : 0;
+    coachingR.status === "fulfilled"
+      ? (coachingR.value.zoneCounts.critical_red ?? 0) + (coachingR.value.zoneCounts.red_zone ?? 0)
+      : 0;
   const unresolvedSalaryFlags =
-    flagsR.status === "fulfilled" ? (flagsR.value.count ?? 0) : 0;
-  const latestBatch =
-    batchR.status === "fulfilled" ? (batchR.value.data?.[0] ?? null) : null;
+    flagsR.status === "fulfilled" ? flagsR.value.unresolvedCount : resolvedPlatformMetrics.payroll.flags;
 
   const signalAttention: CeoAttentionItem[] = [];
   if (expiringContracts > 0) {
     signalAttention.push({ key: "contracts", label: "Contracts expiring soon", count: expiringContracts, href: "/contracts", tone: "blue" });
+  }
+  if (probationCounts.overdue > 0) {
+    signalAttention.push({ key: "probationOverdue", label: "Probation decisions overdue", count: probationCounts.overdue, href: "/probation", tone: "rose" });
+  }
+  if (probationCounts.dueSoon > 0) {
+    signalAttention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationCounts.dueSoon, href: "/probation", tone: "amber" });
   }
   if (pendingResignations > 0) {
     signalAttention.push({ key: "resignations", label: "Pending resignations", count: pendingResignations, href: "/resignations", tone: "rose" });
@@ -322,17 +345,20 @@ async function getCeoAdminSignals(): Promise<CeoAdminSignals> {
     signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: coachingRedZone, href: "/coaching", tone: "amber" });
   }
 
-  const monthNum = latestBatch ? Number((latestBatch as { month: unknown }).month) : 0;
-  const batchLabel =
-    latestBatch && monthNum >= 1 && monthNum <= 12
-      ? `${SIGNAL_MONTH_LABELS[monthNum - 1]} ${(latestBatch as { year: unknown }).year}`
-      : "—";
+  const health = buildCeoHealth(resolvedPlatformMetrics, resolvedPlatformMetrics.sales.dataQualityRate);
+  const trends = buildCeoTrends(resolvedPlatformMetrics, null, departuresLast30d);
+  const payroll = resolvedPlatformMetrics.payroll;
 
   return {
     attention: signalAttention,
-    health: { salesLinkageRate: 0, attendanceReadinessRate: 0, salesAchievementRate: 0, employeeHealthRate: 0 },
-    trends: { sales: [], financial: [], hireExit: [] },
-    payroll: { batchLabel, gross: 0, net: 0, unresolvedSalaryFlags },
+    health,
+    trends,
+    payroll: {
+      batchLabel: payroll.batchLabel,
+      gross: payroll.gross,
+      net: payroll.net,
+      unresolvedSalaryFlags,
+    },
   };
 }
 
@@ -412,13 +438,13 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
   // Run all heavy sources concurrently. SoS is NOT re-fetched here — the fast path
   // already loads it and passes byRegion/byProduct via sosPrefetched prop on the page.
   // getCeoAdminSignals() replaces the old getAdminCommandCenterData + getOverviewDashboard
-  // with 6 lean COUNT queries (<500ms each vs 15–30s for the old aggregators).
+  // with CEO-safe service aggregates.
   const [dvR, expenseR, attendanceR, marketingR, adminSignalsR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
     getOutstationExpenseCommandData(access, { preset: "30d" }),
     getAttendanceAnalytics(),
     getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
-    getCeoAdminSignals(),
+    getCeoAdminSignals(access),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;
