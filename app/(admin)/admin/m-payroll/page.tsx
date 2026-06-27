@@ -19,6 +19,7 @@ type QueryValue = string | string[] | undefined;
 type SearchParams = Promise<{
   month?: QueryValue;
   year?: QueryValue;
+  batchId?: QueryValue;
 }>;
 
 function asText(value: QueryValue) {
@@ -66,7 +67,8 @@ export default async function MPayrollPage({
 
   const now = new Date();
   const params = await searchParams;
-  const { hasIssue, month, year } = parsePayrollPeriod(params.month, params.year, now);
+  const requestedPeriod = parsePayrollPeriod(params.month, params.year, now);
+  const selectedBatchId = asText(params.batchId).trim();
 
   let batches: SalaryBatch[] = [];
   let fetchError: string | null = null;
@@ -74,13 +76,22 @@ export default async function MPayrollPage({
 
   try {
     batches = await listSalaryBatches();
-    const years = new Set<number>([year, year - 1, year + 1, year + 2]);
+    const years = new Set<number>([
+      requestedPeriod.year,
+      requestedPeriod.year - 1,
+      requestedPeriod.year + 1,
+      requestedPeriod.year + 2,
+    ]);
     batches.forEach((batch) => years.add(batch.year));
     availableYears = Array.from(years).sort((left, right) => right - left);
   } catch (error) {
     fetchError = error instanceof Error ? error.message : "Unable to load payroll batches.";
   }
 
+  const selectedBatch = selectedBatchId ? batches.find((batch) => batch.id === selectedBatchId) ?? null : null;
+  const month = selectedBatch?.month ?? requestedPeriod.month;
+  const year = selectedBatch?.year ?? requestedPeriod.year;
+  const hasIssue = requestedPeriod.hasIssue;
   const periodBatches = batches.filter((batch) => batch.month === month && batch.year === year);
   const selectedDownloadUrl = `/api/payroll/template?ready=1&month=${month}&year=${year}`;
   const periodLabel = payrollPeriodLabel(month, year);
@@ -162,6 +173,18 @@ export default async function MPayrollPage({
         </AdminCallout>
       ) : null}
 
+      {selectedBatchId && !selectedBatch && !fetchError ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 text-[#B45309]" />
+          <div>
+            <p className="font-semibold">Selected batch was not found</p>
+            <p className="text-sm">
+              The requested batch link no longer exists. Showing {periodLabel} instead.
+            </p>
+          </div>
+        </AdminCallout>
+      ) : null}
+
       {fetchError ? (
         <AdminCallout tone="danger">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-[#B91C1C]" />
@@ -203,32 +226,35 @@ export default async function MPayrollPage({
                   </td>
                 </tr>
               ) : (
-                periodBatches.map((batch) => (
-                  <tr className="transition-colors hover:bg-[#FCFDFE]" key={batch.id}>
-                    <td className="px-3 py-3">
-                      <p className="font-semibold text-[#0F172A]">{batch.fileName}</p>
-                      <p className="mt-0.5 text-xs text-[#64748B]">Batch ID: {batch.id}</p>
-                    </td>
-                    <td className="px-3 py-3 text-[#0F172A]">{batch.uploadedBy ?? "System Upload"}</td>
-                    <td className="px-3 py-3">{statusBadge(batch.status)}</td>
-                    <td className="px-3 py-3 text-[#64748B]">{formatDateTimeValue(batch.createdAt)}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
-                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
-                            <Download className="mr-2 h-3.5 w-3.5" />
-                            Download
-                          </Button>
-                        </Link>
-                        <Link href={`/payroll?batchId=${batch.id}`}>
-                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
-                            Open batch
-                          </Button>
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                periodBatches.map((batch) => {
+                  const isSelected = selectedBatchId === batch.id;
+                  return (
+                    <tr className={`transition-colors ${isSelected ? "bg-[#FFF7ED]" : "hover:bg-[#FCFDFE]"}`} key={batch.id}>
+                      <td className="px-3 py-3">
+                        <p className="font-semibold text-[#0F172A]">{batch.fileName}</p>
+                        <p className="mt-0.5 text-xs text-[#64748B]">Batch ID: {batch.id}</p>
+                      </td>
+                      <td className="px-3 py-3 text-[#0F172A]">{batch.uploadedBy ?? "System Upload"}</td>
+                      <td className="px-3 py-3">{statusBadge(batch.status)}</td>
+                      <td className="px-3 py-3 text-[#64748B]">{formatDateTimeValue(batch.createdAt)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
+                            <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                              <Download className="mr-2 h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </Link>
+                          <Link href={`/admin/m-payroll?batchId=${encodeURIComponent(batch.id)}`}>
+                            <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                              Open batch
+                            </Button>
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

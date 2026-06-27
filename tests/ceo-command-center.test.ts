@@ -89,14 +89,74 @@ export function runCeoCommandCenterTests() {
     /trends:\s*\{\s*sales:\s*\[\],\s*financial:\s*\[\],\s*hireExit:\s*\[\]\s*\}/,
     "CEO trend metrics must not be hardcoded empty placeholders",
   );
-  assert.match(ceoComponentSource, /const \{ attention, approvals, headcount, health, payroll, sos \} = data/);
+  assert.match(ceoComponentSource, /const \{ attention, approvals, dataUnavailable, headcount, health, payroll, sos \} = data/);
   assert.match(ceoComponentSource, /Active employees/);
   assert.match(ceoComponentSource, /Total structure/);
   assert.match(ceoComponentSource, /Lookup-backed count/);
   assert.match(
+    ceoCommandCenterSource,
+    /const plansPending = pendingPlansR\.status === "fulfilled" \? pendingPlansR\.value : null/,
+    "CEO weekly-plan failures must render unavailable instead of zero",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /dataUnavailable\.push\("Pending weekly-plan approvals"\)/,
+    "CEO fast path must surface pending-plan source failures",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /dataUnavailable: Array\.from\(new Set\(dataUnavailable\)\)/,
+    "CEO unavailable source metadata must be de-duplicated and returned",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /href: "\/admin\/m-payroll"/,
+    "CEO salary flag links must land on the CEO payroll console",
+  );
+  assert.match(
+    ceoComponentSource,
+    /<DataUnavailableNotice sources=\{dataUnavailable\} \/>/,
+    "CEO fast path must render unavailable-source warnings",
+  );
+  assert.match(
+    ceoComponentSource,
+    /const allClear = dataAvailable && attention\.length === 0 && totalApprovals === 0/,
+    "CEO all-clear must be blocked while any source is unavailable",
+  );
+  assert.match(
+    ceoComponentSource,
+    /totalApprovals > 0 \|\| hasUnavailableApprovals/,
+    "CEO approval counts must render unavailable values instead of hiding as zero",
+  );
+  assert.match(
     ceoPhaseBSource,
     /payroll\.net > 0 \|\| payroll\.gross > 0 \|\| payroll\.unresolvedSalaryFlags > 0/,
     "CEO Phase B must show payroll risk cards when only salary flags are present",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /RiskSourceWarning/,
+    "CEO Phase B must render unavailable-source warnings",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /No risk cards can be declared clear while critical CEO sources are unavailable/,
+    "CEO Phase B must not show no-risk language when critical sources fail",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/payroll"/,
+    "CEO Phase B smart navigation must not link to operational payroll",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/sales\/weekly"/,
+    "CEO Phase B smart navigation must not link to the redirecting weekly sales route",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/sales\/monthly-dashboard"/,
+    "CEO Phase B smart navigation must not link to the redirecting monthly sales route",
   );
   assert.match(ceoPhaseBSource, /SmartNavGrid\(\{ access \}/);
   assert.match(ceoPhaseBSource, /item\.href !== "\/employees" && item\.href !== "\/admin\/data-health"/);

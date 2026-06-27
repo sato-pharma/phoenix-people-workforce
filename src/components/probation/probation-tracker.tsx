@@ -51,7 +51,7 @@ type ProbationTrackerCapabilities = {
   canExport?: boolean;
   canManageWorkflow?: boolean;
   canSubmitManagerFeedback?: boolean;
-  viewerMode?: "employee" | "hr" | "manager";
+  viewerMode?: "employee" | "executive" | "hr" | "manager";
 };
 
 type SelectedWorkflowAction = {
@@ -263,6 +263,8 @@ export function ProbationTracker({
   const canExport = capabilities.canExport ?? false;
   const canManageWorkflow = capabilities.canManageWorkflow ?? false;
   const canSubmitManagerFeedback = capabilities.canSubmitManagerFeedback ?? false;
+  const viewerMode = capabilities.viewerMode ?? "hr";
+  const isExecutiveReadOnly = viewerMode === "executive";
   const panelClassName = isPremium ? premiumPanelClassName : adminPanelClassName;
   const inputClassName = isPremium ? premiumInputClassName : "h-10 bg-white";
   const [areaFilter, setAreaFilter] = useState(allValue);
@@ -503,6 +505,9 @@ export function ProbationTracker({
           }
           badges={(
             <div className="flex flex-wrap gap-2">
+              {isExecutiveReadOnly ? (
+                <AdminInsightChip tone="slate">Executive read-only</AdminInsightChip>
+              ) : null}
               <AdminInsightChip>Employees in probation period: {summary.total}</AdminInsightChip>
               <AdminInsightChip tone="slate">
                 {summary.total > 0 ? `${((summary.critical / summary.total) * 100).toFixed(0)}% critical` : "0% critical"}
@@ -512,11 +517,26 @@ export function ProbationTracker({
               </AdminInsightChip>
             </div>
           )}
-          description="Track employees inside the 90-day probation window and prioritize deadlines by risk zone before deadlines become people-risk."
-          eyebrow="People Operations"
+          description={isExecutiveReadOnly
+            ? "Review company probation risk and upcoming decision deadlines. HR and authorized reviewers keep ownership of workflow actions."
+            : "Track employees inside the 90-day probation window and prioritize deadlines by risk zone before deadlines become people-risk."
+          }
+          eyebrow={isExecutiveReadOnly ? "Executive Read-Only" : "People Operations"}
           icon={<Shield className="h-3.5 w-3.5" />}
           title="Probation Period"
         />
+
+        {isExecutiveReadOnly ? (
+          <AdminCallout tone="warning">
+            <ShieldCheck className="mt-0.5 h-4 w-4 text-[#B45309]" />
+            <div>
+              <p className="font-semibold">CEO read-only probation view</p>
+              <p className="text-sm">
+                This page shows aggregate and employee probation risk for oversight. Create, decision, and feedback actions remain disabled for CEO.
+              </p>
+            </div>
+          </AdminCallout>
+        ) : null}
 
       {initialError ? (
         <AdminCallout tone="danger">

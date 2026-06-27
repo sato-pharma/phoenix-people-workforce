@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { adminNavigationSections } from "../src/config/system-navigation.ts";
 import {
@@ -122,9 +122,76 @@ export async function runCeoAccountContractTests() {
 
   const usersRouteSource = readFileSync("app/api/admin/users/route.ts", "utf8");
   const permissionsRouteSource = readFileSync("app/api/admin/permissions/route.ts", "utf8");
+  const ceoCommandCenterSource = readFileSync("src/components/admin/ceo-command-center.tsx", "utf8");
+  const ceoPhaseBSource = readFileSync("src/components/admin/ceo-phase-b.tsx", "utf8");
+  const ceoSosTablesSource = readFileSync("src/components/admin/ceo-sos-tables.tsx", "utf8");
+  const payrollPageSource = readFileSync("app/(admin)/payroll/page.tsx", "utf8");
+  const mPayrollPageSource = readFileSync("app/(admin)/admin/m-payroll/page.tsx", "utf8");
+  const probationPageSource = readFileSync("app/(admin)/probation/page.tsx", "utf8");
+  const probationTrackerSource = readFileSync("src/components/probation/probation-tracker.tsx", "utf8");
   const sidebarSource = readFileSync("src/components/layout/sidebar.tsx", "utf8");
   assert.match(usersRouteSource, /assertPermission\(access, "admin_access", "read"\)/);
   assert.match(permissionsRouteSource, /assertPermission\(access, "admin_access", "read"\)/);
+  assert.doesNotMatch(
+    ceoCommandCenterSource,
+    /href="\/sales\/weekly"/,
+    "CEO Command Center must not link to the redirecting weekly sales route",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /href="\/sales\/weekly\/dashboard"/,
+    "CEO Command Center must link directly to the weekly sales dashboard",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/payroll"/,
+    "CEO Phase B smart navigation must not link to operational payroll",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/sales\/weekly"/,
+    "CEO Phase B smart navigation must not link to the redirecting weekly sales route",
+  );
+  assert.doesNotMatch(
+    ceoPhaseBSource,
+    /href: "\/sales\/monthly-dashboard"/,
+    "CEO Phase B smart navigation must not link to the redirecting monthly sales route",
+  );
+  assert.match(ceoPhaseBSource, /href: "\/admin\/m-payroll"/);
+  assert.match(ceoPhaseBSource, /href: "\/sales\/weekly\/dashboard"/);
+  assert.match(ceoPhaseBSource, /href: "\/admin\/analytics\/monthly-closing"/);
+  assert.doesNotMatch(
+    ceoSosTablesSource,
+    /href="\/sales\/monthly-dashboard"/,
+    "CEO SoS tables must not link to the redirecting monthly sales route",
+  );
+  assert.match(ceoSosTablesSource, /href="\/admin\/analytics\/monthly-closing"/);
+  assert.match(
+    payrollPageSource,
+    /access\.role === "CEO"[\s\S]{0,220}redirect\(target\)/,
+    "CEO direct payroll access must redirect to the CEO payroll console",
+  );
+  assert.doesNotMatch(
+    mPayrollPageSource,
+    /\/payroll\?batchId/,
+    "CEO payroll console batch links must not point back to operational payroll",
+  );
+  assert.match(
+    mPayrollPageSource,
+    /\/admin\/m-payroll\?batchId/,
+    "CEO payroll console batch links must stay inside the CEO payroll console",
+  );
+  assert.equal(
+    existsSync("app/(admin)/admin/m.payroll/page.tsx"),
+    false,
+    "Legacy dotted CEO payroll route must be removed",
+  );
+  assert.match(
+    probationPageSource,
+    /viewerMode: access\.role === "CEO" \? "executive" : "hr"/,
+    "CEO probation route must pass executive read-only mode",
+  );
+  assert.match(probationTrackerSource, /Executive read-only/);
   assert.match(sidebarSource, /currentRole === "CEO" \? resolveLandingPathForRole\(currentRole\) : navigationHomePathByMode\[mode\]/);
   assert.match(sidebarSource, /<SidebarBrand currentRole=\{currentRole\} mode=\{navigationMode\}/);
 }

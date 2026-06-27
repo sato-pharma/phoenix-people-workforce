@@ -69,6 +69,24 @@ function UnavailableChip({ label }: { label: string }) {
   );
 }
 
+function RiskSourceWarning({ sources }: { sources: string[] }) {
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        <div>
+          <p className="text-sm font-black text-amber-900">Some CEO data sources are unavailable.</p>
+          <p className="mt-1 text-xs font-medium text-amber-800">
+            Do not treat missing cards as all clear until these sources recover: {sources.join(", ")}.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Health breakdown ──────────────────────────────────────────────────────────
 
 function HealthBreakdown({
@@ -178,15 +196,18 @@ const toneStyles: Record<CeoAttentionTone, { bar: string; label: string; text: s
 };
 
 function RiskSignals({
+  dataUnavailable,
   items,
   payroll,
 }: {
+  dataUnavailable: NonNullable<import("@/lib/ceo/command-center").CeoAdminSignals>["dataUnavailable"];
   items: NonNullable<import("@/lib/ceo/command-center").CeoAdminSignals>["attention"];
   payroll: NonNullable<import("@/lib/ceo/command-center").CeoAdminSignals>["payroll"];
 }) {
   const n = (v: number) => (Number.isFinite(v) ? Math.round(v).toLocaleString("en-US") : "0");
   return (
     <div className="p-5 space-y-4">
+      <RiskSourceWarning sources={dataUnavailable} />
       {/* Payroll KPIs */}
       {(payroll.net > 0 || payroll.gross > 0 || payroll.unresolvedSalaryFlags > 0) && (
         <div className="grid grid-cols-3 gap-2">
@@ -227,6 +248,13 @@ function RiskSignals({
               </Link>
             );
           })}
+        </div>
+      ) : dataUnavailable.length > 0 ? (
+        <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-5 py-4">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+          <span className="text-sm font-semibold text-amber-900">
+            No risk cards can be declared clear while critical CEO sources are unavailable.
+          </span>
         </div>
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
@@ -399,9 +427,9 @@ function AttendanceWidget({
 
 const NAV_ITEMS = [
   { href: "/employees",                              icon: Users,        label: "Employees",         sub: "Directory & lifecycle" },
-  { href: "/payroll",                                icon: Wallet,       label: "Payroll",            sub: "Salary & flags" },
-  { href: "/sales/monthly-dashboard",                icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
-  { href: "/sales/weekly",                           icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
+  { href: "/admin/m-payroll",                        icon: Wallet,       label: "Payroll",            sub: "Salary & flags" },
+  { href: "/admin/analytics/monthly-closing",        icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
+  { href: "/sales/weekly/dashboard",                 icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
   { href: "/admin/marketing-requests/roi-tracking",  icon: TrendingUp,   label: "ROI Tracking",       sub: "Marketing investment returns" },
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/admin/outstation/expense-command",       icon: DollarSign,   label: "Expense Command",    sub: "Company-wide outstation spend" },
@@ -470,9 +498,15 @@ export async function CeoPhaseBWidgets({
   sosPrefetched: CeoCommandCenterData["sos"];
 }) {
   const landing = await getCeoLandingDeferred(access);
+  const unavailableSources = Array.from(new Set(landing.dataUnavailable));
 
   return (
     <div className="divide-y divide-slate-200 border-t border-slate-200">
+      {unavailableSources.length > 0 ? (
+        <div className="bg-white p-5">
+          <RiskSourceWarning sources={unavailableSources} />
+        </div>
+      ) : null}
 
       {/* ── Risk signals + payroll (from admin aggregator, deferred) ──────── */}
       <Section
@@ -488,7 +522,11 @@ export async function CeoPhaseBWidgets({
         }
       >
         {landing.adminSignals ? (
-          <RiskSignals items={landing.adminSignals.attention} payroll={landing.adminSignals.payroll} />
+          <RiskSignals
+            dataUnavailable={landing.adminSignals.dataUnavailable}
+            items={landing.adminSignals.attention}
+            payroll={landing.adminSignals.payroll}
+          />
         ) : (
           <UnavailableChip label="Risk signals" />
         )}
@@ -552,7 +590,7 @@ export async function CeoPhaseBWidgets({
         description="Company-wide source of sales — sortable by region or product."
         action={
           <Link
-            href="/sales/monthly-dashboard"
+            href="/admin/analytics/monthly-closing"
             className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
           >
             Full SoS <ArrowRight className="h-3 w-3" />
