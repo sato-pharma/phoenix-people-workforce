@@ -32,8 +32,6 @@ export async function assertOutstationAdminAccess(
   access: AccessContext,
   action: PermissionAction = "approve",
 ) {
-  await assertPermission(access, "outstation", action);
-
   if (!canUseAdminOutstationWorkspace(access, action)) {
     throw new Error(
       action === "approve"
@@ -41,4 +39,6 @@ export async function assertOutstationAdminAccess(
         : "Forbidden: only HR Manager (Super Admin) and approved read-only finance roles can access this admin workspace.",
     );
   }
+
+  await assertPermission(access, "outstation", action);
 }
