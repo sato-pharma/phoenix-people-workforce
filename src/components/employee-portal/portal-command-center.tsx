@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Trophy,
   User,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -452,7 +453,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -484,6 +485,14 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
   const now = new Date();
   const thisMonth = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pacingPct =
+    ach && pct !== null && dayOfMonth > 0
+      ? Math.round(((ach.salesValue / dayOfMonth) * daysInMonth) / (ach.targetValue || 1) * 100)
+      : null;
+  const pacingVsActual = pacingPct !== null && pct !== null ? pacingPct - pct : null;
 
   const renewalUrgent = daysUntilRenewal !== null && daysUntilRenewal !== undefined && daysUntilRenewal <= 30;
   const renewalWarning =
@@ -591,6 +600,92 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           )}
         </div>
       </div>
+
+      {(ach || (monthlySalesTrend && monthlySalesTrend.length > 0) || doubleVisitPulse) && (
+        <SectionShell title="Field Intelligence">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {/* Pacing */}
+            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
+              <div className="flex items-center gap-2">
+                <Target className="h-3.5 w-3.5 text-slate-400" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Month Pace</p>
+              </div>
+              {pacingPct !== null ? (
+                <>
+                  <p className={`mt-2 text-2xl font-black tabular-nums ${pacingPct >= 100 ? "text-emerald-600" : pacingPct >= 90 ? "text-amber-600" : "text-orange-500"}`}>
+                    {pacingPct}%
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-semibold text-slate-400">projected end-of-month</p>
+                  {pacingVsActual !== null && (
+                    <p className={`mt-1.5 text-xs font-bold ${pacingVsActual >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                      {pacingVsActual >= 0 ? `+${pacingVsActual}%` : `${pacingVsActual}%`} vs current
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-slate-400">Data not yet available</p>
+              )}
+            </div>
+
+            {/* Monthly trend mini-bars */}
+            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-3.5 w-3.5 text-slate-400" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Trend (4 Mo.)</p>
+              </div>
+              {monthlySalesTrend && monthlySalesTrend.length > 0 ? (
+                <div className="mt-3 flex items-end gap-1.5" style={{ height: 64 }}>
+                  {[...monthlySalesTrend].reverse().map((m) => {
+                    const barH = Math.max(5, Math.min(100, m.achievementPercent));
+                    const bColor = m.achievementPercent >= 100 ? "bg-emerald-500" : m.achievementPercent >= 90 ? "bg-amber-400" : "bg-orange-400";
+                    const mo = new Date(m.year, m.month - 1).toLocaleString("en-US", { month: "short" });
+                    return (
+                      <div key={`${m.year}-${m.month}`} className="flex flex-1 flex-col items-center justify-end gap-0.5">
+                        <p className="text-[9px] font-bold tabular-nums text-slate-500">{m.achievementPercent}%</p>
+                        <div className={`w-full ${bColor}`} style={{ height: `${barH}%`, minHeight: 4 }} />
+                        <p className="text-[9px] font-semibold text-slate-400">{mo}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-slate-400">No history yet</p>
+              )}
+            </div>
+
+            {/* Double visit pulse */}
+            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-3.5 w-3.5 text-slate-400" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Double Visits</p>
+              </div>
+              {doubleVisitPulse ? (
+                <>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <div>
+                      <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsThisMonth}</p>
+                      <p className="text-[9px] font-semibold uppercase text-slate-400">this month</p>
+                    </div>
+                    <div>
+                      <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsLast90Days}</p>
+                      <p className="text-[9px] font-semibold uppercase text-slate-400">last 90 days</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[10px] font-semibold text-slate-400">
+                    {doubleVisitPulse.daysSinceLastDv === null
+                      ? "No visits recorded"
+                      : doubleVisitPulse.daysSinceLastDv === 0
+                        ? "Last visit today"
+                        : `Last visit ${doubleVisitPulse.daysSinceLastDv}d ago`}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-slate-400">No data available</p>
+              )}
+            </div>
+          </div>
+        </SectionShell>
+      )}
 
       <SectionShell title="My Status">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
