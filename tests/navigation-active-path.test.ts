@@ -238,7 +238,11 @@ export function runNavigationActivePathTests() {
     "/leave-management/vacation-control",
   ] as const;
   const systemAdministratorOnlyHrefs = [
+    "/admin/access",
+    "/admin/data-health",
     "/attendance/exceptions",
+    "/attendance/device-user-mapping",
+    "/attendance/policies",
     "/leave-management/vacation-action-center",
     "/payroll/expenses/dashboard",
     "/payroll/expenses",
@@ -310,7 +314,11 @@ export function runNavigationActivePathTests() {
   assertExcludesAll(financeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "Finance Manager must not see HR-owned or owner-only modules");
 
   const ceoAdmin = adminHrefsFor("CEO");
-  assertIncludesAll(ceoAdmin, ["/admin/m-payroll"], "CEO must keep payroll reporting access via m-payroll");
+  assertIncludesAll(
+    ceoAdmin,
+    ["/attendance/analytics", "/probation", "/contracts", "/resignations", "/admin/m-payroll"],
+    "CEO must keep read-only executive module access",
+  );
   assertExcludesAll(ceoAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "CEO must not see HR-owned or owner-only modules");
 
   const superAdminAuthorityNav = adminHrefsFor("Super Admin");

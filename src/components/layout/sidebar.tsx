@@ -59,6 +59,7 @@ import {
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { getActiveHref, getSections, type PermissionLookup } from "@/lib/navigation/active-path";
 import { subscribeNavBadge } from "@/lib/nav-badge-store";
@@ -1040,8 +1041,18 @@ function SidebarNav({
 }
 
 // ── Brand / logo header ──────────────────────────────────────────────────────
-function SidebarBrand({ mode = "admin", onNavigate, rail = false }: { mode?: NavigationMode; onNavigate?: () => void; rail?: boolean }) {
-  const homePath = navigationHomePathByMode[mode];
+function SidebarBrand({
+  currentRole,
+  mode = "admin",
+  onNavigate,
+  rail = false,
+}: {
+  currentRole?: PhoenixRole;
+  mode?: NavigationMode;
+  onNavigate?: () => void;
+  rail?: boolean;
+}) {
+  const homePath = currentRole === "CEO" ? resolveLandingPathForRole(currentRole) : navigationHomePathByMode[mode];
   const isAdmin = mode === "admin";
   const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 
@@ -1208,7 +1219,7 @@ export function Sidebar({
         </button>
       )}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        <SidebarBrand mode={navigationMode} rail={railActive} />
+        <SidebarBrand currentRole={currentRole} mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
           key={pathname}
@@ -1266,7 +1277,7 @@ export function MobileSidebar({
       >
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <div className="flex items-start justify-between gap-3">
-            <SidebarBrand mode={navigationMode} onNavigate={onClose} />
+            <SidebarBrand currentRole={currentRole} mode={navigationMode} onNavigate={onClose} />
             <button
               aria-label="Close menu"
               className={cn(
