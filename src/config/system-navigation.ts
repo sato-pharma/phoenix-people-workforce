@@ -342,8 +342,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
-      { href: "/sales/monthly-dashboard", icon: Network, label: "M.Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"], exact: true },
+      { href: "/sales/monthly-dashboard", icon: Network, label: "M.Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Data Entry", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "Mapping Database", permissions: [{ action: "import", resource: "sales" }] },
