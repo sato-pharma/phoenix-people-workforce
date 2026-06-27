@@ -218,8 +218,8 @@ export function runWeeklyMonthlyPlansV1Tests() {
     { ...baseItem, conflictKey: planningConflictKey("2026-06-21", "Line B", "MR-1"), employeeHrId: "E-3", employeeName: "Other Line", id: "plan-item-3", lineName: "Line B" },
   ];
   const conflicts = buildPlanningCalendarConflicts(conflictItems);
-  assert.equal(conflicts.length, 1, "same date + same line + same Medical Rep must warn once");
-  assert.deepEqual(conflicts[0].employeeNames, ["Nahid Hatab", "Russia Sabri"]);
+  assert.equal(conflicts.length, 1, "same date + same Medical Rep must warn once — cross-line conflicts are now detected");
+  assert.deepEqual(conflicts[0].employeeNames, ["Nahid Hatab", "Other Line", "Russia Sabri"]);
   assert.equal(attachPlanningConflictWarnings(conflictItems, conflicts)[0].conflictWarning !== null, true);
   assert.equal(planningCalendarTitle("Russia Sabri", "Delta 2", "Munufia 2", "Double Visit"), "Russia Sabri - Delta 2 - Munufia 2");
   assert.match(

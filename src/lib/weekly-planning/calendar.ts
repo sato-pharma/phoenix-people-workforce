@@ -128,11 +128,10 @@ export function planSlotLabel(startTime: string | null | undefined, endTime: str
   return "Full day";
 }
 
-export function planningConflictKey(date: string, lineName: string | null, medicalRepHrId: string | null) {
-  const line = normalizedPlanningCalendarKey(lineName);
+export function planningConflictKey(date: string, _lineName: string | null, medicalRepHrId: string | null) {
   const rep = normalizedPlanningCalendarKey(medicalRepHrId);
-  if (!date || !line || !rep) return null;
-  return `${date}|${line}|${rep}`;
+  if (!date || !rep) return null;
+  return `${date}|${rep}`;
 }
 
 function uniqueSorted(values: Array<string | null | undefined>) {
@@ -155,8 +154,11 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
     const employeeNames = uniqueSorted(group.map((item) => item.employeeName));
     const medicalRepName = cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
-    const lineName = cleanText(first.lineName) || "Unassigned line";
-    const warning = `${employeeNames.join(", ")} are planned with ${medicalRepName} on the same day in ${lineName}.`;
+    const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
+    const lineName = conflictLineNames.length === 1 ? (conflictLineNames[0] || "Unassigned line") : conflictLineNames.join(" / ");
+    const warning = conflictLineNames.length > 1
+      ? `${employeeNames.join(", ")} are each planned with ${medicalRepName} on the same day (across lines: ${lineName}).`
+      : `${employeeNames.join(", ")} are planned with ${medicalRepName} on the same day in ${lineName}.`;
     conflicts.push({
       areaNames: uniqueSorted(group.map((item) => item.area)),
       date: first.startDate,

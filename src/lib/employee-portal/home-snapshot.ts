@@ -36,6 +36,7 @@ export type PortalHomeSnapshot = {
   nsmNational:
     | { achievementPercent: number; dsmCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
     | null;
+  plansAwaitingManagerApproval: number | null;
 };
 
 type RoleSpecificExtras = Pick<PortalHomeSnapshot, "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational">;
@@ -302,6 +303,18 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         )
       : Promise.resolve(null);
 
+  // Plans waiting for this user's manager approval (non-MR portal managers only).
+  const managerPlanCountPromise =
+    !isMr && hrId
+      ? wrapPromise(
+          supabase
+            .from("weekly_plans")
+            .select("id", { count: "exact", head: true })
+            .eq("manager_hr_id", hrId.toUpperCase())
+            .eq("status", "submitted"),
+        )
+      : Promise.resolve(null);
+
   // All three fire in parallel (sequential in dev to protect Turbopack workers).
   const [vacationResult, excuseResult, batchResult] = await devSafePromiseAllSettled([
     () =>
@@ -356,12 +369,13 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     }
   }
 
-  // Await all four MR promises together (they've been in-flight since the start).
-  const [mrSalesResult, trendResult, dvResult, expenseResult] = await Promise.allSettled([
+  // Await all MR + manager promises together (they've been in-flight since the start).
+  const [mrSalesResult, trendResult, dvResult, expenseResult, managerPlanResult] = await Promise.allSettled([
     mrSalesPromise,
     trendPromise,
     dvPromise,
     expensePromise,
+    managerPlanCountPromise,
   ]);
 
   // Current-month achievement.
@@ -441,6 +455,17 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     // null on failure
   }
 
+  // Plans awaiting this manager's approval.
+  let plansAwaitingManagerApproval: PortalHomeSnapshot["plansAwaitingManagerApproval"] = null;
+  try {
+    const mpData = managerPlanResult.status === "fulfilled" ? managerPlanResult.value : null;
+    if (mpData && "count" in mpData && mpData.count !== null) {
+      plansAwaitingManagerApproval = mpData.count;
+    }
+  } catch {
+    // null on failure
+  }
+
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
   const roleExtras = await roleExtrasPromise;
@@ -457,5 +482,6 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     doubleVisitPulse,
     mrPendingExpenseCount,
     ...roleExtras,
+    plansAwaitingManagerApproval,
   };
 }

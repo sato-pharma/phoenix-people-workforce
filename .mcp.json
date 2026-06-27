@@ -2,7 +2,17 @@
   "mcpServers": {
     "supabase-staging": {
       "type": "http",
-      "url": "https://mcp.supabase.com/mcp"
+      "url": "https://mcp.supabase.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SUPABASE_STAGING_TOKEN}"
+      }
+    },
+    "supabase-production": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SUPABASE_PROD_TOKEN}"
+      }
     },
     "github": {
       "type": "stdio",

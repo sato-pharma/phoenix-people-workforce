@@ -884,6 +884,7 @@ async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>)
 
 async function notifyRecipients(input: {
   actionUrl: string;
+  additionalMetadata?: Record<string, unknown>;
   emailCcRecipients?: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
   emailMode?: "none" | "primary_to_cc";
   eventType: string;
@@ -939,6 +940,7 @@ async function notifyRecipients(input: {
         planId: input.plan.id,
         planKind: input.plan.plan_kind,
         periodKey: input.plan.period_key,
+        ...input.additionalMetadata,
       },
       module: "weekly_plans",
       priority: "high",
@@ -1076,8 +1078,25 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
 
   try {
     const actionUrl = await planReviewActionUrl(managerRecipients[0]?.hrId ?? plan.manager_hr_id, plan.id);
+    // roleHrefs ensures portal-mode managers (PM, GPM, MM, NSM, DM, RM, TM…) always
+    // land at the employee-portal review page regardless of when the plan was submitted.
+    // The fallback actionUrl (admin shell) covers CEO and Super Admin.
+    const portalPlanUrl = `/employee-portals/plans?plan=${plan.id}`;
+    const roleHrefs: Record<string, string> = {
+      "Employee": portalPlanUrl,
+      "Medical Rep": portalPlanUrl,
+      "District Manager": portalPlanUrl,
+      "Manager": portalPlanUrl,
+      "Regional Manager": portalPlanUrl,
+      "National Sales Manager": portalPlanUrl,
+      "Product Manager": portalPlanUrl,
+      "Group Product Manager": portalPlanUrl,
+      "Marketing Manager": portalPlanUrl,
+      "Training Manager": portalPlanUrl,
+    };
     await notifyRecipients({
       actionUrl,
+      additionalMetadata: { roleHrefs },
       emailCcRecipients: ccRecipients,
       eventType: "plan_submitted",
       message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
