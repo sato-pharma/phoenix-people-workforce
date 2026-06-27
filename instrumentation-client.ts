@@ -50,8 +50,16 @@ Sentry.init({
   tracesSampleRate: parseSentrySampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.02),
 });
 
+const isLocalDev =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
 const ignoredResourceUrlPatterns = [
   /vercel\.live\/_next-live\/feedback\/feedback\.js/i,
+  // Turbopack / webpack dev-server resources that fail when SWC workers crash
+  /\/_next\/static\/development\//i,
+  /\/__nextjs_original-stack-frames/i,
+  /\/_next\/webpack-hmr/i,
 ];
 const reportedResourceFailures = new Set<string>();
 
@@ -69,6 +77,7 @@ if (typeof window !== "undefined") {
     (event) => {
       const resourceUrl = resourceUrlFromTarget(event.target);
       if (!resourceUrl) return;
+      if (isLocalDev) return; // Dev-mode resource failures are not actionable
       if (ignoredResourceUrlPatterns.some((pattern) => pattern.test(resourceUrl))) return;
 
       const tagName = event.target instanceof HTMLElement ? event.target.tagName.toLowerCase() : "unknown";
