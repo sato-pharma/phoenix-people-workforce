@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { RefreshCcw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { RefreshCcw, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import type {
   MarketingCustomerDatabaseRow,
   MarketingCustomerDatabaseWorkspace,
   MarketingValidationStatus,
 } from "@/lib/marketing-requests/types";
+
+const PAGE_SIZE = 25;
 
 function emptyWorkspace(): MarketingCustomerDatabaseWorkspace {
   return {
@@ -41,7 +45,7 @@ function Metric({
   return (
     <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
+      <p className="mt-1 text-lg font-black text-slate-950 sm:text-2xl">{value}</p>
     </div>
   );
 }
@@ -79,6 +83,8 @@ export function MarketingCustomerDatabase() {
   const [workspace, setWorkspace] = useState<MarketingCustomerDatabaseWorkspace>(emptyWorkspace);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
 
   async function loadWorkspace() {
     setIsLoading(true);
@@ -112,6 +118,31 @@ export function MarketingCustomerDatabase() {
     return () => window.clearTimeout(timeout);
   }, []);
 
+  const filteredRows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return workspace.rows;
+    return workspace.rows.filter((row) =>
+      [
+        row.customerName,
+        row.customerCode,
+        row.pharmacyName,
+        row.pharmacyCode,
+        row.distributorName,
+        row.distributorCode,
+      ]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(term)),
+    );
+  }, [search, workspace.rows]);
+
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (search !== prevSearch) {
+    setPrevSearch(search);
+    setPage(0);
+  }
+
+  const pageRows = filteredRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   return (
     <div className="space-y-6">
       <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
@@ -141,12 +172,25 @@ export function MarketingCustomerDatabase() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Customer Database</p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Customer, pharmacy, and vendor rows</h2>
+            <h2 className="mt-2 text-lg font-black tracking-tight text-slate-950 sm:text-2xl">Customer, pharmacy, and vendor rows</h2>
           </div>
-          <Badge variant="neutral">{workspace.rows.length} rows</Badge>
+          <Badge variant="neutral">{filteredRows.length} of {workspace.rows.length} rows</Badge>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+          <label className="relative block max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              className="pl-9"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search customer, pharmacy, or vendor"
+              type="search"
+              value={search}
+            />
+          </label>
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1900px] border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
@@ -171,7 +215,7 @@ export function MarketingCustomerDatabase() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {workspace.rows.map((row: MarketingCustomerDatabaseRow) => (
+              {pageRows.map((row: MarketingCustomerDatabaseRow) => (
                 <tr className="align-top" key={row.rowId}>
                   <td className="px-4 py-3 font-bold capitalize text-slate-700">{row.customerType}</td>
                   <td className="px-4 py-3"><CodeCell value={row.customerCode} /></td>
@@ -195,7 +239,7 @@ export function MarketingCustomerDatabase() {
                   </td>
                 </tr>
               ))}
-              {!isLoading && workspace.rows.length === 0 ? (
+              {!isLoading && filteredRows.length === 0 ? (
                 <tr>
                   <td className="px-4 py-8 text-center text-sm font-semibold text-slate-500" colSpan={18}>
                     No customer database rows yet.
@@ -205,6 +249,70 @@ export function MarketingCustomerDatabase() {
             </tbody>
           </table>
         </div>
+
+        <div className="space-y-3 p-4 md:hidden">
+          {pageRows.map((row: MarketingCustomerDatabaseRow) => (
+            <div
+              className="rounded-none border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+              key={`${row.rowId}-mobile`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">{row.customerType}</p>
+                  <p className="mt-1 font-black text-slate-950">{row.customerName}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">{row.pharmacyName}</p>
+                </div>
+                <Badge variant={statusVariant(row.validationStatus)}>
+                  {row.validationStatus.replace(/_/g, " ")}
+                </Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <p className="text-slate-600">
+                  Area: <span className="font-bold text-slate-950">{row.customerArea || "Not captured"}</span>
+                </p>
+                <p className="text-slate-600">
+                  Governorate: <span className="font-bold text-slate-950">{row.customerGovernorate || "Not captured"}</span>
+                </p>
+                <p className="text-slate-600">
+                  Vendor: <span className="font-bold text-slate-950">{row.distributorName}</span>
+                </p>
+                <p className="text-slate-600">
+                  Phone: <span className="font-bold text-slate-950">{row.customerPhone || "Not captured"}</span>
+                </p>
+              </div>
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer font-bold text-orange-700">More details</summary>
+                <div className="mt-2 space-y-1.5 text-slate-700">
+                  <p>Customer ID: <CodeCell value={row.customerCode} /></p>
+                  <p>Customer address: {row.customerAddress || "Not captured"}</p>
+                  <p>
+                    Customer photo:{" "}
+                    {row.customerValidationPhoto ? <PhotoCell value={row.customerValidationPhoto} /> : "No photo"}
+                  </p>
+                  <p>Pharmacy ID: <CodeCell value={row.pharmacyCode} /></p>
+                  <p>Pharmacy area: {row.pharmacyArea || "Not captured"}</p>
+                  <p>Pharmacy governorate: {row.pharmacyGovernorate || "Not captured"}</p>
+                  <p>Pharmacy address: {row.pharmacyAddress || "Not captured"}</p>
+                  <p>Vendor ID: <CodeCell value={row.distributorCode || row.distributorId} /></p>
+                  <p>Vendor pharmacy code: <CodeCell value={row.vendorPharmacyCode} /></p>
+                  <p>Vendor code row ID: <CodeCell value={row.pharmacyDistributorCodeId} /></p>
+                </div>
+              </details>
+            </div>
+          ))}
+          {!isLoading && filteredRows.length === 0 ? (
+            <p className="px-2 py-8 text-center text-sm font-semibold text-slate-500">
+              No customer database rows yet.
+            </p>
+          ) : null}
+        </div>
+
+        <PaginationControls
+          onPageChange={setPage}
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={filteredRows.length}
+        />
       </Card>
     </div>
   );

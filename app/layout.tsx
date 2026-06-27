@@ -3,6 +3,14 @@ import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
 import "./globals.css";
 
+// @font-face rules for the identity card signature name. Injected as a raw <style>
+// tag so they bypass Tailwind v4 / Lightning CSS processing (@font-face inside or
+// after @import "tailwindcss" gets silently dropped by the Turbopack CSS bundler).
+const SCRIPT_FONT_CSS = `
+@font-face{font-family:"Great Vibes";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/great-vibes.woff2") format("woff2")}
+@font-face{font-family:"Pinyon Script";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/pinyon-script.woff2") format("woff2")}
+`;
+
 export const metadata: Metadata = {
   title: systemIdentity.appName,
   description: systemIdentity.description,
@@ -30,6 +38,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full bg-bg font-sans text-text">
+        {/* React 19 / Next.js hoists <style> to <head> automatically */}
+        <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

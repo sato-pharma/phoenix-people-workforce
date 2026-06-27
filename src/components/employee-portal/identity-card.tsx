@@ -40,6 +40,7 @@ export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
       photoSrc={profileImage}
       logoSrc="/brand/phoenix-camera-watermark.png"
       prefix={isManagerOrAbove(roleLabel) ? "Dr." : undefined}
+      employeeCode={employee.hrId}
     />
   );
 }

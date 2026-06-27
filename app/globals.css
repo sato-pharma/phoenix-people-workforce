@@ -4,25 +4,6 @@
 @import "shadcn/tailwind.css";
 @config "../tailwind.config.ts";
 
-/* Self-hosted elegant script face used for the employee identity banner name.
-   Self-hosted (served from 'self') so it stays within the app CSP, which does
-   not allow fonts.googleapis.com for stylesheets. */
-@font-face {
-  font-family: "Great Vibes";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/great-vibes.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Pinyon Script";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/pinyon-script.woff2") format("woff2");
-}
-
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
