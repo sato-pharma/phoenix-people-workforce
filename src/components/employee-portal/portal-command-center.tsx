@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
   BarChart3,
   CalendarClock,
@@ -26,7 +25,6 @@ import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/ins
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
-import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 
@@ -194,22 +192,6 @@ export function PendingActions({
   );
 }
 
-/**
- * Honest empty state for the pending-actions area. When a pending-count query failed we must NOT
- * render the green "All clear" banner (that reads as "nothing needs your attention" when in fact
- * the data simply didn't load). Render this instead. Pass `pendingCountsAvailable` from the snapshot.
- */
-export function PendingCountsUnavailable() {
-  return (
-    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5 sm:py-4">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-      <span className="text-sm font-medium text-amber-800">
-        Couldn&apos;t load your pending items right now — refresh to try again.
-      </span>
-    </div>
-  );
-}
-
 /* ── ProfileIntelBar ─────────────────────────────────────────────── */
 
 export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
@@ -373,8 +355,8 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           },
           {
             icon: Wallet,
-            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
-            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
+            label: "latest payslip",
             href: "/employee-portals/payslips",
           },
         ]}
@@ -519,7 +501,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -594,8 +576,8 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           },
           {
             icon: Wallet,
-            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
-            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
+            label: "latest payslip",
             href: "/employee-portals/payslips",
           },
         ]}
@@ -805,10 +787,10 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             </div>
             <div className="bg-white px-3 py-3 transition-colors group-hover:bg-orange-50 sm:px-4 sm:py-4">
               <p className="break-words text-2xl font-bold text-slate-900">
-                {latestPayslip ? egp(latestPayslip.netSalary) : "Not issued"}
+                {latestPayslip ? monthLabel(latestPayslip.month) : "Not issued"}
               </p>
               <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                {latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip"}
+                latest payslip
               </p>
             </div>
           </Link>
@@ -875,9 +857,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         </div>
       </div>
 
-      {!pendingCountsAvailable ? (
-        <PendingCountsUnavailable />
-      ) : totalPending > 0 ? (
+      {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
@@ -892,7 +872,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
     snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -938,8 +918,8 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           },
           {
             icon: Wallet,
-            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
-            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
+            label: "latest payslip",
             href: "/employee-portals/payslips",
           },
         ]}
@@ -995,9 +975,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         </div>
       </div>
 
-      {!pendingCountsAvailable ? (
-        <PendingCountsUnavailable />
-      ) : totalPending > 0 ? (
+      {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
@@ -1009,15 +987,13 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
-export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
+export function PortalCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   switch (snapshot.role) {
     case "Product Manager":
     case "Group Product Manager":
       return <PmGpmCommandCenter snapshot={snapshot} />;
     case "Marketing Manager":
-      // access is threaded only for the Marketing Manager branch, which streams heavy
-      // line-scoped analytics (ROI, field health) as Suspense server components.
-      return <MarketingManagerCommandCenter snapshot={snapshot} access={access} />;
+      return <MarketingManagerCommandCenter snapshot={snapshot} />;
     case "District Manager":
       return <DsmCommandCenter snapshot={snapshot} />;
     case "National Sales Manager":
