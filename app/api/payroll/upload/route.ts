@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { createSystemNotification } from "@/lib/notifications/system";
+import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
@@ -149,11 +150,12 @@ export async function POST(request: Request) {
       year,
     });
 
+    const batchHref = payrollBatchHref(result.batch.id);
     await createSystemNotification({
-      actionUrl: `/payroll?batchId=${result.batch.id}`,
+      actionUrl: batchHref,
       actorId: actor,
       email: {
-        ctaHref: `/payroll?batchId=${result.batch.id}`,
+        ctaHref: batchHref,
         ctaLabel: "Open payroll dashboard",
         metrics: [
           { label: "Payroll period", value: `${month}/${year}` },
@@ -170,7 +172,7 @@ export async function POST(request: Request) {
       eventType: "salary_upload_imported",
       message: "A payroll salary upload was validated and imported successfully.",
       metadata: {
-        batchId: result.batch.id,
+        ...payrollBatchNotificationMetadata(result.batch.id),
         governanceWarnings: result.governanceWarnings,
         idempotencyKey: `payroll-upload:${result.batch.id}`,
         sensitivity: "payroll",

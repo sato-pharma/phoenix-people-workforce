@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
+import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 
@@ -44,11 +45,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: false, error: "Batch not found." }, { status: 404 });
     }
 
+    const batchHref = payrollBatchHref(updated.id);
     await createSystemNotification({
-      actionUrl: `/payroll?batchId=${updated.id}`,
+      actionUrl: batchHref,
       actorId: actorIdentity,
       email: {
-        ctaHref: `/payroll?batchId=${updated.id}`,
+        ctaHref: batchHref,
         ctaLabel: "Open payroll dashboard",
         metrics: [
           { label: "Action", value: action },
@@ -72,6 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           : `Payroll workflow action "${action}" was completed.`,
       metadata: {
         action,
+        ...payrollBatchNotificationMetadata(updated.id),
         idempotencyKey: `payroll-workflow:${updated.id}:${updated.status}:${action}`,
         sensitivity: "payroll",
         status: updated.status,

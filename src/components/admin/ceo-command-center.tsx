@@ -308,6 +308,7 @@ export function CeoCommandCenter({
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "Africa/Cairo",
   }).format(new Date(data.generatedAt));
 
   const dataAvailable = dataUnavailable.length === 0;

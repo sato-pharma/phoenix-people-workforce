@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 import { adminNavigationSections } from "../src/config/system-navigation.ts";
+import { notificationHrefForViewerRole } from "../src/lib/notifications/hrefs.ts";
+import { payrollBatchHref, payrollBatchNotificationMetadata } from "../src/lib/payroll/links.ts";
 import {
   canAccess,
   createAccessContext,
@@ -123,8 +125,14 @@ export async function runCeoAccountContractTests() {
   const usersRouteSource = readFileSync("app/api/admin/users/route.ts", "utf8");
   const permissionsRouteSource = readFileSync("app/api/admin/permissions/route.ts", "utf8");
   const ceoCommandCenterSource = readFileSync("src/components/admin/ceo-command-center.tsx", "utf8");
+  const ceoHeroClockSource = readFileSync("src/components/admin/ceo-hero-clock.tsx", "utf8");
   const ceoPhaseBSource = readFileSync("src/components/admin/ceo-phase-b.tsx", "utf8");
   const ceoSosTablesSource = readFileSync("src/components/admin/ceo-sos-tables.tsx", "utf8");
+  const notificationHrefSource = readFileSync("src/lib/notifications/hrefs.ts", "utf8");
+  const inAppNotificationSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");
+  const notificationSystemSource = readFileSync("src/lib/notifications/system.ts", "utf8");
+  const payrollUploadRouteSource = readFileSync("app/api/payroll/upload/route.ts", "utf8");
+  const payrollWorkflowRouteSource = readFileSync("app/api/payroll/[id]/workflow/route.ts", "utf8");
   const payrollPageSource = readFileSync("app/(admin)/payroll/page.tsx", "utf8");
   const mPayrollPageSource = readFileSync("app/(admin)/admin/m-payroll/page.tsx", "utf8");
   const probationPageSource = readFileSync("app/(admin)/probation/page.tsx", "utf8");
@@ -141,6 +149,21 @@ export async function runCeoAccountContractTests() {
     ceoCommandCenterSource,
     /href="\/sales\/weekly\/dashboard"/,
     "CEO Command Center must link directly to the weekly sales dashboard",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /timeZone: "Africa\/Cairo"/,
+    "CEO generated-at label must use a fixed timezone to avoid server/client text drift",
+  );
+  assert.match(
+    ceoHeroClockSource,
+    /useState<Date \| null>\(null\)/,
+    "CEO live clock must render the same placeholder on server and initial client render",
+  );
+  assert.doesNotMatch(
+    ceoHeroClockSource,
+    /typeof window[\s\S]{0,80}new Date\(\)/,
+    "CEO live clock must not initialize client state before hydration",
   );
   assert.doesNotMatch(
     ceoPhaseBSource,
@@ -180,6 +203,41 @@ export async function runCeoAccountContractTests() {
     mPayrollPageSource,
     /\/admin\/m-payroll\?batchId/,
     "CEO payroll console batch links must stay inside the CEO payroll console",
+  );
+  assert.equal(payrollBatchHref("batch 1"), "/payroll?batchId=batch%201");
+  assert.equal(payrollBatchHref("batch 1", "executive"), "/admin/m-payroll?batchId=batch%201");
+  assert.equal(
+    notificationHrefForViewerRole({
+      fallbackHref: payrollBatchHref("batch 1"),
+      metadata: payrollBatchNotificationMetadata("batch 1"),
+      role: "CEO",
+    }),
+    "/admin/m-payroll?batchId=batch%201",
+    "CEO payroll notification links must resolve directly to the CEO payroll console",
+  );
+  assert.equal(
+    notificationHrefForViewerRole({
+      fallbackHref: payrollBatchHref("batch 1"),
+      metadata: payrollBatchNotificationMetadata("batch 1"),
+      role: "Super Admin",
+    }),
+    "/payroll?batchId=batch%201",
+    "Operational payroll notification links must keep using the operational payroll page",
+  );
+  assert.match(notificationHrefSource, /roleHrefs/);
+  assert.match(inAppNotificationSource, /notificationHrefForViewerRole/);
+  assert.match(notificationSystemSource, /notificationHrefForViewerRole[\s\S]{0,220}ctaHref/);
+  assert.match(payrollUploadRouteSource, /payrollBatchNotificationMetadata\(result\.batch\.id\)/);
+  assert.match(payrollWorkflowRouteSource, /payrollBatchNotificationMetadata\(updated\.id\)/);
+  assert.doesNotMatch(
+    payrollUploadRouteSource,
+    /ctaHref:\s*`\/payroll\?batchId=/,
+    "Payroll upload notification email CTA must not hardcode the operational payroll route",
+  );
+  assert.doesNotMatch(
+    payrollWorkflowRouteSource,
+    /ctaHref:\s*`\/payroll\?batchId=/,
+    "Payroll workflow notification email CTA must not hardcode the operational payroll route",
   );
   assert.equal(
     existsSync("app/(admin)/admin/m.payroll/page.tsx"),
