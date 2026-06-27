@@ -1,17 +1,16 @@
-import { BarChart3, ClipboardCheck, Plus } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import {
-  AdminInsightChip,
-  AdminPageHero,
-} from "@/components/admin/admin-design-system";
 import {
   CoachingAnalyticsDashboard,
   type CoachingAnalyticsFilterOptions,
   type CoachingAnalyticsPayload,
 } from "@/components/coaching/coaching-analytics-dashboard";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import {
+  EmployeePortalActionBar,
+  EmployeePortalActionLink,
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,
   canManageCoachingReports,
@@ -172,39 +171,20 @@ export default async function TrainingManagerCoachingDashboardPage() {
     (await canAccess(access, "coaching", "create"));
 
   return (
-    <div className="space-y-6">
-      <AdminPageHero
+    <EmployeePortalPageShell
+      badge="Coaching"
+      description="Track field coaching performance, development progress, and quarterly improvement trends without leaving the employee portal."
+      title="Coaching Analytics"
+    >
+      <EmployeePortalActionBar
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-5 py-2.5 text-sm font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
-              href={fieldCoachingHref}
-            >
-              <ClipboardCheck className="h-4 w-4" />
-              Back to Reports Center
-            </Link>
+          <>
+            <EmployeePortalActionLink href={fieldCoachingHref} label="Back to Reports Center" />
             {canCreate ? (
-              <Link
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
-                href={createCoachingReportHref}
-              >
-                <Plus className="h-4 w-4" />
-                Create Coaching Report
-              </Link>
+              <EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" />
             ) : null}
-          </div>
+          </>
         }
-        badges={
-          <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>Quarterly intelligence</AdminInsightChip>
-            <AdminInsightChip tone="orange">Field Excellence</AdminInsightChip>
-            <AdminInsightChip tone="slate">Development progress</AdminInsightChip>
-          </div>
-        }
-        description="Track field coaching performance, development progress, and quarterly improvement trends without leaving the employee portal."
-        eyebrow="Coaching"
-        icon={<BarChart3 className="h-3.5 w-3.5" />}
-        title="Coaching Analytics"
       />
 
       <CoachingAnalyticsDashboard
@@ -214,6 +194,6 @@ export default async function TrainingManagerCoachingDashboardPage() {
         initialFilters={{ year: String(currentYear) }}
         initialData={payload}
       />
-    </div>
+    </EmployeePortalPageShell>
   );
 }

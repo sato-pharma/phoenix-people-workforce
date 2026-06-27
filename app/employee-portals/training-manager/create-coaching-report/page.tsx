@@ -1,12 +1,10 @@
-import { ClipboardCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import {
-  AdminInsightChip,
-  AdminPageHero,
-} from "@/components/admin/admin-design-system";
 import { CoachingReportForm } from "@/components/coaching/coaching-report-form";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import {
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,
   canManageCoachingReports,
@@ -67,21 +65,11 @@ export default async function TrainingManagerCreateCoachingReportPage() {
     }));
 
   return (
-    <div className="space-y-6">
-      <AdminPageHero
-        badges={
-          <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>Field Excellence</AdminInsightChip>
-            <AdminInsightChip tone="orange">Structured 120-point score</AdminInsightChip>
-            <AdminInsightChip tone="slate">Employee acknowledgment workflow</AdminInsightChip>
-          </div>
-        }
-        description="Create a field coaching report with structured scoring, development feedback, and employee acknowledgment workflow."
-        eyebrow="Coaching"
-        icon={<ClipboardCheck className="h-3.5 w-3.5" />}
-        title="Coaching Report"
-      />
-
+    <EmployeePortalPageShell
+      badge="Coaching"
+      description="Create a field coaching report with structured scoring, development feedback, and employee acknowledgment workflow."
+      title="Coaching Report"
+    >
       <CoachingReportForm
         coach={{
           hrId: access.hrId,
@@ -90,6 +78,6 @@ export default async function TrainingManagerCreateCoachingReportPage() {
         }}
         employees={activeEmployees}
       />
-    </div>
+    </EmployeePortalPageShell>
   );
 }

@@ -14,8 +14,6 @@ import {
   ArrowUpDown,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Download,
   FileText,
   Filter,
@@ -33,6 +31,7 @@ import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-sys
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
 import {
@@ -414,55 +413,6 @@ function SortableHeader<K extends string>({
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Pagination Controls ─────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
-
-function PaginationControls({
-  page,
-  pageSize,
-  total,
-  onPageChange,
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  onPageChange: (p: number) => void;
-}) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  if (total <= pageSize) return null;
-
-  const from = page * pageSize + 1;
-  const to = Math.min((page + 1) * pageSize, total);
-
-  return (
-    <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
-      <p className="text-[11px] font-bold text-slate-500">
-        {from}–{to} of {total}
-      </p>
-      <div className="flex items-center gap-1">
-        <button
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-          disabled={page === 0}
-          onClick={() => onPageChange(page - 1)}
-          type="button"
-          aria-label="Previous page"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <span className="px-2 text-[11px] font-bold text-slate-700">
-          {page + 1} / {totalPages}
-        </span>
-        <button
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-          disabled={page >= totalPages - 1}
-          onClick={() => onPageChange(page + 1)}
-          type="button"
-          aria-label="Next page"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Select with focus trap ──────────────────────────────────────── */
