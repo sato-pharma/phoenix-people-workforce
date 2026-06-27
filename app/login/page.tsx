@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { PremiumLoginPage } from "@/components/auth/premium-login-page";
+import { PremiumLoginPageDynamic } from "@/components/auth/premium-login-page-dynamic";
 import { systemIdentity } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
@@ -58,5 +58,5 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     }
   }
 
-  return <PremiumLoginPage returnUrl={returnUrl ?? undefined} />;
+  return <PremiumLoginPageDynamic returnUrl={returnUrl ?? undefined} />;
 }
