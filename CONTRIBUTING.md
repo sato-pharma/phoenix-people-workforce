@@ -13,7 +13,7 @@ Phoenix Workforce is a private enterprise HR/workforce platform. This repository
 
 1. Clone the repo and run `npm install`.
 2. Copy `.env.example` to `.env.local` and fill in the required environment variables.
-3. Start the dev server with `npm run dev` (Turbopack).
+3. Start the dev server with `npm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
 4. Use `npm run check:edit` (typecheck only) as the fast inner loop while editing.
 5. Run `npm run check:harden` (lint + typecheck + test + build) before every commit, push, or PR.
 6. Never push a broken build.

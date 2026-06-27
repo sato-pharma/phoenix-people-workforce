@@ -38,7 +38,10 @@ npm ci
 npm run dev
 ```
 
-Opens at http://localhost:3000 with Turbopack.
+Opens at http://localhost:3000. On macOS/Linux this uses Turbopack for faster
+refreshes. On Windows, Turbopack is automatically disabled because its SWC
+worker processes are unstable on NTFS and can crash, breaking client resource
+loading. To opt in to Turbopack on Windows anyway, run `npm run dev:turbopack`.
 
 ## Dev Auth (Local Testing)
 
