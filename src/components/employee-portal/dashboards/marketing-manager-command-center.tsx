@@ -28,7 +28,8 @@ function monthLabel(ym: string) {
 }
 
 export function MarketingManagerCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mmOverview } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval } = snapshot;
+  const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
   return (
@@ -76,8 +77,8 @@ export function MarketingManagerCommandCenter({ snapshot }: { snapshot: PortalHo
         ]}
       />
 
-      {totalPending > 0 && (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+      {(totalPending > 0 || plansCount > 0) && (
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
       <div className="overflow-hidden border border-slate-200">
@@ -105,7 +106,7 @@ export function MarketingManagerCommandCenter({ snapshot }: { snapshot: PortalHo
             ))}
           </div>
         ) : (
-          <p className="bg-white px-5 py-6 text-sm text-slate-500">No pending approvals. You&apos;re all caught up.</p>
+          <p className="bg-white px-5 py-6 text-sm text-slate-500">No pending marketing approvals. You&apos;re all caught up.</p>
         )}
       </div>
 

@@ -142,13 +142,27 @@ export function MarketingToolRow({
 export function PendingActions({
   pendingVacationCount,
   pendingExcuseCount,
+  plansAwaitingApproval = 0,
 }: {
   pendingVacationCount: number;
   pendingExcuseCount: number;
+  plansAwaitingApproval?: number;
 }) {
   return (
-    <SectionShell title="Pending Actions">
+    <SectionShell title="Needs Your Decision">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {plansAwaitingApproval > 0 && (
+          <Link
+            href="/employee-portals/plans"
+            className="flex items-center justify-between border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
+          >
+            <span className="flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              {plansAwaitingApproval} plan{plansAwaitingApproval > 1 ? "s" : ""} awaiting your approval
+            </span>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
         {pendingVacationCount > 0 && (
           <Link
             href="/employee-portals/actions"
@@ -309,8 +323,9 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
 /* ── Private command center layouts ─────────────────────────────── */
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing } = snapshot;
-  const totalPending = pendingVacationCount + pendingExcuseCount;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval } = snapshot;
+  const plansCount = plansAwaitingManagerApproval ?? 0;
+  const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
   return (
     <div className="mx-auto w-full space-y-2 sm:space-y-3" dir="auto">
@@ -355,7 +370,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         ]}
       />
       {totalPending > 0 && (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
       {/* ── SALES INTELLIGENCE ────────────────────────────────────── */}
@@ -464,7 +479,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
       {/* ── STATUS ────────────────────────────────────────────────── */}
       {totalPending > 0 ? (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="relative overflow-hidden bg-[#0a2018] px-4 py-4 shadow-[0_4px_24px_rgba(0,0,0,0.12)] sm:px-6 sm:py-5">
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
@@ -857,9 +872,10 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
     snapshot;
-  const totalPending = pendingVacationCount + pendingExcuseCount;
+  const plansCount = plansAwaitingManagerApproval ?? 0;
+  const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
   const ach = mrSalesAchievement;
   const pct = ach ? Math.max(0, Math.min(100, Math.round(ach.achievementPercent))) : null;
@@ -917,7 +933,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         ]}
       />
       {totalPending > 0 && (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
       {ach && pct !== null && (
@@ -960,7 +976,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       </div>
 
       {totalPending > 0 ? (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
