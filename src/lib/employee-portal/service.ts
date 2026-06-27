@@ -35,6 +35,7 @@ import {
   lineScopeIncludesEmployee,
   reportsToManagerSeat,
   resolveSeatGrouping,
+  sameWorkforceLine,
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
 } from "@/lib/workforce/hierarchy-resolver";
@@ -4667,7 +4668,6 @@ export async function getEmployeePortalVacancies(
     if (!directory) return null;
 
     const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
-    const currentLineNormalized = normalizeLineName(currentUser.line);
     const currentEmployee = directory.employees.find((employee) => {
       const employeeCanonical = normalizeHrIdForAccess(employee.hrId);
       return Boolean(employeeCanonical && currentCanonicalHrId && employeeCanonical === currentCanonicalHrId);
@@ -4698,10 +4698,10 @@ export async function getEmployeePortalVacancies(
     const scopedRows = vacancyRows.filter((row) => {
       if (isCompanyWide) return true;
       if (isLineScoped) {
-        if (typeof currentEmployee.lineId === "number") {
-          return row.line_id === currentEmployee.lineId;
-        }
-        return normalizeLineName(row.lines?.name ?? null) === currentLineNormalized;
+        return sameWorkforceLine(
+          { lineId: currentEmployee.lineId, lineName: currentEmployee.lineName },
+          { lineId: row.line_id, lineName: row.lines?.name ?? null },
+        );
       }
 
       const rowCanonicalManager = normalizeHrIdForAccess(row.manager_hr_id);

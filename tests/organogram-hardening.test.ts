@@ -402,6 +402,12 @@ export function runOrganogramHardeningTests() {
   assert.match(vacancyApiSource, /assertPermission\(access, "vacancies", "read"\)/);
   assert.match(portalPageSource, /resolveOrganogramLineForEmployee/);
   assert.doesNotMatch(portalPageSource, /getVacancyReport/);
+  assert.match(
+    portalPageSource,
+    /canAccessCompanyOrganogram/,
+    "Employee-portal Organogram page must branch on company-wide access (Training Manager / Marketing Manager), not just isLineScopedOrganogramRole.",
+  );
+  assert.match(portalPageSource, /isCompanyScoped/);
   assert.match(adminPageSource, /canAccessCompanyOrganogram/);
   assert.match(sharedViewModelSource, /export function buildOrganogramLanes/);
   assert.match(sharedViewModelSource, /organogramPositionSlotKey/);

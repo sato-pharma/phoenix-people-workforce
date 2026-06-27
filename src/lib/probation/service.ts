@@ -4,7 +4,6 @@ import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/work
 import {
   canSeeEmployee,
   normalizeHrId,
-  normalizeLineName,
   systemAccessContext,
   type AccessContext,
 } from "@/lib/auth/permissions";
@@ -13,6 +12,7 @@ import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 
 import type {
   CreateProbationEvaluationInput,
@@ -131,9 +131,10 @@ export function assertCanExportProbation(access: AccessContext) {
 
 function isSameLine(employee: EmployeeScopeRow, viewer: EmployeeScopeRow | null) {
   if (!viewer) return false;
-  const employeeLine = normalizeLineName(employee.lineName);
-  const viewerLine = normalizeLineName(viewer.lineName);
-  return Boolean(employeeLine && viewerLine && employeeLine === viewerLine);
+  // Prefer numeric line_id (canonical sameWorkforceLine), falling back to normalized
+  // lineName text only when an id is missing — mirrors Coaching / Double-Visit-Analytics.
+  // The old text-only comparison missed peers whose lineName text was stale.
+  return sameWorkforceLine(employee, viewer);
 }
 
 function canReadProbationEmployee(

@@ -9,6 +9,7 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  canAccessCompanyOrganogram,
   getOrganogramReport,
   isLineScopedOrganogramRole,
   resolveOrganogramLineForEmployee,
@@ -46,7 +47,11 @@ export default async function EmployeePortalOrganogramPage() {
     redirect("/overview");
   }
 
-  if (!isLineScopedOrganogramRole(access)) {
+  // Company-wide roles (Training Manager / Marketing Manager / CEO / Super Admin) reach the
+  // organogram via canAccessCompanyOrganogram; line roles via isLineScopedOrganogramRole.
+  // The page previously checked only the latter, redirecting TM/MM away despite their access.
+  const isCompanyScoped = canAccessCompanyOrganogram(access);
+  if (!isCompanyScoped && !isLineScopedOrganogramRole(access)) {
     redirect("/employee-portals");
   }
 
@@ -57,11 +62,15 @@ export default async function EmployeePortalOrganogramPage() {
   let fixedLine: string | null = null;
 
   try {
-    fixedLine = await resolveOrganogramLineForEmployee(access);
-    if (!fixedLine) {
-      initialError = "Unable to resolve your Organogram line scope.";
+    if (isCompanyScoped) {
+      initialReport = await getOrganogramReport(access, { mode: "company" });
     } else {
-      initialReport = await getOrganogramReport(access, { lineName: fixedLine, mode: "line" });
+      fixedLine = await resolveOrganogramLineForEmployee(access);
+      if (!fixedLine) {
+        initialError = "Unable to resolve your Organogram line scope.";
+      } else {
+        initialReport = await getOrganogramReport(access, { lineName: fixedLine, mode: "line" });
+      }
     }
   } catch (error) {
     initialError = organogramPageError(error);
