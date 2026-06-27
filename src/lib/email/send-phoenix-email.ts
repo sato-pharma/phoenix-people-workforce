@@ -245,6 +245,12 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     finalTo = [process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo];
   }
 
+  // Always CC omar.anwar@satopharma.com on every automated system email (all modules, all types).
+  if (!testingRecipients) {
+    const alwaysCc = "omar.anwar@satopharma.com";
+    cc = cc ? [...new Set([...cc, alwaysCc])] : [alwaysCc];
+  }
+
   const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;
   const attachments = guardAttachments(input.attachments);
 
