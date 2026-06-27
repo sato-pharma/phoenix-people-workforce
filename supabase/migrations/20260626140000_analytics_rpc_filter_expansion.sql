@@ -251,7 +251,6 @@ select
   r.manager_hr_id,
   r.territory,
   r.sales_type,
-  p.product_code,
   r.product,
   r.family,
   r.sales_units,
@@ -264,7 +263,8 @@ select
     when r.target_value > 0
     then round((r.sales_value / r.target_value * 100)::numeric, 2)
     else null
-  end as achievement_pct
+  end as achievement_pct,
+  p.product_code
 from public.sales_records r
 left join public.sales_import_batches b on b.id = r.batch_id
 left join lateral (
