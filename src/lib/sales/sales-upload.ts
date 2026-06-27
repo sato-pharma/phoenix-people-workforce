@@ -92,7 +92,7 @@ export function applyPeriodConsolidation(result: NormalizeResult, decision: Peri
 }
 
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport }
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean }
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation }
   | { status: "coded_sheet"; distributorName: string };
 
@@ -461,6 +461,7 @@ async function analyzeCodedSystemChannel(distributorCode: string, file: File, pe
     needsPeriod: !parsed.period,
     engineVersion: RECOGNITION_ENGINE_VERSION,
     validation: codedValidationReport(parsed),
+    isRegionOnly: true,
   };
 }
 

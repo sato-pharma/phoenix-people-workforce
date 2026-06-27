@@ -806,7 +806,7 @@ function forecastTrend(trend: Array<{ period: string; sales: number }>) {
 }
 
 function anomalyInsights(records: ScopedRecord[]) {
-  const groups = [...aggregate(records, (record) => `${record.product} Â· ${record.territory}`).entries()].map(
+  const groups = [...aggregate(records, (record) => `${record.product} / ${record.territory}`).entries()].map(
     ([name, items]) => ({ name, units: Math.abs(sum(items, (item) => item.salesUnits)) })
   );
   const mean = groups.reduce((total, item) => total + item.units, 0) / Math.max(groups.length, 1);

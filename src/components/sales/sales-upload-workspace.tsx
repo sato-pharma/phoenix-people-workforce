@@ -35,7 +35,7 @@ type ValidationReport = { ok: boolean; errorCount: number; warningCount: number;
 type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
 type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
 type AiExplanation = { aiUsed: boolean; summary: string; suggestions: { expected: string; suggestedHeader: string | null; note?: string }[] };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean };
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
 type DetectResponse = { success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string }; error?: string };
 
@@ -682,7 +682,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
             <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
               <BreakdownTable headLabel="Product" rows={breakdowns.byProduct} title="By product" />
               <BreakdownTable headLabel="Region" rows={breakdowns.byRegion} title="By region" />
-              <BreakdownTable headLabel="Brick" rows={breakdowns.byBrick} title="By brick" />
+              {!analysis?.isRegionOnly && <BreakdownTable headLabel="Brick" rows={breakdowns.byBrick} title="By brick" />}
               <BreakdownTable headLabel="Line" rows={breakdowns.byLine} title="By line" />
             </div>
           ) : null}
