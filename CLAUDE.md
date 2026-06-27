@@ -191,6 +191,7 @@ providing the unlock phrase in the active conversation first.
 | --- | --- |
 | `src/lib/incentives/scheme-2026.ts` | 2026 incentive payout curve, achievement thresholds, semester target formula |
 | `src/lib/payroll/policy.ts` | `BASIC_SALARY_RATE` (70%), and all salary derivation formulas (base → basic → net → gross) |
+| `src/components/employee-portal/identity-card.tsx` | Employee portal identity banner design — must always use `PhoenixSignatureCard`; do NOT swap for any other component |
 
 **If any request would touch either file** (fix, refactor, rename, extend, delete):
 

@@ -87,9 +87,10 @@ export async function runMarketingApproverHrIdCasingTests() {
     2,
     "the decision and finance-evidence flows must each resolve the actor to the employee-master casing",
   );
-  assert.match(service, /decision_by_hr_id: storedActorHrId/, "decideMarketingRequest must store the resolved decider");
-  const updatedByStored = service.match(/updated_by_hr_id: storedActorHrId/g) ?? [];
-  assert.equal(updatedByStored.length, 2, "both decision request-row updates must store the resolved updated_by_hr_id");
+  // Since the sequential writes were replaced by phx_decide_marketing_request_step, TypeScript no
+  // longer writes decision_by_hr_id / updated_by_hr_id directly — it passes storedActorHrId as
+  // p_decided_by and the RPC stores it into both columns atomically inside the transaction.
+  assert.match(service, /p_decided_by: storedActorHrId/, "the atomic RPC must receive the resolved actor casing via p_decided_by");
   // The advisory comment reuses the CC step's already-resolved (real-cased) assigned_hr_id.
   assert.match(service, /decision_by_hr_id: ccStep\.assignedHrId/, "the advisory comment must store the CC step's real-cased HR_ID");
 

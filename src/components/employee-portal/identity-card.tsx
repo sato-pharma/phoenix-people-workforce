@@ -1,51 +1,52 @@
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  DESIGN LOCK — OWNER UNLOCK REQUIRED (phrase: Sato-1997)        ║
+// ║  This file is permanently locked. The identity banner MUST use   ║
+// ║  PhoenixSignatureCard. Do NOT swap it for any other component,   ║
+// ║  refactor the render, or change props without the unlock phrase. ║
+// ╚══════════════════════════════════════════════════════════════════╝
 "use client";
 
-import { PhoenixIdentityCard } from "@/components/employee/PhoenixIdentityCard";
-import { formatDateOnly } from "@/lib/date-only";
+import dynamic from "next/dynamic";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
+import type { PhoenixSignatureCardProps } from "@/components/phoenix-signature-card/types";
 
-function prettyDate(value: string | null) {
-  return formatDateOnly(value, "en-GB", { day: "2-digit", month: "short", year: "numeric" }, "Not available");
+const PhoenixSignatureCard = dynamic<PhoenixSignatureCardProps>(
+  () => import("@/components/phoenix-signature-card/PhoenixSignatureCard").then((m) => m.PhoenixSignatureCard),
+  { ssr: false }
+);
+
+const MANAGER_KEYWORDS = [
+  "manager", "director", "head", "ceo", "president",
+  "gpm", "nsm", "sfe", "finance", "hr specialist", "super admin",
+];
+
+function isManagerOrAbove(roleLabel: string) {
+  const lower = roleLabel.toLowerCase();
+  return MANAGER_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-function titleCaseOffice(value: string | null | undefined, fallback: string) {
-  const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  return trimmed
-    .split(/\s+/)
-    .map((part) => (part.length <= 2 ? part.toUpperCase() : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`))
-    .join(" ");
-}
-
-function departmentFromRole(roleLabel: string, fallback: string | null | undefined) {
-  if (/marketing/i.test(roleLabel)) return "Marketing";
-  if (/training/i.test(roleLabel)) return "Training";
-  if (/sales/i.test(roleLabel)) return "Sales";
-  return titleCaseOffice(fallback, "Phoenix");
+function displaySignatureName(name: string) {
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length < 3) return name;
+  return `${parts[0]} ${parts[1].charAt(0).toUpperCase()}. ${parts[parts.length - 1]}`;
 }
 
 export function IdentityCard({ data }: { data: EmployeePortalShellData }) {
   const employee = data.employee;
   const uploadedPhoto = employee.photoUrl ?? null;
   const staticPhoto = employeeProfileImageForHrId(employee.hrId);
-  const photoUrl = uploadedPhoto ?? staticPhoto;
-  const displayHrId = formatHrIdForDisplay(employee.hrId) ?? employee.hrId;
+  const profileImage = uploadedPhoto ?? staticPhoto;
+  const roleLabel = employee.roleLabel || "Phoenix Workforce";
 
   return (
-    <PhoenixIdentityCard
-      employee={{
-        department: departmentFromRole(employee.roleLabel, employee.line),
-        employeeId: displayHrId,
-        fullName: employee.fullName,
-        joinDate: prettyDate(data.hrContract.hireDate),
-        location: titleCaseOffice(employee.area, "Head Office"),
-        photoUrl,
-        title: employee.roleLabel,
-        verified: true,
-      }}
-      unoptimizedPhoto={Boolean(uploadedPhoto)}
+    <PhoenixSignatureCard
+      name={displaySignatureName(employee.fullName)}
+      title={roleLabel}
+      photoSrc={profileImage}
+      logoSrc="/brand/phoenix-camera-watermark.png"
+      prefix={isManagerOrAbove(roleLabel) ? "Dr." : undefined}
+      employeeCode={employee.hrId}
     />
   );
 }

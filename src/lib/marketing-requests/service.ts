@@ -2221,44 +2221,37 @@ export async function decideMarketingRequestWorkflow(
   }
 
   const decidedAt = new Date().toISOString();
-  const terminalStepStatus = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "returned";
-  const stepUpdate = await supabase
-    .from("marketing_request_approval_steps")
-    .update({
-      decision_at: decidedAt,
-      decision_by_hr_id: storedActorHrId,
-      decision_note: comment || null,
-      status: terminalStepStatus,
-      updated_at: decidedAt,
-    })
-    .eq("id", currentStep.id)
-    .eq("status", "current")
-    .select("*")
-    .single();
-  if (stepUpdate.error) {
-    throw conflictError("This marketing approval step was already decided. Refresh Phoenix and try again.");
-  }
-  const decidedStep = mapApprovalStep(stepUpdate.data as MarketingRequestApprovalStepDbRow);
 
+  // All table writes happen atomically inside one Postgres transaction via RPC,
+  // eliminating the corrupt half-state risk of the previous sequential-write pattern.
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc("phx_decide_marketing_request_step", {
+    p_decided_at: decidedAt,
+    p_decided_by: storedActorHrId,
+    p_decision: decision,
+    p_decision_note: comment || null,
+    p_request_id: requestId,
+    p_step_id: currentStep.id,
+  });
+  if (rpcErr) {
+    if (rpcErr.message?.includes("marketing_step_already_decided")) {
+      throw conflictError("This marketing approval step was already decided. Refresh Phoenix and try again.");
+    }
+    throw rpcErr;
+  }
+  const rpcData = rpcResult as {
+    branch: "reject" | "return" | "approve_next" | "approve_final";
+    isExecution: boolean;
+    nextStep: MarketingRequestApprovalStepDbRow | null;
+    request: MarketingRequestDbRow;
+    step: MarketingRequestApprovalStepDbRow;
+  };
+  const decidedStep = mapApprovalStep(rpcData.step);
+  request = mapRequest(rpcData.request);
+
+  // Load the request type name for notification messages (separate read, non-mutating).
   const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
 
   if (decision === "reject" || decision === "return") {
-    const nextStatus = decision === "reject" ? "rejected" : "returned";
-    const requestUpdate = await supabase
-      .from("marketing_requests")
-      .update({
-        rejected_at: decision === "reject" ? decidedAt : null,
-        returned_at: decision === "return" ? decidedAt : null,
-        returned_step_sequence: decision === "return" ? currentStep.sequence : null,
-        status: nextStatus,
-        updated_at: decidedAt,
-        updated_by_hr_id: storedActorHrId,
-      })
-      .eq("id", request.id)
-      .select("*")
-      .single();
-    if (requestUpdate.error) throw requestUpdate.error;
-    request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
     await auditMarketingDecision({
       actorHrId,
       decision,
@@ -2285,20 +2278,8 @@ export async function decideMarketingRequestWorkflow(
     return { decision, request, step: decidedStep };
   }
 
-  const nextStep = steps
-    .filter((step) => step.status === "pending" && !step.isCc && step.sequence > currentStep.sequence)
-    .sort((left, right) => left.sequence - right.sequence)[0] ?? null;
-
-  if (nextStep) {
-    const nextStepUpdate = await supabase
-      .from("marketing_request_approval_steps")
-      .update({ status: "current", updated_at: decidedAt })
-      .eq("id", nextStep.id)
-      .eq("status", "pending")
-      .select("*")
-      .single();
-    if (nextStepUpdate.error) throw nextStepUpdate.error;
-    const currentNextStep = mapApprovalStep(nextStepUpdate.data as MarketingRequestApprovalStepDbRow);
+  if (rpcData.branch === "approve_next") {
+    const currentNextStep = mapApprovalStep(rpcData.nextStep!);
     const ccHrIds = steps
       .filter((step) => step.isCc && step.stepCode === currentNextStep.stepCode)
       .map((step) => step.assignedHrId)
@@ -2329,28 +2310,8 @@ export async function decideMarketingRequestWorkflow(
     return { decision, nextStep: currentNextStep, request, step: decidedStep };
   }
 
-  const finalStatus = currentStep.terminalStatus ?? "approved";
-  const isExecution = finalStatus === "active";
-  const requestUpdate = await supabase
-    .from("marketing_requests")
-    .update({
-      approved_at: decidedAt,
-      executed_at: isExecution ? decidedAt : null,
-      status: finalStatus,
-      updated_at: decidedAt,
-      updated_by_hr_id: storedActorHrId,
-    })
-    .eq("id", request.id)
-    .select("*")
-    .single();
-  if (requestUpdate.error) throw requestUpdate.error;
-  request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
-  if (isExecution) {
-    await supabase
-      .from("marketing_request_approval_steps")
-      .update({ executed_at: decidedAt, updated_at: decidedAt })
-      .eq("id", decidedStep.id);
-  }
+  // approve_final
+  const isExecution = rpcData.isExecution ?? false;
   await auditMarketingDecision({
     actorHrId,
     decision,
