@@ -22,7 +22,7 @@ create unique index if not exists salary_batches_period_hash_uniq
 -- existing call-sites continue to work without modification.
 drop function if exists public.phx_create_salary_batch(integer, integer, text, text, jsonb, jsonb, timestamptz);
 
-create function public.phx_create_salary_batch(
+create or replace function public.phx_create_salary_batch(
   p_month integer,
   p_year integer,
   p_file_name text,
