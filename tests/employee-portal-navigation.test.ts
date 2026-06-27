@@ -30,6 +30,8 @@ export function runEmployeePortalNavigationTests() {
   const dashboardSource = readFileSync("src/components/employee-portal/employee-portal-dashboard.tsx", "utf8");
   const layoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   const marketingDraftsSource = readFileSync("src/components/employee-portal/marketing-request-drafts.tsx", "utf8");
+  const portalPrimitivesSource = readFileSync("src/components/employee-portal/portal-primitives.tsx", "utf8");
+  const portalShellSource = readFileSync("src/components/employee-portal/enterprise-shell.tsx", "utf8");
   const adminPageSource = readFileSync("app/(admin)/admin/page.tsx", "utf8");
   const vacanciesPageSource = readFileSync("app/employee-portals/vacancies/page.tsx", "utf8");
   const teamPerformancePageSource = readFileSync("app/employee-portals/team-performance/page.tsx", "utf8");
@@ -66,6 +68,22 @@ export function runEmployeePortalNavigationTests() {
   assert.match(launchSmokeSource, /\/api\/auth\/login/);
   assert.match(launchSmokeSource, /runDirectRouteSweep/);
   assert.match(launchSmokeSource, /portal error/);
+  assert.match(portalPrimitivesSource, /export function PortalResponsiveDataList/);
+  assert.match(portalPrimitivesSource, /export function PortalRecordCard/);
+  assert.match(portalPrimitivesSource, /export function PortalDesktopTable/);
+  assert.match(portalPrimitivesSource, /data-portal-desktop-table/);
+  assert.match(portalShellSource, /employee-portal-mobile-safe/);
+  assert.match(portalShellSource, /overflow-x: hidden/);
+  assert.doesNotMatch(
+    employeePortalSource,
+    /hidden xs:block|block xs:hidden|xs:hidden/,
+    "Portal-owned pages must keep card/mobile layouts through md instead of exposing tables at xs.",
+  );
+  assert.doesNotMatch(
+    employeePortalSource,
+    /min-w-\[(?:1[12-9]\d{2}|[2-9]\d{3})px\]/,
+    "Portal-owned pages must not ship 1200px+ Tailwind min-width tables as the mobile data strategy.",
+  );
 
   const medicalRep = resolveEmployeePortalNavVisibility("Medical Rep");
   assert.equal(medicalRep.showDashboardTab, true, "Medical Rep should see Dashboard");
@@ -133,7 +151,7 @@ export function runEmployeePortalNavigationTests() {
   );
 
   const marketingManager = resolveEmployeePortalNavVisibility("Marketing Manager");
-  assert.equal(marketingManager.showIncentiveTab, false, "Marketing Manager should not see Incentive");
+  assert.equal(marketingManager.showIncentiveTab, true, "Marketing Manager should see Incentive like GPM");
 
   // --- Marketing Requests and Contact HR Support both graduated to full modules ------
   const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
@@ -170,7 +188,20 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
-  assert.equal(marketingManagerDefault.showMyPerformanceTab, false, "Marketing Manager should not see My Performance");
+  assert.deepEqual(
+    marketingManagerDefault,
+    groupProductManagerDefault,
+    "Marketing Manager sidebar visibility must mimic Group Product Manager",
+  );
+  assert.equal(marketingManagerDefault.showMyPerformanceTab, true, "Marketing Manager sees Sales Dashboard like GPM");
+  assert.equal(marketingManagerDefault.showPlansTab, true, "Marketing Manager should see plans like PM/GPM");
+  assert.equal(marketingManagerDefault.showVacanciesTab, true, "Marketing Manager should see Vacancies like PM/GPM");
+  assert.equal(marketingManagerDefault.showProbationTab, true, "Marketing Manager should see Probation like PM/GPM");
+  assert.equal(marketingManagerDefault.showOrganogramTab, true, "Marketing Manager should see Organogram like PM/GPM");
+  assert.equal(marketingManagerDefault.showExpenseActionTab, true, "Marketing Manager should see Submit Expense like PM/GPM");
+  assert.equal(marketingManagerDefault.showMarketingRequestsTab, true, "Marketing Manager should see Marketing Requests in nav");
+  assert.equal(marketingManagerDefault.showMarketingInboxTab, true, "Marketing Manager should see the Marketing Approval Inbox in nav");
+  assert.equal(marketingManagerDefault.showMarketingRoiTrackingTab, true, "Marketing Manager should see Marketing ROI Tracking in nav");
 
   const sfeDefault = resolveEmployeePortalNavVisibility("SFE Manager");
   assert.equal(sfeDefault.showMarketingControlTab, true, "SFE Manager should see Marketing Control in nav (full module)");

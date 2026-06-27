@@ -5,7 +5,6 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -44,14 +43,7 @@ export default async function EmployeePlanningCalendarPage() {
   return (
     <EmployeePortalPageShell
       badge="Planning Calendar"
-      description="Shared submitted weekly and monthly plan activity with same-line visit warnings."
-      hero={
-        <PremiumHero
-          kicker="Shared Calendar"
-          title="Planning Calendar"
-          subtitle="Submitted plan activity, national vacations, and same-line Medical Rep warnings in one premium calendar."
-        />
-      }
+      description="Submitted plan activity, national vacations, and same-line Medical Rep warnings in one shared calendar."
       title="Planning Calendar"
     >
       {workspace ? (

@@ -275,7 +275,8 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   // allowedHrIds, so a DV is in scope whenever the double-visitor OR the visited MR sits on
   // the line. Without this a GPM saw only their direct chain (≈30 of ≈1,900 line visits).
   if (
-    (access.role === "Group Product Manager" || access.role === "Product Manager") &&
+    (access.role === "Product Manager" ||
+     access.role === "Group Product Manager") &&
     viewer &&
     (viewer.lineId != null || viewer.lineName)
   ) {
@@ -667,6 +668,7 @@ const allowedDoubleVisitorRoles = [
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
   "SFE Manager",
   "Training Manager",
 ] as const;
@@ -750,7 +752,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
   });
 }
 
-const functionalDoubleVisitorRoles = ["Product Manager", "Group Product Manager", "Training Manager"] as const;
+const functionalDoubleVisitorRoles = ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] as const;
 
 function isFunctionalDoubleVisitorRole(employee: EmployeeDirectoryRow): boolean {
   const posRole = resolveJobFunctionRole(employee.positionTitle);
@@ -779,7 +781,7 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     }
   }
 
-  // Pass 2: functional double-visitors (PM / GPM / Training / SFE) who appear in
+  // Pass 2: functional double-visitors (PM / GPM / MM / Training / SFE) who appear in
   // the rows but are not in the org-chart hierarchy above any MR.
   const doubleVisitorKeys = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
   for (const dvKey of doubleVisitorKeys) {
@@ -790,10 +792,16 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
     const posRole = resolveJobFunctionRole(dvEmployee.positionTitle);
     const jobRole = resolveJobFunctionRole(dvEmployee.jobTitle);
     const isLineScopedRole =
-      posRole === "Product Manager" || posRole === "Group Product Manager" || posRole === "Training Manager" ||
-      jobRole === "Product Manager" || jobRole === "Group Product Manager" || jobRole === "Training Manager";
+      posRole === "Product Manager" ||
+      posRole === "Group Product Manager" ||
+      posRole === "Marketing Manager" ||
+      posRole === "Training Manager" ||
+      jobRole === "Product Manager" ||
+      jobRole === "Group Product Manager" ||
+      jobRole === "Marketing Manager" ||
+      jobRole === "Training Manager";
 
-    // PM/GPM/TM have no fixed org-chart team, so scope their executive report to
+    // PM/GPM/MM/TM have no fixed org-chart team, so scope their executive report to
     // exactly the MRs they actually visited. This is self-scoping: a PM covering two
     // lines (e.g. Pedia + Anti Inf) automatically gets both sets of MR scores, and a
     // TM does not get incorrectly assigned the entire MR universe.

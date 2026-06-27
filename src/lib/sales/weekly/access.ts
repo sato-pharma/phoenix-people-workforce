@@ -8,6 +8,7 @@ import {
   applyLineRegionScope,
   canonicalizeRegionName,
   isRestrictedProductCode,
+  normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -20,14 +21,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //  • full      — the whole company. Exception HR_IDs and CEO/Super Admin see EVERYTHING
 //                including the confidential Lacto Basic products (LA003/LA004); SFE Manager
 //                sees everything EXCEPT those.
-//  • product   — any role with an explicit curated assignment in `weekly_sales_product_scope`
-//                (by HR_ID) sees ONLY those product codes, line ignored. Product / Group
-//                Product Manager are NEVER bounded this way (see territory below) — this tier
-//                is reserved for an opt-in curated list on some other role.
+//  • product   — Product / Group Product / Marketing Managers see ONLY the product codes
+//                explicitly assigned to them in `weekly_sales_product_scope` (by HR_ID).
+//                Line is ignored entirely; an empty assignment set means they see nothing.
 //  • territory — sales-field roles (District / Regional / National Sales Manager, Medical
-//                Rep) AND Product / Group Product Manager reuse the monthly sales scope:
-//                bounded to their own line and/or region. PM/GPM always see their whole line
-//                with no region restriction (mirrors National Sales Manager).
+//                Rep) reuse the monthly sales scope: bounded to their own line and/or region.
 //
 // Confidential products are stripped for every tier except a full-access viewer who is
 // allowed to reveal them — mirroring the locked rule in `access-scope.ts`.
@@ -38,6 +36,13 @@ export const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
   ["admin-hr", "b-10", "aa"].map((id) => canonicalHrIdKey(id)).filter((id): id is string => Boolean(id)),
 );
 
+/** Roles scoped by their explicit product assignments (line ignored). */
+const PRODUCT_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+]);
+
 /** Sales-field roles scoped to their own line/region via the shared monthly sales scope. */
 const TERRITORY_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
@@ -45,9 +50,6 @@ const TERRITORY_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "National Sales Manager",
   "Medical Rep",
 ]);
-
-/** Product / Group Product Manager: always their whole line, never the curated product sheet. */
-const LINE_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set(["Product Manager", "Group Product Manager"]);
 
 export type WeeklyAccessScope =
   | { tier: "full"; canViewRestricted: boolean }
@@ -70,22 +72,6 @@ export async function getWeeklyProductScopeCodes(hrKey: string | null): Promise<
     .eq("hr_id", hrKey);
   if (error) return new Set();
   return new Set((data ?? []).map((row) => String(row.product_code ?? "").trim().toUpperCase()).filter(Boolean));
-}
-
-/** Read the explicit SoS region codes assigned to a manager (DM / RSM) in the authoritative
- *  territory map (sales_manager_region_scope). Returns null when the manager has NO explicit rows,
- *  so callers fall back to auto region-name resolution rather than failing closed. Shared by the
- *  weekly and monthly sales scope. */
-export async function getManagerRegionScope(hrKey: string | null): Promise<Set<string> | null> {
-  if (!hrKey) return null;
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("sales_manager_region_scope")
-    .select("region_code")
-    .eq("hr_id", hrKey);
-  if (error || !data || data.length === 0) return null;
-  const codes = new Set(data.map((row) => String(row.region_code ?? "").trim().toUpperCase()).filter(Boolean));
-  return codes.size > 0 ? codes : null;
 }
 
 /** All product-scope assignments, grouped by canonical HR_ID (for the admin manager). */
@@ -141,46 +127,46 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   // 2. Company executives keep full access (CEO/Super Admin reveal restricted products).
   if (ctx.role === "Super Admin" || ctx.role === "CEO") return { tier: "full", canViewRestricted: true };
 
-  // 3. Product / Group Product Manager always see their whole product line — the curated
-  // product-scope sheet (step 4) is never consulted for these two roles.
-  if (LINE_SCOPED_ROLES.has(ctx.role)) {
-    const scope = await resolveSalesAccessScope(ctx);
-    if (scope.canViewAllSales) return { tier: "full", canViewRestricted: scope.canViewRestrictedProducts };
-    return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes: null };
-  }
-
-  // 4. The product-scope sheet is the source of truth for any OTHER role with an explicit
-  // assignment — bounded to exactly those products (e.g. an SFE Manager who owns a curated list).
+  // 3. The product-scope sheet is the source of truth: anyone with an explicit assignment is bounded
+  // to exactly those products — regardless of role (e.g. an SFE Manager who owns a curated list).
   const assignedCodes = await getWeeklyProductScopeCodes(hrKey);
   if (assignedCodes.size > 0) return { tier: "product", productCodes: assignedCodes };
 
-  // 5. Sales-field roles — reuse the monthly line/region scope. Region codes come from the explicit
-  // territory map first (authoritative; e.g. RSM PD-0001 -> AB+D1+D2, each DM -> his region), else
-  // auto region-name resolution. The explicit map replaces the old hardcoded Pedia-RSM special case.
+  // 4. Product roles without an assignment yet see nothing (fail closed).
+  if (PRODUCT_SCOPED_ROLES.has(ctx.role)) return { tier: "product", productCodes: new Set() };
+
+  // 5. Sales-field roles — reuse the monthly line/region scope.
   if (TERRITORY_SCOPED_ROLES.has(ctx.role)) {
     const scope = await resolveSalesAccessScope(ctx);
     if (scope.canViewAllSales) return { tier: "full", canViewRestricted: scope.canViewRestrictedProducts };
-    const explicit = await getManagerRegionScope(hrKey);
-    let allowedRegionCodes = explicit ?? (await resolveRegionCodesForNames(scope.allowedRegionNames));
-    // NSM (LINE scope) legitimately has no region bound -> whole line. DM / RSM / MR MUST be region-
-    // bounded: if neither the explicit territory map nor the region name resolved, fail closed (see
-    // nothing) rather than fall open to the whole line.
-    if (ctx.role !== "National Sales Manager" && !allowedRegionCodes) allowedRegionCodes = new Set();
+    let allowedRegionCodes = await resolveRegionCodesForNames(scope.allowedRegionNames);
+    // RSM in the Pedia line has system-wide coverage across all Pedia regions (AB, D1, D2).
+    if (ctx.role === "Regional Manager" && hasPediaLine(scope.allowedLineNames)) {
+      allowedRegionCodes = new Set(["AB", "D1", "D2"]);
+    }
     return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes };
   }
 
-  // 6. Company-wide commercial oversight (SFE Manager + Marketing Manager) without a curated list
-  // keeps full access minus the confidential Lacto Basic. An explicit product-scope assignment in
-  // step 4 still narrows either of them, which is the correct opt-in override.
-  if (ctx.role === "SFE Manager" || ctx.role === "Marketing Manager") {
+  // 6. Company-wide commercial oversight without a curated list keeps full access minus the
+  // confidential Lacto Basic. An explicit product-scope assignment in step 3 still narrows it.
+  if (ctx.role === "SFE Manager") {
     return { tier: "full", canViewRestricted: false };
   }
 
   return { tier: "none" };
 }
 
+/** True when the viewer's allowed lines include Pedia (any case/whitespace variant). */
+function hasPediaLine(lineNames: Set<string> | null): boolean {
+  if (!lineNames) return false;
+  for (const name of lineNames) {
+    if (normalizeLineKey(name) === "pedia") return true;
+  }
+  return false;
+}
+
 /** Map canonical employee region NAMES onto Source-of-Sales region CODES via the master. */
-export async function resolveRegionCodesForNames(
+async function resolveRegionCodesForNames(
   allowedRegionNames: Set<string> | null,
 ): Promise<Set<string> | null> {
   if (!allowedRegionNames) return null;

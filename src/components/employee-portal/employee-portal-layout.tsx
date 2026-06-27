@@ -501,13 +501,13 @@ export function EmployeePortalTopNav({
   return (
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
-      <header className="fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/60 bg-white/97 shadow-[0_4px_12px_rgba(15,23,42,0.06)] backdrop-blur-2xl">
+      <header className="fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl">
         <div className="mx-auto flex h-[56px] w-full max-w-[1560px] items-center gap-1.5 px-2 sm:gap-2.5 sm:px-4 lg:h-[64px] lg:px-8">
           <button
             aria-label="Menu"
             aria-controls="employee-portal-mobile-sidebar"
             aria-expanded={mobileMenuOpen}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-orange-200 bg-orange-50 text-orange-700 transition hover:border-orange-300 hover:bg-orange-100 focus:outline-none focus:ring-1 focus:ring-orange-500/20 lg:hidden"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded border border-orange-200 bg-orange-50 text-orange-700 shadow-[0_6px_16px_rgba(249,115,22,0.10)] transition hover:border-orange-300 hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20 lg:hidden"
             onClick={() => setMobileMenuOpen((open) => !open)}
             type="button"
           >
@@ -516,7 +516,7 @@ export function EmployeePortalTopNav({
           <div className="flex min-w-0 flex-1 items-center lg:flex-none">
             <div className="min-w-0">
               <p className="text-[8px] font-black uppercase tracking-[0.22em] text-orange-600 sm:text-[9px] sm:tracking-[0.26em]">Employee Portal</p>
-              <p className="truncate text-[10px] font-medium text-slate-400 sm:text-[11px]">{data.employee.roleLabel}</p>
+              <p className="truncate text-[10px] font-bold text-slate-500 sm:text-[11px]">{data.employee.roleLabel}</p>
             </div>
           </div>
 
@@ -524,7 +524,7 @@ export function EmployeePortalTopNav({
             <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
             <input
               aria-label="Search"
-              className="h-9 w-full rounded border border-slate-200 bg-slate-50/80 pl-9 pr-3 text-sm font-medium text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:ring-1 focus:ring-orange-400/15"
+              className="h-10 w-full rounded-sm border border-slate-200 bg-slate-50/90 pl-9 pr-3 text-sm font-semibold text-slate-700 shadow-inner placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:ring-2 focus:ring-orange-400/15"
               onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
               onChange={(event) => {
                 setSearchQuery(event.target.value);
@@ -597,7 +597,7 @@ export function EmployeePortalTopNav({
             <button
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
-              className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-1.5 py-1 transition hover:border-orange-200 hover:bg-orange-50/70 sm:px-2"
+            className="flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-1.5 py-1 shadow-[0_8px_20px_rgba(15,23,42,0.06)] transition hover:border-orange-200 hover:bg-orange-50/70 sm:px-2"
               onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
@@ -661,7 +661,7 @@ export function EmployeePortalTopNav({
       {/* Mobile Sidebar Content */}
       <div
         aria-hidden={!mobileMenuOpen}
-        className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,306px)] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden"
+        className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,320px)] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden"
         id="employee-portal-mobile-sidebar"
         style={{ transform: mobileMenuOpen ? "translate3d(0, 0, 0)" : "translate3d(-100%, 0, 0)" }}
       >
@@ -695,7 +695,7 @@ export function EmployeePortalTopNav({
         </nav>
 
         <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
-          <div className="rounded border border-orange-100 bg-orange-50 p-3">
+          <div className="rounded border border-orange-100 bg-orange-50 p-3 shadow-[0_8px_20px_rgba(249,115,22,0.08)]">
             <div className="flex items-center gap-3">
               <Image alt="Phoenix" className="h-8 w-8 shrink-0 rounded object-cover" height={32} src={systemAssets.adminRailMark} width={32} />
               <div>
@@ -767,9 +767,9 @@ export function EmployeePortalSidebar({
   };
 
   return (
-    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[302px]"}`}>
-      <div className="sticky top-[78px] flex max-h-[calc(100vh-104px)] w-full overflow-hidden rounded border border-slate-100/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-        <div className={`${collapsed ? "w-full" : "w-[54px]"} shrink-0 bg-[#17233E]`}>
+    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[312px]"}`}>
+      <div className="sticky top-[78px] flex max-h-[calc(100vh-104px)] w-full overflow-hidden rounded-sm border border-slate-200/90 bg-white/96 shadow-[0_24px_70px_rgba(15,23,42,0.14)] ring-1 ring-white/80 backdrop-blur">
+        <div className={`${collapsed ? "w-full" : "w-[58px]"} shrink-0 bg-[#101a31]`}>
           <div className="flex h-full min-h-0 flex-col items-center py-4">
             <button
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -817,12 +817,12 @@ export function EmployeePortalSidebar({
           </div>
         </div>
 
-        <div className={`${collapsed ? "hidden" : "flex"} min-h-0 flex-1 flex-col px-4 py-5`}>
+        <div className={`${collapsed ? "hidden" : "flex"} min-h-0 flex-1 flex-col bg-[linear-gradient(180deg,#ffffff_0%,#fbfcff_100%)] px-4 py-5`}>
           <div className="mb-4 flex items-start justify-between pl-1 pr-0">
             <div className="flex items-center gap-2.5">
               <Image
                 alt="Phoenix Workforce logo"
-                className="h-8 w-8 object-contain"
+                className="h-8 w-8 rounded-sm border border-orange-100 bg-orange-50 object-contain p-1 shadow-[0_8px_18px_rgba(249,115,22,0.12)]"
                 height={32}
                 priority
                 src="/brand/phoenix-bird-icon.png"
@@ -839,7 +839,7 @@ export function EmployeePortalSidebar({
             </div>
             <button
               aria-label="Collapse sidebar"
-              className="flex h-7 w-7 items-center justify-center rounded bg-[#F2F0FF] text-[#293268] transition hover:bg-[#E7E5FF]"
+              className="flex h-7 w-7 items-center justify-center rounded-sm bg-slate-100 text-[#293268] transition hover:bg-orange-50 hover:text-orange-700"
               onClick={toggleCollapsed}
               type="button"
             >
@@ -885,17 +885,17 @@ export function EmployeePortalChrome({
       <div className="employee-portal-shell relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.028)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.65),transparent_56%)]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(255,255,255,0)_70%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.52),transparent_58%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0)_72%)]" />
         <EmployeePortalTopNav
           activePathOverride={activePathOverride}
           data={data}
           disableSessionGuard={disableSessionGuard}
           visibility={visibility}
         />
-        <div className="relative mx-auto flex w-full max-w-[1560px] items-start gap-4 px-3 py-5 sm:px-4 lg:gap-8 lg:px-8 lg:py-8">
+        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
           <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
-          <main className="min-w-0 flex-1 space-y-6 pb-24 lg:space-y-8 lg:pb-0">
+          <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
             <PageTransition>{children}</PageTransition>
           </main>
         </div>

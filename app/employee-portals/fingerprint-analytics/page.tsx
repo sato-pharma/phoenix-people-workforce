@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { FingerprintAnalytics, type FingerprintTarget } from "@/components/employee-portal/fingerprint-analytics";
-import { PremiumHero } from "@/components/ui/premium-hero";
 import { getEmployeeAttendanceData, loadAttendanceDirectReports } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -76,20 +75,8 @@ export default async function FingerprintAnalyticsPage() {
 
   return (
     <EmployeePortalPageShell
+      badge="My Attendance"
       description="Your complete punch history — filter by date range and export a formatted Excel report."
-      hero={
-        <PremiumHero
-          badge={
-            <span className="inline-flex items-center gap-1.5 rounded border border-orange-400/30 bg-orange-500/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-orange-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-400 ep-pulse-orange" />
-              Live Data
-            </span>
-          }
-          kicker="My Attendance"
-          subtitle="Your complete punch history. Filter by date range, review your status per day, and export a formatted Excel report."
-          title="Fingerprint Analytics"
-        />
-      }
       title="Fingerprint Analytics"
     >
       {initialError && (

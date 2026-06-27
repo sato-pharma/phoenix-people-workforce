@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -624,8 +625,7 @@ export function MedicalRepExpensesWorkspace({
             </div>
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1320px] divide-y divide-orange-100 text-left text-sm">
+          <PortalDesktopTable className="divide-y divide-orange-100" minWidth="1240px">
               <thead className="bg-slate-900 text-xs font-black uppercase tracking-[0.14em] text-white">
                 <tr>
                   <th className="px-4 py-3">Request</th>
@@ -682,8 +682,7 @@ export function MedicalRepExpensesWorkspace({
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </PortalDesktopTable>
 
           <div className="space-y-3 p-4 md:hidden">
             {filteredRequests.map((request) => (

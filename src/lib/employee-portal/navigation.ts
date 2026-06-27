@@ -104,7 +104,6 @@ const marketingRequestRoles = new Set<PhoenixRole>([
 
 const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
   "Training Manager",
-  "Marketing Manager",
 ]);
 
 export function canUseEmployeePortalMarketingRequests(
@@ -166,11 +165,12 @@ export function resolveEmployeePortalNavVisibility(
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
-  // Product / Group Product Managers get line-scoped Vacancies, Probation, and
+  // Product / Group Product / Marketing Managers get line-scoped Vacancies, Probation, and
   // Organogram views (see getEmployeePortalVacancies, probation service, and
   // isLineScopedOrganogramRole). The sidebar tabs must mirror that data access.
   const isProductManager = resolvedRole === "Product Manager";
   const isGroupProductManager = resolvedRole === "Group Product Manager";
+  const isMarketingManager = resolvedRole === "Marketing Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
@@ -194,6 +194,7 @@ export function resolveEmployeePortalNavVisibility(
   const showPlansTab = [
     "Product Manager",
     "Group Product Manager",
+    "Marketing Manager",
     "Training Manager",
     "National Sales Manager",
     "CEO",
@@ -202,8 +203,7 @@ export function resolveEmployeePortalNavVisibility(
     "Regional Manager",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  const baseShowIncentiveTab = !isTrainingManager && resolvedRole !== "Marketing Manager";
-  const isMarketingManager = resolvedRole === "Marketing Manager";
+  const baseShowIncentiveTab = !isTrainingManager;
   // Product / Group Product Managers (and their line manager, Marketing Manager) get the
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
@@ -221,6 +221,7 @@ export function resolveEmployeePortalNavVisibility(
       isNationalSalesManager ||
       isProductManager ||
       isGroupProductManager ||
+      isMarketingManager ||
       isTrainingManager,
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
@@ -235,12 +236,12 @@ export function resolveEmployeePortalNavVisibility(
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
     showReportItTab: isA3Account,
-    showReportItDashboardTab: isProductManager || isGroupProductManager || isTrainingManager,
+    showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
     showOrganogramTab:
-      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
+      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
     showPlansTab: isA3Account || showPlansTab,
     showProbationTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
     showSupportTab: true,
     showTeamCoachingTab,
     showTeamExpensesTab: isNationalSalesManager,
@@ -249,8 +250,8 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isTrainingManager,
-    showFingerprintReportTab: hasDeviceMapping === true || isProductManager || isGroupProductManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
+    showFingerprintReportTab: hasDeviceMapping === true,
     showRoiIntelligenceTab: showSalesIntelligence,
     showSosDashboardTab: showFieldSalesTabs,
     showMiniWeeklySalesTab: showFieldSalesTabs,

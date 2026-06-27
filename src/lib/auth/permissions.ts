@@ -179,6 +179,7 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
   "Training Manager",
   "CEO",
   "Manager",
@@ -186,7 +187,6 @@ const portalNavigationRoles = new Set<PhoenixRole>([
 
 export const adminShellEmployeeRoles = [
   "SFE Manager",
-  "Marketing Manager",
   "Finance Manager",
   "Financial Advisor",
   "Talent Acquisition",
@@ -628,34 +628,27 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
-  // Marketing Manager = company-wide MARKETING + COMMERCIAL oversight. It owns the Marketing
-  // Review approval step and needs full visibility of marketing requests, sales, and ROI. As an
-  // EXECUTIVE marketing role it ALSO holds company-wide READ-ONLY oversight of the field/commercial
-  // reports that Product/Group-Product/Training Managers see — coaching, double_visit_analytics,
-  // organogram, vacancies, probation, team — VIEW ONLY (no coaching write: canManageCoachingReports
-  // still excludes it). It holds NO HR authority: employees/employee_documents/offers/recruitment/
-  // candidates stay denied by the hard boundary. Only grants that survive the hard boundary are
-  // declared here, so this matrix reads as the role's true effective access.
+  // Marketing Manager uses the employee portal like PM/GPM for reports and sidebar modules,
+  // while HR authority remains blocked.
   "Marketing Manager": {
     attendance: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
+    double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "update"],
+    coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
+    organogram: ["read"],
+    vacancies: ["read"],
+    probation: ["read"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     support_requests: ["create"],
-    weekly_plans: ["read", "create", "update", "approve"],
+    weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
-    coaching: ["read"],
-    double_visit_analytics: ["read", "export"],
-    team: ["read"],
-    vacancies: ["read"],
-    probation: ["read"],
-    organogram: ["read"],
   },
   Manager: {
     attendance: ["read", "create", "update", "delete", "export"],
@@ -847,7 +840,8 @@ export function canManageCoachingReports(context: Pick<AccessContext, "role" | "
     context.role === "Super Admin" ||
     context.role === "Training Manager" ||
     context.role === "Product Manager" ||
-    context.role === "Group Product Manager"
+    context.role === "Group Product Manager" ||
+    context.role === "Marketing Manager"
   );
 }
 
@@ -861,7 +855,12 @@ export function scopeForRole(role: PhoenixRole): AccessScope {
   }
   if (role === "District Manager" || role === "Manager") return "team";
   if (role === "Regional Manager") return "hierarchy";
-  if (role === "National Sales Manager" || role === "Product Manager" || role === "Group Product Manager") {
+  if (
+    role === "National Sales Manager" ||
+    role === "Product Manager" ||
+    role === "Group Product Manager" ||
+    role === "Marketing Manager"
+  ) {
     return "line";
   }
   return "self";
@@ -1033,14 +1032,13 @@ export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScop
     case "National Sales Manager":
     case "Product Manager":
     case "Group Product Manager":
-      return "LINE";
     case "Marketing Manager":
+      return "LINE";
     case "SFE Manager":
     case "CEO":
     case "Super Admin":
-      // Company-wide commercial oversight. Marketing Manager sees all lines for monthly sales
-      // and the Marketing ROI dashboard (which scopes via resolveSalesAccessScope); restricted
-      // products stay hidden because canViewRestrictedProducts(role) is false for it.
+      // Company-wide commercial oversight. Restricted products stay hidden unless the role
+      // is explicitly allowed by canViewRestrictedProducts.
       return "COMPANY";
     default:
       return "NONE";
@@ -1074,12 +1072,11 @@ export function getExpensesScope(
     case "Product Manager":
     case "Group Product Manager":
     case "Training Manager":
+    case "Marketing Manager":
       return "LINE";
     case "SFE Manager":
-    case "Marketing Manager":
     case "CEO":
     case "Finance Manager":
-    case "Marketing Manager":
     case "Super Admin":
       return "COMPANY";
     default:

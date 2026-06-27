@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { PaginationControls } from "@/components/ui/pagination-controls";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+} from "@/components/employee-portal/portal-primitives";
 import type {
   PlanningCalendarConflict,
   PlanningCalendarItem,
@@ -303,7 +308,7 @@ export function PlanningCalendar({
                 </span>
               ) : null}
             </div>
-            <h2 className="mt-2 text-xl font-black text-slate-950 sm:text-2xl">{monthLabel(year, month)}</h2>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -447,7 +452,7 @@ export function PlanningCalendar({
               const isToday = date === today;
               return (
                 <button
-                  className={`min-h-[64px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[138px] ${
+                  className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[138px] ${
                     day.inMonth ? "bg-white" : "bg-slate-50"
                   } ${isSelected ? "ring-2 ring-inset ring-orange-500" : "hover:bg-orange-50/40"}`}
                   disabled={!date}
@@ -504,13 +509,13 @@ export function PlanningCalendar({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Selected day</p>
-              <h3 className="mt-1 text-base font-black text-slate-950 sm:text-lg">{dayLabel(selectedDate)}</h3>
+              <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
             <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
               {selectedDetailRows.length} visible row{selectedDetailRows.length === 1 ? "" : "s"}
             </span>
           </div>
-          <PlanningCalendarDetailsTable resetKey={selectedDate} rows={selectedDetailRows} />
+          <PlanningCalendarDetailsTable rows={selectedDetailRows} />
         </section>
       </section>
     </div>
@@ -540,7 +545,7 @@ function Metric({
         {icon}
         <span className="text-[11px] font-black uppercase tracking-[0.14em]">{label}</span>
       </div>
-      <p className="mt-2 text-lg font-bold sm:text-2xl">{value}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
     </div>
   );
 }
@@ -557,26 +562,58 @@ function statusToneClass(tone: PlanningCalendarDetailRow["tone"]) {
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
-const PLANNING_DETAILS_PAGE_SIZE = 25;
+function detailAccent(tone: PlanningCalendarDetailRow["tone"]) {
+  if (tone === "conflict") return "rose";
+  if (tone === "holiday") return "emerald";
+  return "slate";
+}
 
-function PlanningCalendarDetailsTable({ resetKey, rows }: { resetKey: string; rows: PlanningCalendarDetailRow[] }) {
-  const [page, setPage] = useState(0);
-
-  const [prevResetKey, setPrevResetKey] = useState(resetKey);
-  if (resetKey !== prevResetKey) {
-    setPrevResetKey(resetKey);
-    setPage(0);
-  }
-
-  const pageRows = rows.slice(
-    page * PLANNING_DETAILS_PAGE_SIZE,
-    (page + 1) * PLANNING_DETAILS_PAGE_SIZE,
-  );
-
+function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRow[] }) {
   return (
     <div className="p-4">
-      <div className="hidden overflow-x-auto border border-slate-200 bg-white md:block">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-xs">
+      {rows.length === 0 ? (
+        <PortalEmptyState
+          message="Submitted planning activity, national vacation, and conflict warnings for the selected day will appear here."
+          title="No detail rows for this day"
+        />
+      ) : (
+        <div className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
+          {rows.map((row) => (
+            <PortalRecordCard
+              accent={detailAccent(row.tone)}
+              key={`${row.id}-mobile`}
+              meta={`${row.date} · ${row.employee}`}
+              status={
+                <span className={`inline-flex border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                  {row.status}
+                </span>
+              }
+              title={row.activity}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Location", value: row.regionLocation },
+                  { label: "Area", value: row.area },
+                  { label: "Medical rep", value: row.medicalRep },
+                  { label: "Time", value: row.time },
+                ]}
+              />
+              {row.conflictWarning ? (
+                <p className="mt-2 rounded border border-red-100 bg-red-50 px-2.5 py-2 text-xs font-semibold leading-5 text-red-800">
+                  {row.conflictWarning}
+                </p>
+              ) : null}
+              {row.notes ? (
+                <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+                  {row.notes}
+                </p>
+              ) : null}
+            </PortalRecordCard>
+          ))}
+        </div>
+      )}
+      <div className="border border-slate-200 bg-white">
+        <PortalDesktopTable className="text-xs" minWidth="1120px">
           <thead>
             <tr className="bg-slate-950">
               {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning", "Notes"].map((column) => (
@@ -590,14 +627,7 @@ function PlanningCalendarDetailsTable({ resetKey, rows }: { resetKey: string; ro
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-10 text-center text-sm font-semibold text-slate-400" colSpan={10}>
-                  No submitted planning activity, national vacation, or conflict warning for this day.
-                </td>
-              </tr>
-            ) : (
-              pageRows.map((row) => (
+            {rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">{row.date}</td>
                   <td className="max-w-[180px] truncate border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">{row.employee}</td>
@@ -618,61 +648,10 @@ function PlanningCalendarDetailsTable({ resetKey, rows }: { resetKey: string; ro
                     <span className="line-clamp-2">{row.notes}</span>
                   </td>
                 </tr>
-              ))
-            )}
+              ))}
           </tbody>
-        </table>
+        </PortalDesktopTable>
       </div>
-
-      <div className="space-y-3 border border-slate-200 bg-white p-3 md:hidden">
-        {rows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-sm font-semibold text-slate-400">
-            No submitted planning activity, national vacation, or conflict warning for this day.
-          </p>
-        ) : (
-          pageRows.map((row) => (
-            <div className={`border border-slate-200 p-3 ${detailToneClass(row.tone)}`} key={`${row.id}-mobile`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-mono text-[11px] font-semibold text-slate-500">{row.date}</p>
-                  <p className="mt-1 truncate font-black text-slate-900">{row.employee}</p>
-                  <p className="mt-0.5 truncate text-xs font-semibold">{row.activity}</p>
-                </div>
-                <span className={`inline-flex shrink-0 truncate border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
-                  {row.status}
-                </span>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <p className="text-slate-600">
-                  Region: <span className="font-bold text-slate-900">{row.regionLocation}</span>
-                </p>
-                <p className="text-slate-600">
-                  Area: <span className="font-bold text-slate-900">{row.area}</span>
-                </p>
-                <p className="text-slate-600">
-                  Rep: <span className="font-bold text-slate-900">{row.medicalRep}</span>
-                </p>
-                <p className="text-slate-600">
-                  Time: <span className="font-bold text-slate-900">{row.time}</span>
-                </p>
-              </div>
-              {row.conflictWarning ? (
-                <p className="mt-2 text-[11px] font-semibold leading-relaxed text-red-800">{row.conflictWarning}</p>
-              ) : null}
-              {row.notes ? (
-                <p className="mt-2 text-[11px] font-semibold leading-relaxed text-slate-500">{row.notes}</p>
-              ) : null}
-            </div>
-          ))
-        )}
-      </div>
-
-      <PaginationControls
-        onPageChange={setPage}
-        page={page}
-        pageSize={PLANNING_DETAILS_PAGE_SIZE}
-        total={rows.length}
-      />
     </div>
   );
 }

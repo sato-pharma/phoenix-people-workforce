@@ -553,7 +553,7 @@ function ValidatedPharmaciesModal({
         </div>
         <div className="max-h-[65vh] overflow-auto p-4">
           {/* Mobile card view < 480px */}
-          <div className="block xs:hidden">
+          <div className="block md:hidden">
             <div className="space-y-3">
               {pharmacies.map((pharmacy) => (
                 <div className="rounded-sm border border-slate-200 bg-white p-3" key={pharmacy.id}>
@@ -583,7 +583,7 @@ function ValidatedPharmaciesModal({
             </div>
           </div>
           {/* Desktop table view */}
-          <div className="hidden xs:block">
+          <div className="hidden md:block">
             <div className="overflow-hidden rounded-sm border border-slate-200">
               <table className="w-full border-collapse text-left">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
@@ -1698,7 +1698,7 @@ export function MarketingValidationWorkspace() {
           ) : (
             <>
               {/* Mobile card view < 480px */}
-              <div className="mt-4 block xs:hidden">
+              <div className="mt-4 block md:hidden">
                 {validatedGroups.length === 0 ? (
                   <p className="py-6 text-center text-[13px] font-medium text-slate-500">No validated customers yet.</p>
                 ) : (
@@ -1743,7 +1743,7 @@ export function MarketingValidationWorkspace() {
               </div>
 
               {/* Desktop table view >= 480px */}
-              <div className="mt-4 hidden xs:block">
+              <div className="mt-4 hidden md:block">
                 <div className="overflow-hidden rounded-sm border border-slate-200">
                   <table className="w-full border-collapse text-left">
                     <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">

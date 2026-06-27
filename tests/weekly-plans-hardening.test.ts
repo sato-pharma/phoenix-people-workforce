@@ -40,12 +40,12 @@ export function runWeeklyPlansHardeningTests() {
   assert.match(calendarUiSource, /workspace\.hasMoreHeaders \|\| workspace\.hasMoreItems/, "calendar UI must warn when results are capped");
 
   assert.match(workflowE2eSource, /EMPLOYEE_PLANS_PATH = "\/employee-portals\/plans"/, "submitter workflow must use employee portal route");
-  assert.match(workflowE2eSource, /MANAGER_PLANS_PATH = "\/workspace\/plans"/, "Marketing Manager reviewer workflow must use workspace route");
+  assert.match(workflowE2eSource, /MANAGER_PLANS_PATH = "\/employee-portals\/plans"/, "Marketing Manager reviewer workflow must use employee portal route");
   assert.match(workflowE2eSource, /ADMIN_PLANS_PATH = "\/admin\/weekly-plans"/, "CEO and HR workflow must use admin route");
   assert.match(workflowE2eSource, /Never point this mutating workflow at production/, "mutating workflow must be marked local/staging only");
 
   assert.match(readonlyE2eSource, /GET requests only/, "read-only smoke must avoid mutations");
   assert.match(readonlyE2eSource, /\/employee-portals\/plans\/calendar/, "read-only smoke must cover employee calendar");
-  assert.match(readonlyE2eSource, /\/workspace\/plans\/calendar/, "read-only smoke must cover workspace calendar");
+  assert.match(readonlyE2eSource, /Marketing Manager employee portal reviewer/, "read-only smoke must cover the MM employee portal reviewer");
   assert.match(readonlyE2eSource, /\/admin\/weekly-plans\/calendar/, "read-only smoke must cover admin calendar");
 }

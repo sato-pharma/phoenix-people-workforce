@@ -304,7 +304,7 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Mobile card view */}
-        <div className="grid gap-2.5 sm:hidden">
+        <div className="grid gap-2.5 md:hidden">
           {data.dsms.map((dsm) => {
             const spendRatio = maxExpense > 0 ? dsm.totalExpenses / maxExpense : 0;
             const color = expenseColor(dsm.totalExpenses, maxExpense);
@@ -361,7 +361,7 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Desktop table view */}
-        <div className="hidden overflow-x-auto sm:block">
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-0 text-sm">
             <thead>
               <tr className="border-b border-slate-100">
@@ -420,7 +420,7 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Mobile card view */}
-        <div className="grid gap-2.5 sm:hidden">
+        <div className="grid gap-2.5 md:hidden">
           {data.expenseRows.slice(0, 20).map((expense) => (
             <div
               className="relative min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm"
@@ -472,7 +472,7 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Desktop table view */}
-        <div className="hidden overflow-x-auto sm:block">
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-0 text-sm">
             <thead>
               <tr className="border-b border-slate-100">

@@ -21,6 +21,8 @@
     "security:identity-health": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-identity-health.ts",
     "security:rls-static": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-rls-static.ts",
     "security:preflight:local": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-preflight-local.ts",
+    "ops:a9-mm-rebuild": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/rebuild-a9-marketing-manager-account.ts",
+    "ops:a9-mm-rebuild:dry-run": "npm run ops:a9-mm-rebuild -- --dry-run --backup",
     "check:edit": "npm run typecheck",
     "check:harden": "npm run check:routes && npm run check:migrations && npm run lint && npx next typegen && npm run typecheck && npm run test && npm run build",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",

@@ -26,7 +26,7 @@ const BASE = "http://localhost:3000";
 
 // Path-only constants for dev-auth `next` param (normalizeNextPath requires a leading "/")
 const EMPLOYEE_PLANS_PATH = "/employee-portals/plans";
-const MANAGER_PLANS_PATH = "/workspace/plans";
+const MANAGER_PLANS_PATH = "/employee-portals/plans";
 const ADMIN_PLANS_PATH = "/admin/weekly-plans";
 
 // Full URLs for page.goto() after auth is established

@@ -4654,15 +4654,13 @@ export async function getEmployeePortalVacancies(
     const currentRole = normalizeRole(currentUser.role);
     const isDsm = currentRole === "District Manager";
     const isNsm = currentRole === "National Sales Manager";
-    // Product / Group Product Managers see vacancies for their own line, like an NSM.
+    // Product / Group Product / Marketing Managers see vacancies for their own line, like an NSM.
     const isLineScoped =
       isNsm ||
       currentRole === "Product Manager" ||
-      currentRole === "Group Product Manager";
-    // Training Manager and Marketing Manager see all company vacancies.
-    const isCompanyWide =
-      currentRole === "Training Manager" || currentRole === "Marketing Manager";
-    if (!isDsm && !isLineScoped && !isCompanyWide) return null;
+      currentRole === "Group Product Manager" ||
+      currentRole === "Marketing Manager";
+    if (!isDsm && !isLineScoped) return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -4690,13 +4688,10 @@ export async function getEmployeePortalVacancies(
       } else if (isLineScoped && typeof currentEmployee.lineId === "number") {
         query = query.eq("line_id", currentEmployee.lineId);
       }
-      // isCompanyWide: no filter — fetch all open vacancies
-
       return query;
     });
 
     const scopedRows = vacancyRows.filter((row) => {
-      if (isCompanyWide) return true;
       if (isLineScoped) {
         return sameWorkforceLine(
           { lineId: currentEmployee.lineId, lineName: currentEmployee.lineName },

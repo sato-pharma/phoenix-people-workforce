@@ -352,7 +352,7 @@ export default async function EmployeePortalVacanciesPage({
             </div>
 
             {/* Desktop Table */}
-            <div className="hidden overflow-x-auto sm:block">
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50/80 text-left text-[11px] uppercase tracking-wider text-slate-400">
                   <tr>
@@ -452,7 +452,7 @@ export default async function EmployeePortalVacanciesPage({
             </div>
 
             {/* Mobile Card View */}
-            <div className="divide-y divide-gray-100 sm:hidden">
+            <div className="divide-y divide-gray-100 md:hidden">
               {filteredVacancies.map((vacancy) => {
                 const formattedCode = formatVacancyCode(vacancy.vacancyCode);
                 const style = statusStyle(vacancy.status);

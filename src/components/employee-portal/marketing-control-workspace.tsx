@@ -6,6 +6,10 @@ import { LockKeyhole, RefreshCcw, Save, Settings2, SlidersHorizontal, Workflow }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+} from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type {
@@ -274,8 +278,96 @@ export function MarketingControlWorkspace() {
           icon={<SlidersHorizontal className="h-5 w-5" />}
           title="Request Types"
         />
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {workspace.requestTypes.map((type) => {
+            const draft = requestTypeDrafts[type.id] ?? type;
+            return (
+              <PortalRecordCard
+                accent={draft.active ? "emerald" : "slate"}
+                key={`${type.id}-mobile`}
+                meta={<span className="font-mono">{type.code}</span>}
+                status={<Badge variant={draft.active ? "success" : "neutral"}>{draft.active ? "Active" : "Inactive"}</Badge>}
+                title={draft.name}
+              >
+                <div className="grid gap-3">
+                  <Field label="Name">
+                    <Input
+                      className="h-10 border-slate-200 bg-white font-bold"
+                      onChange={(event) => setRequestTypeDrafts((current) => ({
+                        ...current,
+                        [type.id]: { ...draft, name: event.target.value },
+                      }))}
+                      value={draft.name}
+                    />
+                  </Field>
+                  <Field label="Description">
+                    <Input
+                      className="h-10 border-slate-200 bg-white"
+                      onChange={(event) => setRequestTypeDrafts((current) => ({
+                        ...current,
+                        [type.id]: { ...draft, description: event.target.value },
+                      }))}
+                      value={draft.description ?? ""}
+                    />
+                  </Field>
+                  <Field label="Sort order">
+                    <Input
+                      className="h-10 border-slate-200 bg-white font-bold"
+                      min={0}
+                      onChange={(event) => setRequestTypeDrafts((current) => ({
+                        ...current,
+                        [type.id]: { ...draft, sortOrder: Number(event.target.value || 0) },
+                      }))}
+                      type="number"
+                      value={draft.sortOrder}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Other description
+                      <Toggle
+                        checked={draft.requiresDescription}
+                        onChange={(checked) => setRequestTypeDrafts((current) => ({
+                          ...current,
+                          [type.id]: { ...draft, requiresDescription: checked },
+                        }))}
+                      />
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Active
+                      <Toggle
+                        checked={draft.active}
+                        onChange={(checked) => setRequestTypeDrafts((current) => ({
+                          ...current,
+                          [type.id]: { ...draft, active: checked },
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  <Button
+                    className="w-full gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                    disabled={saving}
+                    onClick={() => void patchControl({
+                      entity: "request_type",
+                      id: type.id,
+                      patch: {
+                        active: draft.active,
+                        description: draft.description,
+                        name: draft.name,
+                        requiresDescription: draft.requiresDescription,
+                        sortOrder: draft.sortOrder,
+                      },
+                    }, "Request type saved.")}
+                  >
+                    <Save className="h-4 w-4" />
+                    Save
+                  </Button>
+                </div>
+              </PortalRecordCard>
+            );
+          })}
+        </div>
+        <PortalDesktopTable minWidth="980px">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Code</th>
@@ -367,8 +459,7 @@ export function MarketingControlWorkspace() {
                 );
               })}
             </tbody>
-          </table>
-        </div>
+        </PortalDesktopTable>
       </Card>
 
       <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
@@ -377,8 +468,129 @@ export function MarketingControlWorkspace() {
           icon={<Workflow className="h-5 w-5" />}
           title="Approval Workflow"
         />
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {workspace.workflowSteps.map((step) => {
+            const draft = workflowDrafts[step.id] ?? step;
+            return (
+              <PortalRecordCard
+                accent={draft.active ? "orange" : "slate"}
+                key={`${step.id}-mobile`}
+                meta={`Sequence ${draft.sequence}`}
+                status={<Badge variant={draft.active ? "success" : "neutral"}>{draft.active ? "Active" : "Inactive"}</Badge>}
+                title={draft.stepName}
+              >
+                <div className="grid gap-3">
+                  <Field label="Step">
+                    <Input
+                      className="h-10 border-slate-200 bg-white font-bold"
+                      onChange={(event) => setWorkflowDrafts((current) => ({
+                        ...current,
+                        [step.id]: { ...draft, stepName: event.target.value },
+                      }))}
+                      value={draft.stepName}
+                    />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Sequence">
+                      <Input
+                        className="h-10 border-slate-200 bg-white font-bold"
+                        min={1}
+                        onChange={(event) => setWorkflowDrafts((current) => ({
+                          ...current,
+                          [step.id]: { ...draft, sequence: Number(event.target.value || 1) },
+                        }))}
+                        type="number"
+                        value={draft.sequence}
+                      />
+                    </Field>
+                    <Field label="SLA Days">
+                      <Input
+                        className="h-10 border-slate-200 bg-white font-bold"
+                        min={0}
+                        onChange={(event) => setWorkflowDrafts((current) => ({
+                          ...current,
+                          [step.id]: {
+                            ...draft,
+                            defaultSlaDays: event.target.value ? Number(event.target.value) : null,
+                          },
+                        }))}
+                        type="number"
+                        value={draft.defaultSlaDays ?? ""}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Scope">
+                    <SelectField
+                      onChange={(value) => setWorkflowDrafts((current) => ({
+                        ...current,
+                        [step.id]: { ...draft, approvalScope: value as MarketingWorkflowApprovalScope },
+                      }))}
+                      value={draft.approvalScope}
+                    >
+                      <option value="direct_manager">Direct manager</option>
+                      <option value="role">Role</option>
+                      <option value="finance">Finance</option>
+                      <option value="final">Final</option>
+                    </SelectField>
+                  </Field>
+                  <Field label="Assigned Role">
+                    <Input
+                      className="h-10 border-slate-200 bg-white font-bold"
+                      onChange={(event) => setWorkflowDrafts((current) => ({
+                        ...current,
+                        [step.id]: { ...draft, assignedRole: event.target.value },
+                      }))}
+                      value={draft.assignedRole}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Required
+                      <Toggle
+                        checked={draft.required}
+                        onChange={(checked) => setWorkflowDrafts((current) => ({
+                          ...current,
+                          [step.id]: { ...draft, required: checked },
+                        }))}
+                      />
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Active
+                      <Toggle
+                        checked={draft.active}
+                        onChange={(checked) => setWorkflowDrafts((current) => ({
+                          ...current,
+                          [step.id]: { ...draft, active: checked },
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  <Button
+                    className="w-full gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                    disabled={saving}
+                    onClick={() => void patchControl({
+                      entity: "workflow_step",
+                      id: step.id,
+                      patch: {
+                        active: draft.active,
+                        approvalScope: draft.approvalScope,
+                        assignedRole: draft.assignedRole,
+                        defaultSlaDays: draft.defaultSlaDays,
+                        required: draft.required,
+                        sequence: draft.sequence,
+                        stepName: draft.stepName,
+                      },
+                    }, "Workflow step saved.")}
+                  >
+                    <Save className="h-4 w-4" />
+                    Save
+                  </Button>
+                </div>
+              </PortalRecordCard>
+            );
+          })}
+        </div>
+        <PortalDesktopTable minWidth="1120px">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Seq</th>
@@ -501,8 +713,7 @@ export function MarketingControlWorkspace() {
                 );
               })}
             </tbody>
-          </table>
-        </div>
+        </PortalDesktopTable>
       </Card>
 
       <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">

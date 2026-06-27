@@ -19,8 +19,11 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (canonicalHrIdKey(access.hrId) === "a-3") {
     redirect("/employee-portals");
   }
-  const isPmGpm = access.role === "Product Manager" || access.role === "Group Product Manager";
-  if (resolveNavigationMode(access) !== "employee-portal" && !isPmGpm) {
+  const isProductMarketingRole =
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager" ||
+    access.role === "Marketing Manager";
+  if (resolveNavigationMode(access) !== "employee-portal" && !isProductMarketingRole) {
     redirect("/payroll");
   }
   if (isMedicalRep(access.role)) {

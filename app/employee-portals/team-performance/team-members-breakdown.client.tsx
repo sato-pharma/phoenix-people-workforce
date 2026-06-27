@@ -434,7 +434,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
   return (
     <div className="min-w-0">
       {/* Mobile card view */}
-      <div className="grid gap-2.5 sm:hidden">
+      <div className="grid gap-2.5 md:hidden">
         {members.map((member) => {
           const gap = Math.max(0, member.totalTarget - member.totalSales);
           const color = achievementColor(member.achievementPercent, member.position === 1);
@@ -503,7 +503,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
       </div>
 
       {/* Desktop table view */}
-      <div className="hidden overflow-x-auto sm:block">
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-0 text-sm">
           <thead>
             <tr className="border-b border-slate-100">

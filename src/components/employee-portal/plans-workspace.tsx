@@ -110,8 +110,8 @@ const statusLabels: Record<EmployeePlanStatus, string> = {
 // Premium field controls (square corners, slate-300 border, orange focus ring) -
 // matched to the Report It module's design language.
 const cin = "h-8 w-full border border-slate-300 bg-white px-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
-const tableSelectClass = "h-10 w-full min-w-0 cursor-pointer border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
-const tableInputClass = "h-10 w-full min-w-0 border border-orange-200 bg-orange-50/50 px-3 text-sm font-semibold text-slate-800 placeholder:text-orange-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-60";
+const tableSelectClass = "h-10 w-full min-w-0 cursor-pointer rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800 shadow-inner transition-colors duration-150 hover:bg-white focus:border-orange-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+const tableInputClass = "h-10 w-full min-w-0 rounded-sm border border-orange-200 bg-orange-50/50 px-3 text-sm font-semibold text-slate-800 placeholder:text-orange-400 shadow-inner transition-colors duration-150 focus:border-orange-500 focus:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-60";
 // Taller field controls for the touch-friendly mobile bottom-sheet editor.
 const mobileField = "h-11 w-full border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
 
@@ -1112,7 +1112,7 @@ export function PlansWorkspace({
         </div>
 
         {/* Info chips */}
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div className="grid grid-cols-2 gap-2">
           <InfoChip
             label="HR ID"
             value={workspace.currentEmployee?.hrId ?? access.hrId ?? "Unknown"}
@@ -1273,7 +1273,7 @@ export function PlansWorkspace({
         : null}
 
       {/* ===================== DESKTOP / TABLET (>= md) ===================== */}
-      <div className="hidden min-w-0 space-y-5 md:block">
+      <div className="hidden min-w-0 space-y-4 md:block">
         {schemaBanner}
         {cappedResultsBanner}
 
@@ -1305,8 +1305,8 @@ export function PlansWorkspace({
         </div>
 
         {/* Kind toggle + date picker */}
-        <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.07)]">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 px-4 py-3">
+        <div className="overflow-hidden rounded-sm border border-slate-200/90 bg-white/95 shadow-[0_24px_62px_rgba(15,23,42,0.10)] ring-1 ring-white/80">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
               <h2 className="mt-1 text-xl font-black text-slate-950">
@@ -1323,18 +1323,18 @@ export function PlansWorkspace({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-orange-700">
+                <span className="rounded-sm border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-orange-700">
                 {dayGroups.length} selected day{dayGroups.length === 1 ? "" : "s"}
               </span>
               {activeKind === "monthly" ? (
-                <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
+                  <span className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
                   {workingDayCount} working days default
                 </span>
               ) : null}
             </div>
           </div>
-          <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="inline-flex w-full border border-slate-200 bg-slate-50 p-1 sm:w-auto">
+          <div className="flex flex-col gap-3 bg-white px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="inline-flex w-full rounded-sm border border-slate-200 bg-slate-50 p-1 sm:w-auto">
               {(["weekly", "monthly"] as const).map((kind) => (
                 <button
                   className={`min-h-10 flex-1 px-4 text-sm font-black transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
@@ -1359,12 +1359,12 @@ export function PlansWorkspace({
                 idPrefix="desktop"
                 onAnchorChange={onAnchorChange}
               />
-              <span className="border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700">
+              <span className="inline-flex h-10 items-center rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm">
                 {period.periodKey}
               </span>
               {periodLocked && workspace.canSubmitPlans ? (
                 <button
-                  className="inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                   onClick={() => startNewPlan(activeKind)}
                   type="button"
                 >
@@ -1374,7 +1374,7 @@ export function PlansWorkspace({
               ) : null}
               <Link
                 aria-label="Open calendar"
-                className="inline-flex h-10 items-center gap-1.5 border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100"
+                className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100"
                 href={calendarHref}
               >
                 <CalendarDays className="h-4 w-4" />
@@ -1404,8 +1404,8 @@ export function PlansWorkspace({
 
         {/* Full-width plan table */}
         <div className="min-w-0 space-y-5">
-          <section className="min-w-0 overflow-hidden border border-slate-200 bg-white shadow-[0_24px_58px_rgba(15,23,42,0.08)]">
-            <div className="bg-slate-950 px-4 py-4 text-white sm:px-5">
+          <section className="min-w-0 overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_28px_72px_rgba(15,23,42,0.13)] ring-1 ring-white/80">
+            <div className="employee-portal-command-grid border-b border-slate-800 bg-[#08111f] px-4 py-4 text-white sm:px-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0">
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
@@ -1418,7 +1418,7 @@ export function PlansWorkspace({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    className="inline-flex h-9 items-center gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
                     onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
                     type="button"
                   >
@@ -1426,7 +1426,7 @@ export function PlansWorkspace({
                     Export XLSX
                   </button>
                   <button
-                    className="inline-flex h-9 items-center gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
                     onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
                     type="button"
                   >
@@ -1436,7 +1436,7 @@ export function PlansWorkspace({
                   {plan ? (
                     <>
                       <button
-                        className="inline-flex h-9 items-center gap-1.5 border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
                         onClick={() =>
                           window.location.assign(
                             `/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`,
@@ -1448,7 +1448,7 @@ export function PlansWorkspace({
                         Selected XLSX
                       </button>
                       <button
-                        className="inline-flex h-9 items-center gap-1.5 border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
                         onClick={() =>
                           window.location.assign(
                             `/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`,
@@ -1465,10 +1465,10 @@ export function PlansWorkspace({
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/90 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap gap-2">
                 <button
-                  className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!canEdit || selectedDateSet.size >= periodDays.length}
                   onClick={addRow}
                   type="button"
@@ -1477,7 +1477,7 @@ export function PlansWorkspace({
                   Add day
                 </button>
                 <button
-                  className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!canEdit}
                   onClick={() => resetRows(activeKind, anchorDate)}
                   type="button"
@@ -1487,14 +1487,14 @@ export function PlansWorkspace({
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                <span className="border border-slate-200 bg-white px-2.5 py-1.5">Rows: {rows.length}</span>
-                <span className="border border-slate-200 bg-white px-2.5 py-1.5">Period days: {periodDays.length}</span>
+                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5">Rows: {rows.length}</span>
+                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5">Period days: {periodDays.length}</span>
               </div>
             </div>
 
-            <div className="bg-white">
-              <table className="w-full table-fixed border-collapse">
-                <thead className="bg-slate-50">
+            <div className="overflow-x-auto bg-white">
+              <table className="w-full min-w-[1040px] table-fixed border-collapse" data-portal-desktop-table>
+                <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                     <th className="w-[18%] px-4 py-3">Date</th>
                     <th className="w-[15%] px-3 py-3">Activity</th>
@@ -1890,9 +1890,9 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5">
-      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
-      <span className="ml-1.5 text-xs font-black text-slate-700">{value}</span>
+    <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+      <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+      <span className="mt-0.5 block truncate text-xs font-black text-slate-700">{value}</span>
     </div>
   );
 }
@@ -2245,7 +2245,7 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
 
 function DisabledFieldText({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-10 min-w-0 items-center border border-slate-200 bg-slate-50 px-3">
+    <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3">
       <span className="truncate text-xs font-semibold text-slate-400">{children}</span>
     </div>
   );
@@ -2264,10 +2264,10 @@ function ContextTile({
 }) {
   const accentCls =
     accent === "orange"
-      ? "border-l-orange-500 bg-orange-50/40"
-      : "border-l-slate-400 bg-slate-50/40";
+      ? "border-l-orange-500 bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)]"
+      : "border-l-slate-500 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)]";
   return (
-    <div className={`border border-slate-200 border-l-4 bg-white p-4 ${accentCls}`}>
+    <div className={`rounded-sm border border-slate-200 border-l-4 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] ${accentCls}`}>
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-2 text-base font-black text-slate-900">{value}</p>
       {sub ? <p className="mt-0.5 text-sm text-slate-600">{sub}</p> : null}
@@ -2291,7 +2291,7 @@ function Kpi({
     slate: "border-slate-200 bg-white text-slate-900",
   }[tone];
   return (
-    <div className={`border p-3 ${toneClass}`}>
+    <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] ${toneClass}`}>
       <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
       <p className="mt-1 text-2xl font-black">{value}</p>
     </div>

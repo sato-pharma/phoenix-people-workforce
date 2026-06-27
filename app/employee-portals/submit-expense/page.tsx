@@ -47,8 +47,11 @@ export default async function EmployeePortalSubmitExpensePage() {
   const access = await resolveAccessContextFromPage();
 
   const navigationMode = resolveNavigationMode(access);
-  const isPmGpm = access.role === "Product Manager" || access.role === "Group Product Manager";
-  if (navigationMode !== "employee-portal" && !isPmGpm) {
+  const isProductMarketingRole =
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager" ||
+    access.role === "Marketing Manager";
+  if (navigationMode !== "employee-portal" && !isProductMarketingRole) {
     redirect("/overview");
   }
   if (access.role === "Medical Rep") {

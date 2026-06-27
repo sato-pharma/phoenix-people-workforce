@@ -147,7 +147,8 @@ function canReadProbationEmployee(
   if (
     access.role === "National Sales Manager" ||
     access.role === "Product Manager" ||
-    access.role === "Group Product Manager"
+    access.role === "Group Product Manager" ||
+    access.role === "Marketing Manager"
   ) {
     return isSameLine(employee, viewer);
   }

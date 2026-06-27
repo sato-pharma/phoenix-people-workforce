@@ -79,7 +79,8 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
   return (
     access.role === "National Sales Manager" ||
     access.role === "Product Manager" ||
-    access.role === "Group Product Manager"
+    access.role === "Group Product Manager" ||
+    access.role === "Marketing Manager"
   );
 }
 
