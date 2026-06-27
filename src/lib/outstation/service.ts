@@ -1,6 +1,6 @@
 import {
+  isMedicalRep,
   normalizeHrIdForAccess,
-  normalizeRole,
   resolveEmployeeIdentityId,
   systemAccessContext,
   type AccessContext,
@@ -490,7 +490,7 @@ function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): Employee
 }
 
 function assertMedicalRepRole(role: string | null | undefined) {
-  if (normalizeRole(role) !== "Medical Rep") {
+  if (!isMedicalRep(role)) {
     throw new Error("Forbidden: only Medical Rep users can use simple expense submission.");
   }
 }

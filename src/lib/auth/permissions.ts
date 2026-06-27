@@ -754,6 +754,10 @@ export function isNationalSalesManager(value: string | null | undefined): boolea
   return normalizeRole(value) === "National Sales Manager";
 }
 
+export function isMedicalRep(value: string | null | undefined): boolean {
+  return normalizeRole(value) === "Medical Rep";
+}
+
 export function getRolePrivilegeRank(role: PhoenixRole) {
   switch (role) {
     case "Super Admin":

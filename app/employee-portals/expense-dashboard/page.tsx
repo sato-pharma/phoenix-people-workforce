@@ -4,6 +4,7 @@ import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/p
 import {
   assertPermission,
   resolveNavigationMode,
+  isMedicalRep,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -22,7 +23,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (resolveNavigationMode(access) !== "employee-portal" && !isPmGpm) {
     redirect("/payroll");
   }
-  if (access.role === "Medical Rep") {
+  if (isMedicalRep(access.role)) {
     redirect("/employee-portals/expenses");
   }
   await assertPermission(access, "expenses", "read");
