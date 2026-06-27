@@ -48,7 +48,11 @@ export function notificationHrefForViewerRole(input: {
   // clicking those links get redirected to the portal home instead of the plan page.
   // Rewrite the URL here at read time so existing notifications work correctly.
   if (role && PORTAL_PLAN_ROLES.has(role) && fallback.startsWith("/admin/weekly-plans")) {
-    return fallback.replace("/admin/weekly-plans", "/employee-portals/plans");
+    const planMatch = /[?&]plan=([^&]+)/.exec(fallback);
+    const planId = planMatch ? planMatch[1] : null;
+    return planId
+      ? `/employee-portals/actions?id=${planId}&module=weekly_plan`
+      : "/employee-portals/actions?module=weekly_plan";
   }
 
   return fallback;
