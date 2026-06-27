@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   canAccess,
+  canManageCoachingReports,
   createAccessContext,
   getExpensesScope,
   getPayrollScope,
@@ -45,6 +46,9 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(await canAccess(mm, "report_it", "create"), true);
   assert.equal(await canAccess(mm, "support_requests", "create"), true, "MM can raise support requests");
   assert.equal(await canAccess(mm, "coaching", "create"), false, "MM reads coaching analytics but does not create coaching reports");
+  // Guard the matrix-bypass fix: the canManageCoachingReports helper must agree with the matrix
+  // (read-only), so a coaching write path gated on the helper cannot over-grant MM.
+  assert.equal(canManageCoachingReports(mm), false, "MM must not have coaching-report management authority (helper aligns with matrix)");
 
   // ── Matrix honesty: denied (boundary-stripped or never granted) ─────────────────────────────
   // These were previously DECLARED in the matrix but silently stripped by the hard boundary; the

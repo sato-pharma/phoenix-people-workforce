@@ -3,11 +3,14 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  BarChart3,
+  Building2,
   Minus,
   ShieldAlert,
   Stethoscope,
   Target,
   TrendingUp,
+  Users,
 } from "lucide-react";
 
 import { egp } from "@/components/employee-portal/portal-command-center";
@@ -15,7 +18,9 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
 import { getSalesMarketingDashboard } from "@/lib/sales-marketing-intelligence/service";
+import { loadPortalClosingTrend, loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
 
 /* ── Shared shells (premium skin: slate-900 header + orange rule, square corners) ── */
 
@@ -191,6 +196,105 @@ export async function MmFieldHealthSection({ access }: { access: AccessContext }
           value={mappedVisits == null ? "—" : String(mappedVisits)}
           sub={<span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><Target className="h-3 w-3" /> this month</span>}
         />
+      </StatGrid>
+    </Shell>
+  );
+}
+
+/* ── Line Sales Pacing (published monthly closing, confidential-stripped at source) ── */
+
+export async function MmPacingSection({ access }: { access: AccessContext }) {
+  let monthly: Awaited<ReturnType<typeof loadPortalMonthlyClosing>>;
+  let trend: Awaited<ReturnType<typeof loadPortalClosingTrend>>;
+  try {
+    [monthly, trend] = await Promise.all([
+      loadPortalMonthlyClosing({ access }),
+      loadPortalClosingTrend({ access, maxMonths: 4 }),
+    ]);
+  } catch {
+    return (
+      <Shell title="Line Sales Pacing" icon={BarChart3}>
+        <Note tone="warn">Couldn&apos;t load sales pacing right now — refresh to try again.</Note>
+      </Shell>
+    );
+  }
+
+  if (!monthly.line) {
+    return (
+      <Shell title="Line Sales Pacing" icon={BarChart3}>
+        <Note>No line mapped to your profile — contact an administrator.</Note>
+      </Shell>
+    );
+  }
+  if (monthly.awaitingPublish || trend.length === 0) {
+    return (
+      <Shell title="Line Sales Pacing" icon={BarChart3}>
+        <Note>Closing not published yet for {monthly.line}.</Note>
+      </Shell>
+    );
+  }
+
+  const latest = trend[trend.length - 1];
+  const prev = trend.length >= 2 ? trend[trend.length - 2] : null;
+  const momPct = prev && prev.salesValue > 0 ? Math.round(((latest.salesValue - prev.salesValue) / prev.salesValue) * 100) : null;
+  const maxVal = Math.max(...trend.map((t) => t.salesValue), 1);
+
+  return (
+    <Shell title="Line Sales Pacing" icon={BarChart3}>
+      <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
+        <Stat
+          label="Latest month sales"
+          value={egp(latest.salesValue)}
+          sub={momPct == null ? <span className="text-[11px] text-slate-400 whitespace-nowrap">no prior month</span> : <DeltaPts value={momPct} goodWhenUp />}
+        />
+        <Stat label="Published months" value={String(trend.length)} sub={<span className="text-[11px] text-slate-400 whitespace-nowrap">{monthly.line}</span>} />
+        <div className="bg-white px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">Trend</p>
+          <div className="mt-2 flex items-end gap-1.5" style={{ height: 40 }}>
+            {trend.map((t, i) => (
+              <div
+                key={t.period}
+                title={`${t.period}: ${egp(t.salesValue)}`}
+                className={i === trend.length - 1 ? "flex-1 bg-orange-500" : "flex-1 bg-slate-300"}
+                style={{ height: `${Math.max(6, Math.round((t.salesValue / maxVal) * 100))}%` }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── My Line People (line-scoped vacancies — a signal MM is genuinely authorized to see) ── */
+
+export async function MmPeopleSection({ access }: { access: AccessContext }) {
+  const vacancies = await getEmployeePortalVacancies(access).catch(() => null);
+
+  if (!vacancies) {
+    return (
+      <Shell title="My Line People" icon={Users}>
+        <Note>No vacancy data for your scope.</Note>
+      </Shell>
+    );
+  }
+
+  const { summary } = vacancies;
+  return (
+    <Shell title="My Line People" icon={Users}>
+      <StatGrid>
+        <Stat
+          label="Open vacancies"
+          value={String(summary.openVacancies)}
+          tone={summary.openVacancies > 0 ? "danger" : "default"}
+          sub={<span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><Building2 className="h-3 w-3" /> {summary.totalAreas} areas</span>}
+        />
+        <Stat
+          label="DSM seats vacant"
+          value={String(summary.districtManagerVacancies)}
+          tone={summary.districtManagerVacancies > 0 ? "danger" : "default"}
+        />
+        <Stat label="Total vacancies" value={String(summary.totalVacancies)} />
       </StatGrid>
     </Shell>
   );
