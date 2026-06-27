@@ -11,6 +11,7 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { daysBetweenDateOnly } from "@/lib/date-only";
@@ -1345,8 +1346,8 @@ async function fetchPortalSalesSeatContinuityRecords({
 
   const directory = await getEmployeeDirectory();
   const seats = (
-    await Promise.all(
-      currentHrIds.map(async (currentHrId) => {
+    await devSafePromiseAll(
+      currentHrIds.map((currentHrId) => async () => {
         const employee = findDirectoryEmployeeByHrId(directory, currentHrId);
         if (!employee?.lineName && !employee?.areaName) return null;
         const previousHrIds = await fetchPreviousSeatHrIdsForReplacement(supabase, currentHrId);
@@ -1977,13 +1978,17 @@ export async function getEmployeePortalData(
     targetSalesHrIds.push(...teamHrIds);
   }
 
-  const [payroll, sales, expenses, expenseReports, documents, notifications] = await Promise.all([
-    prefetched?.payroll != null ? Promise.resolve(prefetched.payroll) : getEmployeePortalPayrollDashboard(currentHrId),
-    prefetched?.sales != null ? Promise.resolve(prefetched.sales) : getScopedEmployeePortalSalesDashboard({ line: salesLineFilter, salesScope, targetSalesHrIds }),
-    prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
-    prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
-    listEmployeeDocuments(currentHrId),
-    fetchPortalNotifications(currentHrId),
+  const [payroll, sales, expenses, expenseReports, documents, notifications] = await devSafePromiseAll([
+    () => prefetched?.payroll != null ? Promise.resolve(prefetched.payroll) : getEmployeePortalPayrollDashboard(currentHrId),
+    () => prefetched?.sales != null ? Promise.resolve(prefetched.sales) : getScopedEmployeePortalSalesDashboard({
+      line: salesLineFilter,
+      salesScope,
+      targetSalesHrIds,
+    }),
+    () => prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+    () => prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
+    () => listEmployeeDocuments(currentHrId),
+    () => fetchPortalNotifications(currentHrId),
   ]);
 
   const latestExpense = expenses[0] ?? null;
@@ -2371,10 +2376,10 @@ async function buildEmployeePortalOverviewData(input: {
 }): Promise<MedicalRepPortalData["overview"]> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [vacationReport, marketingWorkspace, vacancyDetails] = await Promise.all([
-    getVacationReportData(input.access).catch(() => null),
-    getMarketingRequestDraftWorkspace(input.access).catch(() => null),
-    getEmployeePortalVacancies(input.access).catch(() => null),
+  const [vacationReport, marketingWorkspace, vacancyDetails] = await devSafePromiseAll([
+    () => getVacationReportData(input.access).catch(() => null),
+    () => getMarketingRequestDraftWorkspace(input.access).catch(() => null),
+    () => getEmployeePortalVacancies(input.access).catch(() => null),
   ]);
 
   const vacationRows = vacationReport?.rows ?? [];
@@ -3488,19 +3493,19 @@ export async function getMedicalRepPortalData(
     }
 
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
-    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await Promise.all([
-      getScopedEmployeePortalSalesDashboard({
+    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await devSafePromiseAll([
+      () => getScopedEmployeePortalSalesDashboard({
         line: salesLineFilter,
         salesScope,
         targetSalesHrIds,
       }),
-      currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
-      listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+      () => currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
+      () => listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
       // Live outstation (system-entered) expenses must follow the SAME access scope as
       // the historical rows above — otherwise managers only see their own trips and the
       // team's system-entered expenses vanish (they used to be masked by Excel uploads).
-      includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }) : Promise.resolve([]),
-      listPayrollExpenseReports({ ...access, hrId: currentHrId }),
+      () => includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }) : Promise.resolve([]),
+      () => listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
     const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
     const expenses = [
@@ -5231,4 +5236,3 @@ export async function getNsmTeamExpenses(
     return null;
   }
 }
-
