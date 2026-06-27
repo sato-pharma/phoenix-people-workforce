@@ -153,7 +153,7 @@ export function PendingActions({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {plansAwaitingApproval > 0 && (
           <Link
-            href="/employee-portals/plans"
+            href="/employee-portals/actions?module=weekly_plan"
             className="flex items-center justify-between border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
           >
             <span className="flex items-center gap-2">
