@@ -1055,7 +1055,7 @@ function resolveProduct(
       factoryPrice: 0,
       warning: {
         field: "productCode",
-        message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. Add the alias, then re-upload.`,
+        message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. This row was skipped as a non-Phoenix product. If it is one of our products, add the alias and re-upload.`,
       },
       failure: null,
     };
@@ -1365,6 +1365,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   // ── resolve + aggregate over the UNION of (product, branch) keys across all sides ─────────────
   const aggregates = new Map<AggKey, Agg>();
+  const skippedProductIssues: WeeklyValidationIssue[] = [];
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
@@ -1372,6 +1373,21 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
     // Excluded branch → drop the cell from totals entirely (not a failure, no fact row).
     if (region.excluded) continue;
+
+    // Unknown product + mapped branch: warn and skip. Unknown product + unmapped branch must still
+    // flow into the aggregate below so the branch/geography failure blocks the upload.
+    if (product.warning && !region.failure) {
+      if (!skippedProductIssues.some((i) => i.rowNumber === obs.sourceRowNumber && i.field === product.warning!.field && i.message === product.warning!.message)) {
+        skippedProductIssues.push({
+          field: product.warning.field,
+          message: product.warning.message,
+          rowNumber: obs.sourceRowNumber,
+          severity: "warning",
+          value: obs.rawItemCode || obs.rawItemName || null,
+        });
+      }
+      continue;
+    }
 
     const key = aggKeyOf(product.productCode, obs);
     let agg = aggregates.get(key);
@@ -1549,6 +1565,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
     sheetName: adapted.sheetName,
     weekStart,
     blockingReasons,
+    skippedIssues: skippedProductIssues,
   });
   return { ok: true, rows, result };
 }
@@ -1582,16 +1599,21 @@ export function summarizeWeekly(input: {
   sheetName: string;
   weekStart: string | null;
   blockingReasons: string[];
+  skippedIssues?: WeeklyValidationIssue[];
 }): WeeklySalesValidationResult {
   const { rows } = input;
   const totals = emptyTotals();
   const regions = new Map<string, { regionName: string; totals: WeeklyTotals }>();
   const products = new Map<string, { productName: string; officialLine: string; totals: WeeklyTotals }>();
   const branches = new Map<string, { branchName: string; regionCode: string; regionName: string; totals: WeeklyTotals }>();
-  const issues: WeeklyValidationIssue[] = [];
+  const issues: WeeklyValidationIssue[] = [...(input.skippedIssues ?? [])];
   let importableRows = 0;
   let failedRows = 0;
-  let warningRows = 0;
+  let warningRows = new Set(
+    (input.skippedIssues ?? [])
+      .filter((issue) => issue.severity === "warning")
+      .map((issue) => issue.rowNumber),
+  ).size;
 
   for (const row of rows) {
     addTotals(totals, row);

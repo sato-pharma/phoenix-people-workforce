@@ -172,6 +172,49 @@ function exceptionToIssue(exc: NormalizeException): DistributorSalesValidationIs
   };
 }
 
+export function productExceptionToWarningIssue(exc: NormalizeException): DistributorSalesValidationIssue {
+  const rawItem = exc.rawProductName || exc.rawProduct || "";
+  return {
+    field: "Product",
+    message: `"${rawItem || "(blank)"}" is not mapped to a Phoenix product, so this row was skipped and not imported. If it is one of our products, add the product mapping and re-upload.`,
+    rowNumber: exc.rawRowNumber,
+    severity: "warning",
+    value: rawItem || null,
+  };
+}
+
+export function skippedProductRowsAdvisory(productExceptions: NormalizeException[]): string | null {
+  if (productExceptions.length === 0) return null;
+  const examples = [...new Set(productExceptions.map((exc) => exc.rawProductName || exc.rawProduct).filter(Boolean))]
+    .slice(0, 5);
+  const exampleText = examples.length > 0 ? ` Examples: ${examples.join(", ")}.` : "";
+  return (
+    `${productExceptions.length} row${productExceptions.length === 1 ? "" : "s"} were skipped because their products are not mapped to Phoenix products. ` +
+    `They were treated as non-Phoenix products and did not block the upload.${exampleText}`
+  );
+}
+
+type ValidationResultWithNullableBatch = Omit<DistributorSalesValidationResult, "batchId" | "createdAt"> & {
+  batchId?: string | null;
+  createdAt?: string | null;
+};
+
+export function attachSkippedProductWarnings<T extends ValidationResultWithNullableBatch>(
+  result: T,
+  productExceptions: NormalizeException[],
+): T {
+  if (productExceptions.length === 0) return result;
+  const warnings = productExceptions.map(productExceptionToWarningIssue);
+  const advisory = skippedProductRowsAdvisory(productExceptions);
+  const warningRows = new Set(warnings.map((issue) => issue.rowNumber)).size;
+  return {
+    ...result,
+    advisories: advisory ? [...(result.advisories ?? []), advisory] : result.advisories,
+    issues: [...result.issues, ...warnings],
+    warningRows: result.warningRows + warningRows,
+  };
+}
+
 // Single upload entry point for the "Upload Sales" screen. It accepts, for EVERY distributor,
 // both a coded/hybrid sheet (the distributor's own template, or a raw export with hand-added
 // coded columns) AND a plain raw export — so EGD/Ramco/Sofico/MEC/Chimipharm no longer get
@@ -233,22 +276,30 @@ export async function importSourceOfSalesFile(input: {
 
     const { result: normalizeResult, distributorName, period } = coded;
     const exceptions = normalizeResult.exceptions;
+    const productExceptions = exceptions.filter((exc) => exc.reason === "product");
+    const blockingExceptions = exceptions.filter((exc) => exc.reason !== "product");
+    const productAdvisory = skippedProductRowsAdvisory(productExceptions);
 
-    // Block the entire import if any rows could not be mapped. Never silently drop rows.
-    if (exceptions.length > 0) {
-      const issues = exceptions.map(exceptionToIssue);
+    // Product-only misses are usually non-Phoenix items in distributor exports: skip them with a
+    // warning. Missing brick/customer/territory geography still blocks because allocation would be unsafe.
+    if (blockingExceptions.length > 0) {
+      const issues = [
+        ...blockingExceptions.map(exceptionToIssue),
+        ...productExceptions.map(productExceptionToWarningIssue),
+      ];
       const totalQty = normalizeResult.coded.reduce((sum, r) => sum + r.qty, 0);
       const totalBonusQty = normalizeResult.coded.reduce((sum, r) => sum + r.bonusQty, 0);
       const totalValue = normalizeResult.coded.reduce((sum, r) => sum + r.value, 0);
       const rowCount = normalizeResult.summary.totalRows - normalizeResult.summary.ignored;
+      const blockingReasons = [
+        `${blockingExceptions.length} row${blockingExceptions.length === 1 ? "" : "s"} could not be imported because customer, territory, or branch mapping is missing.`,
+        `Go to the Mapping tab -> click "Analyze raw sheet" -> fix the geography unknowns -> Save -> re-upload this file.`,
+      ];
 
       const blockedResult = {
-        advisories: [] as string[],
+        advisories: productAdvisory ? [productAdvisory] : [] as string[],
         batchId: null as string | null,
-        blockingReasons: [
-          `${exceptions.length} row${exceptions.length === 1 ? "" : "s"} could not be imported — their product or territory is not yet mapped.`,
-          `Go to the Mapping tab → click "Analyze raw sheet" → fix the unknowns → Save → re-upload this file.`,
-        ],
+        blockingReasons,
         byArea: [] as DistributorSalesAreaSummary[],
         byBrick: [] as DistributorSalesBrickSummary[],
         byLine: [] as DistributorSalesLineSummary[],
@@ -256,7 +307,7 @@ export async function importSourceOfSalesFile(input: {
         byRegion: [] as DistributorSalesRegionSummary[],
         createdAt: null as string | null,
         distributor: { code: input.distributorCode, name: distributorName },
-        failedRows: exceptions.length,
+        failedRows: blockingExceptions.length,
         fileName: input.file.name,
         importableRows: normalizeResult.summary.fullyCoded,
         issues,
@@ -267,13 +318,13 @@ export async function importSourceOfSalesFile(input: {
         templateKey: "normalizer",
         templateName: "Raw distributor sheet",
         totals: { rowCount, totalQty, totalBonusQty, totalValue },
-        warningRows: 0,
+        warningRows: new Set(productExceptions.map((exc) => exc.rawRowNumber)).size,
       };
 
       if (!input.dryRun) return blockedResult;
       const rows: ImportPreviewRow[] = normalizeResult.coded.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
       const previewDiff = await buildPreviewDiff(input.distributorCode, rows, blockedResult);
-      const unmappedCustomers = unmappedFromExceptions(exceptions);
+      const unmappedCustomers = unmappedFromExceptions(blockingExceptions);
       const suggestions = await buildSuggestions(input.distributorCode, unmappedCustomers);
       return { ...blockedResult, previewDiff, suggestions, unmappedCustomers: unmappedCustomers.slice(0, MAX_UNMAPPED_DETAILS) };
     }
@@ -292,10 +343,13 @@ export async function importSourceOfSalesFile(input: {
       const { parsedRows, ...result } = parsed as DistributorSalesValidationResult & {
         parsedRows: ParsedDistributorRow[];
       };
+      const resultWithProductWarnings = attachSkippedProductWarnings(result, productExceptions);
       const rows: ImportPreviewRow[] = parsedRows.map((r) => ({ brickId: r.brickId, clientCode: r.clientCode, value: r.value }));
-      const previewDiff = await buildPreviewDiff(input.distributorCode, rows, result);
+      const previewDiff = await buildPreviewDiff(input.distributorCode, rows, resultWithProductWarnings);
       const advisory = ignoredRowsAdvisory(normalizeResult);
-      return advisory ? { ...result, advisories: [...(result.advisories ?? []), advisory], previewDiff } : { ...result, previewDiff };
+      return advisory
+        ? { ...resultWithProductWarnings, advisories: [...(resultWithProductWarnings.advisories ?? []), advisory], previewDiff }
+        : { ...resultWithProductWarnings, previewDiff };
     }
 
     const persistResult = await createSourceOfSalesUploadFromBuffer({
@@ -309,8 +363,9 @@ export async function importSourceOfSalesFile(input: {
 
     // Surface ignored rows as an advisory so the user knows exactly how many units were excluded
     // and why — without blocking the import (the "ignore" mapping is intentional).
+    const persistResultWithProductWarnings = attachSkippedProductWarnings(persistResult, productExceptions);
     const advisory = ignoredRowsAdvisory(normalizeResult);
-    if (!advisory) return persistResult;
-    return { ...persistResult, advisories: [...(persistResult.advisories ?? []), advisory] };
+    if (!advisory) return persistResultWithProductWarnings;
+    return { ...persistResultWithProductWarnings, advisories: [...(persistResultWithProductWarnings.advisories ?? []), advisory] };
   }
 }
