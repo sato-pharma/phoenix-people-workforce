@@ -19,7 +19,14 @@ export function runProbationStabilizationTests() {
 
   assert.match(serviceSource, /getProbationRows\(access: AccessContext\)/);
   assert.match(serviceSource, /canReadProbationEmployee\(access, employee, viewer, employees\)/);
+  assert.match(serviceSource, /export function canReadAllProbation/);
+  assert.match(serviceSource, /canViewAllProbation\(access\) \|\| access\.role === "CEO"/);
+  assert.match(serviceSource, /if \(canReadAllProbation\(access\)\) return true/);
   assert.match(adminPageSource, /isProbationAdministrator\(access\)/);
+  assert.match(adminPageSource, /canReadAllProbation\(access\)/);
+  assert.match(adminPageSource, /canCreate: canAdminister/);
+  assert.match(adminPageSource, /canManageWorkflow: canAdminister/);
+  assert.match(adminPageSource, /canExport: canViewAllProbation\(access\)/);
   assert.match(portalPageSource, /getProbationRows\(access\)/);
   assert.doesNotMatch(portalPageSource, /isDsm|isNsm/);
   assert.match(portalPageSource, /canSubmitManagerFeedback/);

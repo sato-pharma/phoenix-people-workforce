@@ -119,6 +119,10 @@ export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope"
   );
 }
 
+export function canReadAllProbation(access: Pick<AccessContext, "role" | "scope">) {
+  return canViewAllProbation(access) || access.role === "CEO";
+}
+
 export function assertCanExportProbation(access: AccessContext) {
   if (!canViewAllProbation(access)) {
     throw new Error(`Forbidden: ${access.role} cannot export probation.`);
@@ -138,7 +142,7 @@ function canReadProbationEmployee(
   viewer: EmployeeScopeRow | null,
   directory: EmployeeScopeRow[] = [],
 ) {
-  if (canViewAllProbation(access)) return true;
+  if (canReadAllProbation(access)) return true;
   if (
     access.role === "National Sales Manager" ||
     access.role === "Product Manager" ||

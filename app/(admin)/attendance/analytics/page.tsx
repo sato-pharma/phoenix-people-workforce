@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AttendanceAnalyticsPage() {
   const access = await resolveAccessContextFromPage();
-  if (!await canAccess(access, "employees", "read")) {
+  if (!await canAccess(access, "attendance", "read")) {
     redirect("/employee-portals");
   }
 

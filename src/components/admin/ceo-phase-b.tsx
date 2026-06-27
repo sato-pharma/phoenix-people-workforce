@@ -188,7 +188,7 @@ function RiskSignals({
   return (
     <div className="p-5 space-y-4">
       {/* Payroll KPIs */}
-      {payroll.net > 0 && (
+      {(payroll.net > 0 || payroll.gross > 0 || payroll.unresolvedSalaryFlags > 0) && (
         <div className="grid grid-cols-3 gap-2">
           <div className="border border-slate-200 px-3 py-2.5">
             <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Net payroll</p>
@@ -412,10 +412,14 @@ const NAV_ITEMS = [
   { href: "/admin/data-health",                      icon: ShieldCheck,  label: "Data Health",        sub: "System quality score" },
 ];
 
-function SmartNavGrid() {
+function SmartNavGrid({ access }: { access: AccessContext }) {
+  const items = access.role === "CEO"
+    ? NAV_ITEMS.filter((item) => item.href !== "/employees" && item.href !== "/admin/data-health")
+    : NAV_ITEMS;
+
   return (
     <div className="grid grid-cols-2 gap-2 p-5 sm:grid-cols-3 lg:grid-cols-4">
-      {NAV_ITEMS.map(({ href, icon: Icon, label, sub }) => (
+      {items.map(({ href, icon: Icon, label, sub }) => (
         <Link
           key={href}
           href={href}
@@ -628,7 +632,7 @@ export async function CeoPhaseBWidgets({
 
       {/* ── Smart Navigation Grid ─────────────────────────────────────────── */}
       <Section title="Quick Navigation" description="Every module, one click away.">
-        <SmartNavGrid />
+        <SmartNavGrid access={access} />
       </Section>
     </div>
   );

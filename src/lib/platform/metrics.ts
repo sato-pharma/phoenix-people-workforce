@@ -224,6 +224,16 @@ export function canReadCompanyWorkforceAggregates(context: Pick<AccessContext, "
   return context.scope === "system" || context.role === "Super Admin" || (context.role === "CEO" && context.scope === "company");
 }
 
+export function canReadCompanyAttendanceAggregates(context: Pick<AccessContext, "role" | "scope" | "source">) {
+  if (context.source === "guest" || context.scope === "none") return false;
+  return context.scope === "system" || context.role === "Super Admin" || (context.role === "CEO" && context.scope === "company");
+}
+
+export function canReadCompanyRecruitmentAggregates(context: Pick<AccessContext, "role" | "scope" | "source">) {
+  if (context.source === "guest" || context.scope === "none") return false;
+  return context.scope === "system" || context.role === "Super Admin" || (context.role === "CEO" && context.scope === "company");
+}
+
 export function buildCompanyWorkforceAggregateMetrics(directory: WorkforceMetricDirectory): PlatformMetrics["workforce"] {
   const employees = directory.employees.filter((employee) =>
     !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
@@ -316,14 +326,16 @@ async function getExpenseMetrics(accessContext: AccessContext): Promise<Platform
 }
 
 async function getRecruitmentMetrics(accessContext: AccessContext): Promise<PlatformMetrics["recruitment"]> {
-  if (!(await canAccess(accessContext, "offers", "read"))) {
+  const canReadOffers = await canAccess(accessContext, "offers", "read");
+  const canReadCompanyAggregates = canReadCompanyRecruitmentAggregates(accessContext);
+  if (!canReadOffers && !canReadCompanyAggregates) {
     return emptyPlatformMetrics().recruitment;
   }
 
   const canReadHiringDocuments = await canAccess(accessContext, "employee_documents", "read");
   const [offers, hiringDocuments] = await Promise.all([
     getOfferDashboard(),
-    canReadHiringDocuments
+    canReadHiringDocuments || canReadCompanyAggregates
       ? getHiringDocumentsDashboard().catch(() => null)
       : Promise.resolve(null),
   ]);
@@ -353,7 +365,12 @@ async function getRecruitmentMetrics(accessContext: AccessContext): Promise<Plat
 }
 
 async function getAttendanceMetrics(accessContext: AccessContext): Promise<PlatformMetrics["attendance"]> {
-  if (!(await canAccess(accessContext, "employees", "read"))) {
+  const [canReadAttendance, canReadEmployeeMaster] = await Promise.all([
+    canAccess(accessContext, "attendance", "read"),
+    canAccess(accessContext, "employees", "read"),
+  ]);
+  const canReadCompanyAggregates = canReadCompanyAttendanceAggregates(accessContext);
+  if (!canReadAttendance && !canReadEmployeeMaster && !canReadCompanyAggregates) {
     return emptyPlatformMetrics().attendance;
   }
 
