@@ -34,7 +34,7 @@ SELECT
   lower(trim(regexp_replace(
     regexp_replace(
       translate(
-        normalize(wdm.raw_value, 'NFC'),
+        normalize(wdm.raw_value, NFC),
         E'أإآٱى',   -- أإآٱى (alef-hamza forms + alef-maqsura)
         E'ااااي'    -- ا ا ا ا ي  (bare alef + ya)
       ),
@@ -57,7 +57,7 @@ WHERE wdm.dimension = 'product'
       AND wpa.normalized_alias = lower(trim(regexp_replace(
             regexp_replace(
               translate(
-                normalize(wdm.raw_value, 'NFC'),
+                normalize(wdm.raw_value, NFC),
                 E'أإآٱى',
                 E'ااااي'
               ),
