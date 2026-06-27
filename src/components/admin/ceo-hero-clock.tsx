@@ -9,12 +9,16 @@ import { useEffect, useState } from "react";
  * stable placeholder on the server to avoid hydration mismatch, then hydrates to live.
  */
 export function CeoHeroClock() {
-  // Lazy initializer: null on the server (avoids hydration mismatch), new Date() on the client.
-  const [now, setNow] = useState<Date | null>(() => (typeof window === "undefined" ? null : new Date()));
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
+    const tick = () => setNow(new Date());
+    const first = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
   }, []);
 
   const dateStr = now

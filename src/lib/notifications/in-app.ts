@@ -8,6 +8,7 @@ import {
   type NotificationEnrichmentRecord,
 } from "@/lib/communication/metrics";
 import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
+import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { fetchVacationNotificationEnrichments } from "@/lib/vacation/notification-enrichment";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
@@ -263,7 +264,11 @@ export async function listInAppNotificationsForViewer(
         id: String(row.id ?? ""),
         metadata: {
           ...metadata,
-          href: metadata.href ?? row.action_url ?? null,
+          href: notificationHrefForViewerRole({
+            fallbackHref: typeof metadata.href === "string" ? metadata.href : row.action_url ?? null,
+            metadata,
+            role: access.role,
+          }),
         },
         module: row.module ?? null,
         priority: row.priority ?? "normal",

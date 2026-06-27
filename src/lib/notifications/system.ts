@@ -19,6 +19,7 @@ import {
   type NotificationRecipientGovernanceWarning,
 } from "@/lib/notifications/policy";
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
+import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
@@ -1271,12 +1272,17 @@ async function buildChannelEmailInput(
   recipient: RecipientProfile,
   resolvedPriority: string,
 ): Promise<NotificationEmailInput> {
-  const emailContent = await renderChannelContent(input, "email");
+  const ctaHref = notificationHrefForViewerRole({
+    fallbackHref: input.actionUrl ?? input.email?.ctaHref ?? null,
+    metadata: input.metadata,
+    role: recipient.role,
+  });
+  const emailContent = await renderChannelContent({ ...input, actionUrl: ctaHref || input.actionUrl }, "email");
   const identity = resolvedEmailIdentity(input, recipient);
   return {
     bcc: input.email?.bcc,
     cc: input.email?.cc,
-    ctaHref: input.actionUrl ?? input.email?.ctaHref,
+    ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
     employeeHrId: identity.employeeHrId,
     includeHrInbox: input.email?.includeHrInbox,
