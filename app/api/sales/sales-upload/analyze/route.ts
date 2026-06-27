@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     if (result.status === "header_error") {
       return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, aiExplanation: result.aiExplanation ?? null, error: `Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
     }
-    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation });
+    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation, isRegionOnly: result.isRegionOnly ?? false });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });
