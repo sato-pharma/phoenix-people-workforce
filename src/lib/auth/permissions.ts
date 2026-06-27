@@ -257,6 +257,36 @@ export function isRolePermissionWithinHardBoundary(
   return !allowedActions || allowedActions.includes(action);
 }
 
+/**
+ * Minimum permissions that must never be denied via `role_permission_overrides`.
+ * These are permissions that the employee portal requires for basic functionality;
+ * revoking them via a DB override breaks portal pages with an unrecoverable
+ * Forbidden error. The admin Access Control Manager checks this before persisting
+ * a deny-override.
+ */
+export const portalMinimumPermissions: ReadonlyArray<{
+  action: PermissionAction;
+  resource: PermissionResource;
+  roles: readonly PhoenixRole[];
+}> = [
+  { resource: "probation", action: "read", roles: phoenixRoles },
+  { resource: "leave", action: "read", roles: phoenixRoles },
+  { resource: "employee_profile", action: "read", roles: phoenixRoles },
+];
+
+export function isDenialBlockedByMinimumPermission(
+  role: PhoenixRole,
+  resource: PermissionResource,
+  action: PermissionAction,
+): boolean {
+  return portalMinimumPermissions.some(
+    (min) =>
+      min.resource === resource &&
+      min.action === action &&
+      min.roles.includes(role),
+  );
+}
+
 function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
   for (const role of phoenixRoles) {
     for (const resource of permissionResources) {
