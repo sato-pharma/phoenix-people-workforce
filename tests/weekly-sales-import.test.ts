@@ -852,7 +852,9 @@ export async function runWeeklySalesImportTests() {
     assert.equal(unmappedAlias.ok, true);
     if (unmappedAlias.ok) {
       assert.equal(unmappedAlias.result.status, "validated", "unmapped alias validates with warning (not blocked)");
-      assert.equal(unmappedAlias.result.importableRows, unmappedAlias.result.rowCount, "unresolved-product rows are still importable");
+      assert.equal(unmappedAlias.result.rowCount, 0, "unresolved-product rows are skipped");
+      assert.equal(unmappedAlias.result.importableRows, 0, "skipped product rows are not importable");
+      assert.equal(unmappedAlias.rows.length, 0, "no unresolved-product fact rows are emitted");
       assert.ok(unmappedAlias.result.issues.some((i) => i.field === "productCode" && i.severity === "warning"), "no-alias recorded as warning");
     }
 
@@ -902,6 +904,22 @@ export async function runWeeklySalesImportTests() {
     if (unmappedBranch.ok) {
       assert.equal(unmappedBranch.result.status, "blocked", "unmapped non-excluded branch blocks");
       assert.ok(unmappedBranch.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "branch failure recorded");
+    }
+
+    const unmappedProductAndBranch = await parseWeeklyWorkbookBuffer({
+      buffer: await issWorkbook(),
+      distributorCode: "IS-S",
+      distributorName: "Ibn Sina Sato",
+      fileName: "ISS.xlsx",
+      references: references(),
+      aliasIndex: aliasIndex("IS-S", {}),
+      branchMapIndex: branchIndex({ branches: [{ key: "B01", fileType: "stock", region: "CA" }] }),
+    });
+    assert.equal(unmappedProductAndBranch.ok, true);
+    if (unmappedProductAndBranch.ok) {
+      assert.equal(unmappedProductAndBranch.result.status, "blocked", "unmapped branch blocks even when product is skipped");
+      assert.ok(unmappedProductAndBranch.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "branch failure still recorded");
+      assert.ok(unmappedProductAndBranch.result.issues.some((i) => i.field === "productCode" && i.severity === "warning"), "product miss remains a warning");
     }
 
     // excluded branch → cell dropped from totals, NOT a failure.

@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
+import type { DistributorSalesValidationResult } from "../src/lib/sales/monthly-distributor-import.ts";
 import { normalizeRawWorkbook } from "../src/lib/sales/normalizer/engine.ts";
 import { distinctUnknowns, suggestProduct, type ProductRef } from "../src/lib/sales/normalizer/mapping.ts";
 import { deriveHierarchy, normalizeAliasKey, normalizeCodeKey, resolveBrick, resolveProduct } from "../src/lib/sales/normalizer/resolvers.ts";
 import type { Crosswalks, DistributorProfile, NormalizeException } from "../src/lib/sales/normalizer/types.ts";
+import { attachSkippedProductWarnings, productExceptionToWarningIssue, skippedProductRowsAdvisory } from "../src/lib/sales/source-of-sales-upload.ts";
 
 const maps: Crosswalks = {
   brickById: new Map([["B1", { areaCode: "A1", areaName: "Area One", blockCode: "BL1", brickId: "B1", brickName: "Brick One", regionCode: "CA", regionName: "Cairo" }]]),
@@ -132,6 +134,38 @@ export async function runSosNormalizerTests() {
   assert.equal(du.customers[0]!.raw, "C3");
   assert.equal(du.customers[0]!.count, 2);
   assert.equal(du.customers[0]!.rawName, "Pharma C");
+
+  const productOnlyWarning = productExceptionToWarningIssue(exceptions[0]!);
+  assert.equal(productOnlyWarning.severity, "warning");
+  assert.match(productOnlyWarning.message, /skipped and not imported/);
+  assert.match(skippedProductRowsAdvisory([exceptions[0]!, exceptions[1]!]) ?? "", /did not block the upload/);
+  const baseValidationResult: DistributorSalesValidationResult = {
+    advisories: [],
+    blockingReasons: [],
+    byArea: [],
+    byBrick: [],
+    byLine: [],
+    byProduct: [],
+    byRegion: [],
+    distributor: { code: "IS", name: "Ibn Sina" },
+    failedRows: 0,
+    fileName: "raw.xlsx",
+    importableRows: 1,
+    issues: [],
+    period: "2026-04",
+    rowCount: 1,
+    sheetName: "Sheet1",
+    status: "validated",
+    templateKey: "normalizer",
+    templateName: "Raw distributor sheet",
+    totals: { rowCount: 1, totalBonusQty: 0, totalQty: 6, totalValue: 60 },
+    warningRows: 0,
+  };
+  const validatedWithSkippedProducts = attachSkippedProductWarnings(baseValidationResult, [exceptions[0]!, exceptions[1]!]);
+  assert.equal(validatedWithSkippedProducts.status, "validated");
+  assert.equal(validatedWithSkippedProducts.failedRows, 0);
+  assert.equal(validatedWithSkippedProducts.warningRows, 2);
+  assert.equal(validatedWithSkippedProducts.issues.every((issue) => issue.severity === "warning"), true);
 
   const workspaceSource = readFileSync("src/components/sales/normalizer-workspace.tsx", "utf8");
   assert.match(workspaceSource, /quietFailure/, "post-save coverage refresh must not overwrite a successful save with a generic fetch error");
