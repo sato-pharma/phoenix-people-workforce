@@ -400,6 +400,13 @@ export async function WorkspaceFingerprintReportPage() {
 
 export async function WorkspaceMarketingOverviewPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
+  // Marketing Manager moved into the Employee Portal (role-based landing redesign) and now has
+  // its own dashboard there showing this same overview data. This workspace page is retired as
+  // MM's landing — redirect any direct/bookmarked visit to the new home instead of duplicating it.
+  // Every other workspace marketing page (inbox, validation, roi-tracking) stays reachable for MM.
+  if (access.role === "Marketing Manager") {
+    redirect("/employee-portals");
+  }
   let data = null;
   try {
     data = await getMarketingOverview(access);
