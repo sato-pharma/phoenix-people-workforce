@@ -270,10 +270,10 @@ export function runNavigationActivePathTests() {
     "Super Admin must see full governance modules",
   );
   assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");
-  assertExcludesAll(
+  assertIncludesAll(
     superAdminAuthorityNav,
     ["/sales/import"],
-    "Legacy Source of Sales import route must be hidden from visible sidebar navigation",
+    "Sales Import (Advanced) is intentionally visible alongside Sales Upload in the Source of Sales section",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");
