@@ -8,6 +8,7 @@ import {
   getPermissionMatrix,
   getRolePrivilegeRank,
   getSalesScope,
+  isDenialBlockedByMinimumPermission,
   isRolePermissionWithinHardBoundary,
   parsePermissionActionStrict,
   parsePermissionResourceStrict,
@@ -416,6 +417,11 @@ export async function upsertRolePermissionOverride(
   if (input.isAllowed && !isRolePermissionWithinHardBoundary(permissionRole, resource, action)) {
     throw new Error(
       `Forbidden: ${permissionRole} cannot be granted ${action} ${resource}; this is blocked by the hard role-authority boundary.`,
+    );
+  }
+  if (!input.isAllowed && isDenialBlockedByMinimumPermission(permissionRole, resource, action)) {
+    throw new Error(
+      `Forbidden: ${permissionRole} must retain ${action} on ${resource}; this is a portal-required minimum permission.`,
     );
   }
 
