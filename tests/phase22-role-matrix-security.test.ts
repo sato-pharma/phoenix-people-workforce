@@ -69,6 +69,8 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(talentAcquisition, "support_requests", "export"), true);
   assert.equal(await canAccess(talentAcquisition, "employees", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "admin", "read"), false);
+  assert.equal(await canAccess(talentAcquisition, "admin_access", "read"), false);
+  assert.equal(await canAccess(talentAcquisition, "permission_admin", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "user_admin", "read"), false);
 
   assert.equal(await canAccess(superAdmin, "employees", "read"), true);
@@ -115,11 +117,15 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const ceo = createAccessContext({ hrId: "CEO-1", role: "CEO" });
   assert.equal(await canAccess(ceo, "employees", "read"), false, "CEO must not see the employee master");
   assert.equal(await canAccess(ceo, "employees", "update"), false, "CEO still cannot edit other employees");
+  assert.equal(await canAccess(ceo, "admin", "read"), false, "CEO must not see generic admin tools");
   assert.equal(await canAccess(ceo, "support_requests", "create"), true, "CEO can submit HR support requests");
   assert.equal(await canAccess(ceo, "support_requests", "read"), false, "CEO must not read the HR support inbox");
   assert.equal(await canAccess(ceo, "recruitment", "read"), false, "CEO must not see HR recruitment");
   assert.equal(await canAccess(ceo, "candidates", "read"), false, "CEO must not see candidate PII");
   assert.equal(await canAccess(ceo, "offers", "read"), false, "CEO must not see HR offer lifecycle");
+  assert.equal(await canAccess(ceo, "admin_access", "read"), false, "CEO must not see Users & Access");
+  assert.equal(await canAccess(ceo, "permission_admin", "read"), false, "CEO must not see permission administration");
+  assert.equal(await canAccess(ceo, "user_admin", "read"), false, "CEO must not see user administration");
   assert.equal(await canAccess(ceo, "probation", "read"), true, "CEO can read probation risk aggregates and read-only page");
   assert.equal(await canAccess(ceo, "probation", "create"), false, "CEO must not create probation reviews");
   assert.equal(await canAccess(ceo, "probation", "update"), false, "CEO must not update probation workflow");
@@ -146,7 +152,15 @@ export async function runPhase22RoleMatrixSecurityTests() {
     );
   }
 
-  const blockedResources: PermissionResource[] = ["employee_documents", "recruitment", "candidates", "offers"];
+  const blockedResources: PermissionResource[] = [
+    "employee_documents",
+    "recruitment",
+    "candidates",
+    "offers",
+    "admin_access",
+    "permission_admin",
+    "user_admin",
+  ];
   const blockedActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
   for (const role of phoenixRoles.filter((candidate) => !hrAuthorityRoles.has(candidate))) {
     for (const resource of blockedResources) {
@@ -159,6 +173,20 @@ export async function runPhase22RoleMatrixSecurityTests() {
       }
     }
     assert.equal(permissionMatrix[role].employees, undefined, `${role} has no employee master permissions`);
+  }
+
+  const accessAdminResources: PermissionResource[] = ["admin", "admin_access", "permission_admin", "user_admin"];
+  for (const role of phoenixRoles.filter((candidate) => candidate !== "Super Admin")) {
+    for (const resource of accessAdminResources) {
+      assert.equal(permissionMatrix[role][resource], undefined, `${role} has no ${resource} permissions`);
+      for (const action of blockedActions) {
+        assert.equal(
+          isRolePermissionWithinHardBoundary(role, resource, action),
+          false,
+          `${role} cannot be hard-granted ${action} ${resource}`,
+        );
+      }
+    }
   }
 
   // Segregation of duties: the CEO account is observational on irreversible HR/finance

@@ -224,6 +224,14 @@ export function assertSystemAdministratorWorkspaceAccess(
 
 function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResource): PermissionAction[] | null {
   switch (resource) {
+    case "admin":
+      return role === "Super Admin" ? allActions : [];
+    case "admin_access":
+    case "permission_admin":
+    case "user_admin":
+    case "system_cleanup":
+    case "user_activity":
+      return role === "Super Admin" ? allActions : [];
     case "employees":
       return role === "Super Admin" ? allActions : [];
     case "module_control":
@@ -317,12 +325,10 @@ const defaultPermissionMatrix: PermissionMap = {
     user_activity: ["read", "export"],
   },
   CEO: {
-    admin: ["read"],
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
     overview: ["read"],
-    admin_access: ["read"],
     imports: ["read"],
     // SoD: read/export only — contract renew/not-renew (can drive termination)
     // belongs to Super Admin/HR. The CEO is observational on contracts.
@@ -343,7 +349,6 @@ const defaultPermissionMatrix: PermissionMap = {
     leave: ["read", "approve", "export"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
-    permission_admin: ["read"],
     probation: ["read"],
     workflow_registry: ["read"],
     payslips: ["read", "export"],
@@ -360,7 +365,6 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_sales: ["read", "export"],
     support_requests: ["read", "export"],
     team: ["read", "export"],
-    user_admin: ["read"],
     vacancies: ["read", "export"],
     recruitment: ["read"],
     candidates: ["read"],
