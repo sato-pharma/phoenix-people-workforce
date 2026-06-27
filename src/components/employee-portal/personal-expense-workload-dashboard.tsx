@@ -642,21 +642,31 @@ export function PersonalExpenseWorkloadDashboard({
   }, [data.workload?.expenseRows]);
 
   /* -------- filter state -------- */
-  // Initialize from URL search params (if any) so deep links + refresh
-  // restore the previous view. Falls back to sensible defaults.
-  const initialUrl = typeof window !== "undefined" ? new URL(window.location.href) : null;
-  const initialPreset = ((initialUrl?.searchParams.get("period") as PeriodPreset) ||
-    "custom") as PeriodPreset;
-  const initialFrom = initialUrl?.searchParams.get("from") ?? "";
-  const initialTo = initialUrl?.searchParams.get("to") ?? "";
-  const initialStatus = (initialUrl?.searchParams.get("status") ?? "All") as (typeof statusOptions)[number];
-  const initialQ = initialUrl?.searchParams.get("q") ?? "";
-
-  const [searchTerm, setSearchTerm] = useState(initialQ);
-  const [dateFrom, setDateFrom] = useState(initialFrom);
-  const [dateTo, setDateTo] = useState(initialTo);
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(initialPreset);
-  const [statusFilter, setStatusFilter] = useState<(typeof statusOptions)[number]>(initialStatus);
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const initialUrl = new URL(window.location.href);
+    return initialUrl.searchParams.get("q") ?? "";
+  });
+  const [dateFrom, setDateFrom] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const initialUrl = new URL(window.location.href);
+    return initialUrl.searchParams.get("from") ?? "";
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const initialUrl = new URL(window.location.href);
+    return initialUrl.searchParams.get("to") ?? "";
+  });
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(() => {
+    if (typeof window === "undefined") return "custom";
+    const initialUrl = new URL(window.location.href);
+    return (initialUrl.searchParams.get("period") as PeriodPreset) || "custom";
+  });
+  const [statusFilter, setStatusFilter] = useState<(typeof statusOptions)[number]>(() => {
+    if (typeof window === "undefined") return "All";
+    const initialUrl = new URL(window.location.href);
+    return (initialUrl.searchParams.get("status") ?? "All") as (typeof statusOptions)[number];
+  });
   const [requestTypeFilter, setRequestTypeFilter] = useState("All");
   const [transportationFilter, setTransportationFilter] = useState("All");
   const [destinationFilter, setDestinationFilter] = useState("All");
