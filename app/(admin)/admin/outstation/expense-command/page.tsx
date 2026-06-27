@@ -9,6 +9,7 @@ import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-comman
 import type { OutstationExpenseCommandData } from "@/lib/outstation/expense-command-types";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,11 @@ export default async function ExpenseCommandPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const access = await resolveAccessContextFromPage();
+
+  if (access.source === "guest") {
+    redirect("/login");
+  }
+
   // Page guard is the weaker "read" so a viewer without approve still sees the
   // dashboard tab. The Queue tab is hidden + its data fetch is skipped for them
   // (defense-in-depth; the API routes already require "approve" to act).
