@@ -25,7 +25,14 @@ const ceoAllowedReadOnlyRoutes = [
   "/admin/payslips-center",
   "/admin/outstation/expense-command",
   "/admin/analytics",
+  "/admin/analytics/source-sales",
+  "/admin/analytics/monthly-closing",
   "/admin/marketing-requests/roi-tracking",
+] as const;
+
+const ceoBlockedRedirectRoutes = [
+  "/sales",
+  "/sales/monthly-dashboard",
 ] as const;
 
 const ceoBlockedHighRiskRoutes = [
@@ -83,6 +90,14 @@ export async function runCeoAccountContractTests() {
       visibleAdminHrefs.includes(href),
       false,
       `CEO navigation must not expose the blocked high-risk route ${href}`,
+    );
+  }
+
+  for (const href of ceoBlockedRedirectRoutes) {
+    assert.equal(
+      visibleAdminHrefs.includes(href),
+      false,
+      `CEO navigation must not expose redirect/bounce route ${href}`,
     );
   }
 
