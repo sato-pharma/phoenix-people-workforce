@@ -70,7 +70,7 @@ export type CeoCommandCenterData = {
     available: boolean;
   };
   attention: CeoAttentionItem[];
-  approvals: { leavePending: number; plansPending: number };
+  approvals: { leavePending: number | null; plansPending: number | null };
   sos: {
     period: string | null;
     totalValue: number;
@@ -140,7 +140,8 @@ async function getCeoPendingPlansCount(): Promise<number> {
     .from("employee_plan_headers")
     .select("id", { count: "exact", head: true })
     .eq("status", "manager_approved");
-  return error ? 0 : (count ?? 0);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 function buildCeoHealth(
@@ -214,9 +215,11 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   if (platformMetrics?.dataUnavailable.length) dataUnavailable.push(...platformMetrics.dataUnavailable);
   const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
   if (!adminSignals) dataUnavailable.push("Executive risk signals");
-  const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : 0;
+  if (adminSignals?.dataUnavailable.length) dataUnavailable.push(...adminSignals.dataUnavailable);
+  const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : null;
+  if (pendingPlansR.status === "rejected") dataUnavailable.push("Pending weekly-plan approvals");
 
-  const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : 0;
+  const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : null;
 
   const sosOut = sos
     ? {
@@ -286,6 +289,13 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
       getCoachingReports({}, access).then(buildCoachingReportAnalytics),
       getSalaryFlags(),
     ]);
+  const dataUnavailable: string[] = [];
+  if (resignationsR.status === "rejected") dataUnavailable.push("Resignation risk signals");
+  if (leavePendingR.status === "rejected") dataUnavailable.push("Leave SLA risk signals");
+  if (contractsActiveR.status === "rejected") dataUnavailable.push("Contract renewal risk signals");
+  if (probationCountsR.status === "rejected") dataUnavailable.push("Probation risk signals");
+  if (coachingR.status === "rejected") dataUnavailable.push("Coaching risk signals");
+  if (flagsR.status === "rejected") dataUnavailable.push("Salary flag risk signals");
 
   const daysFromNow = (iso: string | null | undefined): number | null => {
     if (!iso) return null;
@@ -339,7 +349,7 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
     signalAttention.push({ key: "leaveSla", label: "Pending leave approvals", count: overdueLeaveSla, href: "/admin/action-center", tone: "rose" });
   }
   if (unresolvedSalaryFlags > 0) {
-    signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/payroll", tone: "rose" });
+    signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/admin/m-payroll", tone: "rose" });
   }
   if (coachingRedZone > 0) {
     signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: coachingRedZone, href: "/coaching", tone: "amber" });
@@ -351,6 +361,7 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
 
   return {
     attention: signalAttention,
+    dataUnavailable: Array.from(new Set(dataUnavailable)),
     health,
     trends,
     payroll: {
@@ -387,6 +398,7 @@ export type CeoRoiSignal = {
 
 export type CeoAdminSignals = {
   attention: CeoAttentionItem[];
+  dataUnavailable: string[];
   health: {
     salesLinkageRate: number;
     attendanceReadinessRate: number;
@@ -456,6 +468,8 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
   const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
   if (!marketing) dataUnavailable.push("ROI Signal");
   const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
+  if (!adminSignals) dataUnavailable.push("Executive risk signals");
+  if (adminSignals?.dataUnavailable.length) dataUnavailable.push(...adminSignals.dataUnavailable);
 
   // Double-visit manager rows
   const dvOut = dv
@@ -570,7 +584,7 @@ export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoL
     : null;
 
   return {
-    dataUnavailable,
+    dataUnavailable: Array.from(new Set(dataUnavailable)),
     doubleVisit: dvOut,
     expense: expenseOut,
     roiSignal: roiSignalOut,

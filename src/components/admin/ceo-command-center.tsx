@@ -2,6 +2,7 @@ import Link from "next/link";
 import { type ReactNode } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   BarChart3,
   BriefcaseBusiness,
@@ -42,8 +43,8 @@ function egp(value: number) {
   return `EGP ${Math.round(safe).toLocaleString("en-US")}`;
 }
 
-function n(value: number) {
-  return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "0";
+function n(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "-";
 }
 
 function pct(value: number) {
@@ -78,6 +79,24 @@ function MetricTile({
       </div>
       <p className={`mt-4 text-3xl font-black leading-none ${toneClass}`}>{value}</p>
       <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
+    </div>
+  );
+}
+
+function DataUnavailableNotice({ sources }: { sources: string[] }) {
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="border border-amber-200 bg-amber-50 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        <div>
+          <p className="text-sm font-black text-amber-900">Some CEO data sources are unavailable.</p>
+          <p className="mt-1 text-xs font-medium text-amber-800">
+            All-clear status is paused until these sources recover: {sources.join(", ")}.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -285,14 +304,16 @@ export function CeoCommandCenter({
   welcome: CeoWelcomeProfile;
   access: AccessContext;
 }) {
-  const { attention, approvals, headcount, health, payroll, sos } = data;
+  const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(data.generatedAt));
 
-  const totalApprovals = approvals.leavePending + approvals.plansPending;
-  const allClear = attention.length === 0 && totalApprovals === 0;
+  const dataAvailable = dataUnavailable.length === 0;
+  const totalApprovals = (approvals.leavePending ?? 0) + (approvals.plansPending ?? 0);
+  const hasUnavailableApprovals = approvals.leavePending === null || approvals.plansPending === null;
+  const allClear = dataAvailable && attention.length === 0 && totalApprovals === 0;
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
@@ -311,6 +332,8 @@ export function CeoCommandCenter({
           />
         </div>
       </AdminHeroFrame>
+
+      <DataUnavailableNotice sources={dataUnavailable} />
 
       <SectionShell
         title="Workforce & payroll snapshot"
@@ -399,7 +422,16 @@ export function CeoCommandCenter({
           ) : (
             <div className="space-y-2">
               {/* Approval tiles */}
-              {totalApprovals > 0 ? (
+              {dataUnavailable.length > 0 ? (
+                <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
+                  <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <span className="text-sm font-semibold text-amber-900">
+                    Not all executive risk sources loaded. This section is not treated as all clear.
+                  </span>
+                </div>
+              ) : null}
+
+              {totalApprovals > 0 || hasUnavailableApprovals ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Link
                     href="/admin/action-center"
@@ -516,7 +548,7 @@ export function CeoCommandCenter({
             icon={<Activity className="h-3.5 w-3.5" />}
             headline="7-week trend + region breakdown"
             sub="Click to open Weekly Sales"
-            href="/sales/weekly"
+            href="/sales/weekly/dashboard"
           />
 
           {/* Marketing ROI — instant link card */}

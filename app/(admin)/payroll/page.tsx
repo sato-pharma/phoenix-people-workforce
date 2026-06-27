@@ -17,6 +17,10 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
     redirect("/payslips");
   }
   await assertPermission(access, "payroll", "read");
+  if (access.role === "CEO") {
+    const target = sp.batchId ? `/admin/m-payroll?batchId=${encodeURIComponent(sp.batchId)}` : "/admin/m-payroll";
+    redirect(target);
+  }
 
   return (
     <Suspense

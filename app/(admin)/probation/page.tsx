@@ -67,7 +67,7 @@ export default async function ProbationPage() {
         canExport: canViewAllProbation(access),
         canManageWorkflow: canAdminister,
         canSubmitManagerFeedback: canAdminister,
-        viewerMode: "hr",
+        viewerMode: access.role === "CEO" ? "executive" : "hr",
       }}
       initialData={initialData}
       initialError={initialError}
