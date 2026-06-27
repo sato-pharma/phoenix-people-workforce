@@ -1,16 +1,15 @@
-import { ClipboardCheck, Plus } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import {
-  AdminInsightChip,
-  AdminPageHero,
-} from "@/components/admin/admin-design-system";
 import {
   CoachingReportsCenter,
   type CoachingReportsFilterOptions,
 } from "@/components/coaching/coaching-reports-center";
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import {
+  EmployeePortalActionBar,
+  EmployeePortalActionLink,
+  EmployeePortalEmptyState,
+  EmployeePortalPageShell,
+} from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,
   canManageCoachingReports,
@@ -144,31 +143,16 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
     (await canAccess(access, "coaching", "export"));
 
   return (
-    <div className="space-y-6">
-      <AdminPageHero
-        actions={
-          canCreate ? (
-            <Link
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
-              href={createCoachingReportHref}
-            >
-              <Plus className="h-4 w-4" />
-              Create Coaching Report
-            </Link>
-          ) : null
-        }
-        badges={
-          <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>Reports Center</AdminInsightChip>
-            <AdminInsightChip tone="orange">Field Excellence</AdminInsightChip>
-            <AdminInsightChip tone="slate">Excel Export</AdminInsightChip>
-          </div>
-        }
-        description="Review field coaching reports, filter by employee context, export XLSX files, and inspect scoring outcomes without leaving the employee portal."
-        eyebrow="Coaching"
-        icon={<ClipboardCheck className="h-3.5 w-3.5" />}
-        title="Field Coaching"
-      />
+    <EmployeePortalPageShell
+      badge="Coaching"
+      description="Review field coaching reports, filter by employee context, export XLSX files, and inspect scoring outcomes without leaving the employee portal."
+      title="Field Coaching"
+    >
+      {canCreate ? (
+        <EmployeePortalActionBar
+          actions={<EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" />}
+        />
+      ) : null}
 
       <CoachingReportsCenter
         canCreate={canCreate}
@@ -180,6 +164,6 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
         lockedCoachHrId={access.hrId}
         lockedCoachLabel={coachLabel}
       />
-    </div>
+    </EmployeePortalPageShell>
   );
 }
