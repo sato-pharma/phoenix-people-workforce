@@ -27,7 +27,13 @@ import {
   QuickActions,
   egp,
 } from "@/components/employee-portal/portal-command-center";
-import { MmFieldHealthSection, MmRoiSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import {
+  MmFieldHealthSection,
+  MmPacingSection,
+  MmPeopleSection,
+  MmRoiSection,
+  MmSectionSkeleton,
+} from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 
@@ -122,9 +128,11 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
             href: "/employee-portals/marketing-requests",
           },
           {
+            // RULE (portal-no-salary-on-landing): never render a salary amount on any landing
+            // surface. The payslip tile shows the month label only; the figure lives on /payslips.
             icon: Wallet,
-            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
-            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
+            label: "latest payslip",
             href: "/employee-portals/payslips",
           },
         ]}
@@ -186,6 +194,12 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
           </Suspense>
           <Suspense fallback={<MmSectionSkeleton title="Field Activity Health" />}>
             <MmFieldHealthSection access={access} />
+          </Suspense>
+          <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
+            <MmPacingSection access={access} />
+          </Suspense>
+          <Suspense fallback={<MmSectionSkeleton title="My Line People" />}>
+            <MmPeopleSection access={access} />
           </Suspense>
         </>
       ) : null}
