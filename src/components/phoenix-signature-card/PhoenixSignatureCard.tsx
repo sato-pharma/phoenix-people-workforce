@@ -274,6 +274,21 @@ export function PhoenixSignatureCard({
         >
           {titleLabel}
         </p>
+        {/* Employee code */}
+        {employeeCode && (
+          <p
+            className="font-semibold text-center"
+            style={{
+              color: "#2a3a5c",
+              fontSize: "clamp(0.35rem, 0.95cqw, 1rem)",
+              opacity: 0.65,
+              marginTop: "clamp(2px,0.4cqw,6px)",
+              width: nameWidth ? `${nameWidth}px` : "auto",
+            }}
+          >
+            {employeeCode}
+          </p>
+        )}
       </div>
 
       {/* Navy wave + orange stroke — bottom, above watermark */}
