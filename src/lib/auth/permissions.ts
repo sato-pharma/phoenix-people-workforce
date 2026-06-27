@@ -835,13 +835,16 @@ export function resolveNavigationMode(context: AccessContext): NavigationMode {
 }
 
 export function canManageCoachingReports(context: Pick<AccessContext, "role" | "scope">) {
+  // Marketing Manager is intentionally excluded: the permission matrix grants it coaching:["read"]
+  // only (oversight analytics), with no create/update. It previously appeared here, over-granting
+  // coaching-lifecycle WRITE authority that bypassed the matrix. Read/oversight stays broad via
+  // coachingOversightRoles in src/lib/coaching/service.ts.
   return (
     context.scope === "system" ||
     context.role === "Super Admin" ||
     context.role === "Training Manager" ||
     context.role === "Product Manager" ||
-    context.role === "Group Product Manager" ||
-    context.role === "Marketing Manager"
+    context.role === "Group Product Manager"
   );
 }
 

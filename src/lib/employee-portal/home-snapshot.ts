@@ -18,6 +18,12 @@ export type PortalHomeSnapshot = {
   role: string;
   pendingVacationCount: number;
   pendingExcuseCount: number;
+  /**
+   * False when either pending-count query failed/timed out. Counts stay 0 for arithmetic, but the
+   * UI must show a "couldn't load" state instead of a misleading "All clear" green banner (honest
+   * empty state — a failed source must never read as "nothing needs your attention").
+   */
+  pendingCountsAvailable: boolean;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
@@ -26,8 +32,12 @@ export type PortalHomeSnapshot = {
   mrPendingExpenseCount: number | null;
   /** Product / Group Product Manager only: the PM's own marketing requests still in flight + upcoming pay dates. */
   pmMarketing: { myPendingRequests: number; upcoming: UpcomingMarketingActivity[] } | null;
-  /** Marketing Manager only: company-wide approval/validation pipeline counts + upcoming pay dates (company-wide). */
-  mmOverview: (MarketingOverviewMetrics & { upcoming: UpcomingMarketingActivity[] }) | null;
+  /**
+   * Marketing Manager only: company-wide approval/validation pipeline counts + upcoming pay dates
+   * (company-wide). `asOf` is a server-stamped epoch (ms) so the dashboard can compute inbox aging
+   * without calling Date.now() during render (which is impure for a React component).
+   */
+  mmOverview: (MarketingOverviewMetrics & { upcoming: UpcomingMarketingActivity[]; asOf: number }) | null;
   /** District Manager only: the DSM's own med-rep team, current period, + team approvals awaiting the DSM. */
   dsmTeam:
     | { achievementPercent: number; memberCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
@@ -92,7 +102,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
     }
     if (role === "Marketing Manager") {
       const [overview, upcoming] = await Promise.all([getMarketingOverview(access), getUpcomingMarketingActivity()]);
-      return { ...emptyRoleExtras, mmOverview: { ...overview, upcoming } };
+      return { ...emptyRoleExtras, mmOverview: { ...overview, upcoming, asOf: Date.now() } };
     }
     if (role === "District Manager") {
       const [team, approvals] = await Promise.all([
@@ -138,6 +148,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
 export type MrHomeStats = {
   pendingVacationCount: number;
   pendingExcuseCount: number;
+  pendingCountsAvailable: boolean;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
@@ -186,6 +197,8 @@ export async function getMrHomeStats(
     vacationResult.status === "fulfilled" ? (vacationResult.value.count ?? 0) : 0;
   const pendingExcuseCount =
     excuseResult.status === "fulfilled" ? (excuseResult.value.count ?? 0) : 0;
+  const pendingCountsAvailable =
+    vacationResult.status === "fulfilled" && excuseResult.status === "fulfilled";
 
   let latestPayslip: MrHomeStats["latestPayslip"] = null;
   if (batchResult.status === "fulfilled" && batchResult.value.data && hrId) {
@@ -226,6 +239,7 @@ export async function getMrHomeStats(
   return {
     pendingVacationCount,
     pendingExcuseCount,
+    pendingCountsAvailable,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
     mrSalesAchievement,
@@ -350,6 +364,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     vacationResult.status === "fulfilled" ? (vacationResult.value.count ?? 0) : 0;
   const pendingExcuseCount =
     excuseResult.status === "fulfilled" ? (excuseResult.value.count ?? 0) : 0;
+  const pendingCountsAvailable =
+    vacationResult.status === "fulfilled" && excuseResult.status === "fulfilled";
 
   // One fast lookup: employee's record in the latest batch.
   let latestPayslip: PortalHomeSnapshot["latestPayslip"] = null;
@@ -475,6 +491,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     role,
     pendingVacationCount,
     pendingExcuseCount,
+    pendingCountsAvailable,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
     mrSalesAchievement,

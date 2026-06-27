@@ -76,11 +76,13 @@ export function isPortalOrganogramRole(access: AccessContext) {
 }
 
 export function isLineScopedOrganogramRole(access: AccessContext) {
+  // Marketing Manager is intentionally NOT here: it has company-wide oversight via
+  // canAccessCompanyOrganogram, so a line-scoped entry was dead code that misrepresented
+  // its scope. (Head-of-department company-wide org visibility is the intended behavior.)
   return (
     access.role === "National Sales Manager" ||
     access.role === "Product Manager" ||
-    access.role === "Group Product Manager" ||
-    access.role === "Marketing Manager"
+    access.role === "Group Product Manager"
   );
 }
 
