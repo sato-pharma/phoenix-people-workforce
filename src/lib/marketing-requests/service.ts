@@ -508,7 +508,7 @@ export type PreparedMarketingRequestDraft = {
 
 export type MarketingFinanceEvidenceType = "money_transfer_proof" | "invoice";
 
-const approvedMarketingRequestStatuses: MarketingRequest["status"][] = [
+export const approvedMarketingRequestStatuses: MarketingRequest["status"][] = [
   "approved",
   "active",
   "roi_tracking",

@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Layers,
-  MapPin,
   ReceiptText,
   Send,
   Target,
@@ -22,10 +21,14 @@ import {
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
+import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
+import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
+import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 
-function egp(n: number) {
+export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 }
 
@@ -306,70 +309,53 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
 /* ── Private command center layouts ─────────────────────────────── */
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount } = snapshot;
-  const lineName = shell.employee.line;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
-  const hireDate = shell.hrContract.hireDate;
-  const manager = shell.employee.manager;
-  const area = shell.employee.area;
-  const dept = shell.employee.department ?? "";
-  const isSales = dept.toLowerCase().includes("sales");
-  const hireDateLabel = hireDate
-    ? new Date(hireDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    : null;
 
   return (
     <div className="mx-auto w-full space-y-2 sm:space-y-3" dir="auto">
       <IdentityCard data={shell} />
+      <ProfileIntelBar shell={shell} />
 
-      {/* ── PROFILE INTEL ─────────────────────────────────────────── */}
-      {(lineName || hireDateLabel || manager || (isSales && area)) && (
-        <div className="border-l-[3px] border-[#f47b20] bg-white px-4 py-3.5 shadow-[0_2px_16px_rgba(0,0,0,0.07)] sm:px-6 sm:py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-slate-100">
-            {/* Group 1 — Line · Joined · Area */}
-            {(lineName || hireDateLabel || (isSales && area)) && (
-              <div className="flex items-center gap-5 sm:gap-7 sm:pr-7">
-                {lineName && (
-                  <div className="flex items-center gap-2">
-                    <Layers className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
-                    <div>
-                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Line</p>
-                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{lineName}</p>
-                    </div>
-                  </div>
-                )}
-                {hireDateLabel && (
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
-                    <div>
-                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Joined</p>
-                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{hireDateLabel}</p>
-                    </div>
-                  </div>
-                )}
-                {isSales && area && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
-                    <div>
-                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Area</p>
-                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{area}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Group 2 — Reports To */}
-            {manager && (
-              <div className="flex items-center gap-2 sm:pl-7">
-                <User className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Reports To</p>
-                  <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{manager}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      <GlanceStrip
+        items={[
+          {
+            icon: Send,
+            value: pmMarketing ? String(pmMarketing.myPendingRequests) : "—",
+            label: pmMarketing?.myPendingRequests === 1 ? "marketing request in flight" : "marketing requests in flight",
+            href: "/employee-portals/marketing-requests",
+          },
+          {
+            icon: CalendarX2,
+            value: String(totalPending),
+            label: totalPending === 1 ? "pending request" : "pending requests",
+            href: "/employee-portals/actions",
+            urgent: totalPending > 0,
+          },
+          {
+            icon: CalendarDays,
+            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
+            label: "leave balance",
+            href: "/employee-portals/vacation-request",
+          },
+          {
+            icon: Wallet,
+            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
+            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            href: "/employee-portals/payslips",
+          },
+        ]}
+      />
+      <QuickActions
+        actions={[
+          { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing Request" },
+          { href: "/employee-portals/plans", icon: CalendarDays, label: "My Plans" },
+          { href: "/employee-portals/roi", icon: Target, label: "ROI Intelligence" },
+          { href: "/employee-portals/vacation-request", icon: CalendarX2, label: "Request Leave" },
+        ]}
+      />
+      {totalPending > 0 && (
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
       {/* ── SALES INTELLIGENCE ────────────────────────────────────── */}
@@ -445,6 +431,37 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         </div>
       </div>
 
+      {/* ── UPCOMING PAY DATES ────────────────────────────────────── */}
+      <div className="overflow-hidden border border-slate-200">
+        <div className="bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
+        </div>
+        {pmMarketing && pmMarketing.upcoming.length > 0 ? (
+          <div className="divide-y divide-slate-100 bg-white">
+            {pmMarketing.upcoming.map((row) => (
+              <Link
+                key={row.id}
+                href="/employee-portals/marketing-requests"
+                className="group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-orange-50"
+              >
+                <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{row.requestCode}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {new Date(row.payDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-bold text-slate-700">{egp(row.estimatedCost)}</span>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="bg-white px-5 py-6 text-sm text-slate-500">No approved marketing requests paying out soon.</p>
+        )}
+      </div>
+
+      <InsightPreviewPanel note="Campaign and ROI recommendations for your line are coming soon." />
+
       {/* ── STATUS ────────────────────────────────────────────────── */}
       {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
@@ -517,6 +534,50 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-4" dir="auto">
       <IdentityCard data={shell} />
+      <ProfileIntelBar shell={shell} />
+      <PortalContextBar role="Medical Representative" context="Field Performance" />
+
+      <GlanceStrip
+        items={[
+          {
+            icon: TrendingUp,
+            value: pct !== null ? `${pct}%` : "—",
+            label: "achievement",
+            href: "/employee-portals/sales",
+            urgent: pct !== null && pct < 70,
+          },
+          {
+            icon: CalendarX2,
+            value: String(totalPending),
+            label: totalPending === 1 ? "pending request" : "pending requests",
+            href: "/employee-portals/actions",
+            urgent: totalPending > 0,
+          },
+          {
+            icon: CalendarDays,
+            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
+            label: "leave balance",
+            href: "/employee-portals/vacation-request",
+          },
+          {
+            icon: Wallet,
+            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
+            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            href: "/employee-portals/payslips",
+          },
+        ]}
+      />
+      <QuickActions
+        actions={[
+          { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
+          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
+          { href: "/employee-portals/plans", icon: ClipboardCheck, label: "Submit Plan" },
+          { href: "/employee-portals/sales", icon: TrendingUp, label: "Sales Dashboard" },
+        ]}
+      />
+      {totalPending > 0 && (
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+      )}
 
       <div className="relative overflow-hidden border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_58%,#241002_100%)] shadow-[0_16px_48px_rgba(0,0,0,0.24)]">
         <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(255,255,255,.3)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.3)_1px,transparent_1px)] [background-size:40px_40px]" />
@@ -796,9 +857,8 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role } =
     snapshot;
-  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
   const ach = mrSalesAchievement;
@@ -811,6 +871,54 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
       <IdentityCard data={shell} />
+      <ProfileIntelBar shell={shell} />
+      <PortalContextBar role={role} context={shell.employee.department || ""} />
+
+      <GlanceStrip
+        items={[
+          ...(ach && pct !== null
+            ? [
+                {
+                  icon: TrendingUp,
+                  value: `${pct}%`,
+                  label: "achievement",
+                  href: "/employee-portals/sales",
+                  urgent: pct < 70,
+                },
+              ]
+            : []),
+          {
+            icon: CalendarX2,
+            value: String(totalPending),
+            label: totalPending === 1 ? "pending request" : "pending requests",
+            href: "/employee-portals/actions",
+            urgent: totalPending > 0,
+          },
+          {
+            icon: CalendarDays,
+            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
+            label: "leave balance",
+            href: "/employee-portals/vacation-request",
+          },
+          {
+            icon: Wallet,
+            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
+            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            href: "/employee-portals/payslips",
+          },
+        ]}
+      />
+      <QuickActions
+        actions={[
+          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
+          { href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" },
+          { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
+          { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
+        ]}
+      />
+      {totalPending > 0 && (
+        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
+      )}
 
       {ach && pct !== null && (
         <div className="overflow-hidden border border-slate-200">
@@ -838,32 +946,25 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         </div>
       )}
 
-      <SectionShell title="Quick Stats">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatTile
-            icon={Wallet}
-            headline={latestPayslip ? egp(latestPayslip.netSalary) : "Not yet issued"}
-            sub={latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip"}
-          />
-          <StatTile
-            icon={CalendarDays}
-            headline={leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "-"}
-            sub="annual leave entitlement"
-          />
-          <StatTile
-            icon={daysUntilRenewal != null ? CalendarClock : ClipboardCheck}
-            headline={daysUntilRenewal != null ? `${daysUntilRenewal} days` : "No renewal pending"}
-            sub="until contract renewal"
-          />
+      <div className="overflow-hidden border border-slate-200">
+        <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
+          <div className="h-1.5 w-12 bg-orange-500" />
         </div>
-      </SectionShell>
+        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
+          <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
+          <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
+          <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
+          <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
+        </div>
+      </div>
 
       {totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-800">All clear - nothing needs your attention right now.</span>
+          <span className="text-sm font-medium text-emerald-800">All clear — nothing needs your attention right now.</span>
         </div>
       )}
     </div>
@@ -871,9 +972,17 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 }
 
 export function PortalCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const isPmGpm = snapshot.role === "Product Manager" || snapshot.role === "Group Product Manager";
-  const isMr = snapshot.role.toLowerCase() === "medical rep";
-  if (isPmGpm) return <PmGpmCommandCenter snapshot={snapshot} />;
-  if (isMr) return <MedicalRepCommandCenter snapshot={snapshot} />;
+  switch (snapshot.role) {
+    case "Product Manager":
+    case "Group Product Manager":
+      return <PmGpmCommandCenter snapshot={snapshot} />;
+    case "Marketing Manager":
+      return <MarketingManagerCommandCenter snapshot={snapshot} />;
+    case "District Manager":
+      return <DsmCommandCenter snapshot={snapshot} />;
+    case "National Sales Manager":
+      return <NsmCommandCenter snapshot={snapshot} />;
+  }
+  if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
 }

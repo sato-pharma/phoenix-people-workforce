@@ -70,11 +70,13 @@ export async function runMarketingManagerRoleTests() {
   assert.equal(getExpensesScope(mm), "LINE", "MM expense dashboard aligns with PM/GPM line scope");
 
   // ── Navigation / landing ────────────────────────────────────────────────────────────────────
+  // Reversed by the role-based Employee Portal landing redesign: MM now uses the portal shell
+  // (its own dedicated dashboard) instead of the admin /workspace/marketing-requests/overview.
   assert.equal(resolveNavigationMode(mm), "employee-portal", "MM uses the employee portal like PM/GPM");
   assert.equal(
     resolveLandingPathForRole("Marketing Manager"),
     "/employee-portals",
-    "MM lands in the employee portal",
+    "MM lands on the portal command center (its own MM dashboard)",
   );
 
   // ── Structural guarantees (source-pinned, so refactors cannot silently regress them) ─────────
