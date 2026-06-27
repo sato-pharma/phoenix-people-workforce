@@ -14,6 +14,7 @@ export type PortalHomeSnapshot = {
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   monthlySalesTrend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
   doubleVisitPulse: { daysSinceLastDv: number | null; dvsThisMonth: number; dvsLast90Days: number } | null;
+  mrPendingExpenseCount: number | null;
 };
 
 const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
@@ -73,6 +74,18 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         )
       : Promise.resolve(null);
 
+  // Submitted (pending reimbursement) expense count — lightweight head-only query.
+  const expensePromise =
+    isMr && hrId
+      ? wrapPromise(
+          supabase
+            .from("outstation_expense_requests")
+            .select("id", { count: "exact", head: true })
+            .eq("employee_hr_id", hrId.toUpperCase())
+            .eq("status", "submitted"),
+        )
+      : Promise.resolve(null);
+
   // All three fire in parallel (sequential in dev to protect Turbopack workers).
   const [vacationResult, excuseResult, batchResult] = await devSafePromiseAllSettled([
     () =>
@@ -127,11 +140,12 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     }
   }
 
-  // Await all three MR promises together (they've been in-flight since the start).
-  const [mrSalesResult, trendResult, dvResult] = await Promise.allSettled([
+  // Await all four MR promises together (they've been in-flight since the start).
+  const [mrSalesResult, trendResult, dvResult, expenseResult] = await Promise.allSettled([
     mrSalesPromise,
     trendPromise,
     dvPromise,
+    expensePromise,
   ]);
 
   // Current-month achievement.
@@ -200,6 +214,17 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     // null on failure
   }
 
+  // Pending submitted expenses count.
+  let mrPendingExpenseCount: PortalHomeSnapshot["mrPendingExpenseCount"] = null;
+  try {
+    const expData = expenseResult.status === "fulfilled" ? expenseResult.value : null;
+    if (expData && "count" in expData && expData.count !== null) {
+      mrPendingExpenseCount = expData.count;
+    }
+  } catch {
+    // null on failure
+  }
+
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
 
@@ -213,5 +238,6 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     mrSalesAchievement,
     monthlySalesTrend,
     doubleVisitPulse,
+    mrPendingExpenseCount,
   };
 }

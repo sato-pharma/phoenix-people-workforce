@@ -73,17 +73,24 @@ export function PremiumNavTile({
   icon: Icon,
   label,
   description,
+  badge,
 }: {
   href: string;
   icon: React.ElementType;
   label: string;
   description: string;
+  badge?: number;
 }) {
   return (
     <Link
       href={href}
       className="group relative flex min-h-[52px] bg-white transition-colors hover:bg-orange-50 active:bg-orange-100 sm:min-h-[72px]"
     >
+      {badge != null && badge > 0 && (
+        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-[9px] font-black text-white">
+          {badge}
+        </span>
+      )}
       <div className="w-[3px] shrink-0 bg-slate-200 transition-colors group-hover:bg-orange-500" />
       <div className="flex flex-1 items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white sm:h-10 sm:w-10">
@@ -180,32 +187,39 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
     <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
       <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
-      <div className="relative grid grid-cols-2 sm:flex sm:flex-wrap">
-        {employee.line && (
-          <div className="flex flex-col gap-1 border-b border-r border-white/[0.06] px-3 py-2.5 sm:min-w-[160px] sm:flex-1 sm:border-b-0 sm:px-7 sm:py-5">
-            <div className="flex items-center gap-1.5">
-              <Layers className="h-3 w-3 shrink-0 text-[#f47b20]" />
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Product Line</span>
-            </div>
-            <span className="truncate text-sm font-black text-white sm:text-base">{employee.line}</span>
+      <div className="relative flex flex-col">
+        {/* Row 1 — Line + Joined */}
+        {(employee.line || hireDateLabel) && (
+          <div className="flex border-b border-white/[0.06]">
+            {employee.line && (
+              <div className="flex min-w-0 flex-1 flex-col gap-1 border-r border-white/[0.06] px-4 py-3 sm:px-7 sm:py-4">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="h-3 w-3 shrink-0 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Line</span>
+                </div>
+                <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{employee.line}</span>
+              </div>
+            )}
+            {hireDateLabel && (
+              <div className="flex min-w-0 flex-1 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4">
+                <div className="flex items-center gap-1.5">
+                  <CalendarDays className="h-3 w-3 shrink-0 text-[#f47b20]" />
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Joined</span>
+                </div>
+                <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{hireDateLabel}</span>
+              </div>
+            )}
           </div>
         )}
-        {hireDateLabel && (
-          <div className="flex flex-col gap-1 border-b border-r border-white/[0.06] px-3 py-2.5 sm:min-w-[160px] sm:flex-1 sm:border-b-0 sm:px-7 sm:py-5">
-            <div className="flex items-center gap-1.5">
-              <CalendarDays className="h-3 w-3 shrink-0 text-[#f47b20]" />
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Joined</span>
-            </div>
-            <span className="truncate text-sm font-black text-white sm:text-base">{hireDateLabel}</span>
-          </div>
-        )}
+        {/* Row 2 — Reports To */}
         {employee.manager && (
-          <div className="col-span-2 flex flex-col gap-1 border-r border-white/[0.06] px-3 py-2.5 sm:col-auto sm:min-w-[200px] sm:flex-1 sm:px-7 sm:py-5">
-            <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-7 sm:py-4">
+            <div className="flex shrink-0 items-center gap-1.5">
               <User className="h-3 w-3 shrink-0 text-[#f47b20]" />
               <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Reports To</span>
             </div>
-            <span className="truncate text-sm font-black text-white sm:text-base">{employee.manager}</span>
+            <div className="h-3 w-px shrink-0 bg-white/[0.12]" />
+            <span className="min-w-0 whitespace-nowrap text-sm font-black text-white sm:text-base">{employee.manager}</span>
           </div>
         )}
       </div>
@@ -310,46 +324,48 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
       {/* ── PROFILE INTEL ─────────────────────────────────────────── */}
       {(lineName || hireDateLabel || manager || (isSales && area)) && (
-        <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
-          {/* subtle grid */}
-          <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
-          {/* top orange line */}
-          <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
-          <div className="relative flex flex-wrap">
-            {lineName && (
-              <div className="group flex min-w-0 sm:min-w-[160px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-4 py-3 sm:px-7 sm:py-5">
-                <div className="flex items-center gap-2">
-                  <Layers className="h-3 w-3 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Product Line</span>
-                </div>
-                <span className="text-base font-black text-white">{lineName}</span>
+        <div className="border-l-[3px] border-[#f47b20] bg-white px-4 py-3.5 shadow-[0_2px_16px_rgba(0,0,0,0.07)] sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-0 sm:divide-x sm:divide-slate-100">
+            {/* Group 1 — Line · Joined · Area */}
+            {(lineName || hireDateLabel || (isSales && area)) && (
+              <div className="flex items-center gap-5 sm:gap-7 sm:pr-7">
+                {lineName && (
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Line</p>
+                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{lineName}</p>
+                    </div>
+                  </div>
+                )}
+                {hireDateLabel && (
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Joined</p>
+                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{hireDateLabel}</p>
+                    </div>
+                  </div>
+                )}
+                {isSales && area && (
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Area</p>
+                      <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{area}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-            {hireDateLabel && (
-              <div className="group flex min-w-0 sm:min-w-[160px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-4 py-3 sm:px-7 sm:py-5">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="h-3 w-3 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Joined</span>
-                </div>
-                <span className="text-base font-black text-white">{hireDateLabel}</span>
-              </div>
-            )}
+            {/* Group 2 — Reports To */}
             {manager && (
-              <div className="group flex min-w-0 sm:min-w-[200px] flex-1 flex-col gap-1 border-r border-white/[0.06] px-4 py-3 sm:px-7 sm:py-5">
-                <div className="flex items-center gap-2">
-                  <User className="h-3 w-3 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Reports To</span>
+              <div className="flex items-center gap-2 sm:pl-7">
+                <User className="h-3.5 w-3.5 shrink-0 text-[#f47b20]" />
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">Reports To</p>
+                  <p className="whitespace-nowrap text-[13px] font-black text-slate-900">{manager}</p>
                 </div>
-                <span className="text-base font-black text-white">{manager}</span>
-              </div>
-            )}
-            {isSales && area && (
-              <div className="group flex min-w-0 sm:min-w-[140px] flex-1 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-5">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-3 w-3 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Area</span>
-                </div>
-                <span className="text-base font-black text-white">{area}</span>
               </div>
             )}
           </div>
@@ -453,7 +469,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse } =
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -757,7 +773,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         </div>
         <div className="grid grid-cols-2 gap-px bg-slate-200">
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="View and track coaching reports" />
-          <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
+          <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" badge={mrPendingExpenseCount ?? 0} />
           <PremiumNavTile href="/employee-portals/incentive" icon={Trophy} label="My Incentive" description="Track commission and bonus" />
           <PremiumNavTile href="/employee-portals/sales" icon={TrendingUp} label="Sales Dashboard" description="Achievement vs monthly target" />
           <PremiumNavTile href="/employee-portals/vacation-request" icon={CalendarDays} label="Vacation Request" description="Submit and track leave requests" />
