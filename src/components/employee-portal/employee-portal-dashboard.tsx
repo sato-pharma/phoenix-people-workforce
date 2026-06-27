@@ -3186,7 +3186,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <p className="text-lg font-semibold text-slate-900">Workload by Day (Heatmap)</p>
         </div>
         {/* Mobile vertical layout for <480px */}
-        <div className="space-y-4 xs:hidden">
+        <div className="space-y-4 md:hidden">
           {([
             { label: "Trips", data: heatmapData.trips, max: 6 },
             { label: "Distance (km)", data: heatmapData.distance, max: 520 },
@@ -3211,7 +3211,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
@@ -3276,7 +3276,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <p className="text-lg font-semibold text-slate-900">Employee Performance (AM & PM)</p>
         </div>
         {/* Mobile card view for <480px */}
-        <div className="space-y-2 xs:hidden">
+        <div className="space-y-2 md:hidden">
           {employeePerformance.map((emp, index) => (
             <div key={emp.name} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-2">
@@ -3304,7 +3304,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr>
@@ -3378,7 +3378,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <p className="text-lg font-semibold text-slate-900">Territory Analysis</p>
           </div>
           {/* Mobile card view for <480px */}
-          <div className="space-y-2 xs:hidden">
+          <div className="space-y-2 md:hidden">
             {territoryAnalysis.map((territory) => (
               <div key={territory.territory} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
                 <p className="text-sm font-bold text-slate-900">{territory.territory}</p>
@@ -3400,7 +3400,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             ))}
           </div>
           {/* Desktop table for >=480px */}
-          <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+          <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr>
@@ -3436,7 +3436,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           </span>
         </div>
         {/* Mobile card view for <480px */}
-        <div className="space-y-2 xs:hidden">
+        <div className="space-y-2 md:hidden">
           {recentTrips.map((trip) => (
             <div key={trip.id} className="rounded border border-slate-100 bg-white p-3.5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-2">
@@ -3466,7 +3466,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 xs:block">
+        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr>

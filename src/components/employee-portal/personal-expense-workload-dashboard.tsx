@@ -35,6 +35,7 @@ import {
   type ExpenseBubbleInput,
 } from "@/components/outstation/expense-heatmap-layer";
 import { Card } from "@/components/ui/card";
+import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
@@ -1853,8 +1854,7 @@ export function PersonalExpenseWorkloadDashboard({
 
         <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
           {/* Desktop / wide tablet table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1220px] w-full text-left text-sm">
+          <PortalDesktopTable minWidth="1160px">
               <thead className="bg-slate-900">
                 <tr>
                   <th className={cellPaddingClass}>{header("tripId", "TripID")}</th>
@@ -2022,8 +2022,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <td colSpan={3} />
                 </tr>
               </tfoot>
-            </table>
-          </div>
+          </PortalDesktopTable>
 
           {/* Mobile / narrow tablet stacked cards (< md ~ < 768px) */}
           <div className="space-y-2 p-3 md:hidden">

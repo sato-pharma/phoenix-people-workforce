@@ -1663,7 +1663,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           </div>
 
                           {/* Mobile layout (#6 --- short product names) */}
-                          <div className="block sm:hidden space-y-2">
+                          <div className="block md:hidden space-y-2">
                             <SelectField
                               disabled={visibleProducts.length === 0}
                               onChange={(value) =>
@@ -1831,7 +1831,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Product ROI table --- Desktop */}
-          <div className="mt-3 hidden xs:block overflow-hidden rounded-sm border border-slate-200">
+          <div className="mt-3 hidden md:block overflow-hidden rounded-sm border border-slate-200">
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
@@ -1893,7 +1893,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Product ROI --- Mobile cards */}
-          <div className="mt-3 block xs:hidden space-y-2">
+          <div className="mt-3 block md:hidden space-y-2">
             {productLineMetrics.length === 0 ? (
               <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
                 Add product quantities to preview ROI.
@@ -2080,7 +2080,7 @@ function MarketingRequestDraftWorkspaceInner() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden xs:block overflow-x-auto">
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
                   <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
@@ -2193,7 +2193,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
 
               {/* Mobile cards */}
-              <div className="block xs:hidden divide-y divide-slate-100">
+              <div className="block md:hidden divide-y divide-slate-100">
                 {filteredApproved.length === 0 ? (
                   <p className="px-4 py-5 text-center text-[11px] font-medium text-slate-400">
                     {approvedSearch

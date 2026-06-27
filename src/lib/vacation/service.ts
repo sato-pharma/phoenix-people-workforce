@@ -358,6 +358,7 @@ function getVacationVisibilityScope(access: AccessContext): VacationVisibilitySc
     case "National Sales Manager":
     case "Product Manager":
     case "Group Product Manager":
+    case "Marketing Manager":
     case "Training Manager":
       return "LINE";
     case "Regional Manager":

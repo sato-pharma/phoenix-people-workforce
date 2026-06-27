@@ -1052,7 +1052,7 @@ function NationalEgyptianVacationPanel() {
         ) : data && !data.connected ? null : data?.holidays.length ? (
           <>
             {/* Desktop table (xs+) */}
-            <div className="hidden xs:block overflow-hidden rounded-sm border border-slate-200 bg-white">
+            <div className="hidden md:block overflow-hidden rounded-sm border border-slate-200 bg-white">
               <table className="w-full border-collapse text-left text-[12px]">
                 <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
@@ -1089,7 +1089,7 @@ function NationalEgyptianVacationPanel() {
             </div>
 
             {/* Mobile card view (< xs) */}
-            <div className="block xs:hidden space-y-2">
+            <div className="block md:hidden space-y-2">
               {data.holidays.map((holiday) => (
                 <div key={holiday.id} className="rounded-sm border border-slate-200 bg-white p-3">
                   <p className="text-[13px] font-bold text-slate-900">{holiday.name}</p>

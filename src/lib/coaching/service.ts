@@ -93,6 +93,7 @@ const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
   "SFE Manager",
 ]);
 const defaultCoachingReportLimit = 500;

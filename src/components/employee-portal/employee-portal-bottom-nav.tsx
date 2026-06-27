@@ -55,10 +55,10 @@ export function EmployeePortalBottomNav({
   return (
     <nav
       aria-label="Employee portal"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/90 bg-white/97 shadow-[0_-12px_34px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto flex max-w-[640px] items-stretch justify-around">
+      <ul className="mx-auto flex max-w-[640px] items-stretch justify-around px-1">
         {items.map((item) => {
           const Icon = item.icon;
           const active = isActiveHref(pathname, item.href);
@@ -66,13 +66,13 @@ export function EmployeePortalBottomNav({
             <li className="flex-1" key={`${item.label}-${item.href}`}>
               <Link
                 aria-current={active ? "page" : undefined}
-                className={`flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors ${
-                  active ? "text-orange-600" : "text-slate-500 active:text-slate-700"
+                className={`mx-0.5 flex h-[60px] min-w-0 flex-col items-center justify-center gap-0.5 rounded text-[10px] font-black transition-colors ${
+                  active ? "bg-orange-50 text-orange-700 ring-1 ring-orange-100" : "text-slate-500 active:text-slate-700"
                 }`}
                 href={item.href}
               >
-                <Icon className="h-5 w-5" />
-                <span className="max-w-full truncate px-0.5">{item.label}</span>
+                <Icon className="h-[19px] w-[19px] shrink-0" />
+                <span className="max-w-full truncate px-1 leading-tight">{item.label}</span>
               </Link>
             </li>
           );

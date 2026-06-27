@@ -953,8 +953,8 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                 </div>
               ) : null}
 
-              {/* Desktop table (xs+) */}
-              <div className="hidden xs:block overflow-x-auto">
+              {/* Desktop table (md+) */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
                   <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
@@ -1015,7 +1015,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
               </div>
 
               {/* Mobile card view (< xs / 480px) */}
-              <div className="block xs:hidden space-y-2 p-3">
+              <div className="block md:hidden space-y-2 p-3">
                 {filteredRequests.length === 0 ? (
                   <div className="rounded-sm border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                     <CalendarClock className="mx-auto h-6 w-6 text-slate-400" />

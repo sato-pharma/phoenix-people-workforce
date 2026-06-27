@@ -55,8 +55,6 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 
-const adminShellEmployeeRolesWithIncentive = adminShellEmployeeRoles.filter((role) => role !== "Marketing Manager");
-
 export type NavigationPermission = {
   action?: PermissionAction;
   resource: PermissionResource;
@@ -144,8 +142,6 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO"] },
-      // Marketing Manager uses the dedicated "ROI Dashboard" entry in workspace-marketing-requests
-      // (same href, moduleId admin.workspace.roi_dashboard_mm) instead of this generic duplicate.
       { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "Sales & Marketing Intelligence", roles: ["CEO", "Super Admin", "SFE Manager", "Product Manager", "Group Product Manager", "National Sales Manager"] },
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
@@ -161,8 +157,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-my-workspace",
     items: [
-      { href: "/workspace", icon: LayoutDashboard, label: "Command Center", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
-      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRolesWithIncentive },
+      { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
+      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
       { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
@@ -394,15 +390,14 @@ const adminNavigationSectionSeeds = [
   {
     id: "marketing-requests",
     items: [
-      // SFE Manager + Marketing Manager use the de-duplicated /workspace/marketing-requests home
-      // (see the "workspace-marketing-requests" group); District Manager / Medical Rep / NSM / PM /
-      // GPM use the employee portal. So these admin workflow links are Super-Admin-only in practice.
-      // ROI Dashboard is a READ-ONLY executive report, so it also surfaces to the CEO (the oversight
-      // audience the report is built for; the page guard admits the company-oversight roles too).
+      // SFE Manager uses the de-duplicated /workspace/marketing-requests home, while Marketing
+      // Manager uses the employee-portal marketing request routes alongside PM/GPM. This org-wide
+      // admin module stays for District Manager + Super Admin only.
+      // ROI Dashboard is a READ-ONLY executive report — also surfaces to CEO for oversight.
       { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["Super Admin", "CEO"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["Super Admin"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
     ],
@@ -443,10 +438,11 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/actions", icon: Inbox, label: "Actions", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/sales", icon: ChartNoAxesColumnIncreasing, label: "Sales", excludedRoles: ["Training Manager"], permissions: [{ resource: "sales" }], exact: true },
-      { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Manager"] },
-      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Manager"] },
+      { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
+      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
@@ -454,8 +450,8 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
       { href: "/employee-portals/contact-hr-support", icon: LifeBuoy, label: "HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
       { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Outstation Expenses", permissions: [{ resource: "expenses" }], roles: ["Medical Rep"] },
-      { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager", "Manager"] },
-      { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Submit Expense", permissions: [{ resource: "outstation", action: "create" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager"] },
+      { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
+      { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Submit Expense", permissions: [{ resource: "outstation", action: "create" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/team-expenses", icon: ReceiptText, label: "Team Expenses", permissions: [{ resource: "expenses" }], roles: ["National Sales Manager"] },
     ],
     label: "Medical Rep Portal",

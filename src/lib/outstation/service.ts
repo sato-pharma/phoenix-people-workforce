@@ -1,6 +1,6 @@
-import {
-  isMedicalRep,
+﻿import {
   normalizeHrIdForAccess,
+  normalizeRole,
   resolveEmployeeIdentityId,
   systemAccessContext,
   type AccessContext,
@@ -20,7 +20,8 @@ import {
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
 import {
@@ -490,7 +491,7 @@ function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): Employee
 }
 
 function assertMedicalRepRole(role: string | null | undefined) {
-  if (!isMedicalRep(role)) {
+  if (normalizeRole(role) !== "Medical Rep") {
     throw new Error("Forbidden: only Medical Rep users can use simple expense submission.");
   }
 }
@@ -529,7 +530,7 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
   const { data, error } = await supabase
     .from("employee_locations")
     .select("*")
-    .eq("employee_hr_id", employeeHrId)
+    .ilike("employee_hr_id", employeeHrId)
     .maybeSingle();
 
   if (error) {
@@ -577,7 +578,7 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
           residence_longitude: geocoded.lng,
           updated_at: new Date().toISOString(),
         })
-        .eq("employee_hr_id", employeeHrId);
+        .ilike("employee_hr_id", employeeHrId);
       residence.residenceLatitude = geocoded.lat;
       residence.residenceLongitude = geocoded.lng;
       residence.geocodeStatus = "success";
@@ -661,7 +662,7 @@ async function getLatestValidationSignal(employeeHrId: string): Promise<Validati
   const { data, error } = await supabase
     .from("outstation_location_audit_logs")
     .select("captured_latitude,captured_longitude,previous_captured_at,created_at")
-    .eq("employee_hr_id", employeeHrId)
+    .ilike("employee_hr_id", employeeHrId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -686,7 +687,7 @@ async function getCachedRoute(params: {
   const { data, error } = await supabase
     .from("outstation_expense_requests")
     .select("distance_km,duration_minutes,route_polyline")
-    .eq("employee_hr_id", params.employeeHrId)
+    .ilike("employee_hr_id", params.employeeHrId)
     .eq("residence_latitude", roundCoordinate(params.residenceLatitude))
     .eq("residence_longitude", roundCoordinate(params.residenceLongitude))
     .eq("captured_latitude", roundCoordinate(params.capturedLatitude))
@@ -1243,21 +1244,86 @@ export async function calculateOutstationExpense(
   return calculation;
 }
 
-// ── Decision notification ─────────────────────────────────────────────────────
-// Outstation/expenses sends exactly ONE notification: the rejection notice to the
-// submitting employee (below). Submit and approve are intentionally silent — there
-// is no manager/approver "approval needed" alert. The send is wrapped so a
-// notification failure can never roll back or fail the underlying submit/approve/
-// reject. Module "outstation" maps to the in-app "general" bell category and the
-// "general" email type, with explicit recipients + channels.
+// ── Approval notifications ────────────────────────────────────────────────────
+// The expenses/outstation workflow historically sent NO notifications (a confirmed
+// gap in the workflow map). These best-effort dispatch helpers close that gap:
+// on submit we alert the submitter's direct manager + HR manager(s) ("approval
+// needed"); on a decision we tell the submitting employee the outcome. Every send
+// is wrapped so a notification failure can never roll back or fail the underlying
+// submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
+// to the in-app "general" bell category and the "general" email type) with explicit
+// recipients + channels, so no notification policy/governance changes are needed.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function outstationActionCenterUrl(requestId: number | string) {
+  return `/admin/action-center?module=outstation&id=${encodeURIComponent(String(requestId))}`;
+}
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 
 function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 
-// Rejection notification to the submitting employee. This is the ONLY notification sent
-// for outstation/expenses — HR Manager rejects violations; submit and approve are silent.
+type OutstationNotifyRecipient = { email: string | null; hrId: string; name: string; role: "direct_manager" | "hr" };
+
+// Resolve who must act when an expense/outstation request is submitted: the
+// submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
+// manager). A-16 is intentionally excluded because it has no
+// outstation "approve" authority, so an "approval needed" alert there is a dead end.
+// Best-effort: a missing manager or a failed approver lookup is logged and skipped,
+// never thrown — notifications must not block a submit.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function resolveOutstationApprovalRecipients(
+  directory: EmployeeDirectoryData,
+  employee: EmployeeDirectoryRow,
+): Promise<OutstationNotifyRecipient[]> {
+  const byHrId = (hrId: string | null | undefined) =>
+    hrId
+      ? directory.employees.find(
+          (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(hrId),
+        ) ?? null
+      : null;
+
+  const recipients = new Map<string, OutstationNotifyRecipient>();
+  const add = (hrId: string | null | undefined, name: string | null | undefined, email: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
+    const key = normalizeHrIdForAccess(hrId);
+    if (!key || recipients.has(key)) return;
+    recipients.set(key, { email: pickDeliverableEmail(email), hrId: String(hrId), name: name?.trim() || String(hrId), role });
+  };
+
+  // 1. Direct manager of the submitter.
+  if (employee.managerHrId) {
+    const manager = byHrId(employee.managerHrId);
+    if (manager?.hrId) add(manager.hrId, manager.fullName, manager.workEmail, "direct_manager");
+    else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
+  }
+
+  // 2. Approver(s): Super Admin accounts only. A-16 is
+  //    deliberately NOT included: A-16 is HR review/follow-up and holds NO outstation
+  //    "approve" permission (see 20260522203000_hr_manager_approval_authority.sql), so an
+  //    "approval needed" alert to A-16 would be a dead end. B-10 is the Super Admin HR
+  //    approver and is covered by this query.
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id,role,is_active")
+      .eq("is_active", true)
+      .eq("role", "Super Admin");
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+      const hrId = text(row.hr_id);
+      if (!hrId || text(row.role) !== "Super Admin") continue;
+      const directoryRow = byHrId(hrId);
+      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, directoryRow?.workEmail, "hr");
+    }
+  } catch (error) {
+    console.error("[outstation] approver lookup failed; approval alert may be incomplete", error);
+  }
+
+  return [...recipients.values()];
+}
+
+// Rejection notification to the submitting employee. This is the ONLY email sent for
+// outstation/expenses — HR Manager rejects violations; approvals are silent (auto-approve).
 async function notifyOutstationDecision(input: {
   comment?: string | null;
   decision: "reject";
@@ -1734,7 +1800,7 @@ export async function listMedicalRepExpenseRequests(access: AccessContext) {
   const { data, error } = await supabase
     .from("outstation_expense_requests")
     .select("*")
-    .eq("employee_hr_id", identity.employeeHrId)
+    .ilike("employee_hr_id", identity.employeeHrId)
     .order("created_at", { ascending: false });
 
   if (error) {

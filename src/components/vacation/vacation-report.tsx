@@ -1718,8 +1718,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               </div>
 
-              {/* Desktop table (xs+) */}
-              <div className="hidden xs:block overflow-x-auto">
+              {/* Desktop table (md+) */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
                   <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
@@ -1789,8 +1789,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
               </div>
 
-              {/* Mobile card view (< xs) */}
-              <div className="block xs:hidden space-y-2 p-3">
+              {/* Mobile card view (< md) */}
+              <div className="block md:hidden space-y-2 p-3">
                 {paginatedEntitlements.length === 0 ? (
                   <p className="py-6 text-center text-[13px] font-medium text-slate-500">
                     No active employees matched the current filters.
@@ -2016,8 +2016,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               </div>
 
-              {/* Desktop table (xs+) */}
-              <div className="hidden xs:block overflow-x-auto">
+              {/* Desktop table (md+) */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[12px]">
                   <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
@@ -2164,8 +2164,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
               </div>
 
-              {/* Mobile card view (< xs) */}
-              <div className="block xs:hidden space-y-2 p-3">
+              {/* Mobile card view (< md) */}
+              <div className="block md:hidden space-y-2 p-3">
                 {paginatedRequests.length === 0 ? (
                   <p className="py-6 text-center text-[13px] font-medium text-slate-500">
                     No vacation requests found.

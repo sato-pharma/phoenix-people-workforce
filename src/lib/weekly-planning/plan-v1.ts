@@ -61,6 +61,7 @@ export type EmployeePlanActivityType = (typeof employeePlanActivityTypes)[number
 export const WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES = [
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
   "Training Manager",
   "National Sales Manager",
 ] as const;

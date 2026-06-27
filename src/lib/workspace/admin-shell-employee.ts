@@ -14,7 +14,6 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const workspaceMarketingRoles = [
   "SFE Manager",
-  "Marketing Manager",
   // Finance Execution of marketing requests runs from the workspace shell. Financial Advisor is the
   // designated executor. Finance Manager is included so they can monitor requests as observers.
   "Finance Manager",

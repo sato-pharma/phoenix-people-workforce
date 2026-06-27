@@ -131,36 +131,32 @@ export function runModulesControlTests() {
     positionTitle: "Marketing Manager",
     role: "Marketing Manager",
   });
-  const workspacePlans = catalog.find((module) => module.moduleId === "admin.workspace.weekly_monthly_plan");
-  assert.ok(workspacePlans, "workspace weekly/monthly plan module exists");
+  const marketingManagerPortalModules = [
+    "/employee-portals/monthly-closing",
+    "/employee-portals/plans",
+    "/employee-portals/organogram",
+    "/employee-portals/vacancies",
+    "/employee-portals/probation",
+    "/employee-portals/marketing-requests",
+    "/employee-portals/marketing-requests/inbox",
+    "/employee-portals/marketing-requests/roi-tracking",
+  ].map((href) => {
+    const catalogModule = catalog.find((entry) => entry.href === href && entry.navigationMode === "employee-portal");
+    assert.ok(catalogModule, `${href} employee-portal module exists`);
+    return catalogModule.moduleId;
+  });
   assert.doesNotThrow(() =>
     validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,
-      moduleIds: [workspacePlans!.moduleId],
-      navigationMode: "admin",
+      moduleIds: marketingManagerPortalModules,
+      navigationMode: "employee-portal",
       people: [hossam],
       targetKey: "a-9",
       targetType: "user",
     }),
-    "A-9 Marketing Manager can receive allowed workspace modules",
+    "A-9 Marketing Manager can receive PM/GPM-style employee portal modules",
   );
-  // Marketing Manager was granted vacancies/organogram/probation read access so the workspace
-  // Team Operations section now shows for MM — these modules are no longer blocked.
-  for (const allowedModuleId of ["admin.workspace.organogram", "admin.workspace.vacancies", "admin.workspace.probation_tracker"]) {
-    assert.doesNotThrow(
-      () => validateModuleAssignmentList({
-        catalog,
-        matrix: permissionMatrix,
-        moduleIds: [allowedModuleId],
-        navigationMode: "admin",
-        people: [hossam],
-        targetKey: "a-9",
-        targetType: "user",
-      }),
-      `${allowedModuleId} is now accessible to A-9 Marketing Manager`,
-    );
-  }
 
   assert.throws(
     () => validateModuleAssignmentList({

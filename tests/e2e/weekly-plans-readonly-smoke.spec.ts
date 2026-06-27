@@ -30,9 +30,9 @@ const ACTOR_ROUTES: ActorRoute[] = [
   },
   {
     hrId: "A-9",
-    name: "Marketing Manager workspace reviewer",
+    name: "Marketing Manager employee portal reviewer",
     role: "Marketing Manager",
-    routes: ["/workspace/plans", "/workspace/plans/calendar"],
+    routes: ["/employee-portals/plans", "/employee-portals/plans/calendar"],
   },
   {
     hrId: "AA",
