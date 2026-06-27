@@ -42,5 +42,5 @@ export default async function EmployeePortalsHomePage() {
     );
   }
 
-  return <PortalCommandCenter snapshot={snapshot} access={access} />;
+  return <PortalCommandCenter snapshot={snapshot} />;
 }

@@ -22,9 +22,6 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
-import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
-import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
-import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 
@@ -188,6 +185,14 @@ export function PendingActions({
           </Link>
         )}
       </div>
+    </SectionShell>
+  );
+}
+
+export function PendingCountsUnavailable() {
+  return (
+    <SectionShell title="Needs Your Decision">
+      <p className="text-sm text-slate-400">Pending counts are temporarily unavailable.</p>
     </SectionShell>
   );
 }
@@ -992,12 +997,7 @@ export function PortalCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot
     case "Product Manager":
     case "Group Product Manager":
       return <PmGpmCommandCenter snapshot={snapshot} />;
-    case "Marketing Manager":
-      return <MarketingManagerCommandCenter snapshot={snapshot} />;
-    case "District Manager":
-      return <DsmCommandCenter snapshot={snapshot} />;
-    case "National Sales Manager":
-      return <NsmCommandCenter snapshot={snapshot} />;
+
   }
   if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
