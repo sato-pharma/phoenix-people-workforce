@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   BarChart3,
   CalendarClock,
@@ -22,6 +23,10 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
+import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
+import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
+import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 
@@ -191,9 +196,12 @@ export function PendingActions({
 
 export function PendingCountsUnavailable() {
   return (
-    <SectionShell title="Needs Your Decision">
-      <p className="text-sm text-slate-400">Pending counts are temporarily unavailable.</p>
-    </SectionShell>
+    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5 sm:py-4">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+      <span className="text-sm font-medium text-amber-800">
+        Couldn&apos;t load your pending items right now — refresh to try again.
+      </span>
+    </div>
   );
 }
 
@@ -992,12 +1000,17 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
-export function PortalCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   switch (snapshot.role) {
     case "Product Manager":
     case "Group Product Manager":
       return <PmGpmCommandCenter snapshot={snapshot} />;
-
+    case "Marketing Manager":
+      return <MarketingManagerCommandCenter snapshot={snapshot} access={access} />;
+    case "District Manager":
+      return <DsmCommandCenter snapshot={snapshot} />;
+    case "National Sales Manager":
+      return <NsmCommandCenter snapshot={snapshot} />;
   }
   if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
