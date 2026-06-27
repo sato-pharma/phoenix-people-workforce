@@ -347,7 +347,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                 </div>
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Coach</p>
-                  <h2 className="text-lg font-black tracking-[-0.03em] text-[#0F172A]">{coach.name}</h2>
+                  <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A] sm:text-lg">{coach.name}</h2>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -437,7 +437,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                             Point {item.displayOrder} of {coachingScoreItems.length}
                           </p>
                         </div>
-                        <div className="grid grid-cols-6 gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
                           {[0, 1, 2, 3, 4, 5].map((rating) => {
                             const selected = scores[item.key] === rating;
                             return (
@@ -553,7 +553,7 @@ export function CoachingReportForm({ coach, employees }: CoachingReportFormProps
                 <div className={`${adminSoftPanelClassName} p-4`}>
                   <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Final Score</p>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <p className="text-4xl font-black tracking-[-0.05em] text-[#0F172A]">{liveScore.finalScorePercent}%</p>
+                    <p className="text-3xl font-black tracking-[-0.05em] text-[#0F172A] sm:text-4xl">{liveScore.finalScorePercent}%</p>
                     <p className="pb-1 text-sm font-bold text-[#64748B]">{liveScore.actualScore} / {liveScore.maxScore}</p>
                   </div>
                 </div>

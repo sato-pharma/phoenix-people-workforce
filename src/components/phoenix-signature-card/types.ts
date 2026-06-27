@@ -4,5 +4,6 @@ export type PhoenixSignatureCardProps = {
   photoSrc: string | null;
   logoSrc: string;
   prefix?: string;
+  employeeCode?: string;
   className?: string;
 };

@@ -30,6 +30,7 @@ import {
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -529,7 +530,7 @@ export function PrivateCalendar({
                     </span>
                   ) : null}
                 </div>
-                <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
+                <h2 className="mt-3 text-xl font-black tracking-tight text-white sm:text-2xl md:text-3xl">{monthLabel(year, month)}</h2>
                 <p className="mt-1 text-sm font-semibold text-slate-300">
                   {isTeamView
                     ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
@@ -587,7 +588,7 @@ export function PrivateCalendar({
                   </span>
                 ) : null}
               </div>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
+              <h2 className="mt-2 text-xl font-black text-slate-950 sm:text-2xl">{monthLabel(year, month)}</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
                 {isTeamView
                   ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
@@ -812,7 +813,7 @@ export function PrivateCalendar({
               return (
                 <button
                   className={[
-                    "min-h-[120px] bg-white p-2 text-left align-top transition-colors",
+                    "min-h-[60px] bg-white p-2 text-left align-top transition-colors sm:min-h-[120px]",
                     day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20",
                     selected ? "ring-2 ring-inset ring-orange-400" : "",
                   ].join(" ")}
@@ -962,7 +963,7 @@ function Metric({
           {ready ? "Ready" : "N/A"}
         </span>
       </div>
-      <p className="mt-3 text-3xl font-black text-slate-950">{value}</p>
+      <p className="mt-3 text-xl font-black text-slate-950 sm:text-2xl md:text-3xl">{value}</p>
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
   );
@@ -999,7 +1000,7 @@ function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalenda
                 {row.exceptionCount} warn{row.exceptionCount === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-black text-slate-500">
+            <div className="mt-3 grid grid-cols-2 gap-1 text-center text-[10px] font-black text-slate-500 sm:grid-cols-4 sm:gap-1.5">
               <span className="rounded-lg bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
               <span className="rounded-lg bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
               <span className="rounded-lg bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
@@ -1046,6 +1047,8 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
   );
 }
 
+const CALENDAR_REPORT_PAGE_SIZE = 25;
+
 function CalendarReportTable({
   rows,
   surface = "employee",
@@ -1056,6 +1059,19 @@ function CalendarReportTable({
   warningCount: number;
 }) {
   const isWorkspaceSurface = surface === "workspace";
+  const [page, setPage] = useState(0);
+
+  const [prevRows, setPrevRows] = useState(rows);
+  if (rows !== prevRows) {
+    setPrevRows(rows);
+    setPage(0);
+  }
+
+  const pageRows = rows.slice(
+    page * CALENDAR_REPORT_PAGE_SIZE,
+    (page + 1) * CALENDAR_REPORT_PAGE_SIZE,
+  );
+
   return (
     <section className={isWorkspaceSurface ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm" : "overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60"}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
@@ -1079,7 +1095,7 @@ function CalendarReportTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[1220px] border-collapse text-left text-xs">
           <thead>
             <tr className="bg-slate-950">
@@ -1101,7 +1117,7 @@ function CalendarReportTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              pageRows.map((row) => (
                 <tr className="transition-colors hover:bg-orange-50/40" key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">
                     {reportDateLabel(row.date)}
@@ -1140,6 +1156,60 @@ function CalendarReportTable({
           </tbody>
         </table>
       </div>
+
+      <div className="space-y-3 p-4 md:hidden">
+        {rows.length === 0 ? (
+          <p className="px-2 py-8 text-center text-sm font-semibold text-slate-400">
+            No private calendar entries match the current filters.
+          </p>
+        ) : (
+          pageRows.map((row) => (
+            <div
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              key={`${row.id}-mobile`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-[11px] font-semibold text-slate-500">{reportDateLabel(row.date)}</p>
+                  <p className="mt-1 truncate font-black text-slate-900">{row.title}</p>
+                </div>
+                <span className={["inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                  {sourceReportLabel(row.source)}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <p className="text-slate-600">
+                  Check-in: <span className="font-mono font-bold text-slate-900">{row.checkIn ?? "-"}</span>
+                </p>
+                <p className="text-slate-600">
+                  Check-out: <span className="font-mono font-bold text-slate-900">{row.checkOut ?? "-"}</span>
+                </p>
+                <p className="text-slate-600">
+                  Scheduled: <span className="font-bold text-slate-900">{row.scheduledTime ?? "-"}</span>
+                </p>
+                <p className="text-slate-600">
+                  Hours: <span className="font-bold text-slate-900">{row.workingHours ?? "-"}</span>
+                </p>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className={["inline-flex truncate rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                  {row.status ?? row.sourceLabel}
+                </span>
+              </div>
+              {row.detail ? (
+                <p className="mt-2 text-[11px] font-semibold leading-relaxed text-slate-500">{row.detail}</p>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+
+      <PaginationControls
+        onPageChange={setPage}
+        page={page}
+        pageSize={CALENDAR_REPORT_PAGE_SIZE}
+        total={rows.length}
+      />
     </section>
   );
 }
