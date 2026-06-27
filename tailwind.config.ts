@@ -10,6 +10,8 @@ const config = {
     },
     extend: {
       colors: {
+        navy: "#0b1f3a",
+        "navy-light": "#0e2747",
         bg: "var(--bg)",
         "bg-soft": "var(--bg-soft)",
         "bg-muted": "var(--bg-muted)",
