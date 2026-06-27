@@ -12,6 +12,8 @@ export type PortalHomeSnapshot = {
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
+  monthlySalesTrend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
+  doubleVisitPulse: { daysSinceLastDv: number | null; dvsThisMonth: number; dvsLast90Days: number } | null;
 };
 
 const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
@@ -25,8 +27,13 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   const supabase = getSupabaseAdmin();
   const isMr = role.toLowerCase() === "medical rep";
 
-  // Start MR sales query immediately so it runs in parallel with the batch below.
+  // All three MR-only queries start immediately so they run in parallel with the
+  // vacation/excuse/batch block below.
   const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
   const mrSalesPromise =
     isMr && hrId
       ? wrapPromise(
@@ -34,8 +41,35 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
             .from("v_employee_portal_sales")
             .select("sales_value, target_value")
             .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
-            .eq("year", now.getFullYear())
-            .eq("month", now.getMonth() + 1),
+            .eq("year", currentYear)
+            .eq("month", currentMonth),
+        )
+      : Promise.resolve(null);
+
+  // Last 4 months of per-row sales data; aggregated client-side into trend buckets.
+  const trendPromise =
+    isMr && hrId
+      ? wrapPromise(
+          supabase
+            .from("v_employee_portal_sales")
+            .select("year, month, sales_value, target_value")
+            .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
+            .order("year", { ascending: false })
+            .order("month", { ascending: false })
+            .limit(200),
+        )
+      : Promise.resolve(null);
+
+  // Double-visit rows for this MR — most recent first so [0] is the latest visit.
+  const dvPromise =
+    isMr && hrId
+      ? wrapPromise(
+          supabase
+            .from("double_visit_rows")
+            .select("activity_date")
+            .eq("visited_employee_hr_id", hrId.toUpperCase())
+            .order("activity_date", { ascending: false })
+            .limit(500),
         )
       : Promise.resolve(null);
 
@@ -93,12 +127,19 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     }
   }
 
-  // Resolve MR achievement (null for all other roles).
+  // Await all three MR promises together (they've been in-flight since the start).
+  const [mrSalesResult, trendResult, dvResult] = await Promise.allSettled([
+    mrSalesPromise,
+    trendPromise,
+    dvPromise,
+  ]);
+
+  // Current-month achievement.
   let mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = null;
   try {
-    const mrResult = await mrSalesPromise;
-    if (mrResult && "data" in mrResult && Array.isArray(mrResult.data) && mrResult.data.length > 0) {
-      const rows = mrResult.data as Array<{ sales_value?: number | null; target_value?: number | null }>;
+    const mrData = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
+    if (mrData && "data" in mrData && Array.isArray(mrData.data) && mrData.data.length > 0) {
+      const rows = mrData.data as Array<{ sales_value?: number | null; target_value?: number | null }>;
       const totalSales = rows.reduce((s, r) => s + Number(r.sales_value ?? 0), 0);
       const totalTarget = rows.reduce((s, r) => s + Number(r.target_value ?? 0), 0);
       mrSalesAchievement = {
@@ -108,7 +149,55 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
       };
     }
   } catch {
-    // null on failure — non-fatal
+    // null on failure
+  }
+
+  // Last 4 distinct (year, month) buckets — newest first.
+  let monthlySalesTrend: PortalHomeSnapshot["monthlySalesTrend"] = null;
+  try {
+    const trendData = trendResult.status === "fulfilled" ? trendResult.value : null;
+    if (trendData && "data" in trendData && Array.isArray(trendData.data)) {
+      type TrendRow = { year: number; month: number; sales_value?: number | null; target_value?: number | null };
+      const rows = trendData.data as TrendRow[];
+      const buckets = new Map<string, { year: number; month: number; salesValue: number; targetValue: number }>();
+      for (const row of rows) {
+        const key = `${row.year}-${row.month}`;
+        const b = buckets.get(key) ?? { year: row.year, month: row.month, salesValue: 0, targetValue: 0 };
+        b.salesValue += Number(row.sales_value ?? 0);
+        b.targetValue += Number(row.target_value ?? 0);
+        buckets.set(key, b);
+      }
+      monthlySalesTrend = Array.from(buckets.values())
+        .sort((a, b) => b.year - a.year || b.month - a.month)
+        .slice(0, 4)
+        .map((m) => ({
+          ...m,
+          achievementPercent: m.targetValue > 0 ? Math.round((m.salesValue / m.targetValue) * 100) : 0,
+        }));
+    }
+  } catch {
+    // null on failure
+  }
+
+  // Double-visit pulse for this MR.
+  let doubleVisitPulse: PortalHomeSnapshot["doubleVisitPulse"] = null;
+  try {
+    const dvData = dvResult.status === "fulfilled" ? dvResult.value : null;
+    if (dvData && "data" in dvData && Array.isArray(dvData.data)) {
+      const rows = dvData.data as Array<{ activity_date: string }>;
+      const thisMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
+      if (rows.length === 0) {
+        doubleVisitPulse = { daysSinceLastDv: null, dvsThisMonth: 0, dvsLast90Days: 0 };
+      } else {
+        const lastDate = new Date(rows[0].activity_date);
+        const daysSinceLastDv = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+        const dvsThisMonth = rows.filter((r) => r.activity_date.startsWith(thisMonthPrefix)).length;
+        const dvsLast90Days = rows.filter((r) => r.activity_date >= ninetyDaysAgo).length;
+        doubleVisitPulse = { daysSinceLastDv, dvsThisMonth, dvsLast90Days };
+      }
+    }
+  } catch {
+    // null on failure
   }
 
   // Pure calculation — no DB.
@@ -122,5 +211,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
     mrSalesAchievement,
+    monthlySalesTrend,
+    doubleVisitPulse,
   };
 }
