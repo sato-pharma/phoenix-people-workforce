@@ -89,6 +89,22 @@ export function runCeoOrganogramVisibilityTests() {
     "District Manager has no company organogram",
   );
 
+  // Training Manager and Marketing Manager get company-wide (all 3 commercial lines)
+  // organogram oversight — regression guard for the employee-portal redirect bug where
+  // the page checked only isLineScopedOrganogramRole() and never consulted this function.
+  const trainingManager = createAccessContext({ hrId: "A-7", role: "Training Manager" });
+  const marketingManager = createAccessContext({ hrId: "MM-1", role: "Marketing Manager" });
+  assert.equal(
+    canAccessCompanyOrganogram(trainingManager),
+    true,
+    "Training Manager must reach the company organogram",
+  );
+  assert.equal(
+    canAccessCompanyOrganogram(marketingManager),
+    true,
+    "Marketing Manager must reach the company organogram",
+  );
+
   // 2) Company mode must NOT be row-filtered down to the viewer. A CEO must see
   //    the WHOLE company structure, not just themselves — this guards against the
   //    employee-directory-style self-only filtering ever being copied here.

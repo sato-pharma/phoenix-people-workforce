@@ -1,6 +1,13 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+// sameWorkforceLine is a zero-dependency pure function — safe to import directly
+// in the test runner. canReadProbationEmployee lives in the full service (which pulls
+// in Supabase, notification, and resignation dependencies that can't load under the
+// alias-loader without stubs), so we test the line-matching behaviour via
+// sameWorkforceLine directly — that IS the new logic under test.
+import { sameWorkforceLine } from "../src/lib/workforce/hierarchy-resolver.ts";
+
 export function runProbationStabilizationTests() {
   const serviceSource = readFileSync("src/lib/probation/service.ts", "utf8");
   const adminPageSource = readFileSync("app/(admin)/probation/page.tsx", "utf8");
@@ -107,4 +114,54 @@ export function runProbationStabilizationTests() {
   assert.doesNotMatch(trackerSource, /Attach letter/);
   assert.doesNotMatch(readFileSync("app/api/probation/route.ts", "utf8"), /probationEndDate/);
   assert.doesNotMatch(trackerSource, /onClick=\{\(\) => runWorkflow\(row,/);
+
+  // ── Line-scoped probation matching must prefer numeric line_id (canonical
+  //    sameWorkforceLine), not text-only lineName — mirrors Coaching/Double-Visit-Analytics. ──
+  assert.match(serviceSource, /import \{ sameWorkforceLine \} from "@\/lib\/workforce\/hierarchy-resolver"/);
+  assert.match(serviceSource, /return sameWorkforceLine\(employee, viewer\)/);
+  assert.doesNotMatch(
+    serviceSource,
+    /normalizeLineName\(employee\.lineName\)/,
+    "Probation line matching must not fall back to the old text-only isSameLine implementation.",
+  );
+
+  const adminProbationPageSource = readFileSync("app/(admin)/probation/page.tsx", "utf8");
+  assert.match(adminProbationPageSource, /canViewAllProbation\(access\)/);
+
+  // ── Runtime: sameWorkforceLine is the new core of isSameLine in probation service. ──
+  // 1) Same line_id matches even when lineName text is stale/differently-cased.
+  assert.equal(
+    sameWorkforceLine(
+      { lineId: 1, lineName: "Anti Infective" },
+      { lineId: 1, lineName: "ANTI-INFECTIVE (legacy)" },
+    ),
+    true,
+    "same line_id must match regardless of stale lineName text",
+  );
+
+  // 2) Different line_id must NOT match even when both lineName values are blank.
+  assert.equal(
+    sameWorkforceLine({ lineId: 1, lineName: null }, { lineId: 2, lineName: null }),
+    false,
+    "different line_id must not match even when lineName coincidentally matches (both null)",
+  );
+
+  // 3) Neither side has line_id → normalized lineName text fallback preserves legacy behaviour.
+  assert.equal(
+    sameWorkforceLine({ lineName: "Pedia" }, { lineName: "pedia" }),
+    true,
+    "when no line_id is present, normalized lineName text fallback must still match",
+  );
+  assert.equal(
+    sameWorkforceLine({ lineName: "Cardiovascular" }, { lineName: "pedia" }),
+    false,
+    "when no line_id, different normalized lineName must not match",
+  );
+
+  // 4) canViewAllProbation grants TM + MM company-wide — verified at source level.
+  assert.match(
+    serviceSource,
+    /canViewAllProbation[\s\S]{0,400}Training Manager[\s\S]{0,200}Marketing Manager|canViewAllProbation[\s\S]{0,400}Marketing Manager[\s\S]{0,200}Training Manager/,
+    "canViewAllProbation must include both Training Manager and Marketing Manager",
+  );
 }
