@@ -89,11 +89,13 @@ const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO"]);
 // canManageCoachingReports + assertOwnDraftOrOverride + the workflow registry, so these oversight
 // roles never gain edit rights on others' reports (Marketing Manager is view-only by design).
 const coachingOversightRoles = new Set<AccessContext["role"]>([...companyRoles, "Training Manager", "Marketing Manager"]);
+// Line-scoped coaching READ roles. Marketing Manager is intentionally NOT here: it is in
+// coachingOversightRoles, which short-circuits to full company-wide read above (line ~187)
+// before this branch is reached — so a line entry was dead code that misrepresented its scope.
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
-  "Marketing Manager",
   "SFE Manager",
 ]);
 const defaultCoachingReportLimit = 500;

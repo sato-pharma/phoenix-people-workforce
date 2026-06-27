@@ -144,11 +144,13 @@ function canReadProbationEmployee(
   directory: EmployeeScopeRow[] = [],
 ) {
   if (canReadAllProbation(access)) return true;
+  // Marketing Manager is intentionally NOT in this line-scoped branch: it is already
+  // granted company-wide read/export via canViewAllProbation (head-of-department oversight),
+  // so this branch was unreachable dead code for it.
   if (
     access.role === "National Sales Manager" ||
     access.role === "Product Manager" ||
-    access.role === "Group Product Manager" ||
-    access.role === "Marketing Manager"
+    access.role === "Group Product Manager"
   ) {
     return isSameLine(employee, viewer);
   }

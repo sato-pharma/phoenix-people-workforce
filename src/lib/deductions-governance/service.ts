@@ -1691,6 +1691,13 @@ function collectPortalDeductionScope(input: {
 }) {
   if (input.access.scope === "system") return { all: true, compactHrIds: new Set<string>() };
   const root = compactHrId(input.access.hrId ?? input.access.loginId);
+  // Marketing Manager (Head of Department) keeps broad analytics oversight elsewhere, but
+  // portal Deductions are intentionally SELF-only: a marketing lead must not read other line
+  // employees' financial/disciplinary deduction PII. Return the viewer's own record only,
+  // before any line/hierarchy widening below.
+  if (input.access.role === "Marketing Manager") {
+    return { all: false, compactHrIds: new Set<string>(root ? [root] : []) };
+  }
   const compactHrIds = new Set<string>();
   if (root) compactHrIds.add(root);
   const byManager = new Map<string, EmployeeScopeRow[]>();
