@@ -9,7 +9,7 @@ import { getAttendancePolicyDashboard } from "@/lib/attendance/policies";
 import { buildCommunicationMetrics } from "@/lib/communication/metrics";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getEmailTemplateCatalog } from "@/lib/email-templates/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isDisposableFixtureText } from "@/lib/fixture-hygiene";
 import { countHrWorkingDays } from "@/lib/hr-calendar/calendar-logic";
 import { getHiringDocumentsDashboard } from "@/lib/hiring-documents/service";
@@ -212,12 +212,19 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export async function getWorkforceMetrics(accessContext: AccessContext): Promise<PlatformMetrics["workforce"]> {
-  if (!(await canAccess(accessContext, "employees", "read"))) {
-    return emptyPlatformMetrics().workforce;
-  }
+type WorkforceMetricDirectory = {
+  employees: Array<Pick<EmployeeDirectoryData["employees"][number], "areaName" | "employmentStatus" | "fullName" | "hrId" | "lineName" | "managerHrId">>;
+  lookups: {
+    workforceVacancies: Array<{ vacancyCode?: string | null }>;
+  };
+};
 
-  const directory = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), accessContext);
+export function canReadCompanyWorkforceAggregates(context: Pick<AccessContext, "role" | "scope" | "source">) {
+  if (context.source === "guest" || context.scope === "none") return false;
+  return context.scope === "system" || context.role === "Super Admin" || (context.role === "CEO" && context.scope === "company");
+}
+
+export function buildCompanyWorkforceAggregateMetrics(directory: WorkforceMetricDirectory): PlatformMetrics["workforce"] {
   const employees = directory.employees.filter((employee) =>
     !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
   );
@@ -242,6 +249,20 @@ export async function getWorkforceMetrics(accessContext: AccessContext): Promise
     uniqueAreas: new Set(employees.map((employee) => employee.areaName).filter(Boolean)).size,
     uniqueLines: new Set(employees.map((employee) => employee.lineName).filter(Boolean)).size,
   };
+}
+
+export async function getWorkforceMetrics(accessContext: AccessContext): Promise<PlatformMetrics["workforce"]> {
+  const canReadEmployeeMaster = await canAccess(accessContext, "employees", "read");
+  const canReadCompanyAggregates = canReadCompanyWorkforceAggregates(accessContext);
+  if (!canReadEmployeeMaster && !canReadCompanyAggregates) {
+    return emptyPlatformMetrics().workforce;
+  }
+
+  const directory = await getEmployeeDirectory();
+  const metricDirectory = canReadEmployeeMaster
+    ? filterEmployeeDirectoryForAccess(directory, accessContext)
+    : directory;
+  return buildCompanyWorkforceAggregateMetrics(metricDirectory);
 }
 
 async function getPayrollMetrics(accessContext: AccessContext): Promise<PlatformMetrics["payroll"]> {

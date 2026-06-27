@@ -1,9 +1,42 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import {
+  buildCompanyWorkforceAggregateMetrics,
+  canReadCompanyWorkforceAggregates,
+} from "../src/lib/platform/metrics.ts";
+
 export function runPlatformMetricsTests() {
+  assert.equal(
+    canReadCompanyWorkforceAggregates({ role: "CEO", scope: "company", source: "session" }),
+    true,
+    "CEO must be allowed to read company-level workforce aggregates without employee-master access",
+  );
+  assert.equal(
+    canReadCompanyWorkforceAggregates({ role: "Employee", scope: "self", source: "session" }),
+    false,
+    "self-scoped employees must not read company-level workforce aggregates",
+  );
+  const ceoWorkforce = buildCompanyWorkforceAggregateMetrics({
+    employees: [
+      { areaName: "Cairo", employmentStatus: "active", fullName: "Alpha", hrId: "A-1", lineName: "Line 1", managerHrId: "AA" },
+      { areaName: "Giza", employmentStatus: "on_leave", fullName: "Beta", hrId: "A-2", lineName: "Line 1", managerHrId: "AA" },
+      { areaName: "Cairo", employmentStatus: "inactive", fullName: "Gamma", hrId: "A-3", lineName: "Line 2", managerHrId: "AA" },
+    ],
+    lookups: {
+      workforceVacancies: [{ vacancyCode: "VAC-1" }],
+    },
+  });
+  assert.equal(ceoWorkforce.activeEmployees, 2, "CEO aggregate workforce metrics must count active/on-leave employees");
+  assert.equal(ceoWorkforce.totalEmployees, 3, "CEO aggregate workforce metrics must count company employees");
+  assert.equal(ceoWorkforce.totalStructure, 3, "CEO aggregate workforce metrics must expose non-zero structure when employees exist");
+
   const platformSource = readFileSync("src/lib/platform/metrics.ts", "utf8");
   assert.match(platformSource, /export async function getPlatformMetrics/);
+  assert.match(platformSource, /export function canReadCompanyWorkforceAggregates/);
+  assert.match(platformSource, /const canReadEmployeeMaster = await canAccess\(accessContext, "employees", "read"\)/);
+  assert.match(platformSource, /const canReadCompanyAggregates = canReadCompanyWorkforceAggregates\(accessContext\)/);
+  assert.match(platformSource, /buildCompanyWorkforceAggregateMetrics\(metricDirectory\)/);
   assert.match(platformSource, /getEmployeeDirectory/);
   assert.match(platformSource, /getPayrollDashboard/);
   assert.match(platformSource, /getSalesPlatformMetrics/);
