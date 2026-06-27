@@ -20,7 +20,8 @@
 -- Re-runnable / idempotent: guarded inserts (on conflict) + region-scoped updates. Wrapped in a
 -- transaction so a partial failure rolls back cleanly. Geography FKs are ON UPDATE CASCADE, so
 -- moving an AREA's region_code cascades the region_code change to its blocks and bricks; the
--- denormalized region_name columns are refreshed explicitly afterward (step 5).
+-- dependent tables inherit the moved region_code via FKs; no extra denormalized
+-- name columns exist on the base local hierarchy tables.
 
 begin;
 
@@ -49,28 +50,26 @@ where area_code in ('D11', 'D24', 'D25')
 
 -- 3) Suez — dedicated area + block under D3, then move ONLY the El Sewis brick (B122-12).
 insert into public.source_of_sales_areas
-  (area_code, area_name, normalized_area_name, region_code, region_name, description, active,
+  (area_code, area_name, normalized_area_name, region_code, description, active,
    source_file, source_sheet, effective_from)
 values
-  ('D31', 'Suez', 'suez', 'D3', 'Delta (3)', 'Suez', true,
+  ('D31', 'Suez', 'suez', 'D3', 'Suez', true,
    'manual:delta3_carveout', 'Areas', date '2026-06-01')
 on conflict (area_code) do update set
   area_name = excluded.area_name, normalized_area_name = excluded.normalized_area_name,
-  region_code = 'D3', region_name = 'Delta (3)', active = true, updated_at = now();
+  region_code = 'D3', active = true, updated_at = now();
 
 insert into public.source_of_sales_blocks
-  (block_code, block_name, normalized_block_name, area_code, area_name, region_code, region_name,
-   description, active, source_file, source_sheet)
+  (block_code, area_code, region_code, description, normalized_description, active, source_file, source_sheet)
 values
-  ('B300', 'Suez', 'suez', 'D31', 'Suez', 'D3', 'Delta (3)',
-   'Suez', true, 'manual:delta3_carveout', 'Blocks')
+  ('B300', 'D31', 'D3', 'Suez', 'suez', true, 'manual:delta3_carveout', 'Blocks')
 on conflict (block_code) do update set
-  area_code = 'D31', area_name = 'Suez', region_code = 'D3', region_name = 'Delta (3)',
+  area_code = 'D31', region_code = 'D3', description = 'Suez', normalized_description = 'suez',
   active = true, updated_at = now();
 
 update public.source_of_sales_bricks
-set block_code = 'B300', block_name = 'Suez', area_code = 'D31', area_name = 'Suez',
-    region_code = 'D3', region_name = 'Delta (3)',
+set block_code = 'B300', area_code = 'D31',
+    region_code = 'D3',
     source_area_code   = coalesce(source_area_code, 'OT2'),
     source_region_code = coalesce(source_region_code, 'OT'),
     updated_at = now()
@@ -78,36 +77,20 @@ where brick_id = 'B122-12';
 
 -- 4) Ismailia — EMPTY placeholder area + block under D3 (no bricks yet).
 insert into public.source_of_sales_areas
-  (area_code, area_name, normalized_area_name, region_code, region_name, description, active,
+  (area_code, area_name, normalized_area_name, region_code, description, active,
    source_file, source_sheet, effective_from)
 values
-  ('D32', 'Ismailia', 'ismailia', 'D3', 'Delta (3)', 'Ismailia (placeholder — no bricks yet)', true,
+  ('D32', 'Ismailia', 'ismailia', 'D3', 'Ismailia (placeholder — no bricks yet)', true,
    'manual:delta3_carveout', 'Areas', date '2026-06-01')
 on conflict (area_code) do update set
-  region_code = 'D3', region_name = 'Delta (3)', active = true, updated_at = now();
+  region_code = 'D3', active = true, updated_at = now();
 
 insert into public.source_of_sales_blocks
-  (block_code, block_name, normalized_block_name, area_code, area_name, region_code, region_name,
-   description, active, source_file, source_sheet)
+  (block_code, area_code, region_code, description, normalized_description, active, source_file, source_sheet)
 values
-  ('B301', 'Ismailia', 'ismailia', 'D32', 'Ismailia', 'D3', 'Delta (3)',
-   'Ismailia (placeholder)', true, 'manual:delta3_carveout', 'Blocks')
+  ('B301', 'D32', 'D3', 'Ismailia (placeholder)', 'ismailia placeholder', true, 'manual:delta3_carveout', 'Blocks')
 on conflict (block_code) do update set
-  area_code = 'D32', region_code = 'D3', region_name = 'Delta (3)', active = true, updated_at = now();
-
--- 5) Refresh the denormalized region_name on everything now in D3 (the cascade in step 2 only moved
---    region_code; the importer also snapshots region_name onto sales rows, so it must agree).
-update public.source_of_sales_areas
-set region_name = 'Delta (3)', updated_at = now()
-where region_code = 'D3' and region_name is distinct from 'Delta (3)';
-
-update public.source_of_sales_blocks
-set region_name = 'Delta (3)', updated_at = now()
-where region_code = 'D3' and region_name is distinct from 'Delta (3)';
-
-update public.source_of_sales_bricks
-set region_name = 'Delta (3)', updated_at = now()
-where region_code = 'D3' and region_name is distinct from 'Delta (3)';
+  area_code = 'D32', region_code = 'D3', description = 'Ismailia (placeholder)', normalized_description = 'ismailia placeholder', active = true, updated_at = now();
 
 -- 6) Refresh the customer→brick snapshot used by the read-only "Database Validation" tab so it shows
 --    the moved customers under Delta (3). (The import path itself re-derives region live from the

@@ -48,12 +48,13 @@ comment on table public.weekly_distributor_mapping is
 
 -- Carry the existing POS branch->region mappings into the unified table as region rows.
 -- Idempotent: re-running skips rows already present (unique key).
+-- Legacy POS mappings predate map_type and are always treated as 'combined'.
 insert into public.weekly_distributor_mapping
   (distributor_code, dimension, map_type, raw_value, normalized_raw_value, official_code, updated_by, created_at, updated_at)
 select
   m.distributor_code,
   'region',
-  coalesce(m.map_type, 'combined'),
+  'combined',
   m.raw_column_name,
   m.normalized_column_name,
   m.region_code,
