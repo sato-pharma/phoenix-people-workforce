@@ -33,20 +33,23 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // they were explicitly assigned, which the seed never does.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Roles that can open the portal Monthly Closing tab. Medical Rep is excluded. */
+/**
+ * Roles that can open the portal Monthly Closing tab. Medical Rep and Marketing
+ * Manager are excluded — Medical Rep has no line, Marketing Manager sits on
+ * "Head Office" (not a product line) so the portal can never resolve meaningful
+ * published data for them.
+ */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
-  "Marketing Manager",
 ]);
 
 const PRODUCT_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Product Manager",
   "Group Product Manager",
-  "Marketing Manager",
 ]);
 
 export function canAccessPortalClosing(access: AccessContext): boolean {

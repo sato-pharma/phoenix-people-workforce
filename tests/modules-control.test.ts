@@ -132,7 +132,6 @@ export function runModulesControlTests() {
     role: "Marketing Manager",
   });
   const marketingManagerPortalModules = [
-    "/employee-portals/monthly-closing",
     "/employee-portals/plans",
     "/employee-portals/organogram",
     "/employee-portals/vacancies",
