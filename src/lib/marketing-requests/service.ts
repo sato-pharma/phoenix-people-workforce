@@ -55,6 +55,7 @@ import type {
   MarketingWorkflowApprovalScope,
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
+import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -2668,6 +2669,43 @@ function canSeeMarketingRequest(access: AccessContext, row: MarketingRequestDbRo
   }, employeeRows);
 }
 
+/** Load a map of request_id → Set<productCode> for the given request IDs. Used to apply
+ *  product_scope_override filtering when a viewer's access is restricted to specific codes. */
+async function loadProductCodesByRequestId(
+  supabase: SupabaseClient,
+  requestIds: string[],
+): Promise<Map<string, Set<string>>> {
+  if (requestIds.length === 0) return new Map();
+  const { data } = await supabase
+    .from("marketing_request_products")
+    .select("request_id, marketing_products(product_code)")
+    .in("request_id", requestIds);
+  const map = new Map<string, Set<string>>();
+  for (const row of (data ?? []) as Array<{ request_id: string; marketing_products?: { product_code?: string | null } | null }>) {
+    const code = row.marketing_products?.product_code;
+    if (!row.request_id || !code) continue;
+    const bucket = map.get(row.request_id) ?? new Set<string>();
+    bucket.add(code.trim().toUpperCase());
+    map.set(row.request_id, bucket);
+  }
+  return map;
+}
+
+/** Return a filter that drops requests whose products don't include any of the viewer's
+ *  allowed product codes. When allowedProductCodes is null, all requests pass. */
+function makeProductCodeFilter(allowedProductCodes: Set<string> | null) {
+  return (requestId: string, productCodesByRequestId: Map<string, Set<string>>) => {
+    if (!allowedProductCodes) return true;
+    if (allowedProductCodes.size === 0) return false;
+    const codes = productCodesByRequestId.get(requestId);
+    if (!codes || codes.size === 0) return false;
+    for (const code of codes) {
+      if (allowedProductCodes.has(code)) return true;
+    }
+    return false;
+  };
+}
+
 async function fetchActiveProducts(supabase: SupabaseClient, productIds: number[]) {
   const { data, error } = await supabase
     .from("marketing_products")
@@ -3430,7 +3468,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (returnedResult.error) throw returnedResult.error;
   if (inApprovalResult.error) throw inApprovalResult.error;
 
-  const employeeRows = await loadEmployeeDirectoryRows();
+  const [employeeRows, rawProductOverride] = await Promise.all([
+    loadEmployeeDirectoryRows(),
+    getUserProductScopeOverride(access.loginId ?? ""),
+  ]);
+  const allowedProductCodes: Set<string> | null = rawProductOverride === null
+    ? null
+    : new Set(rawProductOverride.map((c) => c.trim().toUpperCase()));
+
   // Read-only surface: a valid reviewer may not be a directory requester. Degrade the
   // creation affordance gracefully instead of failing the whole workspace with a 400.
   const requester = tryFindRequester(access, employeeRows);
@@ -3453,24 +3498,47 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const narrowToOwnRequests = (requests: MarketingRequest[]) =>
     scopeTrackingToOwnRequests ? requests.filter(ownsMarketingRequest) : requests;
 
+  const passesHierarchyCheck = (row: MarketingRequestDbRow) =>
+    canSeeMarketingRequest(access, row, employeeRows);
+
+  const allVisibleRows = [
+    ...((draftsResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
+    ...((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
+    ...((returnedResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
+    ...((inApprovalResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
+  ];
+  // Batch-load product codes for product-code-restricted viewers (e.g. Ahmed Sharaf).
+  const productCodeFilter = makeProductCodeFilter(allowedProductCodes);
+  let productCodesByRequestId = new Map<string, Set<string>>();
+  if (allowedProductCodes !== null) {
+    const allIds = [...new Set(allVisibleRows.map((r) => r.id))];
+    productCodesByRequestId = await loadProductCodesByRequestId(supabase, allIds);
+  }
+  const passesProductFilter = (row: MarketingRequestDbRow) =>
+    productCodeFilter(row.id, productCodesByRequestId);
+
   const drafts = narrowToOwnRequests(
     ((draftsResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+      .filter(passesHierarchyCheck)
+      .filter(passesProductFilter)
       .map(mapRequest),
   );
   const approvedRequests = narrowToOwnRequests(
     ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+      .filter(passesHierarchyCheck)
+      .filter(passesProductFilter)
       .map(mapRequest),
   );
   const returned = narrowToOwnRequests(
     ((returnedResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+      .filter(passesHierarchyCheck)
+      .filter(passesProductFilter)
       .map(mapRequest),
   );
   const inApproval = narrowToOwnRequests(
     ((inApprovalResult.data ?? []) as MarketingRequestDbRow[])
-      .filter((row) => canSeeMarketingRequest(access, row, employeeRows))
+      .filter(passesHierarchyCheck)
+      .filter(passesProductFilter)
       .map(mapRequest),
   );
 

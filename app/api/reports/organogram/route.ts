@@ -6,7 +6,7 @@ import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
   isLineScopedOrganogramRole,
-  resolveOrganogramLineForEmployee,
+  resolveOrganogramLinesForEmployee,
 } from "@/lib/reports/organogram";
 import {
   errorMessage,
@@ -62,15 +62,15 @@ export async function GET(request: Request) {
       );
     }
 
-    const lineName = await resolveOrganogramLineForEmployee(access);
-    if (!lineName) {
+    const lineNames = await resolveOrganogramLinesForEmployee(access);
+    if (!lineNames || lineNames.length === 0) {
       return NextResponse.json(
         { error: "organogram_scope_missing", message: "Unable to resolve your Organogram line scope." },
         { status: 409 },
       );
     }
 
-    return NextResponse.json(await getOrganogramReport(access, { lineName, mode: "line" }));
+    return NextResponse.json(await getOrganogramReport(access, { lineNames, mode: "line" }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(

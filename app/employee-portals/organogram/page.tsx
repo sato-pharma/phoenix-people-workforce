@@ -12,7 +12,7 @@ import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
   isLineScopedOrganogramRole,
-  resolveOrganogramLineForEmployee,
+  resolveOrganogramLinesForEmployee,
 } from "@/lib/reports/organogram";
 import {
   errorMessage,
@@ -59,17 +59,20 @@ export default async function EmployeePortalOrganogramPage() {
 
   let initialError: string | null = null;
   let initialReport = null;
+  // fixedLine locks the UI filter to one line; for multi-line users it stays null
+  // because the report is already pre-filtered server-side via lineNames.
   let fixedLine: string | null = null;
 
   try {
     if (isCompanyScoped) {
       initialReport = await getOrganogramReport(access, { mode: "company" });
     } else {
-      fixedLine = await resolveOrganogramLineForEmployee(access);
-      if (!fixedLine) {
+      const resolvedLines = await resolveOrganogramLinesForEmployee(access);
+      if (!resolvedLines || resolvedLines.length === 0) {
         initialError = "Unable to resolve your Organogram line scope.";
       } else {
-        initialReport = await getOrganogramReport(access, { lineName: fixedLine, mode: "line" });
+        if (resolvedLines.length === 1) fixedLine = resolvedLines[0];
+        initialReport = await getOrganogramReport(access, { lineNames: resolvedLines, mode: "line" });
       }
     }
   } catch (error) {

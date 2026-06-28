@@ -67,6 +67,7 @@ import type { SalesDashboardData } from "@/lib/sales/types";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
+import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getVacationReportData } from "@/lib/vacation/service";
 
@@ -4669,7 +4670,10 @@ export async function getEmployeePortalVacancies(
         currentRole === "Group Product Manager");
     if (!isDsm && !isLineScoped && !isCompanyScoped) return null;
 
-    const directory = await getEmployeeDirectory().catch(() => null);
+    const [directory, viewerAllowedLines] = await Promise.all([
+      getEmployeeDirectory().catch(() => null),
+      isLineScoped ? resolveViewerAllowedLines(access) : Promise.resolve(null),
+    ]);
     if (!directory) return null;
 
     const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
@@ -4679,6 +4683,12 @@ export async function getEmployeePortalVacancies(
     });
 
     if (!currentEmployee) return null;
+
+    // Multi-line override: when set, the viewer spans multiple lines (e.g. Ahmed Sharaf).
+    const hasMultiLineOverride = isLineScoped && viewerAllowedLines && viewerAllowedLines.length > 1;
+    const allowedLineNamesNormalized = hasMultiLineOverride
+      ? viewerAllowedLines!.map((l) => normalizeLineName(l)).filter(Boolean)
+      : null;
 
     const supabase = getSupabaseAdmin();
     const vacancyRows = await fetchAllRows<PortalVacancyDbRow>(() => {
@@ -4692,15 +4702,20 @@ export async function getEmployeePortalVacancies(
 
       if (isDsm && currentUser.hrId) {
         query = query.eq("manager_hr_id", currentUser.hrId);
-      } else if (isLineScoped && typeof currentEmployee.lineId === "number") {
+      } else if (isLineScoped && !hasMultiLineOverride && typeof currentEmployee.lineId === "number") {
         query = query.eq("line_id", currentEmployee.lineId);
       }
+      // Multi-line: fetch unfiltered then scope in memory (avoids complex OR/IN on line_id)
       return query;
     });
 
     const scopedRows = vacancyRows.filter((row) => {
       if (isCompanyScoped) return true;
       if (isLineScoped) {
+        if (allowedLineNamesNormalized && allowedLineNamesNormalized.length > 0) {
+          const rowLine = normalizeLineName(row.lines?.name ?? null);
+          return Boolean(rowLine && allowedLineNamesNormalized.includes(rowLine));
+        }
         return sameWorkforceLine(
           { lineId: currentEmployee.lineId, lineName: currentEmployee.lineName },
           { lineId: row.line_id, lineName: row.lines?.name ?? null },
@@ -4744,7 +4759,9 @@ export async function getEmployeePortalVacancies(
       scopeLabel: isCompanyScoped
         ? "All lines"
         : isLineScoped
-          ? currentEmployee.lineName ?? currentUser.line ?? "Your line"
+          ? hasMultiLineOverride
+            ? viewerAllowedLines!.join(" + ")
+            : currentEmployee.lineName ?? currentUser.line ?? "Your line"
           : currentEmployee.fullName,
       summary: {
         districtManagerVacancies: vacancies.filter((row) => row.isDistrictManagerVacancy).length,
