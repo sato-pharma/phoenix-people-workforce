@@ -1,74 +1,67 @@
 import { redirect } from "next/navigation";
 
-import { SalesPerformancePage } from "@/components/sales/sales-performance-page";
-import {
-  EmployeePortalEmptyState,
-  EmployeePortalPageShell,
-} from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { MonthlyClosingPortalView } from "@/components/sales/monthly-closing-portal-view";
+import { canAccess } from "@/lib/auth/permissions";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { getSalesDashboard } from "@/lib/sales/service";
+import {
+  loadPortalLiveMonthly,
+  type PortalClosingResult,
+} from "@/lib/sales/monthly-closing-portal";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+const MONTHLY_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "District Manager", "Regional Manager", "Medical Rep", "SFE Manager", "CEO", "Super Admin"]);
 
 export default async function EmployeePortalSalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string | string[]; family?: string; products?: string | string[] }>;
+  searchParams: Promise<{ period?: string }>;
 }) {
-  const accessContext = await resolveAccessContextFromPage();
-  if (resolveNavigationMode(accessContext) !== "employee-portal") {
-    redirect("/sales");
-  }
-  if (accessContext.role === "Training Manager") {
-    redirect("/employee-portals/training-manager");
+  const access = await resolveAccessContextFromPage();
+  if (!access.loginId && !access.hrId) redirect("/login");
+  if (!MONTHLY_PORTAL_ROLES.has(access.role) || !(await canAccess(access, "sales", "read"))) {
+    redirect(resolveLandingPathForRole(access.role));
   }
 
-  await assertPermission(accessContext, "sales", "read");
+  const { period } = await searchParams;
 
-  const resolvedParams = await searchParams;
-
-  function normalizeMultiValueInput(value?: string | string[]) {
-    if (!value) return [];
-    if (Array.isArray(value)) {
-      return value.flatMap((entry) => (typeof entry === "string" ? entry.split(",") : [])).map((entry) => entry.trim()).filter(Boolean);
-    }
-    return value.split(",").map((entry) => entry.trim()).filter(Boolean);
-  }
-
-  let initialData = null;
+  let result: PortalClosingResult | null = null;
   try {
-    const filters: Record<string, unknown> = {};
-    const normalizedPeriods = normalizeMultiValueInput(resolvedParams.period);
-    if (normalizedPeriods.length > 0) filters.periods = normalizedPeriods;
-    if (resolvedParams.family) filters.family = resolvedParams.family;
-    const normalizedProducts = normalizeMultiValueInput(resolvedParams.products);
-    if (normalizedProducts.length > 0) filters.products = normalizedProducts;
-    initialData = await getSalesDashboard(filters, accessContext);
+    result = await loadPortalLiveMonthly({ access, period });
   } catch (error) {
     logPortalFailure(
-      { route: "/employee-portals/sales", module: "sales", role: accessContext.role, hrId: accessContext.hrId },
+      { route: "/employee-portals/sales", module: "monthly-sales", role: access.role, hrId: access.hrId },
       error,
     );
-    initialData = null;
-  }
-
-  if (!initialData) {
-    return (
-      <EmployeePortalEmptyState
-        message="Unable to load sales data. Please try again later."
-        title="Sales Data Unavailable"
-      />
-    );
+    result = null;
   }
 
   return (
     <EmployeePortalPageShell
-      description="Deep performance view with team filters, product mix, and trend diagnostics."
-      title="Source of Sales"
+      badge="Sales Operations"
+      description="Your products' monthly sales from Source of Sales — by area and region, rolled up to national. Live, not gated by publishing."
+      errorBoundaryTitle="Monthly Sales unavailable"
+      title="Monthly Sales"
     >
-      <SalesPerformancePage data={initialData} isLoading={false} />
+      <MonthlyClosingPortalView
+        awaitingPublish={false}
+        availablePeriods={result?.availablePeriods ?? []}
+        basePath="/employee-portals/sales"
+        distributorsExpected={result?.distributorsExpected ?? null}
+        distributorsUploaded={result?.distributorsUploaded ?? null}
+        emptyMessage="No validated Source-of-Sales months are available for your products yet. Months appear here as soon as their sales are uploaded — no publishing step required."
+        emptyTitle="No monthly sales yet"
+        line={result?.line ?? null}
+        matrix={result?.matrix ?? null}
+        productScoped
+        selectedPeriod={result?.selectedPeriod ?? null}
+        trend={[]}
+      />
     </EmployeePortalPageShell>
   );
 }

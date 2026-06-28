@@ -17,7 +17,6 @@ import {
   Headphones,
   Home,
   Inbox,
-  LineChart,
   type LucideIcon,
   ReceiptText,
   Send,
@@ -51,7 +50,7 @@ export type PortalNavEntry = {
  */
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
-  { label: "Performance", fullLabel: "My Performance", href: "/employee-portals/sales", icon: LineChart, flags: ["showMyPerformanceTab"] },
+  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/sales", icon: CalendarRange, flags: ["showMyPerformanceTab"] },
   { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"] },
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"] },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
@@ -64,7 +63,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, flags: ["showMiniWeeklySalesTab"] },
-  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/monthly-sales", icon: CalendarRange, flags: ["showMiniMonthlySalesTab"] },
+  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/sales", icon: CalendarRange, flags: ["showMiniMonthlySalesTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   // Training Manager
