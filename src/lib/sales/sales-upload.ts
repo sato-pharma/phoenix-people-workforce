@@ -262,7 +262,10 @@ export async function commitMonthlyUpload(input: {
   const result = rec.result;
   const reconciliation = buildReconciliation(result);
 
-  if (result.exceptions.length > 0) {
+  // Product-only exceptions are auto-excluded (those rows are already absent from result.coded).
+  // Only brick/customer/both/blank_customer exceptions block — the operator must fix those mappings.
+  const blockingExceptions = result.exceptions.filter((e) => e.reason !== "product");
+  if (blockingExceptions.length > 0) {
     return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products) };
   }
 
