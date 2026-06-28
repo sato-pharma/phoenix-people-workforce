@@ -102,6 +102,7 @@ export default async function EmployeePortalOrganogramPage() {
         fixedLine={fixedLine}
         initialError={initialError}
         initialReport={initialReport}
+        showLinePicker={access.role === "Marketing Manager" || access.role === "Training Manager"}
       />
     </EmployeePortalPageShell>
   );
