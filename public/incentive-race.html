@@ -33,16 +33,25 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
 /* LAYOUT */
 .game-wrap{display:grid;grid-template-columns:260px 1fr;gap:14px;padding:14px;max-width:1400px;margin:0 auto;position:relative;z-index:1;}
 @media(max-width:900px){.game-wrap{grid-template-columns:1fr;padding:8px;gap:8px;}}
-/* Mobile: achievements fill screen, photos dock to bottom */
+/* Mobile: achievements fill screen, photos dock to a fixed bottom strip */
+.mobile-hint{display:none;}
 @media(max-width:900px){
-  .game-wrap{padding-bottom:140px;}
-  .bank-panel{position:fixed;bottom:0;left:0;right:0;z-index:50;border-radius:0;border-left:none;border-right:none;border-bottom:none;border-top:1px solid rgba(255,255,255,0.12);padding:8px 10px 10px;background:rgba(8,13,26,0.97);backdrop-filter:blur(16px);}
+  .game-wrap{padding-bottom:124px;}
+  /* Photos -> fixed strip at the very bottom */
+  .bank-panel{position:fixed !important;bottom:0;left:0;right:0;z-index:50;}
+  .bank-panel .glass{position:static !important;top:auto !important;border-radius:0;border-left:none;border-right:none;border-bottom:none;border-top:1.5px solid rgba(243,156,18,0.4);padding:7px 10px 9px !important;background:rgba(8,13,26,0.98);}
   .bank-title{margin-bottom:6px;font-size:10px;}
-  .photo-grid{display:flex;flex-direction:row;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
+  .photo-grid{display:flex !important;grid-template-columns:none !important;flex-direction:row;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
   .photo-grid::-webkit-scrollbar{height:3px;}
   .photo-grid::-webkit-scrollbar-thumb{background:#0070d2;border-radius:2px;}
-  .photo-card{min-width:68px;max-width:68px;flex-shrink:0;}
-  .photo-card .pn{font-size:8.5px;}
+  .photo-card{min-width:64px;max-width:64px;flex-shrink:0;padding:5px;}
+  .photo-card img{width:100%;height:auto;}
+  .photo-card .pn{font-size:8px;}
+  /* The % rankings are the big list — show the how-to-play hint above them */
+  .mobile-hint{display:block;margin:0 2px 8px;padding:9px 12px;border-radius:11px;background:rgba(0,112,210,0.12);border:1px solid rgba(0,112,210,0.35);color:#cfe3ff;font-size:12px;line-height:1.4;}
+  .mobile-hint b{color:#f39c12;}
+  /* Once a photo is picked, glow every empty % row so the target is obvious */
+  .placing .ach-card:not(.correct) .drop-zone{border-color:#f39c12;box-shadow:0 0 0 3px rgba(243,156,18,0.18);animation:floatAnim 1.4s ease-in-out infinite;}
 }
 
 /* GLASS PANEL */
@@ -252,7 +261,7 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
 <div class="game-wrap">
 
   <!-- LEFT: Photo Bank -->
-  <div>
+  <div class="bank-panel">
     <div class="glass" style="padding:11px;position:sticky;top:78px;">
       <div class="bank-title">
         📸 Team Photos
@@ -263,7 +272,8 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
   </div>
 
   <!-- RIGHT: Achievements -->
-  <div>
+  <div class="ach-panel">
+    <div class="mobile-hint">👇 Tap a photo at the bottom, then tap the matching <b>%</b> row</div>
     <div class="glass" style="overflow:hidden;">
       <div class="ach-header">
         <span style="color:white;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">📊 Achievement Rankings — S1 2026</span>
@@ -363,6 +373,7 @@ function selectMobile(empId) {
   document.getElementById('mob-chip').classList.add('show');
   const card = document.querySelector(`.photo-card[data-eid="${empId}"]`);
   if (card) card.classList.add('selected');
+  document.body.classList.add('placing');
 }
 
 function clearMobileSelected() {
@@ -372,6 +383,7 @@ function clearMobileSelected() {
   }
   mobileSelected = null;
   document.getElementById('mob-chip').classList.remove('show');
+  document.body.classList.remove('placing');
 }
 
 // ===== INIT =====
