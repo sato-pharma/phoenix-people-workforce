@@ -300,10 +300,10 @@ export async function generateBulkUploadTemplate(): Promise<ArrayBuffer> {
   columns.forEach((col, i) => {
     if (col.validation) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (ws as any).dataValidations.add({
-        ...col.validation,
-        sqref: `${colLetter(i + 1)}3:${colLetter(i + 1)}5000`,
-      } as ExcelJS.DataValidation & { sqref: string });
+      (ws as any).dataValidations.add(
+        `${colLetter(i + 1)}3:${colLetter(i + 1)}5000`,
+        col.validation,
+      );
     }
   });
 
