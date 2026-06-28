@@ -13,7 +13,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const PRODUCT_SCOPED_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
+const PRODUCT_SCOPED_ROLES = new Set(["Product Manager", "Group Product Manager"]);
 
 export default async function EmployeePortalMonthlyClosingPage({
   searchParams,

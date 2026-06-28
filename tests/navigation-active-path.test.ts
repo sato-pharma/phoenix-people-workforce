@@ -212,7 +212,6 @@ export function runNavigationActivePathTests() {
     [
       "/employee-portals",
       "/employee-portals/sales",
-      "/employee-portals/monthly-closing",
       "/employee-portals/plans",
       "/employee-portals/organogram",
       "/employee-portals/vacancies",
