@@ -219,7 +219,15 @@ export function runCoachingAnalyticsTests() {
   assert.match(dashboardSource, /label="Total Reports"/);
   assert.match(dashboardSource, /label="Completed Reports"/);
   assert.match(dashboardSource, /title="Per-Rep Coaching Report"/);
-  assert.match(dashboardSource, /href=\{`\/coaching\/\$\{row\.latestReportId\}`\}/);
+  // The per-rep coaching report link must be surface-aware: this dashboard renders on both the admin
+  // /coaching* routes and the employee portal, so a hardcoded /coaching/<id> would bounce a portal
+  // user into the (admin) route group (redirected to the landing page). The base is derived from the
+  // current pathname instead.
+  assert.match(dashboardSource, /href=\{`\$\{coachingReportBase\}\/\$\{row\.latestReportId\}`\}/);
+  assert.match(
+    dashboardSource,
+    /coachingReportBase = pathname\?\.startsWith\("\/employee-portals"\) \? "\/employee-portals\/coaching" : "\/coaching"/,
+  );
   assert.match(dashboardSource, /HeaderFilterInput/);
 
   const comparisonSectionStart = dashboardSource.indexOf('title="Medical Rep Coaching Comparison"');

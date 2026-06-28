@@ -16,7 +16,7 @@ import {
   SendHorizonal,
   WifiOff,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -1144,6 +1144,10 @@ export function VacationRequestForm(props: VacationRequestFormProps) {
 
 function VacationRequestFormInner({ initialData, initialError, showHero = true }: VacationRequestFormProps) {
   const router = useRouter();
+  // Stay on the current surface after submit: this form renders on both /leave-management/vacation-request
+  // (admin) and /employee-portals/vacation-request (portal). Pushing the admin report URL from the portal
+  // bounces the user through the (admin) layout to /employee-portals (the landing page).
+  const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<VacationRequestPageTab>("request");
   const [vacationType, setVacationType] = useState<VacationType>("annual");
   const [dayPart, setDayPart] = useState<VacationDayPart>("full_day");
@@ -1274,7 +1278,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
       // Optimistic success animation (#3)
       setSubmitSuccess(true);
       setTimeout(() => {
-        router.push("/leave-management/vacation-report?status=pending_manager");
+        const reportBase = pathname?.startsWith("/employee-portals")
+          ? "/employee-portals/vacation-report"
+          : "/leave-management/vacation-report";
+        router.push(`${reportBase}?status=pending_manager`);
         router.refresh();
       }, 1200);
     } catch (submitError) {

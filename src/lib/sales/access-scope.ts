@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sales Intelligence — centralized, server-side access scope.
@@ -32,6 +33,14 @@ const RESTRICTED_SET = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpp
 export function canViewRestrictedProducts(role: PhoenixRole): boolean {
   return role === "CEO" || role === "Super Admin";
 }
+
+/**
+ * Head-office department heads whose OWN line is not a product line (e.g. Marketing Manager, who
+ * sits on the Head Office line while the PM/GPM they supervise sit on the business lines). For
+ * these, a "same own line" sales scope resolves to nothing, so we scope their sales/ROI to the
+ * product lines of their DIRECT REPORTS (one level) instead — the lines their department owns.
+ */
+const HEAD_OFFICE_REPORTS_LINE_SALES_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
 
 export function isRestrictedProductCode(code: string | null | undefined): boolean {
   if (!code) return false;
@@ -151,6 +160,9 @@ type ComputeScopeInput = {
   viewerLineName: string | null;
   viewerRegionName: string | null;
   includeRestricted: boolean;
+  /** Product lines a head-office manager inherits from their direct reports (raw employee line
+   *  names; bridged to official lines here). Merged into the LINE-scope allowed-line set. */
+  reportLineNames?: string[];
 };
 
 /**
@@ -200,6 +212,13 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
   // (empty set → no rows) rather than leaking the whole company.
   const officialLine = bridgeEmployeeLineToOfficial(viewerLineName);
   const allowedLineNames = new Set<string>(officialLine ? [officialLine] : []);
+  // Head-office department heads (e.g. Marketing Manager) sit on a line that is NOT a product line,
+  // so their own line bridges to nothing. Add the product lines of their direct reports (PM/GPM) so
+  // the dashboard reflects the lines their department actually owns instead of resolving to empty.
+  for (const reportLine of input.reportLineNames ?? []) {
+    const bridged = bridgeEmployeeLineToOfficial(reportLine);
+    if (bridged) allowedLineNames.add(bridged);
+  }
 
   // HIERARCHY (Regional Manager), TEAM (District Manager) and SELF (Medical Rep) are further
   // narrowed to the viewer's region when we know it — the tightest level the data reliably
@@ -267,6 +286,7 @@ export async function resolveSalesAccessScope(
   const currentHrId = resolveEmployeeIdentityId(ctx);
   let viewerLineName: string | null = null;
   let viewerRegionName: string | null = null;
+  let reportLineNames: string[] = [];
   if (currentHrId) {
     const directory = await getEmployeeDirectory();
     const viewer = directory.employees.find(
@@ -274,6 +294,23 @@ export async function resolveSalesAccessScope(
     );
     viewerLineName = viewer?.lineName ?? null;
     viewerRegionName = viewer?.regionName ?? null;
+
+    // Head-office department heads (e.g. Marketing Manager) supervise PM/GPM who sit on the
+    // business lines. Their own line is not a product line, so scope their sales/ROI to the
+    // product lines of their DIRECT REPORTS (one level, seat-continuity aware).
+    if (HEAD_OFFICE_REPORTS_LINE_SALES_ROLES.has(ctx.role)) {
+      const viewerCanonical = normalizeIdentity(currentHrId);
+      reportLineNames = directory.employees
+        .filter((employee) =>
+          reportsToManagerSeat({
+            employee,
+            viewerCanonicalHrId: viewerCanonical,
+            canonicalize: (value) => normalizeIdentity(value) || null,
+          }),
+        )
+        .map((employee) => employee.lineName)
+        .filter((lineName): lineName is string => Boolean(lineName));
+    }
   }
 
   return computeSalesAccessScope({
@@ -282,6 +319,7 @@ export async function resolveSalesAccessScope(
     viewerLineName,
     viewerRegionName,
     includeRestricted: opts?.includeRestricted ?? false,
+    reportLineNames,
   });
 }
 
