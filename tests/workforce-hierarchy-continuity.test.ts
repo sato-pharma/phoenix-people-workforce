@@ -418,7 +418,7 @@ export function runWorkforceHierarchyContinuityTests() {
   );
   assert.match(
     vacationServiceSource,
-    /const visibleEmployees = filterVacationEmployeesForAccess\(access, activeEmployees\);[\s\S]*const visibleEmployeeHrIds = new Set\(visibleEmployees\.map\(\(employee\) => canonicalHrId\(employee\.hrId\)\)/,
+    /const visibleEmployees = filterVacationEmployeesForAccess\(access, activeEmployees\);[\s\S]*const visibleEmployeeHrIds = buildVisibleHrIdSet\(visibleEmployees\)/,
     "Vacation report must derive the scoped HR ID set from the same visible employee set used for entitlements",
   );
   assert.match(
