@@ -1219,8 +1219,26 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
     return { average, selectedCount: selectedPoints.length, highlightTotal };
   }, [trend, selectedSet]);
 
-  // Need at least 4 distinct merged weeks for a meaningful trend.
-  if (trend.length < 4) return null;
+  // Render the card even when there is too little data — show a message rather than
+  // vanishing silently, so the user knows the section exists and why it is empty.
+  if (trend.length < 2) {
+    return (
+      <section className="w-full overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+        <div className="flex items-center gap-1.5 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#F97316]" />
+          <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</span>
+          <span className="ml-2 text-[11px] font-semibold text-[#94A3B8]">
+            {trend.length === 0 ? "No data for current filter" : "1 week — need at least 2 to draw a trend"}
+          </span>
+        </div>
+        <div className="flex h-20 items-center justify-center text-[11px] font-medium text-[#CBD5E1]">
+          {trend.length === 0
+            ? "No weekly sales data matches the current filter selection."
+            : "Upload a second week or clear filters to display the trend chart."}
+        </div>
+      </section>
+    );
+  }
 
   const hasOther = chartData.some((d) => d.vOther !== null);
   const labelByWeekStart = new Map(chartData.map((d) => [d.weekStart, d.label]));
