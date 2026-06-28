@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   BarChart3,
   CalendarDays,
-  ChevronDown,
   Download,
   Filter,
   Loader2,
@@ -63,8 +62,6 @@ const monthLabelClient = (cycleMonth: string | null) => {
 };
 
 type WeeklyFilters = {
-  weeks: string[];
-  allWeeks: boolean;
   distributorCodes: string[];
   distributorMode: WeeklyFilterMode;
   regionCodes: string[];
@@ -85,8 +82,6 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [filters, setFilters] = useState<WeeklyFilters>({
-    weeks: initial?.appliedFilters.weekStarts?.length ? [...initial.appliedFilters.weekStarts] : initial?.appliedFilters.weekStart ? [initial.appliedFilters.weekStart] : [],
-    allWeeks: initial?.appliedFilters.allWeeks ?? false,
     distributorCodes: initial?.appliedFilters.distributorCodes ?? [],
     distributorMode: initial?.appliedFilters.distributorFilterMode ?? "include",
     regionCodes: initial?.appliedFilters.regionCodes ?? [],
@@ -100,19 +95,11 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     weekNumberCodes: (initial?.appliedFilters.weekNumbers ?? []).map((value) => String(value)),
     weekNumberMode: initial?.appliedFilters.weekNumberMode ?? "include",
   });
-  // Stable join key for the weeks branch in the effect body. The filter arrays themselves keep a
-  // stable reference between renders (they only change when setFilters replaces them), so the effect
-  // can depend on them directly without retriggering every render.
-  const selectedWeeksKey = useMemo(() => filters.weeks.join("|"), [filters.weeks]);
-
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams();
-    if (filters.allWeeks) {
-      params.set("allWeeks", "1");
-    } else {
-      for (const week of selectedWeeksKey ? selectedWeeksKey.split("|") : []) params.append("week", week);
-    }
+    // No date-week selector: week scoping is via Month + Week-of-month filters below. With neither set,
+    // the server returns all weeks.
     for (const code of filters.distributorCodes) params.append("distributor", code);
     if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
     for (const code of filters.regionCodes) params.append("region", code);
@@ -150,8 +137,6 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       cancelled = true;
     };
   }, [
-    selectedWeeksKey,
-    filters.allWeeks,
     filters.distributorCodes,
     filters.distributorMode,
     filters.regionCodes,
@@ -190,39 +175,11 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     () => (data?.availableWeekNumbers ?? []).map((week) => ({ code: String(week), label: `Week ${week}` })),
     [data],
   );
-  const selectedWeekSummary = useMemo(() => {
-    if (data?.appliedFilters.allWeeks) {
-      return "All time";
-    }
-    if ((data?.appliedFilters.weekStarts?.length ?? 0) > 1) {
-      return `${data?.appliedFilters.weekStarts?.length ?? 0} selected weeks`;
-    }
-    return data?.appliedFilters.weekStart ? `Week of ${data.appliedFilters.weekStart}` : data?.weekStart;
-  }, [data]);
-
-  const filterWeekLabel = useMemo(() => {
-    if (filters.allWeeks) return "All time";
-    if (filters.weeks.length > 1) return `${filters.weeks.length} selected weeks`;
-    return filters.weeks[0] ? `Week of ${filters.weeks[0]}` : "Pick week";
-  }, [filters.allWeeks, filters.weeks]);
-
-  const selectedWeekTitle = useMemo(() => {
-    if (!data) return "";
-    if (data.appliedFilters.allWeeks) return data.availableWeeks.join(", ") || "All time";
-    if (!data.appliedFilters.weekStarts.length) return "";
-    return data.appliedFilters.weekStarts.join(", ");
-  }, [data]);
-
   const handleExport = useCallback(async () => {
     if (downloading) return;
     setDownloading(true);
     try {
       const params = new URLSearchParams();
-      if (filters.allWeeks) {
-        params.set("allWeeks", "1");
-      } else {
-        for (const week of filters.weeks) params.append("week", week);
-      }
       for (const code of filters.distributorCodes) params.append("distributor", code);
       if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
       for (const code of filters.regionCodes) params.append("region", code);
@@ -287,12 +244,6 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {data.weekStart && (
-              <span className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm font-black text-[#0F172A]" title={selectedWeekTitle}>
-                {selectedWeekSummary}
-                {data.priorWeekStart && <span className="ml-1 font-medium text-[#94A3B8]">vs {data.priorWeekStart}</span>}
-              </span>
-            )}
             <button
               type="button"
               onClick={handleExport}
@@ -320,39 +271,6 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           <span className={cn("text-[#64748B]", loading && "text-[#F97316]")}>{loading ? "Updating" : "Ready"}</span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <WeekDropdown
-            allWeeks={filters.allWeeks}
-            availableWeeks={data.availableWeeks}
-            weekGroupMembers={data.weekGroupMembers}
-            selectedTitle={selectedWeekTitle}
-            selectedWeeks={filters.weeks}
-            summary={filterWeekLabel}
-            onAllWeeksChange={(checked) => {
-              setFilters((prev) => {
-                const fallbackWeeks = prev.weeks.length > 0 ? prev.weeks : data.availableWeeks.slice(0, 1);
-                return {
-                  ...prev,
-                  allWeeks: checked,
-                  weeks: checked ? [] : fallbackWeeks,
-                };
-              });
-            }}
-            onWeekChange={(week, checked) => {
-              setFilters((prev) => {
-                if (prev.allWeeks) return prev;
-                const next = new Set(prev.weeks);
-                if (checked) {
-                  next.add(week);
-                } else {
-                  next.delete(week);
-                  if (next.size === 0 && data.availableWeeks.length > 0) {
-                    return { ...prev, weeks: [data.availableWeeks[0]] };
-                  }
-                }
-                return { ...prev, weeks: [...next].sort((left, right) => right.localeCompare(left)) };
-              });
-            }}
-          />
           <MultiSelectFilter
             label="Month"
             icon={<CalendarDays className="h-3.5 w-3.5" />}
@@ -449,19 +367,13 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
 
           <WeekComparisonTable rows={data.weekComparison} />
 
-          <TrendStrip trend={data.trend} selected={data.appliedFilters.weekStarts} />
+          <TrendStrip trend={data.trend} selected={[]} />
 
           <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
         </>
       )}
     </div>
   );
-}
-
-function weekGroupLabel(canonical: string, members: string[]): string {
-  if (members.length <= 1) return `Week of ${canonical}`;
-  const last = members[members.length - 1];
-  return `Period ${canonical} – ${last}`;
 }
 
 function DeltaPct({ value }: { value: number }) {
@@ -522,65 +434,6 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
         </table>
       </div>
     </section>
-  );
-}
-
-function WeekDropdown({
-  allWeeks,
-  availableWeeks,
-  weekGroupMembers,
-  selectedTitle,
-  selectedWeeks,
-  summary,
-  onAllWeeksChange,
-  onWeekChange,
-}: {
-  allWeeks: boolean;
-  availableWeeks: string[];
-  weekGroupMembers: Record<string, string[]>;
-  selectedTitle: string;
-  selectedWeeks: string[];
-  summary: string;
-  onAllWeeksChange: (checked: boolean) => void;
-  onWeekChange: (week: string, checked: boolean) => void;
-}) {
-  return (
-    <details className="group relative">
-      <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm outline-none transition hover:border-[#FDBA74] focus-visible:border-[#FDBA74] [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0">
-          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
-            <CalendarDays className="h-3.5 w-3.5" />
-            Weeks
-          </span>
-          <span className="block truncate text-sm font-black text-[#0F172A]" title={selectedTitle}>
-            {summary}
-          </span>
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-[#94A3B8] transition group-open:rotate-180" />
-      </summary>
-      <div className="absolute left-0 top-full z-30 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-[#E2E8F0] bg-white shadow-lg">
-        <div className="border-b border-[#E2E8F0] p-2">
-          <label className="flex items-center justify-between rounded-[4px] px-2 py-2 text-sm font-black text-[#0F172A] hover:bg-[#F8FAFC]">
-            All time
-            <input className="h-4 w-4 accent-[#F97316]" checked={allWeeks} type="checkbox" onChange={(event) => onAllWeeksChange(event.target.checked)} />
-          </label>
-        </div>
-        <div className="max-h-64 space-y-1 overflow-y-auto p-2">
-          {availableWeeks.map((week) => (
-            <label className={cn("flex items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-[#0F172A] hover:bg-[#F8FAFC]", allWeeks && "opacity-50")} key={week}>
-              <input
-                checked={!allWeeks && selectedWeeks.includes(week)}
-                className="h-4 w-4 accent-[#F97316]"
-                disabled={allWeeks}
-                type="checkbox"
-                onChange={(event) => onWeekChange(week, event.target.checked)}
-              />
-              <span>{weekGroupLabel(week, weekGroupMembers[week] ?? [week])}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-    </details>
   );
 }
 

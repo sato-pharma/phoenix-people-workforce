@@ -712,6 +712,10 @@ export async function loadWeeklyDashboard(filters?: {
   weekNumberMode?: WeeklyFilterMode | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
+  /** Export only: drop rows whose product is unmapped (no master / no line) from EVERY aggregate. */
+  excludeUnmapped?: boolean;
+  /** Export only: also return the row-level fact grain (factRows) for the BI workbook's Data sheet. */
+  includeFactRows?: boolean;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -775,14 +779,18 @@ export async function loadWeeklyDashboard(filters?: {
       ? requestedWeeks
       : requestedSingleWeek && availableWeekSet.has(requestedSingleWeek)
         ? [requestedSingleWeek]
-        : availableWeeks.length > 0
-          ? [availableWeeks[0]]
-          : [];
+        // No explicit date-week request: default to ALL weeks. The dashboard no longer has a date-week
+        // selector — week scoping is done with the Month + Week-of-month (W1–W4) filters — so the
+        // un-filtered view should show everything, not just the latest week.
+        : [...availableWeeks];
   const selectedWeeks = selectedCanonicals.flatMap((can) => weekGroupMap.get(can) ?? [can]);
   const selectedWeekAnchor = selectedCanonicals.length > 0 ? selectedCanonicals[0] : null;
   const selectedWeekSet = new Set(selectedWeeks);
+  // Prior-week comparison only makes sense when exactly ONE week is in scope; for an all-weeks (or
+  // multi-week) view a "vs prior week" delta would compare a single prior week against a multi-week
+  // total, which is misleading — so suppress it.
   const priorCanonical =
-    selectedCanonicals.length > 0 ? availableWeeks.find((w) => w < selectedCanonicals[0]) ?? null : null;
+    selectedCanonicals.length === 1 ? availableWeeks.find((w) => w < selectedCanonicals[0]) ?? null : null;
   const priorWeekSet = new Set(priorCanonical ? (weekGroupMap.get(priorCanonical) ?? [priorCanonical]) : []);
 
   const appliedFilters: WeeklyDashboard["appliedFilters"] = {
@@ -994,12 +1002,15 @@ export async function loadWeeklyDashboard(filters?: {
   //   • Direct channel keeps its own sheet Value (locked invariant — never recompute from price).
   //   • A missing/zero current master price falls back to the stored value (never zero a row).
   const priceMap = new Map<string, number>();
+  const mappedCodes = new Set<string>(); // master products that have a line (i.e. properly mapped)
   try {
     const reference = await loadSalesReferenceData({ includeCustomerBricks: false });
     for (const masterProduct of reference.products) {
       const code = normalizeCode(masterProduct.productCode);
+      if (!code) continue;
       const price = Number(masterProduct.factoryPrice);
-      if (code && Number.isFinite(price) && price > 0) priceMap.set(code, price);
+      if (Number.isFinite(price) && price > 0) priceMap.set(code, price);
+      if ((masterProduct.line ?? "").trim()) mappedCodes.add(code);
     }
   } catch {
     // Best-effort: if the master can't be read, keep stored values rather than failing the load.
@@ -1023,7 +1034,13 @@ export async function loadWeeklyDashboard(filters?: {
   const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
   // Filters run AFTER access-scope redaction, so include/exclude can only narrow already-visible
   // rows — they can never re-expose the confidential LA003/LA004 products.
+  // Export only: when excludeUnmapped is requested, drop rows whose product is not a properly mapped
+  // master product (no master / no line). Guarded on mappedCodes.size so a failed master load never
+  // wipes every row. Applied here so EVERY downstream aggregate (KPIs, trend, breakdowns, factRows)
+  // excludes unmapped products — the exported workbook must never contain them.
+  const dropUnmapped = filters?.excludeUnmapped === true && mappedCodes.size > 0;
   const scopedRows = visibleRows.filter((row) => {
+    if (dropUnmapped && !mappedCodes.has(normalizeCode(row.productCode))) return false;
     if (!passesMultiFilter(distributor, normalizeCode(row.distributorCode))) return false;
     if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
     if (!passesMultiFilter(product, normalizeCode(row.productCode))) return false;
@@ -1249,6 +1266,28 @@ export async function loadWeeklyDashboard(filters?: {
     weekComparison,
     sources,
     trend,
+    // Row-level grain for the BI export (hidden Data sheet → pivots/charts/formulas). Mirrors the exact
+    // rows behind the on-screen aggregates (weekRowsAdj: time-scoped, latest-stock-only) so the workbook's
+    // pivots/formulas reconcile to the dashboard. Only built when requested (export path).
+    factRows: filters?.includeFactRows
+      ? weekRowsAdj.map((row) => ({
+          distributorCode: row.distributorCode,
+          distributorName: row.distributorName,
+          productCode: row.productCode,
+          productName: row.productName,
+          line: row.officialLine,
+          regionCode: row.regionCode,
+          regionName: row.regionName,
+          branchCode: row.branchCode,
+          branchName: row.branchName,
+          cycleMonth: row.cycleMonth,
+          weekNumber: row.weekNumber,
+          weekStart: row.weekStart,
+          salesValue: Number(row.salesValue.toFixed(2)),
+          salesUnits: Number(row.netQty.toFixed(2)),
+          stockUnits: Number(row.stockQty.toFixed(2)),
+        }))
+      : undefined,
   };
 }
 
