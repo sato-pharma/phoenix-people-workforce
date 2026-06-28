@@ -40,7 +40,6 @@ import {
   Inbox,
   Target,
   CalendarRange,
-  ChartNoAxesColumnIncreasing,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -166,7 +165,7 @@ function buildEmployeePortalSections({
   showSosDashboardTab = false,
   showMiniWeeklySalesTab = false,
   showMonthlyClosingTab = false,
-  showMiniMonthlySalesTab = false,
+  showMiniMonthlySalesTab: _showMiniMonthlySalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
@@ -205,9 +204,8 @@ function buildEmployeePortalSections({
     {
       title: "Sales Dashboards",
       items: [
-        ...(showSosDashboardTab ? [{ href: "/employee-portals/sales", label: "Source of Sales", icon: ChartNoAxesColumnIncreasing }] : []),
+        ...(showSosDashboardTab ? [{ href: "/employee-portals/sales", label: "Monthly Sales", icon: CalendarRange }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
-        ...(showMiniMonthlySalesTab ? [{ href: "/employee-portals/monthly-sales", label: "Monthly Sales", icon: CalendarRange }] : []),
         ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: LineChartIcon }] : []),
       ],
     },
