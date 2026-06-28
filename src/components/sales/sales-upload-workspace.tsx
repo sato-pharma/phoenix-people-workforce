@@ -62,6 +62,14 @@ const UNMAPPED_EXPORT_COLUMNS: ExportColumn[] = [
   { key: "suggestionName", label: "Suggested name", width: 30 },
 ];
 
+// Columns for the customer-specific fix template — these header names exactly match the HEADER_ALIASES
+// in importCustomerMap(), so the file can be uploaded directly via the Customer/Brick template slot.
+const CUSTOMER_FIX_COLUMNS: ExportColumn[] = [
+  { key: "distCode", label: "Distrub ID", width: 15 },
+  { key: "customerCode", label: "Customer code", width: 24 },
+  { key: "brickId", label: "Brick ID", width: 15 },
+];
+
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
     <div className="flex items-center gap-2">
@@ -296,6 +304,14 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
     suggestionName: u.suggestionLabel ?? "",
   })));
 
+  // Customer-specific fix template: headers match HEADER_ALIASES in importCustomerMap() exactly,
+  // so this file can be uploaded directly via Mapping tab → Customer/Brick template slot.
+  const customerFixRows: ExportRow[] = customers.map((u) => ({
+    distCode: distributorCode,
+    customerCode: u.raw,
+    brickId: "",
+  }));
+
   function setCode(type: MapType, raw: string, code: string) {
     const k = mapKey(type, raw);
     setSelected((p) => ({ ...p, [k]: code }));
@@ -347,6 +363,17 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
         <div className="flex items-center gap-2">
           {msg ? <span className="text-xs font-semibold text-emerald-700">{msg}</span> : null}
           {err ? <span className="text-xs font-semibold text-rose-700">{err}</span> : null}
+          {customers.length > 0 ? (
+            <ExportXlsxButton
+              className="h-8 border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100"
+              columns={CUSTOMER_FIX_COLUMNS}
+              label="Customer fix template (XLSX)"
+              rows={customerFixRows}
+              sheetName="Customer Mapping"
+              subtitle={`${distributorCode} · Fill the Brick ID column, then upload via Mapping tab → Customer/Brick Mapping`}
+              title={`Customer Fix Template — ${distributorCode}`}
+            />
+          ) : null}
           <ExportXlsxButton
             className="h-8"
             columns={UNMAPPED_EXPORT_COLUMNS}
@@ -669,7 +696,8 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
               <div className="space-y-2">
                 <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
                   <p className="font-semibold">{blockerUnknowns} unmapped customer(s) / territory(ies) — upload is blocked.</p>
-                  <p className="text-xs">Download the XLSX below, fill the mappings, save them, then re-validate.</p>
+                  <p className="text-xs">For customers: click <b>Customer fix template</b> below, fill in the Brick ID column in Excel, then upload the file via <b>Mapping tab → Customer/Brick Mapping</b>. Come back here and re-validate.</p>
+                  <p className="text-xs">For territories: use the inline mapping or the Territory Mapping template on the Mapping tab.</p>
                 </div></AdminCallout>
                 <UnmappedList brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={[]} territories={analysis.data?.unknownTerritories ?? []} />
               </div>
