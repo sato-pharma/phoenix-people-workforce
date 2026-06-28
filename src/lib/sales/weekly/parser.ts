@@ -1663,6 +1663,11 @@ export function summarizeWeekly(input: {
     templateKey: input.distributor.code,
     templateName: input.distributor.name,
     weekStart: input.weekStart,
+    // Week-of-month tags are assigned by the service (importWeeklySalesFile) after parsing; the parser
+    // doesn't know the wizard-confirmed week, so it leaves them null here.
+    cycleMonth: null,
+    weekNumber: null,
+    suggestedWeekNumber: null,
     status,
     blockingReasons,
     rowCount: rows.length,

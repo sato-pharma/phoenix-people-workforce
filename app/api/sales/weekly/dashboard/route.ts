@@ -41,6 +41,10 @@ export async function GET(request: Request) {
       regionFilterMode: mode("regionMode"),
       productCodes: parseList("product"),
       productFilterMode: mode("productMode"),
+      cycleMonths: parseList("month"),
+      cycleMonthMode: mode("monthMode"),
+      weekNumbers: parseList("weekNum").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+      weekNumberMode: mode("weekNumMode"),
       accessScope,
     });
     return NextResponse.json({ success: true, data });

@@ -51,6 +51,17 @@ const compactNumber = (value: number) => {
 const truncateLabel = (value: string, max = 18) => (value.length > max ? `${value.slice(0, max - 1)}...` : value);
 const CHART_COLORS = ["#F97316", "#2563EB", "#0F766E", "#7C3AED", "#DC2626", "#64748B", "#CA8A04"];
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+// "2026-05-01" → "May 2026" (pure string parse, timezone-safe).
+const monthLabelClient = (cycleMonth: string | null) => {
+  if (!cycleMonth) return "—";
+  const [year, month] = cycleMonth.split("-");
+  const name = MONTH_NAMES[Number(month) - 1];
+  return name ? `${name} ${year}` : cycleMonth;
+};
+
 type WeeklyFilters = {
   weeks: string[];
   allWeeks: boolean;
@@ -62,6 +73,10 @@ type WeeklyFilters = {
   productMode: WeeklyFilterMode;
   lineCodes: string[];
   lineMode: WeeklyFilterMode;
+  monthCodes: string[];
+  monthMode: WeeklyFilterMode;
+  weekNumberCodes: string[];
+  weekNumberMode: WeeklyFilterMode;
 };
 
 export function WeeklyDashboardView({ initial, initialError }: { initial: WeeklyDashboard | null; initialError: string | null }) {
@@ -80,6 +95,10 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     productMode: initial?.appliedFilters.productFilterMode ?? "include",
     lineCodes: initial?.appliedFilters.lineCodes ?? [],
     lineMode: initial?.appliedFilters.lineFilterMode ?? "include",
+    monthCodes: initial?.appliedFilters.cycleMonths ?? [],
+    monthMode: initial?.appliedFilters.cycleMonthMode ?? "include",
+    weekNumberCodes: (initial?.appliedFilters.weekNumbers ?? []).map((value) => String(value)),
+    weekNumberMode: initial?.appliedFilters.weekNumberMode ?? "include",
   });
   // Stable join key for the weeks branch in the effect body. The filter arrays themselves keep a
   // stable reference between renders (they only change when setFilters replaces them), so the effect
@@ -102,6 +121,10 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     if (filters.productMode === "exclude") params.set("productMode", "exclude");
     for (const code of filters.lineCodes) params.append("line", code);
     if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
+    for (const code of filters.monthCodes) params.append("month", code);
+    if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
+    for (const code of filters.weekNumberCodes) params.append("weekNum", code);
+    if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
     (async () => {
       // Defer the loading flag off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
@@ -137,6 +160,10 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     filters.productMode,
     filters.lineCodes,
     filters.lineMode,
+    filters.monthCodes,
+    filters.monthMode,
+    filters.weekNumberCodes,
+    filters.weekNumberMode,
   ]);
 
   const distributorOptions = useMemo(
@@ -153,6 +180,14 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   );
   const lineOptions = useMemo(
     () => (data?.availableLines ?? []).map((line) => ({ code: line, label: line })),
+    [data],
+  );
+  const monthOptions = useMemo(
+    () => (data?.availableMonths ?? []).map((month) => ({ code: month.code, label: month.name })),
+    [data],
+  );
+  const weekNumberOptions = useMemo(
+    () => (data?.availableWeekNumbers ?? []).map((week) => ({ code: String(week), label: `Week ${week}` })),
     [data],
   );
   const selectedWeekSummary = useMemo(() => {
@@ -196,6 +231,10 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       if (filters.productMode === "exclude") params.set("productMode", "exclude");
       for (const code of filters.lineCodes) params.append("line", code);
       if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
+      for (const code of filters.monthCodes) params.append("month", code);
+      if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
+      for (const code of filters.weekNumberCodes) params.append("weekNum", code);
+      if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
       const response = await fetch(`/api/sales/weekly/export?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Export failed.");
       const blob = await response.blob();
@@ -280,7 +319,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           </span>
           <span className={cn("text-[#64748B]", loading && "text-[#F97316]")}>{loading ? "Updating" : "Ready"}</span>
         </div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.9fr)_repeat(4,minmax(0,1fr))]">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <WeekDropdown
             allWeeks={filters.allWeeks}
             availableWeeks={data.availableWeeks}
@@ -313,6 +352,26 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
                 return { ...prev, weeks: [...next].sort((left, right) => right.localeCompare(left)) };
               });
             }}
+          />
+          <MultiSelectFilter
+            label="Month"
+            icon={<CalendarDays className="h-3.5 w-3.5" />}
+            options={monthOptions}
+            selected={filters.monthCodes}
+            mode={filters.monthMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, monthCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, monthMode: next }))}
+            allLabel="All months"
+          />
+          <MultiSelectFilter
+            label="Week of month"
+            icon={<CalendarDays className="h-3.5 w-3.5" />}
+            options={weekNumberOptions}
+            selected={filters.weekNumberCodes}
+            mode={filters.weekNumberMode}
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, weekNumberCodes: next }))}
+            onModeChange={(next) => setFilters((f) => ({ ...f, weekNumberMode: next }))}
+            allLabel="All weeks"
           />
           <MultiSelectFilter
             label="Distributor"
@@ -388,6 +447,8 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
 
           {data.distributors.length > 1 && <RankTable maxHeight="max-h-64" title="By distributor" rows={data.distributorBreakdown} />}
 
+          <WeekComparisonTable rows={data.weekComparison} />
+
           <TrendStrip trend={data.trend} selected={data.appliedFilters.weekStarts} />
 
           <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
@@ -401,6 +462,67 @@ function weekGroupLabel(canonical: string, members: string[]): string {
   if (members.length <= 1) return `Week of ${canonical}`;
   const last = members[members.length - 1];
   return `Period ${canonical} – ${last}`;
+}
+
+function DeltaPct({ value }: { value: number }) {
+  const up = value >= 0;
+  return (
+    <span className={cn("inline-flex items-center gap-0.5 font-bold", up ? "text-emerald-600" : "text-rose-600")}>
+      {up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+      {pct(value)}
+    </span>
+  );
+}
+
+// Week-by-week comparison of REAL (de-cumulated) sales: each week minus the previous week of its
+// month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week.
+function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"] }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="border-b border-[#E2E8F0] px-4 py-3">
+        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Week-by-week comparison</h2>
+        <p className="mt-0.5 text-xs font-medium text-[#64748B]">
+          Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …). Stock is the
+          week&apos;s snapshot, never subtracted.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
+            <tr>
+              <th className="px-3 py-2">Month</th>
+              <th className="px-3 py-2">Week</th>
+              <th className="px-3 py-2">Period date</th>
+              <th className="px-3 py-2 text-right">Sales value</th>
+              <th className="px-3 py-2 text-right">Sales units</th>
+              <th className="px-3 py-2 text-right">Stock units</th>
+              <th className="px-3 py-2 text-right">vs prev week</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr className="border-t border-[#FFE8D6]" key={`${row.cycleMonth}-${row.weekNumber}`}>
+                <td className="px-3 py-2 font-semibold text-[#0F172A]">{monthLabelClient(row.cycleMonth)}</td>
+                <td className="px-3 py-2">
+                  <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                    W{row.weekNumber}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-[#64748B] tabular-nums">{row.weekStart ?? "—"}</td>
+                <td className="px-3 py-2 text-right font-bold tabular-nums text-[#0F172A]">{money(row.salesValue)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.salesUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.stockUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {row.deltaValuePct == null ? <span className="text-[#94A3B8]">—</span> : <DeltaPct value={row.deltaValuePct} />}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function WeekDropdown({

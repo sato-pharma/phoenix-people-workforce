@@ -16,6 +16,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { decumulateRows } from "@/lib/sales/weekly/decumulate";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -31,6 +32,8 @@ import type {
   WeeklyProductScopeAdmin,
   WeeklyRanked,
   WeeklySalesValidationResult,
+  WeeklyThisWeekOnly,
+  WeeklyTotals,
 } from "@/lib/sales/weekly/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -55,6 +58,68 @@ export async function listWeeklyDistributors(): Promise<WeeklyDistributorOption[
   })).sort((left, right) => left.name.localeCompare(right.name));
 }
 
+// ── week-of-month tagging helpers (cumulative-sheet de-cumulation) ──────────────────────────────
+// Distributor weekly sheets are cumulative from the start of the month. Each upload is tagged with a
+// cycle_month + week_number (1–4) so the dashboard can de-cumulate true per-week sales. The week is
+// auto-suggested from the sheet date and confirmed/overridable by the uploader.
+
+const round2 = (value: number) => Number(value.toFixed(2));
+
+/** Week-of-month 1–4 from a YYYY-MM-DD date (day bucket, capped at 4); null when undated. */
+function suggestWeekNumber(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const day = Number(dateStr.slice(8, 10));
+  if (!Number.isFinite(day) || day < 1) return null;
+  return day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+}
+
+/** First day of the cycle month (YYYY-MM-01) for a YYYY-MM-DD date; null when undated. */
+function cycleMonthFromDate(dateStr: string | null): string | null {
+  if (!dateStr || dateStr.length < 7) return null;
+  return `${dateStr.slice(0, 7)}-01`;
+}
+
+/**
+ * De-cumulate this sheet's totals against the previous cumulative sheet of the same month-cycle.
+ * Returns the real "this week only" sales (value + net units); stock is a snapshot, returned as-is.
+ * When no earlier sheet exists in the cycle, this IS the first week → real = the full current totals.
+ */
+async function computeThisWeekOnly(
+  distributorCode: string,
+  cycleMonth: string | null,
+  weekStart: string | null,
+  totals: WeeklyTotals,
+): Promise<WeeklyThisWeekOnly | null> {
+  if (!cycleMonth || !weekStart) return null;
+  const supabase = getSupabaseAdmin();
+  const prior = await supabase
+    .from("weekly_sales_batches")
+    .select("week_start, week_number, total_sales_value, total_net_qty")
+    .eq("distributor_code", distributorCode)
+    .eq("cycle_month", cycleMonth)
+    .eq("status", "validated")
+    .lt("week_start", weekStart)
+    .order("week_start", { ascending: false })
+    .limit(1);
+  if (prior.error || !prior.data || prior.data.length === 0) {
+    return {
+      priorWeekStart: null,
+      priorWeekNumber: null,
+      salesValue: round2(totals.salesValue),
+      netQty: round2(totals.netQty),
+      stockQty: round2(totals.stockQty),
+    };
+  }
+  const p = prior.data[0] as { week_start: string | null; week_number: number | null; total_sales_value: number | null; total_net_qty: number | null };
+  return {
+    priorWeekStart: p.week_start ? String(p.week_start) : null,
+    priorWeekNumber: p.week_number != null ? Number(p.week_number) : null,
+    salesValue: round2(totals.salesValue - Number(p.total_sales_value ?? 0)),
+    netQty: round2(totals.netQty - Number(p.total_net_qty ?? 0)),
+    stockQty: round2(totals.stockQty),
+  };
+}
+
 // ── upload → validate → store ──────────────────────────────────────────────────────────────────
 
 export async function importWeeklySalesFile(input: {
@@ -68,6 +133,10 @@ export async function importWeeklySalesFile(input: {
   uploadedBy: string;
   /** explicit period (YYYY-MM-DD) for undated / multi-dated files */
   periodDate?: string | null;
+  /** confirmed week-of-month 1–4 from the wizard; defaults to the date-derived suggestion when omitted */
+  weekNumber?: number | null;
+  /** cycle-month override (YYYY-MM-DD, first of month); defaults to the month of weekStart */
+  cycleMonth?: string | null;
   /** when true, parse + validate but never persist — used by the validate-only step */
   dryRun?: boolean;
 }): Promise<WeeklySalesValidationResult> {
@@ -126,6 +195,22 @@ export async function importWeeklySalesFile(input: {
   // Stamp which column contract parsed this batch (built-in vs in-app override) for traceability.
   parsed.result.contractSource = contractSource;
 
+  // Week-of-month tagging: cycle = month of the sheet date (override-able); week = confirmed value
+  // from the wizard, else the date-derived suggestion. Both flow through to the stored batch + rows.
+  const suggestedWeek = suggestWeekNumber(parsed.result.weekStart);
+  const cycleMonth = input.cycleMonth ?? cycleMonthFromDate(parsed.result.weekStart);
+  const weekNumber = input.weekNumber ?? suggestedWeek;
+  parsed.result.suggestedWeekNumber = suggestedWeek;
+  parsed.result.cycleMonth = cycleMonth;
+  parsed.result.weekNumber = weekNumber;
+  // De-cumulated "this week only" preview vs the previous cumulative sheet of this cycle.
+  parsed.result.thisWeekOnly = await computeThisWeekOnly(
+    parsed.result.distributor.code,
+    cycleMonth,
+    parsed.result.weekStart,
+    parsed.result.totals,
+  );
+
   // Only persist a clean (validated) batch; blocked files are returned for the user to fix.
   // dryRun=true skips persistence so the validate step can show tables without storing anything.
   if (!input.dryRun && parsed.result.status === "validated") {
@@ -170,6 +255,8 @@ async function persistWeeklyUpload(
       file_name: result.fileName,
       sheet_name: result.sheetName,
       week_start: result.weekStart,
+      cycle_month: result.cycleMonth,
+      week_number: result.weekNumber,
       status: result.status,
       total_rows: result.rowCount,
       importable_rows: result.importableRows,
@@ -196,6 +283,8 @@ async function persistWeeklyUpload(
     batch_id: batchId,
     row_number: row.rowNumber,
     week_start: row.weekStart,
+    cycle_month: result.cycleMonth,
+    week_number: result.weekNumber,
     distributor_code: row.distributorCode,
     distributor_name: row.distributorName,
     region_code: row.regionCode,
@@ -300,6 +389,42 @@ export async function deleteWeeklyBatch(batchId: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Re-tag a batch's month-cycle + week-of-month. Used to correct boundary sheets (e.g. a sheet dated
+ * on the 1st that actually closes the prior month) so de-cumulation pairs them with the right cycle.
+ * Updates the batch header and all of its rows together.
+ */
+export async function retagWeeklyBatch(input: {
+  batchId: string;
+  cycleMonth: string;
+  weekNumber: number;
+}): Promise<boolean> {
+  const batchId = (input.batchId ?? "").trim();
+  if (!batchId) throw new SalesWorkflowError("invalid_request", "Missing batch id.", 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.cycleMonth)) {
+    throw new SalesWorkflowError("invalid_request", "cycleMonth must be a YYYY-MM-DD date (first of the month).", 400);
+  }
+  if (![1, 2, 3, 4].includes(input.weekNumber)) {
+    throw new SalesWorkflowError("invalid_request", "weekNumber must be 1, 2, 3 or 4.", 400);
+  }
+  const supabase = getSupabaseAdmin();
+  const batchUpdate = await supabase
+    .from("weekly_sales_batches")
+    .update({ cycle_month: input.cycleMonth, week_number: input.weekNumber })
+    .eq("id", batchId)
+    .select("id")
+    .single();
+  if (batchUpdate.error || !batchUpdate.data) {
+    throw new SalesWorkflowError("update_failed", batchUpdate.error?.message ?? "Batch not found.", 404);
+  }
+  const rowsUpdate = await supabase
+    .from("weekly_sales_rows")
+    .update({ cycle_month: input.cycleMonth, week_number: input.weekNumber })
+    .eq("batch_id", batchId);
+  if (rowsUpdate.error) throw new SalesWorkflowError("update_failed", rowsUpdate.error.message, 500);
+  return true;
+}
+
 function mapBatch(row: Record<string, unknown>): WeeklyBatch {
   return {
     id: String(row.id),
@@ -309,6 +434,8 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
     fileName: String(row.file_name ?? ""),
     sheetName: String(row.sheet_name ?? ""),
     weekStart: row.week_start ? String(row.week_start) : null,
+    cycleMonth: row.cycle_month ? String(row.cycle_month) : null,
+    weekNumber: row.week_number != null ? Number(row.week_number) : null,
     status: (row.status === "validated" ? "validated" : "blocked") as "validated" | "blocked",
     totalRows: Number(row.total_rows ?? 0),
     importableRows: Number(row.importable_rows ?? 0),
@@ -331,6 +458,10 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
 
 type FactRow = {
   weekStart: string;
+  /** first day of the month-cycle this row belongs to (YYYY-MM-DD), or "" when untagged */
+  cycleMonth: string;
+  /** week-of-month 1–4, or null when untagged */
+  weekNumber: number | null;
   distributorCode: string;
   distributorName: string;
   regionCode: string;
@@ -357,6 +488,17 @@ const delta = (current: number, prior: number | null): WeeklyDelta => ({
 const normalizeCode = (value: string | null | undefined) => (value ?? "").trim().toUpperCase();
 const normalizeText = (value: string | null | undefined) => (value ?? "").trim();
 const normalizeComparableLine = (value: string | null | undefined) => normalizeText(value).toUpperCase();
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+// "2026-05-01" → "May 2026" (no Date() — pure string parse, timezone-safe).
+const monthLabel = (cycleMonth: string) => {
+  const [year, month] = (cycleMonth || "").split("-");
+  const name = MONTH_NAMES[Number(month) - 1];
+  return name ? `${name} ${year}` : cycleMonth || "—";
+};
 
 const normalizeWeekList = (values?: string[] | null): string[] => {
   if (!values || values.length === 0) return [];
@@ -556,6 +698,12 @@ export async function loadWeeklyDashboard(filters?: {
   productFilterMode?: WeeklyFilterMode | null;
   lineCodes?: string[] | null;
   lineFilterMode?: WeeklyFilterMode | null;
+  /** Cycle-month filter (YYYY-MM-DD first-of-month values) + mode. Empty = all months. */
+  cycleMonths?: string[] | null;
+  cycleMonthMode?: WeeklyFilterMode | null;
+  /** Week-of-month filter (1–4) + mode. Empty = all weeks. */
+  weekNumbers?: number[] | null;
+  weekNumberMode?: WeeklyFilterMode | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
 }): Promise<WeeklyDashboard> {
@@ -565,7 +713,7 @@ export async function loadWeeklyDashboard(filters?: {
   // ≈ 25 weeks of dropdown history). allWeeks skips the limit so the full history stays available.
   let batchQuery = supabase
     .from("weekly_sales_batches")
-    .select("id, week_start, distributor_code, distributor_name")
+    .select("id, week_start, cycle_month, week_number, distributor_code, distributor_name, file_name")
     .eq("status", "validated")
     .order("week_start", { ascending: false });
   if (!filters?.allWeeks) batchQuery = batchQuery.limit(200);
@@ -597,6 +745,13 @@ export async function loadWeeklyDashboard(filters?: {
   const region = resolveMultiFilter(filters?.regionCodes, filters?.regionCode, filters?.regionFilterMode, normalizeCode);
   const product = resolveMultiFilter(filters?.productCodes, filters?.productCode, filters?.productFilterMode, normalizeCode);
   const line = resolveMultiFilter(filters?.lineCodes, filters?.line, filters?.lineFilterMode, normalizeComparableLine);
+  const cycleMonthFilter = resolveMultiFilter(filters?.cycleMonths, null, filters?.cycleMonthMode, normalizeText);
+  const weekNumberFilter = resolveMultiFilter(
+    filters?.weekNumbers?.map((value) => String(value)),
+    null,
+    filters?.weekNumberMode,
+    normalizeText,
+  );
   const requestedWeekSet = new Set(
     normalizeWeekList(filters?.weekStarts)
       .map((w) => memberToCanonical.get(w) ?? w)
@@ -640,6 +795,10 @@ export async function loadWeeklyDashboard(filters?: {
     regionFilterMode: region.mode,
     lineCodes: [...line.set],
     lineFilterMode: line.mode,
+    cycleMonths: [...cycleMonthFilter.set],
+    cycleMonthMode: cycleMonthFilter.mode,
+    weekNumbers: [...weekNumberFilter.set].map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+    weekNumberMode: weekNumberFilter.mode,
   };
 
   const weekGroupMembersObj = Object.fromEntries(weekGroupMap);
@@ -652,6 +811,8 @@ export async function loadWeeklyDashboard(filters?: {
     availableLines: [],
     availableRegions: [],
     availableProducts: [],
+    availableMonths: [],
+    availableWeekNumbers: [],
     distributors,
     appliedFilters,
     kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
@@ -661,6 +822,8 @@ export async function loadWeeklyDashboard(filters?: {
     distributorBreakdown: [],
     branchBreakdown: [],
     zeroSalesBranches: [],
+    weekComparison: [],
+    sources: [],
     trend: [],
   });
 
@@ -689,13 +852,21 @@ export async function loadWeeklyDashboard(filters?: {
     (filters.accessScope as Extract<WeeklyAccessScope, { tier: "product" }>).productCodes.size > 0;
   // Widen to 8 recent weeks so the trend chart always has enough points for merging.
   const recentWeekSet = new Set(availableWeeks.slice(0, 8).flatMap((can) => weekGroupMap.get(can) ?? [can]));
+  // De-cumulation needs every week of a touched month-cycle loaded (to subtract the previous week),
+  // so widen the window from "selected/prior/recent weeks" to the FULL (distributor, cycle_month) of
+  // any batch in that window.
+  const windowCycleKeys = new Set(
+    batches
+      .filter((b) => {
+        const ws = String(b.week_start ?? "");
+        return selectedWeekSet.has(ws) || priorWeekSet.has(ws) || recentWeekSet.has(ws);
+      })
+      .map((b) => `${b.distributor_code}||${b.cycle_month ?? ""}`),
+  );
   const batchIdsForRows = allWeeksRequested || scopeIsBoundedProduct
     ? [...batches.map((b) => String(b.id))]
     : batches
-        .filter((b) => {
-          const ws = String(b.week_start ?? "");
-          return selectedWeekSet.has(ws) || priorWeekSet.has(ws) || recentWeekSet.has(ws);
-        })
+        .filter((b) => windowCycleKeys.has(`${b.distributor_code}||${b.cycle_month ?? ""}`))
         .map((b) => String(b.id));
   if (batchIdsForRows.length === 0) return empty();
   const CONCURRENCY = 6;
@@ -711,7 +882,7 @@ export async function loadWeeklyDashboard(filters?: {
   let p0Query = supabase
     .from("weekly_sales_rows")
     .select(
-      "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+      "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
       { count: "exact" },
     )
     .order("id", { ascending: true })
@@ -725,6 +896,8 @@ export async function loadWeeklyDashboard(filters?: {
     if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
     allRows.push({
       weekStart: String(row.week_start ?? ""),
+      cycleMonth: String(row.cycle_month ?? ""),
+      weekNumber: row.week_number != null ? Number(row.week_number) : null,
       distributorCode: String(row.distributor_code ?? ""),
       distributorName: String(row.distributor_name ?? ""),
       regionCode: String(row.region_code ?? ""),
@@ -747,7 +920,7 @@ export async function loadWeeklyDashboard(filters?: {
       let q = supabase
         .from("weekly_sales_rows")
         .select(
-          "batch_id, week_start, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+          "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
         )
         .order("id", { ascending: true })
         .range(from, from + pageSize - 1);
@@ -762,6 +935,8 @@ export async function loadWeeklyDashboard(filters?: {
         if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
         allRows.push({
           weekStart: String(row.week_start ?? ""),
+          cycleMonth: String(row.cycle_month ?? ""),
+          weekNumber: row.week_number != null ? Number(row.week_number) : null,
           distributorCode: String(row.distributor_code ?? ""),
           distributorName: String(row.distributor_name ?? ""),
           regionCode: String(row.region_code ?? ""),
@@ -788,10 +963,14 @@ export async function loadWeeklyDashboard(filters?: {
     batchCount: batchIdsForRows.length,
   }));
 
+  // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
+  // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
+  const realRows = decumulateRows(allRows);
+
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true };
-  const visibleRows = applyWeeklyAccessScope(allRows, accessScope);
+  const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
   // Filters run AFTER access-scope redaction, so include/exclude can only narrow already-visible
   // rows — they can never re-expose the confidential LA003/LA004 products.
   const scopedRows = visibleRows.filter((row) => {
@@ -799,6 +978,8 @@ export async function loadWeeklyDashboard(filters?: {
     if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
     if (!passesMultiFilter(product, normalizeCode(row.productCode))) return false;
     if (!passesMultiFilter(line, normalizeComparableLine(row.officialLine))) return false;
+    if (!passesMultiFilter(cycleMonthFilter, normalizeText(row.cycleMonth))) return false;
+    if (!passesMultiFilter(weekNumberFilter, row.weekNumber != null ? String(row.weekNumber) : "")) return false;
     return true;
   });
   // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
@@ -823,15 +1004,48 @@ export async function loadWeeklyDashboard(filters?: {
   const availableLines = [...new Set(optionRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort(
     (left, right) => left.localeCompare(right),
   );
+  // Month + week-of-month option universes — independent of the date-week selection (computed from all
+  // visible rows for the chosen distributor) so these dropdowns never collapse on selection.
+  const monthOptionRows = visibleRows.filter((row) => passesMultiFilter(distributor, normalizeCode(row.distributorCode)));
+  const availableMonths = [...new Set(monthOptionRows.map((row) => row.cycleMonth).filter(Boolean))]
+    .sort((left, right) => right.localeCompare(left))
+    .map((code) => ({ code, name: monthLabel(code) }));
+  const availableWeekNumbers = [
+    ...new Set(monthOptionRows.map((row) => row.weekNumber).filter((value): value is number => value != null)),
+  ].sort((left, right) => left - right);
 
-  const weekRows = scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
-  const priorRows = priorCanonical ? scopedRows.filter((row) => priorWeekSet.has(row.weekStart)) : [];
+  // When a month / week-of-month filter is active it defines the time scope, so don't ALSO restrict to
+  // the date-week selector (that would conflict). Otherwise keep the existing selected-week scope.
+  const timeFilterActive = cycleMonthFilter.has || weekNumberFilter.has;
+  const weekRows = timeFilterActive ? scopedRows : scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
+  const priorRows = !timeFilterActive && priorCanonical ? scopedRows.filter((row) => priorWeekSet.has(row.weekStart)) : [];
+
+  // Stock is a point-in-time snapshot, NOT cumulative — summing it across the weeks of a month would
+  // multiply on-hand inventory. For the KPI / compare / ranking aggregates, keep stock only from the
+  // LATEST in-scope week of each (distributor, cycle_month) and zero it on earlier weeks; sales/units
+  // still sum across all weeks. (The trend + week-comparison read each week's own snapshot directly.)
+  const latestStockOnly = (rows: FactRow[]): FactRow[] => {
+    const latest = new Map<string, string>();
+    for (const row of rows) {
+      if (!row.cycleMonth) continue;
+      const key = `${row.distributorCode}||${row.cycleMonth}`;
+      const cur = latest.get(key);
+      if (!cur || row.weekStart > cur) latest.set(key, row.weekStart);
+    }
+    return rows.map((row) =>
+      !row.cycleMonth || row.weekStart === latest.get(`${row.distributorCode}||${row.cycleMonth}`)
+        ? row
+        : { ...row, stockQty: 0 },
+    );
+  };
+  const weekRowsAdj = latestStockOnly(weekRows);
+  const priorRowsAdj = latestStockOnly(priorRows);
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
   // Zero-sales branches: stock on hand this week but no sales.
   const branchAgg = new Map<string, { branchName: string; regionName: string; salesValue: number; salesUnits: number; stockUnits: number }>();
-  for (const row of weekRows) {
+  for (const row of weekRowsAdj) {
     const key = row.branchCode || row.branchName;
     // Skip branchless rows so the zero-sales list never shows a "—" branch.
     if (!key) continue;
@@ -880,6 +1094,73 @@ export async function loadWeeklyDashboard(filters?: {
   });
   const trend = mergeThinWeeks(rawTrend);
 
+  // Week-by-week comparison (de-cumulated real weeks), grouped by cycle month + week number. The
+  // delta is vs the previous week number within the SAME month-cycle (W2−W1, W3−W2, …).
+  const wcMap = new Map<
+    string,
+    { cycleMonth: string; weekNumber: number; weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }
+  >();
+  for (const row of scopedRows) {
+    if (!row.cycleMonth || row.weekNumber == null) continue;
+    const key = `${row.cycleMonth}||${row.weekNumber}`;
+    const cur = wcMap.get(key) ?? {
+      cycleMonth: row.cycleMonth,
+      weekNumber: row.weekNumber,
+      weekStart: row.weekStart,
+      salesValue: 0,
+      salesUnits: 0,
+      stockUnits: 0,
+    };
+    cur.salesValue += row.salesValue;
+    cur.salesUnits += row.netQty;
+    cur.stockUnits += row.stockQty;
+    if (row.weekStart && (!cur.weekStart || row.weekStart < cur.weekStart)) cur.weekStart = row.weekStart;
+    wcMap.set(key, cur);
+  }
+  const wcSorted = [...wcMap.values()].sort(
+    (a, b) => a.cycleMonth.localeCompare(b.cycleMonth) || a.weekNumber - b.weekNumber,
+  );
+  const weekComparison = wcSorted.map((w, i) => {
+    const prev = i > 0 && wcSorted[i - 1].cycleMonth === w.cycleMonth ? wcSorted[i - 1] : null;
+    return {
+      cycleMonth: w.cycleMonth,
+      weekNumber: w.weekNumber,
+      weekStart: w.weekStart || null,
+      salesValue: Number(w.salesValue.toFixed(2)),
+      salesUnits: Number(w.salesUnits.toFixed(2)),
+      stockUnits: Number(w.stockUnits.toFixed(2)),
+      deltaValuePct: prev && prev.salesValue !== 0 ? Number(((w.salesValue - prev.salesValue) / prev.salesValue).toFixed(4)) : null,
+    };
+  });
+
+  // Report sources: the validated sheets that fed this report (the export's "Report Sources" block).
+  // Scoped by the time + distributor filters (the sheets actually read); region/product/line are
+  // row-level refinements listed separately as applied filters.
+  const sources = batches
+    .filter((batch) => {
+      if (!passesMultiFilter(distributor, normalizeCode(String(batch.distributor_code ?? "")))) return false;
+      if (timeFilterActive) {
+        if (!passesMultiFilter(cycleMonthFilter, normalizeText(String(batch.cycle_month ?? "")))) return false;
+        if (!passesMultiFilter(weekNumberFilter, batch.week_number != null ? String(batch.week_number) : "")) return false;
+        return true;
+      }
+      return selectedWeekSet.has(String(batch.week_start ?? ""));
+    })
+    .map((batch) => ({
+      distributorCode: String(batch.distributor_code ?? ""),
+      distributorName: String(batch.distributor_name ?? ""),
+      cycleMonth: batch.cycle_month ? String(batch.cycle_month) : null,
+      weekNumber: batch.week_number != null ? Number(batch.week_number) : null,
+      weekStart: batch.week_start ? String(batch.week_start) : null,
+      fileName: String(batch.file_name ?? ""),
+    }))
+    .sort(
+      (a, z) =>
+        a.distributorName.localeCompare(z.distributorName) ||
+        String(a.cycleMonth).localeCompare(String(z.cycleMonth)) ||
+        (a.weekNumber ?? 0) - (z.weekNumber ?? 0),
+    );
+
   return {
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
@@ -888,27 +1169,31 @@ export async function loadWeeklyDashboard(filters?: {
     availableLines,
     availableRegions,
     availableProducts,
+    availableMonths,
+    availableWeekNumbers,
     distributors,
     appliedFilters,
     kpis: {
-      salesValue: Number(sum(weekRows, (row) => row.salesValue).toFixed(2)),
-      salesUnits: Number(sum(weekRows, (row) => row.netQty).toFixed(2)),
-      stockUnits: Number(sum(weekRows, (row) => row.stockQty).toFixed(2)),
-      branchCount: new Set(weekRows.map((row) => row.branchCode || row.branchName)).size,
-      regionCount: new Set(weekRows.map((row) => row.regionCode)).size,
-      productCount: new Set(weekRows.map((row) => row.productCode || row.productName)).size,
-      distributorCount: new Set(weekRows.map((row) => row.distributorCode)).size,
+      salesValue: Number(sum(weekRowsAdj, (row) => row.salesValue).toFixed(2)),
+      salesUnits: Number(sum(weekRowsAdj, (row) => row.netQty).toFixed(2)),
+      stockUnits: Number(sum(weekRowsAdj, (row) => row.stockQty).toFixed(2)),
+      branchCount: new Set(weekRowsAdj.map((row) => row.branchCode || row.branchName)).size,
+      regionCount: new Set(weekRowsAdj.map((row) => row.regionCode)).size,
+      productCount: new Set(weekRowsAdj.map((row) => row.productCode || row.productName)).size,
+      distributorCount: new Set(weekRowsAdj.map((row) => row.distributorCode)).size,
     },
     compare: {
-      salesValue: delta(sum(weekRows, (row) => row.salesValue), priorCanonical ? sum(priorRows, (row) => row.salesValue) : null),
-      salesUnits: delta(sum(weekRows, (row) => row.netQty), priorCanonical ? sum(priorRows, (row) => row.netQty) : null),
-      stockUnits: delta(sum(weekRows, (row) => row.stockQty), priorCanonical ? sum(priorRows, (row) => row.stockQty) : null),
+      salesValue: delta(sum(weekRowsAdj, (row) => row.salesValue), !timeFilterActive && priorCanonical ? sum(priorRowsAdj, (row) => row.salesValue) : null),
+      salesUnits: delta(sum(weekRowsAdj, (row) => row.netQty), !timeFilterActive && priorCanonical ? sum(priorRowsAdj, (row) => row.netQty) : null),
+      stockUnits: delta(sum(weekRowsAdj, (row) => row.stockQty), !timeFilterActive && priorCanonical ? sum(priorRowsAdj, (row) => row.stockQty) : null),
     },
-    regions: rank(weekRows, (row) => row.regionCode, (row) => row.regionName),
-    products: rank(weekRows, (row) => row.productCode, (row) => row.productName),
-    distributorBreakdown: rank(weekRows, (row) => row.distributorCode, (row) => row.distributorName),
-    branchBreakdown: rankBranches(weekRows),
+    regions: rank(weekRowsAdj, (row) => row.regionCode, (row) => row.regionName),
+    products: rank(weekRowsAdj, (row) => row.productCode, (row) => row.productName),
+    distributorBreakdown: rank(weekRowsAdj, (row) => row.distributorCode, (row) => row.distributorName),
+    branchBreakdown: rankBranches(weekRowsAdj),
     zeroSalesBranches: zeroSalesBranches.slice(0, 100),
+    weekComparison,
+    sources,
     trend,
   };
 }

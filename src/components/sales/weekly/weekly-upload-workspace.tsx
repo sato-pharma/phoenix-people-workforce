@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Lock, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Lock, Pencil, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -10,6 +10,7 @@ import type {
   WeeklyVerifyColumnStatus,
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
+import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -53,6 +54,8 @@ type WeeklyPostInput = {
   distributorCode: string;
   isPS: boolean;
   periodDate?: string;
+  /** week-of-month 1–4 (the confirmed label); omitted lets the server fall back to the date suggestion */
+  weekNumber?: number | null;
   file?: File | null;
   salesFile?: File | null;
   stockFile?: File | null;
@@ -62,7 +65,7 @@ type WeeklyPostInput = {
 // (both PS files together count toward the cap, so if either pushes the combined body over the limit
 // both are streamed) and the endpoint is called by JSON reference.
 async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Response> {
-  const { distributorCode, isPS, periodDate, file, salesFile, stockFile } = input;
+  const { distributorCode, isPS, periodDate, weekNumber, file, salesFile, stockFile } = input;
   const combinedSize = isPS
     ? (salesFile?.size ?? 0) + (stockFile?.size ?? 0)
     : file?.size ?? 0;
@@ -71,6 +74,7 @@ async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Res
     const form = new FormData();
     form.set("distributorCode", distributorCode);
     if (periodDate) form.set("periodDate", periodDate);
+    if (weekNumber) form.set("weekNumber", String(weekNumber));
     if (isPS) {
       form.set("salesFile", salesFile as File);
       form.set("stockFile", stockFile as File);
@@ -82,6 +86,7 @@ async function postWeekly(endpoint: string, input: WeeklyPostInput): Promise<Res
 
   const body: Record<string, string> = { distributorCode };
   if (periodDate) body.periodDate = periodDate;
+  if (weekNumber) body.weekNumber = String(weekNumber);
   if (isPS) {
     const [salesStoragePath, stockStoragePath] = await Promise.all([
       uploadWeeklyFileToStorage(salesFile as File),
@@ -105,11 +110,20 @@ export function WeeklyUploadWorkspace({
   initialError: string | null;
 }) {
   const [distributorCode, setDistributorCode] = useState(distributors[0]?.code ?? "");
+  // Week-of-month (1–4) this upload covers. The user picks it; the system also derives a suggestion
+  // from the sheet date at Validate and flags any mismatch. It is the LABEL stored on the batch.
+  const [weekNumber, setWeekNumber] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [salesFile, setSalesFile] = useState<File | null>(null);
   const [stockFile, setStockFile] = useState<File | null>(null);
   const [periodDate, setPeriodDate] = useState("");
   const [batches, setBatches] = useState<WeeklyBatch[]>(initialBatches);
+
+  // Inline re-tag (fix a batch's month-cycle + week) — used for boundary sheets.
+  const [retagId, setRetagId] = useState<string | null>(null);
+  const [retagWeek, setRetagWeek] = useState(1);
+  const [retagMonth, setRetagMonth] = useState(""); // YYYY-MM
+  const [retagBusy, setRetagBusy] = useState(false);
 
   // Step 1 — AI verification
   const [verifying, setVerifying] = useState(false);
@@ -297,9 +311,13 @@ export function WeeklyUploadWorkspace({
     setUploadDone(false);
     setUploadError(null);
     try {
-      const response = await postWeekly("/api/sales/weekly/validate", { distributorCode, file, isPS, periodDate, salesFile, stockFile });
+      const response = await postWeekly("/api/sales/weekly/validate", { distributorCode, file, isPS, periodDate, weekNumber, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
-      if (payload?.data) setValidateResult(payload.data);
+      if (payload?.data) {
+        setValidateResult(payload.data);
+        // Auto-suggest the week from the sheet date when the user hasn't picked one yet.
+        if (weekNumber == null && payload.data.suggestedWeekNumber) setWeekNumber(payload.data.suggestedWeekNumber);
+      }
       if (!payload?.success) setValidateError(payload?.error ?? "Validation failed.");
     } catch (caught) {
       setValidateError(caught instanceof Error ? caught.message : "Validation failed — check your network connection.");
@@ -313,7 +331,7 @@ export function WeeklyUploadWorkspace({
     setUploadBusy(true);
     setUploadError(null);
     try {
-      const response = await postWeekly("/api/sales/weekly/upload", { distributorCode, file, isPS, periodDate, salesFile, stockFile });
+      const response = await postWeekly("/api/sales/weekly/upload", { distributorCode, file, isPS, periodDate, weekNumber, salesFile, stockFile });
       const payload = (await response.json()) as { success?: boolean; data?: WeeklySalesValidationResult; error?: string };
       if (payload?.success) {
         setUploadDone(true);
@@ -337,6 +355,38 @@ export function WeeklyUploadWorkspace({
       else await refreshBatches();
     } catch {
       alert("Delete failed.");
+    }
+  }
+
+  function startRetag(batch: WeeklyBatch) {
+    setRetagId(batch.id);
+    setRetagWeek(batch.weekNumber ?? 1);
+    setRetagMonth((batch.cycleMonth ?? batch.weekStart ?? "").slice(0, 7));
+  }
+
+  async function handleRetag() {
+    if (!retagId || !/^\d{4}-\d{2}$/.test(retagMonth)) {
+      alert("Pick a valid month for this sheet.");
+      return;
+    }
+    setRetagBusy(true);
+    try {
+      const response = await fetch("/api/sales/weekly/batches", {
+        body: JSON.stringify({ batchId: retagId, cycleMonth: `${retagMonth}-01`, weekNumber: retagWeek }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const payload = (await response.json()) as { success?: boolean; error?: string };
+      if (!payload?.success) {
+        alert(payload?.error ?? "Re-tag failed.");
+        return;
+      }
+      setRetagId(null);
+      await refreshBatches();
+    } catch {
+      alert("Re-tag failed.");
+    } finally {
+      setRetagBusy(false);
     }
   }
 
@@ -371,8 +421,49 @@ export function WeeklyUploadWorkspace({
         </div>
       )}
 
+      {/* Month completeness tracker — advisory reminder, never blocks uploads */}
+      <MonthCompletenessTracker batches={batches} />
+
       {/* Upload card */}
       <div className={`${card} p-4 sm:p-5`}>
+
+        {/* ── Step 1: Week of month ── */}
+        <div className="mb-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">1</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Week of month</span>
+            {weekNumber && (
+              <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">Week {weekNumber}</span>
+            )}
+          </div>
+          <p className="mt-1 text-xs font-medium text-[#64748B]">
+            Distributor sheets are cumulative within a month (week 2 already includes week 1, and so on). Pick the week this
+            file covers — the system also reads the date inside the file and flags any mismatch when you validate.
+          </p>
+          <div className="mt-2 inline-flex flex-wrap gap-2">
+            {[1, 2, 3, 4].map((w) => (
+              <button
+                className={`h-10 min-w-[88px] rounded-[6px] border px-4 text-sm font-black transition disabled:opacity-60 ${
+                  weekNumber === w
+                    ? "border-[#F97316] bg-[#F97316] text-white"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] hover:border-[#FDBA74]"
+                }`}
+                disabled={busy}
+                key={w}
+                onClick={() => setWeekNumber(w)}
+                type="button"
+              >
+                Week {w}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Step 2: Distributor & file ── */}
+        <div className="mb-2 flex items-center gap-2">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">2</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Distributor &amp; file</span>
+        </div>
 
         {/* File selectors */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -439,7 +530,7 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: AI Verify ── */}
         <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">1</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">3</span>
             <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Verify columns</span>
             {verified && (
               <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
@@ -476,7 +567,7 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 2: Validate (dry run) ── */}
         <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">2</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">4</span>
             <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Validate</span>
             {validateResult && !validateError && (
               <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -517,6 +608,8 @@ export function WeeklyUploadWorkspace({
       {validateResult && (
         <ValidationResultPanel
           result={validateResult}
+          selectedWeek={weekNumber}
+          onPickWeek={setWeekNumber}
           uploadBusy={uploadBusy}
           uploadDone={uploadDone}
           uploadError={uploadError}
@@ -602,6 +695,7 @@ export function WeeklyUploadWorkspace({
                   />
                 </th>
                 <th className="px-3 py-2">Period</th>
+                <th className="px-3 py-2">Week</th>
                 <th className="px-3 py-2">Distributor</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Rows</th>
@@ -614,7 +708,7 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {filteredBatches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={9}>
+                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={10}>
                     {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
                   </td>
                 </tr>
@@ -630,7 +724,37 @@ export function WeeklyUploadWorkspace({
                       type="checkbox"
                     />
                   </td>
-                  <td className="px-3 py-2 font-bold text-[#0F172A]">{batch.weekStart ?? "—"}</td>
+                  <td className="px-3 py-2 font-bold text-[#0F172A]">
+                    {retagId === batch.id ? (
+                      <input
+                        aria-label="Cycle month"
+                        className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                        onChange={(e) => setRetagMonth(e.target.value)}
+                        type="month"
+                        value={retagMonth}
+                      />
+                    ) : (
+                      batch.weekStart ?? "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {retagId === batch.id ? (
+                      <select
+                        aria-label="Week of month"
+                        className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                        onChange={(e) => setRetagWeek(Number(e.target.value))}
+                        value={retagWeek}
+                      >
+                        {[1, 2, 3, 4].map((w) => (
+                          <option key={w} value={w}>Week {w}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                        {batch.weekNumber ? `W${batch.weekNumber}` : "—"}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{batch.distributorName}</td>
                   <td className="px-3 py-2">
                     <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -643,25 +767,57 @@ export function WeeklyUploadWorkspace({
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
-                      <button
-                        aria-label="Download XLSX report"
-                        className="inline-flex text-[#94A3B8] transition hover:text-[#F97316] disabled:opacity-40"
-                        disabled={downloadingId === batch.id}
-                        onClick={() => handleSingleDownload(batch)}
-                        type="button"
-                      >
-                        {downloadingId === batch.id
-                          ? <Loader2 className="h-4 w-4 animate-spin" />
-                          : <Download className="h-4 w-4" />}
-                      </button>
-                      <button
-                        aria-label="Delete upload"
-                        className="inline-flex text-[#94A3B8] transition hover:text-rose-600"
-                        onClick={() => handleDelete(batch.id)}
-                        type="button"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {retagId === batch.id ? (
+                        <>
+                          <button
+                            className="inline-flex h-8 items-center gap-1 rounded-[6px] bg-[#F97316] px-2.5 text-xs font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+                            disabled={retagBusy}
+                            onClick={handleRetag}
+                            type="button"
+                          >
+                            {retagBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                            Save
+                          </button>
+                          <button
+                            aria-label="Cancel re-tag"
+                            className="inline-flex text-[#94A3B8] transition hover:text-[#0F172A]"
+                            onClick={() => setRetagId(null)}
+                            type="button"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            aria-label="Download XLSX report"
+                            className="inline-flex text-[#94A3B8] transition hover:text-[#F97316] disabled:opacity-40"
+                            disabled={downloadingId === batch.id}
+                            onClick={() => handleSingleDownload(batch)}
+                            type="button"
+                          >
+                            {downloadingId === batch.id
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <Download className="h-4 w-4" />}
+                          </button>
+                          <button
+                            aria-label="Re-tag week / month"
+                            className="inline-flex text-[#94A3B8] transition hover:text-[#F97316]"
+                            onClick={() => startRetag(batch)}
+                            type="button"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            aria-label="Delete upload"
+                            className="inline-flex text-[#94A3B8] transition hover:text-rose-600"
+                            onClick={() => handleDelete(batch.id)}
+                            type="button"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -698,12 +854,16 @@ function downloadUnmapped(result: WeeklySalesValidationResult) {
 
 function ValidationResultPanel({
   result,
+  selectedWeek,
+  onPickWeek,
   onUpload,
   uploadBusy,
   uploadError,
   uploadDone,
 }: {
   result: WeeklySalesValidationResult;
+  selectedWeek: number | null;
+  onPickWeek: (week: number) => void;
   onUpload: () => void;
   uploadBusy: boolean;
   uploadError: string | null;
@@ -713,6 +873,9 @@ function ValidationResultPanel({
   const isPS = result.distributor.code === "PS";
   const hasFailures = result.failedRows > 0;
   const t = result.totals;
+  const tw = result.thisWeekOnly;
+  const weekMismatch =
+    result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
 
   return (
     <div className={card}>
@@ -731,6 +894,45 @@ function ValidationResultPanel({
           </button>
         )}
       </div>
+
+      {/* Week-of-month mismatch (selected vs date-derived suggestion) */}
+      {weekMismatch && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            You picked <b>Week {selectedWeek}</b>, but this sheet&apos;s date ({result.weekStart ?? "—"}) looks like{" "}
+            <b>Week {result.suggestedWeekNumber}</b>.
+          </span>
+          <button
+            className="ml-1 inline-flex h-7 items-center rounded-[6px] border border-amber-300 bg-white px-2 text-xs font-black text-amber-800 transition hover:bg-amber-100"
+            onClick={() => onPickWeek(result.suggestedWeekNumber as number)}
+            type="button"
+          >
+            Switch to Week {result.suggestedWeekNumber}
+          </button>
+        </div>
+      )}
+
+      {/* This week only — de-cumulated preview vs the previous cumulative sheet of this month-cycle */}
+      {tw && (
+        <div className="border-b border-[#E2E8F0] bg-[#F0FDF4] px-4 py-3">
+          <div className="text-[11px] font-black uppercase tracking-wide text-emerald-700">
+            This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-[#0F172A]">
+            <span>Sales value: <span className="text-[#F97316]">{money(tw.salesValue)}</span></span>
+            <span>Net units: {num(tw.netQty)}</span>
+            <span className="text-xs font-medium text-[#64748B]">
+              {tw.priorWeekStart
+                ? `= this sheet (cumulative ${money(t.salesValue)}) − previous sheet of the month (${tw.priorWeekStart})`
+                : "first sheet of the month — equals the full cumulative figure"}
+            </span>
+          </div>
+          <div className="mt-1 text-xs font-medium text-[#94A3B8]">
+            Stock {num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.
+          </div>
+        </div>
+      )}
 
       {/* Blocking reasons */}
       {result.blockingReasons.length > 0 && (
@@ -811,7 +1013,7 @@ function ValidationResultPanel({
       {/* Step 3 — Confirm Upload */}
       <div className="border-t border-[#E2E8F0] px-4 py-4">
         <div className="flex items-center gap-2 mb-3">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">3</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">5</span>
           <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Confirm &amp; Upload</span>
         </div>
 
@@ -976,6 +1178,152 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
             </span>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Month completeness tracker (advisory — never blocks uploads) ───────────────────────────────────
+
+const TRACKER_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const trackerMonthLabel = (cycle: string) => {
+  const [year, month] = cycle.split("-");
+  const name = TRACKER_MONTHS[Number(month) - 1];
+  return name ? `${name} ${year}` : cycle.slice(0, 7);
+};
+const weekBucketFromDate = (weekStart: string | null): number | null => {
+  if (!weekStart) return null;
+  const day = Number(weekStart.slice(8, 10));
+  if (!Number.isFinite(day) || day < 1) return null;
+  return day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+};
+const WEEK_DUE_DAY: Record<number, number> = { 1: 1, 2: 8, 3: 15, 4: 22 };
+const cadenceWeeks = (code: string): number[] => {
+  const def = WEEKLY_DISTRIBUTORS.find((d) => d.code.toUpperCase() === code.toUpperCase());
+  return def?.cadence === "twice-monthly" ? [2, 4] : [1, 2, 3, 4];
+};
+
+// Confirms every distributor's weekly sheets are in for the month — purely a reminder, NEVER a gate.
+// Cadence-aware (weekly = 4 slots, twice-monthly = 2) and time-aware (a slot only reads "overdue" once
+// its date has passed). Falls back to the sheet date when a batch isn't week-tagged yet.
+function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
+  // Lazy init (not an effect) — same calendar day on server render + client hydrate, so no mismatch.
+  const [today] = useState(() => {
+    const now = new Date();
+    return { cycle: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, day: now.getDate() };
+  });
+
+  const tagged = useMemo(
+    () =>
+      batches.map((b) => ({
+        cycle: b.cycleMonth ?? (b.weekStart ? `${b.weekStart.slice(0, 7)}-01` : null),
+        week: b.weekNumber ?? weekBucketFromDate(b.weekStart),
+        distributorCode: b.distributorCode,
+        weekStart: b.weekStart,
+      })),
+    [batches],
+  );
+  const monthsPresent = useMemo(
+    () => [...new Set(tagged.map((t) => t.cycle).filter((c): c is string => Boolean(c)))].sort().reverse(),
+    [tagged],
+  );
+  const focusMonth = monthsPresent.includes(today.cycle) ? today.cycle : monthsPresent[0] ?? today.cycle;
+
+  const uploadedBy = new Map<string, Map<number, string | null>>();
+  for (const t of tagged) {
+    if (t.cycle !== focusMonth || t.week == null) continue;
+    const existing = uploadedBy.get(t.distributorCode) ?? new Map<number, string | null>();
+    if (!existing.has(t.week)) existing.set(t.week, t.weekStart);
+    uploadedBy.set(t.distributorCode, existing);
+  }
+
+  const rows = WEEKLY_DISTRIBUTORS.map((dist) => {
+    const weeks = cadenceWeeks(dist.code);
+    const up = uploadedBy.get(dist.code) ?? new Map<number, string | null>();
+    const cells = [1, 2, 3, 4].map((week) => {
+      const isUploaded = up.has(week);
+      const isExpected = weeks.includes(week);
+      const due = today.day >= (WEEK_DUE_DAY[week] ?? 99);
+      const state: "done" | "overdue" | "upcoming" | "na" = isUploaded
+        ? "done"
+        : isExpected
+          ? due ? "overdue" : "upcoming"
+          : "na";
+      return { week, state, date: up.get(week) ?? null, counted: isUploaded && isExpected };
+    });
+    return { code: dist.code, name: dist.name, expectedCount: weeks.length, cells };
+  });
+  const expected = rows.reduce((acc, row) => acc + row.expectedCount, 0);
+  const done = rows.reduce((acc, row) => acc + row.cells.filter((cell) => cell.counted).length, 0);
+  const pctDone = expected > 0 ? Math.round((Math.min(done, expected) / expected) * 100) : 0;
+  const allIn = done >= expected;
+
+  const cellClass: Record<string, string> = {
+    done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    overdue: "bg-amber-50 text-amber-700 border-amber-200",
+    upcoming: "bg-white text-[#CBD5E1] border-[#E2E8F0]",
+    na: "bg-[#F8FAFC] text-[#CBD5E1] border-[#F1F5F9]",
+  };
+
+  return (
+    <div className={`${card} p-4 sm:p-5`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">This month — {trackerMonthLabel(focusMonth)}</span>
+            {allIn && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" /> All sheets in
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs font-medium text-[#64748B]">
+            A reminder so no weekly sheet is forgotten — it never blocks you; upload late any time.
+          </p>
+        </div>
+        <span className="text-sm font-black tabular-nums text-[#0F172A]">{done} / {expected} sheets</span>
+      </div>
+
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]">
+        <div className={`h-full rounded-full ${allIn ? "bg-emerald-500" : "bg-[#F97316]"}`} style={{ width: `${pctDone}%` }} />
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+              <th className="px-2 py-1">Distributor</th>
+              <th className="px-2 py-1 text-center">W1</th>
+              <th className="px-2 py-1 text-center">W2</th>
+              <th className="px-2 py-1 text-center">W3</th>
+              <th className="px-2 py-1 text-center">W4</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.code} className="border-t border-[#F1F5F9]">
+                <td className="px-2 py-1.5 font-bold text-[#0F172A]">{row.name} <span className="font-medium text-[#94A3B8]">({row.code})</span></td>
+                {row.cells.map((cell) => (
+                  <td className="px-2 py-1.5 text-center" key={cell.week}>
+                    <span
+                      className={`inline-flex h-6 min-w-[2.2rem] items-center justify-center rounded-[4px] border text-[11px] font-black ${cellClass[cell.state]}`}
+                      title={cell.date ? `Uploaded — ${cell.date}` : cell.state === "overdue" ? "Expected but not uploaded yet" : cell.state === "na" ? "Not expected for this distributor" : "Upcoming"}
+                    >
+                      {cell.state === "done" ? "✓" : cell.state === "overdue" ? "!" : cell.state === "na" ? "·" : "–"}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">
+        <span><span className="text-emerald-600">✓</span> uploaded</span>
+        <span><span className="text-amber-600">!</span> overdue</span>
+        <span><span className="text-[#CBD5E1]">–</span> upcoming</span>
+        <span><span className="text-[#CBD5E1]">·</span> not expected</span>
       </div>
     </div>
   );

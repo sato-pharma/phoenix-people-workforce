@@ -90,6 +90,7 @@ import { runSalesDistributorRegistryTests } from "./sales-distributor-registry.t
 import { runSalesProfilesTests } from "./sales-profiles.test.ts";
 import { runDistributorProfileStoreTests } from "./sales-distributor-profile-store.test.ts";
 import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.test.ts";
+import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
 import { runSalesUploadReconcileTests } from "./sales-upload-reconcile.test.ts";
@@ -354,6 +355,7 @@ await runTest("sales distributor registry", runSalesDistributorRegistryTests);
 await runTest("sales profiles invariants", runSalesProfilesTests);
 await runTest("distributor profile store (editable merge + validation)", runDistributorProfileStoreTests);
 await runTest("weekly column profile store (editable merge + validation)", runWeeklyColumnProfileStoreTests);
+await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
 await runTest("sales upload reconciliation", runSalesUploadReconcileTests);

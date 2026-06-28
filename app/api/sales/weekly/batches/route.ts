@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { deleteWeeklyBatch, listWeeklyBatches } from "@/lib/sales/weekly/service";
+import { deleteWeeklyBatch, listWeeklyBatches, retagWeeklyBatch } from "@/lib/sales/weekly/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,5 +41,26 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     return fail(error, "Failed to delete the weekly upload.");
+  }
+}
+
+// Re-tag a batch's month-cycle + week-of-month (fixes boundary sheets so de-cumulation pairs correctly).
+export async function PATCH(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "weekly_sales", "import");
+    const body = (await request.json().catch(() => ({}))) as {
+      batchId?: string;
+      cycleMonth?: string;
+      weekNumber?: number | string;
+    };
+    await retagWeeklyBatch({
+      batchId: String(body?.batchId ?? "").trim(),
+      cycleMonth: String(body?.cycleMonth ?? "").trim(),
+      weekNumber: Number(body?.weekNumber),
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return fail(error, "Failed to re-tag the weekly upload.");
   }
 }
