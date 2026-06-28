@@ -81,4 +81,28 @@ export function runMarketingRoiFacetsTests() {
   // ── entryMatchesRoiFilters: roiStatus/includeRestricted never narrow the cascade ─
   const withRoiStatus = { ...emptyRoiFilterState(), roiStatus: ["behind" as const], includeRestricted: true };
   assert.equal(entries.every((e) => entryMatchesRoiFilters(e, withRoiStatus)), true, "roiStatus + includeRestricted do not filter entries");
+
+  // ── REGRESSION: a lone value present on only SOME entries must NOT auto-apply ─────
+  // The org's single Regional Manager sits in one request's chain; the rest have none.
+  // Before the fix this auto-applied that RM for every viewer (and, if applied, hid the
+  // value-less requests). Now: 1 value but NOT universal → not auto-applied, not rendered.
+  const rsmEntries: MarketingRoiRequestIndexEntry[] = [
+    entry({ requestId: "x", rsmHrId: "rm1", rsmName: "Solo RM" }),
+    entry({ requestId: "y", rsmHrId: null, rsmName: null }),
+    entry({ requestId: "z", rsmHrId: null, rsmName: null }),
+  ];
+  const rsmFaceted = computeFacetedDimensions(rsmEntries, emptyRoiFilterState(), false);
+  const rsmDim = dim(rsmFaceted.dimensions, "rsm");
+  assert.equal(rsmDim.options.length, 1, "only one RM value exists across the entries");
+  assert.equal(rsmDim.autoApplied, null, "a lone value covering only a subset is NOT auto-applied");
+  assert.equal(rsmDim.render, false, "a single-option dimension still does not render");
+  assert.equal(rsmFaceted.matchedCount, 3, "all requests stay in scope — none hidden by a phantom auto-apply");
+
+  // contrast: when the lone value IS universal (every entry carries it) it still auto-applies
+  const universalRsm: MarketingRoiRequestIndexEntry[] = [
+    entry({ requestId: "p", rsmHrId: "rm1", rsmName: "Solo RM" }),
+    entry({ requestId: "q", rsmHrId: "rm1", rsmName: "Solo RM" }),
+  ];
+  const uniFaceted = computeFacetedDimensions(universalRsm, emptyRoiFilterState(), false);
+  assert.deepEqual(dim(uniFaceted.dimensions, "rsm").autoApplied, ["rm1"], "a universal lone value still auto-applies");
 }
