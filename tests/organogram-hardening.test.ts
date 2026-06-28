@@ -430,17 +430,17 @@ export function runOrganogramHardeningTests() {
   assert.match(componentSource, /childLanes/);
   assert.match(componentSource, /Medical Sales Representatives/);
   assert.match(
-    componentSource,
+    sharedViewModelSource,
     /if \(assignedToDsm\.has\(key\)\) \{\s*return false;\s*\}/,
     "Organogram DSM lanes must not duplicate the same member or vacancy across multiple manager columns.",
   );
   assert.match(
-    componentSource,
+    sharedViewModelSource,
     /left\.type === "employee"[\s\S]*\? -1/,
     "Organogram lane assignment must prioritize real employee managers before broad vacant manager slots.",
   );
   assert.match(
-    componentSource,
+    sharedViewModelSource,
     /const visibleDsmGroups = dsmGroups;/,
     "Organogram must render vacant DSM seats as visible manager lanes even when their reports are inferred later or temporarily missing.",
   );
@@ -450,7 +450,7 @@ export function runOrganogramHardeningTests() {
     "Vacant manager seats must be visually labeled as vacant boxes, not only counted in totals.",
   );
   assert.match(
-    componentSource,
+    sharedViewModelSource,
     /const directDsmGroups = visibleDsmGroups\.filter/,
     "Organogram direct DSM rendering must use the visible lane set instead of raw vacant manager slots.",
   );
