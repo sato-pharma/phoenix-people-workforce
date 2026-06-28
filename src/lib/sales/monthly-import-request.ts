@@ -145,10 +145,21 @@ export async function resolveUploadedSpreadsheet(request: Request): Promise<Reso
 }
 
 export type ResolvedWeeklyUpload =
-  | { ok: true; storagePaths: string[]; distributorCode: string; periodDate: string | null; file: File | null; salesFile: File | null; stockFile: File | null }
+  | { ok: true; storagePaths: string[]; distributorCode: string; periodDate: string | null; weekNumber: number | null; cycleMonth: string | null; file: File | null; salesFile: File | null; stockFile: File | null }
   | { ok: false; storagePaths: string[]; code: string; error: string; status: number };
 
 const WEEKLY_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// Week-of-month is a 1–4 selector from the upload wizard; anything else is treated as "unset" (the
+// service then falls back to the date-derived suggestion). cycleMonth is an optional YYYY-MM-DD override.
+function parseWeekNumber(value: unknown): number | null {
+  const n = Number(String(value ?? "").trim());
+  return n === 1 || n === 2 || n === 3 || n === 4 ? n : null;
+}
+function parseCycleMonth(value: unknown): string | null {
+  const v = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
 
 // Weekly upload transport resolver. Like resolveUploadedSpreadsheet it accepts BOTH transport paths so
 // large weekly workbooks bypass Vercel's ~4.5MB serverless body cap, but it additionally understands the
@@ -174,6 +185,8 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
       file: single instanceof File ? single : null,
       ok: true,
       periodDate,
+      weekNumber: parseWeekNumber(formData.get("weekNumber")),
+      cycleMonth: parseCycleMonth(formData.get("cycleMonth")),
       salesFile: sales instanceof File ? sales : null,
       stockFile: stock instanceof File ? stock : null,
       storagePaths: [],
@@ -186,9 +199,13 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
     stockStoragePath?: string;
     distributorCode?: string;
     periodDate?: string;
+    weekNumber?: number | string;
+    cycleMonth?: string;
   };
   const distributorCode = String(body?.distributorCode ?? "").trim();
   const periodDate = String(body?.periodDate ?? "").trim() || null;
+  const weekNumber = parseWeekNumber(body?.weekNumber);
+  const cycleMonth = parseCycleMonth(body?.cycleMonth);
 
   const supabase = getSupabaseAdmin();
   const storagePaths: string[] = [];
@@ -211,7 +228,7 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
     if (!salesFile || !stockFile) {
       return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
     }
-    return { distributorCode, file: null, ok: true, periodDate, salesFile, stockFile, storagePaths };
+    return { distributorCode, file: null, ok: true, periodDate, weekNumber, cycleMonth, salesFile, stockFile, storagePaths };
   }
 
   const path = String(body?.storagePath ?? "").trim();
@@ -223,5 +240,5 @@ export async function resolveWeeklyUploadRequest(request: Request): Promise<Reso
   if (!file) {
     return { code: "invalid_weekly_file", error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
   }
-  return { distributorCode, file, ok: true, periodDate, salesFile: null, stockFile: null, storagePaths };
+  return { distributorCode, file, ok: true, periodDate, weekNumber, cycleMonth, salesFile: null, stockFile: null, storagePaths };
 }

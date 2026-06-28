@@ -67,6 +67,23 @@ export type WeeklyParsedRow = {
 
 export type WeeklyDistributorOption = { code: string; name: string };
 
+/**
+ * De-cumulation preview shown at the Validate step. Distributor sheets are cumulative within a month,
+ * so a sheet's true "this week only" sales = its cumulative totals minus the previous cumulative sheet
+ * of the same month-cycle. Stock is a snapshot, never subtracted.
+ */
+export type WeeklyThisWeekOnly = {
+  /** the previous cumulative sheet this was de-cumulated against, or null when this is the cycle's first week */
+  priorWeekStart: string | null;
+  priorWeekNumber: number | null;
+  /** de-cumulated real sales value for THIS week = current cumulative − prior cumulative */
+  salesValue: number;
+  /** de-cumulated real net units for THIS week */
+  netQty: number;
+  /** stock-on-hand snapshot for this sheet (shown as-is, never subtracted) */
+  stockQty: number;
+};
+
 export type WeeklySalesValidationResult = {
   advisories?: string[];
   batchId?: string;
@@ -80,6 +97,14 @@ export type WeeklySalesValidationResult = {
   weekStart: string | null;
   /** which column contract parsed this batch: 'code' (built-in) or 'override' (in-app edit active) */
   contractSource?: "code" | "override";
+  /** first day of the month-cycle (YYYY-MM-DD) this cumulative sheet belongs to (from weekStart, override-able) */
+  cycleMonth: string | null;
+  /** confirmed week-of-month 1–4 for this upload */
+  weekNumber: number | null;
+  /** week-of-month auto-suggested from the sheet date (before the user confirms/overrides) */
+  suggestedWeekNumber: number | null;
+  /** de-cumulated "this week only" preview vs the previous cumulative sheet of this cycle */
+  thisWeekOnly?: WeeklyThisWeekOnly | null;
   status: "blocked" | "validated";
   blockingReasons: string[];
   rowCount: number;
@@ -157,6 +182,10 @@ export type WeeklyBatch = {
   fileName: string;
   sheetName: string;
   weekStart: string | null;
+  /** first day of the month-cycle (YYYY-MM-DD) this sheet belongs to, or null when untagged */
+  cycleMonth: string | null;
+  /** week-of-month 1–4 (auto-tagged from the date, owner re-taggable), or null when untagged */
+  weekNumber: number | null;
   status: "blocked" | "validated";
   totalRows: number;
   importableRows: number;
@@ -223,6 +252,10 @@ export type WeeklyDashboard = {
   /** Stable filter-option universes (scoped by week + distributor only, so multi-select never collapses). */
   availableRegions: WeeklyDistributorOption[];
   availableProducts: WeeklyDistributorOption[];
+  /** Cycle-month options ({ code: "YYYY-MM-DD", name: "May 2026" }), newest first. */
+  availableMonths: WeeklyDistributorOption[];
+  /** Week-of-month numbers present in the data (subset of 1–4), ascending. */
+  availableWeekNumbers: number[];
   distributors: WeeklyDistributorOption[];
   appliedFilters: {
     weekStart: string | null;
@@ -242,6 +275,10 @@ export type WeeklyDashboard = {
     regionFilterMode: WeeklyFilterMode;
     lineCodes: string[];
     lineFilterMode: WeeklyFilterMode;
+    cycleMonths: string[];
+    cycleMonthMode: WeeklyFilterMode;
+    weekNumbers: number[];
+    weekNumberMode: WeeklyFilterMode;
   };
   kpis: {
     salesValue: number;
@@ -262,7 +299,30 @@ export type WeeklyDashboard = {
   zeroSalesBranches: WeeklyBranchRow[];
   /** true when the viewer's access scope has no product codes assigned — admin must configure. */
   scopeEmpty?: boolean;
-  /** simple value trend across the available weeks (in-scope) */
+  /**
+   * De-cumulated week-by-week comparison: real per-week totals (this sheet − previous sheet of the
+   * month), grouped by cycle month + week number, with the week-over-week % delta vs the previous week.
+   */
+  weekComparison: {
+    cycleMonth: string;
+    weekNumber: number;
+    weekStart: string | null;
+    salesValue: number;
+    salesUnits: number;
+    stockUnits: number;
+    /** % change vs the previous week number in the same month-cycle; null when no prior week */
+    deltaValuePct: number | null;
+  }[];
+  /** the validated source sheets this report was built from (powers the export's "Report Sources" block) */
+  sources: {
+    distributorCode: string;
+    distributorName: string;
+    cycleMonth: string | null;
+    weekNumber: number | null;
+    weekStart: string | null;
+    fileName: string;
+  }[];
+  /** simple value trend across the available weeks (in-scope) — now de-cumulated (real per week) */
   trend: {
     weekStart: string;
     salesValue: number;

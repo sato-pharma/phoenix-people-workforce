@@ -31,6 +31,8 @@ function labelFilters(filters: WeeklyDashboard["appliedFilters"]): string {
   } else if (filters.weekStart) {
     parts.push(`Week of: ${filters.weekStart}`);
   }
+  if (filters.cycleMonths?.length) parts.push(`Months: ${filters.cycleMonths.map((m) => m.slice(0, 7)).join(", ")}`);
+  if (filters.weekNumbers?.length) parts.push(`Weeks: ${filters.weekNumbers.map((w) => `W${w}`).join(", ")}`);
   if (filters.distributorCode) parts.push(`Distributor: ${filters.distributorCode}`);
   if (filters.regionCode) parts.push(`Region: ${filters.regionCode}`);
   if (filters.productCode) parts.push(`Product: ${filters.productCode}`);
@@ -391,6 +393,65 @@ function buildZeroSalesSheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard) 
   });
 }
 
+function buildSourcesSheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard) {
+  const sheet = workbook.addWorksheet("Report Sources", {
+    views: [{ state: "frozen", ySplit: 3 }],
+  });
+  bandHeader(sheet, 6, "Report Sources", "The validated weekly sheets this report was built from");
+
+  writeTable(sheet, 4, {
+    title: "Source Sheets",
+    columns: [
+      { label: "Distributor", width: 24 },
+      { label: "Cycle Month", width: 14 },
+      { label: "Week", width: 8 },
+      { label: "Sheet Date", width: 16 },
+      { label: "File", width: 40 },
+      { label: "Status", width: 12 },
+    ],
+    rows: data.sources.map((s) => [
+      s.distributorName || s.distributorCode,
+      (s.cycleMonth ?? "").slice(0, 7) || "—",
+      s.weekNumber ? `W${s.weekNumber}` : "—",
+      s.weekStart ?? "—",
+      s.fileName || "—",
+      "validated",
+    ]),
+    note: data.sources.length === 0 ? "No source sheets matched the current filters." : undefined,
+  });
+}
+
+function buildWeekComparisonSheet(workbook: ExcelJS.Workbook, data: WeeklyDashboard) {
+  if (!data.weekComparison?.length) return;
+  const sheet = workbook.addWorksheet("Week Comparison", {
+    views: [{ state: "frozen", ySplit: 3 }],
+  });
+  bandHeader(sheet, 7, "Week-by-Week Comparison", "Real per-week sales (de-cumulated). Stock is the week's snapshot.");
+
+  writeTable(sheet, 4, {
+    title: "Real Sales Per Week",
+    columns: [
+      { label: "Month", width: 12 },
+      { label: "Week", width: 8 },
+      { label: "Sheet Date", width: 16 },
+      { label: "Sales Value (EGP)", numFmt: VALUE_FMT, right: true, width: 22, dataBar: true },
+      { label: "Units Sold", numFmt: UNITS_FMT, right: true, width: 14 },
+      { label: "Stock Units", numFmt: UNITS_FMT, right: true, width: 14 },
+      { label: "WoW", numFmt: PCT_FMT, right: true, width: 10 },
+    ],
+    rows: data.weekComparison.map((w) => [
+      (w.cycleMonth ?? "").slice(0, 7),
+      `W${w.weekNumber}`,
+      w.weekStart ?? "—",
+      w.salesValue,
+      w.salesUnits,
+      w.stockUnits,
+      w.deltaValuePct ?? 0,
+    ]),
+    note: "Each week = its cumulative sheet minus the previous week of the same month (W2−W1, W3−W2, …).",
+  });
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function buildWeeklyExportWorkbook(
@@ -402,6 +463,8 @@ export async function buildWeeklyExportWorkbook(
   workbook.created = new Date();
 
   buildSummarySheet(workbook, data, generatedAt);
+  buildSourcesSheet(workbook, data);
+  buildWeekComparisonSheet(workbook, data);
   buildRegionsSheet(workbook, data);
   buildProductsSheet(workbook, data);
   buildBranchesSheet(workbook, data);

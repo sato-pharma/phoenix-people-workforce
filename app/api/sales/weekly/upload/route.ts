@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     if (!resolved.ok) {
       return NextResponse.json({ success: false, error: resolved.error, code: resolved.code }, { status: resolved.status });
     }
-    const { distributorCode, periodDate } = resolved;
+    const { distributorCode, periodDate, weekNumber, cycleMonth } = resolved;
 
     const checkFile = (value: File | null, label: string) => {
       if (!value) {
@@ -52,11 +52,11 @@ export async function POST(request: Request) {
       if (!sales.ok) return sales.response;
       const stock = checkFile(resolved.stockFile, "The Overseas POS stock matrix file");
       if (!stock.ok) return stock.response;
-      result = await importWeeklySalesFile({ distributorCode, salesFile: sales.file, stockFile: stock.file, uploadedBy, periodDate });
+      result = await importWeeklySalesFile({ distributorCode, salesFile: sales.file, stockFile: stock.file, uploadedBy, periodDate, weekNumber, cycleMonth });
     } else {
       const single = checkFile(resolved.file, "A weekly file");
       if (!single.ok) return single.response;
-      result = await importWeeklySalesFile({ distributorCode, file: single.file, uploadedBy, periodDate });
+      result = await importWeeklySalesFile({ distributorCode, file: single.file, uploadedBy, periodDate, weekNumber, cycleMonth });
     }
 
     const blocked = result.status !== "validated";
