@@ -55,5 +55,16 @@ export function notificationHrefForViewerRole(input: {
       : "/employee-portals/actions?module=weekly_plan";
   }
 
+  // Remap: vacation action center is guarded by Super Admin access in the admin shell.
+  // Portal-mode managers (DM, RM, NSM, etc.) who receive a vacation approval notification
+  // must be sent to the portal Actions Center instead, where the request is actionable.
+  if (role && PORTAL_PLAN_ROLES.has(role) && fallback.startsWith("/leave-management/vacation-action-center")) {
+    const requestIdMatch = /[?&]requestId=([^&]+)/.exec(fallback);
+    const requestId = requestIdMatch ? decodeURIComponent(requestIdMatch[1]) : null;
+    return requestId
+      ? `/employee-portals/actions?module=leave&id=${encodeURIComponent(requestId)}`
+      : "/employee-portals/actions?module=leave";
+  }
+
   return fallback;
 }

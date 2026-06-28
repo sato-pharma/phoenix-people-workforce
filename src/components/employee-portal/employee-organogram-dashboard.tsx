@@ -30,6 +30,7 @@ type EmployeeOrganogramDashboardProps = {
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
+  showLinePicker?: boolean;
 };
 
 /* ------------------------------------------------------------------ */
@@ -212,12 +213,14 @@ export function EmployeeOrganogramDashboard({
   fixedLine = null,
   initialError = null,
   initialReport = null,
+  showLinePicker = false,
 }: EmployeeOrganogramDashboardProps) {
   const [report, setReport] = useState<VacancyReportData | null>(initialReport);
   const [error, setError] = useState<string | null>(initialError);
   const [isLoading, setIsLoading] = useState(false);
   const [organogramSearch, setOrganogramSearch] = useState("");
-  const effectiveLineFilter = fixedLine ?? "";
+  const [selectedMmLine, setSelectedMmLine] = useState<string | null>(null);
+  const effectiveLineFilter = showLinePicker ? (selectedMmLine ?? "") : (fixedLine ?? "");
   const normalizedSearch = normalizeSearchValue(organogramSearch);
 
   const loadReport = useCallback(async () => {
@@ -242,6 +245,17 @@ export function EmployeeOrganogramDashboard({
     () => (report?.organogramRows ?? []).filter((r) => isOrganogramVisibleRow(r)),
     [report],
   );
+
+  const availableLines = useMemo(() => {
+    if (!showLinePicker) return [] as string[];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (r.lineName?.trim()) seen.add(r.lineName.trim());
+    }
+    return Array.from(seen).sort();
+  }, [showLinePicker, rows]);
+
+  const mmReady = !showLinePicker || selectedMmLine !== null;
 
   const filteredRows = useMemo(
     () => filterOrganogramRows(rows, effectiveLineFilter, normalizedSearch),
@@ -376,6 +390,39 @@ export function EmployeeOrganogramDashboard({
 
   return (
     <div className="space-y-5" dir="auto">
+      {/* ---- MM Line Picker ---- */}
+      {showLinePicker && report && (
+        <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+          <label className="block">
+            <span className={`mb-1.5 block ${labelClassName}`}>Product Line</span>
+            <select
+              className={inputClassName}
+              onChange={(e) => setSelectedMmLine(e.target.value || null)}
+              value={selectedMmLine ?? ""}
+            >
+              <option value="">— Select a product line —</option>
+              {availableLines.map((line) => (
+                <option key={line} value={line}>{line}</option>
+              ))}
+            </select>
+          </label>
+        </Card>
+      )}
+
+      {/* ---- MM Prompt (no line selected yet) ---- */}
+      {showLinePicker && !selectedMmLine && report && (
+        <Card className={`rounded-lg border border-gray-100 p-8 text-center ${cardShadow}`}>
+          <h3 className="text-sm font-semibold text-slate-700">
+            Select a product line to view its organogram
+          </h3>
+          <p className="mx-auto mt-2 max-w-md text-[11px] text-slate-400">
+            Choose a line from the dropdown above. KPIs, vacancies, and the full hierarchy tree will appear for the selected line.
+          </p>
+        </Card>
+      )}
+
+      {/* ---- Data sections — gated for MM until a line is chosen ---- */}
+      {mmReady && <>
       {/* ---- Stat Cards ---- */}
       <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}>
         <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-3 xl:grid-cols-5">
@@ -963,8 +1010,8 @@ export function EmployeeOrganogramDashboard({
         </WorkspaceErrorBoundary>
       )}
 
-      {/* No line selected message */}
-      {report && !effectiveLineFilter && !normalizedSearch && (
+      {/* No line selected message — shown for non-MM roles that have no filter yet */}
+      {!showLinePicker && report && !effectiveLineFilter && !normalizedSearch && (
         <Card className={`rounded-lg border border-gray-100 p-8 text-center ${cardShadow}`}>
           <h3 className="text-sm font-semibold text-slate-700">
             Select a line to view the organogram
@@ -975,6 +1022,7 @@ export function EmployeeOrganogramDashboard({
           </p>
         </Card>
       )}
+      </>}
     </div>
   );
 }
