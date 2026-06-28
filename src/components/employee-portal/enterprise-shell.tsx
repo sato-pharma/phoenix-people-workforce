@@ -118,9 +118,6 @@ export function EmployeePortalPageShell({
                 <span className="inline-flex items-center rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-200">
                   {badge ?? "Employee Portal"}
                 </span>
-                <span className="inline-flex items-center rounded-sm border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
-                  Mobile first workspace
-                </span>
               </div>
               <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl">
                 {title}
