@@ -637,7 +637,7 @@ const defaultPermissionMatrix: PermissionMap = {
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
     outstation: ["read", "create"],
-    leave: ["read", "create", "update"],
+    leave: ["read", "create", "approve", "update"],
     coaching: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
