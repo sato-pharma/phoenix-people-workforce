@@ -30,12 +30,16 @@ export async function GET(request: Request) {
     };
     const mode = (key: string): "include" | "exclude" =>
       (params.get(key) ?? "").toLowerCase() === "exclude" ? "exclude" : "include";
-    const allWeeks = ["1", "true", "yes", "all"].includes((params.get("allWeeks") ?? "").toLowerCase());
 
     const accessScope = await resolveWeeklyAccessScope(access);
     const data = await loadWeeklyDashboard({
       weekStarts: parseList("week"),
-      allWeeks,
+      // The BI workbook is a full-dataset deliverable: always load all weeks (month/week/distributor
+      // filters still narrow it). Exclude unmapped products and include the row-level fact grain that
+      // the workbook's hidden Data sheet, pivots, charts and formulas are built from.
+      allWeeks: true,
+      excludeUnmapped: true,
+      includeFactRows: true,
       weekStart: str("week"),
       lineCodes: parseList("line"),
       lineFilterMode: mode("lineMode"),
@@ -53,7 +57,11 @@ export async function GET(request: Request) {
     });
 
     const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
-    const buffer = await buildWeeklyExportWorkbook(data, generatedAt);
+    // The actual Excel "repair" culprit was the sparkline (now removed from the builder). interactive
+    // keeps the native PivotTable + slicers OFF for now as a precaution until confirmed clean on the
+    // full production dataset; the workbook still has live formulas, native charts, conditional
+    // formatting, the Distributor×Product cross-tab and all breakdown sheets.
+    const buffer = await buildWeeklyExportWorkbook(data, generatedAt, { interactive: false });
 
     // Build a meaningful filename from filters
     const parts: string[] = ["phoenix-weekly-sales"];

@@ -242,6 +242,29 @@ export type WeeklyBranchRow = {
   stockUnits: number;
 };
 
+/**
+ * A single de-cumulated, access-scoped, filter-applied fact row — the row-level grain that powers the
+ * interactive BI export (its hidden Data sheet, pivots, charts and SUMIFS formulas). Only populated
+ * when `includeFactRows` is requested (the export path), so the on-screen dashboard payload stays lean.
+ */
+export type WeeklyFactExportRow = {
+  distributorCode: string;
+  distributorName: string;
+  productCode: string;
+  productName: string;
+  line: string;
+  regionCode: string;
+  regionName: string;
+  branchCode: string;
+  branchName: string;
+  cycleMonth: string;
+  weekNumber: number | null;
+  weekStart: string;
+  salesValue: number;
+  salesUnits: number;
+  stockUnits: number;
+};
+
 export type WeeklyDashboard = {
   weekStart: string | null;
   priorWeekStart: string | null;
@@ -334,6 +357,11 @@ export type WeeklyDashboard = {
     stockUnits: number;
     byDistributor: { distributorCode: string; distributorName: string; salesValue: number }[];
   }[];
+  /**
+   * Row-level fact grain for the interactive BI export (hidden Data sheet → pivots/charts/formulas).
+   * Only present when `includeFactRows` is requested; undefined for normal dashboard loads.
+   */
+  factRows?: WeeklyFactExportRow[];
 };
 
 // ── Missing product resolution ───────────────────────────────────────────────────────────────────

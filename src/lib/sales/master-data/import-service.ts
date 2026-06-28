@@ -332,6 +332,18 @@ export async function importMasterWorkbook(input: {
     systemEnsured = await ensureSystemDistributors(supabase);
   }
 
+  // Product Master is the source of truth for factory price. When prices change, resync the STORED
+  // weekly sales values so raw/stored reads (e.g. the batch export route that bypasses the dashboard
+  // service) match the live read-time recompute in loadWeeklyDashboard. Best-effort: never fail the
+  // import if the resync function isn't present yet (migration pending) or errors.
+  if (def.master === "products" && updated > 0) {
+    try {
+      await supabase.rpc("phx_recompute_weekly_sales_value" as never);
+    } catch {
+      // resync is best-effort; dashboards/exports already recompute value from current price at read time.
+    }
+  }
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: def.master,
