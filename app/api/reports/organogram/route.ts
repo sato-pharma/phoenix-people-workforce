@@ -5,7 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
-  isPortalOrganogramRole,
+  isLineScopedOrganogramRole,
   resolveOrganogramLineForEmployee,
 } from "@/lib/reports/organogram";
 import {
@@ -55,9 +55,9 @@ export async function GET(request: Request) {
       return NextResponse.json(await getOrganogramReport(access, { mode: "company" }));
     }
 
-    if (!isPortalOrganogramRole(access)) {
+    if (!isLineScopedOrganogramRole(access)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Organogram portal access is currently limited to National Sales Managers." },
+        { error: "forbidden", message: "Organogram portal access is limited to National Sales Managers, Product Managers, and Group Product Managers." },
         { status: 403 },
       );
     }
