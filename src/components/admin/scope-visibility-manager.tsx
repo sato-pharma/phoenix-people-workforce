@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Check, Loader2, Pencil, RefreshCw, Search, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Loader2, Pencil, RefreshCw, Search, X } from "lucide-react";
 import * as React from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { UserScopeOverride } from "@/lib/auth/scope-visibility";
+import type { ProductOption, UserScopeOverride } from "@/lib/auth/scope-visibility";
 
 const PRODUCT_LINES = ["Pedia", "CNS", "Anti infective"] as const;
 
@@ -25,17 +25,128 @@ const SALES_SCOPE_OPTIONS = [
 type Props = {
   initialData: UserScopeOverride[] | null;
   initialError: string | null;
+  initialProducts: ProductOption[];
 };
 
 type EditState = {
   lineNames: string[];
-  productCodesRaw: string;
+  productCodes: string[];
   salesScopeOverride: string;
 };
 
-export function ScopeVisibilityManager({ initialData, initialError }: Props) {
+function ProductMultiSelect({
+  products,
+  selected,
+  onChange,
+}: {
+  products: ProductOption[];
+  selected: string[];
+  onChange: (codes: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const visibleProducts = search
+    ? products.filter(
+        (p) =>
+          p.code.toLowerCase().includes(search.toLowerCase()) ||
+          p.name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : products;
+
+  const byLine = PRODUCT_LINES.map((line) => ({
+    line,
+    items: visibleProducts.filter((p) => p.line === line),
+  })).filter((g) => g.items.length > 0);
+
+  function toggle(code: string) {
+    onChange(selected.includes(code) ? selected.filter((c) => c !== code) : [...selected, code]);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v: boolean) => !v)}
+        className="flex min-w-[180px] items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-slate-300 focus:border-orange-300 focus:outline-none"
+      >
+        <span>
+          {selected.length === 0
+            ? "Select product codes…"
+            : `${selected.length} code${selected.length > 1 ? "s" : ""} selected`}
+        </span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-slate-400" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded border border-slate-200 bg-white shadow-lg">
+          <div className="border-b border-slate-100 p-2">
+            <Input
+              autoFocus
+              className="h-7 text-xs"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+              placeholder="Search code or name…"
+              value={search}
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {byLine.map(({ line, items }) => (
+              <div key={line}>
+                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {line}
+                </p>
+                {items.map((p) => (
+                  <label
+                    key={p.code}
+                    className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-orange-50"
+                  >
+                    <input
+                      checked={selected.includes(p.code)}
+                      className="h-3 w-3 accent-orange-500"
+                      onChange={() => toggle(p.code)}
+                      type="checkbox"
+                    />
+                    <span className="w-14 shrink-0 font-mono text-[11px] text-slate-500">{p.code}</span>
+                    <span className="text-slate-700">{p.name}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+            {byLine.length === 0 && (
+              <p className="p-3 text-center text-xs text-slate-400">No products match.</p>
+            )}
+          </div>
+          {selected.length > 0 && (
+            <div className="border-t border-slate-100 px-3 py-1.5">
+              <button
+                className="text-[11px] text-red-500 hover:underline"
+                onClick={() => onChange([])}
+                type="button"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ScopeVisibilityManager({ initialData, initialError, initialProducts }: Props) {
   const [rows, setRows] = React.useState<UserScopeOverride[]>(initialData ?? []);
   const [search, setSearch] = React.useState("");
+  const [filterLine, setFilterLine] = React.useState("");
+  const [filterRole, setFilterRole] = React.useState("");
   const [editingLoginId, setEditingLoginId] = React.useState<string | null>(null);
   const [editState, setEditState] = React.useState<EditState | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -44,22 +155,35 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(initialError);
 
+  const uniqueRoles = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (row.role) seen.add(row.role);
+    }
+    return Array.from(seen).sort();
+  }, [rows]);
+
   const filtered = rows.filter((row: UserScopeOverride) => {
     const q = search.toLowerCase();
-    return (
-      !q ||
-      row.loginId.toLowerCase().includes(q) ||
-      (row.fullName ?? "").toLowerCase().includes(q) ||
-      (row.hrId ?? "").toLowerCase().includes(q) ||
-      (row.role ?? "").toLowerCase().includes(q)
-    );
+    if (
+      q &&
+      !row.loginId.toLowerCase().includes(q) &&
+      !(row.fullName ?? "").toLowerCase().includes(q) &&
+      !(row.hrId ?? "").toLowerCase().includes(q) &&
+      !(row.role ?? "").toLowerCase().includes(q)
+    ) {
+      return false;
+    }
+    if (filterLine && !(row.lineNames ?? []).includes(filterLine)) return false;
+    if (filterRole && row.role !== filterRole) return false;
+    return true;
   });
 
   function startEdit(row: UserScopeOverride) {
     setEditingLoginId(row.loginId);
     setEditState({
       lineNames: row.lineNames ?? [],
-      productCodesRaw: (row.productCodes ?? []).join(", "),
+      productCodes: row.productCodes ?? [],
       salesScopeOverride: row.salesScopeOverride ?? "",
     });
     setSaveError(null);
@@ -90,15 +214,10 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
     setSaveError(null);
     setSaveSuccess(false);
     try {
-      const productCodes = editState.productCodesRaw
-        .split(/[,\s]+/)
-        .map((c: string) => c.trim().toUpperCase())
-        .filter(Boolean);
-
       const body = {
         loginId: editingLoginId,
         lineNames: editState.lineNames.length > 0 ? editState.lineNames : null,
-        productCodes: productCodes.length > 0 ? productCodes : null,
+        productCodes: editState.productCodes.length > 0 ? editState.productCodes : null,
         salesScopeOverride: editState.salesScopeOverride || null,
       };
 
@@ -144,7 +263,7 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
     try {
       const res = await fetch("/api/admin/scope-visibility");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json() as { overrides: UserScopeOverride[] };
+      const json = (await res.json()) as { overrides: UserScopeOverride[] };
       setRows(json.overrides ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -170,22 +289,41 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
       ) : null}
 
       <Card className="p-4">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="relative flex-1">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               className="pl-9"
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, login ID, HR ID, or role…"
+              placeholder="Search by name, login ID, HR ID…"
               value={search}
             />
           </div>
-          <Button
-            disabled={loading}
-            onClick={refresh}
-            size="sm"
-            variant="outline"
+          <select
+            className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
+            onChange={(e) => setFilterLine(e.target.value)}
+            value={filterLine}
           >
+            <option value="">All lines</option>
+            {PRODUCT_LINES.map((line) => (
+              <option key={line} value={line}>
+                {line}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
+            onChange={(e) => setFilterRole(e.target.value)}
+            value={filterRole}
+          >
+            <option value="">All roles</option>
+            {uniqueRoles.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+          <Button disabled={loading} onClick={refresh} size="sm" variant="outline">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -209,7 +347,10 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
                   <tr key={row.loginId} className="align-top">
                     <td className="py-3 pr-4">
                       <p className="font-medium text-slate-900">{row.fullName ?? row.loginId}</p>
-                      <p className="text-[11px] text-slate-400">{row.loginId}{row.hrId ? ` · ${row.hrId}` : ""}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {row.loginId}
+                        {row.hrId ? ` · ${row.hrId}` : ""}
+                      </p>
                     </td>
                     <td className="py-3 pr-4">
                       <span className="text-slate-600">{row.role ?? "—"}</span>
@@ -222,47 +363,52 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
                             {PRODUCT_LINES.map((line) => (
                               <button
                                 key={line}
-                                onClick={() => toggleLine(line)}
-                                type="button"
                                 className={`rounded border px-2 py-0.5 text-[11px] font-semibold transition ${
                                   editState.lineNames.includes(line)
                                     ? "border-orange-300 bg-orange-100 text-orange-700"
                                     : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300"
                                 }`}
+                                onClick={() => toggleLine(line)}
+                                type="button"
                               >
                                 {line}
                               </button>
                             ))}
                           </div>
-                          <p className="mt-1 text-[10px] text-slate-400">Click to toggle. Empty = role default.</p>
+                          <p className="mt-1 text-[10px] text-slate-400">
+                            Click to toggle. Empty = role default.
+                          </p>
                         </td>
                         <td className="py-3 pr-4">
-                          <Input
-                            className="h-7 text-xs"
-                            onChange={(e) => setEditState({ ...editState, productCodesRaw: e.target.value })}
-                            placeholder="CNS001, PEDIA002, …"
-                            value={editState.productCodesRaw}
+                          <ProductMultiSelect
+                            onChange={(codes) => setEditState({ ...editState, productCodes: codes })}
+                            products={initialProducts}
+                            selected={editState.productCodes}
                           />
-                          <p className="mt-1 text-[10px] text-slate-400">Comma/space separated. Empty = no restriction.</p>
+                          <p className="mt-1 text-[10px] text-slate-400">Empty = no restriction.</p>
                         </td>
                         <td className="py-3 pr-4">
                           <select
                             className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-orange-300"
-                            onChange={(e) => setEditState({ ...editState, salesScopeOverride: e.target.value })}
+                            onChange={(e) =>
+                              setEditState({ ...editState, salesScopeOverride: e.target.value })
+                            }
                             value={editState.salesScopeOverride}
                           >
                             {SALES_SCOPE_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
                             ))}
                           </select>
                         </td>
                         <td className="py-3">
                           <div className="flex items-center gap-1">
                             <Button
+                              className="h-7 px-2"
                               disabled={saving}
                               onClick={saveEdit}
                               size="sm"
-                              className="h-7 px-2"
                             >
                               {saving ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -273,11 +419,11 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
                               )}
                             </Button>
                             <Button
+                              className="h-7 px-2"
                               disabled={saving}
                               onClick={cancelEdit}
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2"
                             >
                               <X className="h-3.5 w-3.5" />
                             </Button>
@@ -293,13 +439,13 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
                           {row.lineNames && row.lineNames.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {row.lineNames.map((line) => (
-                                <Badge key={line} variant="neutral" className="text-[10px]">
+                                <Badge key={line} className="text-[10px]" variant="neutral">
                                   {line}
                                 </Badge>
                               ))}
                             </div>
                           ) : (
-                            <span className="text-slate-400 text-[11px]">role default</span>
+                            <span className="text-[11px] text-slate-400">role default</span>
                           )}
                         </td>
                         <td className="py-3 pr-4">
@@ -307,33 +453,33 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
                             row.productCodes.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {row.productCodes.map((code) => (
-                                  <Badge key={code} variant="neutral" className="text-[10px] font-mono">
+                                  <Badge key={code} className="font-mono text-[10px]" variant="neutral">
                                     {code}
                                   </Badge>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-red-500 text-[11px]">sees nothing</span>
+                              <span className="text-[11px] text-red-500">sees nothing</span>
                             )
                           ) : (
-                            <span className="text-slate-400 text-[11px]">no restriction</span>
+                            <span className="text-[11px] text-slate-400">no restriction</span>
                           )}
                         </td>
                         <td className="py-3 pr-4">
                           {row.salesScopeOverride ? (
-                            <Badge variant="warning" className="text-[10px]">
+                            <Badge className="text-[10px]" variant="warning">
                               {row.salesScopeOverride}
                             </Badge>
                           ) : (
-                            <span className="text-slate-400 text-[11px]">role default</span>
+                            <span className="text-[11px] text-slate-400">role default</span>
                           )}
                         </td>
                         <td className="py-3">
                           <Button
+                            className="h-7 px-2"
                             onClick={() => startEdit(row)}
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -345,8 +491,10 @@ export function ScopeVisibilityManager({ initialData, initialError }: Props) {
               })}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-slate-400">
-                    {search ? "No users match your search." : "No active users found."}
+                  <td className="py-8 text-center text-sm text-slate-400" colSpan={6}>
+                    {search || filterLine || filterRole
+                      ? "No users match your filters."
+                      : "No active users found."}
                   </td>
                 </tr>
               ) : null}

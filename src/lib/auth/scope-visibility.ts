@@ -10,6 +10,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "./permissions";
 
+export type ProductOption = {
+  code: string;
+  name: string;
+  line: string;
+};
+
 export type UserScopeOverride = {
   loginId: string;
   hrId: string | null;
@@ -74,6 +80,22 @@ export async function resolveViewerAllowedLines(ctx: AccessContext): Promise<str
 export async function resolveViewerAllowedProductCodes(ctx: AccessContext): Promise<string[] | null> {
   if (!ctx.loginId) return null;
   return getUserProductScopeOverride(ctx.loginId);
+}
+
+// ─── products ─────────────────────────────────────────────────────────────────
+
+export async function listProducts(): Promise<ProductOption[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_products")
+    .select("product_code, product_name, line")
+    .order("line", { ascending: true })
+    .order("product_code", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => {
+    const row = r as { product_code: string; product_name: string; line: string };
+    return { code: row.product_code, name: row.product_name, line: row.line };
+  });
 }
 
 // ─── admin list ───────────────────────────────────────────────────────────────
