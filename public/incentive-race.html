@@ -33,6 +33,17 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
 /* LAYOUT */
 .game-wrap{display:grid;grid-template-columns:260px 1fr;gap:14px;padding:14px;max-width:1400px;margin:0 auto;position:relative;z-index:1;}
 @media(max-width:900px){.game-wrap{grid-template-columns:1fr;padding:8px;gap:8px;}}
+/* Mobile: achievements fill screen, photos dock to bottom */
+@media(max-width:900px){
+  .game-wrap{padding-bottom:140px;}
+  .bank-panel{position:fixed;bottom:0;left:0;right:0;z-index:50;border-radius:0;border-left:none;border-right:none;border-bottom:none;border-top:1px solid rgba(255,255,255,0.12);padding:8px 10px 10px;background:rgba(8,13,26,0.97);backdrop-filter:blur(16px);}
+  .bank-title{margin-bottom:6px;font-size:10px;}
+  .photo-grid{display:flex;flex-direction:row;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
+  .photo-grid::-webkit-scrollbar{height:3px;}
+  .photo-grid::-webkit-scrollbar-thumb{background:#0070d2;border-radius:2px;}
+  .photo-card{min-width:68px;max-width:68px;flex-shrink:0;}
+  .photo-card .pn{font-size:8.5px;}
+}
 
 /* GLASS PANEL */
 .glass{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;backdrop-filter:blur(12px);}
@@ -40,14 +51,27 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
 /* PHOTO BANK */
 .bank-title{color:#f39c12;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;display:flex;align-items:center;gap:6px;margin-bottom:10px;}
 .photo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;}
-@media(max-width:900px){.photo-grid{grid-template-columns:repeat(5,1fr);}}
-@media(max-width:600px){.photo-grid{grid-template-columns:repeat(4,1fr);}}
-@media(max-width:400px){.photo-grid{grid-template-columns:repeat(3,1fr);}}
+@media(min-width:901px){
+  .photo-grid{grid-template-columns:repeat(2,1fr);}
+}
 
 /* PHOTO CARD */
 .photo-card{background:rgba(255,255,255,0.05);border:2px solid rgba(255,255,255,0.1);border-radius:11px;padding:7px;cursor:grab;text-align:center;transition:border-color 0.2s,box-shadow 0.2s,transform 0.2s;user-select:none;-webkit-user-select:none;touch-action:none;}
 .photo-card:not(.matched):hover{border-color:#0070d2;box-shadow:0 0 18px rgba(0,112,210,0.4);transform:translateY(-3px);}
 .photo-card:active:not(.matched){cursor:grabbing;}
+/* Mobile selected state */
+.photo-card.selected{border-color:#f39c12 !important;box-shadow:0 0 20px rgba(243,156,18,0.6) !important;transform:translateY(-3px) scale(1.05);}
+
+/* Mobile selection chip */
+.mob-chip{position:fixed;top:68px;left:50%;transform:translateX(-50%);z-index:200;background:linear-gradient(135deg,#003366,#0070d2);border:1.5px solid rgba(243,156,18,0.5);border-radius:30px;padding:8px 18px;color:white;font-size:13px;font-weight:700;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:none;align-items:center;gap:8px;animation:slideUp 0.25s ease;}
+.mob-chip.show{display:flex;}
+.mob-chip-cancel{background:rgba(255,255,255,0.15);border:none;color:white;border-radius:50%;width:22px;height:22px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+/* Mobile achievement card tap highlight */
+@media(max-width:900px){
+  .ach-card:not([data-filled]):active{background:rgba(0,112,210,0.15);border-color:#0070d2;}
+  .ach-list{max-height:none;overflow-y:visible;}
+}
 .photo-card.matched{opacity:0.25;pointer-events:none;filter:grayscale(0.7);}
 .photo-card.dragging{opacity:0.2;}
 .photo-card img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:7px;display:block;pointer-events:none;}
@@ -171,6 +195,12 @@ canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-even
 <body>
 
 <canvas id="particles"></canvas>
+
+<!-- MOBILE SELECTION CHIP -->
+<div class="mob-chip" id="mob-chip">
+  <span id="mob-chip-label">Selected</span>
+  <button class="mob-chip-cancel" onclick="clearMobileSelected()" title="Cancel">✕</button>
+</div>
 
 <!-- HEADER -->
 <header class="phoenix-header">
@@ -319,10 +349,34 @@ const EMPLOYEES = [
 
 // ===== STATE =====
 let matches = {}, score = 0, dragState = null, audioCtx = null, toastTimer = null;
+let mobileSelected = null; // empId of currently tapped photo on mobile
+const IS_MOBILE = () => window.matchMedia('(max-width:900px)').matches;
+
+function selectMobile(empId) {
+  if (mobileSelected) {
+    const prev = document.querySelector(`.photo-card[data-eid="${mobileSelected}"]`);
+    if (prev) prev.classList.remove('selected');
+  }
+  mobileSelected = empId;
+  const emp = EMPLOYEES.find(e => e.id === empId);
+  document.getElementById('mob-chip-label').textContent = emp ? emp.name : empId;
+  document.getElementById('mob-chip').classList.add('show');
+  const card = document.querySelector(`.photo-card[data-eid="${empId}"]`);
+  if (card) card.classList.add('selected');
+}
+
+function clearMobileSelected() {
+  if (mobileSelected) {
+    const prev = document.querySelector(`.photo-card[data-eid="${mobileSelected}"]`);
+    if (prev) prev.classList.remove('selected');
+  }
+  mobileSelected = null;
+  document.getElementById('mob-chip').classList.remove('show');
+}
 
 // ===== INIT =====
 function initGame() {
-  matches = {}; score = 0; dragState = null;
+  matches = {}; score = 0; dragState = null; clearMobileSelected();
   // Shuffle photos
   const ids = EMPLOYEES.map(e => e.id);
   for (let i = ids.length - 1; i > 0; i--) {
@@ -345,6 +399,13 @@ function renderPhotos(ids) {
     card.dataset.eid = id;
     card.innerHTML = `<img src="${e.photo}" alt="${e.name}" draggable="false"><div class="pn">${e.name}</div>`;
     attachDrag(card, id);
+    // Mobile: tap to select
+    card.addEventListener('click', () => {
+      if (!IS_MOBILE()) return;
+      if (matches[id]) return;
+      if (mobileSelected === id) { clearMobileSelected(); return; }
+      selectMobile(id);
+    });
     grid.appendChild(card);
   });
 }
@@ -376,6 +437,15 @@ function renderSlots() {
     card.addEventListener('dragover', e => { e.preventDefault(); if (!matches[emp.id]) { card.classList.add('drop-target'); card.querySelector('[data-dz]').classList.add('hovering'); }});
     card.addEventListener('dragleave', () => { card.classList.remove('drop-target'); card.querySelector('[data-dz]').classList.remove('hovering'); });
     card.addEventListener('drop', e => { e.preventDefault(); card.classList.remove('drop-target'); card.querySelector('[data-dz]').classList.remove('hovering'); const did = e.dataTransfer.getData('text/plain'); if (did && !matches[emp.id]) resolveMatch(did, emp.id, card); });
+    // Mobile: tap to place
+    card.addEventListener('click', () => {
+      if (!IS_MOBILE()) return;
+      if (matches[emp.id]) return;
+      if (!mobileSelected) return;
+      const selId = mobileSelected;
+      clearMobileSelected();
+      resolveMatch(selId, emp.id, card);
+    });
     list.appendChild(card);
   });
 }
