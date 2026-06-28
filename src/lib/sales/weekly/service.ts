@@ -885,6 +885,21 @@ export async function loadWeeklyDashboard(filters?: {
   // these rows, so filtering here never collapses the filter dropdowns.
   // Region/product/line stay IN MEMORY so exclude-mode and full option lists remain correct.
   // Page 0 uses count:exact so remaining page offsets can be issued concurrently.
+  //
+  // The distributor_code column is CASE-SENSITIVE and some codes are mixed-case (e.g. "Direct").
+  // distributor.set holds normalised (UPPERCASED) codes, so passing it straight into .in() would match
+  // nothing for mixed-case distributors (Direct showed zero rows). Map back to the ACTUAL stored codes
+  // from the batch list before narrowing. The in-memory filter (passesMultiFilter) stays authoritative.
+  const distributorCodesForQuery =
+    distributor.has && distributor.mode === "include"
+      ? [
+          ...new Set(
+            batches
+              .map((b) => String(b.distributor_code ?? ""))
+              .filter((code) => code && distributor.set.has(normalizeCode(code))),
+          ),
+        ]
+      : null;
   let p0Query = supabase
     .from("weekly_sales_rows")
     .select(
@@ -894,7 +909,8 @@ export async function loadWeeklyDashboard(filters?: {
     .order("id", { ascending: true })
     .range(0, pageSize - 1);
   if (batchIdsForRows.length > 0) p0Query = p0Query.in("batch_id", batchIdsForRows);
-  if (distributor.has && distributor.mode === "include") p0Query = p0Query.in("distributor_code", [...distributor.set]);
+  if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
+    p0Query = p0Query.in("distributor_code", distributorCodesForQuery);
   const firstPage = await p0Query;
   if (firstPage.error) throw new SalesWorkflowError("load_failed", firstPage.error.message, 500);
   const totalCount = firstPage.count ?? (firstPage.data?.length ?? 0);
@@ -931,7 +947,8 @@ export async function loadWeeklyDashboard(filters?: {
         .order("id", { ascending: true })
         .range(from, from + pageSize - 1);
       if (batchIdsForRows.length > 0) q = q.in("batch_id", batchIdsForRows);
-      if (distributor.has && distributor.mode === "include") q = q.in("distributor_code", [...distributor.set]);
+      if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
+        q = q.in("distributor_code", distributorCodesForQuery);
       const page = await q;
       if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
       return page.data ?? [];
@@ -968,6 +985,33 @@ export async function loadWeeklyDashboard(filters?: {
     fetchMs: Date.now() - fetchStart,
     batchCount: batchIdsForRows.length,
   }));
+
+  // Live price sync: Product Master factory_price is the single source of truth. Recompute each
+  // non-Direct row's value from the CURRENT master price (netQty × price) so any price edit in
+  // Product Master reflects immediately across every weekly surface (dashboard, export, portal) —
+  // without re-uploading. Runs on the cumulative rows BEFORE de-cumulation, so value stays linear in
+  // qty and all downstream numbers stay consistent.
+  //   • Direct channel keeps its own sheet Value (locked invariant — never recompute from price).
+  //   • A missing/zero current master price falls back to the stored value (never zero a row).
+  const priceMap = new Map<string, number>();
+  try {
+    const reference = await loadSalesReferenceData({ includeCustomerBricks: false });
+    for (const masterProduct of reference.products) {
+      const code = normalizeCode(masterProduct.productCode);
+      const price = Number(masterProduct.factoryPrice);
+      if (code && Number.isFinite(price) && price > 0) priceMap.set(code, price);
+    }
+  } catch {
+    // Best-effort: if the master can't be read, keep stored values rather than failing the load.
+  }
+  if (priceMap.size > 0) {
+    for (const row of allRows) {
+      if (normalizeCode(row.distributorCode) === "DIRECT") continue; // Direct = sheet's own Value
+      const price = priceMap.get(normalizeCode(row.productCode));
+      if (price == null) continue; // no current master price → keep the stored value
+      row.salesValue = Number((row.netQty * price).toFixed(6));
+    }
+  }
 
   // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
   // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
