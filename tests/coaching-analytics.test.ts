@@ -212,13 +212,18 @@ export function runCoachingAnalyticsTests() {
   assert.match(adminAnalyticsPageSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
   assert.match(portalTmCoachingSource, /initialReportFilters = \{ year: currentYear \}/);
   assert.match(portalTmCoachingSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
-  assert.match(dashboardSource, /Coverage by Coaching Month/);
-  assert.match(dashboardSource, /coachingMonthBreakdown/);
   assert.doesNotMatch(dashboardSource, /Coverage by Hiring Year/);
   assert.doesNotMatch(dashboardSource, /hireYearBreakdown/);
-  assert.match(dashboardSource, /label="Total Reports"/);
-  assert.match(dashboardSource, /label="Completed Reports"/);
-  assert.match(dashboardSource, /title="Per-Rep Coaching Report"/);
+  // Style-3 "corporate report" sections — a structured, table-led layout.
+  assert.match(dashboardSource, /title="Executive Summary"/);
+  assert.match(dashboardSource, /title="Coaching Skill Index"/);
+  assert.match(dashboardSource, /title="Parameter Detail"/);
+  assert.match(dashboardSource, /title="Coverage by Area"/);
+  assert.match(dashboardSource, /title="Medical Rep Coaching Comparison"/);
+  assert.match(dashboardSource, /title="Per-Rep Coaching Detail"/);
+  // The redesign surfaces per-parameter averages the previous UI computed but never rendered.
+  assert.match(dashboardSource, /categoryAverageScores/);
+  assert.match(dashboardSource, /scoreItemAverageScores/);
   // The per-rep coaching report link must be surface-aware: this dashboard renders on both the admin
   // /coaching* routes and the employee portal, so a hardcoded /coaching/<id> would bounce a portal
   // user into the (admin) route group (redirected to the landing page). The base is derived from the
@@ -228,13 +233,5 @@ export function runCoachingAnalyticsTests() {
     dashboardSource,
     /coachingReportBase = pathname\?\.startsWith\("\/employee-portals"\) \? "\/employee-portals\/coaching" : "\/coaching"/,
   );
-  assert.match(dashboardSource, /HeaderFilterInput/);
-
-  const comparisonSectionStart = dashboardSource.indexOf('title="Medical Rep Coaching Comparison"');
-  const comparisonSectionEnd = dashboardSource.indexOf('title="Per-Rep Coaching Report"');
-  const comparisonSection = dashboardSource.slice(comparisonSectionStart, comparisonSectionEnd);
-  assert.ok(comparisonSectionStart > 0 && comparisonSectionEnd > comparisonSectionStart);
-  assert.doesNotMatch(comparisonSection, />Sessions</);
-  assert.doesNotMatch(comparisonSection, />Avg</);
-  assert.doesNotMatch(comparisonSection, />Latest</);
+  assert.match(dashboardSource, /SelectField/);
 }
