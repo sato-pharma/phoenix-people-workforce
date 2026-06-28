@@ -135,13 +135,19 @@ export function computeFacetedDimensions(
   for (const spec of MULTISELECT_SPECS) {
     const subset = entries.filter((entry) => entryMatchesRoiFilters(entry, filters, spec.key));
     const options = tally(subset, spec.extract);
+    // Auto-apply a lone value ONLY when it is universal — every entry in the subset
+    // carries a value for this dimension. A single value present on just a MINORITY of
+    // entries (e.g. the company's only Regional Manager, who sits in only some chains
+    // while most requests have no RM at all) is not a real constraint: auto-applying it
+    // would mislead every viewer and, if selected, drop every value-less request. Hide it.
+    const everyEntryHasValue = subset.every((entry) => spec.extract(entry).length > 0);
     dimensions.push({
       key: spec.key,
       label: spec.label,
       type: "multiselect",
       options,
       render: options.length >= 2,
-      autoApplied: options.length === 1 ? [options[0].value] : null,
+      autoApplied: options.length === 1 && everyEntryHasValue ? [options[0].value] : null,
     });
   }
 

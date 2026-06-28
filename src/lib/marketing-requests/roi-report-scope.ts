@@ -178,7 +178,7 @@ function toSortedOptions(tally: Map<string, { label: string; count: number }>): 
 
 /**
  * Build one multi-select dimension and apply the locked render rule:
- *   ≥2 live options → render; exactly 1 → auto-apply + hide; 0 → hide.
+ *   ≥2 live options → render; exactly 1 AND universal → auto-apply + hide; else hide.
  */
 function multiselectDimension(
   key: RoiFilterKey,
@@ -187,13 +187,18 @@ function multiselectDimension(
   extract: (entry: MarketingRoiRequestIndexEntry) => ValueLabel[],
 ): RoiFilterDimension {
   const options = toSortedOptions(tallyOptions(entries, extract));
+  // Only auto-apply a lone value when it covers EVERY entry. A single value present on
+  // just a subset (the rest carry none — e.g. the org's only Regional Manager, who
+  // appears in a minority of request chains) must NOT be auto-applied: it would mislead
+  // and, if applied, exclude all the value-less requests. Matches roi-facets.ts.
+  const everyEntryHasValue = entries.every((entry) => extract(entry).length > 0);
   return {
     key,
     label,
     type: "multiselect",
     options,
     render: options.length >= 2,
-    autoApplied: options.length === 1 ? [options[0].value] : null,
+    autoApplied: options.length === 1 && everyEntryHasValue ? [options[0].value] : null,
   };
 }
 

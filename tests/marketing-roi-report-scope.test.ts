@@ -194,6 +194,34 @@ export function runMarketingRoiReportScopeTests() {
     assert.equal(dim(dimensions, "payDate").render, true);
   }
 
+  // ── REGRESSION: a lone value present on only a SUBSET must NOT auto-apply ──────────
+  // The org's single Regional Manager appears in one request's chain; the other request
+  // has no RM. Previously this auto-applied that RM in autoAppliedByDimension for every
+  // viewer (and applying it would have excluded the RM-less request). Now: one value but
+  // not universal → not auto-applied, not rendered.
+  {
+    const ceoScope = resolveMarketingRoiScope(access("CEO", "C-1", "company"), rows);
+    const mixed: MarketingRoiRequestIndexEntry[] = [
+      entry({ requestId: "withRm", rsmHrId: "pd-0001", rsmName: "Solo RM" }),
+      entry({ requestId: "noRm", rsmHrId: null, rsmName: null }),
+    ];
+    const rsmDim = dim(computeMarketingFilterOptions(ceoScope, mixed).dimensions, "rsm");
+    assert.equal(rsmDim.options.length, 1, "only one RM value exists across the requests");
+    assert.equal(rsmDim.autoApplied, null, "a lone RM covering only a subset is NOT auto-applied");
+    assert.equal(rsmDim.render, false, "single-option dimension still does not render");
+
+    // contrast: a universal lone RM (present on every request) still auto-applies.
+    const universal = [
+      entry({ requestId: "u1", rsmHrId: "pd-0001", rsmName: "Solo RM" }),
+      entry({ requestId: "u2", rsmHrId: "pd-0001", rsmName: "Solo RM" }),
+    ];
+    assert.deepEqual(
+      dim(computeMarketingFilterOptions(ceoScope, universal).dimensions, "rsm").autoApplied,
+      ["pd-0001"],
+      "a universal lone RM still auto-applies",
+    );
+  }
+
   // ── Single-request set: every multiselect collapses (≤1 value) → none rendered.
   {
     const ceoScope = resolveMarketingRoiScope(access("CEO", "C-1", "company"), rows);
