@@ -383,7 +383,9 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
     const members = teamRows
       .filter((row) => {
         const key = rowKey(row);
-        if (assignedToDsm.has(key)) return false;
+        if (assignedToDsm.has(key)) {
+          return false;
+        }
 
         return dsms.some(
           (dsm) =>
@@ -430,7 +432,8 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       title: rsm.positionTitle ?? rsm.jobTitle ?? "Regional Sales Manager",
     };
   });
-  const directDsmGroups = dsmGroups.filter((lane) => !childDsmLaneKeys.has(dsmLaneKey(lane)));
+  const visibleDsmGroups = dsmGroups;
+  const directDsmGroups = visibleDsmGroups.filter((lane) => !childDsmLaneKeys.has(dsmLaneKey(lane)));
   const marketingManagers = teamRows
     .filter((row) => isMarketingManager(row))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
