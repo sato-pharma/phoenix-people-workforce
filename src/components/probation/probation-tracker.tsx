@@ -355,7 +355,7 @@ export function ProbationTracker({
         feedbackStatus: row.workflow?.managerFeedback ? "Submitted" : "Pending",
         probationDayStatus: row.workflow?.decision
           ? row.workflow.decision
-          : `Day ${probationDay} / ${row.days_remaining} days remaining`,
+          : `Day ${probationDay} / ${Math.max(0, row.days_remaining)} days remaining`,
       };
     }),
     [filteredRows],
@@ -772,7 +772,7 @@ export function ProbationTracker({
                       <td className={cn(probationTableCellClassName)}>{row.area_name}</td>
                       <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
                       <td className={cn(probationTableCellClassName)}>{formatDate(row.probation_end_date)}</td>
-                      <td className={cn(probationTableValueClassName, "font-semibold text-text")}>{row.days_remaining}</td>
+                      <td className={cn(probationTableValueClassName, "font-semibold text-text")}>{Math.max(0, row.days_remaining)}</td>
                       <td className={cn("min-w-[125px]", probationTableCellClassName)}>
                         <div className="space-y-1">
                           <div className="h-2 overflow-hidden rounded-full bg-slate-100">

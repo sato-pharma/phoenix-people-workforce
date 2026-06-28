@@ -20,6 +20,9 @@ export default async function EmployeePortalIncentivePageRoute() {
   if (access.role === "Training Manager") {
     redirect("/employee-portals/training-manager");
   }
+  if (access.role === "Marketing Manager") {
+    redirect("/employee-portals");
+  }
 
   await assertPermission(access, "employee_profile", "read");
 

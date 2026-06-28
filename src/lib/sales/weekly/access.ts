@@ -132,8 +132,12 @@ export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<Week
   const assignedCodes = await getWeeklyProductScopeCodes(hrKey);
   if (assignedCodes.size > 0) return { tier: "product", productCodes: assignedCodes };
 
-  // 4. Product roles without an assignment yet see nothing (fail closed).
-  if (PRODUCT_SCOPED_ROLES.has(ctx.role)) return { tier: "product", productCodes: new Set() };
+  // 4. Product roles without an explicit assignment fall back to their full line scope so they
+  //    always see data without requiring an admin to populate weekly_sales_product_scope.
+  if (PRODUCT_SCOPED_ROLES.has(ctx.role)) {
+    const scope = await resolveSalesAccessScope(ctx);
+    return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes: null };
+  }
 
   // 5. Sales-field roles — reuse the monthly line/region scope.
   if (TERRITORY_SCOPED_ROLES.has(ctx.role)) {

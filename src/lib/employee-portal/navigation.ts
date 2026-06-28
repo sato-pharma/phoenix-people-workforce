@@ -203,7 +203,7 @@ export function resolveEmployeePortalNavVisibility(
     "Regional Manager",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  const baseShowIncentiveTab = !isTrainingManager;
+  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager;
   // Product / Group Product Managers (and their line manager, Marketing Manager) get the
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
