@@ -483,6 +483,22 @@ function employeeLineMatches(left: EmployeeDirectoryRow, right: EmployeeDirector
   return Boolean(leftLine && rightLine && leftLine === rightLine);
 }
 
+// Build the HR-ID visibility set with BOTH the canonical lowercase form (used by
+// in-memory has() checks via canonicalHrId) AND the stored uppercase form (used by
+// Postgres = ANY() comparisons in the RPC and .in() Supabase filters).
+// Without both forms the RPC filter drops every request whose employee_hr_id is
+// stored as e.g. "A-7" in the DB but the set only contains lowercase "a-7".
+function buildVisibleHrIdSet(employees: EmployeeDirectoryRow[]): Set<string> {
+  const ids: string[] = [];
+  for (const employee of employees) {
+    const canonical = canonicalHrId(employee.hrId);
+    if (canonical) ids.push(canonical);
+    const stored = (employee.hrId ?? "").trim().toUpperCase();
+    if (stored && stored !== canonical) ids.push(stored);
+  }
+  return new Set(ids);
+}
+
 function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = getVacationVisibilityScope(access);
   if (scope === "COMPANY") return employees;
@@ -3879,7 +3895,7 @@ export async function getVacationRequestTimeline(access: AccessContext, requestI
 
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
-  const visibleEmployeeHrIds = new Set(visibleEmployees.map((employee) => canonicalHrId(employee.hrId)).filter((value): value is string => Boolean(value)));
+  const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   if (!canSeeVacation(access, request, visibleEmployeeHrIds)) {
     throw new Error("Forbidden: you cannot view this vacation request.");
   }
@@ -4409,7 +4425,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   const canReviewAttachments = isAllVacationVisibility(access);
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
-  const visibleEmployeeHrIds = new Set(visibleEmployees.map((employee) => canonicalHrId(employee.hrId)).filter((value): value is string => Boolean(value)));
+  const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
   const visibleRowsBase = await markVacationDecisionAccess(access, (data ?? [])
@@ -4459,11 +4475,7 @@ export async function getVacationPlatformMetricRows(access: AccessContext) {
   await assertPermission(access, "leave", "read");
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
-  const visibleEmployeeHrIds = new Set(
-    visibleEmployees
-      .map((employee) => canonicalHrId(employee.hrId))
-      .filter((value): value is string => Boolean(value)),
-  );
+  const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds });
 
   return markVacationDecisionAccess(access, (data ?? [])
