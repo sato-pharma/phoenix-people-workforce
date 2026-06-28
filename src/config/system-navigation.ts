@@ -400,6 +400,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/bulk-upload", icon: FileUp, label: "Bulk Upload", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
     ],
     label: "Marketing Requests",
