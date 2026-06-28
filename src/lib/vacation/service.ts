@@ -471,7 +471,7 @@ function findCurrentEmployeeRow(rows: EmployeeDirectoryRow[], access: AccessCont
 }
 
 function accessMatchesHrId(access: AccessContext, hrId: string | null | undefined) {
-  const target = canonicalHrId(hrId);
+  const target = normalizeHrIdForAccess(hrId);
   if (!target) return false;
   return accessIdentityCandidates(access).some((candidate) => candidate === target);
 }
@@ -1523,9 +1523,13 @@ async function fetchVacationApprovalStepsForRequests(requestIds: string[]) {
 
 function approvalStepMatchesAccess(access: AccessContext, step: Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>[number]) {
   const candidates = accessIdentityCandidates(access);
-  const approverHrId = canonicalHrId(step.approverHrId);
+  // Use normalizeHrIdForAccess (strips hyphens) on BOTH sides so the comparison is
+  // consistent — accessIdentityCandidates already normalises via that function, so
+  // comparing against canonicalHrId (which keeps hyphens) caused a permanent mismatch
+  // for any HR-ID containing a dash (e.g. "A-9" → candidates "a9" ≠ approverHrId "a-9").
+  const approverHrId = normalizeHrIdForAccess(step.approverHrId);
   const approverUserId = text(step.approverUserId).toLowerCase();
-  return candidates.some((candidate) => candidate === approverHrId) ||
+  return (Boolean(approverHrId) && candidates.some((candidate) => candidate === approverHrId)) ||
     Boolean(approverUserId && text(access.loginId).toLowerCase() === approverUserId);
 }
 
