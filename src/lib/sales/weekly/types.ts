@@ -325,6 +325,10 @@ export type WeeklyDashboard = {
   /** simple value trend across the available weeks (in-scope) — now de-cumulated (real per week) */
   trend: {
     weekStart: string;
+    /** week-of-month 1–4 (for "W1 May" axis labels), or null when untagged */
+    weekNumber: number | null;
+    /** cycle month (YYYY-MM-DD), or null when untagged */
+    cycleMonth: string | null;
     salesValue: number;
     salesUnits: number;
     stockUnits: number;

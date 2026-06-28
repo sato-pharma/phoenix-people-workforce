@@ -614,6 +614,10 @@ function rankBranches(rows: FactRow[]): WeeklyBranchComparisonRow[] {
 
 type TrendPoint = {
   weekStart: string;
+  /** week-of-month 1–4 of this point (for "W1 May" axis labels), or null when untagged */
+  weekNumber: number | null;
+  /** cycle month (YYYY-MM-DD) of this point, or null when untagged */
+  cycleMonth: string | null;
   salesValue: number;
   salesUnits: number;
   stockUnits: number;
@@ -633,6 +637,8 @@ function absorbTrendPoint(base: TrendPoint, thin: TrendPoint): TrendPoint {
   }
   return {
     weekStart: base.weekStart,
+    weekNumber: base.weekNumber,
+    cycleMonth: base.cycleMonth,
     salesValue: Number((base.salesValue + thin.salesValue).toFixed(2)),
     salesUnits: Number((base.salesUnits + thin.salesUnits).toFixed(2)),
     stockUnits: Number((base.stockUnits + thin.stockUnits).toFixed(2)),
@@ -1080,8 +1086,12 @@ export async function loadWeeklyDashboard(filters?: {
       if (entry) entry.value += row.salesValue;
       else distMap.set(row.distributorCode, { name: row.distributorName, value: row.salesValue });
     }
+    // Week-of-month label source: take the (cycleMonth, weekNumber) from this week's tagged rows.
+    const tagged = rows.find((row) => row.cycleMonth && row.weekNumber != null);
     return [{
       weekStart: week,
+      weekNumber: tagged?.weekNumber ?? null,
+      cycleMonth: tagged?.cycleMonth ?? null,
       salesValue: Number(sum(rows, (row) => row.salesValue).toFixed(2)),
       salesUnits: Number(sum(rows, (row) => row.netQty).toFixed(2)),
       stockUnits: Number(sum(rows, (row) => row.stockQty).toFixed(2)),
