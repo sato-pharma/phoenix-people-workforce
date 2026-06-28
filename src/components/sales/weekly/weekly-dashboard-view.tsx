@@ -1034,6 +1034,13 @@ const formatWeekTick = (weekStart: string) => {
   return month && day ? `${day} ${month}` : weekStart;
 };
 
+// Week-of-month x-axis label: "W1 May". Falls back to the date when a point isn't week-tagged.
+const weekOfMonthLabel = (weekNumber: number | null, cycleMonth: string | null, weekStart: string) => {
+  if (weekNumber == null || !cycleMonth) return formatWeekTick(weekStart);
+  const month = TREND_MONTHS[Number(cycleMonth.split("-")[1]) - 1];
+  return month ? `W${weekNumber} ${month}` : `W${weekNumber}`;
+};
+
 // Compact EGP axis formatter — 1_200_000 -> "1.2M", 48_000 -> "48K".
 const compactEgp = (value: number) => {
   const abs = Math.abs(value);
@@ -1046,6 +1053,8 @@ const compactEgp = (value: number) => {
 // year segments render in their own color and visually meet at the boundary.
 type TrendDatum = {
   weekStart: string;
+  /** "W1 May" week-of-month label for the axis + tooltip */
+  label: string;
   year: string;
   total: number;
   selected: boolean;
@@ -1102,7 +1111,7 @@ function TrendTooltip({
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-1.5 text-[11px] font-bold tabular-nums text-[#64748B]">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
-          {datum.weekStart}
+          {datum.label}
         </span>
         {datum.selected && (
           <span className="rounded-[4px] bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#EA580C]">
@@ -1169,6 +1178,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
       const wow = prev && prev.salesValue !== 0 ? (point.salesValue - prev.salesValue) / prev.salesValue : null;
       return {
         weekStart: point.weekStart,
+        label: weekOfMonthLabel(point.weekNumber, point.cycleMonth, point.weekStart),
         year,
         total: point.salesValue,
         selected: selectedSet.has(point.weekStart),
@@ -1213,6 +1223,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
   if (trend.length < 4) return null;
 
   const hasOther = chartData.some((d) => d.vOther !== null);
+  const labelByWeekStart = new Map(chartData.map((d) => [d.weekStart, d.label]));
 
   return (
     <section className="w-full overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
@@ -1275,7 +1286,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
               interval="preserveStartEnd"
               minTickGap={24}
               tick={{ fill: "#64748B", fontSize: 10, fontWeight: 600 }}
-              tickFormatter={formatWeekTick}
+              tickFormatter={(value) => labelByWeekStart.get(String(value)) ?? formatWeekTick(String(value))}
               tickLine={false}
               tickMargin={8}
             />
