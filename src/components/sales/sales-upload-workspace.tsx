@@ -472,12 +472,14 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     finally { setVerifyRan(true); }
   }
 
-  const unknowns = analysis?.data ? analysis.data.unknownProducts.length + analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
+  const productUnknowns = analysis?.data ? analysis.data.unknownProducts.length : 0;
+  const blockerUnknowns = analysis?.data ? analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
   const validation = analysis?.validation ?? null;
   // Only the duplicate-sheet error (report.ok === false) blocks here; warnings are advisory and never
-  // block (mirrors the server gate exactly). Unmapped rows are gated separately via `unknowns`.
+  // block (mirrors the server gate exactly). Unmapped customers/bricks block; unmapped products warn
+  // only (auto-excluded on commit — those rows are already absent from the coded set).
   const validationBlocks = validation ? !validation.ok : false;
-  const canImport = Boolean(analysis?.success) && unknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
+  const canImport = Boolean(analysis?.success) && blockerUnknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
   const breakdowns = analysis?.breakdowns ?? null;
 
   // Step-1 panel decision (pure, regression-tested): guarantees a Confirm path for EVERY finished
@@ -663,15 +665,22 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
 
           {/* Unmapped / period gates */}
           <div className="space-y-2 px-4 pt-4">
-            {unknowns > 0 ? (
+            {blockerUnknowns > 0 ? (
               <div className="space-y-2">
                 <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
-                  <p className="font-semibold">{unknowns} unmapped item(s) — upload is blocked until they&apos;re mapped.</p>
-                  <p className="text-xs">These {num(rec.rowsBlocked)} row(s) can&apos;t be coded yet. Map the items below in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>, then re-validate.</p>
+                  <p className="font-semibold">{blockerUnknowns} unmapped customer(s) / territory(ies) — upload is blocked.</p>
+                  <p className="text-xs">Download the XLSX below, fill the mappings, save them, then re-validate.</p>
                 </div></AdminCallout>
-                <UnmappedList brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={analysis.data?.unknownProducts ?? []} territories={analysis.data?.unknownTerritories ?? []} />
+                <UnmappedList brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={[]} territories={analysis.data?.unknownTerritories ?? []} />
               </div>
-            ) : analysis.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
+            ) : null}
+            {productUnknowns > 0 ? (
+              <AdminCallout tone="neutral"><Info className="mt-0.5 h-4 w-4 shrink-0" /><div>
+                <p className="font-semibold">{productUnknowns} unmapped product(s) — {num(rec.rowsBlocked)} row(s) will be auto-excluded from this upload.</p>
+                <p className="text-xs">The rest of the sheet will upload normally. Map them in <Link className="font-semibold underline" href="/sales/mapping-database">Mapping Database</Link> and re-validate if you want them included.</p>
+              </div></AdminCallout>
+            ) : null}
+            {!blockerUnknowns && !productUnknowns && analysis?.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
               <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>
             ) : null}
             {validation ? <ValidationPanel report={validation} /> : null}
@@ -704,10 +713,10 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
                   {busy === "commit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   {busy === "commit" ? "Uploading…" : "Confirm & Upload"}
                 </button>
-                <span className="text-xs font-medium text-[#64748B]">Review the totals above, then confirm to store the data.</span>
+                <span className="text-xs font-medium text-[#64748B]">{productUnknowns > 0 ? `${num(rec.rowsBlocked)} unmapped product row(s) will be excluded — the rest will be stored.` : "Review the totals above, then confirm to store the data."}</span>
               </div>
             ) : (
-              <p className="text-xs font-semibold text-amber-700">Resolve the items above, then re-validate before uploading.</p>
+              <p className="text-xs font-semibold text-amber-700">Fix unmapped customers / territories above, then re-validate before uploading.</p>
             )}
           </div>
         </div>
