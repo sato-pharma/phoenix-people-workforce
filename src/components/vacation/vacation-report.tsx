@@ -25,7 +25,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -1062,6 +1062,12 @@ export function VacationReport(props: VacationReportProps) {
 function VacationReportInner({ initialData, initialError, showHero = true }: VacationReportProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Base navigation on the CURRENT route, not a hardcoded admin path. This component is rendered at
+  // BOTH /leave-management/vacation-report (admin) AND /employee-portals/vacation-report (portal);
+  // pushing a hardcoded admin URL from the portal bounces the user through the (admin) layout, which
+  // redirects employee-portal users to /employee-portals (the landing page). Staying on `pathname`
+  // keeps tab/filter/pagination navigation inside whichever surface the user is actually on.
+  const pathname = usePathname();
   const activeTab: VacationReportTab = searchParams.get("tab") === "requests" ? "requests" : "entitlements";
 
   const [filters, setFilters] = useState({
@@ -1196,7 +1202,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     } else {
       params.delete("tab");
     }
-    return `/leave-management/vacation-report${params.toString() ? `?${params}` : ""}`;
+    const base = pathname || "/leave-management/vacation-report";
+    return `${base}${params.toString() ? `?${params}` : ""}`;
   }
 
   function switchTab(nextTab: VacationReportTab) {

@@ -389,6 +389,15 @@ export function runWorkforceHierarchyContinuityTests() {
     /employeeLineMatches\(employee, currentEmployee\) &&\s*sameWorkforceDepartment\(currentEmployee, employee\)/,
     "LINE scope must be department-safe",
   );
+  // A head-office department head (e.g. a Marketing Manager on the Head Office line)
+  // supervises PM/GPM who sit on the BUSINESS lines, so a LINE-scoped manager must
+  // still see/approve their OWN direct reports regardless of line — via the
+  // seat-continuity edge, before the department-safe line check.
+  assert.match(
+    vacationServiceSource,
+    /if \(scope === "LINE"\)[\s\S]*?reportsToManagerSeat\(\{[\s\S]*?\}\)\s*\)\s*\{\s*return true;[\s\S]*?employeeLineMatches\(employee, currentEmployee\)/,
+    "LINE scope must also include the viewer's own cross-line direct reports before the department-safe line check",
+  );
   // WP-1: TEAM/HIERARCHY must route through the canonical seat-continuity helpers.
   assert.match(
     vacationServiceSource,

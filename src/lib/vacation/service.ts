@@ -552,6 +552,25 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
       // Upward hierarchy (managers of the viewer) are excluded — employees must
       // never see their manager's leave data regardless of line/department match.
       if (employeeHrId && viewerManagerIds.has(employeeHrId)) return false;
+      // Head-office department heads (e.g. a Marketing Manager) sit on the Head
+      // Office line while the PM/GPM they supervise sit on the 3 BUSINESS lines —
+      // so a LINE-scoped manager's own DIRECT REPORTS are, by design, on a
+      // different line. Always include the viewer's direct reports (one level,
+      // via the live manager_hr_id edge or the vacant-seat continuity marker)
+      // regardless of line, so their leave stays visible and approvable. This uses
+      // the authoritative directory edge — NOT the request's stored manager field —
+      // so it does not re-open the stale-field cross-department leak guarded against
+      // in canSeeVacation(), and it only ever adds the viewer's OWN reports
+      // (downward), never broadens to entire business lines.
+      if (
+        reportsToManagerSeat({
+          employee,
+          viewerCanonicalHrId: viewerHrId,
+          canonicalize: canonicalHrId,
+        })
+      ) {
+        return true;
+      }
       return (
         employeeLineMatches(employee, currentEmployee) &&
         sameWorkforceDepartment(currentEmployee, employee)

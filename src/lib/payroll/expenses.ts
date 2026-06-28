@@ -57,14 +57,18 @@ const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "Super Admin",
 ]);
 
-// PM/GPM/TM line-managers see their full downward team chain for expenses
-// (self + all descendants), not just the line-name slice. This overrides the
-// "LINE" scope that getExpensesScope returns for these roles so the expense
-// dashboard correctly mirrors the org hierarchy rather than a line-name filter.
+// PM/GPM/TM line-managers — and the Marketing Manager (head of the Marketing
+// department) — see their full downward team chain for expenses (self + all
+// descendants), not just the line-name slice. This overrides the "LINE" scope that
+// getExpensesScope returns for these roles so the expense dashboard mirrors the org
+// hierarchy rather than a line-name filter. The Marketing Manager sits on the Head
+// Office line while the PM/GPM they supervise sit on the business lines, so a
+// same-line slice would silently drop the manager's own reports.
 const PORTAL_HIERARCHY_EXPENSE_ROLES = new Set<PhoenixRole>([
   "Product Manager",
   "Group Product Manager",
   "Training Manager",
+  "Marketing Manager",
 ]);
 
 function canBypassPayrollExpenseLocks(accessContext: Pick<AccessContext, "role">) {
@@ -270,9 +274,11 @@ async function resolveExpenseAccessFilter(
     return { all: false, allowedHrIds: new Set() };
   }
 
-  // Portal line-managers (PM/GPM/TM) resolve to HIERARCHY so the expense dashboard
-  // shows the full downward chain (self + direct + indirect reports), not a line-name
-  // slice. Marketing Manager stays on LINE scope (product-line visibility, not hierarchy).
+  // Portal line-managers (PM/GPM/TM) and the Marketing Manager resolve to HIERARCHY so
+  // the expense dashboard shows the full downward chain (self + direct + indirect
+  // reports), not a line-name slice. The Marketing Manager is included because their
+  // PM/GPM reports sit on the business lines (a different line from the Head Office line
+  // the MM sits on), so a line-name slice would wrongly drop the manager's own team.
   const scope = PORTAL_HIERARCHY_EXPENSE_ROLES.has(accessContext.role) ? "HIERARCHY" : getExpensesScope({ role: accessContext.role });
   const currentHrId = resolveEmployeeIdentityId(accessContext);
 

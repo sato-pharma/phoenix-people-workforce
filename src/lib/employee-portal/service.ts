@@ -39,6 +39,7 @@ import {
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
 } from "@/lib/workforce/hierarchy-resolver";
+import { canAccessCompanyOrganogram } from "@/lib/reports/organogram";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
   buildPayrollExpenseDsmSummaries,
@@ -4654,13 +4655,19 @@ export async function getEmployeePortalVacancies(
     const currentRole = normalizeRole(currentUser.role);
     const isDsm = currentRole === "District Manager";
     const isNsm = currentRole === "National Sales Manager";
-    // Product / Group Product / Marketing Managers see vacancies for their own line, like an NSM.
+    // Company-wide org-structure roles (Marketing Manager, Training Manager, CEO, Super Admin)
+    // see ALL open vacancies — matching their company-wide organogram access
+    // (canAccessCompanyOrganogram). A head-office department head sits on the Head Office line
+    // while their reports sit on the business lines, so a single-line vacancy filter would show
+    // ~0. Vacancies are just the open-seat layer of the same org structure the organogram shows.
+    const isCompanyScoped = canAccessCompanyOrganogram(access);
+    // Product / Group Product Managers + NSM see vacancies for their own single business line.
     const isLineScoped =
-      isNsm ||
-      currentRole === "Product Manager" ||
-      currentRole === "Group Product Manager" ||
-      currentRole === "Marketing Manager";
-    if (!isDsm && !isLineScoped) return null;
+      !isCompanyScoped &&
+      (isNsm ||
+        currentRole === "Product Manager" ||
+        currentRole === "Group Product Manager");
+    if (!isDsm && !isLineScoped && !isCompanyScoped) return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -4692,6 +4699,7 @@ export async function getEmployeePortalVacancies(
     });
 
     const scopedRows = vacancyRows.filter((row) => {
+      if (isCompanyScoped) return true;
       if (isLineScoped) {
         return sameWorkforceLine(
           { lineId: currentEmployee.lineId, lineName: currentEmployee.lineName },
@@ -4732,10 +4740,12 @@ export async function getEmployeePortalVacancies(
       // All line-scoped roles (NSM + Product/Group Product Manager) use the line view + line
       // label; only the District Manager uses the team/own-name view. Previously PM/GPM fell into
       // the "dsm" branch and were mislabeled "Team Vacancies / District view" with their own name.
-      roleView: isLineScoped ? "nsm" : "dsm",
-      scopeLabel: isLineScoped
-        ? currentEmployee.lineName ?? currentUser.line ?? "Your line"
-        : currentEmployee.fullName,
+      roleView: isLineScoped || isCompanyScoped ? "nsm" : "dsm",
+      scopeLabel: isCompanyScoped
+        ? "All lines"
+        : isLineScoped
+          ? currentEmployee.lineName ?? currentUser.line ?? "Your line"
+          : currentEmployee.fullName,
       summary: {
         districtManagerVacancies: vacancies.filter((row) => row.isDistrictManagerVacancy).length,
         openVacancies: vacancies.length,

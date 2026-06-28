@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Award,
   BarChart3,
@@ -924,6 +925,13 @@ export function CoachingAnalyticsDashboard({
   initialFilters: initialFilterOverrides,
   initialData,
 }: CoachingAnalyticsDashboardProps) {
+  // This dashboard renders on the admin /coaching* routes AND inside the employee portal
+  // (/employee-portals/coaching-analytics, /employee-portals/training-manager/coaching). A coaching
+  // report detail link hardcoded to /coaching/<id> sends a portal user into the (admin) route group,
+  // whose layout redirects employee-portal users to /employee-portals (the landing page). Derive the
+  // detail base from the current surface so the link stays where the user already is.
+  const pathname = usePathname();
+  const coachingReportBase = pathname?.startsWith("/employee-portals") ? "/employee-portals/coaching" : "/coaching";
   const defaultFilters = useMemo<FilterState>(
     () => ({ ...emptyFilters, ...initialFilterOverrides }),
     [initialFilterOverrides],
@@ -1185,7 +1193,7 @@ export function CoachingAnalyticsDashboard({
                 <td className="px-4 py-3.5">
                   <Link
                     className="block min-w-0 rounded-md outline-none transition hover:text-[#F97316] focus-visible:ring-2 focus-visible:ring-[#F97316]/30"
-                    href={`/coaching/${row.latestReportId}`}
+                    href={`${coachingReportBase}/${row.latestReportId}`}
                   >
                     <p className="truncate font-black text-[#0F172A]" title={row.medicalRep}>{row.medicalRep}</p>
                     <p className="truncate font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
