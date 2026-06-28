@@ -547,9 +547,9 @@ export function filterOrganogramRows(
   const selectedLineRows = effectiveLineFilter
     ? rows.filter((row) =>
         isOfficeSelected
-          ? row.lineName === effectiveLineFilter
-          : row.lineName === effectiveLineFilter &&
-            (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)),
+          ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter)
+          : normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) &&
+            isOrganogramVisibleRow(row),
       )
     : rows;
 
@@ -576,12 +576,12 @@ export function filterOrganogramRows(
     if (isOfficeSelected) {
       const officeManagerHrIds = new Set(
         rows
-          .filter((row) => row.lineName === effectiveLineFilter && !isChiefExecutive(row))
+          .filter((row) => normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) && !isChiefExecutive(row))
           .map((row) => row.hrId),
       );
 
       for (const row of rows) {
-        if (row.lineName === effectiveLineFilter || isChiefExecutive(row)) continue;
+        if (normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || isChiefExecutive(row)) continue;
 
         let managerHrId: string | null | undefined = row.managerHrId;
         const visited = new Set<string>();
@@ -610,9 +610,9 @@ export function filterOrganogramRows(
     const matchesSelectedLine =
       !effectiveLineFilter ||
       (isOfficeSelected
-        ? row.lineName === effectiveLineFilter || officeDescendantHrIdsToKeep.has(row.hrId)
-        : row.lineName === effectiveLineFilter &&
-          (isSalesDepartment(row) || isOrganogramSalesStructureRole(row)));
+        ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || officeDescendantHrIdsToKeep.has(row.hrId)
+        : normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) &&
+          isOrganogramVisibleRow(row));
 
     return keepLeadershipChain || matchesSelectedLine;
   });

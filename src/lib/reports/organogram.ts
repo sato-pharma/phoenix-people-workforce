@@ -37,6 +37,15 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
+function canAccessHeadOffice(access: AccessContext) {
+  return access.role === "Super Admin" || access.role === "CEO" || access.scope === "system";
+}
+
+function isHeadOfficeRow(row: { lineName: string | null | undefined }) {
+  const line = row.lineName?.trim().toLowerCase();
+  return line === "office" || line === "head office";
+}
+
 function activeOrganogramStatus(status: string | null | undefined) {
   const normalized = String(status ?? "active").trim().toLowerCase();
   return normalized === "active" || normalized === "on_leave";
@@ -171,5 +180,16 @@ export async function getOrganogramReport(
   }
 
   const report = await getVacancyReport();
-  return scopeOrganogramReportData(report, options);
+  const scoped = scopeOrganogramReportData(report, options);
+
+  if (options.mode === "company" && !canAccessHeadOffice(access)) {
+    const filtered = {
+      ...scoped,
+      organogramRows: scoped.organogramRows.filter((r) => !isHeadOfficeRow(r)),
+      rows: scoped.rows.filter((r) => !isHeadOfficeRow(r)),
+    };
+    return { ...filtered, summary: recalculateSummary(filtered) };
+  }
+
+  return scoped;
 }

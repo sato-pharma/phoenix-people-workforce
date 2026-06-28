@@ -48,12 +48,14 @@ export default async function OrganogramPage() {
 
   let initialError: string | null = null;
   let initialReport = null;
+  let fixedLine: string | null = null;
 
   try {
     if (canAccessCompanyOrganogram(access)) {
       initialReport = await getOrganogramReport(access, { mode: "company" });
     } else {
       const lineName = await resolveOrganogramLineForEmployee(access);
+      fixedLine = lineName;
       initialReport = await getOrganogramReport(access, { mode: "line", lineName });
     }
     if (initialReport?.diagnostic) {
@@ -65,6 +67,7 @@ export default async function OrganogramPage() {
 
   return (
     <OrganogramReport
+      fixedLine={fixedLine}
       initialError={initialError}
       initialReport={initialReport}
     />
