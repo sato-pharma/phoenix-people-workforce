@@ -151,7 +151,7 @@ export function runEmployeePortalNavigationTests() {
   );
 
   const marketingManager = resolveEmployeePortalNavVisibility("Marketing Manager");
-  assert.equal(marketingManager.showIncentiveTab, true, "Marketing Manager should see Incentive like GPM");
+  assert.equal(marketingManager.showIncentiveTab, false, "Marketing Manager should NOT see Incentive (hidden from MM per portal policy)");
 
   // --- Marketing Requests and Contact HR Support both graduated to full modules ------
   const previousBetaFlag = process.env.PHOENIX_PORTAL_SHOW_BETA_NAV;
@@ -188,11 +188,15 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
+  // MM mirrors GPM on every nav surface EXCEPT the Incentive tab, which is intentionally hidden
+  // from Marketing Manager (navigation.ts: baseShowIncentiveTab excludes MM). Compare with that
+  // one field normalized, then assert the deliberate divergence on both sides.
   assert.deepEqual(
-    marketingManagerDefault,
-    groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager",
+    { ...marketingManagerDefault, showIncentiveTab: null },
+    { ...groupProductManagerDefault, showIncentiveTab: null },
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (except the hidden Incentive tab)",
   );
+  assert.equal(groupProductManagerDefault.showIncentiveTab, true, "Group Product Manager still sees Incentive (only MM is hidden)");
   assert.equal(marketingManagerDefault.showMyPerformanceTab, true, "Marketing Manager sees Sales Dashboard like GPM");
   assert.equal(marketingManagerDefault.showPlansTab, true, "Marketing Manager should see plans like PM/GPM");
   assert.equal(marketingManagerDefault.showVacanciesTab, true, "Marketing Manager should see Vacancies like PM/GPM");
