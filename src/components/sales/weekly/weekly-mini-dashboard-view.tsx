@@ -17,6 +17,14 @@ function shortWeek(week: string | null) {
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+const MINI_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Week-of-month trend label: "W1 May". Falls back to the date when a point isn't week-tagged.
+function weekOfMonthLabel(weekNumber: number | null, cycleMonth: string | null, weekStart: string | null) {
+  if (weekNumber == null || !cycleMonth) return shortWeek(weekStart);
+  const month = MINI_MONTHS[Number(cycleMonth.split("-")[1]) - 1];
+  return month ? `W${weekNumber} ${month}` : `W${weekNumber}`;
+}
+
 function DeltaBadge({ delta }: { delta: WeeklyDelta }) {
   if (delta.pct === null || delta.prior === null) {
     return <span className="text-[11px] font-semibold text-slate-400">no prior week</span>;
@@ -100,7 +108,7 @@ export function WeeklyMiniDashboardView({
   }, [week]);
 
   const trend = useMemo(
-    () => (data?.trend ?? []).map((point) => ({ ...point, label: shortWeek(point.weekStart) })),
+    () => (data?.trend ?? []).map((point) => ({ ...point, label: weekOfMonthLabel(point.weekNumber, point.cycleMonth, point.weekStart) })),
     [data?.trend],
   );
 
