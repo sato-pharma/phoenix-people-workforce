@@ -7,6 +7,7 @@ import {
   systemAccessContext,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -142,6 +143,7 @@ function canReadProbationEmployee(
   employee: EmployeeScopeRow,
   viewer: EmployeeScopeRow | null,
   directory: EmployeeScopeRow[] = [],
+  viewerAllowedLines: string[] | null = null,
 ) {
   if (canReadAllProbation(access)) return true;
   // Marketing Manager is intentionally NOT in this line-scoped branch: it is already
@@ -152,6 +154,12 @@ function canReadProbationEmployee(
     access.role === "Product Manager" ||
     access.role === "Group Product Manager"
   ) {
+    // When a per-user line override is set (e.g. Ahmed Sharaf spanning two lines),
+    // check against the override list instead of the viewer's own single line.
+    if (viewerAllowedLines && viewerAllowedLines.length > 0) {
+      const employeeLine = (employee.lineName ?? "").trim().toLowerCase();
+      return viewerAllowedLines.some((l) => l.trim().toLowerCase() === employeeLine);
+    }
     return isSameLine(employee, viewer);
   }
   if (access.role === "Regional Manager") return isInManagerHierarchy(directory, viewer, employee);
@@ -392,7 +400,10 @@ function assertWorkflowActionAllowed(
 }
 
 export async function getProbationRows(access: AccessContext): Promise<ProbationRow[]> {
-  const employees = await getEmployeeDirectoryRows();
+  const [employees, viewerAllowedLines] = await Promise.all([
+    getEmployeeDirectoryRows(),
+    resolveViewerAllowedLines(access),
+  ]);
   const viewerHrId = normalizeHrId(access.hrId);
   const viewer = employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
   let probationByHrId = new Map<string, ProbationDbRow>();
@@ -408,7 +419,7 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
   }
 
   return employees
-    .filter((employee) => canReadProbationEmployee(access, employee, viewer, employees))
+    .filter((employee) => canReadProbationEmployee(access, employee, viewer, employees, viewerAllowedLines))
     .map((employee) => {
       const probation = probationByHrId.get(employee.hrId);
       const workflow = evaluationsByHrId.get(employee.hrId) ?? null;

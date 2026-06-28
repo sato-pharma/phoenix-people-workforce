@@ -400,7 +400,7 @@ export function runOrganogramHardeningTests() {
   assert.match(portalSource, /\/api\/reports\/organogram/);
   assert.match(organogramApiSource, /assertPermission\(access, "organogram", "read"\)/);
   assert.match(vacancyApiSource, /assertPermission\(access, "vacancies", "read"\)/);
-  assert.match(portalPageSource, /resolveOrganogramLineForEmployee/);
+  assert.match(portalPageSource, /resolveOrganogramLinesForEmployee/);
   assert.doesNotMatch(portalPageSource, /getVacancyReport/);
   assert.match(
     portalPageSource,

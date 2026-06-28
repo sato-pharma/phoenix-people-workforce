@@ -5,6 +5,7 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
@@ -152,6 +153,12 @@ export type SalesAccessScope = {
   allowedRegionNames: Set<string> | null;
   /** Areas are shown by name but never used to over-restrict (taxonomy is unreliable). Always null. */
   allowedAreaNames: null;
+  /**
+   * Per-user product-code allowlist (from product_scope_override). When set, only rows whose
+   * productCode is in this set are visible. null = no product-code restriction (line scope only).
+   * Empty set = sees nothing.
+   */
+  allowedProductCodes: Set<string> | null;
 };
 
 type ComputeScopeInput = {
@@ -163,6 +170,8 @@ type ComputeScopeInput = {
   /** Product lines a head-office manager inherits from their direct reports (raw employee line
    *  names; bridged to official lines here). Merged into the LINE-scope allowed-line set. */
   reportLineNames?: string[];
+  /** Per-user product code allowlist (from product_scope_override). null = no restriction. */
+  allowedProductCodes?: Set<string> | null;
 };
 
 /**
@@ -175,6 +184,7 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
   const restrictedIncluded = restrictedAllowed && includeRestricted === true;
   // The toggle is the ONLY way to empty the exclusion list, and only for an allowed role.
   const excludedProductCodes = restrictedIncluded ? [] : [...RESTRICTED_PRODUCT_CODES];
+  const allowedProductCodes = input.allowedProductCodes ?? null;
 
   const canViewAllSales = businessScope === "COMPANY";
 
@@ -190,6 +200,7 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
       allowedLineNames: null,
       allowedRegionNames: null,
       allowedAreaNames: null,
+      allowedProductCodes,
     };
   }
 
@@ -205,6 +216,7 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
       allowedLineNames: new Set(),
       allowedRegionNames: new Set(),
       allowedAreaNames: null,
+      allowedProductCodes,
     };
   }
 
@@ -239,6 +251,7 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
     allowedLineNames,
     allowedRegionNames,
     allowedAreaNames: null,
+    allowedProductCodes,
   };
 }
 
@@ -268,9 +281,19 @@ export async function resolveSalesAccessScope(
   ctx: AccessContext,
   opts?: { includeRestricted?: boolean },
 ): Promise<SalesAccessScope> {
-  const businessScope: BusinessScope = ctx.scope === "system"
-    ? "COMPANY"
-    : getSalesScope({ role: ctx.role, salesScopeOverride: await getPersistedSalesScopeOverride(ctx) });
+  const [businessScope, rawProductOverride] = await Promise.all([
+    (async (): Promise<BusinessScope> => ctx.scope === "system"
+      ? "COMPANY"
+      : getSalesScope({ role: ctx.role, salesScopeOverride: await getPersistedSalesScopeOverride(ctx) }))(),
+    getUserProductScopeOverride(ctx.loginId ?? ""),
+  ]);
+
+  // Build the product-code allowlist from the per-user override.
+  // null → no restriction; [] → sees nothing; [...] → only those codes.
+  const allowedProductCodes: Set<string> | null =
+    rawProductOverride === null
+      ? null
+      : new Set(rawProductOverride.map((c) => c.trim().toUpperCase()));
 
   // Company-wide roles never need the viewer's territory; skip the directory read entirely.
   if (businessScope === "COMPANY" || businessScope === "NONE") {
@@ -280,6 +303,7 @@ export async function resolveSalesAccessScope(
       viewerLineName: null,
       viewerRegionName: null,
       includeRestricted: opts?.includeRestricted ?? false,
+      allowedProductCodes,
     });
   }
 
@@ -320,6 +344,7 @@ export async function resolveSalesAccessScope(
     viewerRegionName,
     includeRestricted: opts?.includeRestricted ?? false,
     reportLineNames,
+    allowedProductCodes,
   });
 }
 
@@ -403,5 +428,24 @@ export function applyLineRegionScope<
       if (!allowedRegionCodes.has(code)) return false;
     }
     return true;
+  });
+}
+
+/**
+ * Apply a per-user product-code allowlist (product_scope_override). When `allowedProductCodes`
+ * is null, returns rows unchanged. When it is an empty set, returns nothing. When non-empty,
+ * keeps only rows whose productCode is in the set (rows without a productCode pass through —
+ * they are line/region aggregates, not product-grain rows).
+ */
+export function applyProductCodeAllowlist<T extends { productCode?: string | null }>(
+  rows: T[],
+  allowedProductCodes: Set<string> | null,
+): T[] {
+  if (!allowedProductCodes) return rows;
+  if (allowedProductCodes.size === 0) return [];
+  return rows.filter((row) => {
+    const code = row.productCode;
+    if (!code) return true; // pass aggregated rows through
+    return allowedProductCodes.has(code.trim().toUpperCase());
   });
 }
