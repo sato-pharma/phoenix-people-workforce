@@ -624,7 +624,7 @@ export function EmployeeProbationDashboard({
 
                       {/* Days */}
                       <td className="border-r border-slate-100 px-3 py-3 font-bold text-slate-800 sm:px-4">
-                        {row.days_remaining}
+                        {Math.max(0, row.days_remaining)}
                       </td>
 
                       {/* Progress */}
@@ -772,7 +772,7 @@ export function EmployeeProbationDashboard({
                   <div className="mt-2 flex justify-between text-[11px] text-slate-400">
                     <span>Hired {formatDate(row.hire_date)}</span>
                     <span>Ends {formatDate(row.probation_end_date)}</span>
-                    <span>{row.days_remaining}d left</span>
+                    <span>{Math.max(0, row.days_remaining)}d left</span>
                     <span>{progress}%</span>
                   </div>
 

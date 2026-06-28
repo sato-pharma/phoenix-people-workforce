@@ -84,7 +84,8 @@ export async function resolvePortalClosingScope(
       resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
     );
     const productCodes = await getWeeklyProductScopeCodes(hrKey);
-    return { line, productCodes };
+    // No explicit assignment → fall back to showing their full line (null = whole line, no column filter).
+    return { line, productCodes: productCodes.size > 0 ? productCodes : null };
   }
 
   // Territory roles (DM / RM / NSM) see the whole line.
@@ -327,11 +328,41 @@ export function scopeMatrixToRegions(
 }
 
 /**
- * @deprecated Use loadPortalMonthlyClosing instead.
+ * Live (non-publication-gated) monthly closing for the portal.
+ * Unlike loadPortalMonthlyClosing, this reads directly from the raw SoS data so
+ * territory roles (DM/RM/NSM) see their line's data as soon as it is uploaded,
+ * without waiting for an admin to publish it. Product-scoped roles (PM/GPM/MM)
+ * still require product codes in weekly_sales_product_scope to see columns.
  */
 export async function loadPortalLiveMonthly(input: {
   access: AccessContext;
   period?: string | null;
 }): Promise<PortalClosingResult> {
-  return loadPortalMonthlyClosing(input);
+  const scope = await resolvePortalClosingScope(input.access);
+  if (!scope.line) {
+    return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+
+  const raw = await loadMonthlyClosing({ line: scope.line, period: input.period ?? null });
+  const availablePeriods: string[] = raw.availablePeriods ?? [];
+
+  if (availablePeriods.length === 0) {
+    return { matrix: null, line: scope.line, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+
+  const selectedPeriod =
+    input.period && availablePeriods.includes(input.period)
+      ? input.period
+      : availablePeriods[0];
+
+  const safe = stripRestrictedColumns(raw);
+  const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+
+  return {
+    matrix,
+    line: scope.line,
+    availablePeriods,
+    selectedPeriod,
+    awaitingPublish: false,
+  };
 }

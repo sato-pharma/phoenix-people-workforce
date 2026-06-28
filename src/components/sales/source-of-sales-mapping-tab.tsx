@@ -133,6 +133,7 @@ function TemplateCard({
   uploadUrl,
   uploadFields,
   children,
+  step,
 }: {
   title: string;
   description: string;
@@ -141,6 +142,8 @@ function TemplateCard({
   uploadUrl: string;
   uploadFields?: Record<string, string>;
   children?: ReactNode;
+  /** When set, marks this as a primary step: shows a numbered badge + orange accent. */
+  step?: number;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -168,10 +171,15 @@ function TemplateCard({
   }
 
   return (
-    <Card className={cn(panelClassName, "space-y-4 p-5")}>
-      <div>
-        <h3 className="text-lg font-black tracking-tight text-slate-950">{title}</h3>
-        <p className="mt-1 text-sm leading-6 text-[#64748B]">{description}</p>
+    <Card className={cn(panelClassName, "space-y-4 p-5", step ? "border-l-4 border-l-[#F97316]" : "")}>
+      <div className="flex items-start gap-3">
+        {step ? (
+          <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0B0B0B] text-sm font-black text-white">{step}</span>
+        ) : null}
+        <div>
+          <h3 className="text-lg font-black tracking-tight text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-[#64748B]">{description}</p>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <a
@@ -213,7 +221,7 @@ const TIPS: Tip[] = [
   { icon: "🔗", title: "Fix Missing Data first", body: "Red product or area codes block rows from importing. Fix them here before uploading raw files.", href: "/sales/missing-data", actionLabel: "Open Missing Data →" },
 ];
 
-function TipsPanel() {
+function TipsPanel({ onNavigate }: { onNavigate?: (scrollId: string) => void }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     try { return localStorage.getItem("sos-tips-open") === "true"; } catch { return false; }
@@ -245,7 +253,7 @@ function TipsPanel() {
                 {tip.href ? (
                   <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
                 ) : tip.scrollId ? (
-                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" onClick={() => document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" })} type="button">{tip.actionLabel}</button>
+                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" onClick={() => { if (onNavigate) onNavigate(tip.scrollId!); else document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} type="button">{tip.actionLabel}</button>
                 ) : null}
               </div>
             </div>
@@ -772,10 +780,14 @@ function MappingCombobox({
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // When closed: show matched name (or raw value if no match). When open: show search query.
+  // When closed: show the selected ID up front (with its name), so the operator always sees the
+  // brick/product CODE they mapped — not just the name. When open: show the live search query.
+  const selectedOption = options.find((o) => o.code === value);
   const displayValue = open
     ? searchQuery
-    : (options.find((o) => o.code === value)?.name ?? value);
+    : selectedOption
+      ? `${selectedOption.code} — ${selectedOption.name}`
+      : value;
 
   function openDropdown() {
     if (disabled) return;
@@ -788,8 +800,8 @@ function MappingCombobox({
 
   const q = searchQuery.toLowerCase();
   const filtered = q
-    ? options.filter((o) => o.code.toLowerCase().includes(q) || o.name.toLowerCase().includes(q)).slice(0, 25)
-    : options.slice(0, 25);
+    ? options.filter((o) => o.code.toLowerCase().includes(q) || o.name.toLowerCase().includes(q)).slice(0, 50)
+    : options.slice(0, 50);
 
   return (
     <div className="relative">
@@ -805,12 +817,12 @@ function MappingCombobox({
       />
       {open && filtered.length > 0 && pos && (
         <div
-          className="z-9999 max-h-48 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
-          style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
+          className="z-9999 max-h-60 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 360) }}
         >
           {filtered.map((o) => (
             <button
-              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
+              className="flex w-max min-w-full items-center gap-3 whitespace-nowrap px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
               key={o.code}
               onMouseDown={() => {
                 if (disabled) return;
@@ -819,8 +831,8 @@ function MappingCombobox({
               }}
               type="button"
             >
-              <span className="truncate text-xs font-semibold text-[#0F172A]">{o.name}</span>
-              <span className="shrink-0 font-mono text-[10px] text-[#94A3B8]">{o.code}</span>
+              <span className="shrink-0 font-mono text-xs font-bold text-[#0F172A]">{o.code}</span>
+              <span className="whitespace-nowrap text-xs text-[#475569]">{o.name}</span>
             </button>
           ))}
         </div>
@@ -1047,31 +1059,52 @@ function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: st
 
 export { MappingCombobox };
 
+// Lightweight disclosure used to fold the optional/power tools away so the default screen only shows
+// the everyday path. It's just a clickable header bar; the existing Cards render unchanged inside it.
+function CollapsibleSection({ title, subtitle, open, onToggle, children }: { title: string; subtitle?: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <div>
+      <button
+        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-5 py-3.5 text-left transition hover:bg-[#F1F5F9]"
+        onClick={onToggle}
+        type="button"
+      >
+        <div>
+          <h3 className="text-sm font-black text-slate-950">{title}</h3>
+          {subtitle ? <p className="mt-0.5 text-xs text-[#64748B]">{subtitle}</p> : null}
+        </div>
+        <ChevronDown className={cn("h-5 w-5 shrink-0 text-[#64748B] transition-transform duration-200", open && "rotate-180")} />
+      </button>
+      {open ? <div className="mt-3 space-y-4">{children}</div> : null}
+    </div>
+  );
+}
+
 export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistributorChange, profiledDistributorCodes, products, bricks }: Props) {
   const [headersCopied, setHeadersCopied] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const profiled = new Set(profiledDistributorCodes.map((code) => code.trim().toUpperCase()));
   const hasProfile = profiled.has((distributorCode ?? "").trim().toUpperCase());
 
+  // A Tips deep-link (Bootstrap / Analyze) opens the tools section, then scrolls to the target.
+  function navigateToTools(scrollId: string) {
+    setToolsOpen(true);
+    setTimeout(() => document.getElementById(scrollId)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Slim intro — one line, not three paragraphs. */}
       <AdminCallout tone="neutral">
         <UploadCloud className="mt-0.5 h-4 w-4 shrink-0" />
-        <div>
-          <p className="font-semibold">Map once, then upload the raw sheet as-is — no coded columns to add by hand.</p>
-          <p className="text-sm">
-            Set up the product and customer mappings below (the AI assist and &ldquo;learn from a coded file&rdquo; do most of
-            the work). Then upload each distributor&apos;s <b>raw export</b> on the <b>Upload &amp; Status</b> tab — no coded
-            columns to add by hand. Anything still unmapped appears in{" "}
-            <Link className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</Link>.
-          </p>
-          <p className="text-sm">
-            Territory mapping is also available below — map raw area names to Brick IDs globally (applies to all distributors).
-          </p>
-        </div>
+        <p className="text-sm">
+          <b>Map once, reuse forever.</b> Pick a distributor, set its <b>Product</b> and <b>Customer / Brick</b> mappings,
+          then upload the raw sheet on the <b>Upload &amp; Status</b> tab. Anything still unmapped appears in{" "}
+          <Link className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</Link>.
+        </p>
       </AdminCallout>
 
-      <TipsPanel />
-
+      {/* Step 1 — the one required choice. */}
       <Card className={cn(panelClassName, "flex flex-wrap items-center gap-3 p-4")}>
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
         <SearchableSelect
@@ -1088,8 +1121,10 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
         <span className="text-xs text-[#64748B]">Shared with the Upload &amp; Status tab and the tools below.</span>
       </Card>
 
+      {/* Primary — the two everyday mapping cards stay visible, numbered as the steps to do. */}
       <TemplateCard
         description="Map this distributor's raw item code or item name to a Phoenix Product ID. The Distrub ID column is locked to the selected distributor — you never fill it. The downloaded file is pre-filled with everything already mapped for this distributor and includes a read-only Master Products reference sheet. Update it any time and re-upload."
+        step={1}
         templateHref={`/api/sales/monthly-import/product-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
         templateLabel="Download Product Mapping template"
         title={`Product Mapping — ${distributorCode || "(pick a distributor)"}`}
@@ -1101,6 +1136,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
 
       <TemplateCard
         description="Map this distributor's customer codes to Phoenix Brick IDs (Area and Region fill automatically from the brick). You only need Customer code + Brick ID — leave Distrub ID blank and it's filled in from the selected distributor. Pre-filled with what's already saved, plus a read-only Master Bricks reference sheet."
+        step={2}
         templateHref={`/api/sales/monthly-import/customer-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
         templateLabel="Download Customer / Brick template"
         title={`Customer / Brick Mapping — ${distributorCode || "(pick a distributor)"}`}
@@ -1110,43 +1146,52 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
         <CustomerBrickAddForm bricks={bricks} distributorCode={distributorCode} />
       </TemplateCard>
 
-      <TemplateCard
-        description="Map raw territory / area text (as it appears in distributor sheets) to a Phoenix Brick ID. This mapping is global — it applies to all distributors. Download the template to see every alias already saved and the full Master Bricks reference, fill in any new rows, then re-upload."
-        templateHref="/api/sales/monthly-import/territory-mapping/template"
-        templateLabel="Download Territory Mapping template"
-        title="Territory Mapping (global — all distributors)"
-        uploadFields={{}}
-        uploadUrl="/api/sales/monthly-import/territory-mapping"
-      />
+      {/* Everything optional folds into ONE collapsed section, closed by default. */}
+      <CollapsibleSection
+        onToggle={() => setToolsOpen((v) => !v)}
+        open={toolsOpen}
+        subtitle="AI-assist a raw sheet, learn from a coded file, global territory mapping, manual columns, and tips."
+        title="More mapping tools (optional)"
+      >
+        <MissingPanel bricks={bricks} distributorCode={distributorCode} hasProfile={hasProfile} products={products} />
+        <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
 
-      <BootstrapCard distributorCode={distributorCode} hasProfile={hasProfile} />
+        <TemplateCard
+          description="Map raw territory / area text (as it appears in distributor sheets) to a Phoenix Brick ID. This mapping is global — it applies to all distributors. Download the template to see every alias already saved and the full Master Bricks reference, fill in any new rows, then re-upload."
+          templateHref="/api/sales/monthly-import/territory-mapping/template"
+          templateLabel="Download Territory Mapping template"
+          title="Territory Mapping (global — all distributors)"
+          uploadFields={{}}
+          uploadUrl="/api/sales/monthly-import/territory-mapping"
+        />
 
-      <MissingPanel bricks={bricks} distributorCode={distributorCode} hasProfile={hasProfile} products={products} />
+        <Card className={cn(panelClassName, "space-y-3 p-5")}>
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#64748B]">Advanced — manual coded columns</h3>
+            <p className="mt-1 text-sm leading-6 text-[#64748B]">
+              Optional fallback. If you still prefer to paste the coded columns onto a sheet by hand, copy the headers and
+              paste them as the last columns. The importer accepts coded sheets too.
+            </p>
+          </div>
+          <Button
+            className="h-10 w-fit gap-2"
+            onClick={async () => {
+              try {
+                await copyCodedHeaders();
+                setHeadersCopied(true);
+                setTimeout(() => setHeadersCopied(false), 1800);
+              } catch { /* clipboard blocked */ }
+            }}
+            type="button"
+            variant="secondary"
+          >
+            {headersCopied ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+            {headersCopied ? "Copied!" : "Copy coded headers"}
+          </Button>
+        </Card>
 
-      <Card className={cn(panelClassName, "space-y-3 p-5")}>
-        <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#64748B]">Advanced — manual coded columns</h3>
-          <p className="mt-1 text-sm leading-6 text-[#64748B]">
-            Optional fallback. If you still prefer to paste the coded columns onto a sheet by hand, copy the headers and
-            paste them as the last columns. The importer accepts coded sheets too.
-          </p>
-        </div>
-        <Button
-          className="h-10 w-fit gap-2"
-          onClick={async () => {
-            try {
-              await copyCodedHeaders();
-              setHeadersCopied(true);
-              setTimeout(() => setHeadersCopied(false), 1800);
-            } catch { /* clipboard blocked */ }
-          }}
-          type="button"
-          variant="secondary"
-        >
-          {headersCopied ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-          {headersCopied ? "Copied!" : "Copy coded headers"}
-        </Button>
-      </Card>
+        <TipsPanel onNavigate={navigateToTools} />
+      </CollapsibleSection>
     </div>
   );
 }

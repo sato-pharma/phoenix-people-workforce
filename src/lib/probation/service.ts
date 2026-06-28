@@ -450,7 +450,7 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
         workflow,
       };
     })
-    .filter((row) => row.days_remaining > 0 || row.workflow);
+    .filter((row) => row.days_remaining > 0);
 }
 
 async function insertHistory(

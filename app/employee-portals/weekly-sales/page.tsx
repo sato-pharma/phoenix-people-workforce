@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { WeeklyDashboardView } from "@/components/sales/weekly/weekly-dashboard-view";
+import { WeeklyMiniDashboardView } from "@/components/sales/weekly/weekly-mini-dashboard-view";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -42,7 +42,7 @@ export default async function PortalWeeklySalesPage() {
       errorBoundaryTitle="Weekly Sales unavailable"
       title="Weekly Sales"
     >
-      <WeeklyDashboardView initial={dashboard} initialError={error} />
+      <WeeklyMiniDashboardView initial={dashboard} initialError={error} />
     </EmployeePortalPageShell>
   );
 }
