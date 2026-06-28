@@ -203,10 +203,7 @@ export function resolveEmployeePortalNavVisibility(
     "Regional Manager",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  // Marketing Manager is a full portal user (see #560) and keeps the Incentive tab like
-  // GPM — only Training Manager is excluded. (A stray `&& !isMarketingManager` from an
-  // unrelated squash hid it and broke employee-portal-navigation; restored here.)
-  const baseShowIncentiveTab = !isTrainingManager;
+  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager;
   // Product / Group Product Managers (and their line manager, Marketing Manager) get the
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
