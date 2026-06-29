@@ -698,10 +698,13 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
               </div>
             ) : null}
             {productUnknowns > 0 ? (
-              <AdminCallout tone="neutral"><Info className="mt-0.5 h-4 w-4 shrink-0" /><div>
-                <p className="font-semibold">{productUnknowns} unmapped product(s) — {num(rec.rowsBlocked)} row(s) will be auto-excluded from this upload.</p>
-                <p className="text-xs">The rest of the sheet will upload normally. Map them in <Link className="font-semibold underline" href="/sales/mapping-database">Mapping Database</Link> and re-validate if you want them included.</p>
-              </div></AdminCallout>
+              <div className="space-y-2">
+                <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
+                  <p className="font-semibold">{productUnknowns} unrecognized product(s) — {num(rec.rowsBlocked)} row(s) will be skipped unless you map them.</p>
+                  <p className="text-xs">This does <b>not</b> block the upload. If any of these are our products, map them inline below and re-validate to include them. If they are not ours, leave them — those rows are skipped and you can still confirm the upload as-is.</p>
+                </div></AdminCallout>
+                <UnmappedList brickOptions={brickOptions} customers={[]} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={analysis.data?.unknownProducts ?? []} territories={[]} />
+              </div>
             ) : null}
             {!blockerUnknowns && !productUnknowns && analysis?.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
               <AdminCallout tone="neutral"><span>This sheet has no date column — pick a period above to upload.</span></AdminCallout>

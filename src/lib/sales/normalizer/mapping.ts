@@ -75,7 +75,7 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
       let entry = productMap.get(ex.rawProduct);
       if (!entry) {
         const suggestion = suggestProduct(ex.rawProductName || ex.rawProduct, products);
-        entry = { count: 0, raw: ex.rawProduct, rawName: ex.rawProductName, suggestionCode: suggestion?.code ?? null, suggestionLabel: suggestion?.label ?? null };
+        entry = { count: 0, raw: ex.rawProduct, rawName: ex.rawProductName, rawAddress: "", suggestionCode: suggestion?.code ?? null, suggestionLabel: suggestion?.label ?? null };
         productMap.set(ex.rawProduct, entry);
       }
       entry.count += 1;
@@ -85,7 +85,7 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
       if (ex.rawTerritory) {
         const key = normalizeAliasKey(ex.rawTerritory);
         let entry = territoryMap.get(key);
-        if (!entry) { entry = { count: 0, raw: ex.rawTerritory, rawName: "", suggestionCode: null, suggestionLabel: null }; territoryMap.set(key, entry); }
+        if (!entry) { entry = { count: 0, raw: ex.rawTerritory, rawName: "", rawAddress: "", suggestionCode: null, suggestionLabel: null }; territoryMap.set(key, entry); }
         entry.count += 1;
       }
       // Per-pharmacy crosswalk — the reliable path when the distributor's area text is junk.
