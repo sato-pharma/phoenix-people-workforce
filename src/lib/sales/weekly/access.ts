@@ -6,7 +6,9 @@ import {
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   applyLineRegionScope,
+  canViewHeadOfficeLine,
   canonicalizeRegionName,
+  isHeadOfficeLine,
   isRestrictedProductCode,
   normalizeLineKey,
   resolveSalesAccessScope,
@@ -51,11 +53,14 @@ const TERRITORY_SCOPED_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Medical Rep",
 ]);
 
-export type WeeklyAccessScope =
+type WeeklyAccessTier =
   | { tier: "full"; canViewRestricted: boolean }
   | { tier: "product"; productCodes: Set<string> }
   | { tier: "territory"; allowedLineNames: Set<string> | null; allowedRegionCodes: Set<string> | null }
   | { tier: "none" };
+
+/** Tier + the confidential Head Office line flag (CEO/Super Admin only). */
+export type WeeklyAccessScope = WeeklyAccessTier & { canViewHeadOffice: boolean };
 
 /** Canonical HR_ID key for the caller (employee identity first, then login). */
 function viewerHrKey(ctx: AccessContext): string | null {
@@ -117,6 +122,13 @@ export async function replaceWeeklyProductScope(
  * work up front so the dashboard aggregator can stay a pure in-memory filter.
  */
 export async function resolveWeeklyAccessScope(ctx: AccessContext): Promise<WeeklyAccessScope> {
+  const tier = await resolveWeeklyAccessTier(ctx);
+  // Head Office line is confidential — only CEO / Super Admin may ever see it, regardless of tier
+  // (so even a full-access exception HR_ID or SFE Manager is stripped). Fail-closed.
+  return { ...tier, canViewHeadOffice: canViewHeadOfficeLine(ctx.role) };
+}
+
+async function resolveWeeklyAccessTier(ctx: AccessContext): Promise<WeeklyAccessTier> {
   const hrKey = viewerHrKey(ctx);
 
   // 1. Exception accounts — full access including restricted products.
@@ -198,22 +210,26 @@ async function resolveRegionCodesForNames(
 export function applyWeeklyAccessScope<
   T extends { productCode: string; officialLine?: string | null; regionCode?: string | null },
 >(rows: T[], scope: WeeklyAccessScope): T[] {
-  switch (scope.tier) {
-    case "none":
-      return [];
-    case "full":
-      return scope.canViewRestricted ? rows : rows.filter((row) => !isRestrictedProductCode(row.productCode));
-    case "product": {
-      const allowed = new Set([...scope.productCodes].map((code) => code.trim().toUpperCase()));
-      if (allowed.size === 0) return [];
-      return rows.filter(
-        (row) => allowed.has(row.productCode.trim().toUpperCase()) && !isRestrictedProductCode(row.productCode),
-      );
+  const scoped = ((): T[] => {
+    switch (scope.tier) {
+      case "none":
+        return [];
+      case "full":
+        return scope.canViewRestricted ? rows : rows.filter((row) => !isRestrictedProductCode(row.productCode));
+      case "product": {
+        const allowed = new Set([...scope.productCodes].map((code) => code.trim().toUpperCase()));
+        if (allowed.size === 0) return [];
+        return rows.filter(
+          (row) => allowed.has(row.productCode.trim().toUpperCase()) && !isRestrictedProductCode(row.productCode),
+        );
+      }
+      case "territory":
+        return applyLineRegionScope(
+          rows.filter((row) => !isRestrictedProductCode(row.productCode)),
+          { allowedLineNames: scope.allowedLineNames, allowedRegionCodes: scope.allowedRegionCodes },
+        );
     }
-    case "territory":
-      return applyLineRegionScope(
-        rows.filter((row) => !isRestrictedProductCode(row.productCode)),
-        { allowedLineNames: scope.allowedLineNames, allowedRegionCodes: scope.allowedRegionCodes },
-      );
-  }
+  })();
+  // Confidential Head Office line — stripped for everyone except CEO / Super Admin.
+  return scope.canViewHeadOffice ? scoped : scoped.filter((row) => !isHeadOfficeLine(row.officialLine));
 }

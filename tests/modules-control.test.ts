@@ -110,9 +110,24 @@ export function runModulesControlTests() {
     "invalid drag/drop is blocked before any database write can be attempted",
   );
 
-  const portalSales = catalog.find((module) => module.label === "Sales" && module.navigationMode === "employee-portal");
-  assert.ok(portalSales, "Employee portal Sales module exists");
+  const portalSales = catalog.find(
+    (module) => module.label === "Source of Sales" && module.navigationMode === "employee-portal",
+  );
+  assert.ok(portalSales, "Employee portal Source of Sales module exists");
+  // Source of Sales is role-gated (DSM/RM/NSM/PM/GPM/MM): assigning to an eligible role is fine…
   assert.doesNotThrow(() =>
+    validateModuleAssignmentList({
+      catalog,
+      matrix: permissionMatrix,
+      moduleIds: [portalSales!.moduleId],
+      navigationMode: "employee-portal",
+      people: [person({ positionTitle: "Product Manager", role: "Product Manager" })],
+      targetKey: "a-9",
+      targetType: "user",
+    }),
+  );
+  // …but a Medical Rep is outside the module's roles, so the drag/drop is blocked.
+  assert.throws(() =>
     validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,

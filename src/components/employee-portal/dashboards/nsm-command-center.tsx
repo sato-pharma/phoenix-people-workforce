@@ -72,7 +72,7 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <QuickActions
         actions={[
           { href: "/employee-portals/dsms-performance", icon: Network, label: "Regional Comparison" },
-          { href: "/employee-portals/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing" },
+          { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
           { href: "/employee-portals/actions", icon: ClipboardCheck, label: "Review Team KPIs" },
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
         ]}

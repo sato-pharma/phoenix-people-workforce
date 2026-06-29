@@ -10,6 +10,7 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import { loadAnalyticsDimensions, loadCrossSource, type AnalyticsDimensions, type CrossSourceRow } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
@@ -48,6 +49,7 @@ async function ReconciliationContent({
         periodFrom: typeof filters.periodFrom === "string" ? filters.periodFrom : null,
         periodTo:   typeof filters.periodTo   === "string" ? filters.periodTo   : null,
         lines:      Array.isArray(filters.lines) ? filters.lines : [],
+        canViewHeadOffice: canViewHeadOfficeLine(role),
       }).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);

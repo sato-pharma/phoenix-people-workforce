@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function DistributorProfilesPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Mapping-mutation surface — restrict to Super Admin / system, matching the sibling Source-of-Sales
   // admin pages. The write API additionally enforces the sales:import permission.

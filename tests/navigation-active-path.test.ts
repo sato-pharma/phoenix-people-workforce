@@ -211,7 +211,7 @@ export function runNavigationActivePathTests() {
     marketingManagerPortal,
     [
       "/employee-portals",
-      "/employee-portals/sales",
+      "/employee-portals/source-of-sales",
       "/employee-portals/plans",
       "/employee-portals/organogram",
       "/employee-portals/vacancies",

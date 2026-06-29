@@ -10,6 +10,7 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadSosByLine,
@@ -53,6 +54,7 @@ async function ExecComparisonContent({
     lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
     distributors: Array.isArray(filters.distributors)  ? filters.distributors  : [],
+    canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
   let byLine: SosByLineRow[];

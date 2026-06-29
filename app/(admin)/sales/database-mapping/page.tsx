@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function DatabaseMappingPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Master-data mutation surface — restrict to Super Admin / system, matching the other
   // Source-of-Sales admin pages (Customer Directory, Customer Mapping, Normalizer).

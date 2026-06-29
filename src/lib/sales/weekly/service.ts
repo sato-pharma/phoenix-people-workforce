@@ -1030,7 +1030,7 @@ export async function loadWeeklyDashboard(filters?: {
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
-  const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true };
+  const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true, canViewHeadOffice: false };
   const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
   // Filters run AFTER access-scope redaction, so include/exclude can only narrow already-visible
   // rows — they can never re-expose the confidential LA003/LA004 products.

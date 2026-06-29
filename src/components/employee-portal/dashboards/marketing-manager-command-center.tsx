@@ -53,8 +53,7 @@ const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; d
   { href: "/employee-portals/roi", icon: TrendingUp, label: "ROI Intelligence", description: "Coverage, spend at risk, gap" },
   { href: "/employee-portals/coaching-analytics", icon: Stethoscope, label: "Coaching Analytics", description: "Scores and coverage" },
   { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", description: "Field execution health" },
-  { href: "/employee-portals/monthly-closing", icon: ClipboardCheck, label: "Monthly Closing", description: "Line achievement vs target" },
-  { href: "/employee-portals/weekly-sales", icon: BarChart3, label: "Weekly Sales", description: "Assigned products, week on week" },
+  { href: "/employee-portals/source-of-sales", icon: BarChart3, label: "Source of Sales", description: "Distributor sell-in by line, region, product" },
   { href: "/employee-portals/organogram", icon: Network, label: "Organogram", description: "Structure and vacancies" },
 ];
 
@@ -116,7 +115,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
         actions={[
           { href: "/employee-portals/marketing-requests/inbox", icon: Inbox, label: "Review Marketing Requests" },
           { href: "/employee-portals/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking" },
-          { href: "/employee-portals/monthly-closing", icon: ClipboardCheck, label: "Monthly Closing" },
+          { href: "/employee-portals/source-of-sales", icon: ClipboardCheck, label: "Source of Sales" },
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
         ]}
       />

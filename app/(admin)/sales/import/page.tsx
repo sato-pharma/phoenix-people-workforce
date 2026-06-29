@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export default async function SalesImportPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Gate before loading: an admin without `sales:import` must be cleanly
   // redirected (matching the employees/coaching convention), not dropped into

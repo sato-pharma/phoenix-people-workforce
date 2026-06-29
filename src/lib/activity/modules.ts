@@ -92,8 +92,7 @@ const MODULE_RULES: ModuleRule[] = [
   // ── Employee portal ───────────────────────────────────────────────────────
   { prefix: "/employee-portals/report-it", key: "report_it", label: "Report It" },
   { prefix: "/employee-portals/marketing-requests", key: "marketing_requests", label: "Marketing Requests" },
-  { prefix: "/employee-portals/sales", key: "portal_sales", label: "Sales (Portal)" },
-  { prefix: "/employee-portals/monthly-closing", key: "monthly_closing", label: "Monthly Closing" },
+  { prefix: "/employee-portals/source-of-sales", key: "portal_source_of_sales", label: "Source of Sales (Portal)" },
   { prefix: "/employee-portals/organogram", key: "organogram", label: "Organogram" },
   { prefix: "/employee-portals/vacancies", key: "vacancies_report", label: "Vacancies Report" },
   { prefix: "/employee-portals/probation", key: "probation", label: "Probation" },

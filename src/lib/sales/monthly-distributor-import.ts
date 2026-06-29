@@ -2115,6 +2115,53 @@ export async function listSourceOfSalesUploadBatches(): Promise<SourceOfSalesUpl
   return rows.map((row) => mapSourceOfSalesBatch(row));
 }
 
+export type DistributorUploadStatus = {
+  /** Active distributors in the master (the "expected to upload" set). */
+  expectedCount: number;
+  /** Distinct active distributors with a VALIDATED batch for the period. */
+  uploadedCount: number;
+  /** Expected − uploaded; "awaiting upload" so a low total isn't read as real zero. */
+  awaitingCount: number;
+  /** ISO timestamp of the most recent validated upload for the period ("data as of"). */
+  lastUploadedAt: string | null;
+};
+
+/**
+ * Upload coverage for a period: how many distributors have a validated batch vs how many are
+ * expected (active master). Lets a dashboard distinguish "awaiting upload" from a genuine zero.
+ */
+export async function getDistributorUploadStatus(period: string): Promise<DistributorUploadStatus> {
+  const supabase = getSupabaseAdmin();
+  const [distRes, batchRes] = await Promise.all([
+    supabase.from("source_of_sales_distributors").select("distributor_code").eq("active", true),
+    supabase.from("source_of_sales_import_batches").select("distributor_code,status,created_at").eq("period", period),
+  ]);
+  const norm = (value: unknown) => String(value ?? "").trim().toUpperCase();
+  const expected = new Set(
+    ((distRes.data ?? []) as Record<string, unknown>[]).map((row) => norm(row.distributor_code)).filter(Boolean),
+  );
+  const validatedBatches = ((batchRes.data ?? []) as Record<string, unknown>[]).filter(
+    (row) => String(row.status ?? "") === "validated",
+  );
+  const uploaded = new Set(
+    validatedBatches.map((row) => norm(row.distributor_code)).filter((code) => code && expected.has(code)),
+  );
+  let lastUploadedAt: string | null = null;
+  let lastUploadedMs = -Infinity;
+  for (const row of validatedBatches) {
+    const at = row.created_at ? String(row.created_at) : null;
+    if (!at) continue;
+    const ms = Date.parse(at);
+    if (Number.isFinite(ms) && ms > lastUploadedMs) {
+      lastUploadedMs = ms;
+      lastUploadedAt = at;
+    }
+  }
+  const expectedCount = expected.size;
+  const uploadedCount = uploaded.size;
+  return { expectedCount, uploadedCount, awaitingCount: Math.max(0, expectedCount - uploadedCount), lastUploadedAt };
+}
+
 type SourceOfSalesSummaryRecord = {
   batchId?: string;
   groupCode: string | null;

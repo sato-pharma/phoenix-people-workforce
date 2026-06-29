@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function WeeklyDistributorEditorPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Mapping-mutation surface that changes how files are imported — restrict to Super Admin / system,
   // matching the monthly distributor editor. The write API additionally enforces weekly_sales:import.

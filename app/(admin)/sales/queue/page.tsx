@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function SalesQueuePage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   let initialData = null;
   let initialError: string | null = null;

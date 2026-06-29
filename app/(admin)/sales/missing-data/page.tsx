@@ -15,7 +15,7 @@ export const maxDuration = 60;
 export default async function MissingDataPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Read-only gap report, but restricted to Super Admin / system for consistency with the
   // sibling Source-of-Sales admin pages (no sales-import role leakage).

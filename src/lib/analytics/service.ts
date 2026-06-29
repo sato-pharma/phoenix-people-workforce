@@ -3,7 +3,7 @@
 // Phoenix pattern. Access control is enforced at the page/API route layer.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
+import { canViewRestrictedProducts, stripHeadOfficeRows } from "@/lib/sales/access-scope";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -196,6 +196,8 @@ export type SosFilters = {
   families?: string[];
   channel?: string | null;
   clientCodes?: string[];
+  /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
+  canViewHeadOffice?: boolean;
 };
 
 export type SosByLineRow = {
@@ -224,7 +226,7 @@ export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLine
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by line: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+  const rows = ((data ?? []) as Record<string, unknown>[]).map((r) => ({
     period:  s(r.period),
     year:    n(r.year),
     month:   n(r.month),
@@ -233,6 +235,7 @@ export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLine
     units:   n(r.units),
     value:   n(r.value),
   }));
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiRow[]> {
@@ -294,7 +297,8 @@ export async function loadSosByProduct(filters: SosFilters = {}): Promise<SosByP
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by product: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapSosProductRow);
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapSosProductRow);
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 export async function loadSosByCustomer(filters: SosFilters = {}): Promise<SosByCustomerRow[]> {
@@ -308,7 +312,8 @@ export async function loadSosByCustomer(filters: SosFilters = {}): Promise<SosBy
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
   } as never);
   if (error) throw new Error(`SoS by customer: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapSosCustomerRow);
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapSosCustomerRow);
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 // ── Monthly closing loaders ───────────────────────────────────────────────────
@@ -324,6 +329,8 @@ export type ClosingFilters = {
   territory?: string | null;
   batchStatus?: string[];
   batchId?: string | null;
+  /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
+  canViewHeadOffice?: boolean;
 };
 
 export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promise<ClosingByEmployeeRow[]> {
@@ -341,7 +348,8 @@ export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promi
     p_batch_id:     filters.batchId     ?? null,
   } as never);
   if (error) throw new Error(`Closing by employee: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapClosingEmployeeRow);
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapClosingEmployeeRow);
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 // ── Weekly loaders ────────────────────────────────────────────────────────────
@@ -373,7 +381,7 @@ export async function loadWeeklyFact(filters: WeeklyFilters = {}): Promise<Weekl
 
 // ── Cross-source comparison loader ────────────────────────────────────────────
 
-export async function loadCrossSource(filters: { periodFrom?: string | null; periodTo?: string | null; lines?: string[] } = {}): Promise<CrossSourceRow[]> {
+export async function loadCrossSource(filters: { periodFrom?: string | null; periodTo?: string | null; lines?: string[]; canViewHeadOffice?: boolean } = {}): Promise<CrossSourceRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_cross_source" as never, {
     p_period_from: filters.periodFrom ?? null,
@@ -381,7 +389,8 @@ export async function loadCrossSource(filters: { periodFrom?: string | null; per
     p_lines:       filters.lines?.length ? filters.lines : null,
   } as never);
   if (error) throw new Error(`Cross-source: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapCrossSourceRow);
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapCrossSourceRow);
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 // ── Row mappers ───────────────────────────────────────────────────────────────
