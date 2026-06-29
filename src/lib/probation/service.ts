@@ -581,12 +581,60 @@ function probationWorkflowApproverHrIds(employee: EmployeeScopeRow, directory: E
   ].filter(Boolean)));
 }
 
-function resolveProbationReminderRecipientHrIds(employee: EmployeeScopeRow, directory: EmployeeScopeRow[], hrApproverHrIds: string[]) {
-  const manager = managerOf(employee, directory);
-  return Array.from(new Set([
-    normalizeHrId(manager?.hrId),
-    ...probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds),
-  ].filter(Boolean)));
+async function resolveFeedbackExtraRecipients(
+  employee: EmployeeScopeRow,
+  directory: EmployeeScopeRow[],
+): Promise<{ nsmHrIds: string[]; tmHrIds: string[]; pmGpmHrIds: string[] }> {
+  const isCns = (employee.lineName ?? "").toLowerCase() === "cns";
+
+  const { data } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id, role")
+    .in("role", ["National Sales Manager", "Training Manager", "Product Manager", "Group Product Manager"])
+    .eq("is_active", true);
+
+  const authUsers = (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>;
+
+  const nsmAuthHrIds = new Set(
+    authUsers
+      .filter((u) => u.role === "National Sales Manager")
+      .map((u) => normalizeHrId(u.hr_id))
+      .filter(Boolean),
+  );
+  const tmHrIds = authUsers
+    .filter((u) => u.role === "Training Manager")
+    .map((u) => normalizeHrId(u.hr_id))
+    .filter(Boolean) as string[];
+  const pmGpmCandidateHrIds = authUsers
+    .filter((u) => u.role === "Product Manager" || u.role === "Group Product Manager")
+    .map((u) => normalizeHrId(u.hr_id))
+    .filter(Boolean) as string[];
+
+  // Walk the management chain upward to find the NSM for this employee
+  const nsmHrIds: string[] = [];
+  let current: EmployeeScopeRow | null | undefined = managerOf(employee, directory);
+  while (current) {
+    const normalized = normalizeHrId(current.hrId);
+    if (normalized && nsmAuthHrIds.has(normalized)) {
+      nsmHrIds.push(normalized);
+      break;
+    }
+    current = managerOf(current, directory);
+  }
+
+  // PM/GPM: filter by matching lineId; skip entirely for CNS
+  const pmGpmHrIds: string[] = [];
+  if (!isCns && employee.lineId !== null) {
+    const directoryMap = new Map(directory.map((e) => [normalizeHrId(e.hrId), e]));
+    for (const hrId of pmGpmCandidateHrIds) {
+      const emp = directoryMap.get(hrId);
+      if (emp?.lineId === employee.lineId) {
+        pmGpmHrIds.push(hrId);
+      }
+    }
+  }
+
+  return { nsmHrIds, tmHrIds, pmGpmHrIds };
 }
 
 function probationRecipientRoles(employee: EmployeeScopeRow, directory: EmployeeScopeRow[], hrApproverHrIds: string[]) {
@@ -605,36 +653,59 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
 
   const now = new Date().toISOString();
   const hrApproverHrIds = await resolveActiveHrApproverHrIds();
-  const recipientHrIds = resolveProbationReminderRecipientHrIds(employee, directory, hrApproverHrIds);
+  const { nsmHrIds, tmHrIds, pmGpmHrIds } = await resolveFeedbackExtraRecipients(employee, directory);
   const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds);
   const recipientRoles = probationRecipientRoles(employee, directory, hrApproverHrIds);
-  const rows = schedule.map((reminder) => ({
-    category: "probation",
-    employee_hr_id: employee.hrId,
-    event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
-    metadata: {
-      href: "/probation",
-      message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
-      title: `${employee.fullName}'s probation feedback is due`,
-      days_after_hire: reminder.daysAfterHire,
-      days_remaining: reminder.daysRemaining,
-      hire_date: employee.hireDate,
-      recipient_roles: recipientRoles,
-      reminder_type: reminder.reminderType,
-      workflowApproverHrIds,
-      details: [
-        { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
-        { label: "Days remaining", value: `${reminder.daysRemaining}` },
-        { label: "Status", value: "Feedback required" },
-        { label: "Action", value: "Submit feedback" },
-      ],
-    },
-    recipients: recipientHrIds,
-    scheduled_for: reminder.scheduledFor,
-    status: "pending",
-    subject: `${employee.fullName}'s probation feedback is due`,
-    updated_at: now,
-  }));
+
+  const dmNormalized = normalizeHrId(managerOf(employee, directory)?.hrId);
+
+  // Base recipients for all cycles: DM + NSM + HR
+  const baseRecipientHrIds = Array.from(
+    new Set([...(dmNormalized ? [dmNormalized] : []), ...nsmHrIds, ...hrApproverHrIds].filter(Boolean)),
+  );
+  // Cycle 1 additionally notifies TM + PM/GPM (once-only roles)
+  const cycle1RecipientHrIds = Array.from(
+    new Set([...baseRecipientHrIds, ...tmHrIds, ...pmGpmHrIds]),
+  );
+
+  const reminderToCycle: Record<string, number> = {
+    probation_day_30_check: 1,
+    probation_30_days_remaining: 2,
+    probation_15_days_remaining: 3,
+  };
+
+  const rows = schedule.map((reminder) => {
+    const cycleNumber = reminderToCycle[reminder.reminderType] ?? 1;
+    const recipients = cycleNumber === 1 ? cycle1RecipientHrIds : baseRecipientHrIds;
+    return {
+      category: "probation",
+      employee_hr_id: employee.hrId,
+      event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
+      metadata: {
+        href: `/api/probation/redirect?action=feedback&employeeHrId=${employee.hrId}&cycle=${cycleNumber}`,
+        message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
+        title: `${employee.fullName}'s probation feedback is due`,
+        days_after_hire: reminder.daysAfterHire,
+        days_remaining: reminder.daysRemaining,
+        hire_date: employee.hireDate,
+        recipient_roles: recipientRoles,
+        reminder_type: reminder.reminderType,
+        cycle_number: cycleNumber,
+        workflowApproverHrIds,
+        details: [
+          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+          { label: "Days remaining", value: `${reminder.daysRemaining}` },
+          { label: "Status", value: "Feedback required" },
+          { label: "Action", value: "Submit feedback" },
+        ],
+      },
+      recipients,
+      scheduled_for: reminder.scheduledFor,
+      status: "pending",
+      subject: `${employee.fullName}'s probation feedback is due`,
+      updated_at: now,
+    };
+  });
 
   const { error } = await getSupabaseAdmin()
     .from("notification_events")

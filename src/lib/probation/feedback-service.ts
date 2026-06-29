@@ -1,4 +1,5 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -239,6 +240,82 @@ export async function checkFeedbackEligibility(
   };
 }
 
+// ── Notify HR/CEO of new feedback submission ─────────────────────────────────
+
+const SUBMITTER_ROLE_LABELS: Record<FeedbackSubmitterRole, string> = {
+  dm: "District Manager",
+  nsm: "National Sales Manager",
+  tm: "Training Manager",
+  pm_gpm: "PM / GPM",
+};
+
+const RECOMMENDATION_LABELS_NOTIFY: Record<FeedbackRecommendation, string> = {
+  recommend_pass: "Recommend Pass",
+  recommend_dismissal: "Recommend Dismissal",
+  not_sure_yet: "Not Sure Yet",
+};
+
+function notifySuperAdminsOfFeedbackAsync(submission: FeedbackSubmission): void {
+  (async () => {
+    const db = getSupabaseAdmin();
+    const [empResult, adminsResult] = await Promise.all([
+      db.from("employees").select("full_name").ilike("hr_id", submission.employeeHrId).maybeSingle(),
+      db.from("app_auth_users").select("hr_id").in("role", ["Super Admin", "CEO"]).eq("is_active", true),
+    ]);
+    const employeeName =
+      (empResult.data as { full_name?: string } | null)?.full_name ?? submission.employeeHrId;
+    const recipientHrIds = (
+      (adminsResult.data ?? []) as Array<{ hr_id?: string | null }>
+    )
+      .map((row) => normalizeHrId(row.hr_id))
+      .filter(Boolean) as string[];
+    if (recipientHrIds.length === 0) return;
+
+    const roleLabel = SUBMITTER_ROLE_LABELS[submission.submitterRole] ?? submission.submitterRole;
+    const recLabel = RECOMMENDATION_LABELS_NOTIFY[submission.recommendation] ?? submission.recommendation;
+    const title = `Probation feedback: ${employeeName} — Cycle ${submission.cycleNumber}`;
+    const message = `${roleLabel} submitted "${recLabel}" for ${employeeName}'s cycle ${submission.cycleNumber} probation review.`;
+    const ctaHref = `/api/probation/redirect?action=feedback&employeeHrId=${submission.employeeHrId}&cycle=${submission.cycleNumber}`;
+
+    await Promise.allSettled(
+      recipientHrIds.map((hrId) =>
+        createSystemNotification({
+          actorId: "system",
+          channels: ["email", "in_app"],
+          email: {
+            ctaHref,
+            ctaLabel: "View feedback",
+            metrics: [
+              { label: "Employee", value: `${employeeName} (${submission.employeeHrId})` },
+              { label: "Submitted by", value: roleLabel },
+              { label: "Recommendation", value: recLabel },
+              { label: "Cycle", value: `Cycle ${submission.cycleNumber}` },
+            ],
+            notificationType: "probation",
+            subject: title,
+            summary: message,
+            title,
+            tone: "neutral",
+          },
+          eventType: "feedback_submitted",
+          message,
+          metadata: {
+            cycleNumber: submission.cycleNumber,
+            employeeHrId: submission.employeeHrId,
+            idempotencyKey: `probation:feedback:${submission.employeeHrId}:cycle${submission.cycleNumber}:${submission.submitterRole}:${hrId}`,
+            submitterRole: submission.submitterRole,
+          },
+          module: "probation",
+          priority: "high",
+          recipientHrId: hrId,
+          subjectHrId: submission.employeeHrId,
+          title,
+        }),
+      ),
+    );
+  })().catch(() => undefined);
+}
+
 // ── Submit feedback ───────────────────────────────────────────────────────────
 
 export async function submitFeedback(
@@ -276,7 +353,9 @@ export async function submitFeedback(
     .single();
 
   if (error) throw new Error(`Failed to save feedback: ${error.message}`);
-  return mapSubmission(data as RawSubmissionRow, []);
+  const submission = mapSubmission(data as RawSubmissionRow, []);
+  notifySuperAdminsOfFeedbackAsync(submission);
+  return submission;
 }
 
 // ── Add follow-up comment ─────────────────────────────────────────────────────

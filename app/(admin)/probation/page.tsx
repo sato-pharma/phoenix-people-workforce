@@ -41,7 +41,11 @@ function probationPageError(error: unknown) {
   return probationErrorMessage(error) || employeeDirectoryErrorMessage(error);
 }
 
-export default async function ProbationPage() {
+export default async function ProbationPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/probation");
@@ -51,6 +55,9 @@ export default async function ProbationPage() {
     redirect("/employee-portals");
   }
   const canAdminister = isProbationAdministrator(access);
+  const params = await searchParams;
+  const initialFeedbackEmployeeHrId = typeof params.feedbackEmployeeHrId === "string" ? params.feedbackEmployeeHrId : null;
+
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
 
@@ -65,8 +72,10 @@ export default async function ProbationPage() {
       capabilities={{
         canCreate: canAdminister,
         canExport: canViewAllProbation(access),
+        canManageDvCheckboxes: canAdminister,
         canManageWorkflow: canAdminister,
         canSubmitManagerFeedback: canAdminister,
+        initialFeedbackEmployeeHrId,
         viewerMode: access.role === "CEO" ? "executive" : "hr",
       }}
       initialData={initialData}

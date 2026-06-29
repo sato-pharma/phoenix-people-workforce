@@ -24,6 +24,8 @@ import {
   AdminSectionHeader,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
+import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -49,8 +51,10 @@ type Props = {
 type ProbationTrackerCapabilities = {
   canCreate?: boolean;
   canExport?: boolean;
+  canManageDvCheckboxes?: boolean;
   canManageWorkflow?: boolean;
   canSubmitManagerFeedback?: boolean;
+  initialFeedbackEmployeeHrId?: string | null;
   viewerMode?: "employee" | "executive" | "hr" | "manager";
 };
 
@@ -261,6 +265,7 @@ export function ProbationTracker({
   const isPremium = presentation === "premium";
   const canCreate = capabilities.canCreate ?? false;
   const canExport = capabilities.canExport ?? false;
+  const canManageDvCheckboxes = capabilities.canManageDvCheckboxes ?? false;
   const canManageWorkflow = capabilities.canManageWorkflow ?? false;
   const canSubmitManagerFeedback = capabilities.canSubmitManagerFeedback ?? false;
   const viewerMode = capabilities.viewerMode ?? "hr";
@@ -278,6 +283,7 @@ export function ProbationTracker({
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
   const [rows, setRows] = useState<ProbationRow[]>(initialData ?? []);
+  const [feedbackEmployeeHrId, setFeedbackEmployeeHrId] = useState<string | null>(capabilities.initialFeedbackEmployeeHrId ?? null);
   const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
   const [actionForm, setActionForm] = useState<WorkflowActionForm>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -742,6 +748,7 @@ export function ProbationTracker({
                   "Progress",
                   "Status",
                   "Probation Review",
+                  "DV Status",
                   "Actions",
                 ].map((column) => (
                   <th className={adminTableHeaderClassName} key={column}>
@@ -753,7 +760,7 @@ export function ProbationTracker({
             <tbody className="divide-y divide-[#E2E8F0]">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={13}>
+                  <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={14}>
                     No probation records match the current filters.
                   </td>
                 </tr>
@@ -761,6 +768,7 @@ export function ProbationTracker({
                 filteredRows.map((row) => {
                   const traffic = getTrafficStatus(row.days_remaining);
                   const progress = getProbationProgress(row.days_remaining);
+                  const isFeedbackOpen = feedbackEmployeeHrId === row.hr_id;
 
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
@@ -804,38 +812,73 @@ export function ProbationTracker({
                           ) : null}
                         </div>
                       </td>
-                      <td className={cn(probationTableValueClassName, "align-top")}>
-                        {row.workflow ? (
-                          <div className="flex min-w-[200px] flex-wrap gap-1.5">
-                            {(row.workflow.allowedActions ?? row.allowedActions ?? [])
-                              .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
-                              .map((action) => (
-                                <Button
-                                  className={probationActionButtonClassName}
-                                  disabled={Boolean(pendingAction)}
-                                  key={action}
-                                  onClick={() => openWorkflowAction(row, action)}
-                                  variant={isDestructiveAction(action) ? "destructive" : "secondary"}
-                                >
-                                  {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
-                                  {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
-                                  {actionLabel(action)}
-                                </Button>
-                              ))}
-                            {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
-                              <span className="text-xs font-semibold text-[#64748B]">No available actions</span>
-                            ) : null}
-                          </div>
+                      <td className={cn(probationTableValueClassName, "min-w-[180px]")}>
+                        {row.dv_state ? (
+                          <DvCheckboxPanel
+                            canManualOverride={canManageDvCheckboxes}
+                            dvState={{
+                              dmDvDone: row.dv_state.dm_dv_done,
+                              dmDvDoneAt: row.dv_state.dm_dv_done_at,
+                              dmDvDoneManually: row.dv_state.dm_dv_done_manually,
+                              nsmDvDone: row.dv_state.nsm_dv_done,
+                              nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
+                              nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
+                              pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
+                              pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
+                              pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
+                              tmDvDone: row.dv_state.tm_dv_done,
+                              tmDvDoneAt: row.dv_state.tm_dv_done_at,
+                              tmDvDoneManually: row.dv_state.tm_dv_done_manually,
+                            }}
+                            probationId={Number(row.probation_id ?? 0)}
+                          />
                         ) : (
-                          <Button
-                            className={probationActionButtonClassName}
-                            disabled={!canCreate || Boolean(pendingAction)}
-                            onClick={() => createEvaluation(row)}
-                            variant="secondary"
-                          >
-                            Start review
-                          </Button>
+                          <span className="text-xs text-slate-400">—</span>
                         )}
+                      </td>
+                      <td className={cn(probationTableValueClassName, "align-top")}>
+                        <div className="flex flex-wrap gap-1.5">
+                          {row.workflow ? (
+                            <>
+                              {(row.workflow.allowedActions ?? row.allowedActions ?? [])
+                                .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
+                                .map((action) => (
+                                  <Button
+                                    className={probationActionButtonClassName}
+                                    disabled={Boolean(pendingAction)}
+                                    key={action}
+                                    onClick={() => openWorkflowAction(row, action)}
+                                    variant={isDestructiveAction(action) ? "destructive" : "secondary"}
+                                  >
+                                    {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
+                                    {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
+                                    {actionLabel(action)}
+                                  </Button>
+                                ))}
+                              {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
+                                <span className="text-xs font-semibold text-[#64748B]">No available actions</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <Button
+                              className={probationActionButtonClassName}
+                              disabled={!canCreate || Boolean(pendingAction)}
+                              onClick={() => createEvaluation(row)}
+                              variant="secondary"
+                            >
+                              Start review
+                            </Button>
+                          )}
+                          {canManageWorkflow ? (
+                            <Button
+                              className={cn(probationActionButtonClassName, isFeedbackOpen ? "border-orange-300 bg-orange-50 text-orange-700" : "")}
+                              onClick={() => setFeedbackEmployeeHrId(isFeedbackOpen ? null : row.hr_id)}
+                              variant="secondary"
+                            >
+                              {isFeedbackOpen ? "Close feedback" : "Feedback"}
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -845,6 +888,16 @@ export function ProbationTracker({
           </table>
         </div>
       </Card>
+
+      {feedbackEmployeeHrId ? (
+        <Card className={`${panelClassName} overflow-hidden`}>
+          <FeedbackFormPanel
+            employeeHrId={feedbackEmployeeHrId}
+            employeeName={rows.find((r) => r.hr_id === feedbackEmployeeHrId)?.full_name ?? feedbackEmployeeHrId}
+            onClose={() => setFeedbackEmployeeHrId(null)}
+          />
+        </Card>
+      ) : null}
 
       {selectedAction ? (
         <AdminTableShell
