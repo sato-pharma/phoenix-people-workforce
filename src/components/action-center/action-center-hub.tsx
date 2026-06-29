@@ -407,14 +407,32 @@ function PlanActivityCard({ item }: { item: WeeklyPlanDetail["items"][number] })
     ? (item.region ? `Format: ${item.region}` : null)
     : [item.region, item.area].filter(Boolean).join(" · ") || null;
   return (
-    <div className={`rounded-md border px-2 py-1.5 ${color}`}>
-      <div className="flex items-start justify-between gap-1.5">
-        <span className="text-[11px] font-bold leading-tight">{item.activityLabel}</span>
-        {item.timeLabel && <span className="shrink-0 text-[10px] font-semibold opacity-70">{item.timeLabel}</span>}
+    <div className="space-y-1">
+      <div className={`rounded-md border px-2 py-1.5 ${color}`}>
+        <div className="flex items-start justify-between gap-1.5">
+          <span className="text-[11px] font-bold leading-tight">{item.activityLabel}</span>
+          {item.timeLabel && <span className="shrink-0 text-[10px] font-semibold opacity-70">{item.timeLabel}</span>}
+        </div>
+        {geo && <p className="mt-0.5 text-[10px] font-medium opacity-90">{geo}</p>}
+        {item.repName && <p className="text-[10px] opacity-80">with {item.repName}</p>}
+        {item.objective && <p className="mt-0.5 text-[10px] italic leading-snug opacity-75">{item.objective}</p>}
       </div>
-      {geo && <p className="mt-0.5 text-[10px] font-medium opacity-90">{geo}</p>}
-      {item.repName && <p className="text-[10px] opacity-80">with {item.repName}</p>}
-      {item.objective && <p className="mt-0.5 text-[10px] italic leading-snug opacity-75">{item.objective}</p>}
+      {item.activityType === "Field" && item.visitDetails.length > 0 && (
+        <div className="ml-1 space-y-1 border-l-2 border-sky-300 pl-2">
+          {item.visitDetails.map((vd, idx) => (
+            <div key={vd.id ?? idx} className="rounded border border-sky-200 bg-sky-50 px-2 py-1">
+              <p className="text-[10px] font-black text-sky-900">{vd.doctorName}</p>
+              <p className="text-[10px] font-semibold text-sky-700">
+                <span className="rounded-full bg-sky-200 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-sky-800">
+                  {vd.speciality}
+                </span>
+                {" · "}{vd.address}
+              </p>
+              {vd.objective && <p className="mt-0.5 text-[10px] italic text-sky-600">{vd.objective}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -950,6 +968,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
         ? action === "approve" ? "manager_approve" : action === "return" ? "manager_return" : "manager_reject"
         : action === "approve" ? "ceo_approve" : action === "return" ? "ceo_return" : "ceo_reject";
     void callApi(`/api/weekly-plans/${selected.id}/decision`, { action: apiAction, comment: comment.trim() || null });
+  }
+
+  function handleRequestVisitDetails() {
+    if (!selected) return;
+    void callApi(`/api/weekly-plans/${selected.id}/request-visit-details`, {});
   }
 
   async function handleBulkApprove() {
@@ -1522,6 +1545,12 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50">
                                     {busy ? "…" : selected.detail.stage === "manager" ? "Approve → CEO" : "Approve (final)"}
                                   </button>
+                                  {selected.detail.stage === "manager" && selected.detail.items.some((i) => i.activityType === "Field") && (
+                                    <button disabled={busy} onClick={() => handleRequestVisitDetails()}
+                                      className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-700 shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-100 disabled:opacity-50">
+                                      {busy ? "…" : "Request Visit Details"}
+                                    </button>
+                                  )}
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("return")}
                                     className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
                                     {busy ? "…" : "Return for edit"}

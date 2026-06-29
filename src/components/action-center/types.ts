@@ -93,6 +93,15 @@ export type ContractRenewalDetail = {
   currentStatus: string;
 };
 
+export type VisitDetail = {
+  id: string;
+  doctorName: string;
+  speciality: string;
+  address: string;
+  objective: string;
+  sortOrder: number;
+};
+
 // One planned activity, rendered read-only in the approver inbox calendar. Kept
 // structurally identical to ApproverPlanItem in the weekly-planning service so the
 // service result passes straight through without re-shaping.
@@ -107,6 +116,7 @@ export type WeeklyPlanCalendarItem = {
   region: string | null;
   repName: string | null;
   timeLabel: string | null;
+  visitDetails: VisitDetail[];
 };
 
 export type WeeklyPlanDetail = {
