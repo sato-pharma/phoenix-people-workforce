@@ -27,7 +27,7 @@ type Props = {
 };
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
-type UnknownItem = { count: number; raw: string; rawName: string; suggestionCode: string | null; suggestionLabel: string | null };
+type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; period: string | null };
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; fixHint?: string };
@@ -51,23 +51,19 @@ const UPLOAD_YEARS = [2024, 2025, 2026, 2027, 2028];
 // dropped from coding (ignoredRows) rather than surfaced as unmapped exceptions.
 const IGNORE_PRODUCT_CODE = "IGNORE";
 
-// Columns for the "Export unmapped (XLSX)" sheet — mirrors the on-screen unmapped table so the operator
-// gets one fix-list (products + customers + territories) to map in bulk offline, then re-validate.
-const UNMAPPED_EXPORT_COLUMNS: ExportColumn[] = [
-  { key: "type", label: "Type", width: 12 },
-  { key: "rawCode", label: "Value in sheet", width: 22 },
-  { key: "rawName", label: "Name in sheet", width: 36 },
-  { key: "rows", label: "Rows", numeric: true, width: 10 },
-  { key: "suggestionCode", label: "Suggested code", width: 18 },
-  { key: "suggestionName", label: "Suggested name", width: 30 },
-];
-
-// Columns for the customer-specific fix template — these header names exactly match the HEADER_ALIASES
-// in importCustomerMap(), so the file can be uploaded directly via the Customer/Brick template slot.
+// The ONE offline fix-list for unmapped customers. Header names for Distrub ID / Customer code /
+// Brick ID exactly match the HEADER_ALIASES in importCustomerMap(), so after filling the Brick ID
+// column the SAME file uploads straight back via Mapping tab → Customer/Brick Mapping. The extra
+// helper columns (name / address / area) are IGNORED by the importer but give the operator every
+// piece of context the distributor sheet carries to pick the right brick. No numeric column → no
+// SUM/TOTAL row → the file round-trips cleanly with no stray rows on re-upload.
 const CUSTOMER_FIX_COLUMNS: ExportColumn[] = [
-  { key: "distCode", label: "Distrub ID", width: 15 },
-  { key: "customerCode", label: "Customer code", width: 24 },
-  { key: "brickId", label: "Brick ID", width: 15 },
+  { key: "distCode", label: "Distrub ID", width: 12 },
+  { key: "customerCode", label: "Customer code", width: 22 },
+  { key: "customerName", label: "Customer name", width: 34 },
+  { key: "address", label: "Address", width: 42 },
+  { key: "area", label: "Governorate / area", width: 24 },
+  { key: "brickId", label: "Brick ID", width: 14 },
 ];
 
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
@@ -292,23 +288,16 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
       .map((u) => ({ type: g.type as MapType, raw: u.raw, code: IGNORE_PRODUCT_CODE })));
   const ready = [...readyMapped, ...readyExcluded];
 
-  // Every unmapped row across all groups, flattened into one offline fix-list. Exports the full list
-  // (independent of what's confirmed) so the operator can map products + customers + territories in bulk.
-  const typeLabel: Record<MapType, string> = { product: "Product", customer: "Customer", territory: "Territory" };
-  const exportRows: ExportRow[] = groups.flatMap((g) => g.items.map((u): ExportRow => ({
-    type: typeLabel[g.type],
-    rawCode: u.raw,
-    rawName: u.rawName,
-    rows: u.count,
-    suggestionCode: u.suggestionCode ?? "",
-    suggestionName: u.suggestionLabel ?? "",
-  })));
-
-  // Customer-specific fix template: headers match HEADER_ALIASES in importCustomerMap() exactly,
-  // so this file can be uploaded directly via Mapping tab → Customer/Brick template slot.
+  // The single customer fix-list: one row per distinct unmapped customer, carrying everything the
+  // distributor sheet knows (name / address / area) so the operator can pick the brick offline. Headers
+  // match HEADER_ALIASES in importCustomerMap() exactly, so once Brick ID is filled the SAME file
+  // uploads back via Mapping tab → Customer/Brick template slot. Blank Brick ID = leave for later.
   const customerFixRows: ExportRow[] = customers.map((u) => ({
     distCode: distributorCode,
     customerCode: u.raw,
+    customerName: u.rawName ?? "",
+    address: u.rawAddress ?? "",
+    area: u.rawTerritory ?? "",
     brickId: "",
   }));
 
@@ -370,19 +359,10 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
               label="Customer fix template (XLSX)"
               rows={customerFixRows}
               sheetName="Customer Mapping"
-              subtitle={`${distributorCode} · Fill the Brick ID column, then upload via Mapping tab → Customer/Brick Mapping`}
+              subtitle={`${distributorCode} · ${customerFixRows.length} customer(s) · fill the Brick ID column (name / address / area are there to help), then upload via Mapping tab → Customer/Brick Mapping`}
               title={`Customer Fix Template — ${distributorCode}`}
             />
           ) : null}
-          <ExportXlsxButton
-            className="h-8"
-            columns={UNMAPPED_EXPORT_COLUMNS}
-            label="Export unmapped (XLSX)"
-            rows={exportRows}
-            sheetName="Unmapped"
-            subtitle={`${distributorCode} · ${exportRows.length} unmapped item(s) to map`}
-            title={`Unmapped items — ${distributorCode}`}
-          />
           <button
             className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-[#0F172A] px-3 text-xs font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]"
             disabled={busy || ready.length === 0}
