@@ -11,18 +11,26 @@ import {
 
 export function runPlanWorkweekLinkageTests() {
   // --- Role classification --------------------------------------------------
-  // Field Force (Saturday-anchored week).
-  for (const title of ["Medical Rep", "District Sales Manager", "Regional Manager", "National Sales Manager"]) {
+  // Field Force (Saturday-anchored week) — ONLY field sales roles.
+  for (const title of ["Medical Rep", "District Sales Manager", "Regional Manager"]) {
     assert.equal(resolvePlanWorkweek({ jobTitle: title }).category, "field", `${title} should be field`);
   }
   assert.equal(resolvePlanWorkweek({ role: "Medical Rep" }).category, "field");
   assert.equal(resolvePlanWorkweek({ role: "District Manager" }).category, "field");
   assert.equal(resolvePlanWorkweek({ role: "Regional Manager" }).category, "field");
 
-  // Head Office (Sunday-anchored week).
-  for (const title of ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "HR Specialist"]) {
+  // Head Office (Sunday-anchored week) — incl. National Sales Manager.
+  for (const title of [
+    "Product Manager",
+    "Group Product Manager",
+    "Marketing Manager",
+    "Training Manager",
+    "National Sales Manager",
+    "HR Specialist",
+  ]) {
     assert.equal(resolvePlanWorkweek({ jobTitle: title }).category, "head_office", `${title} should be head office`);
   }
+  assert.equal(resolvePlanWorkweek({ role: "National Sales Manager" }).category, "head_office");
   // Unknown / empty defaults to the safe Head Office week.
   assert.equal(resolvePlanWorkweek({}).category, "head_office");
 
