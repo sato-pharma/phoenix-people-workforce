@@ -24,6 +24,7 @@ import {
   AdminSectionHeader,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import { AggregateFeedbackReport } from "@/components/probation/aggregate-feedback-report";
 import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
 import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
 import { Badge } from "@/components/ui/badge";
@@ -896,6 +897,16 @@ export function ProbationTracker({
             employeeName={rows.find((r) => r.hr_id === feedbackEmployeeHrId)?.full_name ?? feedbackEmployeeHrId}
             onClose={() => setFeedbackEmployeeHrId(null)}
           />
+        </Card>
+      ) : null}
+
+      {canManageWorkflow ? (
+        <Card className={`${panelClassName} overflow-hidden p-0`}>
+          <AdminSectionHeader
+            description="Per-role feedback submissions and DV completion for all active probation employees."
+            title="Probation Feedback Report"
+          />
+          <AggregateFeedbackReport />
         </Card>
       ) : null}
 
