@@ -79,7 +79,7 @@ export default async function TrainingManagerOverviewPage() {
             icon: CalendarX2,
             value: String(totalPending),
             label: totalPending === 1 ? "pending request" : "pending requests",
-            href: "/employee-portals/actions",
+            href: "/employee-portals/approvals-hub",
             urgent: totalPending > 0,
           },
           {

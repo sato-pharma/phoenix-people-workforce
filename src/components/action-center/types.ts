@@ -246,3 +246,16 @@ export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {
   weekly_plan: "Weekly Plan",
   resignation: "Resignation",
 };
+
+// ── "Approval history" tab (decisions the caller has made) ────────────────────
+
+export type HistoricalApprovalItem = {
+  id: string;
+  module: ActionHubModule;
+  employeeName: string;
+  employeeHrId: string;
+  title: string;
+  decision: "approved" | "rejected" | "returned";
+  decidedAt: string;
+  href: string | null;
+};

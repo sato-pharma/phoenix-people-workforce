@@ -113,7 +113,7 @@ function activeStatus(status: EmployeeExcuseStatus) {
 }
 
 function actionCenterHref(requestId: string) {
-  return `/admin/action-center?module=excuse&id=${encodeURIComponent(requestId)}`;
+  return `/admin/approvals-hub?module=excuse&id=${encodeURIComponent(requestId)}`;
 }
 
 function statusLabel(status: EmployeeExcuseStatus) {
@@ -947,9 +947,9 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
         priority: "normal",
         recipientHrId: String(row.manager_hr_id),
         title: "Excuse approval overdue",
-        actionUrl: `/admin/action-center?module=excuse&id=${String(row.id)}`,
+        actionUrl: `/admin/approvals-hub?module=excuse&id=${String(row.id)}`,
         email: {
-          ctaHref: `/admin/action-center?module=excuse&id=${String(row.id)}`,
+          ctaHref: `/admin/approvals-hub?module=excuse&id=${String(row.id)}`,
           ctaLabel: "Review now",
           tone: "warning" as const,
         },

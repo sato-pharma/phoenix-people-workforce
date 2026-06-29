@@ -7,8 +7,8 @@ import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Badge count for the "Actions" sidebar item. Mirrors exactly what the Actions inbox
-// shows — marketing excluded, and portal managers counted only on their scoped sources —
+// Badge count for the "Approvals Hub" sidebar item. Mirrors exactly what the inbox
+// shows — marketing excluded, portal managers counted only on their scoped sources —
 // so the badge number never disagrees with the list it links to.
 export async function GET(request: Request) {
   try {

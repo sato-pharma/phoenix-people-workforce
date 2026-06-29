@@ -745,7 +745,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       setContextLoading(true);
       setContextData(null);
       try {
-        const r = await fetch(`/api/action-center/employee-context?hrId=${encodeURIComponent(hrId)}`);
+        const r = await fetch(`/api/approvals-hub/employee-context?hrId=${encodeURIComponent(hrId)}`);
         const d = (await r.json()) as ContextData;
         if (!cancelled) {
           contextCacheRef.current.set(hrId, d);
@@ -768,7 +768,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   // Fetch managers list for super-admin view-as switcher
   useEffect(() => {
     if (!canViewAs || managers !== null) return;
-    void fetch("/api/action-center/managers")
+    void fetch("/api/approvals-hub/managers")
       .then((r) => r.json())
       .then((d: { managers?: Array<{ hrId: string; name: string }> }) => {
         if (Array.isArray(d.managers)) setManagers(d.managers);
@@ -790,7 +790,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       setViewAsLoading(true);
       try {
         const r = await fetch(
-          `/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=0`,
+          `/api/approvals-hub/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=0`,
         );
         const d = (await r.json()) as { items?: ActionHubItem[]; total?: number };
         if (cancelled) return;
@@ -809,7 +809,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     if (!viewAsHrId || viewAsLoading) return;
     const nextOffset = viewAsOffset + VIEW_AS_LIMIT;
     setViewAsLoading(true);
-    fetch(`/api/action-center/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=${nextOffset}`)
+    fetch(`/api/approvals-hub/hub-data?viewAs=${encodeURIComponent(viewAsHrId)}&limit=${VIEW_AS_LIMIT}&offset=${nextOffset}`)
       .then((r) => r.json())
       .then((d: { items?: ActionHubItem[]; total?: number }) => {
         if (Array.isArray(d.items)) {

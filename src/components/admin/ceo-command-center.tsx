@@ -404,10 +404,10 @@ export function CeoCommandCenter({
         action={
           !allClear ? (
             <Link
-              href="/admin/action-center"
+              href="/admin/approvals-hub"
               className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
             >
-              Action Center <ArrowRight aria-hidden="true" className="h-3 w-3" />
+              Approvals Hub <ArrowRight aria-hidden="true" className="h-3 w-3" />
             </Link>
           ) : null
         }
@@ -435,7 +435,7 @@ export function CeoCommandCenter({
               {totalApprovals > 0 || hasUnavailableApprovals ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Link
-                    href="/admin/action-center"
+                    href="/admin/approvals-hub"
                     className="group flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-3 hover:border-orange-300 hover:bg-orange-50/40"
                   >
                     <span className="flex items-center gap-3">
@@ -448,7 +448,7 @@ export function CeoCommandCenter({
                     </span>
                   </Link>
                   <Link
-                    href="/admin/action-center"
+                    href="/admin/approvals-hub"
                     className="group flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-3 hover:border-orange-300 hover:bg-orange-50/40"
                   >
                     <span className="flex items-center gap-3">

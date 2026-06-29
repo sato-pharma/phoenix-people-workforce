@@ -87,9 +87,6 @@ function mapWeeklyPlan(plan: ApproverPendingPlan): ActionHubItem {
     title: `${kindLabel} plan · ${plan.periodKey}`,
     statusLabel: plan.stage === "manager" ? "Needs manager review" : "Needs CEO approval",
     submittedAt: plan.submittedAt, urgency: "normal",
-    // The viewer (Super Admin / HR Manager) is always in the admin shell, so the
-    // "view full plan" deep-link points at /admin/weekly-plans, not the viewed
-    // manager's portal shell.
     detail: { module: "weekly_plan", stage: plan.stage, planKind: plan.planKind, periodKey: plan.periodKey, periodStartDate: plan.periodStartDate, periodEndDate: plan.periodEndDate, employeeJobTitle: plan.employeeJobTitle, managerName: plan.managerName, itemCount: plan.itemCount, items: plan.items, reviewHref: `/admin/weekly-plans?plan=${plan.id}` },
   };
 }
@@ -97,9 +94,6 @@ function mapWeeklyPlan(plan: ApproverPendingPlan): ActionHubItem {
 // Marketing requests are intentionally excluded from this consolidated inbox — they keep
 // their own dedicated approval inbox at /workspace/marketing-requests + portal equivalents.
 async function fetchAllItems(viewAccess: AccessContext): Promise<ActionHubItem[]> {
-  // Weekly plans are scoped to the *viewed* person acting as the plan manager, so
-  // preview the queue as a non-privileged manager identity rather than the Super
-  // Admin god view (which would surface every pending plan in the company).
   const planManagerAccess: AccessContext = { ...viewAccess, role: "Manager", scope: "team" };
   const settled = await Promise.allSettled([
     getVacationActionCenterData(viewAccess).catch(() => null),

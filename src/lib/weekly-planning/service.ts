@@ -1057,7 +1057,7 @@ async function planReviewActionUrl(hrId: string | null | undefined, planId: stri
     // best-effort — fall back to the admin shell review page
   }
   if (mode === "employee-portal") {
-    return `/employee-portals/actions?id=${planId}&module=weekly_plan`;
+    return `/employee-portals/approvals-hub?id=${planId}&module=weekly_plan`;
   }
   return `/admin/weekly-plans?plan=${planId}`;
 }
@@ -1133,7 +1133,7 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
     // roleHrefs ensures portal-mode managers (PM, GPM, MM, NSM, DM, RM, TM…) always
     // land at the employee-portal review page regardless of when the plan was submitted.
     // The fallback actionUrl (admin shell) covers CEO and Super Admin.
-    const portalPlanUrl = `/employee-portals/actions?id=${plan.id}&module=weekly_plan`;
+    const portalPlanUrl = `/employee-portals/approvals-hub?id=${plan.id}&module=weekly_plan`;
     const roleHrefs: Record<string, string> = {
       "Employee": portalPlanUrl,
       "Medical Rep": portalPlanUrl,

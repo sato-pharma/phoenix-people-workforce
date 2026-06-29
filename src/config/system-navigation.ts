@@ -78,7 +78,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "action-center-pending";
+  navBadge?: "approvals-hub-pending";
 };
 
 export type NavigationSection = {
@@ -238,7 +238,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "people-management",
     items: [
-      { href: "/admin/action-center", icon: Inbox, label: "Actions", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
+      { href: "/admin/approvals-hub", icon: Inbox, label: "Approvals Hub", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }], roles: ["Super Admin"] },
       // Organogram/Probation/Vacancies Report duplicate the workspace-team-operations
       // /workspace/organogram, /workspace/probation, /workspace/vacancies entries for the
@@ -438,7 +438,7 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-portal",
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/actions", icon: Inbox, label: "Actions", permissions: [{ resource: "leave", action: "read" }], navBadge: "action-center-pending" },
+      { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Approvals Hub", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },

@@ -434,7 +434,7 @@ const NAV_ITEMS = [
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/admin/outstation/expense-command",       icon: DollarSign,   label: "Expense Command",    sub: "Company-wide outstation spend" },
   { href: "/coaching/analytics",                     icon: ShieldCheck,  label: "Coaching",           sub: "Rep performance & KPIs" },
-  { href: "/admin/action-center",                    icon: CheckCircle2, label: "Action Center",      sub: "Pending approvals" },
+  { href: "/admin/approvals-hub",                    icon: CheckCircle2, label: "Approvals Hub",      sub: "Pending approvals" },
   { href: "/organogram",                             icon: Users,        label: "Organogram",         sub: "Org chart & hierarchy" },
   { href: "/attendance/analytics",                   icon: Clock,        label: "Attendance",         sub: "Today & trend" },
   { href: "/admin/data-health",                      icon: ShieldCheck,  label: "Data Health",        sub: "System quality score" },
@@ -514,10 +514,10 @@ export async function CeoPhaseBWidgets({
         description="Resignations, leave SLA, expiring contracts, coaching red zone, salary flags — and payroll snapshot."
         action={
           <Link
-            href="/admin/action-center"
+            href="/admin/approvals-hub"
             className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
           >
-            Action Center <ArrowRight className="h-3 w-3" />
+            Approvals Hub <ArrowRight className="h-3 w-3" />
           </Link>
         }
       >
