@@ -380,7 +380,7 @@ export async function getAwaitingMyActionItems(
   const settled = await Promise.allSettled([
     getVacationActionCenterData(access).catch(() => null),
     getManagerPendingExcuses(access).catch(() => null),
-    includeAdminSources ? getResignationsDashboardData().catch(() => null) : Promise.resolve(null),
+    getResignationsDashboardData(access).catch(() => null),
     includeAdminSources ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     getContractRenewalDashboardData(access).catch(() => null),
     getPlansAwaitingAction(access).catch(() => null),

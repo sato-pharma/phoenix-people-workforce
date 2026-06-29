@@ -1,5 +1,5 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { canSeeEmployee, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
@@ -518,7 +518,7 @@ export async function upsertPayrollResignationCandidates(input: {
   return payload.length;
 }
 
-export async function getResignationsDashboardData(): Promise<ResignationDashboardData> {
+export async function getResignationsDashboardData(access?: AccessContext): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
   const [resignationsResult, candidatesResult, historicalEmployees] = await Promise.all([
@@ -540,13 +540,19 @@ export async function getResignationsDashboardData(): Promise<ResignationDashboa
   if (candidatesResult.error) throw candidatesResult.error;
 
   const employeesByHrId = new Map(directory.employees.map((employee) => [employee.hrId.trim().toUpperCase(), employee]));
-  const workflowRecords = (resignationsResult.data ?? []).map((row) => {
+  const allWorkflowRecords = (resignationsResult.data ?? []).map((row) => {
     const record = mapResignation(row as ResignationRow);
     return {
       ...record,
       employeeStatus: employeesByHrId.get(record.employeeHrId.trim().toUpperCase())?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
+  const workflowRecords = access
+    ? allWorkflowRecords.filter((record) => {
+        const employee = employeesByHrId.get(record.employeeHrId.trim().toUpperCase());
+        return employee ? canSeeEmployee(access, employee) : false;
+      })
+    : allWorkflowRecords;
   const workflowHrIds = new Set(workflowRecords.map((record) => record.employeeHrId.trim().toUpperCase()));
   const legacyRecords = historicalEmployees
     .filter((employee) => !workflowHrIds.has(employee.hr_id.trim().toUpperCase()))
