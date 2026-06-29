@@ -117,6 +117,52 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ProductSerial", "SalesOrReturnQty", "AccountSerial"],
   },
   {
+    // EPDA-BULK (ساتو قطاع الجملة — SATO's own wholesale ERP export). RAW sheet: product resolved from
+    // the alias dictionary by class_code/class_name (name-first, like the other distributors); geography
+    // from the customer→brick map by cust_code (the sheet carries no brick/territory column); value
+    // RECOMPUTED (no value column). Free goods (is_bonus=1) are skipped. Sales only — no returns.
+    // NOTE: dates are US-style MONTH-FIRST (M/D/YYYY, e.g. 5/31/2026 = 31 May) — unlike every other
+    // (day-first) Egyptian distributor — so dateFormat is pinned to "month-first".
+    distributorCode: "EP-BK",
+    distributorName: "EPDA-BULK",
+    productCodeColumns: ["class_code"],
+    productNameColumns: ["class_name"],
+    productColumns: ["class_code", "class_name"],
+    qtyColumns: ["qnt"],
+    valueColumns: [],
+    valueSource: "recompute",
+    dateColumns: ["inv_date"],
+    dateFormat: "month-first",
+    customerCodeColumns: ["cust_code"],
+    customerNameColumns: ["cust_name"],
+    customerAddressColumns: ["cust_address"],
+    bonusColumns: ["is_bonus"],
+    fingerprintColumns: ["class_code", "cust_code", "qnt"],
+  },
+  {
+    // EPDA-Pharmacies (ساتو قطاع الصيدليات — SATO's own pharmacies/retail ERP export). BYTE-IDENTICAL
+    // layout to EPDA-BULK (EP-BK): same SATO ERP columns, month-first dates (M/D/YYYY), sales only,
+    // free goods (is_bonus=1) skipped, value recomputed, products via the alias dictionary, geography
+    // via the customer→brick map (cust_code). A SEPARATE code so wholesale vs pharmacy sales stay split.
+    // Because the headers are identical to EP-BK the two can't be auto-distinguished — the operator
+    // picks the right sector from the dropdown (recognition then runs against the picked profile).
+    distributorCode: "EP-PHS",
+    distributorName: "EPDA-Pharmacies",
+    productCodeColumns: ["class_code"],
+    productNameColumns: ["class_name"],
+    productColumns: ["class_code", "class_name"],
+    qtyColumns: ["qnt"],
+    valueColumns: [],
+    valueSource: "recompute",
+    dateColumns: ["inv_date"],
+    dateFormat: "month-first",
+    customerCodeColumns: ["cust_code"],
+    customerNameColumns: ["cust_name"],
+    customerAddressColumns: ["cust_address"],
+    bonusColumns: ["is_bonus"],
+    fingerprintColumns: ["class_code", "cust_code", "qnt"],
+  },
+  {
     distributorCode: "MC",
     distributorName: "mec",
     // Headers Mapping: item code = "دالصنف", item name = "إسم الصنف", date = "شهر".
