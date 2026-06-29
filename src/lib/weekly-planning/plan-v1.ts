@@ -104,11 +104,13 @@ export const HEAD_OFFICE_WORKWEEK: PlanWorkweek = {
 };
 
 // Job-function roles that follow the Saturday-anchored Field Force week.
+// Only the field-based sales roles: Medical Rep, District Manager (DSM),
+// Regional Manager (RM). National Sales Manager is Head Office (Sun–Thu),
+// alongside Product Manager / Group Product Manager / Marketing / Training.
 const fieldForceRoleSet = new Set<PhoenixRole>([
   "Medical Rep",
   "District Manager",
   "Regional Manager",
-  "National Sales Manager",
 ]);
 
 /**
