@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -140,8 +140,30 @@ export function PlanningCalendar({
   const [regionFilter, setRegionFilter] = useState(allValue);
   const [query, setQuery] = useState("");
   const [conflictsOnly, setConflictsOnly] = useState(false);
+  const [viewMode, setViewModeState] = useState<"month" | "week" | "list">("month");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Track whether the user has manually chosen a view. Once they have, the
+  // mobile-default effect must never override their choice.
+  const userPickedView = useRef(false);
+  const setViewMode = (mode: "month" | "week" | "list") => {
+    userPickedView.current = true;
+    setViewModeState(mode);
+  };
+
+  // Mobile-first default: on small screens, prefer the readable List view.
+  // SSR/initial state stays "month" (no hydration mismatch); after mount we
+  // defer the switch to a rAF callback (not the synchronous effect body) and
+  // only adjust if the user hasn't toggled yet.
+  useEffect(() => {
+    if (userPickedView.current) return;
+    if (typeof window === "undefined" || window.innerWidth >= 640) return;
+    const id = window.requestAnimationFrame(() => {
+      if (!userPickedView.current) setViewModeState("list");
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   const { conflicts, items, month, summary, weeks, year } = workspace;
   const today = todayIso();
@@ -179,6 +201,38 @@ export function PlanningCalendar({
     }
     return map;
   }, [visibleItems, weeks]);
+
+  // Agenda (List view): every in-month day that has items, sorted, each fully
+  // readable. This is the antidote to the cramped month grid.
+  const agendaDays = useMemo(() => {
+    const dates = Array.from(itemsByDay.keys())
+      .filter((date) => Number(date.slice(5, 7)) === month)
+      .sort();
+    return dates.map((date) => ({ date, dayItems: itemsByDay.get(date) ?? [] }));
+  }, [itemsByDay, month]);
+
+  // Week view: the 7 dates of the week (Sunday start) containing selectedDate.
+  // Empty days are included so the week is always complete and readable.
+  const weekDays = useMemo(() => {
+    const base = new Date(`${selectedDate}T00:00:00Z`);
+    const weekStart = new Date(base);
+    weekStart.setUTCDate(base.getUTCDate() - base.getUTCDay());
+    return Array.from({ length: 7 }, (_, offset) => {
+      const day = new Date(weekStart);
+      day.setUTCDate(weekStart.getUTCDate() + offset);
+      const date = day.toISOString().slice(0, 10);
+      return { date, dayItems: itemsByDay.get(date) ?? [] };
+    });
+  }, [itemsByDay, selectedDate]);
+
+  const weekRangeLabel = useMemo(() => {
+    if (weekDays.length === 0) return "";
+    const fmt = (value: string) =>
+      new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+        new Date(`${value}T00:00:00Z`),
+      );
+    return `${fmt(weekDays[0].date)} – ${fmt(weekDays[weekDays.length - 1].date)}`;
+  }, [weekDays]);
 
   const selectedItems = useMemo(
     () => visibleItems.filter((item) => itemOccursOn(item, selectedDate)),
@@ -310,7 +364,21 @@ export function PlanningCalendar({
             </div>
             <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex border border-slate-200 bg-slate-50 p-0.5">
+              {(["month", "week", "list"] as const).map((mode) => (
+                <button
+                  className={`h-9 px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
+                    viewMode === mode ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"
+                  }`}
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  type="button"
+                >
+                  {mode === "month" ? "Month" : mode === "week" ? "Week" : "List"}
+                </button>
+              ))}
+            </div>
             <button
               aria-label="Previous month"
               className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
@@ -433,6 +501,26 @@ export function PlanningCalendar({
       ) : null}
 
       <section className="space-y-5">
+        {viewMode === "list" ? (
+          <PlanningCalendarAgenda agendaDays={agendaDays} onSelectDate={setSelectedDate} />
+        ) : viewMode === "week" ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5">
+              <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
+              <span className="whitespace-nowrap text-sm font-black text-slate-900">{weekRangeLabel}</span>
+            </div>
+            {weekDays.map(({ date, dayItems }) => (
+              <AgendaDayBlock
+                date={date}
+                dayItems={dayItems}
+                key={date}
+                onSelectDate={setSelectedDate}
+                showEmpty
+              />
+            ))}
+          </div>
+        ) : (
+        <>
         <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
             {weekdays.map((weekday) => (
@@ -517,7 +605,115 @@ export function PlanningCalendar({
           </div>
           <PlanningCalendarDetailsTable rows={selectedDetailRows} />
         </section>
+        </>
+        )}
       </section>
+    </div>
+  );
+}
+
+function PlanningCalendarAgenda({
+  agendaDays,
+  onSelectDate,
+}: {
+  agendaDays: { date: string; dayItems: PlanningCalendarItem[] }[];
+  onSelectDate: (date: string) => void;
+}) {
+  if (agendaDays.length === 0) {
+    return (
+      <div className="border border-slate-200 bg-white p-10 text-center shadow-sm">
+        <p className="text-sm font-bold text-slate-500">No planned activities this month.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {agendaDays.map(({ date, dayItems }) => (
+        <AgendaDayBlock date={date} dayItems={dayItems} key={date} onSelectDate={onSelectDate} />
+      ))}
+    </div>
+  );
+}
+
+// Shared day-block markup used by both the List (agenda) view and the Week view:
+// a slate-900 day header bar plus readable item rows (colored dot, title, meta
+// chips, status). When `showEmpty` is set, days with no items still render with a
+// subtle "No activities" line so the week stays complete.
+function AgendaDayBlock({
+  date,
+  dayItems,
+  onSelectDate,
+  showEmpty = false,
+}: {
+  date: string;
+  dayItems: PlanningCalendarItem[];
+  onSelectDate: (date: string) => void;
+  showEmpty?: boolean;
+}) {
+  return (
+    <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+      <button
+        className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+        onClick={() => onSelectDate(date)}
+        type="button"
+      >
+        <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
+        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
+          {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
+        </span>
+      </button>
+      {dayItems.length === 0 ? (
+        showEmpty ? (
+          <p className="px-4 py-3 text-xs font-bold text-slate-400">No activities</p>
+        ) : null
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {dayItems.map((item) => {
+            if (!isPlanItem(item)) {
+              return (
+                <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
+                  <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
+                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800">
+                    National vacation
+                  </span>
+                </div>
+              );
+            }
+            const meta = [item.employeeName, item.region || item.lineName, item.area, item.medicalRepName, item.time].filter(
+              (value) => value && value !== "-",
+            ) as string[];
+            return (
+              <div className="px-4 py-3" key={item.id}>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : "bg-indigo-500"}`}
+                  />
+                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
+                    {planStatusLabels[item.status] ?? item.status}
+                  </span>
+                </div>
+                {meta.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                    {meta.map((value, index) => (
+                      <span
+                        className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+                        key={`${item.id}-meta-${index}`}
+                      >
+                        {value}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {item.conflictWarning ? (
+                  <p className="mt-1.5 pl-[18px] text-xs font-bold text-red-600">{item.conflictWarning}</p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

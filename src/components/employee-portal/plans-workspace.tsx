@@ -207,6 +207,72 @@ function trainingFormatValue(value: string | null | undefined) {
   return (trainingFormatOptions as readonly string[]).includes(current) ? current : "";
 }
 
+// Premium activity-type colour system — a left accent bar + dot per activity so
+// each plan day is instantly scannable.
+function activityAccent(value: EmployeePlanItemInput["activityType"]): { bar: string; dot: string } {
+  switch (value) {
+    case "Field":
+      return { bar: "bg-orange-500", dot: "bg-orange-500" };
+    case "Double Visit":
+      return { bar: "bg-violet-500", dot: "bg-violet-500" };
+    case "Training":
+      return { bar: "bg-sky-500", dot: "bg-sky-500" };
+    case "Meeting":
+      return { bar: "bg-indigo-500", dot: "bg-indigo-500" };
+    case "Event":
+      return { bar: "bg-fuchsia-500", dot: "bg-fuchsia-500" };
+    case "Travel":
+      return { bar: "bg-cyan-500", dot: "bg-cyan-500" };
+    case "Vacation":
+      return { bar: "bg-emerald-500", dot: "bg-emerald-500" };
+    case "National Vacation":
+      return { bar: "bg-emerald-600", dot: "bg-emerald-600" };
+    case "Excuse":
+      return { bar: "bg-amber-500", dot: "bg-amber-500" };
+    case "Remote":
+      return { bar: "bg-teal-500", dot: "bg-teal-500" };
+    default:
+      return { bar: "bg-slate-400", dot: "bg-slate-400" };
+  }
+}
+
+// AM / PM / Full-day pill styling.
+function slotPillClass(slot: PlanSlot): string {
+  if (slot === "am") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (slot === "pm") return "border-indigo-200 bg-indigo-50 text-indigo-700";
+  return "border-slate-200 bg-slate-100 text-slate-600";
+}
+
+const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
+  "Field",
+  "Double Visit",
+  "Office",
+  "Training",
+  "Meeting",
+  "Vacation",
+  "National Vacation",
+  "Excuse",
+];
+
+// Self-explanatory key for the activity colour accents + AM/PM pills.
+function PlanActivityLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2">
+      <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
+      {LEGEND_ACTIVITIES.map((type) => (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-slate-600" key={type}>
+          <span className={`inline-block h-2 w-2 rounded-full ${activityAccent(type).dot}`} aria-hidden="true" />
+          {activityLabel(type)}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("am")}`}>AM</span>
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("pm")}`}>PM</span>
+      </span>
+    </div>
+  );
+}
+
 function activityRule(value: EmployeePlanItemInput["activityType"], activityTitle?: string | null) {
   const isSingleVisit = value === "Field";
   const isDoubleVisit = value === "Double Visit";
@@ -258,6 +324,25 @@ function addDays(date: string, days: number) {
   const parsed = new Date(`${date}T00:00:00Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+// A day still sitting at the default blank "Office" — no region/area/objective/
+// notes, not locked, not sourced. Used to nudge the user before they submit a
+// week of untouched placeholder days.
+function isUntouchedRow(row: DraftItem) {
+  return (
+    !row.locked &&
+    !row.source &&
+    row.activityType === "Office" &&
+    !String(row.locationText ?? "").trim() &&
+    !String(row.area ?? "").trim() &&
+    !String(row.objective ?? "").trim() &&
+    !String(row.notes ?? "").trim()
+  );
 }
 
 function isDateInput(value: string) {
@@ -719,8 +804,13 @@ export function PlansWorkspace({
   // Cross-domain prefill (approved vacation/excuse + monthly weekly sync),
   // scoped to the active (kind, period) so a stale fetch never overwrites a
   // newer one. Re-fetched whenever the employee opens a new period.
-  const [prefillState, setPrefillState] = useState<{ items: PlanPrefillItem[]; scopeKey: string }>({
+  const [prefillState, setPrefillState] = useState<{
+    items: PlanPrefillItem[];
+    nationalHolidayDates: string[];
+    scopeKey: string;
+  }>({
     items: [],
+    nationalHolidayDates: [],
     scopeKey: "",
   });
   const [sameLineBookingState, setSameLineBookingState] = useState<{
@@ -783,6 +873,15 @@ export function PlansWorkspace({
   const ownPlans = plans.filter(
     (item) => item.employeeHrId === workspace.currentEmployee?.hrId,
   );
+  // The employee's most recent earlier weekly plan, for one-tap "copy last week".
+  const previousWeeklyPlan = useMemo(() => {
+    if (activeKind !== "weekly") return null;
+    return (
+      ownPlans
+        .filter((item) => item.planKind === "weekly" && item.periodStartDate < period.periodStartDate && item.items.length > 0)
+        .sort((left, right) => right.periodStartDate.localeCompare(left.periodStartDate))[0] ?? null
+    );
+  }, [ownPlans, activeKind, period.periodStartDate]);
   // HR_IDs are stored uppercase on the plan but normalized lowercase on the access
   // context — compare canonical keys, never raw strings (CLAUDE.md). Super Admin is
   // the god-mode reviewer at every stage, mirroring the server guards
@@ -929,13 +1028,14 @@ export function PlansWorkspace({
       .then((payload) => {
         if (!active) return;
         const items: PlanPrefillItem[] = payload.success ? payload.data.items ?? [] : [];
-        setPrefillState({ items, scopeKey });
+        const nationalHolidayDates: string[] = payload.success ? payload.data.nationalHolidayDates ?? [] : [];
+        setPrefillState({ items, nationalHolidayDates, scopeKey });
         if (!selectedPlan && items.length > 0) {
           setRows((current) => mergePrefillIntoRows(current, items));
         }
       })
       .catch(() => {
-        if (active) setPrefillState({ items: [], scopeKey });
+        if (active) setPrefillState({ items: [], nationalHolidayDates: [], scopeKey });
       });
     return () => {
       active = false;
@@ -946,6 +1046,47 @@ export function PlansWorkspace({
     const normalizedDate = normalizeAnchorForKind(kind, date, workweek);
     setRows(defaultRows(kind, normalizedDate, workweek));
     setSheetKey(null);
+  }
+
+  // One-tap "copy my previous week": remap each prior-week item onto the same
+  // weekday of the current week. Locked (approved leave) slots are preserved and
+  // never overwritten; copied days land inside the current period only.
+  function copyPreviousWeek() {
+    if (!previousWeeklyPlan) return;
+    const prevStart = previousWeeklyPlan.periodStartDate;
+    const curStart = period.periodStartDate;
+    const curEnd = period.periodEndDate;
+    setRows((current) => {
+      const lockedRows = current.filter((row) => row.locked);
+      const lockedKeys = new Set(lockedRows.map((row) => `${row.activityDate}|${row.slot}`));
+      const copied: DraftItem[] = [];
+      previousWeeklyPlan.items.forEach((item, index) => {
+        const newDate = addDays(curStart, daysBetween(prevStart, item.activityDate));
+        if (newDate < curStart || newDate > curEnd) return;
+        const slot = slotFromTimes(item.startTime, item.endTime);
+        if (lockedKeys.has(`${newDate}|${slot}`)) return;
+        copied.push({
+          activityDate: newDate,
+          activityTitle: item.activityTitle,
+          activityType: item.activityType,
+          area: item.area ?? "",
+          attendees: item.attendees ?? "",
+          doubleVisitMedicalRepHrId: item.doubleVisitMedicalRepHrId ?? "",
+          doubleVisitMedicalRepName: item.doubleVisitMedicalRepName ?? "",
+          endTime: item.endTime ?? "",
+          key: `copy-${newDate}-${slot}-${index}`,
+          lineFilter: "",
+          locationText: item.locationText ?? "",
+          notes: item.notes,
+          objective: item.objective ?? "",
+          slot,
+          sortOrder: index,
+          startTime: item.startTime ?? "",
+        });
+      });
+      return sortDraftRows([...lockedRows, ...copied]);
+    });
+    setMessage("Copied your previous week — review and adjust before submitting.");
   }
 
   function updateRow(key: string, field: keyof EmployeePlanItemInput, value: string) {
@@ -1269,6 +1410,60 @@ export function PlansWorkspace({
     </div>
   ) : null;
 
+  const untouchedCount = useMemo(() => rows.filter(isUntouchedRow).length, [rows]);
+  // Soft-check: National Vacation days that aren't on the official Egyptian
+  // holiday calendar. Warn (never block) — only when prefill for this scope has
+  // loaded, so we don't false-flag before the holiday list arrives.
+  const nationalVacationWarnings = useMemo(() => {
+    if (prefillState.scopeKey !== prefillScopeKey) return [] as string[];
+    const holidays = new Set(prefillState.nationalHolidayDates);
+    return rows
+      .filter((row) => row.activityType === "National Vacation" && !row.locked && !holidays.has(row.activityDate))
+      .map((row) => `${formatDayName(row.activityDate)} ${formatDate(row.activityDate)}`);
+  }, [rows, prefillState, prefillScopeKey]);
+  // Editor toolbar: copy-last-week shortcut, untouched-day hint, colour legend.
+  const editorToolbar = canEdit ? (
+    <div className="space-y-2">
+      {(previousWeeklyPlan && !selectedPlan && activeKind === "weekly") || untouchedCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {previousWeeklyPlan && !selectedPlan && activeKind === "weekly" ? (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-wide text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+              disabled={isPending}
+              onClick={copyPreviousWeek}
+              type="button"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Copy last week
+            </button>
+          ) : null}
+          {untouchedCount > 0 ? (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-500">
+              {untouchedCount} day{untouchedCount === 1 ? "" : "s"} still empty
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {nationalVacationWarnings.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="whitespace-nowrap text-xs font-bold text-amber-800">
+            Not on the official holiday calendar — double-check:
+          </span>
+          {nationalVacationWarnings.map((label) => (
+            <span
+              className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800"
+              key={label}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <PlanActivityLegend />
+    </div>
+  ) : null;
+
   const messageBanner = message ? (
     <div className="border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
       {message}
@@ -1291,6 +1486,7 @@ export function PlansWorkspace({
         {cappedResultsBanner}
         {syncedBanner}
         {incompleteBanner}
+        {editorToolbar}
 
         {/* Compact header */}
         <div className="border border-slate-200 bg-white p-4 shadow-sm">
@@ -1356,7 +1552,15 @@ export function PlansWorkspace({
                 type="button"
               >
                 <Download className="h-4 w-4" />
-                Export
+                XLSX
+              </button>
+              <button
+                className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
+                onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
+                type="button"
+              >
+                <Download className="h-4 w-4" />
+                PDF
               </button>
             </div>
           </div>
@@ -1507,7 +1711,9 @@ export function PlansWorkspace({
       {mounted && sheetRow
         ? createPortal(
             <RowEditSheet
-              canEdit={canEdit}
+              canEdit={canEdit && !sheetRow.locked}
+              locked={Boolean(sheetRow.locked)}
+              lockedLabel={sheetRow.sourceLabel}
               medicalRepOptions={workspace.medicalRepOptions}
               onClose={() => setSheetKey(null)}
               onDayMode={(mode) => setDayMode(sheetRow.activityDate, mode)}
@@ -1530,6 +1736,7 @@ export function PlansWorkspace({
         {cappedResultsBanner}
         {syncedBanner}
         {incompleteBanner}
+        {editorToolbar}
 
         {/* Context tiles */}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1833,7 +2040,10 @@ export function PlansWorkspace({
                               ) : null}
                               <td className="px-3 py-3">
                                 <div className="mb-1 flex items-center gap-1.5">
-                                  <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${activityAccent(row.activityType).dot}`} aria-hidden="true" />
+                                  <span
+                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                                  >
                                     {slotLabel(row)}
                                   </span>
                                   {row.sourceLabel ? (
@@ -2196,29 +2406,37 @@ function MobileDayCard({
     : "No geography needed";
 
   const locked = Boolean(row.locked);
+  const accent = activityAccent(row.activityType);
   return (
     <button
-      className={`block w-full border bg-white p-3 text-left shadow-sm transition-colors active:bg-slate-50 ${
+      className={`relative block w-full overflow-hidden border bg-white p-3 pl-4 text-left shadow-sm transition-colors active:bg-slate-50 ${
         locked ? "border-violet-300 bg-violet-50/40" : hasReturnNotes ? "border-amber-300" : "border-slate-200"
       }`}
       onClick={onOpen}
       type="button"
     >
+      <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`} aria-hidden="true" />
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-10 w-12 flex-col items-center justify-center border border-orange-200 bg-orange-50">
-            <span className="text-[10px] font-black uppercase leading-none text-orange-500">
+          <div className="flex h-11 w-12 flex-col items-center justify-center border border-slate-200 bg-slate-900">
+            <span className="text-[10px] font-black uppercase leading-none text-orange-400">
               {formatDayName(row.activityDate)}
             </span>
-            <span className="mt-0.5 text-xs font-black leading-none text-slate-800">
+            <span className="mt-0.5 text-sm font-black leading-none text-white">
               {formatDate(row.activityDate).split(" ")[0]}
             </span>
           </div>
           <div className="min-w-0">
-            <p className="whitespace-nowrap text-sm font-black text-slate-900">
-              {rule.label} - {slotLabel(row)}
+            <p className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black text-slate-900">
+              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${accent.dot}`} aria-hidden="true" />
+              {rule.label}
+              <span
+                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+              >
+                {slotLabel(row)}
+              </span>
             </p>
-            <p className="whitespace-nowrap text-xs font-semibold text-slate-500">{geographySummary}</p>
+            <p className="mt-0.5 whitespace-nowrap text-xs font-semibold text-slate-500">{geographySummary}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -2282,6 +2500,8 @@ function RowEditSheet({
   conflictWarning,
   dayMode,
   dayNote,
+  locked = false,
+  lockedLabel,
   medicalRepOptions,
   onClose,
   onDayMode,
@@ -2295,6 +2515,8 @@ function RowEditSheet({
   conflictWarning: string | null;
   dayMode: DayMode;
   dayNote: string;
+  locked?: boolean;
+  lockedLabel?: string;
   medicalRepOptions: MedicalRepOption[];
   onClose: () => void;
   onDayMode: (mode: DayMode) => void;
@@ -2342,6 +2564,14 @@ function RowEditSheet({
         </div>
 
         <div className="space-y-3 px-4 py-4">
+          {locked ? (
+            <div className="flex items-center gap-2 border border-violet-300 bg-violet-50 px-3 py-2">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-violet-600" />
+              <p className="text-xs font-bold text-violet-800">
+                {lockedLabel ?? "Locked"} — read-only. This day comes from an approved request.
+              </p>
+            </div>
+          ) : null}
           <Field label="Day Mode">
             <ChoiceGroup
               aria-label="Day mode"

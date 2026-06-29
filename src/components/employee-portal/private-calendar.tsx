@@ -112,7 +112,18 @@ function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
   if (source === "vacation") return "bg-blue-100 text-blue-700";
   if (source === "excuse") return "bg-amber-100 text-amber-700";
   if (source === "plan") return "bg-violet-100 text-violet-700";
+  if (source === "double_visit") return "bg-blue-100 text-blue-700";
   return "bg-teal-100 text-teal-700";
+}
+
+// Solid swatch colour per source for legend dots / agenda markers.
+function sourceSwatchColor(source: PrivateCalendarSource) {
+  if (source === "attendance") return "bg-emerald-500";
+  if (source === "vacation") return "bg-blue-500";
+  if (source === "excuse") return "bg-amber-500";
+  if (source === "plan") return "bg-violet-500";
+  if (source === "double_visit") return "bg-blue-500";
+  return "bg-teal-500";
 }
 
 function exceptionTone(severity: string) {
@@ -305,6 +316,8 @@ export function PrivateCalendar({
   const [lineFilter, setLineFilter] = useState<string>(allValue);
   const [exceptionOnly, setExceptionOnly] = useState(false);
   const [query, setQuery] = useState("");
+  const [calendarView, setCalendarView] = useState<"month" | "list">("month");
+  const [hiddenSources, setHiddenSources] = useState<Set<PrivateCalendarSource>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -351,6 +364,7 @@ export function PrivateCalendar({
     const search = query.trim().toLowerCase();
     return items.filter((item) => {
       const employee = item.employeeHrId ? employeeByHrId.get(privateCalendarHrIdKey(item.employeeHrId)) : null;
+      if (hiddenSources.has(item.source)) return false;
       if (sourceFilter !== allValue && item.source !== sourceFilter) return false;
       if (statusFilter !== allValue && item.status !== statusFilter) return false;
       if (employeeFilter !== allValue && item.employeeHrId && privateCalendarHrIdKey(item.employeeHrId) !== privateCalendarHrIdKey(employeeFilter)) return false;
@@ -360,7 +374,7 @@ export function PrivateCalendar({
       if (search && !itemSearchText(item).includes(search)) return false;
       return true;
     });
-  }, [departmentFilter, employeeByHrId, employeeFilter, exceptionOnly, items, lineFilter, query, sourceFilter, statusFilter]);
+  }, [departmentFilter, employeeByHrId, employeeFilter, exceptionOnly, hiddenSources, items, lineFilter, query, sourceFilter, statusFilter]);
 
   const filteredExceptions = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -401,6 +415,28 @@ export function PrivateCalendar({
     }
     return map;
   }, [filteredExceptions]);
+
+  // Agenda (List view): every in-month day that has items or exceptions, sorted,
+  // each fully readable. Antidote to the cramped month grid.
+  const agendaDays = useMemo(() => {
+    const dates = new Set<string>();
+    for (const date of itemsByDay.keys()) dates.add(date);
+    for (const date of exceptionsByDay.keys()) dates.add(date);
+    return Array.from(dates)
+      .filter((date) => Number(date.slice(5, 7)) === month)
+      .sort()
+      .map((date) => ({
+        date,
+        dayExceptions: exceptionsByDay.get(date) ?? [],
+        dayItems: sortTimelineItems(itemsByDay.get(date) ?? []),
+      }));
+  }, [exceptionsByDay, itemsByDay, month]);
+
+  // Sources actually present in the (unfiltered-by-hide) data, in canonical order.
+  const presentSources = useMemo(() => {
+    const present = new Set(items.map((item) => item.source));
+    return privateCalendarSources.filter((source) => present.has(source));
+  }, [items]);
 
   const selectedItems = useMemo(
     () => filteredItems.filter((item) => privateCalendarItemOccursOn(item, selectedDate)),
@@ -499,6 +535,23 @@ export function PrivateCalendar({
     setLineFilter(allValue);
     setExceptionOnly(false);
     setQuery("");
+    setHiddenSources(new Set());
+  }
+
+  function toggleSource(source: PrivateCalendarSource) {
+    setHiddenSources((current) => {
+      const next = new Set(current);
+      if (next.has(source)) next.delete(source);
+      else next.add(source);
+      return next;
+    });
+  }
+
+  function focusException(date: string) {
+    setSelectedDate(date);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      setCalendarView("list");
+    }
   }
 
   return (
@@ -540,7 +593,22 @@ export function PrivateCalendar({
                 {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex border border-white/20 bg-white/10 p-0.5">
+                {(["month", "list"] as const).map((mode) => (
+                  <button
+                    className={[
+                      "h-9 px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors",
+                      calendarView === mode ? "bg-slate-900 text-white" : "text-white/70 hover:bg-white/15",
+                    ].join(" ")}
+                    key={mode}
+                    onClick={() => setCalendarView(mode)}
+                    type="button"
+                  >
+                    {mode === "month" ? "Month" : "List"}
+                  </button>
+                ))}
+              </div>
               <button
                 aria-label="Previous month"
                 className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
@@ -737,6 +805,90 @@ export function PrivateCalendar({
 
       {isTeamView ? <TeamSummaryPanel rows={teamSummary} surface={surface} /> : null}
 
+      {/* ── Source legend / toggle chips ── */}
+      {presentSources.length > 0 ? (
+        <section className={[secondaryPanelClass, "px-5 py-4"].join(" ")}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Sources</span>
+            {presentSources.map((source) => {
+              const hidden = hiddenSources.has(source);
+              return (
+                <button
+                  className={[
+                    "inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] transition",
+                    controlRadiusClass,
+                    hidden
+                      ? "border-slate-200 bg-slate-50 text-slate-400 line-through"
+                      : "border-slate-900 bg-slate-900 text-white",
+                  ].join(" ")}
+                  key={source}
+                  onClick={() => toggleSource(source)}
+                  type="button"
+                >
+                  <span className={["h-2.5 w-2.5 shrink-0 rounded-full", hidden ? "bg-slate-300" : sourceSwatchColor(source)].join(" ")} />
+                  <span className="whitespace-nowrap">{privateCalendarSourceLabels[source]}</span>
+                </button>
+              );
+            })}
+            {hiddenSources.size > 0 ? (
+              <button
+                className={["inline-flex items-center px-3 py-1.5 text-xs font-black text-orange-600 transition hover:text-orange-700", controlRadiusClass].join(" ")}
+                onClick={() => setHiddenSources(new Set())}
+                type="button"
+              >
+                Show all
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── Actionable exceptions strip ── */}
+      {filteredExceptions.length > 0 ? (
+        <section className={["border-l-4 border-l-red-500", secondaryPanelClass].join(" ")}>
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
+              {filteredExceptions.length} exception{filteredExceptions.length === 1 ? "" : "s"} need review
+            </span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {filteredExceptions.slice(0, 8).map((exception) => {
+              const isDanger = exception.severity === "danger";
+              return (
+                <button
+                  className={["flex w-full flex-wrap items-center gap-2 px-5 py-3 text-left transition hover:bg-orange-50/40", isDanger ? "bg-red-50/40" : "bg-amber-50/30"].join(" ")}
+                  key={exception.id}
+                  onClick={() => focusException(exception.date)}
+                  type="button"
+                >
+                  <span className={["inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"].join(" ")}>
+                    {exception.severity}
+                  </span>
+                  <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
+                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
+                  {exception.employeeName ? (
+                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+                    </span>
+                  ) : null}
+                  <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200/60">
+                    {exception.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {calendarView === "list" ? (
+        <PrivateCalendarAgenda
+          agendaDays={agendaDays}
+          onSelectDate={setSelectedDate}
+          viewMode={viewMode}
+        />
+      ) : (
       <div className="space-y-6">
         {/* ── Calendar Grid ── */}
         <section className={panelClass}>
@@ -862,9 +1014,119 @@ export function PrivateCalendar({
             </section>
           </div>
         </section>
-
-        <CalendarReportTable rows={reportRows} surface={surface} warningCount={reportWarningCount} />
       </div>
+      )}
+
+      <CalendarReportTable rows={reportRows} surface={surface} warningCount={reportWarningCount} />
+    </div>
+  );
+}
+
+function PrivateCalendarAgenda({
+  agendaDays,
+  onSelectDate,
+  viewMode,
+}: {
+  agendaDays: { date: string; dayExceptions: PrivateCalendarException[]; dayItems: PrivateCalendarItem[] }[];
+  onSelectDate: (date: string) => void;
+  viewMode: PrivateCalendarViewMode;
+}) {
+  if (agendaDays.length === 0) {
+    return (
+      <div className="border border-slate-200 bg-white p-10 text-center shadow-sm">
+        <p className="text-sm font-bold text-slate-500">No calendar items this month.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {agendaDays.map(({ date, dayExceptions, dayItems }) => (
+        <div className="overflow-hidden border border-slate-200 bg-white shadow-sm" key={date}>
+          <button
+            className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+            onClick={() => onSelectDate(date)}
+            type="button"
+          >
+            <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
+            <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
+              {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
+              {dayExceptions.length > 0 ? ` · ${dayExceptions.length} exception${dayExceptions.length === 1 ? "" : "s"}` : ""}
+            </span>
+          </button>
+          <div className="divide-y divide-slate-100">
+            {dayExceptions.map((exception) => {
+              const isDanger = exception.severity === "danger";
+              return (
+                <div className={["px-4 py-3", isDanger ? "bg-red-50/40" : "bg-amber-50/30"].join(" ")} key={exception.id}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", isDanger ? "bg-red-500" : "bg-amber-500"].join(" ")} />
+                    <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
+                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"].join(" ")}>
+                      Exception
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                    {exception.employeeName ? (
+                      <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                        {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {exception.description}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {dayItems.map((item) => {
+              const meta = [
+                viewMode === "team" ? item.employeeName : null,
+                item.time,
+                ...item.detailLines,
+                item.description,
+              ].filter((value): value is string => Boolean(value));
+              return (
+                <div className="px-4 py-3" key={item.id}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", sourceSwatchColor(item.source)].join(" ")} />
+                    <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
+                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+                      {sourceIcon(item.source)}
+                      {privateCalendarSourceLabels[item.source]}
+                    </span>
+                    {item.status ? (
+                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+                        {item.status}
+                      </span>
+                    ) : null}
+                  </div>
+                  {meta.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                      {meta.map((value, index) => (
+                        <span
+                          className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+                          key={`${item.id}-meta-${index}`}
+                        >
+                          {value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {item.exceptionFlags.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                      {item.exceptionFlags.map((flag) => (
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-red-700" key={flag}>
+                          {flag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
