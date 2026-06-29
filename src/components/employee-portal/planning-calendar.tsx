@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import {
   PortalDesktopTable,
   PortalEmptyState,
+  PortalMetricCard,
   PortalRecordCard,
   PortalRecordFields,
 } from "@/components/employee-portal/portal-primitives";
@@ -404,10 +405,10 @@ export function PlanningCalendar({
         </div>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric icon={<CalendarDays className="h-5 w-5" />} label="Plan entries" value={summary.planCount} />
-          <Metric icon={<Users className="h-5 w-5" />} label="Planning owners" value={summary.submittedOwnerCount} />
-          <Metric icon={<ShieldAlert className="h-5 w-5" />} label="Same-line warnings" tone="red" value={summary.conflictCount} />
-          <Metric icon={<Sparkles className="h-5 w-5" />} label="National vacations" tone="green" value={summary.holidayCount} />
+          <PortalMetricCard icon={CalendarDays} label="Plan entries" value={summary.planCount} accent="slate" />
+          <PortalMetricCard icon={Users} label="Planning owners" value={summary.submittedOwnerCount} accent="slate" />
+          <PortalMetricCard icon={ShieldAlert} label="Same-line warnings" value={summary.conflictCount} accent="rose" />
+          <PortalMetricCard icon={Sparkles} label="National vacations" value={summary.holidayCount} accent="emerald" />
         </div>
       </section>
 
@@ -621,8 +622,8 @@ function PlanningCalendarAgenda({
 }) {
   if (agendaDays.length === 0) {
     return (
-      <div className="border border-slate-200 bg-white p-10 text-center shadow-sm">
-        <p className="text-sm font-bold text-slate-500">No planned activities this month.</p>
+      <div className="border border-slate-200 bg-white shadow-sm">
+        <PortalEmptyState title="No planned activities" message="There are no planned activities for this month." />
       </div>
     );
   }
@@ -718,33 +719,6 @@ function AgendaDayBlock({
   );
 }
 
-function Metric({
-  icon,
-  label,
-  tone = "slate",
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  tone?: "green" | "red" | "slate";
-  value: number;
-}) {
-  const toneClass =
-    tone === "red"
-      ? "border-red-200 bg-red-50 text-red-800"
-      : tone === "green"
-        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-        : "border-slate-200 bg-slate-50 text-slate-800";
-  return (
-    <div className={`border p-3 ${toneClass}`}>
-      <div className="flex items-center gap-2">
-        {icon}
-        <span className="text-[11px] font-black uppercase tracking-[0.14em]">{label}</span>
-      </div>
-      <p className="mt-2 text-2xl font-black">{value}</p>
-    </div>
-  );
-}
 
 function detailToneClass(tone: PlanningCalendarDetailRow["tone"]) {
   if (tone === "conflict") return "bg-red-50/60 text-red-900";

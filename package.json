@@ -81,6 +81,7 @@
     "@openai/agents": "^0.11.8",
     "@sentry/nextjs": "^10.60.0",
     "@supabase/supabase-js": "^2.105.1",
+    "@tanstack/react-virtual": "^3.14.4",
     "@types/sanitize-html": "^2.16.1",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

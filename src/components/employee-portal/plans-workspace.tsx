@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -29,18 +30,21 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
+import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
   buildEmployeePlanPeriod,
+  employeePlanActionLabel,
   employeePlanActivityTypes,
   HEAD_OFFICE_WORKWEEK,
   planRequiredSlotsByDate,
 } from "@/lib/weekly-planning/plan-v1";
 import type {
   EmployeePlan,
+  EmployeePlanDecision,
   EmployeePlanItemInput,
   EmployeePlansWorkspace,
   PlanPrefillItem,
@@ -131,6 +135,14 @@ const statusLabels: Record<EmployeePlanStatus, string> = {
   manager_returned: "Manager returned",
   submitted: "Submitted",
 };
+
+// ---------------------------------------------------------------------------
+// F4 — Draft autosave key helpers.
+// ---------------------------------------------------------------------------
+const DRAFT_VERSION = "v1";
+function draftKey(hrId: string, kind: string, startDate: string) {
+  return `phoenix:plan-draft:${DRAFT_VERSION}:${hrId}:${kind}:${startDate}`;
+}
 
 // Premium field controls (square corners, slate-300 border, orange focus ring) -
 // matched to the Report It module's design language.
@@ -269,6 +281,85 @@ function PlanActivityLegend() {
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("am")}`}>AM</span>
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("pm")}`}>PM</span>
       </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// F8 — VirtualList: renders a plain list when items ≤ threshold, or a
+// windowed scroll container when items > threshold. Keeps reviewers with
+// large queues smooth while staying invisible for typical plan sizes.
+// ---------------------------------------------------------------------------
+function VirtualList<T>({
+  estimateSize = 72,
+  items,
+  renderItem,
+  threshold = 40,
+}: {
+  estimateSize?: number | ((index: number) => number);
+  items: T[];
+  renderItem: (item: T, index: number) => React.ReactNode;
+  threshold?: number;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    estimateSize: typeof estimateSize === "number" ? () => estimateSize : estimateSize,
+    getScrollElement: () => parentRef.current,
+    overscan: 5,
+  });
+
+  if (items.length <= threshold) {
+    return <>{items.map((item, i) => renderItem(item, i))}</>;
+  }
+
+  return (
+    <div ref={parentRef} className="overflow-auto" style={{ maxHeight: "640px" }}>
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualizer.getVirtualItems().map((vRow) => (
+          <div
+            key={vRow.key}
+            style={{ left: 0, position: "absolute", top: 0, transform: `translateY(${vRow.start}px)`, width: "100%" }}
+          >
+            {renderItem(items[vRow.index], vRow.index)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// F5 — PlanDecisionTimeline: renders the full decision history of a plan.
+// ---------------------------------------------------------------------------
+function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[] }) {
+  if (decisions.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
+      <ol className="space-y-2">
+        {decisions.map((d) => (
+          <li className="flex items-start gap-2.5" key={d.id}>
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-400" />
+            <div className="min-w-0">
+              <p className="text-xs font-black text-slate-800">
+                {employeePlanActionLabel(d.action)}
+                {d.actorHrId ? (
+                  <span className="ml-1.5 font-semibold text-slate-500">
+                    by {d.actorHrId}{d.actorRole ? ` (${d.actorRole})` : ""}
+                  </span>
+                ) : null}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                {statusLabels[d.fromStatus]} → {statusLabels[d.toStatus]}
+                {" · "}
+                {new Date(d.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+              </p>
+              {d.comment ? <p className="mt-0.5 text-[10px] italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -1042,6 +1133,74 @@ export function PlansWorkspace({
     };
   }, [activeKind, anchorDate, prefillScopeKey, selectedPlan, workspace.currentEmployee?.hrId]);
 
+  // ---------------------------------------------------------------------------
+  // F4 — Draft autosave / restore. Persists only the user-editable (unlocked)
+  // rows to localStorage so refreshing the page doesn't wipe draft work.
+  // A hydratedRef guard prevents SSR / hydration mismatches.
+  // ---------------------------------------------------------------------------
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const hydratedRef = useRef(false);
+  const currentHrId = workspace.currentEmployee?.hrId ?? "";
+
+  // On mount: restore draft if there's no selected plan.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    if (selectedPlan || !currentHrId) return;
+    const key = draftKey(currentHrId, activeKind, period.periodStartDate);
+    void (async () => {
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const parsed: DraftItem[] = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setRows((current) => {
+              const lockedRows = current.filter((row) => row.locked);
+              const lockedKeys = new Set(lockedRows.map((row) => `${row.activityDate}|${row.slot}`));
+              const restoredUnlocked = parsed.filter((row) => !lockedKeys.has(`${row.activityDate}|${row.slot}`));
+              return sortDraftRows([...lockedRows, ...restoredUnlocked]);
+            });
+          }
+        }
+      } catch {
+        // localStorage unavailable or corrupt — silently ignore
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once on mount
+
+  // Debounced save: 800ms after rows change, persist unlocked rows.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (selectedPlan || !currentHrId) return;
+    const key = draftKey(currentHrId, activeKind, period.periodStartDate);
+    const timer = setTimeout(() => {
+      try {
+        const unlockedRows = rows.filter((row) => !row.locked);
+        localStorage.setItem(key, JSON.stringify(unlockedRows));
+        setDraftSavedAt(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
+      } catch {
+        // localStorage quota or unavailability — silently ignore
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [rows, selectedPlan, currentHrId, activeKind, period.periodStartDate]);
+
+  // Clear draft when a plan is saved/selected or period changes.
+  useEffect(() => {
+    if (!currentHrId || !selectedPlan) return;
+    const key = draftKey(currentHrId, activeKind, period.periodStartDate);
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+    void (async () => { setDraftSavedAt(null); })();
+  }, [selectedPlan, currentHrId, activeKind, period.periodStartDate]);
+
+  function discardDraft() {
+    const key = draftKey(currentHrId, activeKind, period.periodStartDate);
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+    setDraftSavedAt(null);
+    resetRows(activeKind, anchorDate);
+  }
+
   function resetRows(kind: EmployeePlanKind, date: string) {
     const normalizedDate = normalizeAnchorForKind(kind, date, workweek);
     setRows(defaultRows(kind, normalizedDate, workweek));
@@ -1278,6 +1437,17 @@ export function PlansWorkspace({
     setMessage("Decision recorded.");
   }
 
+  async function doBulkApprove(planIds: string[]) {
+    const response = await fetch("/api/weekly-plans/decisions/batch", {
+      body: JSON.stringify({ action: "manager_approve", planIds }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message ?? "Bulk approve failed.");
+    return payload;
+  }
+
   async function doRequestVisitDetails(planId: string) {
     const response = await fetch(`/api/weekly-plans/${planId}/request-visit-details`, {
       body: JSON.stringify({}),
@@ -1424,11 +1594,11 @@ export function PlansWorkspace({
   // Editor toolbar: copy-last-week shortcut, untouched-day hint, colour legend.
   const editorToolbar = canEdit ? (
     <div className="space-y-2">
-      {(previousWeeklyPlan && !selectedPlan && activeKind === "weekly") || untouchedCount > 0 ? (
+      {(previousWeeklyPlan && !selectedPlan && activeKind === "weekly") || untouchedCount > 0 || draftSavedAt ? (
         <div className="flex flex-wrap items-center gap-2">
           {previousWeeklyPlan && !selectedPlan && activeKind === "weekly" ? (
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-wide text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-sm border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-wide text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
               disabled={isPending}
               onClick={copyPreviousWeek}
               type="button"
@@ -1441,6 +1611,18 @@ export function PlansWorkspace({
             <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-500">
               {untouchedCount} day{untouchedCount === 1 ? "" : "s"} still empty
             </span>
+          ) : null}
+          {draftSavedAt && !selectedPlan ? (
+            <>
+              <p className="text-[11px] text-slate-400">Draft saved {draftSavedAt}</p>
+              <button
+                className="text-[11px] font-bold text-red-500 underline hover:text-red-700"
+                onClick={discardDraft}
+                type="button"
+              >
+                Discard draft
+              </button>
+            </>
           ) : null}
         </div>
       ) : null}
@@ -1647,6 +1829,13 @@ export function PlansWorkspace({
           <ReviewCard
             comment={comment}
             isPending={isPending}
+            onBulkApprove={(planIds) =>
+              runAction(async () => {
+                const result = await doBulkApprove(planIds);
+                const failed = result.failed ?? 0;
+                if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
+              })
+            }
             onComment={setComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
             onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
@@ -2259,6 +2448,13 @@ export function PlansWorkspace({
               <ReviewCard
                 comment={comment}
                 isPending={isPending}
+                onBulkApprove={(planIds) =>
+                  runAction(async () => {
+                    const result = await doBulkApprove(planIds);
+                    const failed = result.failed ?? 0;
+                    if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
+                  })
+                }
                 onComment={setComment}
                 onDecision={(planId, action) => runAction(() => decide(planId, action))}
                 onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
@@ -2533,6 +2729,7 @@ function RowEditSheet({
   const lineOptions = lineOptionsFromReps(medicalRepOptions);
   const showLine = needsLineSelection(medicalRepOptions) && rule.showRep;
   const rowWarnings = validateDraftRow(row, medicalRepOptions);
+  const sheetRef = useDialogA11y({ open: true, onClose });
 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
@@ -2543,6 +2740,10 @@ function RowEditSheet({
         type="button"
       />
       <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit day"
         className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto border-t border-slate-200 bg-white shadow-2xl"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
@@ -2899,6 +3100,7 @@ function VisitDetailsModal({
     onSubmit(details);
   }
 
+  const modalRef = useDialogA11y({ open: true, onClose });
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
   if (!isClient) return null;
 
@@ -2908,14 +3110,20 @@ function VisitDetailsModal({
 
   const modal = (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
-      <div className="w-full max-w-xl overflow-hidden bg-white shadow-2xl sm:rounded-none">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Fill visit details"
+        className="w-full max-w-xl overflow-hidden bg-white shadow-2xl sm:rounded-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
           <div>
             <h2 className="text-sm font-black uppercase tracking-wide text-white">Fill Visit Details</h2>
             <p className="text-[11px] text-slate-400">{plan.planKind} {plan.periodKey} — required by your manager</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white" type="button">
+          <button aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white" type="button">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -3065,6 +3273,8 @@ function QueueCard({
               </div>
               <p className="mt-1 text-xs font-semibold text-slate-500">Revision {p.revision}</p>
             </button>
+            {/* F5 — Decision history */}
+            <PlanDecisionTimeline decisions={p.decisions} />
             {p.status === "details_requested" && (
               <button
                 className="mt-2 flex w-full items-center justify-center gap-1.5 border border-orange-300 bg-orange-50 py-1.5 text-[11px] font-bold text-orange-700 hover:border-orange-400 hover:bg-orange-100"
@@ -3085,6 +3295,7 @@ function QueueCard({
 function ReviewCard({
   comment,
   isPending,
+  onBulkApprove,
   onComment,
   onDecision,
   onRequestDetails,
@@ -3096,6 +3307,7 @@ function ReviewCard({
 }: {
   comment: string;
   isPending: boolean;
+  onBulkApprove?: (planIds: string[]) => void;
   onComment: (value: string) => void;
   onDecision: (planId: string, action: string) => void;
   onRequestDetails?: (plan: EmployeePlan) => void;
@@ -3105,121 +3317,183 @@ function ReviewCard({
   title: string;
   type: "ceo" | "hr" | "manager";
 }) {
+  // F1 — bulk selection state (manager only)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const allSelected = plans.length > 0 && plans.every((p) => selectedIds.has(p.id));
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(plans.map((p) => p.id)));
+  const toggleOne = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   if (plans.length === 0) return null;
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
-      <div className="flex items-center gap-2.5 bg-slate-900 px-4 py-3">
-        <span aria-hidden className="h-4 w-1 bg-orange-500" />
-        <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
+      <div className="flex items-center justify-between gap-2.5 bg-slate-900 px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden className="h-4 w-1 bg-orange-500" />
+          <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
+        </div>
+        {type === "manager" ? (
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              checked={allSelected}
+              className="h-4 w-4 accent-orange-500"
+              onChange={toggleAll}
+              type="checkbox"
+            />
+            <span className="text-xs font-semibold text-white/70">All</span>
+          </label>
+        ) : null}
       </div>
       <div className="space-y-3 p-3">
-        {plans.map((p) => (
-          <div className="border border-slate-200 p-3" key={p.id}>
-            <p className="font-black text-slate-900">{p.employeeName}</p>
-            <p className="text-xs font-semibold text-slate-500">
-              {p.planKind} {p.periodKey} — {statusLabels[p.status]}
-            </p>
-            <textarea
-              className="mt-3 min-h-20 w-full border border-slate-200 p-2 text-sm"
-              onChange={(e) => onComment(e.target.value)}
-              placeholder={type === "hr" ? "Acknowledgement note" : "Comment for reject/return"}
-              value={comment}
-            />
-            {type !== "hr" ? (
-              <div className="mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2">
-                {p.items.map((item) => (
-                  <label className="block" key={item.id}>
-                    <span className="block text-xs font-black text-slate-600">
-                      {formatDate(item.activityDate)} — {item.activityTitle}
-                    </span>
-                    <input
-                      className={cin}
-                      onChange={(e) => onReturnNote?.(p.id, item.id, e.target.value)}
-                      placeholder="Optional row return note"
-                      value={returnNotes?.[p.id]?.[item.id] ?? ""}
-                    />
-                  </label>
-                ))}
+        <VirtualList
+          estimateSize={200}
+          items={plans}
+          renderItem={(p) => (
+            <div className="border border-slate-200 p-3" key={p.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-black text-slate-900">{p.employeeName}</p>
+                  <p className="text-xs font-semibold text-slate-500">
+                    {p.planKind} {p.periodKey} — {statusLabels[p.status]}
+                  </p>
+                </div>
+                {type === "manager" ? (
+                  <input
+                    checked={selectedIds.has(p.id)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-orange-500"
+                    onChange={() => toggleOne(p.id)}
+                    type="checkbox"
+                  />
+                ) : null}
               </div>
-            ) : null}
-            {type !== "hr" && comment.trim().length === 0 ? (
-              <p className="mt-2 text-xs font-semibold text-amber-700">
-                A comment is required to return or reject a plan.
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {type === "manager" ? (
-                <>
-                  <Button disabled={isPending} onClick={() => onDecision(p.id, "manager_approve")}>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Approve
-                  </Button>
-                  {p.items.some((i) => i.activityType === "Field") && onRequestDetails && (
+              <textarea
+                className="mt-3 min-h-20 w-full border border-slate-200 p-2 text-sm"
+                onChange={(e) => onComment(e.target.value)}
+                placeholder={type === "hr" ? "Acknowledgement note" : "Comment for reject/return"}
+                value={comment}
+              />
+              {type !== "hr" ? (
+                <div className="mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2">
+                  {p.items.map((item) => (
+                    <label className="block" key={item.id}>
+                      <span className="block text-xs font-black text-slate-600">
+                        {formatDate(item.activityDate)} — {item.activityTitle}
+                      </span>
+                      <input
+                        className={cin}
+                        onChange={(e) => onReturnNote?.(p.id, item.id, e.target.value)}
+                        placeholder="Optional row return note"
+                        value={returnNotes?.[p.id]?.[item.id] ?? ""}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+              {type !== "hr" && comment.trim().length === 0 ? (
+                <p className="mt-2 text-xs font-semibold text-amber-700">
+                  A comment is required to return or reject a plan.
+                </p>
+              ) : null}
+              {/* F5 — Decision history */}
+              <PlanDecisionTimeline decisions={p.decisions} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {type === "manager" ? (
+                  <>
+                    <Button disabled={isPending} onClick={() => onDecision(p.id, "manager_approve")}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Approve
+                    </Button>
+                    {p.items.some((i) => i.activityType === "Field") && onRequestDetails && (
+                      <Button
+                        disabled={isPending}
+                        onClick={() => onRequestDetails(p)}
+                        variant="secondary"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Request Visit Details
+                      </Button>
+                    )}
                     <Button
-                      disabled={isPending}
-                      onClick={() => onRequestDetails(p)}
+                      disabled={isPending || comment.trim().length === 0}
+                      onClick={() => onDecision(p.id, "manager_return")}
                       variant="secondary"
                     >
-                      <FileText className="mr-2 h-4 w-4" />
-                      Request Visit Details
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Return
                     </Button>
-                  )}
+                    <Button
+                      disabled={isPending || comment.trim().length === 0}
+                      onClick={() => onDecision(p.id, "manager_reject")}
+                      variant="destructive"
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
+                {type === "ceo" ? (
+                  <>
+                    <Button disabled={isPending} onClick={() => onDecision(p.id, "ceo_approve")}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Approve
+                    </Button>
+                    <Button
+                      disabled={isPending || comment.trim().length === 0}
+                      onClick={() => onDecision(p.id, "ceo_return")}
+                      variant="secondary"
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Return
+                    </Button>
+                    <Button
+                      disabled={isPending || comment.trim().length === 0}
+                      onClick={() => onDecision(p.id, "ceo_reject")}
+                      variant="destructive"
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
+                {type === "hr" ? (
                   <Button
-                    disabled={isPending || comment.trim().length === 0}
-                    onClick={() => onDecision(p.id, "manager_return")}
+                    disabled={isPending}
+                    onClick={() => onDecision(p.id, "hr_acknowledge")}
                     variant="secondary"
                   >
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Return
+                    <CircleAlert className="mr-2 h-4 w-4" />
+                    Acknowledge
                   </Button>
-                  <Button
-                    disabled={isPending || comment.trim().length === 0}
-                    onClick={() => onDecision(p.id, "manager_reject")}
-                    variant="destructive"
-                  >
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Reject
-                  </Button>
-                </>
-              ) : null}
-              {type === "ceo" ? (
-                <>
-                  <Button disabled={isPending} onClick={() => onDecision(p.id, "ceo_approve")}>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Approve
-                  </Button>
-                  <Button
-                    disabled={isPending || comment.trim().length === 0}
-                    onClick={() => onDecision(p.id, "ceo_return")}
-                    variant="secondary"
-                  >
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Return
-                  </Button>
-                  <Button
-                    disabled={isPending || comment.trim().length === 0}
-                    onClick={() => onDecision(p.id, "ceo_reject")}
-                    variant="destructive"
-                  >
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Reject
-                  </Button>
-                </>
-              ) : null}
-              {type === "hr" ? (
-                <Button
-                  disabled={isPending}
-                  onClick={() => onDecision(p.id, "hr_acknowledge")}
-                  variant="secondary"
-                >
-                  <CircleAlert className="mr-2 h-4 w-4" />
-                  Acknowledge
-                </Button>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          )}
+        />
       </div>
+      {/* F1 — Sticky bulk approve bar for manager type */}
+      {type === "manager" && selectedIds.size > 0 && onBulkApprove ? (
+        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-orange-200 bg-orange-50 px-4 py-3">
+          <span className="text-sm font-black text-orange-800">
+            {selectedIds.size} plan{selectedIds.size > 1 ? "s" : ""} selected
+          </span>
+          <Button
+            disabled={isPending}
+            onClick={() => {
+              const ids = Array.from(selectedIds);
+              onBulkApprove(ids);
+              setSelectedIds(new Set());
+            }}
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Approve selected ({selectedIds.size})
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
