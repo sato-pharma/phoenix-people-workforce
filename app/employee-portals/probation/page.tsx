@@ -26,9 +26,6 @@ import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
 
-// Print stylesheet + dir="auto" + page-level error boundary are now
-// provided automatically by EmployeePortalPageShell.
-
 /* ---------- error handling ---------- */
 
 function probationPageError(error: unknown) {
@@ -47,7 +44,11 @@ function probationPageError(error: unknown) {
 
 /* ---------- page ---------- */
 
-export default async function EmployeePortalProbationPage() {
+export default async function EmployeePortalProbationPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
@@ -56,11 +57,20 @@ export default async function EmployeePortalProbationPage() {
 
   await assertPermission(access, "probation", "read");
 
+  const params = await searchParams;
+  const feedbackEmployeeHrId = typeof params.feedbackEmployeeHrId === "string" ? params.feedbackEmployeeHrId : null;
+  const feedbackCycle = typeof params.cycle === "string" ? parseInt(params.cycle, 10) : null;
+
   const canSubmitManagerFeedback =
     access.role === "District Manager" ||
     access.role === "Regional Manager" ||
     access.role === "National Sales Manager" ||
+    access.role === "Training Manager" ||
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager" ||
     access.role === "Manager";
+
+  const canManageDvCheckboxes = access.role === "Super Admin";
 
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
@@ -100,7 +110,10 @@ export default async function EmployeePortalProbationPage() {
         <ScopeBadge scope={access.scope} />
       </div>
       <EmployeeProbationDashboard
+        canManageDvCheckboxes={canManageDvCheckboxes}
         canSubmitManagerFeedback={canSubmitManagerFeedback}
+        feedbackCycle={feedbackCycle}
+        feedbackEmployeeHrId={feedbackEmployeeHrId}
         initialData={initialData}
       />
     </EmployeePortalPageShell>

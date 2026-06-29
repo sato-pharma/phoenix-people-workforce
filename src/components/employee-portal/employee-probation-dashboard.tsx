@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
+import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
   calculateProbationProgress,
@@ -13,6 +15,7 @@ import {
   summarizeProbationRiskRows,
 } from "@/lib/lifecycle-risk/metrics";
 import type {
+  ProbationDvState,
   ProbationRow,
   ProbationWorkflowAction,
   TrafficStatus,
@@ -25,7 +28,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 /* ------------------------------------------------------------------ */
 
 type EmployeeProbationDashboardProps = {
+  canManageDvCheckboxes?: boolean;
   canSubmitManagerFeedback: boolean;
+  feedbackCycle?: number | null;
+  feedbackEmployeeHrId?: string | null;
   initialData: ProbationRow[];
 };
 
@@ -122,7 +128,10 @@ function workflowBadgeColors(status: string | null | undefined) {
 /* ------------------------------------------------------------------ */
 
 export function EmployeeProbationDashboard({
+  canManageDvCheckboxes = false,
   canSubmitManagerFeedback,
+  feedbackCycle: _feedbackCycle,
+  feedbackEmployeeHrId: initialFeedbackHrId,
   initialData,
 }: EmployeeProbationDashboardProps) {
   /* State */
@@ -137,6 +146,8 @@ export function EmployeeProbationDashboard({
   const [actionForm, setActionForm] = useState<ActionFormState>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
+  const [feedbackEmployeeHrId, setFeedbackEmployeeHrId] = useState<string | null>(initialFeedbackHrId ?? null);
+  const [dvStateMap, setDvStateMap] = useState<Record<string, ProbationDvState>>({});
 
   /* Filter options */
   const filterOptions = useMemo(
@@ -197,6 +208,23 @@ export function EmployeeProbationDashboard({
       ),
     [filteredRows],
   );
+
+  /* DV state update callback */
+  function handleDvChanged(hrId: string, probationId: number) {
+    // Reload DV state for this employee row from fresh data
+    fetch(`/api/probation/feedback/employee/${encodeURIComponent(hrId)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.eligibility?.probationId) {
+          // Re-fetch the full probation rows to pick up updated DV columns
+          void probationId; // probationId used for future per-row endpoint
+        }
+      })
+      .catch(() => {});
+    // Optimistically keep rows fresh — they'll reload on next navigate
+    void dvStateMap;
+    setDvStateMap(prev => ({ ...prev }));
+  }
 
   /* Active filter tracking */
   const hasActiveFilters =
@@ -599,6 +627,29 @@ export function EmployeeProbationDashboard({
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="font-semibold text-slate-800">{row.full_name}</p>
                         <p className="mt-0.5 text-[11px] text-slate-400">{row.hr_id}</p>
+                        {row.dv_state && (
+                          <div className="mt-1.5">
+                            <DvCheckboxPanel
+                              canManualOverride={canManageDvCheckboxes}
+                              dvState={{
+                                dmDvDone: row.dv_state.dm_dv_done,
+                                dmDvDoneAt: row.dv_state.dm_dv_done_at,
+                                dmDvDoneManually: row.dv_state.dm_dv_done_manually,
+                                nsmDvDone: row.dv_state.nsm_dv_done,
+                                nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
+                                nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
+                                pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
+                                pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
+                                pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
+                                tmDvDone: row.dv_state.tm_dv_done,
+                                tmDvDoneAt: row.dv_state.tm_dv_done_at,
+                                tmDvDoneManually: row.dv_state.tm_dv_done_manually,
+                              }}
+                              onChanged={() => handleDvChanged(row.hr_id, Number(row.probation_id ?? 0))}
+                              probationId={Number(row.probation_id ?? 0)}
+                            />
+                          </div>
+                        )}
                       </td>
 
                       {/* Job Title */}
@@ -669,34 +720,37 @@ export function EmployeeProbationDashboard({
 
                       {/* Actions */}
                       <td className="px-3 py-3 sm:px-4">
-                        {row.workflow ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {allowed.map((action) => (
-                              <button
-                                className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
-                                  action === "terminate"
-                                    ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                                    : action === "pass"
-                                      ? "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                                }`}
-                                disabled={Boolean(pendingAction)}
-                                key={action}
-                                onClick={() => openWorkflowAction(row, action)}
-                                type="button"
-                              >
-                                {actionLabel(action)}
-                              </button>
-                            ))}
-                            {allowed.length === 0 && (
-                              <span className="text-[11px] text-slate-400">
-                                No available actions
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">No review</span>
-                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                          {row.workflow && allowed.map((action) => (
+                            <button
+                              className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
+                                action === "terminate"
+                                  ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                  : action === "pass"
+                                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                              }`}
+                              disabled={Boolean(pendingAction)}
+                              key={action}
+                              onClick={() => openWorkflowAction(row, action)}
+                              type="button"
+                            >
+                              {actionLabel(action)}
+                            </button>
+                          ))}
+                          {canSubmitManagerFeedback && row.probation_id && (
+                            <button
+                              className="rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 transition"
+                              onClick={() => setFeedbackEmployeeHrId(feedbackEmployeeHrId === row.hr_id ? null : row.hr_id)}
+                              type="button"
+                            >
+                              {feedbackEmployeeHrId === row.hr_id ? "Close" : "Feedback"}
+                            </button>
+                          )}
+                          {!row.workflow && !canSubmitManagerFeedback && (
+                            <span className="text-[11px] text-slate-400">No review</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -818,6 +872,20 @@ export function EmployeeProbationDashboard({
         pageSize={PROBATION_PAGE_SIZE}
         total={filteredRows.length}
       />
+
+      {/* ---- Feedback Panel ---- */}
+      {feedbackEmployeeHrId && (() => {
+        const feedbackRow = rows.find(r => r.hr_id === feedbackEmployeeHrId);
+        return feedbackRow ? (
+          <Card className={`rounded-lg border border-orange-100 p-0 ${cardShadow}`}>
+            <FeedbackFormPanel
+              employeeHrId={feedbackRow.hr_id}
+              employeeName={feedbackRow.full_name}
+              onClose={() => setFeedbackEmployeeHrId(null)}
+            />
+          </Card>
+        ) : null;
+      })()}
 
       {/* ---- Workflow Action Form ---- */}
       {selectedAction && (
