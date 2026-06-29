@@ -20,7 +20,7 @@ const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black upp
 export default async function CustomerDetailPage({ params }: PageProps) {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   if (access.role !== "Super Admin" && access.scope !== "system") {
     redirect(resolveLandingPathForRole(access.role));

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function MappingDatabasePage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Mapping authority — restrict to Super Admin / system, matching the other Source-of-Sales admin pages.
   if (accessContext.role !== "Super Admin" && accessContext.scope !== "system") {

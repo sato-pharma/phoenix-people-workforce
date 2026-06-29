@@ -11,6 +11,7 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadSosByPeriod,
@@ -66,6 +67,7 @@ async function SosDashboardContent({
     products:     Array.isArray(filters.products)      ? filters.products      : [],
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
+    canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
   let byPeriod: SosKpiRow[];

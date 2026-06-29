@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function SalesDiagnosticsPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   // Admin troubleshooting surface — gate to Super Admin / system like the sibling Source-of-Sales
   // admin pages (no sales-import role leakage), redirecting denied users instead of rendering empty.

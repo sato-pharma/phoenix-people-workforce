@@ -13,7 +13,7 @@ export const maxDuration = 60;
 export default async function SourceOfSalesDashboardPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/monthly-sales");
+    redirect("/employee-portals/source-of-sales");
   }
 
   await assertPermission(accessContext, "sales", "read");

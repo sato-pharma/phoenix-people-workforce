@@ -51,6 +51,15 @@ export async function buildPhoenixTableWorkbook(input: BuildTableWorkbookInput) 
     return buildOutstationExpenseWorkbook(workbook, input);
   }
 
+  addPhoenixTableSheet(workbook, input);
+  return await workbook.xlsx.writeBuffer();
+}
+
+/**
+ * Render one premium Phoenix-styled table sheet (title band + subtitle + header + zebra rows +
+ * SUM total) into an existing workbook. Reused by multi-sheet builders (e.g. Source of Sales).
+ */
+export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTableWorkbookInput) {
   const sheet = workbook.addWorksheet(sanitizeSheetName(input.sheetName ?? input.title), {
     views: [{ state: "frozen", ySplit: 3 }],
   });
@@ -134,8 +143,6 @@ export async function buildPhoenixTableWorkbook(input: BuildTableWorkbookInput) 
     }, col.label.length);
     sheet.getColumn(i + 1).width = col.width ?? Math.max(12, Math.min(46, longest + 4));
   });
-
-  return await workbook.xlsx.writeBuffer();
 }
 
 function numberCell(row: ExportRow, key: string) {

@@ -397,12 +397,10 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           </div>
           <TrendingUp className="h-4 w-4 text-[#f47b20]/60" />
         </div>
-        {/* 3 cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3">
+        {/* Source of Sales — consolidated distributor sell-in dashboard */}
+        <div className="grid grid-cols-1">
           {([
-            { href: "/employee-portals/weekly-sales", icon: TrendingUp, label: "Weekly Sales", sub: "Distributor performance week by week", primary: true },
-            { href: "/employee-portals/monthly-sales", icon: BarChart3, label: "Monthly Closing", sub: "17-distributor closing progress", primary: false },
-            { href: "/employee-portals/sales", icon: Activity, label: "Sales Dashboard", sub: "Monthly target vs actual achievement", primary: false },
+            { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales", sub: "Distributor sell-in across your scope — value, units, regions, products", primary: true },
           ] as const).map(({ href, icon: Icon, label, sub, primary }) => (
             <Link key={href} href={href}
               className="group relative flex flex-row items-center gap-3 overflow-hidden border-b border-slate-100 bg-white px-4 py-3 last:border-b-0 transition-all duration-200 hover:bg-[#0b1f3a] sm:flex-col sm:items-start sm:gap-3 sm:border-b-0 sm:border-r sm:p-6"
@@ -571,7 +569,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             icon: TrendingUp,
             value: pct !== null ? `${pct}%` : "—",
             label: "achievement",
-            href: "/employee-portals/sales",
+            href: "/employee-portals/source-of-sales",
             urgent: pct !== null && pct < 70,
           },
           {
@@ -600,7 +598,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
           { href: "/employee-portals/plans", icon: ClipboardCheck, label: "Submit Plan" },
-          { href: "/employee-portals/sales", icon: TrendingUp, label: "Sales Dashboard" },
+          { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Sales Dashboard" },
         ]}
       />
       {totalPending > 0 && (
@@ -672,7 +670,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                   </p>
                 </div>
                 <Link
-                  href="/employee-portals/sales"
+                  href="/employee-portals/source-of-sales"
                   className="mt-5 inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-[11px] font-black uppercase text-white transition hover:bg-orange-600"
                 >
                   Open sales dashboard <ArrowRight className="h-3.5 w-3.5" />
@@ -695,7 +693,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
               </div>
               <div className="flex items-end justify-start lg:justify-end">
                 <Link
-                  href="/employee-portals/sales"
+                  href="/employee-portals/source-of-sales"
                   className="inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-[11px] font-black uppercase text-white transition hover:bg-orange-600"
                 >
                   View dashboard <ArrowRight className="h-3.5 w-3.5" />
@@ -864,7 +862,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="View and track coaching reports" />
           <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" badge={mrPendingExpenseCount ?? 0} />
           <PremiumNavTile href="/employee-portals/incentive" icon={Trophy} label="My Incentive" description="Track commission and bonus" />
-          <PremiumNavTile href="/employee-portals/sales" icon={TrendingUp} label="Sales Dashboard" description="Achievement vs monthly target" />
+          <PremiumNavTile href="/employee-portals/source-of-sales" icon={TrendingUp} label="Sales Dashboard" description="Achievement vs monthly target" />
           <PremiumNavTile href="/employee-portals/vacation-request" icon={CalendarDays} label="Vacation Request" description="Submit and track leave requests" />
           <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
         </div>
@@ -911,7 +909,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
                   icon: TrendingUp,
                   value: `${pct}%`,
                   label: "achievement",
-                  href: "/employee-portals/sales",
+                  href: "/employee-portals/source-of-sales",
                   urgent: pct < 70,
                 },
               ]

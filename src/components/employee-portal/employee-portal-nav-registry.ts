@@ -4,9 +4,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
-  CalendarRange,
   ChartColumnBig,
-  ChartNoAxesColumnIncreasing,
   CircleDollarSign,
   ClipboardCheck,
   Database,
@@ -50,7 +48,6 @@ export type PortalNavEntry = {
  */
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
-  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/sales", icon: CalendarRange, flags: ["showMyPerformanceTab"] },
   { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"] },
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"] },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
@@ -62,8 +59,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
-  { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: ChartNoAxesColumnIncreasing, flags: ["showMiniWeeklySalesTab"] },
-  { label: "Monthly", fullLabel: "Monthly Sales", href: "/employee-portals/sales", icon: CalendarRange, flags: ["showMiniMonthlySalesTab"] },
+  { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   // Training Manager
@@ -113,7 +109,6 @@ export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/plans/calendar",
   "/employee-portals/private-calendar",
   "/employee-portals/report-it",
-  "/employee-portals/sales",
   "/employee-portals/team-performance",
   "/employee-portals/marketing-requests",
   "/employee-portals/expense-dashboard",
@@ -121,6 +116,7 @@ export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/incentive",
   "/employee-portals/coaching",
 ];
+
 
 export function isEntryVisible(entry: PortalNavEntry, visibility: EmployeePortalNavVisibility): boolean {
   if (!entry.flags || entry.flags.length === 0) return true;

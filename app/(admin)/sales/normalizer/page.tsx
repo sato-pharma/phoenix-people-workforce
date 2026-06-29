@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function NormalizerPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
   if (access.role !== "Super Admin" && access.scope !== "system") {
     redirect(resolveLandingPathForRole(access.role));

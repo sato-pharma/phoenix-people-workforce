@@ -36,6 +36,24 @@ export function canViewRestrictedProducts(role: PhoenixRole): boolean {
 }
 
 /**
+ * The Head Office product line is CONFIDENTIAL. The entire line and ALL of its products are
+ * visible only to CEO / Super Admin. For every other role the line, its products, and their
+ * contribution are stripped from every total, KPI, chart, table, filter and export — the same
+ * lock class as the restricted products above, but at the line grain. Fail-closed.
+ */
+export function canViewHeadOfficeLine(role: PhoenixRole): boolean {
+  return role === "CEO" || role === "Super Admin";
+}
+
+/** Case/whitespace-insensitive keys that identify the confidential Head Office line. */
+const HEAD_OFFICE_LINE_KEYS = new Set(["head office", "headoffice", "office", "hq"]);
+
+/** True when a line name (employee line or SoS official line) is the confidential Head Office line. */
+export function isHeadOfficeLine(line: string | null | undefined): boolean {
+  return HEAD_OFFICE_LINE_KEYS.has(normalizeLineKey(line));
+}
+
+/**
  * Head-office department heads whose OWN line is not a product line (e.g. Marketing Manager, who
  * sits on the Head Office line while the PM/GPM they supervise sit on the business lines). For
  * these, a "same own line" sales scope resolves to nothing, so we scope their sales/ROI to the
@@ -388,6 +406,20 @@ export function stripRestrictedRowsByName<T>(
     if (!key) return true;
     return !restrictedNames.has(key);
   });
+}
+
+/**
+ * Drop rows on the confidential Head Office line. `enabled` = "stripping on" (i.e.
+ * `!canViewHeadOfficeLine(role)`). When disabled (a CEO/Super Admin viewer) rows pass through.
+ * Rows whose line is empty pass through (they carry no line dimension to gate on).
+ */
+export function stripHeadOfficeRows<T>(
+  rows: T[],
+  getLine: (row: T) => string | null | undefined,
+  enabled: boolean,
+): T[] {
+  if (!enabled) return rows;
+  return rows.filter((row) => !isHeadOfficeLine(getLine(row)));
 }
 
 /** Drop confidential names from a plain product-name list (e.g. a filter dropdown). */

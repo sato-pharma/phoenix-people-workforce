@@ -5,7 +5,9 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
+  canViewHeadOfficeLine,
   canViewRestrictedProducts,
+  isHeadOfficeLine,
   isRestrictedProductCode,
   normalizeLineKey,
   normalizeProductNameKey,
@@ -408,6 +410,11 @@ async function resolveDashboardLineScope(access: AccessContext): Promise<Set<str
     const rawLine = viewer?.lineName?.trim();
     if (rawLine) tokens.add(rawLine);
   }
+  // Head Office is confidential — never let a non-CEO/Super-Admin viewer scope INTO it (e.g. an
+  // HO-based Marketing Manager whose own line is Head Office). Fail-closed: drop the HO tokens.
+  if (!canViewHeadOfficeLine(access.role)) {
+    for (const token of [...tokens]) if (isHeadOfficeLine(token)) tokens.delete(token);
+  }
   return tokens;
 }
 
@@ -580,6 +587,59 @@ function stripRestrictedFromMarketingSnapshot(
   };
 }
 
+/**
+ * Remove the confidential Head Office line from EVERY line-bearing breakdown (product / line /
+ * region / distributor / customer / requests) + the line filter, and subtract its product-level
+ * contribution from the pre-aggregated summary. Only ever called for non-CEO/Super-Admin viewers
+ * (the CEO/SA path early-returns the untouched snapshot), so it strips unconditionally.
+ */
+function stripHeadOfficeFromMarketingSnapshot(
+  snapshot: SalesMarketingDashboardSnapshot,
+): SalesMarketingDashboardSnapshot {
+  const isHo = (row: { line?: string | null }) => isHeadOfficeLine(row.line);
+
+  const hoProductRows = snapshot.productRoi.filter(isHo);
+  const rCost   = hoProductRows.reduce((s, r) => s + r.marketingCost, 0);
+  const rActual = hoProductRows.reduce((s, r) => s + r.actualSalesValue, 0);
+  const rUnits  = hoProductRows.reduce((s, r) => s + r.actualSalesUnits, 0);
+  const rReqRoi = hoProductRows.reduce((s, r) => s + r.requiredRoiValue, 0);
+  const rExpRoi = hoProductRows.reduce((s, r) => s + r.expectedRoiValue, 0);
+
+  const correctedCost   = Math.max(0, snapshot.summary.totalMarketingCost - rCost);
+  const correctedActual = Math.max(0, snapshot.summary.actualAttributedSalesValue - rActual);
+  const correctedUnits  = Math.max(0, snapshot.summary.actualAttributedSalesUnits - rUnits);
+  const correctedReqRoi = Math.max(0, snapshot.summary.requiredRoiValue - rReqRoi);
+  const correctedExpRoi = Math.max(0, snapshot.summary.expectedRoiValue - rExpRoi);
+
+  return {
+    ...snapshot,
+    productRoi:     snapshot.productRoi.filter((row) => !isHo(row)),
+    lineRoi:        snapshot.lineRoi.filter((row) => !isHeadOfficeLine(row.value) && !isHo(row)),
+    regionRoi:      snapshot.regionRoi.filter((row) => !isHo(row)),
+    distributorRoi: snapshot.distributorRoi.filter((row) => !isHo(row)),
+    requestReport:  snapshot.requestReport.filter((row) => !isHo(row)),
+    filters: {
+      ...snapshot.filters,
+      lines: snapshot.filters.lines.filter(
+        (option) => !isHeadOfficeLine(option.value) && !isHeadOfficeLine(option.label),
+      ),
+    },
+    summary: {
+      ...snapshot.summary,
+      totalMarketingCost:         correctedCost,
+      actualAttributedSalesValue: correctedActual,
+      actualAttributedSalesUnits: correctedUnits,
+      requiredRoiValue:           correctedReqRoi,
+      expectedRoiValue:           correctedExpRoi,
+      actualRoiCoverage:          correctedReqRoi > 0 ? correctedActual / correctedReqRoi : 0,
+      coverageGap:                Math.max(0, correctedReqRoi - correctedActual),
+      expectedGap:                Math.max(0, correctedReqRoi - correctedExpRoi),
+      noDataSpend:                Math.max(0, snapshot.summary.noDataSpend - rCost),
+      spendAtRisk:                Math.max(0, snapshot.summary.spendAtRisk - rCost),
+    },
+  };
+}
+
 // Cached wrapper for the heavy marketing ROI RPC. Cache key = ['smi-rpc'] plus
 // the serialized params object (Next.js appends it automatically). TTL = 300s.
 // Arrays are pre-sorted by callers so the same logical query always maps to the
@@ -682,7 +742,10 @@ export async function getSalesMarketingDashboardSnapshot(
   // already drop their value at source. We still strip the per-product ROI rows and the product
   // filter here as defense in depth — a future RPC edit or new entrypoint cannot leak them.
   if (canViewRestrictedProducts(access.role)) return snapshot;
-  return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
+  // Non-CEO/SA: strip confidential products AND the confidential Head Office line.
+  return stripHeadOfficeFromMarketingSnapshot(
+    stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+  );
 }
 
 /**
@@ -723,7 +786,10 @@ async function getSalesMarketingDashboardFast(
   const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(rawData), filters.lines, lineScope);
   const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
   if (canViewRestrictedProducts(access.role)) return snapshot;
-  return stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet());
+  // Non-CEO/SA: strip confidential products AND the confidential Head Office line.
+  return stripHeadOfficeFromMarketingSnapshot(
+    stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+  );
 }
 
 /**

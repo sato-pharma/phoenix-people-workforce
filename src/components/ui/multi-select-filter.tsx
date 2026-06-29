@@ -93,7 +93,7 @@ export function MultiSelectFilter({
         <ChevronDown className="h-4 w-4 shrink-0 text-[#94A3B8] transition group-open:rotate-180" />
       </summary>
 
-      <div className="absolute left-0 top-full z-30 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-[#E2E8F0] bg-white shadow-lg">
+      <div className="absolute left-0 top-full z-50 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-[#E2E8F0] bg-white shadow-lg">
         {/* Mode toggle + bulk actions */}
         <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] p-2">
           <div className="flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] p-0.5">

@@ -10,7 +10,6 @@ import {
   CalendarClock,
   Zap,
   LogOut,
-  LineChart as LineChartIcon,
   Activity,
   CircleDollarSign,
   ReceiptText,
@@ -39,7 +38,6 @@ import {
   UserCog,
   Inbox,
   Target,
-  CalendarRange,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -128,6 +126,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Support" || title === "HR Support") return Headphones;
   if (title === "Pharmacovigilance") return FileText;
   if (title === "Sales Intelligence") return Target;
+  if (title === "Sales Operations") return ChartColumnBig;
   return Activity;
 }
 
@@ -162,10 +161,7 @@ function buildEmployeePortalSections({
   showReportItTab = false,
   showReportItDashboardTab = false,
   showRoiIntelligenceTab = false,
-  showSosDashboardTab = false,
-  showMiniWeeklySalesTab = false,
-  showMonthlyClosingTab = false,
-  showMiniMonthlySalesTab: _showMiniMonthlySalesTab = false,
+  showSourceOfSalesTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
@@ -202,11 +198,9 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "Sales Dashboards",
+      title: "Sales Operations",
       items: [
-        ...(showSosDashboardTab ? [{ href: "/employee-portals/sales", label: "Monthly Sales", icon: CalendarRange }] : []),
-        ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
-        ...(showMiniWeeklySalesTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: LineChartIcon }] : []),
+        ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
       ],
     },
     {

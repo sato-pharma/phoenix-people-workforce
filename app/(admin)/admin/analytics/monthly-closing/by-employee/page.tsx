@@ -10,6 +10,7 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadClosingByEmployee,
@@ -47,6 +48,7 @@ async function ByEmployeeContent({
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
     batchStatus:  Array.isArray(filters.batchStatus)        ? filters.batchStatus  : [],
     batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
+    canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
   let rows: ClosingByEmployeeRow[];

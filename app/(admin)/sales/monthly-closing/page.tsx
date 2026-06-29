@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function MonthlyClosingPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
 
   // The admin upload + publish workspace is reserved for the admin account (Super Admin /

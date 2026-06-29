@@ -94,10 +94,10 @@ export function runSalesSourceOfTruthTests() {
   assert.match(salesPageSource, /getSosDashboard/);
   const salesAnalyticsPageSource = readFileSync("app/(admin)/admin/analytics/source-sales/page.tsx", "utf8");
   assert.match(salesAnalyticsPageSource, /loadSosByPeriod/);
-  const portalSalesPageSource = readFileSync("app/employee-portals/sales/page.tsx", "utf8");
-  // #601 switched the portal sales page to the live Monthly Sales dashboard (loadPortalLiveMonthly),
-  // replacing the older getSalesDashboard loader. Guard the current real-data source.
-  assert.match(portalSalesPageSource, /loadPortalLiveMonthly/);
+  // The portal sales dashboards were consolidated into a single scope-aware Source of Sales page
+  // that reuses the admin SoS engine via the getPortalSosDashboard wrapper.
+  const portalSosPageSource = readFileSync("app/employee-portals/source-of-sales/page.tsx", "utf8");
+  assert.match(portalSosPageSource, /getPortalSosDashboard/);
 
   const medRepsPerformancePageSource = readFileSync("app/employee-portals/med-reps-performance/page.tsx", "utf8");
   assert.match(medRepsPerformancePageSource, /buildSalesManagerPerformanceGroups/);

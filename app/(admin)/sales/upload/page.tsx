@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function SalesUploadPage() {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
-    redirect("/employee-portals/sales");
+    redirect("/employee-portals/source-of-sales");
   }
 
   let distributors: SalesDistributorEntry[] = [];

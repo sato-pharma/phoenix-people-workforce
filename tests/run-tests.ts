@@ -247,6 +247,8 @@ import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
 import { runAnalyticsValidationTests } from "./analytics-validation.test.ts";
 import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.ts";
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
+import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
+import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   try {
@@ -507,3 +509,5 @@ await runTest("nav-badge store", runNavBadgeStoreTests);
 await runTest("analytics validation helpers", runAnalyticsValidationTests);
 await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests);
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
+await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
+await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);

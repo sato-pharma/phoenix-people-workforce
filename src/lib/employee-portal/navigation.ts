@@ -35,16 +35,9 @@ export type EmployeePortalNavVisibility = {
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
-  // Three independent sales dashboards — each data source is separate and must
-  // appear as its own sidebar entry (not combined):
-  //   showSosDashboardTab  → /employee-portals/sales         (SoS aggregated)
-  //   showMiniWeeklySalesTab → /employee-portals/weekly-sales   (weekly uploads)
-  //   showMonthlyClosingTab → /employee-portals/monthly-closing (queue-published)
-  showSosDashboardTab?: boolean;
-  showMiniWeeklySalesTab?: boolean;
-  showMonthlyClosingTab?: boolean;
-  // Legacy — retained for layout back-compat; no longer drives the monthly sidebar entry
-  showMiniMonthlySalesTab?: boolean;
+  // Source of Sales — distributor sell-in dashboard, scope-aware. Shown to the field sales
+  // management roles + product/marketing managers (see /employee-portals/source-of-sales).
+  showSourceOfSalesTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showActionsTab?: boolean;
@@ -208,10 +201,6 @@ export function resolveEmployeePortalNavVisibility(
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
   const showSalesIntelligence = isProductManager || isGroupProductManager || isMarketingManager;
-  const isSfeManager = resolvedRole === "SFE Manager";
-  const isCeo = resolvedRole === "CEO";
-  const isSuperAdmin = resolvedRole === "Super Admin";
-  const showFieldSalesTabs = showSalesIntelligence || isNationalSalesManager || isDistrictManager || resolvedRole === "Regional Manager" || isMedicalRep || isSfeManager || isCeo || isSuperAdmin;
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -253,10 +242,13 @@ export function resolveEmployeePortalNavVisibility(
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
     showFingerprintReportTab: hasDeviceMapping === true,
     showRoiIntelligenceTab: showSalesIntelligence,
-    showSosDashboardTab: showFieldSalesTabs,
-    showMiniWeeklySalesTab: showFieldSalesTabs,
-    showMonthlyClosingTab: showFieldSalesTabs,
-    showMiniMonthlySalesTab: showFieldSalesTabs,
+    showSourceOfSalesTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager",
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     showActionsTab: !isTrainingManager && !isMedicalRep,

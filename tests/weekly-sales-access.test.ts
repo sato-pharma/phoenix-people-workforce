@@ -16,20 +16,20 @@ const codesOf = (result: Row[]) => result.map((row) => row.productCode).sort();
 
 export async function runWeeklySalesAccessTests() {
   // Full access + may reveal restricted → everything, including Lacto Basic.
-  const fullOpen = applyWeeklyAccessScope(rows, { tier: "full", canViewRestricted: true });
+  const fullOpen = applyWeeklyAccessScope(rows, { tier: "full", canViewRestricted: true, canViewHeadOffice: true });
   assert.deepEqual(codesOf(fullOpen), ["GU001", "LA003", "LA004", "RO001", "SA001"], "full+restricted keeps Lacto");
 
   // Full access but NOT allowed to reveal (e.g. SFE Manager) → Lacto Basic stripped.
-  const fullClosed = applyWeeklyAccessScope(rows, { tier: "full", canViewRestricted: false });
+  const fullClosed = applyWeeklyAccessScope(rows, { tier: "full", canViewRestricted: false, canViewHeadOffice: true });
   assert.deepEqual(codesOf(fullClosed), ["GU001", "RO001", "SA001"], "full without reveal strips Lacto");
 
   // Product scope → only assigned codes; a restricted code is dropped even if (wrongly) assigned.
-  const product: WeeklyAccessScope = { tier: "product", productCodes: new Set(["GU001", "RO001", "LA003"]) };
+  const product: WeeklyAccessScope = { tier: "product", productCodes: new Set(["GU001", "RO001", "LA003"]), canViewHeadOffice: true };
   assert.deepEqual(codesOf(applyWeeklyAccessScope(rows, product)), ["GU001", "RO001"], "product scope = assigned, no Lacto");
 
   // Empty product scope → sees nothing.
   assert.deepEqual(
-    applyWeeklyAccessScope(rows, { tier: "product", productCodes: new Set() }),
+    applyWeeklyAccessScope(rows, { tier: "product", productCodes: new Set(), canViewHeadOffice: true }),
     [],
     "empty product scope sees nothing",
   );
@@ -39,6 +39,7 @@ export async function runWeeklySalesAccessTests() {
     tier: "territory",
     allowedLineNames: new Set(["Pedia"]),
     allowedRegionCodes: new Set(["AB"]),
+    canViewHeadOffice: true,
   };
   assert.deepEqual(codesOf(applyWeeklyAccessScope(rows, territory)), ["GU001"], "territory line+region bound");
 
@@ -47,9 +48,29 @@ export async function runWeeklySalesAccessTests() {
     tier: "territory",
     allowedLineNames: new Set(["Pedia"]),
     allowedRegionCodes: null,
+    canViewHeadOffice: true,
   };
   assert.deepEqual(codesOf(applyWeeklyAccessScope(rows, lineOnly)), ["GU001"], "territory line-only strips Lacto");
 
   // None → empty.
-  assert.deepEqual(applyWeeklyAccessScope(rows, { tier: "none" }), [], "none sees nothing");
+  assert.deepEqual(applyWeeklyAccessScope(rows, { tier: "none", canViewHeadOffice: true }), [], "none sees nothing");
+
+  // ── Head Office confidential line ───────────────────────────────────────────
+  const hoRows: Row[] = [
+    { productCode: "PD001", officialLine: "Pedia", regionCode: "AB" },
+    { productCode: "HO001", officialLine: "Head Office", regionCode: "CA" },
+    { productCode: "HO002", officialLine: "office", regionCode: "GZ" }, // legacy variant
+  ];
+  // canViewHeadOffice false → Head Office line stripped for every tier (here: full).
+  assert.deepEqual(
+    codesOf(applyWeeklyAccessScope(hoRows, { tier: "full", canViewRestricted: true, canViewHeadOffice: false })),
+    ["PD001"],
+    "Head Office stripped when not allowed",
+  );
+  // canViewHeadOffice true (CEO / Super Admin) → Head Office kept.
+  assert.deepEqual(
+    codesOf(applyWeeklyAccessScope(hoRows, { tier: "full", canViewRestricted: true, canViewHeadOffice: true })),
+    ["HO001", "HO002", "PD001"],
+    "Head Office kept for CEO / Super Admin",
+  );
 }

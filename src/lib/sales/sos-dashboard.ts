@@ -11,8 +11,10 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   RESTRICTED_PRODUCT_CODES,
+  canViewHeadOfficeLine,
   canViewRestrictedProducts,
   canonicalizeRegionName,
+  isHeadOfficeLine,
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
@@ -24,7 +26,10 @@ const RESTRICTED_SET = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpp
 
 export type SosDashboardFilters = Partial<{
   period: string;
+  /** Single-line filter (legacy/admin). Prefer `lines` for multi-select. */
   line: string;
+  /** Multi-line filter — keeps a row when its official line is in this set. */
+  lines: string[];
   distributors: string[];
   regions: string[];
   areas: string[];
@@ -118,12 +123,33 @@ async function safeRpcAll<T>(
   }
 }
 
+/**
+ * Optional server-resolved scope overrides. Used by the employee-portal Source-of-Sales
+ * wrapper (getPortalSosDashboard) to tighten visibility beyond the role's base scope. Both
+ * are resolved from the SESSION, never from user input, so a caller can never widen via the
+ * URL/API. Omitting the option (admin /sales) leaves behavior byte-identical.
+ */
+export type SosScopeOverrides = {
+  /** Restrict to these product codes. null = no restriction; empty Set = show nothing. */
+  allowedProductCodes?: Set<string> | null;
+  /**
+   * Override the scope-derived region codes. When the KEY is present it replaces the base
+   * region lockdown (e.g. widen a Regional Manager from his single own-region to his managed
+   * region set). null = no region restriction; a Set = restrict to those codes.
+   */
+  allowedRegionCodes?: Set<string> | null;
+};
+
 export async function getSosDashboard(
   filters: SosDashboardFilters,
   accessContext: AccessContext,
+  options?: SosScopeOverrides,
 ): Promise<SosDashboardData> {
   const supabase = getSupabaseAdmin();
   const canSeeRestricted = canViewRestrictedProducts(accessContext.role);
+  // Head Office line + its products are confidential — CEO / Super Admin only. Stripped below
+  // from rows, filter options and the trend for every other role (incl. company-scope SFE).
+  const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
 
   const [availablePeriods, references, salesScope] = await Promise.all([
     listMonthlyClosingPeriods(),
@@ -140,14 +166,27 @@ export async function getSosDashboard(
     salesScope.canViewAllSales || !salesScope.allowedLineNames
       ? null
       : new Set([...salesScope.allowedLineNames].map(normalizeLineKey));
+  // Region lockdown: a portal-supplied override (server-resolved) takes precedence over the
+  // role's base region scope so e.g. a Regional Manager can be widened to his full managed
+  // region set. Otherwise fall back to the base scope (company = all; else the viewer's region).
   const scopeRegionCodes: Set<string> | null =
-    salesScope.canViewAllSales || !salesScope.allowedRegionNames
+    options && "allowedRegionCodes" in options
+      ? options.allowedRegionCodes
+        ? new Set([...options.allowedRegionCodes].map((code) => code.trim().toUpperCase()))
+        : null
+      : salesScope.canViewAllSales || !salesScope.allowedRegionNames
+        ? null
+        : new Set(
+            references.regions
+              .filter((r) => salesScope.allowedRegionNames!.has(canonicalizeRegionName(r.regionName)))
+              .map((r) => r.regionCode.toUpperCase()),
+          );
+  // Product lockdown (server-resolved): null/undefined = no restriction; empty Set = show
+  // nothing (the strict "PM with no assigned products" case); non-empty = only those codes.
+  const scopeProductCodes: Set<string> | null =
+    options?.allowedProductCodes == null
       ? null
-      : new Set(
-          references.regions
-            .filter((r) => salesScope.allowedRegionNames!.has(canonicalizeRegionName(r.regionName)))
-            .map((r) => r.regionCode.toUpperCase()),
-        );
+      : new Set([...options.allowedProductCodes].map((code) => code.trim().toUpperCase()));
 
   // Label + master maps.
   const regionLabel = new Map<string, string>();
@@ -166,7 +205,12 @@ export async function getSosDashboard(
     productLabel.set(p.productCode, p.productName || p.productCode);
     productLine.set(p.productCode, p.line);
   });
-  const masterAreas = (references.areas ?? []).filter((a) => a.areaCode);
+  // Coverage denominator is scoped to the viewer: a region-locked caller (DSM / RM) measures
+  // coverage against THEIR regions' areas, not the whole company — otherwise "3 / 120 areas"
+  // reads as poor coverage when they only own a handful. Company / line-only callers keep all areas.
+  const masterAreas = (references.areas ?? [])
+    .filter((a) => a.areaCode)
+    .filter((a) => !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()));
   const totalAreas = masterAreas.length;
 
   const selectedPeriod =
@@ -175,12 +219,15 @@ export async function getSosDashboard(
   // Filter option lists (stable, from masters — products stripped of confidential codes for non-CEO).
   const filterOptions: SosFilterOptions = {
     periods: availablePeriods,
-    lines: [...new Set(references.products.map((p) => norm(p.line)).filter(Boolean))].sort(),
+    lines: [...new Set(references.products.map((p) => norm(p.line)).filter(Boolean))]
+      .filter((line) => canSeeHeadOffice || !isHeadOfficeLine(line))
+      .sort(),
     distributors: references.distributors.map((d) => ({ code: d.code, label: d.name || d.code })),
     regions: references.regions.map((r) => ({ code: r.regionCode, label: r.regionName || r.regionCode })),
     areas: (references.areas ?? []).map((a) => ({ code: a.areaCode, label: a.areaName || a.areaCode, region: a.regionCode })),
     products: references.products
       .filter((p) => canSeeRestricted || !RESTRICTED_SET.has(p.productCode.toUpperCase()))
+      .filter((p) => canSeeHeadOffice || !isHeadOfficeLine(p.line))
       .map((p) => ({ code: p.productCode, label: p.productName || p.productCode, line: p.line })),
   };
 
@@ -196,35 +243,88 @@ export async function getSosDashboard(
   // re-running the heavy per-distributor/product aggregate once per window month. The old pattern
   // fired ~6 heavy aggregates concurrently, saturated the DB (16–26s each) and timed the page out.
   const excludeCodes = canSeeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES];
-  const trendResultPromise = safeRpcAll(
-    "phx_exec_sos_trend",
-    () =>
-      (async () => {
-        const response = await supabase.rpc("phx_exec_sos_trend", {
-          p_areas: filters.areas ?? [],
-          p_distributors: filters.distributors ?? [],
-          p_exclude_codes: excludeCodes,
-          p_lines: filters.line ? [filters.line] : [],
-          p_periods: windowPeriods,
-          p_products: filters.products ?? [],
-          p_regions: filters.regions ?? [],
-        });
-        if (response.error) throw response.error;
-        return (response.data ?? []) as Array<Record<string, unknown>>;
-      })(),
-  );
 
+  // The trend RPC takes explicit line/region/product arrays (empty = "all"), so a scoped caller
+  // must pass the INTERSECTION of their user filters and their access scope — otherwise the 6-month
+  // history would silently span lines/regions/products the viewer can't see (and the selected-period
+  // point, which reuses the scoped detail total, wouldn't match). Head Office is stripped here too.
+  const intersect = (a: string[] | null, b: string[] | null): string[] | null => {
+    if (a === null) return b;
+    if (b === null) return a;
+    const bSet = new Set(b.map((value) => value.toUpperCase()));
+    return a.filter((value) => bSet.has(value.toUpperCase()));
+  };
+  const userLineNames = filters.lines?.length ? filters.lines : filters.line ? [filters.line] : null;
+  const userRegionCodes = filters.regions?.length ? filters.regions.map((c) => c.toUpperCase()) : null;
+  const userProductCodes = filters.products?.length ? filters.products.map((c) => c.toUpperCase()) : null;
+
+  const scopeLineNamesArr = scopeLineKeys ? (salesScope.allowedLineNames ? [...salesScope.allowedLineNames] : []) : null;
+  const scopeRegionArr = scopeRegionCodes ? [...scopeRegionCodes] : null;
+  const scopeProductArr = scopeProductCodes ? [...scopeProductCodes] : null;
+
+  const trendLineNames = intersect(userLineNames, scopeLineNamesArr);
+  const trendRegionCodes = intersect(userRegionCodes, scopeRegionArr);
+  const trendProductCodes = intersect(userProductCodes, scopeProductArr);
+
+  // Head Office lock for the trend: exclude HO by PRODUCT CODE (matching the rollup's product_code)
+  // instead of by line name — this sidesteps any product-master line vs official_line label
+  // divergence. keepExec already strips HO from the detail by official_line; this keeps the 6-month
+  // trend consistent (the confidential line never contributes for non-CEO/Super-Admin viewers).
+  const headOfficeProductCodes = canSeeHeadOffice
+    ? []
+    : references.products
+        .filter((p) => isHeadOfficeLine(p.line))
+        .map((p) => p.productCode.toUpperCase());
+  const trendExcludeCodes = headOfficeProductCodes.length > 0 ? [...excludeCodes, ...headOfficeProductCodes] : excludeCodes;
+
+  // An empty (but non-null) effective set means the viewer's scope ∩ filter is disjoint — the
+  // detail is empty too, so the trend must be empty rather than fall back to RPC "all".
+  const trendForcedEmpty =
+    (trendLineNames !== null && trendLineNames.length === 0) ||
+    (trendRegionCodes !== null && trendRegionCodes.length === 0) ||
+    (trendProductCodes !== null && trendProductCodes.length === 0);
+
+  const trendResultPromise = trendForcedEmpty
+    ? Promise.resolve([] as Array<Record<string, unknown>>)
+    : safeRpcAll(
+        "phx_exec_sos_trend",
+        () =>
+          (async () => {
+            const response = await supabase.rpc("phx_exec_sos_trend", {
+              p_areas: filters.areas ?? [],
+              p_distributors: filters.distributors ?? [],
+              p_exclude_codes: trendExcludeCodes,
+              p_lines: trendLineNames ?? [],
+              p_periods: windowPeriods,
+              p_products: trendProductCodes ?? [],
+              p_regions: trendRegionCodes ?? [],
+            });
+            if (response.error) throw response.error;
+            return (response.data ?? []) as Array<Record<string, unknown>>;
+          })(),
+      );
+
+  // Brick + customer aggregates carry no LINE dimension, so they are only ever shown to
+  // company-scope callers (see canSeeCrossLineGeography below). Skip those two heavy RPCs
+  // entirely for every scoped caller (portal roles) — their results would be discarded anyway,
+  // so this is a pure latency win with no behavior change.
+  const canSeeCrossLineGeography = salesScope.canViewAllSales;
+  const emptyRpcRows = Promise.resolve([] as Array<Record<string, unknown>>);
   const [detailRows, trendRowsRaw, brickRaw, customerRaw] = await Promise.all([
     rpcAll(supabase, "phx_exec_distributor_product", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
     trendResultPromise,
-    safeRpcAll(
-      "phx_exec_brick",
-      () => rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
-    ),
-    safeRpcAll(
-      "phx_exec_customers",
-      () => rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
-    ),
+    canSeeCrossLineGeography
+      ? safeRpcAll(
+          "phx_exec_brick",
+          () => rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
+        )
+      : emptyRpcRows,
+    canSeeCrossLineGeography
+      ? safeRpcAll(
+          "phx_exec_customers",
+          () => rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
+        )
+      : emptyRpcRows,
   ]);
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
@@ -233,26 +333,29 @@ export async function getSosDashboard(
   const areaSet = toFilterSet(filters.areas);
   const productSet = toFilterSet(filters.products);
   const lineFilter = filters.line ? norm(filters.line).toLowerCase() : null;
+  const lineFilterSet =
+    filters.lines && filters.lines.length > 0
+      ? new Set(filters.lines.map((value) => norm(value).toLowerCase()))
+      : null;
 
   const keepExec = (row: ExecRow): boolean => {
     if (!canSeeRestricted && RESTRICTED_SET.has(row.productCode.toUpperCase())) return false;
-    // Access-scope lockdown (line/region) — applied before user-supplied filters so a scoped
-    // caller can never widen past their own line/region via query params.
+    // Head Office line is confidential — strip it (and its products) for non-CEO/Super-Admin.
+    if (!canSeeHeadOffice && isHeadOfficeLine(row.officialLine)) return false;
+    // Access-scope lockdown (line/region/product) — applied before user-supplied filters so a
+    // scoped caller can never widen past their own line/region/products via query params.
     if (scopeLineKeys && !scopeLineKeys.has(normalizeLineKey(row.officialLine))) return false;
     if (scopeRegionCodes && !scopeRegionCodes.has(row.regionCode.toUpperCase())) return false;
-    if (lineFilter && row.officialLine.toLowerCase() !== lineFilter) return false;
+    if (scopeProductCodes && !scopeProductCodes.has(row.productCode.toUpperCase())) return false;
+    if (lineFilterSet) {
+      if (!lineFilterSet.has(row.officialLine.toLowerCase())) return false;
+    } else if (lineFilter && row.officialLine.toLowerCase() !== lineFilter) return false;
     if (distSet && !distSet.has(row.distributorCode.toUpperCase())) return false;
     if (regionSet && !regionSet.has(row.regionCode.toUpperCase())) return false;
     if (areaSet && !areaSet.has(row.areaCode.toUpperCase())) return false;
     if (productSet && !productSet.has(row.productCode.toUpperCase())) return false;
     return true;
   };
-
-  // Brick + customer aggregates come from RPCs that carry no LINE dimension, so they cannot be
-  // line-attributed. For a non-company (line/region scoped) caller, returning them would leak
-  // cross-line customer/brick totals — so they are suppressed entirely for those callers. Company
-  // roles (canViewAllSales) keep the full sections.
-  const canSeeCrossLineGeography = salesScope.canViewAllSales;
 
   // Detail = selected period (the only month we pull full leaf rows for).
   const detail = (detailRows as Array<Record<string, unknown>>)
