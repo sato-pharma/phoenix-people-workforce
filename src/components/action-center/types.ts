@@ -257,5 +257,7 @@ export type HistoricalApprovalItem = {
   title: string;
   decision: "approved" | "rejected" | "returned";
   decidedAt: string;
+  // Deep-link back to the original request. MUST be a real internal URL (the list renders a
+  // "View request" button only when present) or explicit null. Never an empty string.
   href: string | null;
 };

@@ -1439,6 +1439,32 @@ export async function updateResignationDates(
   return updatedRecord;
 }
 
+/**
+ * Resolve a workflow actor token to its canonical employee HR_ID before it is written to a
+ * decision column. The history tab matches on HR_ID, so a login token (e.g. "admin-HR") must
+ * never be persisted here. Best-effort: matches the employee directory, then the app_auth_users
+ * login→hr_id map, and finally falls back to the normalized form. Never throws.
+ */
+async function resolveCanonicalActorHrId(actor: string): Promise<string> {
+  const raw = cleanText(actor) ?? "";
+  if (!raw) return raw;
+  try {
+    const { employees } = await getEmployeeDirectory();
+    const match = employees.find((employee) => normalizeHrId(employee.hrId) === normalizeHrId(raw));
+    if (match?.hrId) return match.hrId;
+    const { data } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id")
+      .ilike("login_id", raw)
+      .maybeSingle();
+    const mapped = cleanText((data as { hr_id?: string | null } | null)?.hr_id);
+    if (mapped) return mapped;
+  } catch {
+    // best-effort — fall back to the normalized token below
+  }
+  return normalizeHrId(raw) ?? raw;
+}
+
 export async function runResignationWorkflow(
   id: string,
   action: ResignationWorkflowAction,
@@ -1475,11 +1501,13 @@ export async function runResignationWorkflow(
   });
 
   const now = new Date().toISOString();
+  // Persist the canonical HR_ID (never a login token) so the Approvals Hub history matches.
+  const actorHrId = await resolveCanonicalActorHrId(actor);
   const updates: Record<string, unknown> = {
     exit_status: currentStatus,
-    notes: note ? appendWorkflowNote(row.reason, actor, action, note) : row.reason,
+    notes: note ? appendWorkflowNote(row.reason, actorHrId, action, note) : row.reason,
     updated_at: now,
-    workflow_notes: appendWorkflowNote(row.workflow_notes, actor, action, note),
+    workflow_notes: appendWorkflowNote(row.workflow_notes, actorHrId, action, note),
   };
 
   switch (action) {
@@ -1488,7 +1516,7 @@ export async function runResignationWorkflow(
       updates.status = "under_review";
       updates.exit_status = "submitted";
       updates.reviewed_at = now;
-      updates.reviewed_by = actor;
+      updates.reviewed_by = actorHrId;
       updates.rejected_reason = null;
       break;
     case "approve":
@@ -1498,7 +1526,7 @@ export async function runResignationWorkflow(
       updates.status = "approved";
       updates.exit_status = "approved";
       updates.approved_at = now;
-      updates.approved_by = actor;
+      updates.approved_by = actorHrId;
       updates.rejected_reason = null;
       break;
     case "reject":
@@ -1506,7 +1534,7 @@ export async function runResignationWorkflow(
       updates.status = "rejected";
       updates.exit_status = "cancelled";
       updates.rejected_at = now;
-      updates.rejected_by = actor;
+      updates.rejected_by = actorHrId;
       updates.rejected_reason = cleanText(rejectedReason) ?? "No reason provided.";
       break;
     case "complete":
@@ -1516,14 +1544,14 @@ export async function runResignationWorkflow(
       updates.status = "completed";
       updates.exit_status = "completed";
       updates.completed_at = now;
-      updates.completed_by = actor;
+      updates.completed_by = actorHrId;
       break;
     case "cancel":
       if (currentStatus === "completed") throw new Error("Completed resignations cannot be cancelled.");
       updates.status = "cancelled";
       updates.exit_status = "cancelled";
       updates.cancelled_at = now;
-      updates.cancelled_by = actor;
+      updates.cancelled_by = actorHrId;
       break;
     case "reopen":
       if (!["rejected", "cancelled", "approved"].includes(currentStatus)) {
@@ -1532,7 +1560,7 @@ export async function runResignationWorkflow(
       updates.status = "under_review";
       updates.exit_status = "submitted";
       updates.reviewed_at = now;
-      updates.reviewed_by = actor;
+      updates.reviewed_by = actorHrId;
       updates.rejected_reason = null;
       break;
     default:
