@@ -133,6 +133,7 @@ import { runMarketingRoiReportScopeTests } from "./marketing-roi-report-scope.te
 import { runMarketingRoiReportHelpersTests } from "./marketing-roi-report-helpers.test.ts";
 import { runMarketingRoiFacetsTests } from "./marketing-roi-facets.test.ts";
 import { runMarketingRoiExportWorkbookTests } from "./marketing-roi-export-workbook.test.ts";
+import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
 import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
@@ -388,6 +389,7 @@ await runTest("marketing ROI report scope + filter options", runMarketingRoiRepo
 await runTest("marketing ROI report helpers (date math + body parse)", runMarketingRoiReportHelpersTests);
 await runTest("marketing ROI facets (smart cascading filters)", runMarketingRoiFacetsTests);
 await runTest("marketing ROI export workbook (xlsx builds)", runMarketingRoiExportWorkbookTests);
+await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
