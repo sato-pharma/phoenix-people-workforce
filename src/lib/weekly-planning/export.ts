@@ -126,6 +126,7 @@ function planItems(plan: EmployeePlan): PlanItem[] {
       returnNotes: [],
       sortOrder: 0,
       startTime: null,
+      visitDetails: [],
     },
   ];
 }
@@ -718,7 +719,13 @@ class PdfRenderer {
     const hasNotes = noteLines.length > 0 || returnLines.length > 0;
     const notesH = hasNotes ? 6 + noteLines.length * 11 + (returnLines.length > 0 ? returnLines.length * 10 + 4 : 0) : 0;
 
-    this.ensure(rowH + notesH, () => this.drawColumnHeader());
+    const visits = item.activityType === "Field" ? (item.visitDetails ?? []) : [];
+    const visitCardsH = visits.reduce((acc, vd) => {
+      const objLines = vd.objective ? this.wrap(vd.objective, this.font, 7.5, CONTENT_W - 28) : [];
+      return acc + 18 + objLines.length * 9 + 4;
+    }, visits.length > 0 ? 4 : 0);
+
+    this.ensure(rowH + notesH + visitCardsH, () => this.drawColumnHeader());
 
     // Zebra / return-note fill
     if (hasReturn) {
@@ -818,6 +825,40 @@ class PdfRenderer {
         }
       }
       this.y -= notesH;
+    }
+
+    // --- Visit detail cards (Field days only, sky-blue accent) ----------------
+    if (visits.length > 0) {
+      this.y -= 4;
+      for (const vd of visits) {
+        const objLines = vd.objective ? this.wrap(vd.objective, this.font, 7.5, CONTENT_W - 28) : [];
+        const cardH = 18 + objLines.length * 9;
+        this.page.drawRectangle({ x: MARGIN, y: this.y - cardH, width: CONTENT_W, height: cardH, color: hx("#F0F9FF") });
+        this.page.drawRectangle({ x: MARGIN, y: this.y - cardH, width: 3, height: cardH, color: hx("#7DD3FC") });
+        const nameLabel = `Dr. ${asciiSafe(vd.doctorName)}`;
+        this.text(nameLabel, MARGIN + 10, this.y - 10, { size: 9, font: this.bold, color: hx("#0C4A6E") });
+        const nameW = this.bold.widthOfTextAtSize(nameLabel, 9) + 6;
+        const specialityLabel = asciiSafe(vd.speciality);
+        this.page.drawRectangle({
+          x: MARGIN + 10 + nameW,
+          y: this.y - 14.5,
+          width: this.font.widthOfTextAtSize(specialityLabel, 7.5) + 8,
+          height: 11,
+          color: hx("#BAE6FD"),
+        });
+        this.text(specialityLabel, MARGIN + 14 + nameW, this.y - 11, { size: 7.5, font: this.bold, color: hx("#075985") });
+        const addrW = CONTENT_W - 28;
+        const addrText = this.truncate(asciiSafe(vd.address), this.font, 8, addrW);
+        this.text(addrText, MARGIN + 10, this.y - 19, { size: 8, font: this.font, color: hx("#0369A1") });
+        if (objLines.length > 0) {
+          let oy = this.y - 28;
+          for (const line of objLines) {
+            this.text(line, MARGIN + 10, oy, { size: 7.5, font: this.font, color: hx("#0C4A6E") });
+            oy -= 9;
+          }
+        }
+        this.y -= cardH + 2;
+      }
     }
   }
 

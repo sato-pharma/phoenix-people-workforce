@@ -116,6 +116,17 @@ type PlanHeaderRow = {
   employee_plan_hr_acknowledgements?: PlanAckRow[];
 };
 
+type PlanVisitDetailRow = {
+  id: string;
+  plan_id: string;
+  item_id: string;
+  doctor_name: string;
+  speciality: string;
+  address: string;
+  objective: string;
+  sort_order: number;
+};
+
 type PlanItemRow = {
   activity_date: string;
   activity_title: string;
@@ -133,6 +144,7 @@ type PlanItemRow = {
   sort_order: number;
   start_time: string | null;
   employee_plan_item_return_notes?: PlanReturnNoteRow[];
+  employee_plan_visit_details?: PlanVisitDetailRow[];
 };
 
 type PlanAckRow = {
@@ -184,6 +196,24 @@ export type EmployeePlanItemInput = {
   startTime?: string | null;
 };
 
+export type VisitDetail = {
+  id: string;
+  doctorName: string;
+  speciality: string;
+  address: string;
+  objective: string;
+  sortOrder: number;
+};
+
+export type VisitDetailInput = {
+  itemId: string;
+  doctorName: string;
+  speciality: string;
+  address: string;
+  objective: string;
+  sortOrder: number;
+};
+
 export type EmployeePlanReturnNote = {
   action: Extract<EmployeePlanAction, "manager_return" | "ceo_return">;
   actorHrId: string | null;
@@ -226,6 +256,7 @@ export type EmployeePlan = {
     returnNotes: EmployeePlanReturnNote[];
     sortOrder: number;
     startTime: string | null;
+    visitDetails: VisitDetail[];
   }>;
   managerHrId: string | null;
   managerName: string | null;
@@ -241,6 +272,7 @@ export type EmployeePlan = {
 
 export type EmployeePlansSummary = {
   ceoPending: number;
+  detailsRequested: number;
   drafts: number;
   finalApproved: number;
   hrAcknowledged: number;
@@ -278,7 +310,7 @@ export type EmployeePlansWorkspace = {
 
 const planSelect = `
   *,
-  employee_plan_items (*, employee_plan_item_return_notes (*)),
+  employee_plan_items (*, employee_plan_item_return_notes (*), employee_plan_visit_details (*)),
   employee_plan_hr_acknowledgements (*)
 `;
 
@@ -322,7 +354,7 @@ function normalizedName(value: string | null | undefined) {
 
 function isSchemaMissing(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
-  return /employee_plan_headers|employee_plan_items|employee_plan_item_return_notes|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
+  return /employee_plan_headers|employee_plan_items|employee_plan_item_return_notes|employee_plan_visit_details|double_visit_medical_rep|schema cache|does not exist|PGRST205|42P01/i.test(text);
 }
 
 function mapReturnNotes(item: PlanItemRow): EmployeePlanReturnNote[] {
@@ -368,6 +400,16 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
         returnNotes: mapReturnNotes(item),
         sortOrder: item.sort_order,
         startTime: item.start_time,
+        visitDetails: (item.employee_plan_visit_details ?? [])
+          .map((d) => ({
+            id: d.id,
+            doctorName: d.doctor_name,
+            speciality: d.speciality,
+            address: d.address,
+            objective: d.objective,
+            sortOrder: d.sort_order,
+          }))
+          .sort((a, b) => a.sortOrder - b.sortOrder),
       }))
       .sort((a, b) => `${a.activityDate}-${a.sortOrder}`.localeCompare(`${b.activityDate}-${b.sortOrder}`)),
     managerHrId: row.manager_hr_id,
@@ -386,6 +428,7 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
 function emptyPlansSummary(): EmployeePlansSummary {
   return {
     ceoPending: 0,
+    detailsRequested: 0,
     drafts: 0,
     finalApproved: 0,
     hrAcknowledged: 0,
@@ -404,6 +447,7 @@ function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
       summary.submitted += 1;
       summary.managerPending += 1;
     }
+    if (plan.status === "details_requested") summary.detailsRequested += 1;
     if (plan.status === "manager_approved") summary.ceoPending += 1;
     if (plan.status === "final_approved") summary.finalApproved += 1;
     if (plan.status === "hr_acknowledged") summary.hrAcknowledged += 1;
@@ -1298,6 +1342,7 @@ export type ApproverPlanItem = {
   region: string | null;
   repName: string | null;
   timeLabel: string | null;
+  visitDetails: VisitDetail[];
 };
 
 export type ApproverPendingPlan = {
@@ -1352,6 +1397,7 @@ function mapApproverPlanItem(item: {
   notes: string | null;
   objective: string | null;
   start_time: string | null;
+  employee_plan_visit_details?: PlanVisitDetailRow[];
 }): ApproverPlanItem {
   const { label, isCoaching } = approverItemLabel(item.activity_type, item.activity_title);
   return {
@@ -1365,6 +1411,16 @@ function mapApproverPlanItem(item: {
     region: nullableText(item.location_text),
     repName: nullableText(item.double_visit_medical_rep_name),
     timeLabel: approverTimeLabel(item.start_time, item.end_time),
+    visitDetails: (item.employee_plan_visit_details ?? [])
+      .map((d) => ({
+        id: d.id,
+        doctorName: d.doctor_name,
+        speciality: d.speciality,
+        address: d.address,
+        objective: d.objective,
+        sortOrder: d.sort_order,
+      }))
+      .sort((a, b) => a.sortOrder - b.sortOrder),
   };
 }
 
@@ -1392,7 +1448,7 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .select(
-        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order)",
+        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
       )
       .in("status", ["submitted", "manager_approved"])
       .order("submitted_at", { ascending: true })
@@ -1694,6 +1750,80 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
     summary: `${plan.plan_kind} plan acknowledged by HR`,
   });
   return mapPlan(await loadPlanRow(planId));
+}
+
+async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
+  try {
+    const portalPlanUrl = `/employee-portals/plans?plan=${plan.id}`;
+    await notifyRecipients({
+      actionUrl: portalPlanUrl,
+      eventType: "plan_details_requested",
+      message: `Your manager has requested visit details for your ${plan.plan_kind} plan (${plan.period_key}). Please fill in the doctor information before resubmitting.`,
+      plan,
+      recipients: [{ hrId: plan.employee_hr_id }],
+      title: `Visit details required for your ${plan.plan_kind} plan`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify employee for visit details request on plan ${plan.id}`, error);
+  }
+}
+
+export async function requestVisitDetails(access: AccessContext, planId: string) {
+  const plan = await loadPlanRow(planId);
+  await assertManagerReviewer(access, plan);
+  const hasFieldItems = (plan.employee_plan_items ?? []).some((item) => item.activity_type === "Field");
+  if (!hasFieldItems) {
+    throw new Error("This plan has no Single Visit (Field) days. Visit details can only be requested for plans with Field activities.");
+  }
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_request_details", {
+    p_actor_hr_id: access.hrId,
+    p_actor_login_id: access.loginId ?? null,
+    p_actor_role: access.role,
+    p_expected_revision: plan.revision,
+    p_plan_id: planId,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: "details_requested" },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan visit details requested`,
+  });
+  const updated = await loadPlanRow(planId);
+  await notifyVisitDetailsRequested(updated);
+  return mapPlan(updated);
+}
+
+export async function submitVisitDetails(access: AccessContext, planId: string, details: VisitDetailInput[]) {
+  const plan = await loadPlanRow(planId);
+  if (!hrIdsMatch(access.hrId, plan.employee_hr_id) && access.role !== "Super Admin") {
+    throw new Error("Forbidden: only the employee can submit visit details.");
+  }
+  if (!Array.isArray(details) || details.length === 0) {
+    throw new Error("At least one visit detail entry is required.");
+  }
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_submit_details", {
+    p_actor_hr_id: access.hrId,
+    p_actor_login_id: access.loginId ?? null,
+    p_actor_role: access.role,
+    p_expected_revision: plan.revision,
+    p_plan_id: planId,
+    p_visit_details: details,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: "submitted" },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan visit details submitted`,
+  });
+  const updated = await loadPlanRow(planId);
+  await notifyManager(updated);
+  return mapPlan(updated);
 }
 
 export async function cancelEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {

@@ -6,6 +6,7 @@ export type EmployeePlanKind = "weekly" | "monthly";
 export type EmployeePlanStatus =
   | "draft"
   | "submitted"
+  | "details_requested"
   | "manager_approved"
   | "manager_rejected"
   | "manager_returned"
@@ -18,6 +19,8 @@ export type EmployeePlanStatus =
 
 export type EmployeePlanAction =
   | "submit"
+  | "request_visit_details"
+  | "submit_visit_details"
   | "manager_approve"
   | "manager_reject"
   | "manager_return"
@@ -31,6 +34,7 @@ export type EmployeePlanAction =
 export const employeePlanStatuses = [
   "draft",
   "submitted",
+  "details_requested",
   "manager_approved",
   "manager_rejected",
   "manager_returned",
@@ -87,6 +91,14 @@ export const EMPLOYEE_PLAN_TRANSITIONS: Record<EmployeePlanAction, TransitionDef
     from: ["draft", "manager_returned", "ceo_returned"],
     to: "submitted",
   },
+  request_visit_details: {
+    from: ["submitted"],
+    to: "details_requested",
+  },
+  submit_visit_details: {
+    from: ["details_requested"],
+    to: "submitted",
+  },
   manager_approve: {
     from: ["submitted"],
     to: "manager_approved",
@@ -124,7 +136,7 @@ export const EMPLOYEE_PLAN_TRANSITIONS: Record<EmployeePlanAction, TransitionDef
     to: "draft",
   },
   cancel: {
-    from: ["draft", "submitted", "manager_returned", "ceo_returned"],
+    from: ["draft", "submitted", "details_requested", "manager_returned", "ceo_returned"],
     to: "cancelled",
   },
 };

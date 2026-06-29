@@ -34,7 +34,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import { buildEmployeePlanPeriod, employeePlanActivityTypes } from "@/lib/weekly-planning/plan-v1";
-import type { EmployeePlan, EmployeePlanItemInput, EmployeePlansWorkspace } from "@/lib/weekly-planning/service";
+import type { EmployeePlan, EmployeePlanItemInput, EmployeePlansWorkspace, VisitDetailInput } from "@/lib/weekly-planning/service";
 
 type PlansWorkspaceProps = {
   access: AccessContext;
@@ -98,6 +98,7 @@ const statusLabels: Record<EmployeePlanStatus, string> = {
   ceo_approved: "CEO approved",
   ceo_rejected: "CEO rejected",
   ceo_returned: "CEO returned",
+  details_requested: "Details Required",
   draft: "Draft",
   final_approved: "Final approved",
   hr_acknowledged: "HR acknowledged",
@@ -437,6 +438,7 @@ function planCanEdit(plan: EmployeePlan | null) {
 function statusTone(status: EmployeePlanStatus) {
   if (status.includes("rejected")) return "border-red-200 bg-red-50 text-red-700";
   if (status.includes("returned")) return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "details_requested") return "border-orange-300 bg-orange-50 text-orange-700";
   if (status === "final_approved" || status === "hr_acknowledged")
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "submitted" || status === "manager_approved")
@@ -618,6 +620,7 @@ export function PlansWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
+  const [visitDetailsPlan, setVisitDetailsPlan] = useState<EmployeePlan | null>(null);
   const [sameLineBookingState, setSameLineBookingState] = useState<{
     bookings: SameLinePlanBooking[];
     scopeKey: string;
@@ -966,6 +969,29 @@ export function PlansWorkspace({
     setMessage("Decision recorded.");
   }
 
+  async function doRequestVisitDetails(planId: string) {
+    const response = await fetch(`/api/weekly-plans/${planId}/request-visit-details`, {
+      body: JSON.stringify({}),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message ?? "Request failed.");
+    setMessage("Visit details requested. Employee has been notified.");
+  }
+
+  async function doSubmitVisitDetails(planId: string, details: VisitDetailInput[]) {
+    const response = await fetch(`/api/weekly-plans/${planId}/visit-details`, {
+      body: JSON.stringify({ details }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message ?? "Submission failed.");
+    setVisitDetailsPlan(null);
+    setMessage("Visit details submitted. Plan resubmitted for manager review.");
+  }
+
   async function acknowledge(planId: string) {
     const response = await fetch(`/api/weekly-plans/${planId}/acknowledge`, {
       body: JSON.stringify({ comment }),
@@ -1037,6 +1063,14 @@ export function PlansWorkspace({
 
   return (
     <>
+      {visitDetailsPlan && (
+        <VisitDetailsModal
+          onClose={() => setVisitDetailsPlan(null)}
+          onSubmit={(details) => runAction(() => doSubmitVisitDetails(visitDetailsPlan.id, details))}
+          plan={visitDetailsPlan}
+        />
+      )}
+
       {/* ===================== MOBILE (< md) ===================== */}
       <div className="space-y-4 pb-28 md:hidden">
         {schemaBanner}
@@ -1187,13 +1221,14 @@ export function PlansWorkspace({
         {/* My plans + review queues */}
         <div className="space-y-3">
           {ownPlans.length > 0 ? (
-            <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+            <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
           ) : null}
           <ReviewCard
             comment={comment}
             isPending={isPending}
             onComment={setComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
+            onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
             onReturnNote={updateReturnNote}
             plans={managerQueue}
             returnNotes={returnNotes}
@@ -1772,7 +1807,7 @@ export function PlansWorkspace({
 
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
             {ownPlans.length > 0 ? (
-              <QueueCard onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+              <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
             ) : null}
             {managerQueue.length > 0 ? (
               <ReviewCard
@@ -1780,6 +1815,7 @@ export function PlansWorkspace({
                 isPending={isPending}
                 onComment={setComment}
                 onDecision={(planId, action) => runAction(() => decide(planId, action))}
+                onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
                 onReturnNote={updateReturnNote}
                 plans={managerQueue}
                 returnNotes={returnNotes}
@@ -2298,11 +2334,232 @@ function Kpi({
   );
 }
 
+const VISIT_SPECIALITIES = [
+  "ENT",
+  "Chest",
+  "IM",
+  "GP",
+  "Neuro",
+  "NeuroPedia",
+  "Psychiatry",
+  "Urology",
+  "Gynecology",
+  "Ortho",
+  "Pedia",
+] as const;
+
+type VisitEntry = { key: string; doctorName: string; speciality: string; address: string; objective: string };
+type VisitEntriesState = Record<string, VisitEntry[]>;
+
+function makeEntry(): VisitEntry {
+  return { key: crypto.randomUUID(), doctorName: "", speciality: "", address: "", objective: "" };
+}
+
+function VisitDetailsModal({
+  onClose,
+  onSubmit,
+  plan,
+}: {
+  onClose: () => void;
+  onSubmit: (details: VisitDetailInput[]) => void;
+  plan: EmployeePlan;
+}) {
+  const fieldItems = plan.items.filter((item) => item.activityType === "Field");
+  const [entries, setEntries] = useState<VisitEntriesState>(() => {
+    const initial: VisitEntriesState = {};
+    for (const item of fieldItems) {
+      if (item.visitDetails.length > 0) {
+        initial[item.id] = item.visitDetails.map((d) => ({
+          key: d.id,
+          doctorName: d.doctorName,
+          speciality: d.speciality,
+          address: d.address,
+          objective: d.objective,
+        }));
+      } else {
+        initial[item.id] = [makeEntry()];
+      }
+    }
+    return initial;
+  });
+
+  function updateEntry(itemId: string, key: string, field: keyof Omit<VisitEntry, "key">, value: string) {
+    setEntries((cur) => ({
+      ...cur,
+      [itemId]: (cur[itemId] ?? []).map((e) => e.key === key ? { ...e, [field]: value } : e),
+    }));
+  }
+
+  function addEntry(itemId: string) {
+    setEntries((cur) => ({ ...cur, [itemId]: [...(cur[itemId] ?? []), makeEntry()] }));
+  }
+
+  function removeEntry(itemId: string, key: string) {
+    setEntries((cur) => ({
+      ...cur,
+      [itemId]: (cur[itemId] ?? []).filter((e) => e.key !== key).length > 0
+        ? (cur[itemId] ?? []).filter((e) => e.key !== key)
+        : [makeEntry()],
+    }));
+  }
+
+  function handleSubmit() {
+    const details: VisitDetailInput[] = [];
+    let sortOrder = 0;
+    for (const item of fieldItems) {
+      for (const entry of entries[item.id] ?? []) {
+        if (!entry.doctorName.trim() || !entry.speciality || !entry.address.trim()) continue;
+        details.push({
+          itemId: item.id,
+          doctorName: entry.doctorName.trim(),
+          speciality: entry.speciality,
+          address: entry.address.trim(),
+          objective: entry.objective.trim(),
+          sortOrder: sortOrder++,
+        });
+      }
+    }
+    if (details.length === 0) return;
+    onSubmit(details);
+  }
+
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  if (!isClient) return null;
+
+  const allFilled = fieldItems.every((item) =>
+    (entries[item.id] ?? []).some((e) => e.doctorName.trim() && e.speciality && e.address.trim()),
+  );
+
+  const modal = (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+      <div className="w-full max-w-xl overflow-hidden bg-white shadow-2xl sm:rounded-none">
+        {/* Header */}
+        <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-wide text-white">Fill Visit Details</h2>
+            <p className="text-[11px] text-slate-400">{plan.planKind} {plan.periodKey} — required by your manager</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white" type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="max-h-[70vh] overflow-y-auto p-4 space-y-5">
+          {fieldItems.length === 0 && (
+            <p className="text-sm text-slate-500">No Single Visit days found in this plan.</p>
+          )}
+          {fieldItems.map((item) => (
+            <div key={item.id} className="border border-orange-200 bg-orange-50/30">
+              <div className="flex items-center gap-2 border-b border-orange-200 bg-orange-100/60 px-3 py-2">
+                <span className="h-3 w-1 bg-orange-500" />
+                <p className="text-xs font-black text-slate-800">
+                  {formatDate(item.activityDate)} — Single Visit
+                </p>
+              </div>
+              <div className="space-y-3 p-3">
+                {(entries[item.id] ?? []).map((entry, idx) => (
+                  <div key={entry.key} className="border border-slate-200 bg-white p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Visit {idx + 1}</p>
+                      {(entries[item.id] ?? []).length > 1 && (
+                        <button
+                          onClick={() => removeEntry(item.id, entry.key)}
+                          className="text-[10px] font-bold text-red-500 hover:text-red-700"
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                          Dr. Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          className={tableInputClass}
+                          onChange={(e) => updateEntry(item.id, entry.key, "doctorName", e.target.value)}
+                          placeholder="Dr. Ahmed Mostafa"
+                          value={entry.doctorName}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                          Speciality <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          className={tableSelectClass}
+                          onChange={(e) => updateEntry(item.id, entry.key, "speciality", e.target.value)}
+                          value={entry.speciality}
+                        >
+                          <option value="">— select —</option>
+                          {VISIT_SPECIALITIES.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                          Address <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          className={tableInputClass}
+                          onChange={(e) => updateEntry(item.id, entry.key, "address", e.target.value)}
+                          placeholder="Clinic / hospital address"
+                          value={entry.address}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                          Objective of Visit
+                        </label>
+                        <input
+                          className={cin}
+                          onChange={(e) => updateEntry(item.id, entry.key, "objective", e.target.value)}
+                          placeholder="Product introduction, follow-up…"
+                          value={entry.objective}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  onClick={() => addEntry(item.id)}
+                  className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 py-2 text-[11px] font-bold text-orange-600 hover:border-orange-400 hover:bg-orange-50"
+                  type="button"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add another visit
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <button onClick={onClose} className="text-xs font-bold text-slate-500 hover:text-slate-800" type="button">
+            Cancel
+          </button>
+          <Button disabled={!allFilled} onClick={handleSubmit}>
+            <Send className="mr-2 h-4 w-4" />
+            Submit Visit Details
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
+}
+
 function QueueCard({
+  onFillDetails,
   onOpen,
   plans,
   title,
 }: {
+  onFillDetails: (plan: EmployeePlan) => void;
   onOpen: (plan: EmployeePlan) => void;
   plans: EmployeePlan[];
   title: string;
@@ -2332,6 +2589,16 @@ function QueueCard({
               </div>
               <p className="mt-1 text-xs font-semibold text-slate-500">Revision {p.revision}</p>
             </button>
+            {p.status === "details_requested" && (
+              <button
+                className="mt-2 flex w-full items-center justify-center gap-1.5 border border-orange-300 bg-orange-50 py-1.5 text-[11px] font-bold text-orange-700 hover:border-orange-400 hover:bg-orange-100"
+                onClick={() => onFillDetails(p)}
+                type="button"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Fill Visit Details
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -2344,6 +2611,7 @@ function ReviewCard({
   isPending,
   onComment,
   onDecision,
+  onRequestDetails,
   onReturnNote,
   plans,
   returnNotes,
@@ -2354,6 +2622,7 @@ function ReviewCard({
   isPending: boolean;
   onComment: (value: string) => void;
   onDecision: (planId: string, action: string) => void;
+  onRequestDetails?: (plan: EmployeePlan) => void;
   onReturnNote?: (planId: string, itemId: string, value: string) => void;
   plans: EmployeePlan[];
   returnNotes?: Record<string, Record<string, string>>;
@@ -2409,6 +2678,16 @@ function ReviewCard({
                     <CheckCircle2 className="mr-2 h-4 w-4" />
                     Approve
                   </Button>
+                  {p.items.some((i) => i.activityType === "Field") && onRequestDetails && (
+                    <Button
+                      disabled={isPending}
+                      onClick={() => onRequestDetails(p)}
+                      variant="secondary"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Request Visit Details
+                    </Button>
+                  )}
                   <Button
                     disabled={isPending || comment.trim().length === 0}
                     onClick={() => onDecision(p.id, "manager_return")}
