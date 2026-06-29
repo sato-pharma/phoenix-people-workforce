@@ -28,6 +28,11 @@ export type DistinctUnknown = {
   count: number;
   raw: string; // the distinct raw key the user maps once
   rawName: string;
+  // Customer-only mapping context lifted straight from the distributor sheet so the operator can pick
+  // the right brick offline: the customer's postal address and the distributor's own area/governorate
+  // text (when the sheet carries a territory column). Empty for product/territory unknowns.
+  rawAddress?: string;
+  rawTerritory?: string;
   suggestionCode: string | null;
   suggestionLabel: string | null;
 };
@@ -86,9 +91,12 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
       // Per-pharmacy crosswalk — the reliable path when the distributor's area text is junk.
       if (ex.rawCustomerCode) {
         let entry = customerMap.get(ex.rawCustomerCode);
-        if (!entry) { entry = { count: 0, raw: ex.rawCustomerCode, rawName: ex.rawCustomerName, suggestionCode: null, suggestionLabel: null }; customerMap.set(ex.rawCustomerCode, entry); }
+        if (!entry) { entry = { count: 0, raw: ex.rawCustomerCode, rawName: ex.rawCustomerName, rawAddress: ex.rawCustomerAddress, rawTerritory: ex.rawTerritory, suggestionCode: null, suggestionLabel: null }; customerMap.set(ex.rawCustomerCode, entry); }
         entry.count += 1;
+        // Backfill name/address/area from any later row for the same code (the first row may be sparse).
         if (!entry.rawName && ex.rawCustomerName) entry.rawName = ex.rawCustomerName;
+        if (!entry.rawAddress && ex.rawCustomerAddress) entry.rawAddress = ex.rawCustomerAddress;
+        if (!entry.rawTerritory && ex.rawTerritory) entry.rawTerritory = ex.rawTerritory;
       }
     }
   }
