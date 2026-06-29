@@ -150,7 +150,7 @@ export function MarketingRequestDecisionConfirmation({
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
-              <p className="truncate text-[13px] font-medium text-slate-950">{summary.customerName ?? "—"}</p>
+              <p className="whitespace-nowrap text-[13px] font-medium text-slate-950">{summary.customerName ?? "—"}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>

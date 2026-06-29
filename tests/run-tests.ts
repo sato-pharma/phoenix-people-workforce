@@ -48,6 +48,7 @@ import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governanc
 import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-completion.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
+import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
 import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test.ts";
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
 import { runWeeklyPlansHardeningTests } from "./weekly-plans-hardening.test.ts";
@@ -309,6 +310,7 @@ await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcC
 await runTest("deductions governance completion", runDeductionsGovernanceCompletionTests);
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
+await runTest("plan workweek + linkage (role-aware week, slots, new activity types)", runPlanWorkweekLinkageTests);
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);

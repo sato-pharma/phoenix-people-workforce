@@ -477,12 +477,12 @@ export function PlanningCalendar({
 
                   <div className="mt-1 hidden space-y-1 sm:block">
                     {dayHolidays.slice(0, 1).map((holiday) => (
-                      <div className="truncate border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] font-black text-emerald-800" key={holiday.id}>
+                      <div className="whitespace-nowrap border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] font-black text-emerald-800" key={holiday.id}>
                         {holiday.title}
                       </div>
                     ))}
                     {dayPlans.slice(0, 3).map((item) => (
-                      <div className={`truncate border px-1.5 py-1 text-[10px] font-bold ${planTone(item)}`} key={item.id}>
+                      <div className={`whitespace-nowrap border px-1.5 py-1 text-[10px] font-bold ${planTone(item)}`} key={item.id}>
                         {item.title}
                       </div>
                     ))}
@@ -630,22 +630,22 @@ function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRo
             {rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">{row.date}</td>
-                  <td className="max-w-[180px] truncate border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">{row.employee}</td>
-                  <td className="max-w-[170px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
-                  <td className="max-w-[190px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
-                  <td className="max-w-[150px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
-                  <td className="max-w-[170px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
-                  <td className="max-w-[100px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">{row.employee}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={`inline-flex max-w-[150px] truncate border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>
                   <td className="max-w-[260px] border-r border-slate-100 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-red-800">
-                    <span className="line-clamp-2">{row.conflictWarning}</span>
+                    <span className="whitespace-nowrap">{row.conflictWarning}</span>
                   </td>
                   <td className="max-w-[260px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-                    <span className="line-clamp-2">{row.notes}</span>
+                    <span className="whitespace-nowrap">{row.notes}</span>
                   </td>
                 </tr>
               ))}

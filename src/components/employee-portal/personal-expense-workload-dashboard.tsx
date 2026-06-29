@@ -1198,7 +1198,7 @@ export function PersonalExpenseWorkloadDashboard({
             <PlusCircle className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-slate-900">Submit a new outstation expense</p>
+            <p className="whitespace-nowrap text-sm font-bold text-slate-900">Submit a new outstation expense</p>
             <p className="mt-0.5 text-[12px] text-slate-600">
               Start the guided trip submission. Captures location, distance, and allowance automatically.
             </p>
@@ -1279,7 +1279,7 @@ export function PersonalExpenseWorkloadDashboard({
           <div className="grid grid-cols-1 divide-x divide-y divide-slate-200 sm:grid-cols-3">
             <div className="px-4 py-3">
               <p className={labelClass}>Top destination</p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-800">
+              <p className="mt-1 whitespace-nowrap text-sm font-bold text-slate-800">
                 {insights.top?.city ?? "—"}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-500">
@@ -1290,7 +1290,7 @@ export function PersonalExpenseWorkloadDashboard({
             </div>
             <div className="px-4 py-3">
               <p className={labelClass}>Cost outlier</p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-800">
+              <p className="mt-1 whitespace-nowrap text-sm font-bold text-slate-800">
                 {insights.outlier
                   ? `${insights.outlier.tripId || "Trip"} → ${insights.outlier.toCity}`
                   : "—"}
@@ -1892,8 +1892,8 @@ export function PersonalExpenseWorkloadDashboard({
                             {trip.tripId || "N/A"}
                           </td>
                           <td className={`max-w-[180px] whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            <span className="block truncate">{trip.ownerName || "Employee"}</span>
-                            <span className="block truncate font-mono text-[10px] font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
+                            <span className="block whitespace-nowrap">{trip.ownerName || "Employee"}</span>
+                            <span className="block whitespace-nowrap font-mono text-[10px] font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
                           </td>
                           <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
@@ -2042,10 +2042,10 @@ export function PersonalExpenseWorkloadDashboard({
                     <div className="px-3 py-3 pl-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate font-mono text-[11px] font-bold text-slate-600">
+                          <p className="whitespace-nowrap font-mono text-[11px] font-bold text-slate-600">
                             {trip.tripId || "N/A"}
                           </p>
-                          <p className="mt-0.5 truncate text-[12px] font-bold text-slate-800">
+                          <p className="mt-0.5 whitespace-nowrap text-[12px] font-bold text-slate-800">
                             {trip.ownerName || "Employee"}
                           </p>
                           <p className="mt-0.5 text-[11px] text-slate-500">

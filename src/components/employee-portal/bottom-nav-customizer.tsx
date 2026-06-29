@@ -95,7 +95,7 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
                 >
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="min-w-0 truncate text-sm font-bold text-slate-800">{entry.fullLabel}</span>
+                <span className="min-w-0 whitespace-nowrap text-sm font-bold text-slate-800">{entry.fullLabel}</span>
               </Link>
               <button
                 aria-label={isPinned ? `Unpin ${entry.fullLabel}` : `Pin ${entry.fullLabel}`}

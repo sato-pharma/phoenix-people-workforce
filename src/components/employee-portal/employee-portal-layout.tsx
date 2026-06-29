@@ -514,7 +514,7 @@ export function EmployeePortalTopNav({
           <div className="flex min-w-0 flex-1 items-center lg:flex-none">
             <div className="min-w-0">
               <p className="text-[8px] font-black uppercase tracking-[0.22em] text-orange-600 sm:text-[9px] sm:tracking-[0.26em]">Employee Portal</p>
-              <p className="truncate text-[10px] font-bold text-slate-500 sm:text-[11px]">{data.employee.roleLabel}</p>
+              <p className="whitespace-nowrap text-[10px] font-bold text-slate-500 sm:text-[11px]">{data.employee.roleLabel}</p>
             </div>
           </div>
 
@@ -563,8 +563,8 @@ export function EmployeePortalTopNav({
                     >
                       <item.icon className="h-4 w-4 shrink-0 text-orange-500" />
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold text-slate-800">{item.label}</span>
-                        <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
+                        <span className="block whitespace-nowrap text-sm font-bold text-slate-800">{item.label}</span>
+                        <span className="block whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
                       </span>
                     </button>
                   ))

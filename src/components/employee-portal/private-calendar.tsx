@@ -791,7 +791,7 @@ export function PrivateCalendar({
                   <span className="mt-1.5 block space-y-1">
                     {dayExceptions.slice(0, 2).map((exception) => (
                       <span
-                        className="block truncate rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
+                        className="block whitespace-nowrap rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
                         key={exception.id}
                         title={exception.description}
                       >
@@ -800,7 +800,7 @@ export function PrivateCalendar({
                     ))}
                     {dayItems.slice(0, dayExceptions.length > 0 ? 3 : 4).map((item) => (
                       <span
-                        className={["block truncate rounded-md px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
+                        className={["block whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
                         key={item.id}
                         title={chipTitle(item, viewMode)}
                       >
@@ -935,8 +935,8 @@ function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalenda
           <article key={row.hrId} className={isWorkspaceSurface ? "rounded-sm border border-slate-200 bg-slate-50 p-4" : "rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/60"}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h4 className="truncate text-sm font-black text-slate-900">{row.fullName}</h4>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">
+                <h4 className="whitespace-nowrap text-sm font-black text-slate-900">{row.fullName}</h4>
+                <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-slate-400">
                   {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
@@ -1079,32 +1079,32 @@ function CalendarReportTable({
                     {reportDateLabel(row.date)}
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex max-w-[150px] items-center truncate rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                    <span className={["inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {sourceReportLabel(row.source)}
                     </span>
                   </td>
                   <td className="max-w-[230px] border-r border-slate-100 px-3 py-2.5">
-                    <p className="truncate font-black text-slate-900">{row.title}</p>
+                    <p className="whitespace-nowrap font-black text-slate-900">{row.title}</p>
                   </td>
-                  <td className="max-w-[120px] truncate border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
                     {row.checkIn ?? "-"}
                   </td>
-                  <td className="max-w-[120px] truncate border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
                     {row.checkOut ?? "-"}
                   </td>
-                  <td className="max-w-[140px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
                     {row.scheduledTime ?? "-"}
                   </td>
-                  <td className="max-w-[130px] truncate border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
                     {row.workingHours ?? "-"}
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex max-w-[140px] truncate rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                    <span className={["inline-flex whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {row.status ?? row.sourceLabel}
                     </span>
                   </td>
                   <td className="max-w-[360px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-                    <span className="line-clamp-2">{row.detail || row.sourceLabel}</span>
+                    <span className="whitespace-nowrap">{row.detail || row.sourceLabel}</span>
                   </td>
                 </tr>
               ))}

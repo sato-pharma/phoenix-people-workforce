@@ -72,7 +72,7 @@ export function EmployeePortalBottomNav({
                 href={item.href}
               >
                 <Icon className="h-[19px] w-[19px] shrink-0" />
-                <span className="max-w-full truncate px-1 leading-tight">{item.label}</span>
+                <span className="whitespace-nowrap px-1 leading-tight">{item.label}</span>
               </Link>
             </li>
           );

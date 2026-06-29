@@ -69,6 +69,7 @@ import {
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -79,10 +80,14 @@ import {
   getNextEmployeePlanStatus,
   isClosedEmployeePlanStatus,
   isWeeklyMonthlyPlanEligibleTitle,
+  planRequiredSlotsByDate,
+  resolvePlanWorkweek,
   type EmployeePlanAction,
   type EmployeePlanActivityType,
   type EmployeePlanKind,
   type EmployeePlanStatus,
+  type PlanSlot,
+  type PlanWorkweek,
 } from "@/lib/weekly-planning/plan-v1";
 
 type PlanHeaderRow = {
@@ -295,6 +300,7 @@ export type EmployeePlansWorkspace = {
     jobTitle: string | null;
     managerHrId: string | null;
     managerName: string | null;
+    workweek: PlanWorkweek;
   } | null;
   medicalRepOptions: Array<{
     areaName: string | null;
@@ -1265,6 +1271,10 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
             managerName: employee.managerName,
+            workweek: resolvePlanWorkweek({
+              jobTitle: employeeTitle(employee, access.role),
+              role: access.role,
+            }),
           }
         : null,
       hasMorePlans,
@@ -1288,6 +1298,10 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
             managerName: employee.managerName,
+            workweek: resolvePlanWorkweek({
+              jobTitle: employeeTitle(employee, access.role),
+              role: access.role,
+            }),
           }
         : null,
       hasMorePlans: false,
@@ -1507,6 +1521,369 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
   }
 }
 
+// ===========================================================================
+// Cross-domain plan prefill + submission completeness guard
+//
+// Approved Vacation/Excuse days (and, for monthly plans, already-submitted
+// weekly plans) are surfaced into the plan editor so the employee never
+// re-declares them blind. The submission guard then enforces that every
+// required working slot (per the role-aware workweek) is filled before a plan
+// can leave draft. See plan-v1.ts for the workweek model.
+// ===========================================================================
+
+export type PlanPrefillSource = "vacation" | "excuse" | "national_vacation" | "weekly";
+
+export type PlanPrefillItem = {
+  activityDate: string;
+  slot: PlanSlot;
+  activityType: EmployeePlanActivityType;
+  activityTitle: string;
+  area: string | null;
+  locationText: string | null;
+  objective: string | null;
+  notes: string;
+  source: PlanPrefillSource;
+  sourceLabel: string;
+  // Locked rows (approved vacation/excuse) are read-only in the editor; sourced
+  // weekly rows are editable. Both always satisfy the workday guard.
+  locked: boolean;
+};
+
+export type PlanPrefill = {
+  items: PlanPrefillItem[];
+  schemaReady: boolean;
+};
+
+const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
+  am: { start: "09:00", end: "13:00" },
+  pm: { start: "13:00", end: "17:00" },
+};
+
+function planSlotFromTimes(start: string | null | undefined, end: string | null | undefined): PlanSlot {
+  const s = String(start ?? "").slice(0, 5);
+  const e = String(end ?? "").slice(0, 5);
+  if (s === PLAN_SLOT_TIMES.am.start && e === PLAN_SLOT_TIMES.am.end) return "am";
+  if (s === PLAN_SLOT_TIMES.pm.start && e === PLAN_SLOT_TIMES.pm.end) return "pm";
+  return "full";
+}
+
+function dayPartToSlot(dayPart: string | null | undefined): PlanSlot {
+  const value = String(dayPart ?? "").toLowerCase();
+  if (value === "am_only") return "am";
+  if (value === "pm_only") return "pm";
+  return "full";
+}
+
+function excuseTypeToSlot(excuseType: string | null | undefined): PlanSlot {
+  return String(excuseType ?? "").toLowerCase() === "afternoon" ? "pm" : "am";
+}
+
+function eachDateInclusive(start: string, end: string): string[] {
+  const result: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor.getTime() <= last.getTime()) {
+    result.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return result;
+}
+
+type ApprovedVacationRow = {
+  start_date: string;
+  end_date: string | null;
+  day_part: string | null;
+  vacation_type: string | null;
+};
+
+type ApprovedExcuseRow = {
+  excuse_date: string;
+  excuse_type: string | null;
+};
+
+// Manager-approved vacations overlapping [start, end]. We key on
+// manager_decision='approved' (the moment the direct manager signs off), per
+// product decision, independent of the later HR step. Degrades to [] if the
+// column/table is absent so the editor never crashes.
+async function loadManagerApprovedVacations(
+  employeeHrId: string,
+  start: string,
+  end: string,
+): Promise<{ rows: ApprovedVacationRow[]; ready: boolean }> {
+  try {
+    const keys = hrIdLookupKeys(employeeHrId);
+    if (keys.length === 0) return { rows: [], ready: true };
+    const { data, error } = await getSupabaseAdmin()
+      .from("v2_vacation_requests")
+      .select("start_date,end_date,day_part,vacation_type,manager_decision,status")
+      .eq("manager_decision", "approved")
+      .neq("status", "rejected")
+      .lte("start_date", end)
+      .gte("end_date", start)
+      .in("employee_hr_id", keys)
+      .limit(100);
+    if (error) throw error;
+    return { rows: (data ?? []) as ApprovedVacationRow[], ready: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { rows: [], ready: false };
+    throw error;
+  }
+}
+
+async function loadApprovedExcuses(
+  employeeHrId: string,
+  start: string,
+  end: string,
+): Promise<{ rows: ApprovedExcuseRow[]; ready: boolean }> {
+  try {
+    const keys = hrIdLookupKeys(employeeHrId);
+    if (keys.length === 0) return { rows: [], ready: true };
+    const { data, error } = await getSupabaseAdmin()
+      .from("v2_excuse_requests")
+      .select("excuse_date,excuse_type,status")
+      .eq("status", "approved")
+      .gte("excuse_date", start)
+      .lte("excuse_date", end)
+      .in("employee_hr_id", keys)
+      .limit(100);
+    if (error) throw error;
+    return { rows: (data ?? []) as ApprovedExcuseRow[], ready: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { rows: [], ready: false };
+    throw error;
+  }
+}
+
+// Submitted/approved weekly plans overlapping [start, end] (monthly sourcing).
+async function loadWeeklySourcedItems(
+  employeeHrId: string,
+  start: string,
+  end: string,
+): Promise<{ items: PlanPrefillItem[]; ready: boolean }> {
+  try {
+    const keys = hrIdLookupKeys(employeeHrId);
+    if (keys.length === 0) return { items: [], ready: true };
+    const supabase = getSupabaseAdmin();
+    const { data: headers, error: headersError } = await supabase
+      .from("employee_plan_headers")
+      .select("id,status,plan_kind")
+      .eq("plan_kind", "weekly")
+      .in("status", ["submitted", "manager_approved", "ceo_approved", "final_approved", "hr_acknowledged"])
+      .lte("period_start_date", end)
+      .gte("period_end_date", start)
+      .in("employee_hr_id", keys)
+      .limit(20);
+    if (headersError) throw headersError;
+    const planIds = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);
+    if (planIds.length === 0) return { items: [], ready: true };
+    const { data: itemRows, error: itemsError } = await supabase
+      .from("employee_plan_items")
+      .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
+      .in("plan_id", planIds)
+      .gte("activity_date", start)
+      .lte("activity_date", end)
+      .order("activity_date", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .limit(2000);
+    if (itemsError) throw itemsError;
+    const items = ((itemRows ?? []) as PlanItemRow[]).map((row) => ({
+      activityDate: row.activity_date,
+      slot: planSlotFromTimes(row.start_time, row.end_time),
+      activityType: row.activity_type,
+      activityTitle: row.activity_title,
+      area: row.area,
+      locationText: row.location_text,
+      objective: row.objective,
+      notes: row.notes ?? "",
+      source: "weekly" as const,
+      sourceLabel: "From weekly plan",
+      locked: false,
+    }));
+    return { items, ready: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { items: [], ready: false };
+    throw error;
+  }
+}
+
+/**
+ * Build the prefill (locked vacation/excuse + sourced weekly items) for a given
+ * period. Re-computed each time the editor opens, so the monthly plan always
+ * live-reflects the latest submitted/approved weekly plans.
+ */
+export async function getPlanPrefill(
+  access: AccessContext,
+  kind: EmployeePlanKind,
+  anchorDate: string,
+): Promise<PlanPrefill> {
+  await assertPermission(access, "weekly_plans", "read");
+  const employee = await currentEmployee(access);
+  if (!employee) return { items: [], schemaReady: true };
+  const workweek = resolvePlanWorkweek({
+    jobTitle: employeeTitle(employee, access.role),
+    role: access.role,
+  });
+  const period = buildEmployeePlanPeriod(kind, anchorDate, workweek);
+  const start = period.periodStartDate;
+  const end = period.periodEndDate;
+
+  const items: PlanPrefillItem[] = [];
+  let ready = true;
+
+  const vacation = await loadManagerApprovedVacations(employee.hrId, start, end);
+  ready = ready && vacation.ready;
+  for (const row of vacation.rows) {
+    const slot = dayPartToSlot(row.day_part);
+    const clippedStart = row.start_date < start ? start : row.start_date;
+    const clippedEnd = !row.end_date || row.end_date > end ? end : row.end_date;
+    for (const date of eachDateInclusive(clippedStart, clippedEnd)) {
+      items.push({
+        activityDate: date,
+        slot,
+        activityType: "Vacation",
+        activityTitle: "Vacation",
+        area: null,
+        locationText: null,
+        objective: null,
+        notes: "",
+        source: "vacation",
+        sourceLabel: "Approved vacation",
+        locked: true,
+      });
+    }
+  }
+
+  const excuses = await loadApprovedExcuses(employee.hrId, start, end);
+  ready = ready && excuses.ready;
+  for (const row of excuses.rows) {
+    items.push({
+      activityDate: row.excuse_date,
+      slot: excuseTypeToSlot(row.excuse_type),
+      activityType: "Excuse",
+      activityTitle: "Excuse",
+      area: null,
+      locationText: null,
+      objective: null,
+      notes: "",
+      source: "excuse",
+      sourceLabel: "Approved excuse",
+      locked: true,
+    });
+  }
+
+  if (kind === "monthly") {
+    const weekly = await loadWeeklySourcedItems(employee.hrId, start, end);
+    ready = ready && weekly.ready;
+    items.push(...weekly.items);
+  }
+
+  return { items, schemaReady: ready };
+}
+
+/**
+ * Submission completeness guard. Throws a plain Error (surfaced to the user as
+ * a 400-style message) when any required working slot is empty, or when a
+ * Vacation/Excuse day is not backed by an approved request.
+ */
+async function assertSubmissionComplete(input: {
+  employeeHrId: string;
+  items: EmployeePlanItemInput[];
+  periodEndDate: string;
+  periodStartDate: string;
+  workweek: PlanWorkweek;
+}) {
+  const { items, periodEndDate, periodStartDate, workweek } = input;
+  const required = planRequiredSlotsByDate(periodStartDate, periodEndDate, workweek);
+
+  // Slots present per date.
+  const slotsByDate = new Map<string, Set<PlanSlot>>();
+  for (const item of items) {
+    const slot = planSlotFromTimes(item.startTime, item.endTime);
+    const set = slotsByDate.get(item.activityDate) ?? new Set<PlanSlot>();
+    set.add(slot);
+    slotsByDate.set(item.activityDate, set);
+  }
+
+  const incomplete: string[] = [];
+  for (const [date, requirement] of required) {
+    const present = slotsByDate.get(date) ?? new Set<PlanSlot>();
+    const hasFull = present.has("full");
+    const dayLabel = formatPlanDayLabel(date);
+    if (requirement === "am") {
+      if (!hasFull && !present.has("am")) incomplete.push(`${dayLabel} (morning)`);
+      continue;
+    }
+    // requirement === "full": needs a full-day entry OR both AM and PM.
+    if (hasFull) continue;
+    const hasAm = present.has("am");
+    const hasPm = present.has("pm");
+    if (hasAm && hasPm) continue;
+    if (!hasAm && !hasPm) incomplete.push(dayLabel);
+    else incomplete.push(`${dayLabel} (${hasAm ? "afternoon" : "morning"} missing)`);
+  }
+
+  if (incomplete.length > 0) {
+    throw new Error(
+      `Plan is incomplete — every working day must be fully filled before submit. Missing: ${incomplete.join(", ")}.`,
+    );
+  }
+
+  // Validate that any leave-typed days are backed by approved requests.
+  const vacationItems = items.filter((item) => item.activityType === "Vacation");
+  const excuseItems = items.filter((item) => item.activityType === "Excuse");
+  if (vacationItems.length === 0 && excuseItems.length === 0) return;
+
+  const [vacation, excuses] = await Promise.all([
+    vacationItems.length > 0
+      ? loadManagerApprovedVacations(input.employeeHrId, periodStartDate, periodEndDate)
+      : Promise.resolve({ rows: [] as ApprovedVacationRow[], ready: true }),
+    excuseItems.length > 0
+      ? loadApprovedExcuses(input.employeeHrId, periodStartDate, periodEndDate)
+      : Promise.resolve({ rows: [] as ApprovedExcuseRow[], ready: true }),
+  ]);
+
+  const vacationViolations: string[] = [];
+  for (const item of vacationItems) {
+    const covered = vacation.rows.some((row) => {
+      const endDate = row.end_date ?? row.start_date;
+      return item.activityDate >= row.start_date && item.activityDate <= endDate;
+    });
+    if (!covered) vacationViolations.push(formatPlanDayLabel(item.activityDate));
+  }
+  if (vacationViolations.length > 0) {
+    throw new Error(
+      `These days are marked Vacation but have no manager-approved vacation request — file (and get approval) first: ${vacationViolations.join(", ")}.`,
+    );
+  }
+
+  const excuseViolations: string[] = [];
+  for (const item of excuseItems) {
+    const slot = planSlotFromTimes(item.startTime, item.endTime);
+    const covered = excuses.rows.some(
+      (row) => row.excuse_date === item.activityDate && excuseTypeToSlot(row.excuse_type) === slot,
+    );
+    if (!covered) excuseViolations.push(formatPlanDayLabel(item.activityDate));
+  }
+  if (excuseViolations.length > 0) {
+    throw new Error(
+      `These days are marked Excuse but have no approved excuse request: ${excuseViolations.join(", ")}.`,
+    );
+  }
+}
+
+function formatPlanDayLabel(date: string): string {
+  try {
+    return new Intl.DateTimeFormat("en", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+      weekday: "short",
+    }).format(new Date(`${date}T00:00:00Z`));
+  } catch {
+    return date;
+  }
+}
+
 export async function createEmployeePlan(access: AccessContext, input: {
   anchorDate: string;
   items: EmployeePlanItemInput[];
@@ -1524,7 +1901,11 @@ export async function createEmployeePlan(access: AccessContext, input: {
   if (!isActiveEmployee(employee)) {
     throw new Error("Forbidden: only active employees can submit plans.");
   }
-  const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate);
+  const workweek = resolvePlanWorkweek({
+    jobTitle: employeeTitle(employee, access.role),
+    role: access.role,
+  });
+  const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate, workweek);
   const items = normalizeItems(
     input.items,
     period.periodStartDate,
@@ -1532,6 +1913,15 @@ export async function createEmployeePlan(access: AccessContext, input: {
     await medicalRepOptionsForEmployee(employee, isOrgWidePlanningEmployee(employee, access.role)),
     { submit: Boolean(input.submit) },
   );
+  if (input.submit) {
+    await assertSubmissionComplete({
+      employeeHrId: employee.hrId,
+      items,
+      periodEndDate: period.periodEndDate,
+      periodStartDate: period.periodStartDate,
+      workweek,
+    });
+  }
 
   // Always create the row in 'draft' first. If the caller asked to submit, we
   // replace items and optionally promote to 'submitted' through the item RPC,
@@ -1605,6 +1995,18 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
       { submit: Boolean(input.submit) },
     );
+    if (input.submit) {
+      await assertSubmissionComplete({
+        employeeHrId: existing.employee_hr_id,
+        items,
+        periodEndDate: existing.period_end_date,
+        periodStartDate: existing.period_start_date,
+        workweek: resolvePlanWorkweek({
+          jobTitle: existing.employee_job_title,
+          role: owner ? access.role : null,
+        }),
+      });
+    }
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .insert({
@@ -1651,16 +2053,29 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     throw new Error("This plan cannot be edited in its current status.");
   }
   const owner = await currentEmployee(access);
+  const editItems = normalizeItems(
+    input.items,
+    existing.period_start_date,
+    existing.period_end_date,
+    await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
+    { submit: Boolean(input.submit) },
+  );
+  if (input.submit) {
+    await assertSubmissionComplete({
+      employeeHrId: existing.employee_hr_id,
+      items: editItems,
+      periodEndDate: existing.period_end_date,
+      periodStartDate: existing.period_start_date,
+      workweek: resolvePlanWorkweek({
+        jobTitle: existing.employee_job_title,
+        role: owner ? access.role : null,
+      }),
+    });
+  }
   await rpcReplacePlanItems({
     access,
     expectedRevision: existing.revision,
-    items: normalizeItems(
-      input.items,
-      existing.period_start_date,
-      existing.period_end_date,
-      await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
-      { submit: Boolean(input.submit) },
-    ),
+    items: editItems,
     planId: existing.id,
     submit: Boolean(input.submit),
   });
