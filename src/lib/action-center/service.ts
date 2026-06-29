@@ -444,17 +444,17 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       .order("manager_decision_at", { ascending: false })
       .limit(200),
     db
-      .from("employee_excuses")
+      .from("v2_excuse_requests")
       .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
       .ilike("manager_decision_by_hr_id", hrId)
       .not("manager_decision", "is", null)
       .order("manager_decision_at", { ascending: false })
       .limit(200),
     db
-      .from("employee_plans")
-      .select("id,employee_name,employee_hr_id,period_key,plan_kind,manager_decision,manager_decision_at,manager_decision_by_hr_id,ceo_decision,ceo_decision_at,ceo_decision_by_hr_id")
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
       .or(`manager_decision_by_hr_id.ilike.${hrId},ceo_decision_by_hr_id.ilike.${hrId}`)
-      .not("manager_decision", "is", null)
+      .not("manager_decision_at", "is", null)
       .order("manager_decision_at", { ascending: false })
       .limit(200),
     db
@@ -516,10 +516,19 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     for (const row of plans.value.data ?? []) {
       const isMgrDecider = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
       const isCeoDecider = String(row.ceo_decision_by_hr_id ?? "").toUpperCase() === hrId;
-      const decisionRaw = isCeoDecider && row.ceo_decision ? row.ceo_decision : row.manager_decision;
-      const decidedAt = isCeoDecider && row.ceo_decision_at ? row.ceo_decision_at : row.manager_decision_at;
-      const decision = decodeDecision(decisionRaw);
-      if (!decision || (!isMgrDecider && !isCeoDecider)) continue;
+      if (!isMgrDecider && !isCeoDecider) continue;
+      const s = String(row.status ?? "").toLowerCase();
+      // Derive decision from status — employee_plan_headers has no text decision columns
+      let decision: "approved" | "rejected" | "returned" | null = null;
+      let decidedAt: string | null = null;
+      if (isCeoDecider && row.ceo_decision_at) {
+        decision = ["final_approved", "hr_acknowledged"].includes(s) ? "approved" : s === "ceo_returned" ? "returned" : null;
+        decidedAt = row.ceo_decision_at;
+      } else if (isMgrDecider && row.manager_decision_at) {
+        decision = s === "manager_returned" ? "returned" : row.manager_decision_at ? "approved" : null;
+        decidedAt = row.manager_decision_at;
+      }
+      if (!decision) continue;
       items.push({
         id: `history:weekly_plan:${row.id}`,
         module: "weekly_plan",
