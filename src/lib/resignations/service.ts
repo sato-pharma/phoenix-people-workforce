@@ -1,5 +1,6 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canSeeEmployee, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
@@ -1437,32 +1438,6 @@ export async function updateResignationDates(
   invalidateExecutiveDashboardCache("resignation dates updated", ["resignations", "employees", "vacancies"]);
 
   return updatedRecord;
-}
-
-/**
- * Resolve a workflow actor token to its canonical employee HR_ID before it is written to a
- * decision column. The history tab matches on HR_ID, so a login token (e.g. "admin-HR") must
- * never be persisted here. Best-effort: matches the employee directory, then the app_auth_users
- * login→hr_id map, and finally falls back to the normalized form. Never throws.
- */
-async function resolveCanonicalActorHrId(actor: string): Promise<string> {
-  const raw = cleanText(actor) ?? "";
-  if (!raw) return raw;
-  try {
-    const { employees } = await getEmployeeDirectory();
-    const match = employees.find((employee) => normalizeHrId(employee.hrId) === normalizeHrId(raw));
-    if (match?.hrId) return match.hrId;
-    const { data } = await getSupabaseAdmin()
-      .from("app_auth_users")
-      .select("hr_id")
-      .ilike("login_id", raw)
-      .maybeSingle();
-    const mapped = cleanText((data as { hr_id?: string | null } | null)?.hr_id);
-    if (mapped) return mapped;
-  } catch {
-    // best-effort — fall back to the normalized token below
-  }
-  return normalizeHrId(raw) ?? raw;
 }
 
 export async function runResignationWorkflow(

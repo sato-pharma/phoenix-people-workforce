@@ -249,9 +249,29 @@ export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {
 
 // ── "Approval history" tab (decisions the caller has made) ────────────────────
 
+// History spans more modules than the live inbox: the inbox (ActionHubModule) is limited to
+// the sequential, manager-facing approvals, but a person's decision history also includes
+// admin/system approvals they personally made (salary, sales imports, marketing steps, payroll
+// expenses). These extra modules deep-link to their native pages rather than the hub, so they
+// never need the inbox detail-payload machinery — hence a dedicated, wider union here.
+export type HistoryApprovalModule =
+  | ActionHubModule
+  | "salary"
+  | "sales_import"
+  | "marketing_request"
+  | "payroll_expense";
+
+export const HISTORY_MODULE_LABELS: Record<HistoryApprovalModule, string> = {
+  ...ACTION_HUB_MODULE_LABELS,
+  salary: "Payroll Batch",
+  sales_import: "Sales Import",
+  marketing_request: "Marketing",
+  payroll_expense: "Expense",
+};
+
 export type HistoricalApprovalItem = {
   id: string;
-  module: ActionHubModule;
+  module: HistoryApprovalModule;
   employeeName: string;
   employeeHrId: string;
   title: string;

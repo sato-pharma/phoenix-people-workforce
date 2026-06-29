@@ -4,7 +4,7 @@ import { Clock } from "lucide-react";
 
 import { adminPanelClassName } from "@/components/admin/admin-design-system";
 import type { HistoricalApprovalItem } from "@/components/action-center/types";
-import { ACTION_HUB_MODULE_LABELS } from "@/components/action-center/types";
+import { HISTORY_MODULE_LABELS } from "@/components/action-center/types";
 
 const DECISION_CLASSES: Record<HistoricalApprovalItem["decision"], string> = {
   approved: "border-emerald-200/80 bg-emerald-50 text-emerald-700",
@@ -67,7 +67,7 @@ export function HistoricalApprovalsList({ items }: Props) {
                 {DECISION_LABEL[item.decision]}
               </span>
               <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                {ACTION_HUB_MODULE_LABELS[item.module]}
+                {HISTORY_MODULE_LABELS[item.module]}
               </span>
             </div>
             <p className="text-sm font-semibold text-slate-900">{item.title}</p>
