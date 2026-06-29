@@ -1,5 +1,20 @@
 export type TrafficStatus = "critical" | "warning" | "safe";
 
+export type ProbationDvState = {
+  dm_dv_done: boolean;
+  dm_dv_done_at: string | null;
+  dm_dv_done_manually: boolean;
+  nsm_dv_done: boolean;
+  nsm_dv_done_at: string | null;
+  nsm_dv_done_manually: boolean;
+  pm_gpm_dv_done: boolean | null; // null = CNS (not applicable)
+  pm_gpm_dv_done_at: string | null;
+  pm_gpm_dv_done_manually: boolean;
+  tm_dv_done: boolean;
+  tm_dv_done_at: string | null;
+  tm_dv_done_manually: boolean;
+};
+
 export type ProbationRow = {
   allowedActions?: ProbationWorkflowAction[];
   area_name: string;
@@ -7,6 +22,7 @@ export type ProbationRow = {
   employment_status?: string;
   has_durable_probation_record?: boolean;
   days_remaining: number;
+  dv_state?: ProbationDvState | null;
   full_name: string;
   hire_date: string;
   hr_id: string;

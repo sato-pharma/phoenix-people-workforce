@@ -22,12 +22,24 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const employeeHrId = searchParams.get("employeeHrId");
+  const action = searchParams.get("action"); // "feedback" = open feedback panel
+  const cycle = searchParams.get("cycle");
 
   if (resolveNavigationMode(access) === "employee-portal") {
     const dest = new URL("/employee-portals/probation", request.url);
     if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
+    if (action === "feedback" && employeeHrId) {
+      dest.searchParams.set("feedbackEmployeeHrId", employeeHrId);
+    }
+    if (cycle) dest.searchParams.set("cycle", cycle);
     return NextResponse.redirect(dest);
   }
 
-  return NextResponse.redirect(new URL("/probation", request.url));
+  const dest = new URL("/probation", request.url);
+  if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
+  if (action === "feedback" && employeeHrId) {
+    dest.searchParams.set("feedbackEmployeeHrId", employeeHrId);
+  }
+  if (cycle) dest.searchParams.set("cycle", cycle);
+  return NextResponse.redirect(dest);
 }

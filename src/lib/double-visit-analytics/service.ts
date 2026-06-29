@@ -592,6 +592,11 @@ export async function publishDoubleVisitImport(input: {
     summary: "Double Visit Analytics import published as the official snapshot.",
   });
 
+  // Auto-tick DV checkboxes on active probation records (fire-and-forget, non-blocking)
+  import("@/lib/probation/feedback-service")
+    .then(m => m.tickDvCheckboxesFromPublish(input.importId))
+    .catch(() => undefined);
+
   return mapImportRow(data as DoubleVisitImportRow);
 }
 
