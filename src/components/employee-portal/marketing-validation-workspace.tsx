@@ -793,7 +793,7 @@ function LiveCameraModal({
           <p className="text-[13px] font-bold text-slate-900">Live timestamped photo</p>
           <p className="mt-0.5 text-[12px] font-medium text-slate-500">{message}</p>
           {hasLocationStamp ? (
-            <p className="mt-1.5 text-[11px] font-semibold text-slate-600 line-clamp-2">{capture.address}</p>
+            <p className="mt-1.5 text-[11px] font-semibold text-slate-600 whitespace-nowrap">{capture.address}</p>
           ) : null}
         </div>
         <div className="bg-slate-900">

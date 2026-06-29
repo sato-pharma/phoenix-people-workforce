@@ -2593,7 +2593,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 </p>
               </div>
             </div>
-            <span className="hidden truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
+            <span className="hidden whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
               {employeeName}
             </span>
           </div>
@@ -2739,7 +2739,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       className="inline-flex items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium text-orange-800"
                       key={`${file.name}-${file.size}`}
                     >
-                      <span className="max-w-[160px] truncate" title={file.name}>
+                      <span className="whitespace-nowrap" title={file.name}>
                         {file.name}
                       </span>
                       <span className="text-[10px] text-orange-600">
@@ -2802,7 +2802,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               {lastTicket.subcategory ? ` / ${lastTicket.subcategory}` : ""} /{" "}
               {formatRequestDate(lastTicket.createdAt)}
             </p>
-            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-600">
+            <p className="mt-2 whitespace-nowrap text-[12px] leading-relaxed text-slate-600">
               {lastTicket.description}
             </p>
             {lastTicket.attachments.length > 0 && (

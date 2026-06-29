@@ -103,7 +103,7 @@ function OverviewStatCard({
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               {note ? (
-                <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-slate-500" title={note}>
+                <p className="whitespace-nowrap text-[11px] font-semibold leading-snug text-slate-500" title={note}>
                   {note}
                 </p>
               ) : null}

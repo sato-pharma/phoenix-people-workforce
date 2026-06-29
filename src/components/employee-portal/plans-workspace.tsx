@@ -32,9 +32,21 @@ import { ChoiceGroup } from "@/components/ui/choice-group";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
-import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
-import { buildEmployeePlanPeriod, employeePlanActivityTypes } from "@/lib/weekly-planning/plan-v1";
-import type { EmployeePlan, EmployeePlanItemInput, EmployeePlansWorkspace, VisitDetailInput } from "@/lib/weekly-planning/service";
+import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
+import {
+  buildEmployeePlanPeriod,
+  employeePlanActivityTypes,
+  HEAD_OFFICE_WORKWEEK,
+  planRequiredSlotsByDate,
+} from "@/lib/weekly-planning/plan-v1";
+import type {
+  EmployeePlan,
+  EmployeePlanItemInput,
+  EmployeePlansWorkspace,
+  PlanPrefillItem,
+  PlanPrefillSource,
+  VisitDetailInput,
+} from "@/lib/weekly-planning/service";
 
 type PlansWorkspaceProps = {
   access: AccessContext;
@@ -45,17 +57,27 @@ type PlansWorkspaceProps = {
 
 type DraftItem = EmployeePlanItemInput & {
   key: string;
+  // Explicit half-day slot. This is the source of truth for AM/PM (NOT derived
+  // from start/end times) — deriving it from times caused rows to reclassify and
+  // re-sort mid-keystroke, stealing input focus. Times are only synthesised at
+  // save time for storage. "Office full day" is the sole entry where a clock
+  // concept matters and even there it stays implicit.
+  slot: PlanSlot;
   // Client-only disambiguation axis: only meaningful for org-wide roles (e.g.
   // Training Manager) whose medicalRepOptions span more than one line. Never
   // sent to the server - the resolved doubleVisitMedicalRepHrId carries the
   // outcome instead.
   lineFilter?: string | null;
   returnNotes?: EmployeePlan["items"][number]["returnNotes"];
+  // Cross-domain provenance. Locked rows (approved vacation/excuse) are
+  // read-only; sourced weekly rows (monthly sync) are editable but badged.
+  locked?: boolean;
+  source?: PlanPrefillSource;
+  sourceLabel?: string;
 };
 
 type MedicalRepOption = EmployeePlansWorkspace["medicalRepOptions"][number];
 type DayMode = "full" | "split";
-type SlotKind = "full" | "am" | "pm" | "other";
 type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
 
 type DayGroup = {
@@ -84,6 +106,8 @@ const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
   "Admin",
   "Remote",
   "Vacation",
+  "National Vacation",
+  "Excuse",
 ]);
 
 const dayModeOptions = [
@@ -120,29 +144,31 @@ function normalizeTime(value: string | null | undefined) {
   return String(value ?? "").slice(0, 5);
 }
 
-function slotKind(row: Pick<DraftItem, "startTime" | "endTime">): SlotKind {
-  const start = normalizeTime(row.startTime);
-  const end = normalizeTime(row.endTime);
-  if (start === AM_START && end === AM_END) return "am";
-  if (start === PM_START && end === PM_END) return "pm";
-  return start || end ? "other" : "full";
+// Derive the explicit slot from stored times (only used once, on load).
+function slotFromTimes(start: string | null | undefined, end: string | null | undefined): PlanSlot {
+  const s = normalizeTime(start);
+  const e = normalizeTime(end);
+  if (s === AM_START && e === AM_END) return "am";
+  if (s === PM_START && e === PM_END) return "pm";
+  return "full";
 }
 
-function slotSortValue(row: Pick<DraftItem, "startTime" | "endTime">) {
-  const kind = slotKind(row);
-  if (kind === "am" || kind === "full") return 0;
-  if (kind === "pm") return 1;
-  return 2;
+// Synthesise storage times from the explicit slot (only used at save time).
+function timesForSlot(slot: PlanSlot): { startTime: string; endTime: string } {
+  if (slot === "am") return { startTime: AM_START, endTime: AM_END };
+  if (slot === "pm") return { startTime: PM_START, endTime: PM_END };
+  return { startTime: "", endTime: "" };
 }
 
-function slotLabel(row: Pick<DraftItem, "startTime" | "endTime">) {
-  const kind = slotKind(row);
-  if (kind === "am") return "AM";
-  if (kind === "pm") return "PM";
-  if (kind === "full") return "Full day";
-  const start = normalizeTime(row.startTime);
-  const end = normalizeTime(row.endTime);
-  return [start, end].filter(Boolean).join(" - ") || "Activity";
+function slotSortValue(row: Pick<DraftItem, "slot">) {
+  if (row.slot === "pm") return 1;
+  return 0; // am + full sort first
+}
+
+function slotLabel(row: Pick<DraftItem, "slot">) {
+  if (row.slot === "am") return "AM";
+  if (row.slot === "pm") return "PM";
+  return "Full day";
 }
 
 function isCoachingActivity(value: string | null | undefined, activityTitle?: string | null) {
@@ -155,7 +181,11 @@ function activityLabel(value: PlanningActivityValue) {
 }
 
 const planningActivityOptions: Array<{ label: string; value: PlanningActivityValue }> = [
-  ...employeePlanActivityTypes.map((type) => ({ label: activityLabel(type), value: type })),
+  // "Excuse" is auto-filled (locked) from approved excuse requests only — never
+  // manually selectable. "National Vacation" stays a manual choice.
+  ...employeePlanActivityTypes
+    .filter((type) => type !== "Excuse")
+    .map((type) => ({ label: activityLabel(type), value: type })),
   { label: "Coaching", value: "Coaching" },
 ];
 
@@ -234,25 +264,25 @@ function isDateInput(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function nextWeeklyPlanStart(referenceDate = today()) {
-  const currentWeekStart = buildEmployeePlanPeriod("weekly", referenceDate).periodStartDate;
+function nextWeeklyPlanStart(referenceDate = today(), workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK) {
+  const currentWeekStart = buildEmployeePlanPeriod("weekly", referenceDate, workweek).periodStartDate;
   return addDays(currentWeekStart, 7);
 }
 
-function defaultPlanAnchorDate(kind: EmployeePlanKind) {
-  return kind === "weekly" ? nextWeeklyPlanStart() : today();
+function defaultPlanAnchorDate(kind: EmployeePlanKind, workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK) {
+  return kind === "weekly" ? nextWeeklyPlanStart(today(), workweek) : today();
 }
 
-function normalizeAnchorForKind(kind: EmployeePlanKind, value: string) {
-  if (!isDateInput(value)) return defaultPlanAnchorDate(kind);
-  const period = buildEmployeePlanPeriod(kind, value);
+function normalizeAnchorForKind(kind: EmployeePlanKind, value: string, workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK) {
+  if (!isDateInput(value)) return defaultPlanAnchorDate(kind, workweek);
+  const period = buildEmployeePlanPeriod(kind, value, workweek);
   return kind === "weekly" ? period.periodStartDate : value;
 }
 
-function weeklyPlanWeekOptions(anchorDate: string) {
+function weeklyPlanWeekOptions(anchorDate: string, workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK) {
   const starts = new Set<string>();
-  starts.add(buildEmployeePlanPeriod("weekly", anchorDate).periodStartDate);
-  const firstFutureWeek = nextWeeklyPlanStart();
+  starts.add(buildEmployeePlanPeriod("weekly", anchorDate, workweek).periodStartDate);
+  const firstFutureWeek = nextWeeklyPlanStart(today(), workweek);
   for (let index = 0; index < 12; index += 1) {
     starts.add(addDays(firstFutureWeek, index * 7));
   }
@@ -268,11 +298,6 @@ function dateRange(startDate: string, endDate: string) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return result;
-}
-
-function isDefaultWorkingDay(value: string) {
-  const day = new Date(`${value}T00:00:00Z`).getUTCDay();
-  return day >= 0 && day <= 4;
 }
 
 function formatDate(value: string) {
@@ -305,7 +330,7 @@ function formatDayName(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function createDraftRow(activityDate: string, index: number, keySeed = "row"): DraftItem {
+function createDraftRow(activityDate: string, index: number, keySeed = "row", slot: PlanSlot = "full"): DraftItem {
   return {
     activityDate,
     activityTitle: "",
@@ -320,11 +345,14 @@ function createDraftRow(activityDate: string, index: number, keySeed = "row"): D
     locationText: "",
     notes: "",
     objective: "",
+    slot,
     sortOrder: index,
     startTime: "",
   };
 }
 
+// Sort by (date, slot) only. Crucially this never depends on the value being
+// typed, so editing a field can't reorder rows and steal input focus.
 function sortDraftRows(rows: DraftItem[]) {
   return [...rows]
     .sort((left, right) => {
@@ -350,11 +378,19 @@ function groupDraftRows(rows: DraftItem[]): DayGroup[] {
   }));
 }
 
-function defaultRows(kind: EmployeePlanKind, anchorDate: string): DraftItem[] {
-  const period = buildEmployeePlanPeriod(kind, anchorDate);
-  const days = dateRange(period.periodStartDate, period.periodEndDate);
-  const selectedDays = kind === "monthly" ? days.filter(isDefaultWorkingDay) : days;
-  return selectedDays.map((date, index) => createDraftRow(date, index));
+// Seed the editor with one row per required working slot, per the employee's
+// role-aware workweek (Head Office Sun–Thu full; Field Force Sat–Wed full +
+// Thu AM only). Field Thursday seeds a single AM-slot row.
+function defaultRows(kind: EmployeePlanKind, anchorDate: string, workweek: PlanWorkweek): DraftItem[] {
+  const period = buildEmployeePlanPeriod(kind, anchorDate, workweek);
+  const required = planRequiredSlotsByDate(period.periodStartDate, period.periodEndDate, workweek);
+  let index = 0;
+  const rows: DraftItem[] = [];
+  for (const [date, requirement] of required) {
+    rows.push(createDraftRow(date, index, "row", requirement === "am" ? "am" : "full"));
+    index += 1;
+  }
+  return rows;
 }
 
 function draftRowsFromPlan(plan: EmployeePlan, medicalRepOptions: MedicalRepOption[]): DraftItem[] {
@@ -374,9 +410,62 @@ function draftRowsFromPlan(plan: EmployeePlan, medicalRepOptions: MedicalRepOpti
     notes: item.notes,
     objective: item.objective ?? "",
     returnNotes: item.returnNotes,
+    slot: slotFromTimes(item.startTime, item.endTime),
     sortOrder: index,
     startTime: item.startTime ?? "",
   }));
+}
+
+// Overlay cross-domain prefill onto seeded rows. Locked vacation/excuse rows
+// replace any seeded row in the same (date, slot); sourced weekly rows fill
+// empty seeded slots. Existing user-entered content is never clobbered.
+function mergePrefillIntoRows(base: DraftItem[], prefill: PlanPrefillItem[]): DraftItem[] {
+  if (prefill.length === 0) return base;
+  const slotFilled = (row: DraftItem) =>
+    Boolean(
+      (row.activityType && row.activityType !== "Office") ||
+        String(row.locationText ?? "").trim() ||
+        String(row.area ?? "").trim() ||
+        String(row.objective ?? "").trim(),
+    );
+  const rows = [...base];
+  const indexOf = (date: string, slot: PlanSlot) =>
+    rows.findIndex((row) => row.activityDate === date && row.slot === slot);
+
+  prefill.forEach((item, prefillIndex) => {
+    const row: DraftItem = {
+      activityDate: item.activityDate,
+      activityTitle: item.activityTitle,
+      activityType: item.activityType,
+      area: item.area ?? "",
+      attendees: "",
+      doubleVisitMedicalRepHrId: "",
+      doubleVisitMedicalRepName: "",
+      endTime: "",
+      key: `${item.source}-${item.activityDate}-${item.slot}-${prefillIndex}`,
+      lineFilter: "",
+      locationText: item.locationText ?? "",
+      locked: item.locked,
+      notes: item.notes ?? "",
+      objective: item.objective ?? "",
+      slot: item.slot,
+      sortOrder: rows.length + prefillIndex,
+      source: item.source,
+      sourceLabel: item.sourceLabel,
+      startTime: "",
+    };
+    const existingIndex = indexOf(item.activityDate, item.slot);
+    if (existingIndex === -1) {
+      rows.push(row);
+      return;
+    }
+    const existing = rows[existingIndex];
+    // Locked sources always win; sourced weekly only fills an untouched slot.
+    if (item.locked || !slotFilled(existing)) {
+      rows[existingIndex] = { ...row, key: existing.key };
+    }
+  });
+  return sortDraftRows(rows);
 }
 
 function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): EmployeePlanItemInput[] {
@@ -388,6 +477,9 @@ function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): E
       const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
       const medicalRepHrId = row.doubleVisitMedicalRepHrId || autoRep?.hrId || "";
       const medicalRepName = row.doubleVisitMedicalRepName || autoRep?.fullName || "";
+      // Persist the explicit slot as storage times (am/pm windows, or none for
+      // a full day). The editor itself never reads these back as slot truth.
+      const slotTimes = timesForSlot(row.slot);
       result.push({
         activityDate: row.activityDate,
         activityTitle: rule.label,
@@ -396,12 +488,12 @@ function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): E
         attendees: row.attendees,
         doubleVisitMedicalRepHrId: rule.requiresRep ? medicalRepHrId : null,
         doubleVisitMedicalRepName: rule.requiresRep ? medicalRepName : null,
-        endTime: row.endTime,
+        endTime: slotTimes.endTime,
         locationText: rule.showTrainingFormat ? trainingFormatValue(row.locationText) : rule.showRegion ? region : "",
         notes: slotIndex === 0 ? group.dayNote : "",
         objective: row.objective,
         sortOrder: result.length,
-        startTime: row.startTime,
+        startTime: slotTimes.startTime,
       });
     });
   }
@@ -537,14 +629,16 @@ function PlanPeriodControl({
   disabled,
   idPrefix,
   onAnchorChange,
+  workweek,
 }: {
   activeKind: EmployeePlanKind;
   anchorDate: string;
   disabled: boolean;
   idPrefix: string;
   onAnchorChange: (value: string) => void;
+  workweek: PlanWorkweek;
 }) {
-  const period = buildEmployeePlanPeriod(activeKind, anchorDate);
+  const period = buildEmployeePlanPeriod(activeKind, anchorDate, workweek);
   const inputClass =
     "h-10 w-full border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
 
@@ -564,8 +658,8 @@ function PlanPeriodControl({
           onChange={(event) => onAnchorChange(event.target.value)}
           value={period.periodStartDate}
         >
-          {weeklyPlanWeekOptions(anchorDate).map((weekStart) => {
-            const optionPeriod = buildEmployeePlanPeriod("weekly", weekStart);
+          {weeklyPlanWeekOptions(anchorDate, workweek).map((weekStart) => {
+            const optionPeriod = buildEmployeePlanPeriod("weekly", weekStart, workweek);
             return (
               <option key={weekStart} value={weekStart}>
                 {formatDate(optionPeriod.periodStartDate)} to {formatDate(optionPeriod.periodEndDate)} - {optionPeriod.periodKey}
@@ -603,11 +697,12 @@ export function PlansWorkspace({
   initialWorkspace,
   selectedPlanId,
 }: PlansWorkspaceProps) {
+  const initialWorkweek = initialWorkspace.currentEmployee?.workweek ?? HEAD_OFFICE_WORKWEEK;
   const initialSelectedPlan = selectedPlanId
     ? initialWorkspace.plans.find((item) => item.id === selectedPlanId) ?? null
     : null;
   const initialKind = initialSelectedPlan?.planKind ?? "weekly";
-  const initialAnchorDate = initialSelectedPlan?.periodStartDate ?? defaultPlanAnchorDate(initialKind);
+  const initialAnchorDate = initialSelectedPlan?.periodStartDate ?? defaultPlanAnchorDate(initialKind, initialWorkweek);
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [activeKind, setActiveKind] = useState<EmployeePlanKind>(initialKind);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
@@ -615,12 +710,19 @@ export function PlansWorkspace({
   const [rows, setRows] = useState<DraftItem[]>(() =>
     initialSelectedPlan
       ? draftRowsFromPlan(initialSelectedPlan, initialWorkspace.medicalRepOptions)
-      : defaultRows(initialKind, initialAnchorDate),
+      : defaultRows(initialKind, initialAnchorDate, initialWorkweek),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
   const [visitDetailsPlan, setVisitDetailsPlan] = useState<EmployeePlan | null>(null);
+  // Cross-domain prefill (approved vacation/excuse + monthly weekly sync),
+  // scoped to the active (kind, period) so a stale fetch never overwrites a
+  // newer one. Re-fetched whenever the employee opens a new period.
+  const [prefillState, setPrefillState] = useState<{ items: PlanPrefillItem[]; scopeKey: string }>({
+    items: [],
+    scopeKey: "",
+  });
   const [sameLineBookingState, setSameLineBookingState] = useState<{
     bookings: SameLinePlanBooking[];
     scopeKey: string;
@@ -653,9 +755,10 @@ export function PlansWorkspace({
       ? "Weekly Plan"
       : "Monthly Plan";
 
+  const workweek = workspace.currentEmployee?.workweek ?? HEAD_OFFICE_WORKWEEK;
   const period = useMemo(
-    () => buildEmployeePlanPeriod(activeKind, anchorDate),
-    [activeKind, anchorDate],
+    () => buildEmployeePlanPeriod(activeKind, anchorDate, workweek),
+    [activeKind, anchorDate, workweek],
   );
   const sameLineBookingScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${period.periodStartDate}|${period.periodEndDate}`;
   const sameLineBookings = useMemo(
@@ -670,10 +773,11 @@ export function PlansWorkspace({
     () => new Set(rows.map((row) => row.activityDate)),
     [rows],
   );
-  const workingDayCount = useMemo(
-    () => periodDays.filter(isDefaultWorkingDay).length,
-    [periodDays],
+  const requiredSlotsByDate = useMemo(
+    () => planRequiredSlotsByDate(period.periodStartDate, period.periodEndDate, workweek),
+    [period.periodEndDate, period.periodStartDate, workweek],
   );
+  const workingDayCount = requiredSlotsByDate.size;
   const plans = workspace.plans;
   const plan = plans.find((item) => item.id === selectedPlan) ?? null;
   const ownPlans = plans.filter(
@@ -715,12 +819,41 @@ export function PlansWorkspace({
     () => rows.flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions)),
     [rows, workspace.medicalRepOptions],
   );
+  // Client mirror of the server workday guard: every required working slot must
+  // be filled before submit. A "full" day needs a full entry OR both AM + PM;
+  // a Field Thursday needs only AM. Server re-enforces this on submit.
+  const incompleteDays = useMemo(() => {
+    const slotsByDate = new Map<string, Set<PlanSlot>>();
+    for (const row of rows) {
+      const set = slotsByDate.get(row.activityDate) ?? new Set<PlanSlot>();
+      set.add(row.slot);
+      slotsByDate.set(row.activityDate, set);
+    }
+    const issues: string[] = [];
+    for (const [date, requirement] of requiredSlotsByDate) {
+      const present = slotsByDate.get(date) ?? new Set<PlanSlot>();
+      const hasFull = present.has("full");
+      const label = `${formatDayName(date)} ${formatDate(date)}`;
+      if (requirement === "am") {
+        if (!hasFull && !present.has("am")) issues.push(`${label} (morning)`);
+        continue;
+      }
+      if (hasFull) continue;
+      const hasAm = present.has("am");
+      const hasPm = present.has("pm");
+      if (hasAm && hasPm) continue;
+      if (!hasAm && !hasPm) issues.push(label);
+      else issues.push(`${label} (${hasAm ? "afternoon" : "morning"} missing)`);
+    }
+    return issues;
+  }, [requiredSlotsByDate, rows]);
   const needsAssignedRep = rows.some((row) => activityRule(row.activityType, row.activityTitle).requiresRep);
   const noSameLineReps = needsAssignedRep && workspace.medicalRepOptions.filter((rep) => !isVacantMedicalRep(rep)).length === 0;
   const noPlanRows = rows.length === 0;
   const lineOptions = useMemo(() => lineOptionsFromReps(workspace.medicalRepOptions), [workspace.medicalRepOptions]);
   const tableNeedsLine = lineOptions.length > 1;
-  const submitBlocked = !canEdit || submitValidationIssues.length > 0 || noSameLineReps || noPlanRows;
+  const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows;
+  const prefillScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${activeKind}|${period.periodStartDate}`;
   const rowConflictWarning = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of rows) {
@@ -779,9 +912,39 @@ export function PlansWorkspace({
     };
   }, [period.periodEndDate, period.periodStartDate, sameLineBookingScopeKey, workspace.currentEmployee?.hrId]);
 
+  // Fetch cross-domain prefill (approved vacation/excuse + monthly weekly sync)
+  // whenever the active period changes, then overlay it onto a NEW draft only
+  // (never a saved plan being edited). mergePrefillIntoRows preserves user
+  // input, so re-running is safe. setRows here runs inside the async callback.
+  useEffect(() => {
+    let active = true;
+    if (!workspace.currentEmployee?.hrId) return () => {
+      active = false;
+    };
+    const scopeKey = prefillScopeKey;
+    fetch(`/api/weekly-plans/prefill?kind=${activeKind}&anchor=${encodeURIComponent(anchorDate)}`, {
+      cache: "no-store",
+    })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!active) return;
+        const items: PlanPrefillItem[] = payload.success ? payload.data.items ?? [] : [];
+        setPrefillState({ items, scopeKey });
+        if (!selectedPlan && items.length > 0) {
+          setRows((current) => mergePrefillIntoRows(current, items));
+        }
+      })
+      .catch(() => {
+        if (active) setPrefillState({ items: [], scopeKey });
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeKind, anchorDate, prefillScopeKey, selectedPlan, workspace.currentEmployee?.hrId]);
+
   function resetRows(kind: EmployeePlanKind, date: string) {
-    const normalizedDate = normalizeAnchorForKind(kind, date);
-    setRows(defaultRows(kind, normalizedDate));
+    const normalizedDate = normalizeAnchorForKind(kind, date, workweek);
+    setRows(defaultRows(kind, normalizedDate, workweek));
     setSheetKey(null);
   }
 
@@ -789,6 +952,7 @@ export function PlansWorkspace({
     setRows((current) =>
       current.map((row) => {
         if (row.key !== key) return row;
+        if (row.locked) return row; // approved vacation/excuse rows are read-only
         if (field === "activityType") {
           const nextActivity = activityValue(value);
           const rule = activityRule(nextActivity.activityType, nextActivity.activityTitle);
@@ -838,6 +1002,7 @@ export function PlansWorkspace({
     setRows((current) =>
       current.map((row) => {
         if (row.key !== key) return row;
+        if (row.locked) return row;
         const rule = activityRule(row.activityType, row.activityTitle);
         const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", value) : null;
         return {
@@ -867,18 +1032,20 @@ export function PlansWorkspace({
       const sorted = sortDraftRows(current);
       const dayRows = sorted.filter((row) => row.activityDate === activityDate);
       if (dayRows.length === 0) return current;
+      // Locked (approved vacation/excuse) days can't switch modes.
+      if (dayRows.some((row) => row.locked)) return current;
       const dayNote = dayRows.find((row) => row.notes?.trim())?.notes ?? "";
       const otherRows = sorted.filter((row) => row.activityDate !== activityDate);
       const first = { ...dayRows[0], notes: dayNote };
       if (mode === "full") {
-        return sortDraftRows([...otherRows, { ...first, startTime: "", endTime: "" }]);
+        return sortDraftRows([...otherRows, { ...first, slot: "full" as PlanSlot, startTime: "", endTime: "" }]);
       }
-      const am = dayRows.find((row) => slotKind(row) === "am") ?? first;
-      const pm = dayRows.find((row) => slotKind(row) === "pm") ?? createDraftRow(activityDate, current.length, `row-pm-${Date.now()}`);
+      const am = dayRows.find((row) => row.slot === "am") ?? first;
+      const pm = dayRows.find((row) => row.slot === "pm") ?? createDraftRow(activityDate, current.length, `row-pm-${Date.now()}`, "pm");
       return sortDraftRows([
         ...otherRows,
-        { ...am, startTime: AM_START, endTime: AM_END, notes: dayNote },
-        { ...pm, activityDate, startTime: PM_START, endTime: PM_END, notes: "" },
+        { ...am, slot: "am" as PlanSlot, notes: dayNote },
+        { ...pm, activityDate, slot: "pm" as PlanSlot, notes: "" },
       ]);
     });
   }
@@ -886,6 +1053,7 @@ export function PlansWorkspace({
   function deleteRow(key: string) {
     setRows((current) => {
       const target = current.find((row) => row.key === key);
+      if (target?.locked) return current; // can't delete approved vacation/excuse
       const filtered = current.filter((row) => row.key !== key);
       if (!target?.notes?.trim()) return sortDraftRows(filtered);
 
@@ -1014,7 +1182,7 @@ export function PlansWorkspace({
   }
 
   function startNewPlan(kind: EmployeePlanKind = activeKind) {
-    const nextAnchorDate = defaultPlanAnchorDate(kind);
+    const nextAnchorDate = defaultPlanAnchorDate(kind, workweek);
     setSelectedPlan(null);
     setActiveKind(kind);
     setAnchorDate(nextAnchorDate);
@@ -1023,7 +1191,7 @@ export function PlansWorkspace({
   }
 
   function onKindChange(kind: EmployeePlanKind) {
-    const nextAnchorDate = defaultPlanAnchorDate(kind);
+    const nextAnchorDate = defaultPlanAnchorDate(kind, workweek);
     setActiveKind(kind);
     setSelectedPlan(null);
     setAnchorDate(nextAnchorDate);
@@ -1031,7 +1199,7 @@ export function PlansWorkspace({
   }
 
   function onAnchorChange(value: string) {
-    const nextAnchorDate = normalizeAnchorForKind(activeKind, value);
+    const nextAnchorDate = normalizeAnchorForKind(activeKind, value, workweek);
     setAnchorDate(nextAnchorDate);
     resetRows(activeKind, nextAnchorDate);
   }
@@ -1043,6 +1211,52 @@ export function PlansWorkspace({
   const schemaBanner = !workspace.schemaReady ? (
     <div className="border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
       Planning database migration is not applied yet.
+    </div>
+  ) : null;
+
+  // Mobile-first stacked banner naming exactly which day-slots still block
+  // submit. Chips never wrap their own text (whitespace-nowrap); the chip row
+  // wraps as layout so there is no horizontal scroll.
+  const incompleteBanner = canEdit && incompleteDays.length > 0 ? (
+    <div className="border border-amber-300 bg-amber-50 p-3">
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="h-4 w-4 shrink-0 text-amber-600" />
+        <p className="text-sm font-black text-amber-800 whitespace-nowrap">Finish every working day before submitting</p>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {incompleteDays.map((label) => (
+          <span
+            key={label}
+            className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-800"
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  // Subtle confirmation that approved leave / weekly plans were auto-pulled in.
+  const lockedSyncCount = prefillState.scopeKey === prefillScopeKey
+    ? prefillState.items.filter((item) => item.locked).length
+    : 0;
+  const weeklySyncCount = prefillState.scopeKey === prefillScopeKey
+    ? prefillState.items.filter((item) => item.source === "weekly").length
+    : 0;
+  const syncedBanner = !selectedPlan && (lockedSyncCount > 0 || weeklySyncCount > 0) ? (
+    <div className="flex flex-wrap items-center gap-2 border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs font-bold text-sky-800">
+      <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
+      <span className="whitespace-nowrap">Auto-synced into this plan:</span>
+      {lockedSyncCount > 0 ? (
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+          {lockedSyncCount} approved leave
+        </span>
+      ) : null}
+      {weeklySyncCount > 0 ? (
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-sky-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+          {weeklySyncCount} from weekly plan
+        </span>
+      ) : null}
     </div>
   ) : null;
 
@@ -1075,12 +1289,14 @@ export function PlansWorkspace({
       <div className="space-y-4 pb-28 md:hidden">
         {schemaBanner}
         {cappedResultsBanner}
+        {syncedBanner}
+        {incompleteBanner}
 
         {/* Compact header */}
         <div className="border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-black text-slate-900">{compactHeaderTitle}</h2>
+              <h2 className="whitespace-nowrap text-lg font-black text-slate-900">{compactHeaderTitle}</h2>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">
                 {formatDate(period.periodStartDate)} – {formatDate(period.periodEndDate)} · {period.periodKey}
               </p>
@@ -1113,6 +1329,7 @@ export function PlansWorkspace({
               disabled={periodLocked || isPending || !workspace.canSubmitPlans}
               idPrefix="mobile"
               onAnchorChange={onAnchorChange}
+              workweek={workweek}
             />
             {periodLocked && workspace.canSubmitPlans ? (
               <button
@@ -1311,6 +1528,8 @@ export function PlansWorkspace({
       <div className="hidden min-w-0 space-y-4 md:block">
         {schemaBanner}
         {cappedResultsBanner}
+        {syncedBanner}
+        {incompleteBanner}
 
         {/* Context tiles */}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1393,6 +1612,7 @@ export function PlansWorkspace({
                 disabled={periodLocked || isPending || !workspace.canSubmitPlans}
                 idPrefix="desktop"
                 onAnchorChange={onAnchorChange}
+                workweek={workweek}
               />
               <span className="inline-flex h-10 items-center rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm">
                 {period.periodKey}
@@ -1564,6 +1784,8 @@ export function PlansWorkspace({
                           const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter) : null;
                           const currentRegionOptions = regionOptions(row.locationText);
                           const showLineSelect = tableNeedsLine && rule.showRep;
+                          const locked = Boolean(row.locked);
+                          const dayLocked = group.rows.some((r) => r.locked);
 
                           return (
                             <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`} key={row.key}>
@@ -1598,7 +1820,7 @@ export function PlansWorkspace({
                                         className={`h-8 px-2 text-[11px] font-black ${
                                           group.mode === mode ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
                                         }`}
-                                        disabled={!canEdit}
+                                        disabled={!canEdit || dayLocked}
                                         key={mode}
                                         onClick={() => setDayMode(group.activityDate, mode)}
                                         type="button"
@@ -1610,12 +1832,26 @@ export function PlansWorkspace({
                                 </td>
                               ) : null}
                               <td className="px-3 py-3">
-                                <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
-                                  {slotLabel(row)}
+                                <div className="mb-1 flex items-center gap-1.5">
+                                  <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                                    {slotLabel(row)}
+                                  </span>
+                                  {row.sourceLabel ? (
+                                    <span
+                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                                        locked
+                                          ? "border-violet-300 bg-violet-50 text-violet-700"
+                                          : "border-sky-300 bg-sky-50 text-sky-700"
+                                      }`}
+                                    >
+                                      {locked ? <ShieldCheck className="h-2.5 w-2.5" /> : null}
+                                      {row.sourceLabel}
+                                    </span>
+                                  ) : null}
                                 </div>
                                 <SearchableSelect
                                   className={tableSelectClass}
-                                  disabled={!canEdit}
+                                  disabled={!canEdit || locked}
                                   onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
                                   value={activitySelectValue(row)}
                                 >
@@ -1716,7 +1952,7 @@ export function PlansWorkspace({
                                 <button
                                   aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
                                   className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                                  disabled={!canEdit || rows.length <= 1}
+                                  disabled={!canEdit || locked || rows.length <= 1}
                                   onClick={() => deleteRow(row.key)}
                                   type="button"
                                 >
@@ -1928,7 +2164,7 @@ function InfoChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
       <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
-      <span className="mt-0.5 block truncate text-xs font-black text-slate-700">{value}</span>
+      <span className="mt-0.5 block whitespace-nowrap text-xs font-black text-slate-700">{value}</span>
     </div>
   );
 }
@@ -1959,10 +2195,11 @@ function MobileDayCard({
     ? [region, row.area].filter(Boolean).join(" - ") || (rule.requiresRegion ? "Region and area required" : "No region set")
     : "No geography needed";
 
+  const locked = Boolean(row.locked);
   return (
     <button
       className={`block w-full border bg-white p-3 text-left shadow-sm transition-colors active:bg-slate-50 ${
-        hasReturnNotes ? "border-amber-300" : "border-slate-200"
+        locked ? "border-violet-300 bg-violet-50/40" : hasReturnNotes ? "border-amber-300" : "border-slate-200"
       }`}
       onClick={onOpen}
       type="button"
@@ -1978,13 +2215,22 @@ function MobileDayCard({
             </span>
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black text-slate-900">
+            <p className="whitespace-nowrap text-sm font-black text-slate-900">
               {rule.label} - {slotLabel(row)}
             </p>
-            <p className="truncate text-xs font-semibold text-slate-500">{geographySummary}</p>
+            <p className="whitespace-nowrap text-xs font-semibold text-slate-500">{geographySummary}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {row.sourceLabel ? (
+            <span
+              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
+                locked ? "bg-violet-500 text-white" : "bg-sky-500 text-white"
+              }`}
+            >
+              {row.sourceLabel}
+            </span>
+          ) : null}
           {hasReturnNotes ? (
             <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-white">
               Feedback
@@ -2017,7 +2263,7 @@ function MobileDayCard({
             )
           ) : null}
           {dayNote ? (
-            <p className="truncate text-xs text-slate-500">{dayNote}</p>
+            <p className="whitespace-nowrap text-xs text-slate-500">{dayNote}</p>
           ) : null}
           {conflictWarning ? (
             <p className="flex items-start gap-1 text-xs font-bold text-red-700">
@@ -2282,7 +2528,7 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
 function DisabledFieldText({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3">
-      <span className="truncate text-xs font-semibold text-slate-400">{children}</span>
+      <span className="whitespace-nowrap text-xs font-semibold text-slate-400">{children}</span>
     </div>
   );
 }

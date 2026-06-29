@@ -307,7 +307,7 @@ export function CompanyCalendar({
                 <div className="mt-1 hidden space-y-0.5 sm:block">
                   {dayItems.slice(0, 3).map((item) => (
                     <div
-                      className={`truncate rounded border px-1 py-0.5 text-[9px] font-bold ${toneFor(item).chip}`}
+                      className={`whitespace-nowrap rounded border px-1 py-0.5 text-[9px] font-bold ${toneFor(item).chip}`}
                       key={item.id}
                     >
                       {item.title}
@@ -353,7 +353,7 @@ export function CompanyCalendar({
                   key={item.id}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black">{item.title}</p>
+                    <p className="whitespace-nowrap text-sm font-black">{item.title}</p>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-semibold opacity-80">
                       <span className="capitalize">{item.source === "event" ? item.category : item.source}</span>
                       {item.time ? (

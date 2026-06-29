@@ -57,10 +57,73 @@ export const employeePlanActivityTypes = [
   "Admin",
   "Remote",
   "Vacation",
+  "National Vacation",
+  "Excuse",
   "Other",
 ] as const;
 
 export type EmployeePlanActivityType = (typeof employeePlanActivityTypes)[number];
+
+// ---------------------------------------------------------------------------
+// Role-aware workweek model
+//
+// In the Egyptian pharma context the official weekend is Friday + Saturday for
+// Head Office, but the Field Force (sales) work a Saturday-anchored week:
+//   - Field Force (Medical Rep / District / Regional / National Sales Manager):
+//       Saturday → Wednesday = full days, Thursday = AM only, Fri off.
+//   - Head Office (everyone else: PM / GPM / Marketing / Training / HR …):
+//       Sunday → Thursday = full days, Fri + Sat off.
+// A plan day is "complete" when every required slot is filled. A `full` day
+// needs a full-day entry OR both AM + PM; an `am` day (Field Thursday) needs
+// only the AM slot. Days with no requirement are off and never block submit.
+// ---------------------------------------------------------------------------
+export type PlanSlot = "full" | "am" | "pm";
+export type PlanWorkweekCategory = "field" | "head_office";
+
+export type PlanWorkweek = {
+  category: PlanWorkweekCategory;
+  // ISO day-of-week (0=Sun … 6=Sat) → the requirement for that working day.
+  // "full" needs a whole day (full entry or AM+PM); "am" needs only the morning.
+  requiredDays: Record<number, "full" | "am">;
+  // Day-of-week the planning week is anchored to (6=Saturday, 0=Sunday).
+  weekStartDay: number;
+};
+
+// Field Force: Sat(6) Sun(0) Mon(1) Tue(2) Wed(3) full, Thu(4) AM only.
+export const FIELD_WORKWEEK: PlanWorkweek = {
+  category: "field",
+  requiredDays: { 0: "full", 1: "full", 2: "full", 3: "full", 4: "am", 6: "full" },
+  weekStartDay: 6,
+};
+
+// Head Office: Sun(0) Mon(1) Tue(2) Wed(3) Thu(4) full.
+export const HEAD_OFFICE_WORKWEEK: PlanWorkweek = {
+  category: "head_office",
+  requiredDays: { 0: "full", 1: "full", 2: "full", 3: "full", 4: "full" },
+  weekStartDay: 0,
+};
+
+// Job-function roles that follow the Saturday-anchored Field Force week.
+const fieldForceRoleSet = new Set<PhoenixRole>([
+  "Medical Rep",
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+]);
+
+/**
+ * Classify an employee's planning workweek from their role / job title.
+ * Defaults to Head Office (the safe, narrower Sun–Thu week) when unknown.
+ */
+export function resolvePlanWorkweek(input: {
+  jobTitle?: string | null;
+  role?: PhoenixRole | null;
+}): PlanWorkweek {
+  if (input.role && fieldForceRoleSet.has(input.role)) return FIELD_WORKWEEK;
+  const resolved = resolveJobFunctionRole(input.jobTitle);
+  if (fieldForceRoleSet.has(resolved)) return FIELD_WORKWEEK;
+  return HEAD_OFFICE_WORKWEEK;
+}
 
 export const WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES = [
   "Product Manager",
@@ -204,9 +267,11 @@ function dateString(value: Date) {
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
 }
 
-function sundayOnOrBefore(value: Date) {
+// Most recent occurrence of `startDay` (0=Sun … 6=Sat) on or before `value`.
+function weekStartOnOrBefore(value: Date, startDay: number) {
   const date = new Date(value);
-  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
+  const delta = (date.getUTCDay() - startDay + 7) % 7;
+  date.setUTCDate(date.getUTCDate() - delta);
   return date;
 }
 
@@ -221,12 +286,20 @@ function isoWeek(value: Date) {
   return { week, year };
 }
 
-export function buildEmployeePlanPeriod(kind: EmployeePlanKind, anchor: Date | string) {
+export function buildEmployeePlanPeriod(
+  kind: EmployeePlanKind,
+  anchor: Date | string,
+  // Optional: when omitted, behaves exactly as the legacy Sunday-anchored week
+  // (Head Office). Field Force callers pass FIELD_WORKWEEK to anchor on Saturday.
+  workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK,
+) {
   const date = toDateOnly(anchor);
   if (kind === "weekly") {
-    const start = sundayOnOrBefore(date);
+    const start = weekStartOnOrBefore(date, workweek.weekStartDay);
+    // Span from the week start through Thursday (4) inclusive.
+    const span = (4 - workweek.weekStartDay + 7) % 7;
     const end = new Date(start);
-    end.setUTCDate(start.getUTCDate() + 4);
+    end.setUTCDate(start.getUTCDate() + span);
     const { week, year } = isoWeek(start);
     return {
       periodEndDate: dateString(end),
@@ -242,6 +315,27 @@ export function buildEmployeePlanPeriod(kind: EmployeePlanKind, anchor: Date | s
     periodKey: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
     periodStartDate: dateString(start),
   };
+}
+
+/**
+ * The required working slot for each date in a period, per the workweek.
+ * Returns a Map<YYYY-MM-DD, "full" | "am"> covering only the days that must be
+ * planned. Days not present are off (Fri/Sat for Head Office, Fri for Field).
+ */
+export function planRequiredSlotsByDate(
+  periodStartDate: string,
+  periodEndDate: string,
+  workweek: PlanWorkweek,
+): Map<string, "full" | "am"> {
+  const required = new Map<string, "full" | "am">();
+  const cursor = new Date(`${periodStartDate}T00:00:00Z`);
+  const end = new Date(`${periodEndDate}T00:00:00Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    const requirement = workweek.requiredDays[cursor.getUTCDay()];
+    if (requirement) required.set(cursor.toISOString().slice(0, 10), requirement);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return required;
 }
 
 export function employeePlanActionLabel(action: EmployeePlanAction) {
