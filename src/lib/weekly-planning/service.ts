@@ -1,4 +1,4 @@
-import crypto from "crypto";
+﻿import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 
@@ -120,6 +120,7 @@ type PlanHeaderRow = {
   updated_at: string;
   employee_plan_items?: PlanItemRow[];
   employee_plan_hr_acknowledgements?: PlanAckRow[];
+  employee_plan_decisions?: PlanDecisionRow[];
 };
 
 type PlanVisitDetailRow = {
@@ -161,6 +162,17 @@ type PlanAckRow = {
   login_id: string | null;
   plan_id: string;
   role_label: string | null;
+};
+
+type PlanDecisionRow = {
+  action: EmployeePlanAction;
+  actor_hr_id: string | null;
+  actor_role: string | null;
+  comment: string | null;
+  created_at: string;
+  from_status: EmployeePlanStatus;
+  id: string;
+  to_status: EmployeePlanStatus;
 };
 
 type PlanReturnNoteRow = {
@@ -234,6 +246,18 @@ export type EmployeePlanReturnNoteInput = {
   note: string;
 };
 
+// One row of the plan's approval/decision history (employee_plan_decisions).
+export type EmployeePlanDecision = {
+  action: EmployeePlanAction;
+  actorHrId: string | null;
+  actorRole: string | null;
+  comment: string | null;
+  createdAt: string;
+  fromStatus: EmployeePlanStatus;
+  id: string;
+  toStatus: EmployeePlanStatus;
+};
+
 export type EmployeePlan = {
   acknowledgements: Array<{
     acknowledgedAt: string;
@@ -241,6 +265,7 @@ export type EmployeePlan = {
     hrId: string;
     roleLabel: string | null;
   }>;
+  decisions: EmployeePlanDecision[];
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
@@ -318,7 +343,8 @@ export type EmployeePlansWorkspace = {
 const planSelect = `
   *,
   employee_plan_items (*, employee_plan_item_return_notes (*), employee_plan_visit_details (*)),
-  employee_plan_hr_acknowledgements (*)
+  employee_plan_hr_acknowledgements (*),
+  employee_plan_decisions (*)
 `;
 
 const WORKSPACE_PLAN_LIMIT = 250;
@@ -385,6 +411,18 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
       hrId: ack.hr_id,
       roleLabel: ack.role_label,
     })),
+    decisions: (row.employee_plan_decisions ?? [])
+      .map((d) => ({
+        action: d.action,
+        actorHrId: d.actor_hr_id,
+        actorRole: d.actor_role,
+        comment: d.comment,
+        createdAt: d.created_at,
+        fromStatus: d.from_status,
+        id: d.id,
+        toStatus: d.to_status,
+      }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     employeeHrId: row.employee_hr_id,
     employeeJobTitle: row.employee_job_title,
     employeeName: row.employee_name,
@@ -2198,7 +2236,24 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
     entityType: "weekly_plan",
     summary: `${plan.plan_kind} plan acknowledged by HR`,
   });
-  return mapPlan(await loadPlanRow(planId));
+  const updatedAck = await loadPlanRow(planId);
+  await notifyEmployeeAcknowledged(updatedAck);
+  return mapPlan(updatedAck);
+}
+
+async function notifyEmployeeAcknowledged(plan: PlanHeaderRow) {
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      eventType: "hr_acknowledge",
+      message: `Your ${plan.plan_kind} plan (${plan.period_key}) has been acknowledged by HR.`,
+      plan,
+      recipients: [{ hrId: plan.employee_hr_id }],
+      title: `Your ${plan.plan_kind} plan was acknowledged by HR`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] ack notify failed for plan ${plan.id}`, error);
+  }
 }
 
 async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
@@ -2288,5 +2343,29 @@ export async function cancelEmployeePlan(access: AccessContext, planId: string, 
     oldValues: { status: plan.status },
     summary: `${plan.plan_kind} plan cancelled`,
   });
-  return mapPlan(await loadPlanRow(planId));
+  const cancelledRow = await loadPlanRow(planId);
+  await notifyManager(cancelledRow).catch((err) => console.error("[weekly-plans] cancel notify failed", err));
+  return mapPlan(cancelledRow);
+}
+
+// Approve a batch of plans. Only "manager_approve" in bulk; return/reject need per-plan comments.
+export async function bulkDecideEmployeePlans(
+  access: AccessContext,
+  planIds: string[],
+  action: "manager_approve",
+): Promise<Array<{ planId: string; ok: boolean; message?: string }>> {
+  const results: Array<{ planId: string; ok: boolean; message?: string }> = [];
+  for (const planId of planIds) {
+    try {
+      await decideEmployeePlan(access, planId, { action });
+      results.push({ ok: true, planId });
+    } catch (error) {
+      results.push({
+        message: error instanceof Error ? error.message : String(error),
+        ok: false,
+        planId,
+      });
+    }
+  }
+  return results;
 }

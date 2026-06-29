@@ -283,11 +283,13 @@ export function SearchableSelect({
       {open ? (
         <div
           ref={dropdownRef}
+          role="listbox"
+          aria-label={placeholder ?? "Options"}
           className="absolute left-0 right-0 top-full z-[1000] mt-1 max-h-64 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
           id={`${id ?? "searchable-select"}-options`}
         >
         {filteredOptions.length === 0 ? (
-            <div className="p-2 text-xs text-[#64748B]">{noResultsText}</div>
+            <div className="p-2 text-xs text-[#64748B]" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
           ) : (
             filteredOptions.map((option, index) => {
               const isActive = currentValue === option.value;
@@ -295,6 +297,9 @@ export function SearchableSelect({
                 return (
                   <div
                     key={`${option.value}-${index}`}
+                    role="option"
+                    aria-disabled="true"
+                    aria-selected={false}
                     className={cn(
                       "w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm text-[#94A3B8]",
                       "last:border-b-0"
@@ -307,6 +312,8 @@ export function SearchableSelect({
               return (
                 <button
                   key={`${option.value}-${index}`}
+                  role="option"
+                  aria-selected={isActive}
                   className={cn(
                     "w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm transition last:border-b-0",
                     isActive && "bg-[#FFF7ED] text-[#F97316]",

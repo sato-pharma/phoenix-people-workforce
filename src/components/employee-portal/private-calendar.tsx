@@ -5,9 +5,11 @@ import {
   AlertTriangle,
   CalendarCheck,
   CalendarDays,
+  CalendarX2,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   FileSearch,
   Fingerprint,
   ListFilter,
@@ -339,17 +341,17 @@ export function PrivateCalendar({
   const isWorkspaceSurface = surface === "workspace";
   const panelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60";
+    : "overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60";
   const secondaryPanelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200/60";
+    : "overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60";
   const inputClass = isWorkspaceSurface
     ? "h-10 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-    : "h-10 w-full rounded-xl border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
+    : "h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
   const searchInputClass = isWorkspaceSurface
     ? "h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15"
-    : "h-10 w-full rounded-xl border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
-  const controlRadiusClass = isWorkspaceSurface ? "rounded-sm" : "rounded-xl";
+    : "h-10 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
+  const controlRadiusClass = "rounded-sm";
 
   const employeeByHrId = useMemo(
     () => new Map(visibleEmployees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee])),
@@ -451,6 +453,10 @@ export function PrivateCalendar({
   const reportWarningCount = useMemo(
     () => reportRows.filter((row) => row.source === "exception" || row.severity === "danger" || row.severity === "warning").length,
     [reportRows],
+  );
+  const daysWithIssues = useMemo(
+    () => new Set(exceptions.map((ex) => ex.date)).size,
+    [exceptions],
   );
 
   async function loadWorkspace(
@@ -557,7 +563,7 @@ export function PrivateCalendar({
   return (
     <div className={isWorkspaceSurface ? "space-y-5" : "space-y-6"}>
       {!workspace.schemaReady ? (
-        <div className={["flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm", isWorkspaceSurface ? "rounded-sm" : "rounded-xl"].join(" ")}>
+        <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           Some private calendar sources are temporarily unavailable.
         </div>
@@ -609,6 +615,22 @@ export function PrivateCalendar({
                   </button>
                 ))}
               </div>
+              <a
+                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
+                href={`/api/private-calendar/export?format=xlsx&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}`}
+                download
+              >
+                <Download className="h-3.5 w-3.5" />
+                XLSX
+              </a>
+              <a
+                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
+                href={`/api/private-calendar/export?format=pdf&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}`}
+                download
+              >
+                <Download className="h-3.5 w-3.5" />
+                PDF
+              </a>
               <button
                 aria-label="Previous month"
                 className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
@@ -639,18 +661,19 @@ export function PrivateCalendar({
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" surface={surface} />
-          <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} color="blue" surface={surface} />
-          <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} color="amber" surface={surface} />
-          <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" surface={surface} />
-          <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} color="teal" surface={surface} />
-          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} color="red" tone="warning" surface={surface} />
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-7">
+          <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" />
+          <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} color="blue" />
+          <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} color="amber" />
+          <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" />
+          <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} color="teal" />
+          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} color="red" tone="warning" />
+          <Metric icon={<CalendarX2 className="h-5 w-5" />} label="Days w/ Issues" ready value={daysWithIssues} color="red" tone="warning" />
         </div>
       </section>
 
       {message ? (
-        <div className={["flex items-center gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm", isWorkspaceSurface ? "rounded-sm" : "rounded-xl"].join(" ")}>
+        <div className="flex items-center gap-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {message}
         </div>
@@ -803,7 +826,7 @@ export function PrivateCalendar({
         </div>
       </section>
 
-      {isTeamView ? <TeamSummaryPanel rows={teamSummary} surface={surface} /> : null}
+      {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
 
       {/* ── Source legend / toggle chips ── */}
       {presentSources.length > 0 ? (
@@ -1000,7 +1023,7 @@ export function PrivateCalendar({
 
             <section className={selectedExceptions.length > 0 ? "min-w-0" : "min-w-0 xl:col-span-2"}>
               {timelineItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+                <div className="flex flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
                   <CalendarDays className="h-8 w-8 text-slate-300" />
                   <p className="text-sm font-semibold text-slate-400">No calendar items for this day.</p>
                 </div>
@@ -1017,7 +1040,7 @@ export function PrivateCalendar({
       </div>
       )}
 
-      <CalendarReportTable rows={reportRows} surface={surface} warningCount={reportWarningCount} />
+      <CalendarReportTable rows={reportRows} warningCount={reportWarningCount} />
     </div>
   );
 }
@@ -1136,7 +1159,6 @@ function Metric({
   icon,
   label,
   ready,
-  surface = "employee",
   tone = "neutral",
   value,
 }: {
@@ -1144,11 +1166,9 @@ function Metric({
   icon: ReactNode;
   label: string;
   ready: boolean;
-  surface?: PrivateCalendarSurface;
   tone?: "neutral" | "warning";
   value: number;
 }) {
-  const isWorkspaceSurface = surface === "workspace";
   const iconBg: Record<string, string> = {
     amber: "bg-amber-100 text-amber-600",
     blue: "bg-blue-100 text-blue-600",
@@ -1160,9 +1180,9 @@ function Metric({
   };
 
   return (
-    <div className={[isWorkspaceSurface ? "rounded-sm border p-4" : "rounded-xl p-4 ring-1", tone === "warning" ? "bg-red-50/60 border-red-100 ring-red-100" : "bg-slate-50/60 border-slate-200 ring-slate-200/60"].join(" ")}>
+    <div className={["rounded-sm border p-4", tone === "warning" ? "bg-red-50/60 border-red-100" : "bg-slate-50/60 border-slate-200"].join(" ")}>
       <div className="flex items-center justify-between gap-2">
-        <span className={["inline-flex h-8 w-8 items-center justify-center rounded-lg", iconBg[color] ?? iconBg.slate].join(" ")}>
+        <span className={["inline-flex h-8 w-8 items-center justify-center rounded-sm", iconBg[color] ?? iconBg.slate].join(" ")}>
           {icon}
         </span>
         <span className={["rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
@@ -1175,11 +1195,10 @@ function Metric({
   );
 }
 
-function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalendarWorkspace["teamSummary"]; surface?: PrivateCalendarSurface }) {
-  const isWorkspaceSurface = surface === "workspace";
+function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummary"] }) {
   const sortedRows = [...rows].sort((left, right) => right.exceptionCount - left.exceptionCount || left.fullName.localeCompare(right.fullName));
   return (
-    <section className={isWorkspaceSurface ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm" : "overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200/60"}>
+    <section className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
@@ -1188,13 +1207,13 @@ function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalenda
           </div>
           <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
         </div>
-        <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+        <span className="rounded-sm bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
           {rows.length} employee{rows.length === 1 ? "" : "s"}
         </span>
       </div>
       <div className="grid max-h-72 gap-3 overflow-y-auto p-5 md:grid-cols-2 xl:grid-cols-3">
         {sortedRows.slice(0, 18).map((row) => (
-          <article key={row.hrId} className={isWorkspaceSurface ? "rounded-sm border border-slate-200 bg-slate-50 p-4" : "rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/60"}>
+          <article key={row.hrId} className="rounded-sm border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="whitespace-nowrap text-sm font-black text-slate-900">{row.fullName}</h4>
@@ -1207,10 +1226,10 @@ function TeamSummaryPanel({ rows, surface = "employee" }: { rows: PrivateCalenda
               </span>
             </div>
             <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-black text-slate-500">
-              <span className="rounded-lg bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
-              <span className="rounded-lg bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
-              <span className="rounded-lg bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
-              <span className="rounded-lg bg-violet-100 px-1 py-1.5 text-violet-700">P {row.sourceCounts.plan}</span>
+              <span className="rounded-sm bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
+              <span className="rounded-sm bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
+              <span className="rounded-sm bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
+              <span className="rounded-sm bg-violet-100 px-1 py-1.5 text-violet-700">P {row.sourceCounts.plan}</span>
             </div>
           </article>
         ))}
@@ -1223,7 +1242,7 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
   const isDanger = exception.severity === "danger";
   return (
     <article className={[
-      "rounded-xl border-l-4 p-4 shadow-sm ring-1",
+      "rounded-sm border-l-4 p-4 shadow-sm ring-1",
       isDanger
         ? "border-l-red-500 bg-red-50/80 ring-red-100"
         : "border-l-amber-400 bg-amber-50/80 ring-amber-100",
@@ -1255,16 +1274,13 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
 
 function CalendarReportTable({
   rows,
-  surface = "employee",
   warningCount,
 }: {
   rows: CalendarReportRow[];
-  surface?: PrivateCalendarSurface;
   warningCount: number;
 }) {
-  const isWorkspaceSurface = surface === "workspace";
   return (
-    <section className={isWorkspaceSurface ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm" : "overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200/60"}>
+    <section className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
           <div className="flex items-center gap-2">
@@ -1379,7 +1395,7 @@ function CalendarReportTable({
 
 function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
   return (
-    <article className={["overflow-hidden rounded-xl border-l-4 bg-white shadow-sm ring-1 ring-slate-200/60", sourceAccentColor(item.source, item.severity)].join(" ")}>
+    <article className={["overflow-hidden rounded-sm border-l-4 bg-white shadow-sm ring-1 ring-slate-200/60", sourceAccentColor(item.source, item.severity)].join(" ")}>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -1429,7 +1445,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         ) : null}
 
         {item.approvalImpact ? (
-          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
+          <div className="mt-3 rounded-sm bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
             {item.approvalImpact}
           </div>
         ) : null}
