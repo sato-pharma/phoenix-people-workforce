@@ -5,7 +5,7 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import type { ActionHubData, ActionHubModule } from "@/components/action-center/types";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getAwaitingMyActionItems, getMyRequestItems, getMyApprovalHistory } from "@/lib/action-center/service";
+import { getActionCenterDeepLinkItem, getAwaitingMyActionItems, getMyRequestItems, getMyApprovalHistory } from "@/lib/action-center/service";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
 
 export const dynamic = "force-dynamic";
@@ -47,13 +47,22 @@ export default async function PortalApprovalsHubPage({
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
   ]);
 
+  // A deep link (from a notification or the history tab) may point at a decided item that is no
+  // longer in the live pending inbox. Resolve it read-only and surface it inline so "View request"
+  // always renders the item instead of dead-ending. Mirrors the admin hub page.
+  const resolvedItems = [...items];
+  if (initialModule && initialId && !resolvedItems.some((item) => item.id === initialId && item.module === initialModule)) {
+    const linkedItem = await getActionCenterDeepLinkItem(access, initialModule, initialId).catch(() => null);
+    if (linkedItem) resolvedItems.unshift(linkedItem);
+  }
+
   const data: ActionHubData = {
     generatedAt: new Date().toISOString(),
-    items,
+    items: resolvedItems,
   };
 
   const linkedInboxItem = initialId
-    ? items.some((item) => item.id === initialId && (!initialModule || item.module === initialModule))
+    ? resolvedItems.some((item) => item.id === initialId && (!initialModule || item.module === initialModule))
     : false;
   const linkedMyRequest = initialId
     ? myRequests.some((item) => myRequestMatchesDeepLink(item.id, initialModule, initialId))

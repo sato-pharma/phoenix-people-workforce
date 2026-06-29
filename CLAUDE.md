@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL EXECUTION RULES (override everything else)
+
+### Task Tracking — every session, every command
+1. Use `TaskCreate` to show all planned steps **before** starting any work.
+2. Use `TaskUpdate` to mark each step `completed` **immediately** after finishing it — never batch at the end.
+3. Never silently skip a task.
+
+### Phased Plans — complete ALL phases
+When the user gives a phased plan or a numbered list of steps/orders:
+- **Execute EVERY phase completely**, in order.
+- **Never stop after 1–2 phases** without explicit instruction to pause.
+- **Never silently skip a phase.** If a phase cannot be done, STOP and explain why before halting.
+- This applies regardless of how many phases/orders the user specifies (3, 4, 5 or more).
+
 @AGENTS.md
 
 > The operating rules above (communication, Git/approval workflow, automation-first

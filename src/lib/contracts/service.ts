@@ -2,6 +2,7 @@ import {
   canSeeHrScopedRecord,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
@@ -380,8 +381,9 @@ export async function createContractRenewalRequest(
     status: "new",
   });
   const supabase = getSupabaseAdmin();
+  const actorHrId = await resolveCanonicalActorHrId(actor);
   const { data, error } = await supabase.rpc("phx_create_contract_renewal_request", {
-    p_actor: actor,
+    p_actor: actorHrId,
     p_area_name: employee.areaName,
     p_current_contract_id: currentContract?.id === undefined ? null : String(currentContract.id),
     p_current_renewal_date: dates.currentRenewalDate,
@@ -559,9 +561,13 @@ export async function runContractRenewalWorkflow(
     status: existing.status,
   });
 
+  // Persist the canonical HR_ID (never a login token like "admin-HR") into decision_by /
+  // manager_reviewed_by / hr_reviewed_by, so the decision is correctly attributed and the
+  // Approvals Hub history matches. The RPC writes p_actor verbatim into those columns.
+  const actorHrId = await resolveCanonicalActorHrId(actor);
   const { data, error } = await supabase.rpc("phx_apply_contract_renewal_workflow", {
     p_action: action,
-    p_actor: actor,
+    p_actor: actorHrId,
     p_decision_reason: cleanText(input.decisionReason),
     p_new_contract_document_name: cleanText(input.newContractDocumentName),
     p_new_contract_document_url: cleanText(input.newContractDocumentUrl),
