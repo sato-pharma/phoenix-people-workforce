@@ -257,6 +257,9 @@ export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiR
     p_products:    filters.products?.length    ? filters.products    : null,
     p_families:    filters.families?.length    ? filters.families    : null,
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
+    // Head Office is line-aggregated away here, so it can't be stripped in TS afterward —
+    // exclude it inside the RPC. Fail-closed: absent canViewHeadOffice ⇒ exclude.
+    p_exclude_head_office: !filters.canViewHeadOffice,
   } as never);
   if (error) throw new Error(`SoS by period: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosKpiRow);
@@ -276,6 +279,9 @@ export async function loadSosByArea(filters: SosFilters = {}): Promise<SosByArea
     p_products:    filters.products?.length    ? filters.products    : null,
     p_families:    filters.families?.length    ? filters.families    : null,
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
+    // Head Office is line-aggregated away here, so it can't be stripped in TS afterward —
+    // exclude it inside the RPC. Fail-closed: absent canViewHeadOffice ⇒ exclude.
+    p_exclude_head_office: !filters.canViewHeadOffice,
   } as never);
   if (error) throw new Error(`SoS by area: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaRow);

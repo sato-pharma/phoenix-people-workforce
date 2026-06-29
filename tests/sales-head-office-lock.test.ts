@@ -71,6 +71,22 @@ export function runSalesHeadOfficeLockTests() {
     "every line-bearing analytics loader applies stripHeadOfficeRows",
   );
 
+  // analytics_sos_by_period / analytics_sos_by_area aggregate the line dimension AWAY, so their
+  // result rows have no line to strip in TS. They must instead push the Head Office exclusion into
+  // the RPC via p_exclude_head_office (fail-closed: absent canViewHeadOffice ⇒ exclude). Pin both.
+  assert.ok(
+    (analytics.match(/p_exclude_head_office:\s*!filters\.canViewHeadOffice/g) ?? []).length >= 2,
+    "loadSosByPeriod and loadSosByArea pass p_exclude_head_office to the RPC",
+  );
+
+  // The by-area analytics page must resolve canViewHeadOffice from the role so CEO/Super Admin
+  // still see Head Office while everyone else (the RPC default) fails closed.
+  const byAreaPage = readSource("../app/(admin)/admin/analytics/source-sales/by-area/page.tsx");
+  assert.ok(
+    byAreaPage.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
+    "by-area page passes canViewHeadOffice resolved from the role",
+  );
+
   const weekly = readSource("../src/lib/sales/weekly/access.ts");
   assert.ok(
     weekly.includes("scope.canViewHeadOffice") && weekly.includes("isHeadOfficeLine(row.officialLine)"),

@@ -21,6 +21,7 @@ import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByArea } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ async function ByAreaContent({
     products:     Array.isArray(filters.products)      ? filters.products      : [],
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
+    canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
   let byArea: SosByAreaRow[];
