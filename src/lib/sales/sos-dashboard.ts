@@ -310,8 +310,35 @@ export async function getSosDashboard(
   // so this is a pure latency win with no behavior change.
   const canSeeCrossLineGeography = salesScope.canViewAllSales;
   const emptyRpcRows = Promise.resolve([] as Array<Record<string, unknown>>);
+
+  // Push the viewer's scope ∩ user-filter selection INTO the detail RPC so the database
+  // only aggregates the rows this caller can see, instead of returning the whole company
+  // and letting keepExec drop the rest. The arrays reuse the exact intersections already
+  // computed for the trend (scope-derived line/region/product ∩ user filters), plus the
+  // raw distributor/area user filters and the restricted-code exclusion. keepExec below is
+  // KEPT as the authoritative backstop — these params can only remove rows it would remove
+  // anyway (Head Office stripping intentionally stays in keepExec, not pushed here). When
+  // the intersection is disjoint (trendForcedEmpty) the detail is empty too, so skip the
+  // call entirely rather than fetch the full company only to discard every row.
+  const detailRowsPromise = trendForcedEmpty
+    ? emptyRpcRows
+    : rpcAll(
+        supabase,
+        "phx_exec_distributor_product",
+        {
+          p_period: selectedPeriod,
+          p_lines: trendLineNames ?? [],
+          p_distributors: filters.distributors ?? [],
+          p_regions: trendRegionCodes ?? [],
+          p_areas: filters.areas ?? [],
+          p_products: trendProductCodes ?? [],
+          p_exclude_codes: excludeCodes,
+        },
+        ["distributor_code", "region_code", "area_code", "product_code"],
+      );
+
   const [detailRows, trendRowsRaw, brickRaw, customerRaw] = await Promise.all([
-    rpcAll(supabase, "phx_exec_distributor_product", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
+    detailRowsPromise,
     trendResultPromise,
     canSeeCrossLineGeography
       ? safeRpcAll(

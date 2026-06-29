@@ -91,6 +91,15 @@ export function runPortalSosScopeTests() {
     engine.includes("canSeeCrossLineGeography") && engine.includes("emptyRpcRows"),
     "engine must skip brick/customer RPCs for non-company callers (perf)",
   );
+  // Performance: the detail RPC must receive the scope ∩ filter selection so the database
+  // pre-filters, rather than returning the whole company and filtering only in keepExec.
+  assert.ok(
+    engine.includes('"phx_exec_distributor_product"') &&
+      engine.includes("p_products: trendProductCodes") &&
+      engine.includes("p_regions: trendRegionCodes") &&
+      engine.includes("p_exclude_codes: excludeCodes"),
+    "engine must push scope+filter selection into the phx_exec_distributor_product RPC",
+  );
   // Head Office line is confidential — CEO/Super Admin only. Pinned at the row filter, the filter
   // options (line + products), and the trend so it can never leak to any other role.
   assert.ok(
