@@ -473,15 +473,25 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   const [error, setError] = useState<string | null>(null);
   const [detected, setDetected] = useState<{ code: string; name: string; confidence: string } | null>(null);
   const [verified, setVerified] = useState(false);
+  const [periodAutoDetected, setPeriodAutoDetected] = useState(false);
   // True once an auto-detection attempt has finished — even when it found nothing. Lets the UI always
   // show a result (and a way to continue) instead of silently leaving the operator with a locked step.
   const [verifyRan, setVerifyRan] = useState(false);
   // Any change to file/period/distributor invalidates the verification + validation downstream.
   function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setError(null); }
-  function changePeriod(value: string) { setPeriod(value); setAnalysis(null); setCommitted(null); }
+  function changePeriod(value: string) { setPeriod(value); setPeriodAutoDetected(false); setAnalysis(null); setCommitted(null); }
   function onMonthChange(m: string) { setPeriodMonth(m); changePeriod(m && periodYear ? `${periodYear}-${m}` : ""); }
   function onYearChange(y: string) { setPeriodYear(y); changePeriod(y && periodMonth ? `${y}-${periodMonth}` : ""); }
-  function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); if (f) void detect(f); }
+  function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); setPeriodAutoDetected(false); if (f) void detect(f); }
+
+  function applyAutoDetectedPeriod(detectedPeriod: string) {
+    const [y, m] = detectedPeriod.split("-");
+    if (!y || !m) return;
+    setPeriodYear(y);
+    setPeriodMonth(m);
+    setPeriod(detectedPeriod);
+    setPeriodAutoDetected(true);
+  }
 
   async function detect(f: File) {
     setDetected(null); setVerifyRan(false);
@@ -539,6 +549,8 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
       const res = await postSalesUpload("/api/sales/sales-upload/analyze", file, { distributorCode, period });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
+      // Auto-fill the period dropdowns if the server detected one and the user hasn't set one yet.
+      if (payload.data?.period && !period) applyAutoDetectedPeriod(payload.data.period);
       if (!payload.success) setError(payload.error ?? "Validation failed.");
     } catch (e) { setError(e instanceof Error ? e.message : "Validation failed."); }
     finally { setBusy(null); }
@@ -565,13 +577,16 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
       {/* File + period selectors */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
+            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
+          </div>
           <div className="flex gap-1">
-            <select className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
+            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-[#E2E8F0]")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
               <option value="">Month</option>
               {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
             </select>
-            <select className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
+            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-[#E2E8F0]")} disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
               <option value="">Year</option>
               {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
