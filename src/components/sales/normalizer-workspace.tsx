@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check, ClipboardPaste, Copy, Download, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Copy, Database, Download, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -235,7 +236,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">
       <AdminPageHero
-        badges={(<><AdminInsightChip>Auto-codes Product / Brick / Area / Region</AdminInsightChip><AdminInsightChip tone="orange">Drop the raw distributor file as-is</AdminInsightChip></>)}
+        badges={(<><AdminInsightChip>Auto-codes Product / Brick / Area / Region</AdminInsightChip><AdminInsightChip tone="orange">Drop the raw distributor file as-is</AdminInsightChip><Link className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D4ED8] hover:underline" href="/sales/mapping-database"><Database className="h-3.5 w-3.5" /> Mapping Database</Link><Link className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline" href="/sales/upload"><Upload className="h-3.5 w-3.5" /> Sales Upload</Link></>)}
         description="Drop a raw distributor sheet untouched. The normalizer translates the distributor's own item and territory codes into Phoenix Product ID + Brick ID and derives Area + Region automatically. Map the few unknown codes once (in bulk) and they're remembered forever."
         eyebrow="Source Normalizer" icon={<Sparkles className="h-4 w-4" />} title="Source Normalizer"
       />
@@ -385,6 +386,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                       <button className="inline-flex h-9 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-3 text-xs font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
                         {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save mappings
                       </button>
+                      <Link className="inline-flex h-9 items-center gap-1.5 border border-[#1D4ED8] bg-white px-3 text-xs font-bold text-[#1D4ED8] transition hover:bg-[#EEF3FE]" href="/sales/mapping-database">
+                        <Database className="h-4 w-4" /> Mapping Database <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
                     </div>
                   </div>
 

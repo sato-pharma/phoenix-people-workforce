@@ -443,6 +443,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
 
 function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded, productOptions, brickOptions }: { distributorCode: string; distributorName: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void; productOptions: MapOption[]; brickOptions: MapOption[] }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const analyzingRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
   const [periodMonth, setPeriodMonth] = useState("");
@@ -524,6 +525,10 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   // ── Step 2 — Strict validation (dry run; persists nothing) ──
   async function analyze() {
     if (!file) { setError("Choose a file first."); return; }
+    // Refs are synchronous — this blocks re-entry even when onSaved() auto-triggers and the
+    // user also presses Validate in the same render cycle (before busy state propagates).
+    if (analyzingRef.current) return;
+    analyzingRef.current = true;
     setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null);
     try {
       const res = await postSalesUpload("/api/sales/sales-upload/analyze", file, { distributorCode, period });
@@ -533,7 +538,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
       if (payload.data?.period && !period) applyAutoDetectedPeriod(payload.data.period);
       if (!payload.success) setError(payload.error ?? "Validation failed.");
     } catch (e) { setError(e instanceof Error ? e.message : "Validation failed."); }
-    finally { setBusy(null); }
+    finally { setBusy(null); analyzingRef.current = false; }
   }
 
   // ── Step 3 — Confirm & upload (persist) ──
