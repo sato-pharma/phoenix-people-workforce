@@ -283,9 +283,8 @@ export function SearchableSelect({
       {open ? (
         <div
           ref={dropdownRef}
-          className="z-[1000] max-h-64 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          className="absolute left-0 right-0 top-full z-[1000] mt-1 max-h-64 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
           id={`${id ?? "searchable-select"}-options`}
-          style={{ width: "100%" }}
         >
         {filteredOptions.length === 0 ? (
             <div className="p-2 text-xs text-[#64748B]">{noResultsText}</div>

@@ -70,6 +70,7 @@ import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1552,6 +1553,9 @@ export type PlanPrefillItem = {
 export type PlanPrefill = {
   items: PlanPrefillItem[];
   schemaReady: boolean;
+  // Egyptian national-holiday dates within the period, for the client to
+  // soft-warn (not block) when a day is manually marked "National Vacation".
+  nationalHolidayDates: string[];
 };
 
 const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
@@ -1718,7 +1722,7 @@ export async function getPlanPrefill(
 ): Promise<PlanPrefill> {
   await assertPermission(access, "weekly_plans", "read");
   const employee = await currentEmployee(access);
-  if (!employee) return { items: [], schemaReady: true };
+  if (!employee) return { items: [], schemaReady: true, nationalHolidayDates: [] };
   const workweek = resolvePlanWorkweek({
     jobTitle: employeeTitle(employee, access.role),
     role: access.role,
@@ -1777,7 +1781,37 @@ export async function getPlanPrefill(
     items.push(...weekly.items);
   }
 
-  return { items, schemaReady: ready };
+  const nationalHolidayDates = await loadNationalHolidayDates(start, end);
+
+  return { items, schemaReady: ready, nationalHolidayDates };
+}
+
+// Egyptian national-holiday dates that fall within [start, end]. Cached + guarded
+// so a slow/failed holiday source never breaks the editor (returns []).
+async function loadNationalHolidayDates(start: string, end: string): Promise<string[]> {
+  try {
+    const monthsSeen = new Set<string>();
+    const cursor = new Date(`${start}T00:00:00Z`);
+    const last = new Date(`${end}T00:00:00Z`);
+    while (cursor.getTime() <= last.getTime()) {
+      monthsSeen.add(`${cursor.getUTCFullYear()}-${cursor.getUTCMonth() + 1}`);
+      cursor.setUTCDate(1);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    const dates = new Set<string>();
+    for (const key of monthsSeen) {
+      const [year, month] = key.split("-").map(Number);
+      const result = await getEgyptianNationalHolidays({ month, year });
+      for (const holiday of result.holidays) {
+        for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
+          if (date >= start && date <= end) dates.add(date);
+        }
+      }
+    }
+    return Array.from(dates).sort();
+  } catch {
+    return [];
+  }
 }
 
 /**
