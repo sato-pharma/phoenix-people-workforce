@@ -1051,9 +1051,11 @@ export async function runProbationWorkflow(
 
   const now = new Date().toISOString();
   const note = cleanText(input.note);
+  // Persist the canonical HR_ID (never a login token) for decision attribution.
+  const actorHrId = viewer?.hrId ?? normalizeHrId(access.hrId) ?? actor;
   const updates: Record<string, unknown> = {
     updated_at: now,
-    workflow_notes: appendWorkflowNote(row.workflow_notes, actor, action, note),
+    workflow_notes: appendWorkflowNote(row.workflow_notes, actorHrId, action, note),
   };
 
   if (input.evaluationScores) updates.evaluation_scores = input.evaluationScores;
@@ -1063,7 +1065,7 @@ export async function runProbationWorkflow(
       updates.status = "manager_feedback";
       updates.manager_feedback = cleanText(input.managerFeedback) ?? row.manager_feedback;
       updates.manager_reviewed_at = now;
-      updates.manager_reviewed_by = actor;
+      updates.manager_reviewed_by = actorHrId;
       break;
     case "pass":
     case "terminate":
@@ -1072,9 +1074,9 @@ export async function runProbationWorkflow(
       updates.decision_reason = cleanText(input.decisionReason);
       updates.extension_end_date = null;
       updates.approved_at = now;
-      updates.approved_by = actor;
+      updates.approved_by = actorHrId;
       updates.completed_at = now;
-      updates.completed_by = actor;
+      updates.completed_by = actorHrId;
       break;
     default:
       throw new Error("Unsupported probation workflow action.");

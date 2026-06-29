@@ -1,4 +1,4 @@
-import type { AccessContext } from "@/lib/auth/permissions";
+import { resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
@@ -435,6 +435,16 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
   const db = getSupabaseAdmin();
   const items: HistoricalApprovalItem[] = [];
 
+  // Role-aware deep-link back into the Approvals Hub (portal vs admin shell). Mirrors the
+  // `?module=X&id=Y` convention the inbox/notifications already use, so "View request" always
+  // routes to the correct surface for the viewer and never dead-ends.
+  const hubBase =
+    resolveNavigationMode(access) === "employee-portal"
+      ? "/employee-portals/approvals-hub"
+      : "/admin/approvals-hub";
+  const historyHref = (module: string, id: unknown) =>
+    `${hubBase}?module=${module}&id=${encodeURIComponent(String(id ?? ""))}`;
+
   const [leaves, excuses, plans, resignations] = await Promise.allSettled([
     db
       .from("v2_vacation_requests")
@@ -490,7 +500,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
         decision,
         decidedAt: String(decidedAt ?? ""),
-        href: null,
+        href: historyHref("leave", row.id),
       });
     }
   }
@@ -507,7 +517,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
         decision,
         decidedAt: String(row.manager_decision_at ?? ""),
-        href: null,
+        href: historyHref("excuse", row.id),
       });
     }
   }
@@ -537,7 +547,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         title: `${String(row.plan_kind ?? "weekly").charAt(0).toUpperCase()}${String(row.plan_kind ?? "weekly").slice(1)} plan · ${row.period_key ?? ""}`,
         decision,
         decidedAt: String(decidedAt ?? ""),
-        href: null,
+        href: historyHref("weekly_plan", row.id),
       });
     }
   }
@@ -547,9 +557,17 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       const isApprover = String(row.approved_by ?? "").toUpperCase() === hrId;
       const isRejector = String(row.rejected_by ?? "").toUpperCase() === hrId;
       const isReviewer = String(row.reviewed_by ?? "").toUpperCase() === hrId;
-      const decision = isApprover ? "approved" : isRejector ? "rejected" : isReviewer ? "approved" : null;
+      if (!isApprover && !isRejector && !isReviewer) continue;
+      // Derive the decision from the final status, not from which actor column matched — a
+      // reviewer is not necessarily the approver. A row still under review (matched only via
+      // reviewed_by) is shown as "returned" (in-progress), never as "approved".
+      const status = String(row.status ?? "").toLowerCase();
+      let decision: "approved" | "rejected" | "returned" | null;
+      if (/(approv|complet)/.test(status)) decision = "approved";
+      else if (/(reject)/.test(status)) decision = "rejected";
+      else if (/(cancel|review|return)/.test(status)) decision = "returned";
+      else decision = isApprover ? "approved" : isRejector ? "rejected" : "returned";
       const decidedAt = isApprover ? row.approved_at : isRejector ? row.rejected_at : row.reviewed_at;
-      if (!decision) continue;
       items.push({
         id: `history:resignation:${row.id}`,
         module: "resignation",
@@ -558,7 +576,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         title: `Resignation · effective ${row.effective_date ?? ""}`,
         decision,
         decidedAt: String(decidedAt ?? ""),
-        href: null,
+        href: historyHref("resignation", row.id),
       });
     }
   }
