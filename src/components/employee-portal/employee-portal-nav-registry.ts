@@ -53,7 +53,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlansTab"] },
   { label: "Private", fullLabel: "Private Calendar", href: "/employee-portals/private-calendar", icon: Fingerprint },
-  { label: "Actions", fullLabel: "Actions", href: "/employee-portals/actions", icon: Inbox, flags: ["showActionsTab"] },
+  { label: "Approvals", fullLabel: "Approvals Hub", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },

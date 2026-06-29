@@ -1655,7 +1655,7 @@ async function createMarketingApprovalSteps(params: {
 
 function marketingActionUrl(requestId: string, decision?: "approve" | "reject" | "return") {
   const base = `/employee-portals/marketing-requests/decision/${encodeURIComponent(requestId)}`;
-  return decision ? `${base}?decision=${decision}` : `/admin/action-center?module=marketing&id=${encodeURIComponent(requestId)}`;
+  return decision ? `${base}?decision=${decision}` : `/admin/approvals-hub?module=marketing&id=${encodeURIComponent(requestId)}`;
 }
 
 function marketingTelegramButtons(requestId: string) {

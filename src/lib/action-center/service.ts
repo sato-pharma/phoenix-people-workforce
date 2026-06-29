@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
-import type { ActionHubItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
+import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
 import {
@@ -373,13 +374,15 @@ export async function getAwaitingMyActionItems(
   audience: ActionInboxAudience,
 ): Promise<ActionHubItem[]> {
   // Marketing is intentionally excluded everywhere — it keeps its own dedicated inbox.
+  // Outstation and resignations: admin-only (unscoped company-wide aggregates).
+  // Contract renewal: always included — already access-scoped via canSeeContractRow(access, employee).
   const includeAdminSources = audience === "admin";
   const settled = await Promise.allSettled([
     getVacationActionCenterData(access).catch(() => null),
     getManagerPendingExcuses(access).catch(() => null),
     includeAdminSources ? getResignationsDashboardData().catch(() => null) : Promise.resolve(null),
     includeAdminSources ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
-    includeAdminSources ? getContractRenewalDashboardData(access).catch(() => null) : Promise.resolve(null),
+    getContractRenewalDashboardData(access).catch(() => null),
     getPlansAwaitingAction(access).catch(() => null),
   ]);
 
@@ -418,6 +421,141 @@ export async function getAwaitingMyActionItems(
   // Never surface a requester's own submission in their own action inbox — the CEO
   // role can submit requests and those should only appear in "My Requests", not here.
   return items.filter((item) => !sameHrId(item.employeeHrId, access.hrId));
+}
+
+/**
+ * Returns a chronological list of every approval decision the signed-in user has
+ * ever made, across leave, excuse, weekly-plan, and resignation modules.
+ * Ordered by decision timestamp descending (newest first).
+ */
+export async function getMyApprovalHistory(access: AccessContext): Promise<HistoricalApprovalItem[]> {
+  const hrId = (access.hrId ?? "").trim().toUpperCase();
+  if (!hrId) return [];
+
+  const db = getSupabaseAdmin();
+  const items: HistoricalApprovalItem[] = [];
+
+  const [leaves, excuses, plans, resignations] = await Promise.allSettled([
+    db
+      .from("v2_vacation_requests")
+      .select("id,employee_name,employee_hr_id,vacation_type,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
+      .or(`manager_decision_by_hr_id.ilike.${hrId},hr_decision_by_hr_id.ilike.${hrId}`)
+      .not("manager_decision", "is", null)
+      .order("manager_decision_at", { ascending: false })
+      .limit(200),
+    db
+      .from("employee_excuses")
+      .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
+      .ilike("manager_decision_by_hr_id", hrId)
+      .not("manager_decision", "is", null)
+      .order("manager_decision_at", { ascending: false })
+      .limit(200),
+    db
+      .from("employee_plans")
+      .select("id,employee_name,employee_hr_id,period_key,plan_kind,manager_decision,manager_decision_at,manager_decision_by_hr_id,ceo_decision,ceo_decision_at,ceo_decision_by_hr_id")
+      .or(`manager_decision_by_hr_id.ilike.${hrId},ceo_decision_by_hr_id.ilike.${hrId}`)
+      .not("manager_decision", "is", null)
+      .order("manager_decision_at", { ascending: false })
+      .limit(200),
+    db
+      .from("employee_resignations")
+      .select("id,employee_name,employee_hr_id,effective_date,status,reviewed_by,reviewed_at,approved_by,approved_at,rejected_by,rejected_at")
+      .or(`reviewed_by.ilike.${hrId},approved_by.ilike.${hrId},rejected_by.ilike.${hrId}`)
+      .order("reviewed_at", { ascending: false })
+      .limit(100),
+  ]);
+
+  function decodeDecision(raw: string | null | undefined): "approved" | "rejected" | "returned" | null {
+    if (!raw) return null;
+    const s = raw.toLowerCase();
+    if (/(approv|accept)/.test(s)) return "approved";
+    if (/(reject|declin|denied)/.test(s)) return "rejected";
+    if (/(return|resubmit|sent_back)/.test(s)) return "returned";
+    return null;
+  }
+
+  if (leaves.status === "fulfilled" && !leaves.value.error) {
+    for (const row of leaves.value.data ?? []) {
+      const isMgrDecider = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const isHrDecider = String(row.hr_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
+      const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
+      const decision = decodeDecision(decisionRaw);
+      if (!decision || (!isMgrDecider && !isHrDecider)) continue;
+      items.push({
+        id: `history:leave:${row.id}`,
+        module: "leave",
+        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeHrId: String(row.employee_hr_id ?? ""),
+        title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
+        decision,
+        decidedAt: String(decidedAt ?? ""),
+        href: null,
+      });
+    }
+  }
+
+  if (excuses.status === "fulfilled" && !excuses.value.error) {
+    for (const row of excuses.value.data ?? []) {
+      const decision = decodeDecision(row.manager_decision);
+      if (!decision) continue;
+      items.push({
+        id: `history:excuse:${row.id}`,
+        module: "excuse",
+        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeHrId: String(row.employee_hr_id ?? ""),
+        title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
+        decision,
+        decidedAt: String(row.manager_decision_at ?? ""),
+        href: null,
+      });
+    }
+  }
+
+  if (plans.status === "fulfilled" && !plans.value.error) {
+    for (const row of plans.value.data ?? []) {
+      const isMgrDecider = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const isCeoDecider = String(row.ceo_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const decisionRaw = isCeoDecider && row.ceo_decision ? row.ceo_decision : row.manager_decision;
+      const decidedAt = isCeoDecider && row.ceo_decision_at ? row.ceo_decision_at : row.manager_decision_at;
+      const decision = decodeDecision(decisionRaw);
+      if (!decision || (!isMgrDecider && !isCeoDecider)) continue;
+      items.push({
+        id: `history:weekly_plan:${row.id}`,
+        module: "weekly_plan",
+        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeHrId: String(row.employee_hr_id ?? ""),
+        title: `${String(row.plan_kind ?? "weekly").charAt(0).toUpperCase()}${String(row.plan_kind ?? "weekly").slice(1)} plan · ${row.period_key ?? ""}`,
+        decision,
+        decidedAt: String(decidedAt ?? ""),
+        href: null,
+      });
+    }
+  }
+
+  if (resignations.status === "fulfilled" && !resignations.value.error) {
+    for (const row of resignations.value.data ?? []) {
+      const isApprover = String(row.approved_by ?? "").toUpperCase() === hrId;
+      const isRejector = String(row.rejected_by ?? "").toUpperCase() === hrId;
+      const isReviewer = String(row.reviewed_by ?? "").toUpperCase() === hrId;
+      const decision = isApprover ? "approved" : isRejector ? "rejected" : isReviewer ? "approved" : null;
+      const decidedAt = isApprover ? row.approved_at : isRejector ? row.rejected_at : row.reviewed_at;
+      if (!decision) continue;
+      items.push({
+        id: `history:resignation:${row.id}`,
+        module: "resignation",
+        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeHrId: String(row.employee_hr_id ?? ""),
+        title: `Resignation · effective ${row.effective_date ?? ""}`,
+        decision,
+        decidedAt: String(decidedAt ?? ""),
+        href: null,
+      });
+    }
+  }
+
+  items.sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
+  return items;
 }
 
 export async function getActionCenterDeepLinkItem(

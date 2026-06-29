@@ -182,7 +182,7 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showActionsTab ? [{ href: "/employee-portals/actions", label: "Actions", icon: Inbox }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Approvals Hub", icon: Inbox }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),

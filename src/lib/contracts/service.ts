@@ -409,7 +409,7 @@ async function notifyContractWorkflow(
   title: string,
   tone: "success" | "warning" | "danger" | "neutral",
 ) {
-  const actionUrl = `/admin/action-center?module=contract_renewal&id=${encodeURIComponent(record.id)}`;
+  const actionUrl = `/admin/approvals-hub?module=contract_renewal&id=${encodeURIComponent(record.id)}`;
   await createSystemNotification({
     actionUrl,
     actorId: "system",

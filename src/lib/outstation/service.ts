@@ -1255,7 +1255,7 @@ export async function calculateOutstationExpense(
 // recipients + channels, so no notification policy/governance changes are needed.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function outstationActionCenterUrl(requestId: number | string) {
-  return `/admin/action-center?module=outstation&id=${encodeURIComponent(String(requestId))}`;
+  return `/admin/approvals-hub?module=outstation&id=${encodeURIComponent(String(requestId))}`;
 }
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 
@@ -2931,9 +2931,9 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
           priority: "normal",
           recipientHrId: hrId,
           title: "Outstation approval overdue",
-          actionUrl: `/admin/action-center?module=outstation&id=${String(row.id)}`,
+          actionUrl: `/admin/approvals-hub?module=outstation&id=${String(row.id)}`,
           email: {
-            ctaHref: `/admin/action-center?module=outstation&id=${String(row.id)}`,
+            ctaHref: `/admin/approvals-hub?module=outstation&id=${String(row.id)}`,
             ctaLabel: "Review now",
             tone: "warning" as const,
           },

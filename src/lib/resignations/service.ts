@@ -368,8 +368,8 @@ async function notifyResignationWorkflow(
   tone: "success" | "warning" | "danger" | "neutral" = "warning",
 ) {
   const actionUrl = record.id
-    ? `/admin/action-center?module=resignation&id=${encodeURIComponent(record.id)}`
-    : "/admin/action-center?module=resignation";
+    ? `/admin/approvals-hub?module=resignation&id=${encodeURIComponent(record.id)}`
+    : "/admin/approvals-hub?module=resignation";
   // The admin-editable resignation_workflow template renders an employee detail table
   // (Department/Position/Last Working Day) and a "Dear {{managerName}}" greeting. The
   // minimal record passed here lacks those fields, so load the directory row defensively
@@ -1593,9 +1593,9 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
           priority: "high",
           recipientHrId: hrId,
           title: "Resignation pending decision",
-          actionUrl: `/admin/action-center?module=resignation&id=${String(row.id)}`,
+          actionUrl: `/admin/approvals-hub?module=resignation&id=${String(row.id)}`,
           email: {
-            ctaHref: `/admin/action-center?module=resignation&id=${String(row.id)}`,
+            ctaHref: `/admin/approvals-hub?module=resignation&id=${String(row.id)}`,
             ctaLabel: "Review resignation",
             tone: "danger" as const,
           },

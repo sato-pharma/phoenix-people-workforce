@@ -398,7 +398,7 @@ function NavRow({
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
-            {item.navBadge === "action-center-pending" && <NavBadge src="/api/action-center/pending-count" />}
+            {item.navBadge === "approvals-hub-pending" && <NavBadge src="/api/approvals-hub/pending-count" />}
           </span>
         )}
       </Link>

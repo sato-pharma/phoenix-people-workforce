@@ -51,14 +51,14 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             icon: ClipboardCheck,
             value: nsmNational ? String(nsmNational.pendingApprovals) : "—",
             label: nsmNational?.pendingApprovals === 1 ? "approval pending" : "approvals pending",
-            href: "/employee-portals/actions",
+            href: "/employee-portals/approvals-hub",
             urgent: !!nsmNational && nsmNational.pendingApprovals > 0,
           },
           {
             icon: CalendarX2,
             value: String(totalPending),
             label: totalPending === 1 ? "my pending request" : "my pending requests",
-            href: "/employee-portals/actions",
+            href: "/employee-portals/approvals-hub",
           },
           {
             icon: Wallet,
@@ -73,7 +73,7 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         actions={[
           { href: "/employee-portals/dsms-performance", icon: Network, label: "Regional Comparison" },
           { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
-          { href: "/employee-portals/actions", icon: ClipboardCheck, label: "Review Team KPIs" },
+          { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Review Team KPIs" },
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
         ]}
       />

@@ -249,8 +249,8 @@ export async function runExcusesTests() {
     "HR visibility deep links must be read-only unless the caller is the assigned manager",
   );
 
-  const adminActionPageSource = readFileSync("app/(admin)/admin/action-center/page.tsx", "utf8");
-  const portalActionPageSource = readFileSync("app/employee-portals/actions/page.tsx", "utf8");
+  const adminActionPageSource = readFileSync("app/(admin)/admin/approvals-hub/page.tsx", "utf8");
+  const portalActionPageSource = readFileSync("app/employee-portals/approvals-hub/page.tsx", "utf8");
   assert.match(adminActionPageSource, /preservedQuery/, "admin Action Center redirects must preserve module/id query params");
   assert.match(portalActionPageSource, /preservedQuery/, "portal Action Center redirects must preserve module/id query params");
   assert.match(

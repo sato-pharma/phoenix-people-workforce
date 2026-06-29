@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Inbox } from "lucide-react";
+import { Clock, ClipboardList, Inbox } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ActionCenterHub } from "@/components/action-center/action-center-hub";
+import { HistoricalApprovalsList } from "@/components/action-center/historical-approvals-list";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
-import type { ActionHubData, ActionHubModule, MyRequestItem } from "@/components/action-center/types";
+import type { ActionHubData, ActionHubModule, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
 
-type ActionsTab = "inbox" | "mine";
+type ActionsTab = "inbox" | "mine" | "historical";
 
 type Props = {
   inboxData: ActionHubData;
   myRequests: MyRequestItem[];
+  historicalItems: HistoricalApprovalItem[];
   initialModule?: ActionHubModule | null;
   initialId?: string | null;
   callerRole?: string | null;
@@ -25,6 +27,7 @@ type Props = {
 export function ActionsWorkspace({
   inboxData,
   myRequests,
+  historicalItems,
   initialModule,
   initialId,
   callerRole,
@@ -34,8 +37,9 @@ export function ActionsWorkspace({
   const [tab, setTab] = useState<ActionsTab>(initialTab);
 
   const tabs: Array<{ key: ActionsTab; label: string; count: number; icon: typeof Inbox }> = [
-    { key: "inbox", label: "Awaiting my action", count: inboxData.items.length, icon: Inbox },
+    { key: "inbox", label: "Pending approvals", count: inboxData.items.length, icon: Inbox },
     { key: "mine", label: "My requests", count: myRequests.length, icon: ClipboardList },
+    { key: "historical", label: "Approval history", count: historicalItems.length, icon: Clock },
   ];
 
   return (
@@ -50,10 +54,10 @@ export function ActionsWorkspace({
               <AdminInsightChip tone="slate">{myRequests.length} my requests</AdminInsightChip>
             </>
           )}
-          description="Approvals waiting on your decision, and the live status of the requests you submitted — in one place."
+          description="Approvals waiting on your decision, the live status of your requests, and your full approval history."
           eyebrow="Phoenix Workforce"
           icon={<Inbox className="h-3.5 w-3.5" />}
-          title="Actions"
+          title="Approvals Hub"
         />
       )}
 
@@ -89,8 +93,10 @@ export function ActionsWorkspace({
           initialId={initialId}
           callerRole={callerRole}
         />
-      ) : (
+      ) : tab === "mine" ? (
         <MyRequestsList items={myRequests} initialModule={initialModule} initialId={initialId} />
+      ) : (
+        <HistoricalApprovalsList items={historicalItems} />
       )}
     </div>
   );
