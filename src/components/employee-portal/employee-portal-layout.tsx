@@ -38,6 +38,7 @@ import {
   UserCog,
   Inbox,
   Target,
+  CalendarRange,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -162,6 +163,7 @@ function buildEmployeePortalSections({
   showReportItDashboardTab = false,
   showRoiIntelligenceTab = false,
   showSourceOfSalesTab = false,
+  showWeeklyTab = false,
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
@@ -201,6 +203,7 @@ function buildEmployeePortalSections({
       title: "Sales Operations",
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
+        ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
       ],
     },
     {

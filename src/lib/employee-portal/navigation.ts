@@ -38,6 +38,8 @@ export type EmployeePortalNavVisibility = {
   // Source of Sales — distributor sell-in dashboard, scope-aware. Shown to the field sales
   // management roles + product/marketing managers (see /employee-portals/source-of-sales).
   showSourceOfSalesTab?: boolean;
+  // Weekly Sales — de-cumulated weekly distributor sell-in, same role set as Source of Sales.
+  showWeeklyTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showActionsTab?: boolean;
@@ -243,6 +245,13 @@ export function resolveEmployeePortalNavVisibility(
     showFingerprintReportTab: hasDeviceMapping === true,
     showRoiIntelligenceTab: showSalesIntelligence,
     showSourceOfSalesTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager",
+    showWeeklyTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||
