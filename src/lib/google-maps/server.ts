@@ -306,6 +306,31 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   return { lat: Number(location.lat), lng: Number(location.lng) };
 }
 
+export async function googleGeocodeGovernorate(searchText: string): Promise<string | null> {
+  const key = getServerKey();
+  if (!key || !searchText.trim()) return null;
+
+  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  url.searchParams.set("address", `${searchText}, Egypt`);
+  url.searchParams.set("key", key);
+  url.searchParams.set("language", "en");
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    results?: Array<{
+      address_components?: Array<{ long_name?: string; types?: string[] }>;
+    }>;
+  };
+
+  const components = payload.results?.[0]?.address_components ?? [];
+  const gov = components.find(
+    (c) => Array.isArray(c.types) && c.types.includes("administrative_area_level_1"),
+  );
+  return gov?.long_name?.replace(/\s*Governorate$/i, "").trim() ?? null;
+}
+
 function extractAddressComponent(
   components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
   targetTypes: string[],

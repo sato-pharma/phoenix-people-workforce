@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { aiSuggest, hasAiKey, type AiKind, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
+import { geocodeValidateCustomerBrick } from "@/lib/sales/normalizer/geo-validate";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -95,6 +96,33 @@ export async function POST(request: Request) {
     }
 
     const suggestions = await aiSuggest(kind, unknowns, candidates, referenceAliases.length ? referenceAliases : undefined);
+
+    if (kind === "customer") {
+      const brickMap = new Map((refs.bricks ?? []).map((b) => [b.brickId, b]));
+      const unknownMap = new Map(unknowns.map((u) => [u.raw, u]));
+      const CONCURRENCY = 8;
+      for (let i = 0; i < suggestions.length; i += CONCURRENCY) {
+        const chunk = suggestions.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          chunk.map(async (s) => {
+            const brick = brickMap.get(s.code);
+            const u = unknownMap.get(s.raw);
+            if (!brick || !u) return;
+            try {
+              const result = await geocodeValidateCustomerBrick(
+                u.rawName ?? u.raw,
+                u.rawAddress ?? "",
+                brick,
+              );
+              s.confidence = result.confidence;
+            } catch {
+              s.confidence = s.confidence != null ? Math.round(s.confidence * 0.5) : 30;
+            }
+          }),
+        );
+      }
+    }
+
     return NextResponse.json({ success: true, data: { suggestions } });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
