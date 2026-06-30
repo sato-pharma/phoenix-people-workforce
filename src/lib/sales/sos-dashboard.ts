@@ -80,6 +80,7 @@ export type SosDashboardData = {
   byProduct: SosGroupRow[];
   byLine: SosGroupRow[];
   topBricks: SosGroupRow[];
+  bottomBricks: SosGroupRow[];
   topCustomers: SosCustomerRow[];
   customerTop10Share: number;
   whiteSpaceAreas: SosWhiteSpaceRow[];
@@ -199,6 +200,8 @@ export async function getSosDashboard(
   });
   const distributorLabel = new Map<string, string>();
   references.distributors.forEach((d) => distributorLabel.set(d.code, d.name || d.code));
+  const brickLabel = new Map<string, string>();
+  (references.bricks ?? []).forEach((b) => brickLabel.set(b.brickId, b.brickName || b.brickId));
   const productLabel = new Map<string, string>();
   const productLine = new Map<string, string>();
   references.products.forEach((p) => {
@@ -517,10 +520,10 @@ export async function getSosDashboard(
     brickAccum.set(row.brickId, current);
   }
   const brickTotalValue = brickRows.reduce((sum, row) => sum + row.value, 0);
-  const topBricks: SosGroupRow[] = [...brickAccum.entries()]
-    .map(([code, v]) => ({ code, label: code, line: null, value: v.value, units: v.units, share: share(v.value, brickTotalValue) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 12);
+  const allBrickRows: SosGroupRow[] = [...brickAccum.entries()]
+    .map(([code, v]) => ({ code, label: brickLabel.get(code) ?? code, line: null, value: v.value, units: v.units, share: share(v.value, brickTotalValue) }));
+  const topBricks: SosGroupRow[] = [...allBrickRows].sort((a, b) => b.value - a.value).slice(0, 12);
+  const bottomBricks: SosGroupRow[] = [...allBrickRows].sort((a, b) => a.value - b.value).slice(0, 12);
 
   // Customers (exclude Direct; respect region/area/distributor filters; no product dimension).
   const customerRows: CustomerRow[] = (canSeeCrossLineGeography ? (customerRaw as Array<Record<string, unknown>>) : [])
@@ -598,6 +601,7 @@ export async function getSosDashboard(
     byProduct,
     byLine,
     topBricks,
+    bottomBricks,
     topCustomers,
     customerTop10Share,
     whiteSpaceAreas,
@@ -658,6 +662,7 @@ function emptyDashboard(filters: SosFilterOptions, totalAreas: number): SosDashb
     byProduct: [],
     byLine: [],
     topBricks: [],
+    bottomBricks: [],
     topCustomers: [],
     customerTop10Share: 0,
     whiteSpaceAreas: [],
