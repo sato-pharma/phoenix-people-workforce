@@ -523,7 +523,7 @@ export async function getSosDashboard(
   const allBrickRows: SosGroupRow[] = [...brickAccum.entries()]
     .map(([code, v]) => ({ code, label: brickLabel.get(code) ?? code, line: null, value: v.value, units: v.units, share: share(v.value, brickTotalValue) }));
   const topBricks: SosGroupRow[] = [...allBrickRows].sort((a, b) => b.value - a.value).slice(0, 12);
-  const bottomBricks: SosGroupRow[] = [...allBrickRows].sort((a, b) => a.value - b.value).slice(0, 12);
+  const bottomBricks: SosGroupRow[] = [...allBrickRows].sort((a, b) => a.value - b.value).slice(0, 12).reverse();
 
   // Customers (exclude Direct; respect region/area/distributor filters; no product dimension).
   const customerRows: CustomerRow[] = (canSeeCrossLineGeography ? (customerRaw as Array<Record<string, unknown>>) : [])
