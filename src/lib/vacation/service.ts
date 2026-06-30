@@ -1876,6 +1876,53 @@ async function dispatchVacationManagerReview(input: {
   });
 }
 
+async function dispatchVacationNextManagerStep(input: {
+  directory: EmployeeDirectoryData;
+  nextApproverHrId: string;
+  actingManagerHrId: string | null | undefined;
+  request: VacationRequestRecord;
+}) {
+  const actingManager = findEmployeeByHrId(input.directory, input.actingManagerHrId);
+  const actingName = actingManager?.fullName ?? input.request.managerName ?? "Your manager";
+  const actionHref = `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`;
+  const detailBase = [
+    { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+    { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+    { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+  ];
+  await notifyRecipients({
+    href: actionHref,
+    message: `${actingName} approved ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} request (${input.request.startDate} to ${input.request.endDate}). Your review is now required.`,
+    metadata: {
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [
+        ...detailBase,
+        { label: "Status", value: "Pending your approval" },
+        { label: "Action", value: "Review in the Action Center" },
+      ],
+    },
+    recipients: [input.nextApproverHrId],
+    requestId: input.request.id,
+    title: `${input.request.employeeName}'s vacation request needs your approval`,
+    type: "next_manager_review",
+  });
+  await notifyRecipients({
+    channels: ["in_app", "telegram"],
+    href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(input.request.id)}`,
+    message: `${actingName} approved your ${vacationTypeLabel(input.request.vacationType)} request (${input.request.startDate} → ${input.request.endDate}). It is now pending secondary management review.`,
+    metadata: {
+      requestId: input.request.id,
+      status: input.request.status,
+      details: [...detailBase, { label: "Status", value: "Pending secondary management review" }],
+    },
+    recipients: [input.request.employeeHrId],
+    requestId: input.request.id,
+    title: "Your vacation request is progressing",
+    type: "employee_step_approved",
+  });
+}
+
 async function dispatchVacationDecision(input: {
   decision: VacationDecision;
   directory: EmployeeDirectoryData;
@@ -2976,8 +3023,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       }).catch(() => undefined);
     });
   } else if (nextStatus === "pending_hr") {
-    // Management complete → pending HR acknowledgement. (PR3 refines role/stage notification copy
-    // and adds the "now it's your turn" nudge for the next management approver.)
+    // All management steps done — notify HR and employee.
     try {
       await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated });
     } catch (error) {
@@ -2988,6 +3034,30 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
         message: vacationErrorMessage(error),
         requestId: updated.id,
       }).catch(() => undefined);
+    }
+  } else if (nextStatus === "pending_manager") {
+    // A management step approved but another management step is still pending.
+    // Notify the next approver it is their turn and notify the employee the request is progressing.
+    const nextManagementStep = steps.find(
+      (s) => s.stepOrder > step.stepOrder && s.stepKey !== "hr"
+    );
+    if (nextManagementStep) {
+      try {
+        await dispatchVacationNextManagerStep({
+          actingManagerHrId: step.approverHrId,
+          directory,
+          nextApproverHrId: nextManagementStep.approverHrId,
+          request: updated,
+        });
+      } catch (error) {
+        await insertVacationEvent({
+          actorHrId: input.actorHrId,
+          actorLoginId: input.actorLoginId,
+          eventType: "notification_failed",
+          message: vacationErrorMessage(error),
+          requestId: updated.id,
+        }).catch(() => undefined);
+      }
     }
   }
 
