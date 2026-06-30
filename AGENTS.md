@@ -167,13 +167,13 @@ For role-sensitive modules, test multiple roles — minimum: Super Admin, CEO, t
 
 ## PR Rules
 
-One PR = one major delivery; related bug fixes can join it, unrelated work uses another branch/PR. Before a PR is ready: lint, typecheck, and test pass; `npm run build` passes when relevant; browser smoke checks pass; staging migrations are applied and verified if needed. **Merge automatically once CI passes — do not wait for the user to say "merge".**
+One PR = one major delivery; related bug fixes can join it, unrelated work uses another branch/PR. Before a PR is ready: lint, typecheck, and test pass; `npm run build` passes when relevant; Vercel preview is Ready; browser smoke checks pass; staging migrations are applied and verified if needed; the PR comment summarizes validation. **Do not merge without explicit user approval.**
 
 ## Production
 
 Production app `https://phoenix-workforce.vercel.app` / production Supabase ref `ozucdzovmcqvepbozvqf`.
 
-**Never do these without explicit approval:** production deploy (outside a normal PR merge to `main`), production migration, production environment-variable update, destructive SQL, rollback, force push.
+**Never do these without explicit approval:** merge to `main`, production deploy, production migration, production environment-variable update, destructive SQL, rollback, force push.
 
 After a production deploy: (1) verify the exact public domain `https://phoenix-workforce.vercel.app` (don't rely on workspace aliases), (2) smoke test changed pages, (3) check Vercel logs, (4) confirm no production-only errors.
 
@@ -181,36 +181,13 @@ Vercel cron note: the current Hobby cron setup allows only two daily crons — d
 
 ## Approval Workflow
 
-### Standard Git workflow — fully automatic (no approval needed at any step)
+Before any risky or important action, briefly explain the action and its impact, then ask for approval clearly. **Always ask approval before:** commit, push, PR creation, merge, rebase, reset, branch deletion, force push, applying migrations, production-impacting changes, bulk updates, deletes, auth changes, RLS changes, payroll/employee-lifecycle changes, and any destructive operation.
 
-The complete cycle below runs automatically end-to-end without stopping to ask:
+You **may** perform automatically (no approval needed): `git status`, `git diff`, branch inspection, branch creation, staging files, commit preparation, validation runs, push/PR preparation, safe read-only checks. After approval, execute automatically whenever possible — do not make the user copy-paste commands unless truly required.
 
-1. Create/switch to a branch
-2. Commit validated changes with a clear message
-3. Push the branch (pre-push gate runs automatically)
-4. Open a PR to `main`
-5. Wait for CI to pass
-6. Squash-merge and delete the branch
+**Always warn if:** the working tree is dirty, unrelated files are modified, risky changes exist, validation failed, or production risk exists. Always suggest clear commit messages, safe branch names, and rollback awareness. Never perform destructive operations silently.
 
-**Never pause between these steps to ask "should I push?" or "should I open a PR?" or "should I merge?" — just do it.**
-
-### Still requires explicit approval before acting
-
-- Production migrations (applying to Supabase production ref `ozucdzovmcqvepbozvqf`)
-- Destructive SQL (DROP TABLE, TRUNCATE, DELETE without WHERE, mass UPDATE)
-- `git push --force` / `git reset --hard` on shared branches
-- Production environment-variable changes
-- Any rollback of a production deploy
-- Bulk deletes or irreversible operations on live data
-- Auth/RLS schema changes going directly to production
-
-### Always warn (but proceed) if
-
-- The working tree has unrelated staged/unstaged files — exclude them, note what was skipped
-- Validation (lint/typecheck/test) fails — stop, fix, then re-run the gate before pushing
-- A migration timestamp collision is detected — rename to a unique timestamp and continue
-
-**Golden rule:** do not mix local, preview, staging, and production environments. Prefer feature branches, isolated commits, and validated pushes.
+**Golden rule:** do not mix local, preview, staging, and production. Prefer dedicated feature branches, isolated commits, and safe validation before push.
 
 ## Coding Rules
 
