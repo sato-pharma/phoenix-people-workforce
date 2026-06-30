@@ -222,6 +222,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
   const byProduct = data?.byProduct ?? [];
   const byArea = data?.byArea ?? [];
   const topBricks = data?.topBricks ?? [];
+  const bottomBricks = data?.bottomBricks ?? [];
   const topCustomers = data?.topCustomers ?? [];
   const trend = useMemo(() => data?.trend ?? [], [data]);
   const channelMix = data?.channelMix ?? [];
@@ -281,6 +282,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
   const regionMax = visibleMax(byRegion, (row) => row.value);
   const areaMax = visibleMax(byArea, (row) => row.value);
   const brickMax = visibleMax(topBricks, (row) => row.value);
+  const brickBottomMax = visibleMax(bottomBricks, (row) => row.value);
 
   const hasData = !error && !!summary && summary.totalValue > 0;
   const topDistributor = byDistributor[0];
@@ -669,6 +671,21 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                   <div key={row.code} className="flex items-center gap-3">
                     <span className="w-32 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
                     <div className="flex-1"><Bar2 value={row.value} max={brickMax} color="#10B981" /></div>
+                    <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </ChartCard>
+          ) : null}
+
+          {/* Lowest bricks */}
+          {bottomBricks.length > 0 ? (
+            <ChartCard title="Lowest Bricks" subtitle="Lowest-value territories (excludes direct)" icon={<MapPinned className="h-4 w-4" />}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {bottomBricks.map((row) => (
+                  <div key={row.code} className="flex items-center gap-3">
+                    <span className="w-32 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
+                    <div className="flex-1"><Bar2 value={row.value} max={brickBottomMax} color="#F97316" /></div>
                     <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
                   </div>
                 ))}
