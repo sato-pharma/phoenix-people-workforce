@@ -605,24 +605,45 @@ export async function getSosDashboard(
     topCustomers,
     customerTop10Share,
     whiteSpaceAreas,
-    insights: buildInsights({ byDistributor, byRegion, byProduct, summary, customerTop10Share, whiteSpaceAreas }),
+    insights: buildInsights({
+      byDistributor,
+      byRegion,
+      byArea,
+      byProduct,
+      summary,
+      customerTop10Share,
+      whiteSpaceAreas,
+      // A viewer locked to exactly one region (DSM) gets a useless "top region = 100%" line, so swap
+      // it for a "top area" insight. Derived from the engine's own region lockdown so it holds for
+      // any caller, not just the portal wrapper.
+      singleRegion: scopeRegionCodes !== null && scopeRegionCodes.size === 1,
+    }),
   };
 }
 
 function buildInsights(input: {
   byDistributor: SosDistributorRow[];
   byRegion: SosGroupRow[];
+  byArea: SosGroupRow[];
   byProduct: SosGroupRow[];
   summary: SosDashboardData["summary"];
   customerTop10Share: number;
   whiteSpaceAreas: SosWhiteSpaceRow[];
+  singleRegion: boolean;
 }): SosDashboardData["insights"] {
   const out: SosDashboardData["insights"] = [];
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
   const lead = input.byDistributor[0];
   if (lead) out.push({ tone: "neutral", text: `${lead.label} leads distribution with ${pct(lead.share)} of value across ${lead.regions} region(s).` });
-  const topRegion = input.byRegion[0];
-  if (topRegion) out.push({ tone: "neutral", text: `${topRegion.label} is the top region at ${pct(topRegion.share)} of value.` });
+  if (input.singleRegion) {
+    // One region only → "top region = 100%" is noise. Surface the strongest area instead
+    // (skip the national "Direct" pseudo-area so this stays a real geographic insight).
+    const topArea = input.byArea.find((row) => row.code !== "DIRECT");
+    if (topArea) out.push({ tone: "neutral", text: `${topArea.label} is the top area at ${pct(topArea.share)} of value.` });
+  } else {
+    const topRegion = input.byRegion[0];
+    if (topRegion) out.push({ tone: "neutral", text: `${topRegion.label} is the top region at ${pct(topRegion.share)} of value.` });
+  }
   const topProduct = input.byProduct[0];
   if (topProduct) out.push({ tone: "neutral", text: `${topProduct.label} is the top product at ${pct(topProduct.share)} of value.` });
   if (input.summary.directShare > 0) out.push({ tone: "neutral", text: `Direct (company) sales are ${pct(input.summary.directShare)} of total value; distributors are the rest.` });

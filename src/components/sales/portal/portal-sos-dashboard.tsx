@@ -124,7 +124,8 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
     products: "include",
     distributors: "include",
   });
-  const [view, setView] = useState<DetailView>("product");
+  // Single-region viewers (DSM) lose the Region breakdown tab, so default them to Area instead.
+  const [view, setView] = useState<DetailView>(scope.isSingleRegion ? "area" : "product");
 
   const vis = scope.visibility;
   const firstRun = useRef(true);
@@ -339,20 +340,39 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
                 <RankedBars rows={data.byProduct} gradientId="barProducts" from="#F97316" labelColor="#C2410C" selected={selection.products} onSelect={(code) => toggleFilter("products", code)} />
               </div>
             </Section>
-            <Section title="By region">
-              <div className="h-60 w-full">
-                <RankedBars rows={data.byRegion} gradientId="barRegions" from="#0EA5E9" labelColor="#0369A1" selected={selection.regions} onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined} />
-              </div>
-            </Section>
+            {scope.isSingleRegion ? (
+              // Single-region viewer (DSM): one region vs itself is meaningless, so this slot becomes
+              // a vertical "By area" chart of the areas inside his region.
+              <Section title="By area">
+                <div className="h-60 w-full">
+                  <ColumnBars rows={data.byArea} gradientId="barAreasCol" from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
+                </div>
+              </Section>
+            ) : (
+              <Section title="By region">
+                <div className="h-60 w-full">
+                  <RankedBars rows={data.byRegion} gradientId="barRegions" from="#0EA5E9" labelColor="#0369A1" selected={selection.regions} onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined} />
+                </div>
+              </Section>
+            )}
             <Section title="By distributor">
               <div className="h-60 w-full">
                 <RankedBars rows={data.byDistributor} gradientId="barDistributors" from="#8B5CF6" labelColor="#6D28D9" selected={selection.distributors} onSelect={(code) => toggleFilter("distributors", code)} />
               </div>
             </Section>
+            {scope.isSingleRegion ? null : (
+              // Multi-region viewer (RM/NSM/PM/GPM/MM): keep "By region" above and add a full-width
+              // horizontal "By area" — many areas read best wide, with the full list in the table below.
+              <Section title="By area" className="lg:col-span-3">
+                <div className="h-60 w-full">
+                  <RankedBars rows={data.byArea} gradientId="barAreas" from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
+                </div>
+              </Section>
+            )}
           </div>
 
           {/* Detail breakdown */}
-          <DetailSection data={data} view={view} onViewChange={setView} comparison={comparison} exportQuery={buildQuery()} />
+          <DetailSection data={data} view={view} onViewChange={setView} comparison={comparison} exportQuery={buildQuery()} singleRegion={scope.isSingleRegion} />
         </>
       )}
     </div>
@@ -711,6 +731,83 @@ function RankedBars({
   );
 }
 
+// Vertical column variant — used for the DSM "By area" chart (few areas within one region read
+// better as upright columns than horizontal bars). Same premium gradient + click-to-filter as
+// RankedBars. Bars fade top→base; value labels sit above each column.
+function ColumnBars({
+  rows,
+  gradientId,
+  from,
+  labelColor,
+  selected,
+  onSelect,
+}: {
+  rows: SosGroupRow[];
+  gradientId: string;
+  from: string;
+  labelColor: string;
+  selected?: string[];
+  onSelect?: (code: string | undefined) => void;
+}) {
+  const top = rows.slice(0, 8).map((row) => ({ label: row.label, value: row.value, code: row.code }));
+  if (top.length === 0) return <NoData />;
+  const selectedSet = new Set(selected ?? []);
+  const clickable = Boolean(onSelect);
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={top} margin={{ top: 18, right: 8, bottom: 4, left: 0 }} barCategoryGap="22%">
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={from} stopOpacity={1} />
+            <stop offset="62%" stopColor={from} stopOpacity={0.55} />
+            <stop offset="100%" stopColor={from} stopOpacity={0.1} />
+          </linearGradient>
+        </defs>
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: "#475569", fontWeight: 600 }}
+          axisLine={false}
+          tickLine={false}
+          interval={0}
+          angle={-20}
+          textAnchor="end"
+          height={52}
+        />
+        <YAxis type="number" hide />
+        <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: `${from}12` }} />
+        <Bar
+          dataKey="value"
+          radius={[6, 6, 2, 2]}
+          fill={`url(#${gradientId})`}
+          isAnimationActive
+          cursor={clickable ? "pointer" : undefined}
+          onClick={
+            clickable
+              ? (((entry: { code?: string; payload?: { code?: string } }) =>
+                  onSelect?.(entry?.code ?? entry?.payload?.code)) as never)
+              : undefined
+          }
+        >
+          {top.map((entry) => (
+            <Cell
+              key={entry.code}
+              fill={`url(#${gradientId})`}
+              stroke={selectedSet.has(entry.code) ? from : undefined}
+              strokeWidth={selectedSet.has(entry.code) ? 2 : 0}
+            />
+          ))}
+          <LabelList
+            dataKey="value"
+            position="top"
+            formatter={(value) => formatEgp(Number(value)).replace("EGP ", "")}
+            style={{ fontSize: 10, fontWeight: 800, fill: labelColor }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 function NoData() {
   return <div className="flex h-full items-center justify-center text-xs font-semibold text-slate-400">No data for this selection.</div>;
 }
@@ -724,12 +821,15 @@ function DetailSection({
   onViewChange,
   comparison,
   exportQuery,
+  singleRegion,
 }: {
   data: SosDashboardData;
   view: DetailView;
   onViewChange: (next: DetailView) => void;
   comparison: PortalSosComparison | null;
   exportQuery: string;
+  /** DSM (one region) — drop the Region tab; comparing a single region is meaningless. */
+  singleRegion: boolean;
 }) {
   const rows: DetailRow[] = useMemo(() => {
     const prevByCode = comparison?.prevValueByCode[view] ?? {};
@@ -765,7 +865,7 @@ function DetailSection({
 
   const tabs: { key: DetailView; label: string }[] = [
     { key: "product", label: "Product" },
-    { key: "region", label: "Region" },
+    ...(singleRegion ? [] : [{ key: "region" as const, label: "Region" }]),
     { key: "area", label: "Area" },
     { key: "distributor", label: "Distributor" },
   ];
