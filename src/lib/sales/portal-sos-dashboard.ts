@@ -100,10 +100,22 @@ export type PortalSosScopeView = {
   role: PhoenixRole;
   visibility: PortalSosFilterVisibility;
   scopeSummary: string;
+  /**
+   * Viewer is locked to exactly one region (DSM). Drives the chart layout: comparing a single
+   * region against itself is meaningless, so the client swaps "By region" for a vertical "By area"
+   * chart and drops the Region breakdown tab. Kept distinct from `visibility.region` on purpose —
+   * filter visibility and chart layout are separate concerns even if they coincide today.
+   */
+  isSingleRegion: boolean;
 };
 
 export function toPortalSosScopeView(scope: PortalSosScope): PortalSosScopeView {
-  return { role: scope.role, visibility: scope.visibility, scopeSummary: scope.scopeSummary };
+  return {
+    role: scope.role,
+    visibility: scope.visibility,
+    scopeSummary: scope.scopeSummary,
+    isSingleRegion: scope.isSingleRegion,
+  };
 }
 
 export type PortalSosScope = {
@@ -117,6 +129,8 @@ export type PortalSosScope = {
   /** Normalized line keys in scope (null = all) — trims options. */
   lineKeys: Set<string> | null;
   visibility: PortalSosFilterVisibility;
+  /** Locked to exactly one region (DSM) — see PortalSosScopeView.isSingleRegion. */
+  isSingleRegion: boolean;
   /** Human banner, e.g. "Pedia · 3 regions · 8 products". */
   scopeSummary: string;
 };
@@ -262,6 +276,7 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     : null;
 
   const visibility = computePortalSosVisibility(lineKeys, regionCodes);
+  const isSingleRegion = regionCodes !== null && regionCodes.size === 1;
 
   return {
     role,
@@ -270,6 +285,7 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     regionCodes,
     lineKeys,
     visibility,
+    isSingleRegion,
     scopeSummary: buildScopeSummary({ salesScope, regionCodes, allowedProductCodes, references }),
   };
 }

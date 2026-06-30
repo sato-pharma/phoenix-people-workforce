@@ -120,4 +120,54 @@ export function runPortalSosScopeTests() {
   const route = readSource("../app/api/employee-portals/source-of-sales/route.ts");
   assert.ok(route.includes("isPortalSosRole(access.role)"), "portal SoS API must gate by role");
   assert.ok(route.includes("getPortalSosDashboard"), "portal SoS API must use the scoped wrapper");
+
+  // ── Area scoping — a region-locked viewer (RM / DSM) must never see areas outside his regions ──
+  // Single-region detection is exactly "one region in scope" (DSM); this is the same condition that
+  // hides the Region filter, so the two must stay in agreement.
+  assert.equal(dsm.region, false, "single-region viewer hides the Region filter");
+  assert.equal(rm.region, true, "multi-region viewer (RM) shows the Region filter");
+
+  const wrapper = readSource("../src/lib/sales/portal-sos-dashboard.ts");
+  // RM's region universe is his managed reporting subtree, forwarded to the engine as the override.
+  assert.ok(
+    wrapper.includes("resolveRegionalManagerRegionCodes") && /regionCodes = regionOverride/.test(wrapper),
+    "RM region scope must come from his managed reporting subtree",
+  );
+  // isSingleRegion is derived from the region set size and exported to the client for layout.
+  assert.ok(
+    wrapper.includes("regionCodes !== null && regionCodes.size === 1"),
+    "wrapper must derive isSingleRegion from the region set size",
+  );
+  // The Area filter dropdown is trimmed to the viewer's in-scope regions — never the whole company.
+  assert.ok(
+    wrapper.includes("regionCodes.has(String(area.region).toUpperCase())"),
+    "wrapper must trim Area options to the viewer's region scope",
+  );
+
+  // Engine: byArea is built from the region-locked `detail` set, and the Area Coverage denominator
+  // (masterAreas) is itself scoped to the viewer's regions — so a region-locked caller can never see
+  // or be measured against areas outside his regions.
+  assert.ok(
+    engine.includes("!scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? \"\").toUpperCase())"),
+    "engine must scope the area-coverage denominator (masterAreas) to the viewer's regions",
+  );
+  assert.ok(
+    /const byArea = group\(\s*detail,/.test(engine),
+    "engine byArea must be grouped from the region-locked detail rows",
+  );
+  // Single-region viewers get a "top area" insight instead of the useless "top region = 100%".
+  assert.ok(
+    engine.includes("if (input.singleRegion)") && engine.includes("is the top area at"),
+    "engine must swap the top-region insight for a top-area insight when single-region",
+  );
+
+  // UI: DSM swaps "By region" for a vertical By-area chart and drops the Region breakdown tab;
+  // multi-region viewers keep By region and gain a horizontal By-area chart.
+  const ui = readSource("../src/components/sales/portal/portal-sos-dashboard.tsx");
+  assert.ok(ui.includes("scope.isSingleRegion ?"), "UI must branch chart layout on isSingleRegion");
+  assert.ok(ui.includes("<ColumnBars"), "UI must render the vertical ColumnBars chart for DSM By-area");
+  assert.ok(
+    ui.includes("singleRegion ? [] : [{ key: \"region\""),
+    "UI must drop the Region breakdown tab for single-region viewers",
+  );
 }
