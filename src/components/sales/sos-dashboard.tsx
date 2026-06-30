@@ -291,7 +291,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
         eyebrow="Sales Intelligence"
         icon={<Network className="h-4 w-4" />}
         title="Source of Sales Dashboard"
-        description="Monthly closing data from the Sales Queue pipeline — channels, distributors, regions, products, customers and trends."
+        description="Actual sales performance from distributor uploads — channel mix, regional breakdown, product rankings, top customers, and value trends over time."
         badges={
           <>
             <AdminInsightChip tone="orange">{data?.period ? periodProseLabel(data.period) : "No data"}</AdminInsightChip>
