@@ -213,6 +213,7 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
         distributorCode: OFFICE_DISTRIBUTOR_CODE,
         isDirect: false,
         invoiceDate: `${period}-01`,
+        invoiceNumber: null,
         invoicePeriod: period,
         officialLine,
         productCode: reference?.productCode ?? product.productCode,

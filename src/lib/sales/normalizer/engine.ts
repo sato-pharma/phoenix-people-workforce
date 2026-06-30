@@ -363,6 +363,7 @@ export function normalizeRows(
       discount,
       distributorCode: profile.distributorCode,
       invoiceDate: periodFrom(firstValue(row, header, profile.dateColumns), dayFirst) ?? "",
+      invoiceNumber: null,
       isDirect: profile.valueSource === "sheet",
       officialLine: product?.line || "Unknown",
       productCode,

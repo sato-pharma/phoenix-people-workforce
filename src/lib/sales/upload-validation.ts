@@ -378,10 +378,17 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
   }
 
   // ── Duplicates / double-count ────────────────────────────────────────────────────────────────
+  // A row is only a duplicate when ALL fields including the invoice number match. When the sheet
+  // has no invoice number column (invoiceNumber === null) each row gets a unique sentinel so that
+  // multiple orders for the same customer/product/qty/value are never falsely flagged — they are
+  // legitimately separate invoices we simply cannot distinguish by number.
   const seen = new Set<string>();
   const duplicateRows: { rawRowNumber: number }[] = [];
   for (const r of coded) {
-    const key = `${r.clientCode ?? r.clientName ?? ""}|${r.productCode}|${r.invoiceDate}|${r.qty}|${r.value}|${r.discount}`;
+    const invKey = r.invoiceNumber != null && r.invoiceNumber !== ""
+      ? r.invoiceNumber
+      : `__no_inv_${r.rawRowNumber}__`;
+    const key = `${r.clientCode ?? r.clientName ?? ""}|${r.productCode}|${r.invoiceDate}|${r.qty}|${r.value}|${r.discount}|${invKey}`;
     if (seen.has(key)) duplicateRows.push({ rawRowNumber: r.rawRowNumber });
     else seen.add(key);
   }
@@ -390,10 +397,10 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       code: "duplicate_rows",
       severity: "warning",
       title: "Duplicate sales lines",
-      detail: `${duplicateRows.length.toLocaleString()} redundant row(s) repeat an earlier line exactly (same customer, product, month, quantity, value and discount). These extra copies would double-count sales — the first occurrence of each is kept.`,
+      detail: `${duplicateRows.length.toLocaleString()} row(s) share the same customer, product, month, quantity, value, discount AND invoice number as an earlier row. These are likely copy-paste duplicates — the first occurrence of each is kept.`,
       count: duplicateRows.length,
       sampleRows: sampleRows(duplicateRows),
-      fixHint: "Confirm these are genuinely separate invoices; otherwise remove the duplicate rows from the source sheet.",
+      fixHint: "Remove the duplicate rows from the source sheet. Two rows with different invoice numbers are always treated as separate orders.",
     });
   }
 

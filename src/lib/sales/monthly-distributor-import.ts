@@ -271,6 +271,8 @@ export type ParsedDistributorRow = {
   isDirect: boolean;
   /** Full day-level ISO date (YYYY-MM-DD); null when unparseable or outside the row's period. */
   invoiceDate: string | null;
+  /** Raw invoice / document number from the distributor sheet; null when the column is absent. */
+  invoiceNumber: string | null;
   invoicePeriod: string | null;
   officialLine: string;
   productCode: string;
@@ -358,6 +360,13 @@ const QTY_HEADER_ALIASES = ["Qty", "Quantity", "QTY_INVOICE", "QTY_PACK", "qnt"]
 // still wins on sheets that carry both — this only lets Sofico's raw date column resolve.
 const INVOICE_DATE_HEADER_ALIASES = ["Invoice Date", "Date", "INVOICE_DATE", "inv_date", "BILLINGDATE"];
 const BRICK_ID_HEADER_ALIASES = ["Brick ID", "Brick ID2"];
+// Common invoice / document number column aliases across distributor sheets. Probed automatically;
+// no template-level config needed. Used only for duplicate detection — never stored in the DB.
+const INVOICE_NUMBER_HEADER_ALIASES = [
+  "Invoice No", "Invoice No.", "Invoice Number", "Invoice #", "INVOICE_NO", "INV_NO",
+  "Doc. No", "Doc No", "Document No", "Document Number", "Bill No", "Bill Number",
+  "رقم الفاتورة", "رقم المستند",
+];
 
 const OVERSEAS_PS_TEMPLATE: DistributorSalesTemplateDef = {
   customerFields: { address: ["Customer Address"], code: ["Customer"], name: ["Customer Name"] },
@@ -1325,6 +1334,12 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     const clientName = customerValueAt(row, headerMap, "name");
     const clientAddress = customerValueAt(row, headerMap, "address");
 
+    // Probe for invoice/document number using common column aliases. Used only for duplicate
+    // detection — not stored in the DB. Stays null when no matching column exists in the sheet.
+    const rawInvoiceNumber = INVOICE_NUMBER_HEADER_ALIASES
+      .reduce<unknown>((found, alias) => found ?? valueAtHeader(row, headerMap, alias), null);
+    const invoiceNumber = rawInvoiceNumber != null ? (normalizeDisplay(rawInvoiceNumber) || null) : null;
+
     // Auto-fill Brick (and derived Area/Region) from the customer map when the coded sheet leaves
     // the brick blank or #N/A — keyed by distributor + customer code. This lets a raw export or a
     // raw+coded ("hybrid") sheet validate without hand-filled bricks. A valid typed brick is left
@@ -1562,6 +1577,7 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       distributorCode: rowDistributorCode,
       isDirect,
       invoiceDate,
+      invoiceNumber,
       invoicePeriod: period,
       officialLine: productReference?.line ?? "Unknown",
       productCode: productCode || normalizeDisplay(rawProductCode),

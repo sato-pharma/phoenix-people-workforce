@@ -9,7 +9,7 @@ function row(over: Partial<CodedRow> = {}): CodedRow {
   return {
     areaCode: "A1", areaName: "Area 1", brickId: "B1", brickName: "Brick 1",
     bonusQty: 0, clientCode: "C1", clientName: "Client 1", clientAddress: null,
-    discount: 0, distributorCode: "PS", invoiceDate: "2026-05", isDirect: false,
+    discount: 0, distributorCode: "PS", invoiceDate: "2026-05", invoiceNumber: null, isDirect: false,
     officialLine: "Line A", productCode: "P1", productName: "Product 1",
     qty: 10, rawRowNumber: 2, regionCode: "R1", regionName: "Region 1", value: 100,
     ...over,
