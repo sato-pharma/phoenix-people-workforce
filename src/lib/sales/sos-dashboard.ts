@@ -220,12 +220,14 @@ export async function getSosDashboard(
   const filterOptions: SosFilterOptions = {
     periods: availablePeriods,
     lines: [...new Set(references.products.map((p) => norm(p.line)).filter(Boolean))]
+      .filter((line) => line.toUpperCase() !== "IGNORE")
       .filter((line) => canSeeHeadOffice || !isHeadOfficeLine(line))
       .sort(),
     distributors: references.distributors.map((d) => ({ code: d.code, label: d.name || d.code })),
     regions: references.regions.map((r) => ({ code: r.regionCode, label: r.regionName || r.regionCode })),
     areas: (references.areas ?? []).map((a) => ({ code: a.areaCode, label: a.areaName || a.areaCode, region: a.regionCode })),
     products: references.products
+      .filter((p) => p.productCode.toUpperCase() !== "IGNORE")
       .filter((p) => canSeeRestricted || !RESTRICTED_SET.has(p.productCode.toUpperCase()))
       .filter((p) => canSeeHeadOffice || !isHeadOfficeLine(p.line))
       .map((p) => ({ code: p.productCode, label: p.productName || p.productCode, line: p.line })),
