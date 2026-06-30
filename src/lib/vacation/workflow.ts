@@ -18,6 +18,7 @@ export type LeaveWorkflowActionKey =
   | "hr_reject"
   | "manager_approve"
   | "manager_reject"
+  | "manager_return"
   | "submit";
 
 export function toLeaveWorkflowStatus(status: VacationRequestStatus | string | null | undefined) {
@@ -31,6 +32,10 @@ export function vacationDecisionAction(input: {
   decision: VacationDecision;
   status: VacationRequestStatus;
 }): { actionKey: LeaveWorkflowActionKey; expectedNextStatus: string } {
+  if (input.decision === "return") {
+    return { actionKey: "manager_return", expectedNextStatus: "returned" };
+  }
+
   const decisionValue = input.decision === "approve" ? "approve" : "reject";
 
   if (input.status === "pending_hr") {

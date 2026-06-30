@@ -25,6 +25,7 @@ export const VACATION_STATUSES = [
   { label: "Pending HR", value: "pending_hr" },
   { label: "Approved", value: "approved" },
   { label: "Rejected", value: "rejected" },
+  { label: "Returned to Employee", value: "returned" },
 ] as const;
 
 export const VACATION_PAYMENT_STATUSES = [
@@ -44,7 +45,7 @@ export type VacationType = (typeof VACATION_TYPES)[number]["value"];
 export type VacationDayPart = (typeof VACATION_DAY_PARTS)[number]["value"];
 export type VacationRequestStatus = (typeof VACATION_STATUSES)[number]["value"];
 export type VacationPaymentStatus = (typeof VACATION_PAYMENT_STATUSES)[number]["value"];
-export type VacationDecision = "approve" | "reject";
+export type VacationDecision = "approve" | "reject" | "return";
 export type VacationUnpaidReason = "first_six_months" | "insufficient_balance" | "missing_hire_date";
 export type VacationWeeklyOffMode = (typeof VACATION_WEEKLY_OFF_MODES)[number]["value"];
 export type VacationEvidenceType = "compensatory" | "sick";
@@ -82,7 +83,7 @@ export type VacationApprovalStepState = {
   stepKey: VacationWorkflowStepKey;
 };
 
-export type VacationActionButton = "approve" | "reject" | "acknowledge" | "assign";
+export type VacationActionButton = "approve" | "reject" | "acknowledge" | "assign" | "return";
 export type VacationActionAvailability = Record<
   VacationActionButton,
   { enabled: boolean; disabledReason: string | null }
@@ -347,6 +348,7 @@ export type VacationReportData = {
   canAdminManage: boolean;
   canExport: boolean;
   canReviewAttachments: boolean;
+  viewerHrId: string | null;
   dashboard: VacationDashboardData;
   employeeEligibility: VacationEmployeeEligibilityRow[];
   employeeEligibilitySummary: {

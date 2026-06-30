@@ -627,6 +627,7 @@ function resolveLeaveActions(detail: LeaveDetail): Array<{ key: string; label: s
   const av = detail.actionAvailability;
   const actions: Array<{ key: string; label: string; variant: "approve" | "reject" | "neutral" }> = [];
   if (av.approve) actions.push({ key: "approve", label: "Approve", variant: "approve" });
+  if (av.return) actions.push({ key: "return", label: "Return for Edit", variant: "neutral" });
   if (av.reject) actions.push({ key: "reject", label: "Reject", variant: "reject" });
   if (av.acknowledge) actions.push({ key: "acknowledge", label: "Acknowledge (HR)", variant: "neutral" });
   return actions;
@@ -899,6 +900,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   function handleLeaveAction(action: string) {
     if (!selected) return;
     if (action === "reject" && !comment.trim()) { setError("A rejection reason is required."); return; }
+    if (action === "return" && !comment.trim()) { setError("A return reason is required."); return; }
     void callApi(`/api/vacations/requests/${selected.id}/decision`, {
       decision: action === "acknowledge" ? "approve" : action,
       decisionComment: comment.trim() || null,

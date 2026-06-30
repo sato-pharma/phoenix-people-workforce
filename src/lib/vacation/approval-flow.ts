@@ -87,6 +87,9 @@ export function evaluateStepAction(input: {
   const allManagementApproved = mgmt.every((step) => step.status === "approved");
 
   if (actorStep.stepKey === "hr") {
+    if (decision === "return") {
+      return { allowed: false, reason: "HR cannot return requests to the employee.", nextStatus: "pending_hr", isFinal: false };
+    }
     if (decision === "reject") {
       return { allowed: true, reason: null, nextStatus: "rejected", isFinal: true };
     }
@@ -110,6 +113,10 @@ export function evaluateStepAction(input: {
       nextStatus: "pending_manager",
       isFinal: false,
     };
+  }
+
+  if (decision === "return") {
+    return { allowed: true, reason: null, nextStatus: "returned", isFinal: false };
   }
 
   if (decision === "reject") {
@@ -150,6 +157,8 @@ export function resolveStageLabel(input: {
   const titleFor = (key: VacationWorkflowStepKey) => (input.titles?.[key] ?? "").trim();
 
   if (input.status === "needs_assignment") return "Needs HR Assignment";
+
+  if (input.status === "returned") return "Returned to Employee";
 
   if (input.status === "rejected") {
     const rejected = (input.steps ?? []).find((step) => step.status === "rejected");
@@ -192,15 +201,27 @@ export function resolveActionAvailability(input: {
   actorStep: { stepKey: VacationWorkflowStepKey; order: number } | null;
   isHrActor: boolean;
 }): VacationActionAvailability {
-  const terminal = input.status === "approved" || input.status === "rejected";
+  const terminal = input.status === "approved" || input.status === "rejected" || input.status === "returned";
   const disabledTerminal = { enabled: false, disabledReason: "This request is already closed." };
+  const disabledReturned = { enabled: false, disabledReason: "Waiting for the employee to resubmit." };
 
   const availability: VacationActionAvailability = {
     approve: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
     reject: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
     acknowledge: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
     assign: { enabled: false, disabledReason: "Only HR can assign an approver." },
+    return: { enabled: false, disabledReason: DISABLED_NOT_ASSIGNED },
   };
+
+  if (input.status === "returned") {
+    return {
+      approve: disabledReturned,
+      reject: disabledReturned,
+      acknowledge: disabledReturned,
+      assign: disabledReturned,
+      return: disabledReturned,
+    };
+  }
 
   if (terminal) {
     return {
@@ -208,6 +229,7 @@ export function resolveActionAvailability(input: {
       reject: disabledTerminal,
       acknowledge: disabledTerminal,
       assign: disabledTerminal,
+      return: disabledTerminal,
     };
   }
 
@@ -219,14 +241,16 @@ export function resolveActionAvailability(input: {
     if (input.isHrActor && input.actorStep?.stepKey === "hr") {
       availability.reject = { enabled: true, disabledReason: null };
     }
+    availability.return = { enabled: false, disabledReason: "Cannot return a request that has not been assigned yet." };
     return availability;
   }
 
   if (!input.actorStep) return availability;
 
   if (input.actorStep.stepKey === "hr") {
-    // HR may reject at any time; acknowledge only after management approvals.
+    // HR may reject at any time; acknowledge only after management approvals; cannot return.
     availability.reject = { enabled: true, disabledReason: null };
+    availability.return = { enabled: false, disabledReason: "HR cannot return requests to the employee." };
     const ack = evaluateStepAction({ steps: input.steps, actorStep: input.actorStep, decision: "approve" });
     availability.acknowledge = ack.allowed
       ? { enabled: true, disabledReason: null }
@@ -240,6 +264,9 @@ export function resolveActionAvailability(input: {
     ? { enabled: true, disabledReason: null }
     : { enabled: false, disabledReason: approveEval.reason };
   availability.reject = approveEval.allowed
+    ? { enabled: true, disabledReason: null }
+    : { enabled: false, disabledReason: approveEval.reason };
+  availability.return = approveEval.allowed
     ? { enabled: true, disabledReason: null }
     : { enabled: false, disabledReason: approveEval.reason };
   return availability;
