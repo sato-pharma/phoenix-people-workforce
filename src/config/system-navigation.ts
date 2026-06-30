@@ -224,7 +224,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-sales-intelligence",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "SoS Dashboard", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
       { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Sales Queue Closing Dashboard", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
@@ -338,7 +338,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"], exact: true },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "SoS Dashboard", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"], exact: true },
       { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Sales Queue Closing Dashboard", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "SoS Monthly Closing Entry", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
