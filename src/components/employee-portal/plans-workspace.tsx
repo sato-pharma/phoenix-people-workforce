@@ -302,6 +302,7 @@ function VirtualList<T>({
   threshold?: number;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer intentionally returns non-memoizable functions; this is expected TanStack Virtual behavior
   const virtualizer = useVirtualizer({
     count: items.length,
     estimateSize: typeof estimateSize === "number" ? () => estimateSize : estimateSize,
