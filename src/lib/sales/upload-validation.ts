@@ -34,6 +34,7 @@ export type ValidationFinding = {
   detail: string;
   count: number; // affected rows / entities, or 1 for a batch-level finding
   sampleRows: number[]; // up to SAMPLE_LIMIT raw row numbers for drill-down
+  sampleProducts?: string[]; // parallel to sampleRows — product label for each sampled row
   fixHint?: string;
 };
 
@@ -233,13 +234,15 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
 
   if (result.ignoredRows.length > 0) {
     const units = result.ignoredRows.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
+    const sampledIgnored = result.ignoredRows.slice(0, SAMPLE_LIMIT);
     add({
       code: "ignored_units",
       severity: "info",
       title: "Intentionally excluded items",
       detail: `${result.ignoredRows.length.toLocaleString()} row(s) (${units.toLocaleString()} units) are mapped as "ignore" and excluded from sales on purpose.`,
       count: result.ignoredRows.length,
-      sampleRows: sampleRows(result.ignoredRows),
+      sampleRows: sampledIgnored.map((r) => r.rawRowNumber),
+      sampleProducts: sampledIgnored.map((r) => r.rawProduct || r.rawProductName).filter(Boolean),
     });
   }
 

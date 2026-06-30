@@ -8,6 +8,7 @@ import {
   BarChart,
   Cell,
   LabelList,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -410,62 +411,42 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
           ) : null}
 
           {/* Charts */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Section title="Value trend · de-cumulated weeks" className="lg:col-span-2">
-              <div className="h-60 w-full">
+          <div className="space-y-4">
+            {/* Trend — full width */}
+            <Section title="Value trend · de-cumulated weeks">
+              <div className="h-72 w-full">
                 <WeeklyTrendChart trend={data.trend} />
               </div>
             </Section>
-            <Section title="Week-of-month comparison">
-              <div className="h-60 w-full">
-                <WeekComparisonChart weekComparison={data.weekComparison} />
+
+            {/* Cross-month week comparison — full width, below trend */}
+            <Section title="Week comparison · same week across months">
+              <div className="h-72 w-full">
+                <WeekCrossMonthChart weekComparison={data.weekComparison} />
               </div>
             </Section>
-            <Section title="Top products">
-              <div className="h-60 w-full">
-                <RankedBars
-                  rows={data.products}
-                  gradientId="barWeekProducts"
-                  from="#F97316"
-                  labelColor="#C2410C"
-                  selected={selection.products}
-                  onSelect={(code) => toggleFilter("products", code)}
-                />
-              </div>
-            </Section>
-            {scope.isSingleRegion ? (
-              // DSM: a single region bar is meaningless — widen the distributor chart
-              <Section title="By distributor" className="lg:col-span-2">
+
+            {/* Ranked breakdown charts */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <Section title="Top products">
                 <div className="h-60 w-full">
                   <RankedBars
-                    rows={data.distributorBreakdown}
-                    gradientId="barWeekDistributorsDsm"
-                    from="#8B5CF6"
-                    labelColor="#6D28D9"
-                    selected={selection.distributors}
-                    onSelect={(code) => toggleFilter("distributors", code)}
+                    rows={data.products}
+                    gradientId="barWeekProducts"
+                    from="#F97316"
+                    labelColor="#C2410C"
+                    selected={selection.products}
+                    onSelect={(code) => toggleFilter("products", code)}
                   />
                 </div>
               </Section>
-            ) : (
-              <>
-                <Section title="By region">
-                  <div className="h-60 w-full">
-                    <RankedBars
-                      rows={data.regions}
-                      gradientId="barWeekRegions"
-                      from="#0EA5E9"
-                      labelColor="#0369A1"
-                      selected={selection.regions}
-                      onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined}
-                    />
-                  </div>
-                </Section>
-                <Section title="By distributor">
+              {scope.isSingleRegion ? (
+                // DSM: a single region bar is meaningless — widen the distributor chart
+                <Section title="By distributor" className="lg:col-span-2">
                   <div className="h-60 w-full">
                     <RankedBars
                       rows={data.distributorBreakdown}
-                      gradientId="barWeekDistributors"
+                      gradientId="barWeekDistributorsDsm"
                       from="#8B5CF6"
                       labelColor="#6D28D9"
                       selected={selection.distributors}
@@ -473,8 +454,35 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
                     />
                   </div>
                 </Section>
-              </>
-            )}
+              ) : (
+                <>
+                  <Section title="By region">
+                    <div className="h-60 w-full">
+                      <RankedBars
+                        rows={data.regions}
+                        gradientId="barWeekRegions"
+                        from="#0EA5E9"
+                        labelColor="#0369A1"
+                        selected={selection.regions}
+                        onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined}
+                      />
+                    </div>
+                  </Section>
+                  <Section title="By distributor">
+                    <div className="h-60 w-full">
+                      <RankedBars
+                        rows={data.distributorBreakdown}
+                        gradientId="barWeekDistributors"
+                        from="#8B5CF6"
+                        labelColor="#6D28D9"
+                        selected={selection.distributors}
+                        onSelect={(code) => toggleFilter("distributors", code)}
+                      />
+                    </div>
+                  </Section>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Detail breakdown */}
@@ -678,38 +686,72 @@ function WeeklyTrendChart({ trend }: { trend: WeeklyDashboard["trend"] }) {
   );
 }
 
-function WeekComparisonChart({ weekComparison }: { weekComparison: WeeklyDashboard["weekComparison"] }) {
+function WeekCrossMonthChart({ weekComparison }: { weekComparison: WeeklyDashboard["weekComparison"] }) {
   if (weekComparison.length === 0) return <NoData />;
-  // Show last 8 entries (most recent months/weeks)
-  const points = weekComparison.slice(-8).map((row) => ({
-    label: row.weekNumber ? `W${row.weekNumber}` : "—",
-    value: row.salesValue,
-    code: `${row.cycleMonth}-w${row.weekNumber}`,
-  }));
+
+  // Derive distinct months sorted chronologically, take last 2 (prior + current)
+  const allMonths = [...new Set(weekComparison.map((r) => r.cycleMonth).filter(Boolean) as string[])].sort();
+  const months = allMonths.slice(-2);
+  if (months.length === 0) return <NoData />;
+
+  const monthShort = (code: string): string => {
+    const match = /^(\d{4})-(\d{2})-01$/.exec(code);
+    if (!match) return code;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+    return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  };
+
+  const labels = months.map(monthShort);
+  // Prior month = slate, current month = orange
+  const MONTH_COLORS = ["#94A3B8", "#F97316"];
+  const LABEL_COLORS = ["#64748B", "#C2410C"];
+
+  // Build W1–W4 rows; a row with all zeros is shown as 0 but not hidden
+  const chartData = [1, 2, 3, 4].map((wn) => {
+    const row: Record<string, string | number> = { week: `W${wn}` };
+    months.forEach((m, i) => {
+      const entry = weekComparison.find((r) => r.weekNumber === wn && r.cycleMonth === m);
+      row[labels[i] as string] = entry?.salesValue ?? 0;
+    });
+    return row;
+  });
+
+  const hasAnyData = chartData.some((row) => labels.some((l) => (row[l] as number) > 0));
+  if (!hasAnyData) return <NoData />;
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={points} margin={{ top: 18, right: 8, bottom: 4, left: 0 }} barCategoryGap="22%">
+      <BarChart data={chartData} margin={{ top: 28, right: 16, bottom: 4, left: 0 }} barCategoryGap="28%" barGap={5}>
         <defs>
-          <linearGradient id="barWeekComp" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F97316" stopOpacity={1} />
-            <stop offset="62%" stopColor="#F97316" stopOpacity={0.55} />
-            <stop offset="100%" stopColor="#F97316" stopOpacity={0.1} />
-          </linearGradient>
-        </defs>
-        <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#475569", fontWeight: 600 }} axisLine={false} tickLine={false} />
-        <YAxis type="number" hide />
-        <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: "#F9731612" }} />
-        <Bar dataKey="value" radius={[6, 6, 2, 2]} fill="url(#barWeekComp)" isAnimationActive>
-          {points.map((entry) => (
-            <Cell key={entry.code} fill="url(#barWeekComp)" />
+          {months.map((_, i) => (
+            <linearGradient key={i} id={`barCrossMonth${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={MONTH_COLORS[i]} stopOpacity={1} />
+              <stop offset="100%" stopColor={MONTH_COLORS[i]} stopOpacity={0.35} />
+            </linearGradient>
           ))}
-          <LabelList
-            dataKey="value"
-            position="top"
-            formatter={(value) => formatEgp(Number(value)).replace("EGP ", "")}
-            style={{ fontSize: 10, fontWeight: 800, fill: "#C2410C" }}
-          />
-        </Bar>
+        </defs>
+        <XAxis
+          dataKey="week"
+          tick={{ fontSize: 12, fill: "#1E293B", fontWeight: 800 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis type="number" hide />
+        <Tooltip content={<PremiumTooltip />} cursor={{ fill: "#F9731612" }} />
+        <Legend
+          wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 8 }}
+          formatter={(value: string) => <span style={{ color: "#475569" }}>{value}</span>}
+        />
+        {labels.map((label, i) => (
+          <Bar key={label} dataKey={label} fill={`url(#barCrossMonth${i})`} radius={[5, 5, 2, 2]} isAnimationActive>
+            <LabelList
+              dataKey={label}
+              position="top"
+              formatter={(value) => (Number(value) > 0 ? formatEgp(Number(value)).replace("EGP ", "") : "")}
+              style={{ fontSize: 9, fontWeight: 800, fill: LABEL_COLORS[i] }}
+            />
+          </Bar>
+        ))}
       </BarChart>
     </ResponsiveContainer>
   );

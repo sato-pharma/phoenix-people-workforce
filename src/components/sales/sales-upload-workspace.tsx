@@ -30,7 +30,7 @@ type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number
 type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; period: string | null };
 type Severity = "error" | "warning" | "info";
-type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; fixHint?: string };
+type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleProducts?: string[]; fixHint?: string };
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
 type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
 type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
@@ -234,7 +234,7 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
                   <p className="text-sm font-bold text-[#0F172A]">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-[#64748B]">×{f.count.toLocaleString()}</span> : null}</p>
                   <p className="text-xs text-[#475569]">{f.detail}</p>
                   {f.fixHint ? <p className="mt-0.5 text-xs italic text-[#64748B]">{f.fixHint}</p> : null}
-                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-[#94A3B8]">rows: {f.sampleRows.join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-[#94A3B8]">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
                 </div>
               </div>
             </li>
