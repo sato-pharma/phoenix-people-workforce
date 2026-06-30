@@ -464,12 +464,14 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     <div className="overflow-x-auto border border-[#E2E8F0]">
                       <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownCustomers.map((u) => (
                             <tr className="border-t border-slate-100" key={u.raw}>
                               <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
+                              <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[200px]">{u.rawAddress ? <span className="inline-flex items-center gap-0.5">{u.rawAddress}<CopyBtn text={u.rawAddress} /></span> : <span className="text-slate-300">—</span>}</td>
+                              <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[140px]">{u.rawTerritory ? <span className="inline-flex items-center gap-0.5">{u.rawTerritory}<CopyBtn text={u.rawTerritory} /></span> : <span className="text-slate-300">—</span>}</td>
                               <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
