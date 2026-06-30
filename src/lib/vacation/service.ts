@@ -2705,37 +2705,22 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   if (input.request.status === "needs_assignment" && input.decision === "approve") {
     throw new Error("This vacation request needs a management approver assigned by HR before it can be approved.");
   }
-  if (input.decision === "reject" && !text(input.decisionComment)) {
-    throw new Error("A rejection reason is required.");
+  if (input.request.status === "returned" && input.decision !== "return") {
+    throw new Error("This vacation request has been returned to the employee. Wait for them to resubmit before taking action.");
+  }
+  if ((input.decision === "reject" || input.decision === "return") && !text(input.decisionComment)) {
+    throw new Error(input.decision === "return" ? "A return reason is required." : "A rejection reason is required.");
   }
 
   const directory = await getEmployeeDirectory();
-  const vacApproval = await getPendingVacationApprovalStepForActor({
+  const { step, steps } = await getPendingVacationApprovalStepForActor({
     access: input.access,
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
     request: input.request,
   });
-  const { steps } = vacApproval;
-  let { step } = vacApproval;
-  let skipStepRecord = false;
   if (!step) {
-    // Before throwing Forbidden, check if the actor has an already-decided step.
-    // This happens when a prior attempt recorded the step but the request-status update was
-    // lost (Vercel function timeout / network drop mid-write). Recover by completing the work.
-    const expectedStepStatus = input.decision === "approve" ? "approved" : "rejected";
-    const decidedStep = steps.find((s) =>
-      s.status !== "pending" &&
-      (input.access
-        ? approvalStepMatchesAccess(input.access as AccessContext, s)
-        : approvalStepMatchesActor({ actorHrId: input.actorHrId, actorLoginId: input.actorLoginId, step: s }))
-    );
-    if (!decidedStep || decidedStep.status !== expectedStepStatus) {
-      throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
-    }
-    // Actor's step already decided with matching decision — skip re-recording and complete the update.
-    step = decidedStep;
-    skipStepRecord = true;
+    throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
   }
 
   // Enforce the runtime-overridable workflow-registry role authority on the decide path,
@@ -2781,14 +2766,62 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     }
   }
 
-  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
-  if (!skipStepRecord) {
-    await recordVacationApprovalStepDecision({
-      decision: input.decision,
-      decisionComment: input.decisionComment,
-      stepId: step.id,
+  // "return" is a manager-only action: send the request back to the employee without finalizing
+  // the step. The approval step stays "pending" so the workflow can resume after resubmit.
+  if (input.decision === "return") {
+    const now = new Date().toISOString();
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRequestsTable)
+      .update({
+        status: "returned",
+        manager_decision_comment: nullableText(input.decisionComment),
+        manager_decision_by_hr_id: input.actorHrId,
+        manager_decision_at: now,
+        updated_at: now,
+      })
+      .eq("id", input.request.id)
+      .eq("status", input.request.status)
+      .select("*")
+      .single();
+    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+    if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
+    const returned = mapVacationRow(data as VacationRequestDbRow);
+    await insertVacationEvent({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      eventType: "approval_manager_returned",
+      message: "Manager returned the request to the employee for revision.",
+      metadata: { decisionComment: input.decisionComment ?? null, stepKey: step.stepKey },
+      requestId: returned.id,
     });
+    await writeRequiredAuditLog({
+      actorLoginId: input.actorLoginId ?? input.actorHrId ?? "system",
+      entityId: returned.id,
+      entityType: "vacation_request",
+      newValues: { decisionComment: input.decisionComment ?? null, status: "returned" },
+      oldValues: { status: input.request.status },
+      summary: "Vacation request returned to employee for revision.",
+    });
+    void notifyRecipients({
+      channels: ["in_app", "telegram"],
+      href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(returned.id)}`,
+      message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by your manager for revision. Reason: ${input.decisionComment ?? "No reason provided."}`,
+      metadata: { requestId: returned.id, status: "returned" },
+      recipients: [returned.employeeHrId],
+      requestId: returned.id,
+      title: "Vacation request returned for revision",
+      type: "return",
+    }).catch(() => undefined);
+    invalidateExecutiveDashboardCache("leave request returned", ["leave"]);
+    return returned;
   }
+
+  const decisionValue = input.decision === "approve" ? "approved" : "rejected";
+  await recordVacationApprovalStepDecision({
+    decision: input.decision,
+    decisionComment: input.decisionComment,
+    stepId: step.id,
+  });
 
   const nextStatus = evaluation.nextStatus;
   const isFinal = evaluation.isFinal;
@@ -3196,6 +3229,60 @@ export async function decideVacationRequestByToken(input: {
   return updated;
 }
 
+export async function resubmitVacationRequest(access: AccessContext, input: { requestId: string }) {
+  await assertPermission(access, "leave", "create");
+  const request = await fetchVacationRequestById(input.requestId);
+  if (!request) throw new Error("Vacation request was not found.");
+  if (request.status !== "returned") {
+    throw new Error("Only returned vacation requests can be resubmitted.");
+  }
+  const actorHrId = resolveEmployeeIdentityId(access);
+  if (!hrIdsMatch(actorHrId, request.employeeHrId)) {
+    throw new Error("Forbidden: only the employee who submitted this request can resubmit it.");
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .update({ status: "pending_manager", updated_at: now })
+    .eq("id", request.id)
+    .eq("status", "returned")
+    .select("*")
+    .single();
+  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
+  const resubmitted = mapVacationRow(data as VacationRequestDbRow);
+
+  await insertVacationEvent({
+    actorHrId,
+    actorLoginId: access.loginId,
+    eventType: "employee_resubmitted",
+    message: "Employee resubmitted the vacation request for manager review.",
+    requestId: resubmitted.id,
+  });
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actorHrId ?? "system",
+    entityId: resubmitted.id,
+    entityType: "vacation_request",
+    newValues: { status: "pending_manager" },
+    oldValues: { status: "returned" },
+    summary: "Vacation request resubmitted by employee.",
+  });
+  void notifyRecipients({
+    channels: ["in_app", "telegram"],
+    href: `/leave-management/vacation-action-center?requestId=${encodeURIComponent(resubmitted.id)}`,
+    message: `${resubmitted.employeeName}'s ${vacationTypeLabel(resubmitted.vacationType)} vacation request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending your review.`,
+    metadata: { requestId: resubmitted.id, status: "pending_manager" },
+    recipients: [resubmitted.managerHrId, resubmitted.managerOfManagerHrId].filter(Boolean) as string[],
+    requestId: resubmitted.id,
+    title: "Vacation request resubmitted",
+    type: "resubmit",
+  }).catch(() => undefined);
+
+  invalidateExecutiveDashboardCache("leave request resubmitted", ["leave"]);
+  return resubmitted;
+}
+
 export async function assignVacationManagementApprover(
   access: AccessContext,
   input: { approverHrId: string; requestId: string },
@@ -3431,6 +3518,7 @@ function normalizeDecision(value: unknown): VacationDecision | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "approve" || normalized === "approved") return "approve";
   if (normalized === "reject" || normalized === "rejected") return "reject";
+  if (normalized === "return" || normalized === "returned") return "return";
   return null;
 }
 
@@ -4475,6 +4563,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
     canAdminManage,
     canExport,
     canReviewAttachments,
+    viewerHrId: access.hrId ?? null,
     dashboard: buildVacationDashboardData({ latestSlaRun, rows: filteredRows }),
     employeeEligibility,
     employeeEligibilitySummary: buildEmployeeEligibilitySummary(employeeEligibility),

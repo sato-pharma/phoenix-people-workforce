@@ -152,6 +152,7 @@ function formatDateTime(value: string | null | undefined) {
 function statusBadgeVariant(status: VacationRequestStatus) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
+  if (status === "returned") return "warning";
   return "warning";
 }
 
@@ -865,18 +866,22 @@ function RequestCard({
   actingId,
   canAdminManage,
   canReviewAttachments,
+  viewerHrId,
   onDecide,
   onDelete,
   onEdit,
+  onResubmit,
   onReview,
   row,
 }: {
   actingId: string | null;
   canAdminManage: boolean;
   canReviewAttachments: boolean;
+  viewerHrId: string | null;
   onDecide: (row: VacationRequestRecord, decision: "approve" | "reject") => void;
   onDelete: (row: VacationRequestRecord) => void;
   onEdit: (row: VacationRequestRecord) => void;
+  onResubmit: (row: VacationRequestRecord) => void;
   onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
 }) {
@@ -960,6 +965,23 @@ function RequestCard({
         >
           <FileText className="h-3 w-3" /> Timeline
         </button>
+      ) : null}
+
+      {/* Resubmit button for returned requests (employee only) */}
+      {row.status === "returned" && viewerHrId && row.employeeHrId.toUpperCase() === viewerHrId.toUpperCase() ? (
+        <div className="mt-2.5 space-y-1.5 border border-amber-200 bg-amber-50 p-2">
+          <p className="text-[11px] font-bold text-amber-900">
+            Returned by manager — {row.managerDecisionComment ? `"${row.managerDecisionComment}"` : "see the return reason in the timeline."}
+          </p>
+          <button
+            className="w-full border border-amber-600 bg-amber-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50"
+            disabled={actingId === row.id}
+            onClick={() => onResubmit(row)}
+            type="button"
+          >
+            Resubmit for review
+          </button>
+        </div>
       ) : null}
 
       {/* Decision info or action buttons */}
@@ -1115,6 +1137,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const canAdminManage = Boolean(initialData?.canAdminManage);
   const canExport = Boolean(initialData?.canExport);
   const canReviewAttachments = Boolean(initialData?.canReviewAttachments);
+  const viewerHrId = initialData?.viewerHrId ?? null;
   const showEntitlementsTab = activeTab === "entitlements";
   const showRequestsTab = activeTab === "requests";
   const addVacationTypeOptions = VACATION_TYPES.filter((option) => option.value !== "sick" && option.value !== "compensatory");
@@ -1307,6 +1330,26 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     setDecisionComment("");
     setPendingAction({ decision, kind: "decision", requestId: row.id, status: row.status });
   }, []);
+
+  const resubmit = useCallback(async (row: VacationRequestRecord) => {
+    setActingId(row.id);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/vacations/requests/${encodeURIComponent(row.id)}/resubmit`, {
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof payload.message === "string" ? payload.message : "Resubmit failed.");
+      }
+      router.refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Resubmit failed.");
+    } finally {
+      setActingId(null);
+    }
+  }, [router]);
 
   async function confirmPendingAction() {
     if (!pendingAction) return;
@@ -2184,9 +2227,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       actingId={actingId}
                       canAdminManage={canAdminManage}
                       canReviewAttachments={canReviewAttachments}
+                      viewerHrId={viewerHrId}
                       onDecide={decide}
                       onDelete={deleteAdminRequest}
                       onEdit={startAdminEdit}
+                      onResubmit={resubmit}
                       onReview={openRequestReview}
                       row={row}
                     />

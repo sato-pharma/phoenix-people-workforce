@@ -16,7 +16,7 @@ type Props = {
   initialRequestId?: string | null;
 };
 
-type ActionMode = "approve" | "reject" | "acknowledge" | "assign" | null;
+type ActionMode = "approve" | "reject" | "acknowledge" | "assign" | "return" | null;
 
 function statusBadgeClass(status: string): string {
   if (status === "approved") return "bg-emerald-100 text-emerald-800 border-emerald-300";
@@ -77,10 +77,10 @@ export function VacationActionCenter({ initialData, initialError, initialRequest
     }
   }
 
-  function submitDecision(decision: "approve" | "reject") {
+  function submitDecision(decision: "approve" | "reject" | "return") {
     if (!selected) return;
-    if (decision === "reject" && !reason.trim()) {
-      setError("A rejection reason is required.");
+    if ((decision === "reject" || decision === "return") && !reason.trim()) {
+      setError(decision === "return" ? "A return reason is required." : "A rejection reason is required.");
       return;
     }
     void postJson(`/api/vacations/requests/${selected.id}/decision`, {
@@ -189,6 +189,7 @@ export function VacationActionCenter({ initialData, initialError, initialRequest
               onApprover={setApproverHrId}
               onApprove={() => submitDecision("approve")}
               onReject={() => submitDecision("reject")}
+              onReturn={() => submitDecision("return")}
               onAssign={submitAssign}
               onCancel={resetAction}
             />
@@ -242,6 +243,7 @@ function RequestDetail(props: {
   onApprover: (value: string) => void;
   onApprove: () => void;
   onReject: () => void;
+  onReturn: () => void;
   onAssign: () => void;
   onCancel: () => void;
 }) {
@@ -332,6 +334,27 @@ function RequestDetail(props: {
               </button>
             </div>
           </div>
+        ) : mode === "return" ? (
+          <div className="space-y-2 border border-amber-200 bg-amber-50 p-3">
+            <label className="block text-[11px] font-black uppercase tracking-wide text-amber-900">
+              Return reason (required)
+            </label>
+            <textarea
+              value={props.reason}
+              onChange={(event) => props.onReason(event.target.value)}
+              rows={3}
+              className="w-full border border-amber-300 px-2 py-1 text-sm"
+              placeholder="Explain what the employee should change before resubmitting…"
+            />
+            <div className="flex gap-2">
+              <button type="button" disabled={busy} onClick={props.onReturn} className="border border-amber-600 bg-amber-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+                Return for edit
+              </button>
+              <button type="button" disabled={busy} onClick={props.onCancel} className="border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                Cancel
+              </button>
+            </div>
+          </div>
         ) : mode === "assign" ? (
           <div className="space-y-2 border border-amber-200 bg-amber-50 p-3">
             <label className="block text-[11px] font-black uppercase tracking-wide text-amber-900">
@@ -362,6 +385,9 @@ function RequestDetail(props: {
               : null}
             {row.viewerStepKind === "management"
               ? actionButton("Approve", a.approve, props.onApprove, "primary")
+              : null}
+            {row.viewerStepKind === "management"
+              ? actionButton("Return for Edit", a.return, () => props.onMode("return"), "neutral")
               : null}
             {row.viewerStepKind !== "none"
               ? actionButton("Reject with reason", a.reject, () => props.onMode("reject"), "danger")
