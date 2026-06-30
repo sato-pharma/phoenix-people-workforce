@@ -693,6 +693,43 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
             </ChartCard>
           ) : null}
 
+          {/* All areas comparison */}
+          {byArea.length > 0 ? (
+            <div>
+              <AdminTableShell
+                title="Areas — Full Sales Comparison"
+                description={`All ${byArea.length} areas ranked by value, highest to lowest`}
+              >
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Area</th>
+                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Region</th>
+                      <th className="px-4 py-3 text-xs font-black uppercase tracking-wide text-white" />
+                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Value</th>
+                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Units</th>
+                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byArea.map((row, index) => (
+                      <tr key={row.code} className="border-t border-orange-100 hover:bg-orange-50/40">
+                        <td className="px-4 py-2.5 text-xs font-bold text-slate-400">{index + 1}</td>
+                        <td className="px-4 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap">{row.label}</td>
+                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{row.line ?? "—"}</td>
+                        <td className="w-36 px-4 py-2.5"><Bar2 value={row.value} max={areaMax} color="#8B5CF6" /></td>
+                        <td className="px-4 py-2.5 text-right text-xs font-black text-slate-900 whitespace-nowrap">{compactEGP(row.value)}</td>
+                        <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 whitespace-nowrap">{formatNumber(row.units)}</td>
+                        <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-500 whitespace-nowrap">{formatPercent(row.share, { digits: 1 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </AdminTableShell>
+            </div>
+          ) : null}
+
           <p className="px-1 text-center text-xs text-slate-400">
             Source-of-Sales distributor invoices for {data?.period ? periodProseLabel(data.period) : "—"}. Confidential products are hidden unless you are CEO / Super Admin.
           </p>
