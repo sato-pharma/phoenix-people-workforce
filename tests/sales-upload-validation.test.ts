@@ -125,9 +125,14 @@ function duplicateSheetBlocks() {
 // ── Advisory warnings: never block (the owner's "data quality = warn, not block") ───────────────
 
 function duplicateRowsWarnNeverBlock() {
-  const r = validateNormalizedUpload(result([row({ rawRowNumber: 2 }), row({ rawRowNumber: 3 })]), ctx());
+  // Same invoice number + all other fields match → genuine duplicate → warn
+  const r = validateNormalizedUpload(result([row({ rawRowNumber: 2, invoiceNumber: "INV-001" }), row({ rawRowNumber: 3, invoiceNumber: "INV-001" })]), ctx());
   assert.equal(sev(r, "duplicate_rows"), "warning");
   assert.equal(r.ok, true); // duplicate LINES are advisory — only a duplicate SHEET blocks
+
+  // No invoice number → can't distinguish separate orders → never warn
+  const noInv = validateNormalizedUpload(result([row({ rawRowNumber: 2 }), row({ rawRowNumber: 3 })]), ctx());
+  assert.equal(has(noInv, "duplicate_rows"), false);
 }
 
 function futureDatedRowsWarnNeverBlock() {
@@ -236,14 +241,16 @@ function extremeUnitPriceOnlyForSheet() {
 // otherwise identical are NOT duplicates raw, but BECOME duplicates once consolidated under one
 // picked period — validation must run on the consolidated result so the warning fires.
 function consolidationSurfacesCrossPeriodDuplicates() {
-  const rows = [row({ invoiceDate: "2026-04" }), row({ invoiceDate: "2026-05", rawRowNumber: 3 })];
+  // Rows with matching invoice numbers from different months: distinct before consolidation,
+  // genuine duplicate after — the same invoice appearing twice under one period.
+  const rows = [row({ invoiceDate: "2026-04", invoiceNumber: "INV-001" }), row({ invoiceDate: "2026-05", invoiceNumber: "INV-001", rawRowNumber: 3 })];
   const raw = result(rows);
   const rawReport = validateNormalizedUpload(raw, ctx({ resolvedPeriod: null }));
   assert.equal(has(rawReport, "duplicate_rows"), false); // distinct months → not duplicates yet
   const consolidated = applyPeriodConsolidation(raw, { kind: "ok", period: "2026-05", consolidate: true });
   assert.ok(consolidated.coded.every((r) => r.invoiceDate === "2026-05"));
   const report = validateNormalizedUpload(consolidated, ctx({ resolvedPeriod: "2026-05" }));
-  assert.equal(sev(report, "duplicate_rows"), "warning");
+  assert.equal(sev(report, "duplicate_rows"), "warning"); // same invoice number → genuine duplicate
 }
 
 // Returns-only / negative-net batch must NOT trip a false "collapse" anomaly warning.
@@ -276,8 +283,8 @@ function detectorDisagreementWarnsOnlyWhenConfident() {
 // would corrupt" case (unreadable file, broken geography, duplicate sheet) flips ok=false.
 function onlyHardBlocksBlockDataQualityIsAdvisory() {
   const noisy = result([
-    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 2 }),
-    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 3 }), // identical → duplicate line; future-dated; bad discount
+    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 2, invoiceNumber: "INV-001" }),
+    row({ invoiceDate: "2026-12", discount: 1.5, rawRowNumber: 3, invoiceNumber: "INV-001" }), // same invoice number → duplicate line; future-dated; bad discount
   ]);
   const report = validateNormalizedUpload(noisy, ctx());
   assert.ok(has(report, "duplicate_rows"));
