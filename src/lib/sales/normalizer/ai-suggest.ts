@@ -15,8 +15,11 @@
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
 
 export type AiCandidate = { code: string; label: string };
-export type AiUnknown = { raw: string; rawName?: string };
+// rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
+// the customer's postal address and the distributor's own governorate/area text.
+export type AiUnknown = { raw: string; rawName?: string; rawAddress?: string; rawTerritory?: string };
 export type AiSuggestion = { code: string; raw: string };
+export type AiKind = "product" | "territory" | "customer";
 
 // Provider resolution is shared (src/lib/sales/ai/provider.ts). ai-suggest keeps GPT-4o (the heavier
 // model) for the harder name-matching task, overriding the shared "mini" defaults.
@@ -30,18 +33,39 @@ export function hasAiKey(): boolean {
   return resolveProvider() !== null;
 }
 
-function systemPrompt(kind: "product" | "territory"): string {
-  return kind === "product"
-    ? "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only."
-    : "You match a distributor's raw territory / district names (English or Arabic) to an official territory (brick) list. Match ONLY when confident the place is the same; otherwise use null. Reply with JSON only.";
+function systemPrompt(kind: AiKind): string {
+  if (kind === "product") {
+    return "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only.";
+  }
+  if (kind === "customer") {
+    return "You geo-locate a pharmacy / customer to the correct Phoenix territory (brick). Each item gives the customer NAME, postal ADDRESS, and the distributor's own GOVERNORATE/AREA text (English or Arabic). The official list is bricks shown as 'brick — area, region'. Pick the brick whose area/region/locality best fits the customer's address and governorate. Match ONLY when the geography clearly fits; otherwise use null. Reply with JSON only.";
+  }
+  return "You match a distributor's raw territory / district names (English or Arabic) to an official territory (brick) list shown as 'brick — area, region'. Match ONLY when confident the place is the same; otherwise use null. Reply with JSON only.";
 }
 
-function userPrompt(unknowns: AiUnknown[], candidates: AiCandidate[]): string {
+export type AiReferenceAlias = { raw: string; code: string };
+
+// Build one item line. For customers we fold name + address + governorate into the text so the AI
+// has the full geographic signal; product/territory just use the single raw name.
+function itemText(u: AiUnknown, kind: AiKind): string {
+  if (kind === "customer") {
+    return [u.rawName || u.raw, u.rawAddress, u.rawTerritory].map((s) => String(s ?? "").trim()).filter(Boolean).join(" | ");
+  }
+  return u.rawName || u.raw;
+}
+
+function userPrompt(unknowns: AiUnknown[], candidates: AiCandidate[], kind: AiKind, referenceAliases?: AiReferenceAlias[]): string {
   const cands = candidates.map((c) => `${c.code} | ${c.label}`).join("\n");
-  const items = unknowns.map((u, i) => `${i + 1} | ${u.rawName || u.raw}`).join("\n");
+  const items = unknowns.map((u, i) => `${i + 1} | ${itemText(u, kind)}`).join("\n");
+  const refLabel = kind === "customer"
+    ? "Historical customer → brick placements already learned (customer name/address → brick code). Use these as strong reference for similar pharmacies/addresses:"
+    : "Historical mappings already learned (raw text → official code). Use these as strong reference — if you see the same or very similar text, reuse the same code:";
+  const refSection = referenceAliases && referenceAliases.length > 0
+    ? `\n${refLabel}\n${referenceAliases.slice(0, 800).map((a) => `${a.raw} → ${a.code}`).join("\n")}\n`
+    : "";
   return `Official list (code | name):
 ${cands}
-
+${refSection}
 Items to match (id | text):
 ${items}
 
@@ -55,12 +79,12 @@ function shortReason(raw: string): string {
 
 // One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
 // so the UI surfaces it instead of a misleading "no matches".
-async function generate(provider: AiProvider, kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<string> {
+async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<string> {
   const res = await fetch(`${provider.baseUrl}/chat/completions`, {
     body: JSON.stringify({
       messages: [
         { content: systemPrompt(kind), role: "system" },
-        { content: userPrompt(unknowns, candidates), role: "user" },
+        { content: userPrompt(unknowns, candidates, kind, referenceAliases), role: "user" },
       ],
       model: provider.model,
       response_format: { type: "json_object" },
@@ -82,7 +106,7 @@ async function generate(provider: AiProvider, kind: "product" | "territory", unk
 // Returns best-guess {raw, code} pairs. Validates every returned code against the candidate set, so the
 // AI can never invent a code. Batches to keep each request small. If every batch fails (e.g. bad key or
 // rate limit), throws the reason so the UI shows it instead of a misleading "no matches".
-export async function aiSuggest(kind: "product" | "territory", unknowns: AiUnknown[], candidates: AiCandidate[]): Promise<AiSuggestion[]> {
+export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<AiSuggestion[]> {
   const provider = resolveProvider();
   if (!provider || unknowns.length === 0 || candidates.length === 0) return [];
   const validCodes = new Map(candidates.map((c) => [c.code.trim().toUpperCase(), c.code]));
@@ -92,7 +116,7 @@ export async function aiSuggest(kind: "product" | "territory", unknowns: AiUnkno
   for (let i = 0; i < unknowns.length; i += BATCH) {
     const chunk = unknowns.slice(i, i + BATCH);
     try {
-      const text = await generate(provider, kind, chunk, candidates);
+      const text = await generate(provider, kind, chunk, candidates, referenceAliases);
       const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number }[] } | { code?: string | null; id?: number }[];
       const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {

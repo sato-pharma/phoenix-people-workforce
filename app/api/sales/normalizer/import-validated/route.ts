@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
-import { buildCodedBuffer } from "@/lib/sales/normalizer/service";
+import { buildCodedBuffer, learnFromImportHistory } from "@/lib/sales/normalizer/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +72,10 @@ export async function POST(request: Request) {
         data: { blockingReasons: persisted.blockingReasons, failedRows: persisted.failedRows, warningRows: persisted.warningRows, status: persisted.status },
       }, { status: 400 });
     }
+
+    // Fire-and-forget: mine the newly imported rows into the alias dictionary.
+    // Errors here are non-fatal — the import already succeeded.
+    learnFromImportHistory(distributorCode).catch(() => { /* non-fatal */ });
 
     return NextResponse.json({
       success: true,
