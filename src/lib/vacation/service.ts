@@ -3427,6 +3427,30 @@ export async function assignVacationManagementApprover(
   return updated;
 }
 
+// Returns request IDs where the actor has a pending approval step assignment.
+// Used to surface requests that are outside the actor's normal visibility scope
+// (e.g. a Marketing Manager assigned as manager_of_manager for an employee on a
+// different product line — LINE scope blocks the canSeeVacation fallback, but the
+// Approval Hub must still show requests where the actor is explicitly assigned).
+async function fetchActorPendingApprovalStepRequestIds(access: AccessContext): Promise<string[]> {
+  const candidates = accessIdentityCandidates(access);
+  if (candidates.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .select("request_id, approver_hr_id, approver_user_id")
+    .eq("status", "pending");
+  if (error || !data) return [];
+  const requestIds = new Set<string>();
+  for (const row of data as Array<{ request_id: string; approver_hr_id: string | null; approver_user_id: string | null }>) {
+    const approverHrId = normalizeHrIdForAccess(row.approver_hr_id);
+    const approverUserId = (row.approver_user_id ?? "").toLowerCase();
+    const hrMatch = Boolean(approverHrId) && candidates.some((c) => c === approverHrId);
+    const loginMatch = Boolean(approverUserId) && (access.loginId ?? "").toLowerCase() === approverUserId;
+    if (hrMatch || loginMatch) requestIds.add(row.request_id);
+  }
+  return Array.from(requestIds);
+}
+
 export async function getVacationActionCenterData(access: AccessContext): Promise<VacationActionCenterData> {
   await assertPermission(access, "leave", "read");
   const isHrActor = isAllVacationVisibility(access);
@@ -3436,7 +3460,35 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
   ]);
 
   const actionableStatuses = new Set(["needs_assignment", "pending_manager", "pending_hr"]);
-  const candidateRows = report.rows.filter((row) => actionableStatuses.has(row.status));
+  const candidateRows: typeof report.rows = report.rows.filter((row) => actionableStatuses.has(row.status));
+
+  // Supplemental: surface requests where the actor is an explicit pending approver
+  // but is outside their normal visibility scope (e.g. a LINE-scoped Marketing Manager
+  // acting as manager_of_manager for an employee on a different product line).
+  // HR actors already see all actionable requests via the scoped report.
+  if (!isHrActor) {
+    const actorPendingIds = await fetchActorPendingApprovalStepRequestIds(access);
+    const existingIds = new Set(candidateRows.map((row) => row.id));
+    const extraIds = actorPendingIds.filter((id) => !existingIds.has(id));
+    if (extraIds.length > 0) {
+      const { data: extraData } = await getSupabaseAdmin()
+        .from(vacationRequestsTable)
+        .select("*")
+        .in("id", extraIds)
+        .in("status", Array.from(actionableStatuses));
+      if (extraData && extraData.length > 0) {
+        const extraMapped = await markVacationDecisionAccess(
+          access,
+          (extraData as VacationRequestDbRow[]).map((row) => mapVacationRow(row)),
+        );
+        const extraEnriched = await enrichVacationRows(extraMapped);
+        for (const row of extraEnriched) {
+          candidateRows.push({ ...row, overlapWarnings: [] });
+        }
+      }
+    }
+  }
+
   const stepsByRequest = await fetchVacationApprovalStepsForRequests(candidateRows.map((row) => row.id));
 
   const titleOf = (hrId: string | null) => {
