@@ -94,27 +94,36 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
   return { ...result, scannedRows };
 }
 
+// Read EVERY matching import row, paging past PostgREST's 1000-row default cap. Without this, a mine
+// over 84k rows silently truncates to the first 1000 — only a handful of distributors learned anything.
+async function selectAllImportRows(columns: string, distributorCode: string | undefined, notNull: string[]): Promise<Array<Record<string, unknown>>> {
+  const supabase = getSupabaseAdmin();
+  const pageSize = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  let from = 0;
+  for (;;) {
+    let q = supabase.from("source_of_sales_import_rows").select(columns).order("id", { ascending: true }).range(from, from + pageSize - 1);
+    for (const col of notNull) q = q.not(col, "is", null);
+    if (distributorCode) q = q.eq("distributor_code", distributorCode);
+    const result = await q;
+    if (result.error) throw new Error(`Failed to read import rows: ${result.error.message}`);
+    const page = (result.data ?? []) as unknown as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return rows;
+}
+
 // Mine every import_rows record for product_name→product_code and client_code→brick_id pairs and
 // upsert them as aliases. Runs per-distributor or across all distributors. Idempotent (ON CONFLICT
 // DO UPDATE). Use this to bulk-bootstrap the alias dictionary from all historical upload data.
+// Fully paginated (reads all rows, not just the first 1000) and the upserts are chunked so a large
+// distributor never sends one oversized request.
 export async function learnFromImportHistory(distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
-  const supabase = getSupabaseAdmin();
-
-  const productQuery = supabase
-    .from("source_of_sales_import_rows")
-    .select("distributor_code,product_name,product_code")
-    .not("product_name", "is", null)
-    .not("product_code", "is", null)
-    .neq("product_code", "IGNORE");
-  const customerQuery = supabase
-    .from("source_of_sales_import_rows")
-    .select("distributor_code,client_code,brick_id")
-    .not("client_code", "is", null)
-    .not("brick_id", "is", null);
-
-  const [{ data: productRows }, { data: customerRows }] = await Promise.all([
-    distributorCode ? productQuery.eq("distributor_code", distributorCode) : productQuery,
-    distributorCode ? customerQuery.eq("distributor_code", distributorCode) : customerQuery,
+  const [productRows, customerRows] = await Promise.all([
+    selectAllImportRows("distributor_code,product_name,product_code", distributorCode, ["product_name", "product_code"]),
+    selectAllImportRows("distributor_code,client_code,brick_id", distributorCode, ["client_code", "brick_id"]),
   ]);
 
   const seenProd = new Set<string>();
@@ -122,27 +131,34 @@ export async function learnFromImportHistory(distributorCode?: string): Promise<
   const mappings: MappingInput[] = [];
   let scannedRows = 0;
 
-  for (const row of productRows ?? []) {
+  for (const row of productRows) {
     scannedRows += 1;
-    const raw = String((row as Record<string, unknown>).product_name ?? "").trim();
-    const code = String((row as Record<string, unknown>).product_code ?? "").trim();
-    const dist = String((row as Record<string, unknown>).distributor_code ?? "").trim();
-    if (!raw || !code || !dist) continue;
+    const raw = String(row.product_name ?? "").trim();
+    const code = String(row.product_code ?? "").trim();
+    const dist = String(row.distributor_code ?? "").trim();
+    if (!raw || !code || !dist || code.toUpperCase() === "IGNORE") continue;
     const key = `${dist}\x00${raw.toLowerCase()}\x00${code}`;
     if (!seenProd.has(key)) { seenProd.add(key); mappings.push({ type: "product", raw, code, distributorCode: dist }); }
   }
-  for (const row of customerRows ?? []) {
-    const clientCode = String((row as Record<string, unknown>).client_code ?? "").trim();
-    const brick = String((row as Record<string, unknown>).brick_id ?? "").trim();
-    const dist = String((row as Record<string, unknown>).distributor_code ?? "").trim();
+  for (const row of customerRows) {
+    scannedRows += 1;
+    const clientCode = String(row.client_code ?? "").trim();
+    const brick = String(row.brick_id ?? "").trim();
+    const dist = String(row.distributor_code ?? "").trim();
     if (!clientCode || !brick || !dist) continue;
     const key = `${dist}\x00${clientCode}`;
     if (!seenCust.has(key)) { seenCust.add(key); mappings.push({ type: "customer", raw: clientCode, code: brick, distributorCode: dist }); }
   }
 
   if (mappings.length === 0) return { saved: 0, skipped: 0, invalid: 0, scannedRows };
-  const result = await saveMappings(mappings);
-  return { ...result, scannedRows };
+  // Chunk the upserts so one big distributor never sends a single oversized request.
+  const CHUNK = 1000;
+  let saved = 0, skipped = 0, invalid = 0;
+  for (let i = 0; i < mappings.length; i += CHUNK) {
+    const r = await saveMappings(mappings.slice(i, i + CHUNK));
+    saved += r.saved; skipped += r.skipped; invalid += r.invalid;
+  }
+  return { saved, skipped, invalid, scannedRows };
 }
 
 export type NormalizerDistributorOption = { code: string; name: string };
