@@ -2710,14 +2710,32 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   }
 
   const directory = await getEmployeeDirectory();
-  const { step, steps } = await getPendingVacationApprovalStepForActor({
+  const vacApproval = await getPendingVacationApprovalStepForActor({
     access: input.access,
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
     request: input.request,
   });
+  const { steps } = vacApproval;
+  let { step } = vacApproval;
+  let skipStepRecord = false;
   if (!step) {
-    throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
+    // Before throwing Forbidden, check if the actor has an already-decided step.
+    // This happens when a prior attempt recorded the step but the request-status update was
+    // lost (Vercel function timeout / network drop mid-write). Recover by completing the work.
+    const expectedStepStatus = input.decision === "approve" ? "approved" : "rejected";
+    const decidedStep = steps.find((s) =>
+      s.status !== "pending" &&
+      (input.access
+        ? approvalStepMatchesAccess(input.access as AccessContext, s)
+        : approvalStepMatchesActor({ actorHrId: input.actorHrId, actorLoginId: input.actorLoginId, step: s }))
+    );
+    if (!decidedStep || decidedStep.status !== expectedStepStatus) {
+      throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
+    }
+    // Actor's step already decided with matching decision — skip re-recording and complete the update.
+    step = decidedStep;
+    skipStepRecord = true;
   }
 
   // Enforce the runtime-overridable workflow-registry role authority on the decide path,
@@ -2764,11 +2782,13 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
   }
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
-  await recordVacationApprovalStepDecision({
-    decision: input.decision,
-    decisionComment: input.decisionComment,
-    stepId: step.id,
-  });
+  if (!skipStepRecord) {
+    await recordVacationApprovalStepDecision({
+      decision: input.decision,
+      decisionComment: input.decisionComment,
+      stepId: step.id,
+    });
+  }
 
   const nextStatus = evaluation.nextStatus;
   const isFinal = evaluation.isFinal;

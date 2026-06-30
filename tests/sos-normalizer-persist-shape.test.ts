@@ -52,6 +52,7 @@ function codedRow(overrides: Partial<CodedRow> = {}): CodedRow {
     discount: 0.1,
     distributorCode: "IS",
     invoiceDate: "2026-04",
+    invoiceNumber: null,
     isDirect: false,
     officialLine: "CNS",
     productCode: "LA001",

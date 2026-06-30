@@ -351,6 +351,7 @@ function codedParsedRowToCodedRow(p: ParsedDistributorRow): CodedRow {
     discount: p.discount,
     distributorCode: p.distributorCode,
     invoiceDate: p.invoicePeriod ?? p.invoiceDate ?? "",
+    invoiceNumber: p.invoiceNumber,
     isDirect: p.isDirect,
     officialLine: p.officialLine,
     productCode: p.productCode,

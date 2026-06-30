@@ -92,6 +92,7 @@ export type CodedRow = {
   discount: number;
   distributorCode: string;
   invoiceDate: string;
+  invoiceNumber: string | null;
   isDirect: boolean;
   officialLine: string;
   productCode: string;
