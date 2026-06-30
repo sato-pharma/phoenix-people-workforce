@@ -18,7 +18,7 @@ export type AiCandidate = { code: string; label: string };
 // rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
 // the customer's postal address and the distributor's own governorate/area text.
 export type AiUnknown = { raw: string; rawName?: string; rawAddress?: string; rawTerritory?: string };
-export type AiSuggestion = { code: string; raw: string };
+export type AiSuggestion = { code: string; raw: string; confidence?: number };
 export type AiKind = "product" | "territory" | "customer";
 
 // Provider resolution is shared (src/lib/sales/ai/provider.ts). ai-suggest keeps GPT-4o (the heavier
@@ -38,7 +38,25 @@ function systemPrompt(kind: AiKind): string {
     return "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only.";
   }
   if (kind === "customer") {
-    return "You geo-locate a pharmacy / customer to the correct Phoenix territory (brick). Each item gives the customer NAME, postal ADDRESS, and the distributor's own GOVERNORATE/AREA text (English or Arabic). The official list is bricks shown as 'brick — area, region'. Pick the brick whose area/region/locality best fits the customer's address and governorate. Match ONLY when the geography clearly fits; otherwise use null. Reply with JSON only.";
+    return `You are an expert in Egyptian geography and pharmaceutical sales territories. Your task is to geo-locate each pharmacy to the correct Phoenix brick territory.
+
+Each item gives: pharmacy NAME, postal ADDRESS, and the distributor's GOVERNORATE/AREA text (English or Arabic — may be blank).
+
+CRITICAL: When the governorate/area text is blank, you MUST still attempt to resolve the location by carefully parsing the NAME and ADDRESS fields. Arabic addresses routinely embed: village name (قرية / ناحية), city name, district center (مركز), and governorate (محافظة) as part of the pharmacy name or street address. Extract every geographic signal you can find.
+
+The official brick list is shown as: brick_id — brick_name — area, region.
+
+For each item:
+1. Extract all geographic signals from name, address, and territory fields
+2. Match to the brick whose area/region best fits the identified location
+3. Assign a confidence score (integer 0–100):
+   - 90–100: Geography is unambiguous (governorate or city clearly identified)
+   - 70–89: Strong match, minor ambiguity
+   - 40–69: Reasonable inference, some uncertainty
+   - 1–39: Weak signal — manual verification recommended
+4. Use null for code when no geographic match is possible (omit confidence when code is null)
+
+Reply with JSON only.`;
   }
   return "You match a distributor's raw territory / district names (English or Arabic) to an official territory (brick) list shown as 'brick — area, region'. Match ONLY when confident the place is the same; otherwise use null. Reply with JSON only.";
 }
@@ -69,7 +87,9 @@ ${refSection}
 Items to match (id | text):
 ${items}
 
-Return ONLY JSON of this exact shape: {"matches":[{"id":<id>,"code":"<official code from the list above, or null>"}]}. Use a code only if it appears verbatim in the official list.`;
+Return ONLY JSON of this exact shape: ${kind === "customer"
+    ? `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>","confidence":<integer 0-100, omit when code is null>}]}`
+    : `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>"}]}`}. Use a code only if it appears verbatim in the official list.`;
 }
 
 function shortReason(raw: string): string {
@@ -117,13 +137,16 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
     const chunk = unknowns.slice(i, i + BATCH);
     try {
       const text = await generate(provider, kind, chunk, candidates, referenceAliases);
-      const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number }[] } | { code?: string | null; id?: number }[];
+      const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number; confidence?: number | null }[] } | { code?: string | null; id?: number; confidence?: number | null }[];
       const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {
         const idx = Number(item.id) - 1;
         const u = chunk[idx];
         const code = validCodes.get(String(item.code ?? "").trim().toUpperCase());
-        if (u && code) out.push({ code, raw: u.raw });
+        const confidence = typeof item.confidence === "number"
+          ? Math.max(0, Math.min(100, Math.round(item.confidence)))
+          : undefined;
+        if (u && code) out.push({ code, raw: u.raw, confidence });
       }
     } catch (e) {
       lastError = e instanceof Error ? e.message : "AI error.";

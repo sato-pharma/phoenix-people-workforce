@@ -90,11 +90,21 @@ function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: str
   );
 }
 
+function ConfidenceBadge({ pct: p }: { pct: number }) {
+  const color = p >= 80
+    ? "bg-green-100 text-green-700 border-green-200"
+    : p >= 50
+    ? "bg-amber-100 text-amber-700 border-amber-200"
+    : "bg-red-100 text-red-600 border-red-200";
+  return <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold ${color}`}>{p}%</span>;
+}
+
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
   const [distributorCode, setDistributorCode] = useState(distributors[0]?.code ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [picks, setPicks] = useState<Record<string, string>>({});
+  const [aiConfidence, setAiConfidence] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -126,6 +136,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         const seed: Record<string, string> = {};
         p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
         setPicks(seed);
+        setAiConfidence({});
         return p;
       }
       if (!options.quietFailure) setError(json?.error ?? `Failed to analyze. (${res.status})`);
@@ -192,8 +203,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
         const json = await res.json();
         if (json.success) {
-          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string }[];
-          if (sugg.length) { setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; }); filled += sugg.length; }
+          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string; confidence?: number }[];
+          if (sugg.length) {
+            setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
+            filled += sugg.length;
+            if (kind === "customer") {
+              const newConf: Record<string, number> = {};
+              sugg.forEach((s) => { if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence; });
+              if (Object.keys(newConf).length) setAiConfidence((prev) => ({ ...prev, ...newConf }));
+            }
+          }
         } else { failed = true; if (json.error) setError(json.error); }
       }
       if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
@@ -464,7 +483,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     <div className="overflow-x-auto border border-[#E2E8F0]">
                       <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownCustomers.map((u) => (
                             <tr className="border-t border-slate-100" key={u.raw}>
@@ -475,6 +494,11 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                               <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
+                              </td>
+                              <td className="px-3 py-1.5 text-center">
+                                {aiConfidence[`c:${u.raw}`] != null
+                                  ? <ConfidenceBadge pct={aiConfidence[`c:${u.raw}`]} />
+                                  : <span className="text-slate-300">—</span>}
                               </td>
                             </tr>
                           ))}
