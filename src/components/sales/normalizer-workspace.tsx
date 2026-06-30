@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Copy, Database, Download, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Copy, Database, Download, History, Loader2, Save, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
@@ -14,7 +14,7 @@ type DistributorOption = { code: string; name: string };
 type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
 type CodedRow = { areaCode: string; brickId: string; brickName: string; productCode: string; productName: string; qty: number; regionCode: string; clientName: string | null };
-type Unknown = { raw: string; rawName: string; count: number; suggestionCode: string | null; suggestionLabel: string | null };
+type Unknown = { raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; count: number; suggestionCode: string | null; suggestionLabel: string | null };
 type Preview = {
   distributorName: string; period: string | null;
   periods: { period: string; rows: number }[];
@@ -187,9 +187,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     setBusy("ai"); setError(null); setNotice(null);
     try {
       let filled = 0; let failed = false;
-      for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"]] as const) {
+      for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"], ["customer", preview.unknownCustomers, "c"]] as const) {
         if (list.length === 0) continue;
-        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
+        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
         const json = await res.json();
         if (json.success) {
           const sugg = (json.data.suggestions ?? []) as { raw: string; code: string }[];
@@ -227,6 +227,22 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     finally { setBusy(null); if (mapFileRef.current) mapFileRef.current.value = ""; }
   }
 
+  async function mineHistory() {
+    setBusy("mine"); setError(null); setNotice(null);
+    try {
+      const res = await fetch("/api/sales/normalizer/mappings/learn-from-history", {
+        body: JSON.stringify({ distributorCode }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!json.success) { setError(json.error ?? "Mine history failed."); return; }
+      setNotice(`Mined ${json.data.scannedRows.toLocaleString()} import rows — saved ${json.data.saved} new mapping(s) (${json.data.skipped} already known). Re-analyzing…`);
+      if (file) await analyze(true);
+    } catch (e) { setError(e instanceof Error ? e.message : "Mine history failed."); }
+    finally { setBusy(null); }
+  }
+
   const s = preview?.summary;
   const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
@@ -247,14 +263,25 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
             <p className="text-sm font-black text-[#1E3A8A]">Teach the dictionary from a cleaned file (one-time per distributor)</p>
             <p className="mt-0.5 text-xs text-slate-600">Drop a file you already cleaned by hand (it has the raw codes + your Phoenix IDs side by side) for the distributor selected below. The system learns every raw → Phoenix translation at once, so future raw files auto-code. Insert-only — it never overwrites.</p>
           </div>
-          <button
-            className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#1D4ED8] bg-[#1D4ED8] px-4 text-sm font-bold text-white transition hover:bg-[#1E3A8A] disabled:opacity-50"
-            disabled={busy !== null}
-            onClick={() => cleanFileRef.current?.click()}
-            type="button"
-          >
-            {busy === "bootstrap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Learn from cleaned file
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#1D4ED8] bg-[#1D4ED8] px-4 text-sm font-bold text-white transition hover:bg-[#1E3A8A] disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => cleanFileRef.current?.click()}
+              type="button"
+            >
+              {busy === "bootstrap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Learn from cleaned file
+            </button>
+            <button
+              className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#1D4ED8] bg-white px-4 text-sm font-bold text-[#1D4ED8] transition hover:bg-[#EEF3FE] disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void mineHistory()}
+              title="Scan all previously imported rows for this distributor and save any new product or customer mappings"
+              type="button"
+            >
+              {busy === "mine" ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />} Mine import history
+            </button>
+          </div>
           <input accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void learnFromCleaned(f); }} ref={cleanFileRef} type="file" />
         </div>
       </div>

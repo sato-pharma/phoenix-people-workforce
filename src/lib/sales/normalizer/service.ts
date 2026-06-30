@@ -94,6 +94,57 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
   return { ...result, scannedRows };
 }
 
+// Mine every import_rows record for product_name→product_code and client_code→brick_id pairs and
+// upsert them as aliases. Runs per-distributor or across all distributors. Idempotent (ON CONFLICT
+// DO UPDATE). Use this to bulk-bootstrap the alias dictionary from all historical upload data.
+export async function learnFromImportHistory(distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
+  const supabase = getSupabaseAdmin();
+
+  const productQuery = supabase
+    .from("source_of_sales_import_rows")
+    .select("distributor_code,product_name,product_code")
+    .not("product_name", "is", null)
+    .not("product_code", "is", null)
+    .neq("product_code", "IGNORE");
+  const customerQuery = supabase
+    .from("source_of_sales_import_rows")
+    .select("distributor_code,client_code,brick_id")
+    .not("client_code", "is", null)
+    .not("brick_id", "is", null);
+
+  const [{ data: productRows }, { data: customerRows }] = await Promise.all([
+    distributorCode ? productQuery.eq("distributor_code", distributorCode) : productQuery,
+    distributorCode ? customerQuery.eq("distributor_code", distributorCode) : customerQuery,
+  ]);
+
+  const seenProd = new Set<string>();
+  const seenCust = new Set<string>();
+  const mappings: MappingInput[] = [];
+  let scannedRows = 0;
+
+  for (const row of productRows ?? []) {
+    scannedRows += 1;
+    const raw = String((row as Record<string, unknown>).product_name ?? "").trim();
+    const code = String((row as Record<string, unknown>).product_code ?? "").trim();
+    const dist = String((row as Record<string, unknown>).distributor_code ?? "").trim();
+    if (!raw || !code || !dist) continue;
+    const key = `${dist}\x00${raw.toLowerCase()}\x00${code}`;
+    if (!seenProd.has(key)) { seenProd.add(key); mappings.push({ type: "product", raw, code, distributorCode: dist }); }
+  }
+  for (const row of customerRows ?? []) {
+    const clientCode = String((row as Record<string, unknown>).client_code ?? "").trim();
+    const brick = String((row as Record<string, unknown>).brick_id ?? "").trim();
+    const dist = String((row as Record<string, unknown>).distributor_code ?? "").trim();
+    if (!clientCode || !brick || !dist) continue;
+    const key = `${dist}\x00${clientCode}`;
+    if (!seenCust.has(key)) { seenCust.add(key); mappings.push({ type: "customer", raw: clientCode, code: brick, distributorCode: dist }); }
+  }
+
+  if (mappings.length === 0) return { saved: 0, skipped: 0, invalid: 0, scannedRows };
+  const result = await saveMappings(mappings);
+  return { ...result, scannedRows };
+}
+
 export type NormalizerDistributorOption = { code: string; name: string };
 
 export function listNormalizerDistributors(): NormalizerDistributorOption[] {
