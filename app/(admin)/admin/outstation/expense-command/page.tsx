@@ -84,6 +84,7 @@ export default async function ExpenseCommandPage({
           </div>
         ) : null}
         <OutstationRequestsAdmin
+          canApprove={canApprove}
           initialRequestId={Number.isFinite(initialRequestId) ? initialRequestId : null}
           requests={requests}
         />
