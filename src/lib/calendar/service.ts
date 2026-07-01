@@ -287,6 +287,9 @@ export async function getCompanyCalendarWorkspace(
   year: number,
   month: number,
 ): Promise<CompanyCalendarWorkspace> {
+  if (access.source === "guest") {
+    throw new Error("Forbidden: you must be signed in to view the calendar.");
+  }
   const { start, end } = monthBounds(year, month);
   const viewerLineName = await viewerLine(access);
 
