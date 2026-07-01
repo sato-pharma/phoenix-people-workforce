@@ -32,6 +32,23 @@ npm ci
 
 3. See `docs/environment.md` for all variables and what they do.
 
+### Working in a Git Worktree
+
+`git worktree add` never copies gitignored files, so every new worktree
+starts with no `.env.local` (and no `PHOENIX_AUTH_SECRET`, Supabase keys,
+etc.) — dev-auth and the dev server will fail until you populate it. From
+inside the new worktree, run:
+
+```bash
+npm run worktree:sync-env
+```
+
+This copies `.env.local` and the other local-only env files (`.env.*.rls.local`,
+`.env.sentry-build-plugin`, ...) from the primary worktree (the original clone)
+into the current one. It only fills in files that don't already exist here; pass
+`--force` to overwrite, or `--dry-run` to preview without changing anything. Run
+it once per new worktree, right after `git worktree add`.
+
 ## Start the Dev Server
 
 ```bash

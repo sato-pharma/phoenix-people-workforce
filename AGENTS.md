@@ -56,6 +56,7 @@ git worktree list
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as user work.
 - If the tree is dirty, classify the changes and preserve them. Continue only when the requested work can be isolated safely.
 - Create worktrees with `git worktree add`. Remove them only with `git worktree remove` and only after approval.
+- Immediately after creating a worktree, run `npm run worktree:sync-env` from inside it. `git worktree add` never copies gitignored files, so a new worktree has no `.env.local` (no `PHOENIX_AUTH_SECRET`, Supabase keys, etc.) until this runs — dev-auth and the dev server fail silently otherwise. This is a local file copy only; it never touches Git or prints secret contents.
 - Treat remote history as the source of truth for merged state, while protecting all unpushed local work.
 
 ## Branch And Change Isolation
