@@ -228,3 +228,246 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     to: [input.employeeEmail],
   });
 }
+
+type VacationManagerStepResultEmailInput = {
+  cc: string[];
+  decision: VacationDecision;
+  employeeEmail: string;
+  managerDecisionComment: string | null;
+  managerName: string;
+  nextStep: string;
+  request: VacationRequestRecord;
+};
+
+/**
+ * Notifies the employee (CC: HR) after each intermediate manager decision —
+ * i.e. before the final HR step. Used for both approve and reject at any
+ * management step so the employee always gets an email, not just Telegram/in-app.
+ */
+export async function sendVacationManagerStepResultEmail(
+  input: VacationManagerStepResultEmailInput,
+): Promise<SendPhoenixEmailResult> {
+  const approved = input.decision === "approve";
+  const action = approved ? "approved" : "rejected";
+  const heading = approved
+    ? `${input.managerName} approved your ${vacationTypeLabel(input.request.vacationType)} request. ${input.nextStep}`
+    : `${input.managerName} rejected your ${vacationTypeLabel(input.request.vacationType)} request.${input.managerDecisionComment ? ` Reason: ${input.managerDecisionComment}` : ""}`;
+  const templated = await sendTemplatedEmail({
+    context: {
+      ctaLabel: "Open in Phoenix Workforce",
+      ctaUrl: systemDeployment.productionUrl,
+      duration: formatDays(input.request.durationDays),
+      employeeHrId: input.request.employeeHrId,
+      employeeName: input.request.employeeName,
+      endDate: formatDate(input.request.endDate),
+      managerName: input.managerName,
+      nextStep: approved ? input.nextStep : "",
+      recipientName: input.request.employeeName,
+      startDate: formatDate(input.request.startDate),
+      status: approved ? "Approved" : `Rejected${input.managerDecisionComment ? ` — ${input.managerDecisionComment}` : ""}`,
+      subject: `Vacation request ${action} by ${input.managerName}`,
+      summary: heading,
+      vacationType: vacationTypeLabel(input.request.vacationType),
+    },
+    employeeHrId: input.request.employeeHrId,
+    fallbackTo: [input.employeeEmail],
+    overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
+    templateKey: "leave_manager_step_decision",
+  });
+  if (!isTemplateUnavailableSkip(templated)) return templated;
+
+  const rows: Array<[string, string]> = [
+    ["Type", vacationTypeLabel(input.request.vacationType)],
+    ["Period", `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`],
+    ["Manager", input.managerName],
+    ["Decision", approved ? "Approved" : "Rejected"],
+    ...(approved ? [["Next step", input.nextStep] as [string, string]] : []),
+  ];
+  const fallback = buildFallbackEmail({
+    heading,
+    rows,
+    subject: `Vacation request ${action} by ${input.managerName}`,
+    title: `Vacation request ${action}`,
+  });
+  return sendPhoenixEmail({
+    cc: input.cc,
+    html: fallback.html,
+    idempotencyKey: `vacation:${input.request.id}:manager_step_${action}:employee:${input.employeeEmail.toLowerCase()}`,
+    subject: `Vacation request ${action} by ${input.managerName}`,
+    text: fallback.text,
+    to: [input.employeeEmail],
+  });
+}
+
+type VacationSubmissionConfirmationEmailInput = {
+  employeeEmail: string;
+  request: VacationRequestRecord;
+};
+
+/**
+ * Confirms to the employee (no CC) that their leave request was received and
+ * is now pending manager review — completes the 3-channel requirement on submit.
+ */
+export async function sendVacationSubmissionConfirmationEmail(
+  input: VacationSubmissionConfirmationEmailInput,
+): Promise<SendPhoenixEmailResult> {
+  const period = `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`;
+  const heading = `Your ${vacationTypeLabel(input.request.vacationType)} request has been submitted and is pending manager review.`;
+  const templated = await sendTemplatedEmail({
+    context: {
+      ctaLabel: "Open in Phoenix Workforce",
+      ctaUrl: systemDeployment.productionUrl,
+      duration: formatDays(input.request.durationDays),
+      employeeHrId: input.request.employeeHrId,
+      employeeName: input.request.employeeName,
+      endDate: formatDate(input.request.endDate),
+      recipientName: input.request.employeeName,
+      startDate: formatDate(input.request.startDate),
+      status: "Pending manager review",
+      subject: "Your vacation request has been submitted",
+      summary: heading,
+      vacationType: vacationTypeLabel(input.request.vacationType),
+    },
+    employeeHrId: input.request.employeeHrId,
+    fallbackTo: [input.employeeEmail],
+    overrides: { replaceRecipients: true, to: [input.employeeEmail] },
+    templateKey: "leave_submission_confirmation",
+  });
+  if (!isTemplateUnavailableSkip(templated)) return templated;
+
+  const fallback = buildFallbackEmail({
+    heading,
+    rows: [
+      ["Type", vacationTypeLabel(input.request.vacationType)],
+      ["Period", period],
+      ["Duration", formatDays(input.request.durationDays)],
+      ["Status", "Pending manager review"],
+    ],
+    subject: "Your vacation request has been submitted",
+    title: "Vacation request submitted",
+  });
+  return sendPhoenixEmail({
+    html: fallback.html,
+    idempotencyKey: `vacation:${input.request.id}:submitted:employee:${input.employeeEmail.toLowerCase()}`,
+    subject: "Your vacation request has been submitted",
+    text: fallback.text,
+    to: [input.employeeEmail],
+  });
+}
+
+type VacationResubmitConfirmationEmailInput = {
+  employeeEmail: string;
+  request: VacationRequestRecord;
+};
+
+/**
+ * Confirms to the employee that their returned request has been resubmitted
+ * and is back in the manager review queue.
+ */
+export async function sendVacationResubmitConfirmationEmail(
+  input: VacationResubmitConfirmationEmailInput,
+): Promise<SendPhoenixEmailResult> {
+  const period = `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`;
+  const heading = `Your ${vacationTypeLabel(input.request.vacationType)} request has been resubmitted and is pending manager review.`;
+  const templated = await sendTemplatedEmail({
+    context: {
+      ctaLabel: "Open in Phoenix Workforce",
+      ctaUrl: systemDeployment.productionUrl,
+      duration: formatDays(input.request.durationDays),
+      employeeHrId: input.request.employeeHrId,
+      employeeName: input.request.employeeName,
+      endDate: formatDate(input.request.endDate),
+      recipientName: input.request.employeeName,
+      startDate: formatDate(input.request.startDate),
+      status: "Pending manager review",
+      subject: "Your vacation request has been resubmitted",
+      summary: heading,
+      vacationType: vacationTypeLabel(input.request.vacationType),
+    },
+    employeeHrId: input.request.employeeHrId,
+    fallbackTo: [input.employeeEmail],
+    overrides: { replaceRecipients: true, to: [input.employeeEmail] },
+    templateKey: "leave_resubmit_confirmation",
+  });
+  if (!isTemplateUnavailableSkip(templated)) return templated;
+
+  const fallback = buildFallbackEmail({
+    heading,
+    rows: [
+      ["Type", vacationTypeLabel(input.request.vacationType)],
+      ["Period", period],
+      ["Duration", formatDays(input.request.durationDays)],
+      ["Status", "Pending manager review"],
+    ],
+    subject: "Your vacation request has been resubmitted",
+    title: "Vacation request resubmitted",
+  });
+  return sendPhoenixEmail({
+    html: fallback.html,
+    idempotencyKey: `vacation:${input.request.id}:resubmitted:employee:${input.employeeEmail.toLowerCase()}`,
+    subject: "Your vacation request has been resubmitted",
+    text: fallback.text,
+    to: [input.employeeEmail],
+  });
+}
+
+type VacationReturnedEmailInput = {
+  cc: string[];
+  decisionComment: string | null;
+  employeeEmail: string;
+  managerName: string;
+  request: VacationRequestRecord;
+};
+
+/**
+ * Notifies the employee (CC: HR) when a manager returns their vacation request
+ * for revision, so the employee gets all 3 channels (email + Telegram + in-app).
+ */
+export async function sendVacationReturnedEmail(
+  input: VacationReturnedEmailInput,
+): Promise<SendPhoenixEmailResult> {
+  const heading = `${input.managerName} returned your ${vacationTypeLabel(input.request.vacationType)} request for revision.${input.decisionComment ? ` Reason: ${input.decisionComment}` : ""}`;
+  const templated = await sendTemplatedEmail({
+    context: {
+      ctaLabel: "Open in Phoenix Workforce",
+      ctaUrl: systemDeployment.productionUrl,
+      duration: formatDays(input.request.durationDays),
+      employeeHrId: input.request.employeeHrId,
+      employeeName: input.request.employeeName,
+      endDate: formatDate(input.request.endDate),
+      managerName: input.managerName,
+      recipientName: input.request.employeeName,
+      startDate: formatDate(input.request.startDate),
+      status: "Returned for revision",
+      subject: "Vacation request returned for revision",
+      summary: input.decisionComment ?? "No reason provided",
+      vacationType: vacationTypeLabel(input.request.vacationType),
+    },
+    employeeHrId: input.request.employeeHrId,
+    fallbackTo: [input.employeeEmail],
+    overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
+    templateKey: "leave_returned",
+  });
+  if (!isTemplateUnavailableSkip(templated)) return templated;
+
+  const fallback = buildFallbackEmail({
+    heading,
+    rows: [
+      ["Type", vacationTypeLabel(input.request.vacationType)],
+      ["Period", `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`],
+      ["Returned by", input.managerName],
+      ["Reason", input.decisionComment ?? "No reason provided"],
+      ["Action required", "Please review the reason and resubmit your request"],
+    ],
+    subject: "Vacation request returned for revision",
+    title: "Vacation request returned for revision",
+  });
+  return sendPhoenixEmail({
+    cc: input.cc,
+    html: fallback.html,
+    idempotencyKey: `vacation:${input.request.id}:returned:employee:${input.employeeEmail.toLowerCase()}`,
+    subject: "Vacation request returned for revision",
+    text: fallback.text,
+    to: [input.employeeEmail],
+  });
+}
