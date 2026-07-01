@@ -272,6 +272,7 @@ export const portalMinimumPermissions: ReadonlyArray<{
   { resource: "probation", action: "read", roles: phoenixRoles },
   { resource: "leave", action: "read", roles: phoenixRoles },
   { resource: "employee_profile", action: "read", roles: phoenixRoles },
+  { resource: "payroll", action: "read", roles: phoenixRoles },
 ];
 
 export function isDenialBlockedByMinimumPermission(
