@@ -1,3 +1,4 @@
+import type { PhoenixRole } from "@/lib/auth/permissions";
 import {
   loadCustomerDirectoryFilterOptions,
   loadCustomerDirectoryRows,
@@ -190,17 +191,23 @@ export function consolidateCustomers(input: CustomerDirectoryRow[]): {
 }
 
 // Full (uncapped) consolidated mapping for the current filters — used by the XLSX export.
-export async function loadCustomerMapping(filters: CustomerDirectoryFilters): Promise<{
+export async function loadCustomerMapping(
+  filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
+): Promise<{
   consolidated: ConsolidatedCustomer[];
   rows: CustomerMappingRow[];
 }> {
-  const base = await loadCustomerDirectoryRows(filters);
+  const base = await loadCustomerDirectoryRows(filters, role);
   return consolidateCustomers(base);
 }
 
 // Capped result for the on-screen table (the export keeps the full set).
-export async function listCustomerMapping(filters: CustomerDirectoryFilters): Promise<CustomerMappingResult> {
-  const { consolidated, rows } = await loadCustomerMapping(filters);
+export async function listCustomerMapping(
+  filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
+): Promise<CustomerMappingResult> {
+  const { consolidated, rows } = await loadCustomerMapping(filters, role);
   return {
     consolidated: consolidated.slice(0, DISPLAY_LIMIT),
     matchedMasters: consolidated.reduce((count, master) => count + (master.distributorSpan > 1 ? 1 : 0), 0),

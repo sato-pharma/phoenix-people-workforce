@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       toPeriod: typeof body.toPeriod === "string" ? body.toPeriod : null,
     };
 
-    const rows = await loadCustomerDirectoryRows(filters);
+    const rows = await loadCustomerDirectoryRows(filters, access.role);
     const exportRows: ExportRow[] = rows.map((row) => ({
       area: row.areaName,
       brickId: row.brickId,

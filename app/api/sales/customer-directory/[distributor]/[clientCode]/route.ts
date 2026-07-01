@@ -24,12 +24,15 @@ export async function GET(request: Request, context: RouteContext) {
 
     const { clientCode, distributor } = await context.params;
     const { searchParams } = new URL(request.url);
-    const data = await loadCustomerSales({
-      clientCode: decodeURIComponent(clientCode),
-      distributorCode: decodeURIComponent(distributor),
-      fromPeriod: searchParams.get("from"),
-      toPeriod: searchParams.get("to"),
-    });
+    const data = await loadCustomerSales(
+      {
+        clientCode: decodeURIComponent(clientCode),
+        distributorCode: decodeURIComponent(distributor),
+        fromPeriod: searchParams.get("from"),
+        toPeriod: searchParams.get("to"),
+      },
+      access.role,
+    );
 
     if (!data) {
       return NextResponse.json({ success: false, error: "Customer not found." }, { status: 404 });
