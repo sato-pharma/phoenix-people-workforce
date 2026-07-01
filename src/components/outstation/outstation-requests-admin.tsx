@@ -191,6 +191,7 @@ function RequestActionButtons({
   actionMessage,
   acting,
   actionError,
+  canApprove,
   onApprove,
   onDelete,
   onReject,
@@ -199,6 +200,7 @@ function RequestActionButtons({
   actionError: string | null;
   actionMessage: string | null;
   acting: { action: AdminAction; id: number } | null;
+  canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
   onDelete: (request: OutstationExpenseRequest) => void;
   onReject: (request: OutstationExpenseRequest) => void;
@@ -212,36 +214,38 @@ function RequestActionButtons({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          className="gap-2 rounded-xl bg-[#047857] px-4 py-2 text-xs font-black text-white hover:bg-[#065F46]"
-          disabled={busy || terminal || request.eligibilityStatus === "not_eligible"}
-          onClick={() => onApprove(request)}
-          type="button"
-        >
-          {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-          Approve for payroll
-        </Button>
-        <Button
-          className="gap-2 rounded-xl bg-[#B91C1C] px-4 py-2 text-xs font-black text-white hover:bg-[#991B1B]"
-          disabled={busy || terminal}
-          onClick={() => onReject(request)}
-          type="button"
-        >
-          {rejecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-          Reject
-        </Button>
-        <Button
-          className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
-          disabled={busy}
-          onClick={() => onDelete(request)}
-          title="Delete this expense if it has not been imported into a payroll batch."
-          type="button"
-        >
-          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-          Delete expense
-        </Button>
-      </div>
+      {canApprove && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            className="gap-2 rounded-xl bg-[#047857] px-4 py-2 text-xs font-black text-white hover:bg-[#065F46]"
+            disabled={busy || terminal || request.eligibilityStatus === "not_eligible"}
+            onClick={() => onApprove(request)}
+            type="button"
+          >
+            {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Approve for payroll
+          </Button>
+          <Button
+            className="gap-2 rounded-xl bg-[#B91C1C] px-4 py-2 text-xs font-black text-white hover:bg-[#991B1B]"
+            disabled={busy || terminal}
+            onClick={() => onReject(request)}
+            type="button"
+          >
+            {rejecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+            Reject
+          </Button>
+        </div>
+      )}
+      <Button
+        className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
+        disabled={busy}
+        onClick={() => onDelete(request)}
+        title="Delete this expense if it has not been imported into a payroll batch."
+        type="button"
+      >
+        {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        Delete expense
+      </Button>
       {request.status === "approved" ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved - payroll import lock checked before delete</p>
       ) : null}
@@ -258,6 +262,7 @@ function RequestDetailsModal({
   actionError,
   actionMessage,
   acting,
+  canApprove,
   onApprove,
   onClose,
   onDelete,
@@ -267,6 +272,7 @@ function RequestDetailsModal({
   actionError: string | null;
   actionMessage: string | null;
   acting: { action: AdminAction; id: number } | null;
+  canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
   onClose: () => void;
   onDelete: (request: OutstationExpenseRequest) => void;
@@ -496,6 +502,7 @@ function RequestDetailsModal({
               actionError={actionError}
               actionMessage={actionMessage}
               acting={acting}
+              canApprove={canApprove}
               onApprove={onApprove}
               onDelete={onDelete}
               onReject={onReject}
@@ -510,9 +517,11 @@ function RequestDetailsModal({
 }
 
 export function OutstationRequestsAdmin({
+  canApprove,
   initialRequestId = null,
   requests,
 }: {
+  canApprove: boolean;
   initialRequestId?: number | null;
   requests: OutstationExpenseRequest[];
 }) {
@@ -1063,6 +1072,7 @@ export function OutstationRequestsAdmin({
           actionError={actionError}
           actionMessage={actionMessage}
           acting={acting}
+          canApprove={canApprove}
           onApprove={(request) => void approveRequest(request)}
           onClose={() => setDetailRequestId(null)}
           onDelete={(request) => void deleteRequest(request)}
