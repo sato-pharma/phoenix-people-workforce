@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "read");
+    await assertPermission(access, "sales", "import");
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period");
     const data = await loadSourceOfSalesDashboard(period, canViewRestrictedProducts(access.role));
