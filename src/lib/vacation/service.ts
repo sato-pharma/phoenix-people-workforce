@@ -59,6 +59,10 @@ import {
 import {
   sendVacationDecisionResultEmail,
   sendVacationManagerDecisionEmail,
+  sendVacationManagerStepResultEmail,
+  sendVacationResubmitConfirmationEmail,
+  sendVacationReturnedEmail,
+  sendVacationSubmissionConfirmationEmail,
 } from "@/lib/vacation/email";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import type {
@@ -1835,6 +1839,14 @@ async function dispatchVacationSubmitted(input: {
     request: input.request,
     title: `${input.request.employeeName} submitted a vacation request`,
   });
+  // Submission confirmation to the employee — completes the 3-channel requirement on submit
+  // (managers/HR are notified above; the employee previously got zero channels).
+  if (input.request.employeeWorkEmail) {
+    void sendVacationSubmissionConfirmationEmail({
+      employeeEmail: input.request.employeeWorkEmail,
+      request: input.request,
+    }).catch(() => undefined);
+  }
 }
 
 async function dispatchVacationManagerReview(input: {
@@ -1865,6 +1877,7 @@ async function dispatchVacationManagerReview(input: {
     },
     recipients: [
       input.request.employeeHrId,
+      input.request.managerHrId,
       input.request.managerOfManagerHrId,
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
@@ -1874,6 +1887,28 @@ async function dispatchVacationManagerReview(input: {
       : `${input.request.employeeName}'s vacation request needs HR final decision`,
     type: `manager_review:${input.decision}`,
   });
+  // Email the employee after every manager decision so they get all 3 channels
+  // (email + Telegram + in-app), not just Telegram + in-app.
+  // CC: HR + direct manager so the manager is informed of every step result.
+  if (input.request.employeeWorkEmail) {
+    const hrEmails = hrRecipients
+      .map((r) => findEmployeeByHrId(input.directory, r.hrId)?.workEmail)
+      .filter((e): e is string => Boolean(e));
+    const managerEmail = findEmployeeByHrId(input.directory, input.request.managerHrId)?.workEmail;
+    const ccEmails = Array.from(new Set([...hrEmails, ...(managerEmail ? [managerEmail] : [])]));
+    const nextStep = sequential
+      ? "It is now pending HR acknowledgement."
+      : "It is now pending HR final decision.";
+    await sendVacationManagerStepResultEmail({
+      cc: ccEmails,
+      decision: input.decision,
+      employeeEmail: input.request.employeeWorkEmail,
+      managerDecisionComment: input.request.managerDecisionComment ?? null,
+      managerName: input.request.managerName ?? "Your manager",
+      nextStep,
+      request: input.request,
+    }).catch(() => undefined);
+  }
 }
 
 async function dispatchVacationNextManagerStep(input: {
@@ -1890,8 +1925,13 @@ async function dispatchVacationNextManagerStep(input: {
     { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
     { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
   ];
-  await notifyRecipients({
-    href: actionHref,
+  // Gap 3: call createSystemNotification directly (not notifyRecipients) so we can attach
+  // a Telegram "Review Request" button — mirroring exactly what the direct manager received
+  // on submission. notifyRecipients doesn't expose the telegram.buttons param.
+  await createSystemNotification({
+    actionUrl: actionHref,
+    category: "vacation_request",
+    eventType: "next_manager_review",
     message: `${actingName} approved ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} request (${input.request.startDate} to ${input.request.endDate}). Your review is now required.`,
     metadata: {
       requestId: input.request.id,
@@ -1901,11 +1941,13 @@ async function dispatchVacationNextManagerStep(input: {
         { label: "Status", value: "Pending your approval" },
         { label: "Action", value: "Review in the Action Center" },
       ],
+      idempotencyKey: `vacation:${input.request.id}:next_manager_review:${input.nextApproverHrId.toUpperCase()}`,
     },
-    recipients: [input.nextApproverHrId],
-    requestId: input.request.id,
+    module: "vacation",
+    priority: "high",
+    recipientHrId: input.nextApproverHrId,
+    telegram: { buttons: [{ label: "Review Request", url: actionHref }] },
     title: `${input.request.employeeName}'s vacation request needs your approval`,
-    type: "next_manager_review",
   });
   await notifyRecipients({
     channels: ["in_app", "telegram"],
@@ -1921,6 +1963,18 @@ async function dispatchVacationNextManagerStep(input: {
     title: "Your vacation request is progressing",
     type: "employee_step_approved",
   });
+  // Gap 3: use sendVacationManagerDecisionEmail (the same leave_request WYSIWYG template the
+  // direct manager received on submission) so both steps are truly identical.
+  const nextApprover = findEmployeeByHrId(input.directory, input.nextApproverHrId);
+  const nextManagerEmail = nextApprover?.workEmail;
+  if (nextManagerEmail) {
+    await sendVacationManagerDecisionEmail({
+      managerEmail: nextManagerEmail,
+      managerName: nextApprover.fullName,
+      request: input.request,
+      reviewUrl: toAbsoluteAppUrl(actionHref),
+    }).catch(() => undefined);
+  }
 }
 
 async function dispatchVacationDecision(input: {
@@ -2849,16 +2903,46 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       oldValues: { status: input.request.status },
       summary: "Vacation request returned to employee for revision.",
     });
+    const actorName = findEmployeeByHrId(directory, input.actorHrId)?.fullName
+      ?? returned.managerName
+      ?? "Your manager";
+    const returnReason = input.decisionComment ?? "No reason provided.";
+    // Employee: in-app + Telegram (already all 3 once email below fires)
     void notifyRecipients({
       channels: ["in_app", "telegram"],
       href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(returned.id)}`,
-      message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by your manager for revision. Reason: ${input.decisionComment ?? "No reason provided."}`,
+      message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by ${actorName} for revision. Reason: ${returnReason}`,
       metadata: { requestId: returned.id, status: "returned" },
       recipients: [returned.employeeHrId],
       requestId: returned.id,
       title: "Vacation request returned for revision",
       type: "return",
     }).catch(() => undefined);
+    // HR: in-app + Telegram so they know the request was sent back
+    const hrRecipientsForReturn = await getHrRecipients(directory);
+    void notifyRecipients({
+      channels: ["in_app", "telegram"],
+      href: `/leave-management/vacation-action-center?requestId=${encodeURIComponent(returned.id)}`,
+      message: `${actorName} returned ${returned.employeeName}'s ${vacationTypeLabel(returned.vacationType)} request (${returned.startDate} → ${returned.endDate}) for revision. Reason: ${returnReason}`,
+      metadata: { requestId: returned.id, status: "returned" },
+      recipients: hrRecipientsForReturn.map((r) => r.hrId),
+      requestId: returned.id,
+      title: `${returned.employeeName}'s vacation request was returned for revision`,
+      type: "return_hr_notice",
+    }).catch(() => undefined);
+    // Email the employee (CC: HR) — completes the 3-channel requirement
+    if (returned.employeeWorkEmail) {
+      const hrEmailsForReturn = hrRecipientsForReturn
+        .map((r) => findEmployeeByHrId(directory, r.hrId)?.workEmail)
+        .filter((e): e is string => Boolean(e));
+      void sendVacationReturnedEmail({
+        cc: hrEmailsForReturn,
+        decisionComment: input.decisionComment ?? null,
+        employeeEmail: returned.employeeWorkEmail,
+        managerName: actorName,
+        request: returned,
+      }).catch(() => undefined);
+    }
     invalidateExecutiveDashboardCache("leave request returned", ["leave"]);
     return returned;
   }
@@ -3348,6 +3432,23 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
     title: "Vacation request resubmitted",
     type: "resubmit",
   }).catch(() => undefined);
+  // Employee resubmit confirmation — 3-channel requirement (previously zero channels for the employee).
+  void notifyRecipients({
+    channels: ["in_app", "telegram"],
+    href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(resubmitted.id)}`,
+    message: `Your ${vacationTypeLabel(resubmitted.vacationType)} request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending manager review.`,
+    metadata: { requestId: resubmitted.id, status: "pending_manager" },
+    recipients: [resubmitted.employeeHrId],
+    requestId: resubmitted.id,
+    title: "Your vacation request has been resubmitted",
+    type: "employee_resubmit_confirm",
+  }).catch(() => undefined);
+  if (resubmitted.employeeWorkEmail) {
+    void sendVacationResubmitConfirmationEmail({
+      employeeEmail: resubmitted.employeeWorkEmail,
+      request: resubmitted,
+    }).catch(() => undefined);
+  }
 
   invalidateExecutiveDashboardCache("leave request resubmitted", ["leave"]);
   return resubmitted;

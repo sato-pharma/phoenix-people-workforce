@@ -454,13 +454,13 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     payroll_expense: "/payroll/expenses",
   } as const;
 
-  const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses] =
+  const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses, momSteps] =
     await Promise.allSettled([
       db
         .from("v2_vacation_requests")
-        .select("id,employee_name,employee_hr_id,vacation_type,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
         .or(`manager_decision_by_hr_id.ilike.${hrId},hr_decision_by_hr_id.ilike.${hrId}`)
-        .not("manager_decision", "is", null)
+        .not("manager_decision_at", "is", null)
         .order("manager_decision_at", { ascending: false })
         .limit(200),
       db
@@ -510,6 +510,18 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .not("approved_at", "is", null)
         .order("approved_at", { ascending: false })
         .limit(200),
+      // manager_of_manager decisions are never written to the main request's
+      // manager_decision_by_hr_id column (only direct_manager is). Query the
+      // steps table directly so the secondary manager sees their history too.
+      db
+        .from("v2_vacation_approval_steps")
+        .select("request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
+        .eq("step_key", "manager_of_manager")
+        .ilike("approver_hr_id", hrId)
+        .neq("status", "pending")
+        .not("decided_at", "is", null)
+        .order("decided_at", { ascending: false })
+        .limit(200),
     ]);
 
   function decodeDecision(raw: string | null | undefined): "approved" | "rejected" | "returned" | null {
@@ -527,7 +539,8 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       const isHrDecider = String(row.hr_decision_by_hr_id ?? "").toUpperCase() === hrId;
       const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
       const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
-      const decision = decodeDecision(decisionRaw);
+      // Returned requests set manager_decision_at but leave manager_decision NULL — detect via status.
+      const decision = decodeDecision(decisionRaw) ?? (row.status === "returned" ? ("returned" as const) : null);
       if (!decision || (!isMgrDecider && !isHrDecider)) continue;
       items.push({
         id: `history:leave:${row.id}`,
@@ -538,6 +551,31 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         decision,
         decidedAt: String(decidedAt ?? ""),
         href: historyHref("leave", row.id),
+      });
+    }
+  }
+
+  // Secondary manager (manager_of_manager) decisions — not in the main leaves query above.
+  if (momSteps.status === "fulfilled" && !momSteps.value.error) {
+    const seenLeaveIds = new Set(
+      items.filter((i) => i.module === "leave").map((i) => i.id.replace(/^history:leave:/, "")),
+    );
+    for (const row of momSteps.value.data ?? []) {
+      const reqId = String(row.request_id ?? "");
+      if (!reqId || seenLeaveIds.has(reqId)) continue;
+      const req = (row as { v2_vacation_requests?: { employee_name?: string; employee_hr_id?: string; vacation_type?: string; start_date?: string } | null }).v2_vacation_requests;
+      if (!req) continue;
+      const decision = row.status === "approved" ? "approved" as const : row.status === "rejected" ? "rejected" as const : null;
+      if (!decision) continue;
+      items.push({
+        id: `history:leave:${reqId}`,
+        module: "leave",
+        employeeName: String(req.employee_name ?? "Unknown"),
+        employeeHrId: String(req.employee_hr_id ?? ""),
+        title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
+        decision,
+        decidedAt: String(row.decided_at ?? ""),
+        href: historyHref("leave", reqId),
       });
     }
   }
