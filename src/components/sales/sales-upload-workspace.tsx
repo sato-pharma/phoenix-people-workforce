@@ -258,7 +258,8 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
   const [productCodes, setProductCodes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  // When all items are "keep" and applied, collapse the panel into a compact done banner.
+  const [doneBanner, setDoneBanner] = useState<string | null>(null);
 
   const allDecided = items.every((item) => {
     const d = decisions[item.raw];
@@ -267,12 +268,14 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
     return Boolean(productCodes[item.raw]?.trim());
   });
 
+  const undecidedCount = items.filter((item) => !decisions[item.raw]).length;
+
   const includeItems = items.filter((item) => decisions[item.raw] === "include" && productCodes[item.raw]?.trim());
   const keepItems = items.filter((item) => decisions[item.raw] === "ignore");
 
   async function apply() {
     if (!allDecided) return;
-    setBusy(true); setErr(null); setMsg(null);
+    setBusy(true); setErr(null);
     try {
       if (includeItems.length > 0) {
         const mappings = includeItems.map((item) => ({ type: "product" as const, raw: item.raw, code: productCodes[item.raw].trim() }));
@@ -285,8 +288,14 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
         if (!payload.success) { setErr(payload.error ?? "Save failed."); setBusy(false); return; }
       }
       if (keepItems.length > 0) onIgnoresConfirmed(keepItems.map((i) => i.raw));
-      if (includeItems.length > 0) onSaved();
-      else setMsg("Confirmed — you can now proceed with the upload.");
+      if (includeItems.length > 0) {
+        // Re-validate so the newly-mapped products drop out of the ignored list.
+        onSaved();
+      } else {
+        // All items kept as ignored — collapse the panel and let the user scroll to "Confirm & Upload".
+        const kn = keepItems.length;
+        setDoneBanner(`${kn} product${kn === 1 ? "" : "s"} confirmed as ignored — scroll down to the "Confirm & Upload" button.`);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed.");
     } finally {
@@ -294,12 +303,19 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
     }
   }
 
+  // Collapsed "done" state — show compact banner so the user clearly sees something happened.
+  if (doneBanner) {
+    return (
+      <div className="flex items-center gap-2 rounded-[6px] border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+        <p className="text-sm font-semibold text-emerald-700">{doneBanner}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 rounded-[6px] border border-slate-300 bg-slate-50/60 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-bold text-[#0F172A]">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
-        {msg ? <span className="text-xs font-semibold text-emerald-600">{msg}</span> : null}
-      </div>
+      <p className="text-sm font-bold text-[#0F172A]">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
       <p className="text-xs text-[#475569]">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
       <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
         <table className="w-full text-sm">
@@ -331,7 +347,6 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                           const v = e.target.value as "ignore" | "include" | "";
                           setDecisions((p) => ({ ...p, [item.raw]: v as "ignore" | "include" }));
                           if (v !== "include") setProductCodes((p) => ({ ...p, [item.raw]: "" }));
-                          setMsg(null);
                         }}
                         value={decision ?? ""}
                       >
@@ -358,14 +373,19 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
         </table>
       </div>
       {err ? <p className="text-xs text-rose-600">{err}</p> : null}
-      <button
-        className="rounded-[6px] bg-[#0F172A] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1E293B] disabled:opacity-40"
-        disabled={!allDecided || busy}
-        onClick={() => void apply()}
-        type="button"
-      >
-        {busy ? "Saving…" : `Apply decisions (${items.length} item${items.length === 1 ? "" : "s"})`}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          className="rounded-[6px] bg-[#0F172A] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!allDecided || busy}
+          onClick={() => void apply()}
+          type="button"
+        >
+          {busy ? "Saving…" : `Apply decisions (${items.length} item${items.length === 1 ? "" : "s"})`}
+        </button>
+        {!allDecided && undecidedCount > 0 ? (
+          <span className="text-xs font-medium text-amber-700">{undecidedCount} item{undecidedCount === 1 ? "" : "s"} still need a decision above.</span>
+        ) : null}
+      </div>
     </div>
   );
 }
