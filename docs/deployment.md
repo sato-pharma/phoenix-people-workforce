@@ -6,7 +6,7 @@ Phoenix Workforce is deployed on Vercel with a Supabase PostgreSQL backend.
 
 | Component | Service | Plan |
 |---|---|---|
-| Application hosting | Vercel | Hobby |
+| Application hosting | Vercel | Pro |
 | Database + Auth | Supabase | Free/Pro |
 | Email delivery | Resend | — |
 | Error monitoring | Sentry | Developer (free) |
@@ -43,14 +43,14 @@ Application deploys are not complete until matching database migrations have bee
 
 ## Vercel Cron Jobs
 
-The Vercel Hobby plan limits cron jobs to 2 daily schedules:
+`vercel.json` keeps two crons (confirmed against the live Vercel project 2026-07-02):
 
 | Endpoint | Schedule | Purpose |
 |---|---|---|
-| /api/notifications/birthdays | 0 4 * * * (4 AM UTC) | Birthday notifications |
-| /api/notifications/contract-renewals | 15 4 * * * (4:15 AM UTC) | Contract renewals + outbox processing + probation reminders |
+| /api/notifications/daily | 30 6 * * * (6:30 AM UTC) | Consolidated daily run: birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift check, Telegram HR digest, outstation geocode warm-up + high-risk digest |
+| /api/notifications/process?limit=50 | */30 * * * * (every 30 min) | Drains the notification outbox (`src/lib/notifications/scheduled-processing.ts`) faster than once a day |
 
-Do not add additional cron jobs without upgrading the Vercel plan or using an external scheduler.
+The 30-minute schedule requires Vercel Pro -- Hobby hard-fails deployment for any cron more frequent than daily. Do not add additional cron jobs, and do not downgrade the Vercel plan, without folding outbox draining back into the daily cron or moving it to an external scheduler.
 
 ## Environment Variables
 
