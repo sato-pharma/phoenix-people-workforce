@@ -69,6 +69,7 @@ jobs:
         with:
           name: nextjs-build
           path: .next
+          include-hidden-files: true
           retention-days: 1
 
   preview-smoke:
@@ -157,4 +158,3 @@ jobs:
           name: playwright-report-full-e2e
           path: output/playwright-report
           retention-days: 14
-
