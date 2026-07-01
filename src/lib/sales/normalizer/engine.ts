@@ -273,6 +273,7 @@ export function normalizeRows(
         rawProductName: productValues.slice(1).find(Boolean) ?? "",
         rawRowNumber: r,
         qty: Number.isFinite(ignoredQty) ? ignoredQty : 0,
+        reason: "ignore_mapped",
       });
       continue;
     }
@@ -283,7 +284,7 @@ export function normalizeRows(
       const flag = firstValue(row, header, profile.bonusColumns);
       if (flag && flag !== "0" && flag.toLowerCase() !== "false") {
         ignored += 1;
-        ignoredRows.push({ rawProduct, rawProductName: productValues.slice(1).find(Boolean) ?? "", rawRowNumber: r, qty: 0 });
+        ignoredRows.push({ rawProduct, rawProductName: productValues.slice(1).find(Boolean) ?? "", rawRowNumber: r, qty: 0, reason: "bonus" });
         continue;
       }
     }

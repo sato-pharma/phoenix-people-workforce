@@ -28,7 +28,8 @@ type Props = {
 
 type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
-type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; period: string | null };
+type IgnoredItem = { raw: string; displayName: string; count: number; totalQty: number };
+type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null };
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleProducts?: string[]; fixHint?: string };
 type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
@@ -252,6 +253,123 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
 type MapType = "product" | "customer" | "territory";
 const mapKey = (t: MapType, raw: string) => `${t}::${raw}`;
 
+function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, onIgnoresConfirmed }: { items: IgnoredItem[]; productOptions: MapOption[]; distributorCode: string; onSaved: () => void; onIgnoresConfirmed: (raws: string[]) => void }) {
+  const [decisions, setDecisions] = useState<Record<string, "ignore" | "include">>({});
+  const [productCodes, setProductCodes] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const allDecided = items.every((item) => {
+    const d = decisions[item.raw];
+    if (!d) return false;
+    if (d === "ignore") return true;
+    return Boolean(productCodes[item.raw]?.trim());
+  });
+
+  const includeItems = items.filter((item) => decisions[item.raw] === "include" && productCodes[item.raw]?.trim());
+  const keepItems = items.filter((item) => decisions[item.raw] === "ignore");
+
+  async function apply() {
+    if (!allDecided) return;
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      if (includeItems.length > 0) {
+        const mappings = includeItems.map((item) => ({ type: "product" as const, raw: item.raw, code: productCodes[item.raw].trim() }));
+        const res = await fetch("/api/sales/monthly-import/save-mappings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ distributorCode, mappings }),
+        });
+        const payload = await readJson<{ success: boolean; error?: string }>(res);
+        if (!payload.success) { setErr(payload.error ?? "Save failed."); setBusy(false); return; }
+      }
+      if (keepItems.length > 0) onIgnoresConfirmed(keepItems.map((i) => i.raw));
+      if (includeItems.length > 0) onSaved();
+      else setMsg("Confirmed — you can now proceed with the upload.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-[6px] border border-slate-300 bg-slate-50/60 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-bold text-[#0F172A]">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
+        {msg ? <span className="text-xs font-semibold text-emerald-600">{msg}</span> : null}
+      </div>
+      <p className="text-xs text-[#475569]">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
+      <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+            <tr>
+              <th className="px-3 py-1.5">Product</th>
+              <th className="px-3 py-1.5 text-right">Rows</th>
+              <th className="px-3 py-1.5">Your decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const decision = decisions[item.raw];
+              return (
+                <tr className="border-t border-slate-100" key={item.raw}>
+                  <td className="px-3 py-2">
+                    {item.displayName !== item.raw ? (
+                      <span className="font-medium text-[#0F172A]">{item.displayName}<span className="ml-1 font-mono text-[11px] text-[#94A3B8]">({item.raw})</span></span>
+                    ) : (
+                      <span><span className="font-mono text-xs font-semibold text-[#0F172A]">{item.raw}</span><span className="ml-1 text-[11px] text-[#94A3B8]">no name in sheet</span></span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{item.count.toLocaleString()}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        className="rounded border border-[#E2E8F0] bg-white px-2 py-1 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+                        onChange={(e) => {
+                          const v = e.target.value as "ignore" | "include" | "";
+                          setDecisions((p) => ({ ...p, [item.raw]: v as "ignore" | "include" }));
+                          if (v !== "include") setProductCodes((p) => ({ ...p, [item.raw]: "" }));
+                          setMsg(null);
+                        }}
+                        value={decision ?? ""}
+                      >
+                        <option value="">— review required —</option>
+                        <option value="ignore">Keep as ignored (exclude from sales)</option>
+                        <option value="include">Include → map to product</option>
+                      </select>
+                      {decision === "include" ? (
+                        <div className="w-56">
+                          <MappingCombobox
+                            onChange={(code) => setProductCodes((p) => ({ ...p, [item.raw]: code }))}
+                            options={productOptions}
+                            placeholder="product code (e.g. TE001)"
+                            value={productCodes[item.raw] ?? ""}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {err ? <p className="text-xs text-rose-600">{err}</p> : null}
+      <button
+        className="rounded-[6px] bg-[#0F172A] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1E293B] disabled:opacity-40"
+        disabled={!allDecided || busy}
+        onClick={() => void apply()}
+        type="button"
+      >
+        {busy ? "Saving…" : `Apply decisions (${items.length} item${items.length === 1 ? "" : "s"})`}
+      </button>
+    </div>
+  );
+}
+
 function UnmappedList({ products, customers, territories, productOptions, brickOptions, distributorCode, onSaved }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[]; productOptions: MapOption[]; brickOptions: MapOption[]; distributorCode: string; onSaved: () => void }) {
   const allGroups: { type: MapType; label: string; items: UnknownItem[]; options: MapOption[]; placeholder: string }[] = [
     { type: "product", label: "Products", items: products, options: productOptions, placeholder: "product code (e.g. TE001)" },
@@ -458,8 +576,10 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
   // True once an auto-detection attempt has finished — even when it found nothing. Lets the UI always
   // show a result (and a way to continue) instead of silently leaving the operator with a locked step.
   const [verifyRan, setVerifyRan] = useState(false);
+  // Tracks which ignored-product raw keys the user has explicitly confirmed "keep as ignored" this session.
+  const [confirmedIgnoreRaws, setConfirmedIgnoreRaws] = useState<Set<string>>(new Set());
   // Any change to file/period/distributor invalidates the verification + validation downstream.
-  function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setError(null); }
+  function resetDownstream() { setVerified(false); setVerifyRan(false); setAnalysis(null); setCommitted(null); setError(null); setConfirmedIgnoreRaws(new Set()); }
   function changePeriod(value: string) { setPeriod(value); setPeriodAutoDetected(false); setAnalysis(null); setCommitted(null); }
   function onMonthChange(m: string) { setPeriodMonth(m); changePeriod(m && periodYear ? `${periodYear}-${m}` : ""); }
   function onYearChange(y: string) { setPeriodYear(y); changePeriod(y && periodMonth ? `${y}-${periodMonth}` : ""); }
@@ -492,12 +612,15 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
 
   const productUnknowns = analysis?.data ? analysis.data.unknownProducts.length : 0;
   const blockerUnknowns = analysis?.data ? analysis.data.unknownTerritories.length + analysis.data.unknownCustomers.length : 0;
+  const ignoredItems = analysis?.data?.ignoredItems ?? [];
+  // Gate: every ignore_mapped item must be explicitly reviewed (either confirmed-ignore or mapped-include).
+  const ignoredUnreviewed = ignoredItems.some((item) => !confirmedIgnoreRaws.has(item.raw));
   const validation = analysis?.validation ?? null;
   // Only the duplicate-sheet error (report.ok === false) blocks here; warnings are advisory and never
   // block (mirrors the server gate exactly). Unmapped customers/bricks block; unmapped products warn
   // only (auto-excluded on commit — those rows are already absent from the coded set).
   const validationBlocks = validation ? !validation.ok : false;
-  const canImport = Boolean(analysis?.success) && blockerUnknowns === 0 && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
+  const canImport = Boolean(analysis?.success) && blockerUnknowns === 0 && !ignoredUnreviewed && (!analysis?.needsPeriod || /^\d{4}-\d{2}$/.test(period)) && !validationBlocks;
   const breakdowns = analysis?.breakdowns ?? null;
 
   // Step-1 panel decision (pure, regression-tested): guarantees a Confirm path for EVERY finished
@@ -692,6 +815,15 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
 
           {/* Unmapped / period gates */}
           <div className="space-y-2 px-4 pt-4">
+            {ignoredItems.length > 0 ? (
+              <IgnoredItemsReview
+                distributorCode={distributorCode}
+                items={ignoredItems}
+                onIgnoresConfirmed={(raws) => setConfirmedIgnoreRaws((prev) => { const next = new Set(prev); raws.forEach((r) => next.add(r)); return next; })}
+                onSaved={() => void analyze()}
+                productOptions={productOptions}
+              />
+            ) : null}
             {blockerUnknowns > 0 ? (
               <div className="space-y-2">
                 <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div>
