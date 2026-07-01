@@ -27,6 +27,31 @@ env:
   CI_NODE_VERSION: "24"
 
 jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Generate Next.js route types
+        run: npx next typegen
+
+      - name: Typecheck
+        run: npm run typecheck
+
   validate:
     runs-on: ubuntu-latest
 
@@ -49,20 +74,47 @@ jobs:
       - name: Check migrations
         run: npm run check:migrations
 
-      - name: Lint
-        run: npm run lint
+      - name: Detect code changes
+        id: code-changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            code:
+              - 'app/**'
+              - 'src/**'
+              - 'tests/**'
+              - 'local-attendance-agent/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - '.github/workflows/**'
+              - 'next.config.ts'
+              - 'tailwind.config.ts'
+              - 'vitest.config.ts'
 
-      - name: Generate Next.js route types
-        run: npx next typegen
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test
+      - name: Test (skip if doc-only changes)
+        if: |
+          github.event_name != 'pull_request' ||
+          steps.code-changes.outputs.code == 'true'
         run: npm run test
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app/**', 'src/**', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: nextjs-${{ runner.os }}-
 
       - name: Build
         run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nextjs-build
+          path: .next
+          retention-days: 1
+          include-hidden-files: true
 
   preview-smoke:
     runs-on: ubuntu-latest
@@ -82,11 +134,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build app
-        run: npm run build
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nextjs-build
+          path: .next
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -108,7 +167,7 @@ jobs:
         with:
           name: playwright-report
           path: output/playwright-report
-          retention-days: 14
+          retention-days: 5
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
@@ -129,11 +188,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run full Playwright E2E suite
-        run: npm run test:e2e
+      - name: Run full Playwright E2E suite (4 workers parallel)
+        run: npm run test:e2e -- --workers=4
         env:
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -149,4 +215,4 @@ jobs:
         with:
           name: playwright-report-full-e2e
           path: output/playwright-report
-          retention-days: 14
+          retention-days: 5
