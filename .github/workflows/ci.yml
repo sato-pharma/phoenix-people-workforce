@@ -54,6 +54,13 @@ jobs:
       - name: Check migrations
         run: npm run check:migrations
 
+      - name: Restore .next build cache
+        uses: actions/cache@v4
+        with:
+          path: .next
+          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'package-lock.json') }}
+          restore-keys: nextjs-build-
+
       - name: Test
         run: npm run test
 
