@@ -2,6 +2,11 @@
 
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
   push:
     branches:
       - main
@@ -49,21 +54,7 @@ jobs:
       - name: Check migrations
         run: npm run check:migrations
 
-      - name: Detect docs-only pull request changes
-        id: docs_only_check
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v3
-        with:
-          predicate-quantifier: every
-          filters: |
-            docs_only:
-              - '**/*.md'
-              - 'docs/**'
-              - '.github/ISSUE_TEMPLATE/**'
-              - '.github/PULL_REQUEST_TEMPLATE/**'
-
       - name: Test
-        if: github.event_name != 'pull_request' || steps.docs_only_check.outputs.docs_only != 'true'
         run: npm run test
 
       - name: Build
