@@ -184,7 +184,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run full Playwright E2E suite
-        run: npm run test:e2e
+        run: npm run test:e2e -- -j 4
         env:
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
