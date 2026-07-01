@@ -167,13 +167,13 @@ For role-sensitive modules, test multiple roles — minimum: Super Admin, CEO, t
 
 ## PR Rules
 
-One PR = one major delivery; related bug fixes can join it, unrelated work uses another branch/PR. **Merge automatically once CI passes — do not wait for the user to say "merge".**
+One PR = one major delivery; related bug fixes can join it, unrelated work uses another branch/PR. Before a PR is ready: lint, typecheck, and test pass; `npm run build` passes when relevant; Vercel preview is Ready; browser smoke checks pass; staging migrations are applied and verified if needed; the PR comment summarizes validation. **Do not merge without explicit user approval.**
 
 ## Production
 
 Production app `https://phoenix-workforce.vercel.app` / production Supabase ref `ozucdzovmcqvepbozvqf`.
 
-**Never do these without explicit approval:** production migrations (Supabase prod ref `ozucdzovmcqvepbozvqf`), production environment-variable update, destructive SQL (DROP/TRUNCATE/DELETE without WHERE), rollback, force push.
+**Never do these without explicit approval:** merge to `main`, production deploy, production migration, production environment-variable update, destructive SQL, rollback, force push.
 
 After a production deploy: (1) verify the exact public domain `https://phoenix-workforce.vercel.app` (don't rely on workspace aliases), (2) smoke test changed pages, (3) check Vercel logs, (4) confirm no production-only errors.
 
@@ -181,31 +181,13 @@ Vercel cron note: the current Hobby cron setup allows only two daily crons — d
 
 ## Approval Workflow
 
-### The golden rule: validate first, then auto-proceed — or stop and ask
+Before any risky or important action, briefly explain the action and its impact, then ask for approval clearly. **Always ask approval before:** commit, push, PR creation, merge, rebase, reset, branch deletion, force push, applying migrations, production-impacting changes, bulk updates, deletes, auth changes, RLS changes, payroll/employee-lifecycle changes, and any destructive operation.
 
-**Before every commit, run `npm run lint && npm run typecheck && npm run test`.**
+You **may** perform automatically (no approval needed): `git status`, `git diff`, branch inspection, branch creation, staging files, commit preparation, validation runs, push/PR preparation, safe read-only checks. After approval, execute automatically whenever possible — do not make the user copy-paste commands unless truly required.
 
-- **All pass** → execute the full workflow automatically without asking:
-  1. Commit the change
-  2. Push the branch
-  3. Open a PR to `main`
-  4. Wait for CI to pass
-  5. Squash-merge and delete the branch
-  6. Done ✅
+**Always warn if:** the working tree is dirty, unrelated files are modified, risky changes exist, validation failed, or production risk exists. Always suggest clear commit messages, safe branch names, and rollback awareness. Never perform destructive operations silently.
 
-- **Anything fails** → **STOP immediately. Do not push. Do not commit.** Tell the user exactly what failed and ask how to proceed. Fix the issue first, re-run validation, then proceed automatically once green.
-
-**Never push broken code. Never let CI fail on a PR. If it would fail, fix it first or ask.**
-
-### Still requires explicit approval regardless
-
-- Production migrations (Supabase prod ref `ozucdzovmcqvepbozvqf`)
-- Destructive SQL (DROP TABLE, TRUNCATE, DELETE without WHERE, mass UPDATE)
-- `git push --force` / `git reset --hard` on shared branches
-- Production environment-variable changes
-- Any rollback of a production deploy
-
-**Golden rule:** do not mix local, preview, staging, and production. Validate before every push. Auto-proceed only on green.
+**Golden rule:** do not mix local, preview, staging, and production. Prefer dedicated feature branches, isolated commits, and safe validation before push.
 
 ## Coding Rules
 
