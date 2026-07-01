@@ -77,7 +77,6 @@ export default async function ExpenseCommandPage({
     }
     return (
       <ExpenseCommandTabs active="queue" canApprove={canApprove}>
-          canApprove={canApprove}
         {queueError ? (
           <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             {queueError}
