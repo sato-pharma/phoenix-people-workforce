@@ -137,10 +137,11 @@ export function summarizePreview(distributorCode: string, distributorName: strin
   // Build a master-product lookup so we can show a friendly name when the sheet only has a code.
   const masterNameByCode = new Map(products.map((p) => [normalizeCodeKey(p.code), p.name]));
 
-  // Deduplicate ignore_mapped rows by rawProduct — bonus rows are excluded intentionally.
+  // Deduplicate ignore_mapped rows by rawProduct — bonus rows (sheet-level free-goods flag) are excluded.
+  // Use "not bonus" rather than "must be ignore_mapped" so rows from any code path are surfaced by default.
   const ignoredMap = new Map<string, DistinctIgnoredItem>();
   for (const row of result.ignoredRows) {
-    if (row.reason !== "ignore_mapped") continue;
+    if (row.reason === "bonus") continue;
     let entry = ignoredMap.get(row.rawProduct);
     if (!entry) {
       const displayName = row.rawProductName
