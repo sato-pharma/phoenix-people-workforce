@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { stripRestrictedMasterProductRows } from "@/lib/sales/access-scope";
 import { getMasterDefinition, requiredReferenceMasters, type MasterKey, type MasterRowRecord } from "@/lib/sales/master-data/definitions";
 import { buildMasterWorkbook } from "@/lib/sales/master-data/export-workbook";
 import { listMasterRows } from "@/lib/sales/master-data/list";
@@ -27,7 +28,10 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ success: false, error: "Unknown master table." }, { status: 404 });
     }
 
-    const rows = await listMasterRows(definition.master);
+    const rawRows = await listMasterRows(definition.master);
+    // Confidential products (LA003 / LA004 / SS001) are exported only for CEO / Super Admin.
+    const rows =
+      definition.master === "products" ? stripRestrictedMasterProductRows(rawRows, access.role) : rawRows;
     const referenceMasters = requiredReferenceMasters(definition);
     const referenceEntries = await Promise.all(
       referenceMasters.map(async (master) => [master, await listMasterRows(master)] as const),

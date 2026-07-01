@@ -5,6 +5,7 @@ import {
   isRestrictedProductCode,
   normalizeProductNameKey,
   RESTRICTED_PRODUCT_CODES,
+  stripRestrictedMasterProductRows,
   stripRestrictedProductNames,
   stripRestrictedRows,
   stripRestrictedRowsByName,
@@ -93,6 +94,41 @@ export async function runSalesRestrictedProductsTests() {
     stripRestrictedRowsByName(codeOnly, restrictedNames, (r) => r.product, true).length,
     1,
     "name layer alone misses a code-only restricted row",
+  );
+
+  // ── stripRestrictedMasterProductRows (Database Mapping master-data routes: raw snake_case
+  //    `product_code`, e.g. listMasterRows("products") over source_of_sales_products) ──
+  const masterProductRows = [
+    { product_code: "LA001", product_name: "Lacto Advanced 1" },
+    { product_code: "LA003", product_name: "Lacto Basic 1" },
+    { product_code: "la004", product_name: "Lacto Basic 2" },
+    { product_code: " SS001 ", product_name: "Satoslim" },
+    { product_code: null, product_name: "No code" },
+  ];
+  assert.deepEqual(
+    stripRestrictedMasterProductRows(masterProductRows, "District Manager").map((r) => r.product_code),
+    ["LA001", null],
+    "District Manager loses every restricted-code master row, including lowercase/whitespace variants",
+  );
+  assert.deepEqual(
+    stripRestrictedMasterProductRows(masterProductRows, "Regional Manager").map((r) => r.product_code),
+    ["LA001", null],
+    "Regional Manager loses every restricted-code master row",
+  );
+  assert.deepEqual(
+    stripRestrictedMasterProductRows(masterProductRows, "National Sales Manager").map((r) => r.product_code),
+    ["LA001", null],
+    "National Sales Manager loses every restricted-code master row",
+  );
+  assert.equal(
+    stripRestrictedMasterProductRows(masterProductRows, "CEO").length,
+    masterProductRows.length,
+    "CEO keeps every master row",
+  );
+  assert.equal(
+    stripRestrictedMasterProductRows(masterProductRows, "Super Admin").length,
+    masterProductRows.length,
+    "Super Admin keeps every master row",
   );
 
   // ── Sales & Marketing Intelligence aggregate exclusion (p_exclude_codes) ──
