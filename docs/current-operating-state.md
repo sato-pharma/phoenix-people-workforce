@@ -55,27 +55,22 @@ Do not rely only on the workspace Vercel alias:
 https://phoenix-workforce-phoenix-workspace-s-projects.vercel.app
 ```
 
-## Vercel Hobby Cron Constraint
+## Vercel Cron Model
 
-The current Vercel account is on Hobby limits.
+The current Vercel account is on **Pro** (confirmed live against the project 2026-07-02, correcting an earlier "Hobby" note).
 
-Vercel Hobby allows:
+The production cron setup (`vercel.json`) is:
 
-- maximum 2 cron jobs
-- cron jobs no more frequent than daily
+- `/api/notifications/daily` at `30 6 * * *` -- consolidated daily run (birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift check, Telegram HR digest, outstation geocode warm-up + high-risk digest)
+- `/api/notifications/process?limit=50` at `*/30 * * * *` -- drains the notification outbox faster than once a day
 
-The production-compatible cron setup is:
-
-- `/api/notifications/birthdays` at `0 4 * * *`
-- `/api/notifications/contract-renewals` at `15 4 * * *`
-
-The old `*/15 * * * *` notification-processing cron is not allowed on Hobby. Notification outbox and probation reminder processing are folded into the daily contract-renewal cron through:
+The `*/30 * * * *` schedule is only possible because the account is Pro -- Vercel Hobby hard-fails deployment for any cron more frequent than daily. Notification outbox and probation reminder processing run through:
 
 ```text
 src/lib/notifications/scheduled-processing.ts
 ```
 
-If sub-daily notification processing is needed later, upgrade Vercel to Pro or move that scheduler outside Vercel Cron.
+If the Vercel plan is ever downgraded to Hobby, fold outbox draining back into the single daily cron or move it to an external scheduler first.
 
 ## Local Vercel Metadata
 

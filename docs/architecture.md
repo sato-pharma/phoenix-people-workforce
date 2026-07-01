@@ -78,12 +78,14 @@ registry-key alias, and route/app-shell ownership rules — are documented in
 
 ## Current Vercel Cron Model
 
-The project currently runs on Vercel Hobby limits, so Vercel Cron must stay at two daily jobs.
+The project runs on Vercel Pro (confirmed 2026-07-02). `vercel.json` keeps two crons:
 
-- `/api/notifications/birthdays`
-- `/api/notifications/contract-renewals`
+- `/api/notifications/daily` -- once daily; internally runs birthdays, contract
+  renewals, and the other daily SLA/digest jobs.
+- `/api/notifications/process?limit=50` -- every 30 minutes; drains the
+  notification outbox.
 
-Notification outbox and probation reminder processing are shared through `src/lib/notifications/scheduled-processing.ts` and run from the daily contract-renewal cron. Sub-daily notification processing requires Vercel Pro or an external scheduler.
+Notification outbox and probation reminder processing are shared through `src/lib/notifications/scheduled-processing.ts` and run from the 30-minute outbox-drain cron. Sub-daily notification processing requires Vercel Pro -- Hobby hard-fails deployment for any cron more frequent than daily.
 
 ## Current Gaps
 

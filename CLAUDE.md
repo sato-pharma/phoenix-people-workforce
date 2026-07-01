@@ -150,12 +150,16 @@ notifications). Transitions validate against the registry and write audit logs.
 
 ### Notifications & cron
 
-Notifications use an outbox model. The project runs on **Vercel Hobby**, so
-`vercel.json` keeps exactly **two daily crons** (`/api/notifications/birthdays`,
-`/api/notifications/contract-renewals`). Outbox + probation reminder processing is
-shared via `src/lib/notifications/scheduled-processing.ts` and piggybacks on the daily
-contract-renewal cron. Do **not** add sub-daily Vercel crons without a Pro upgrade or
-an approved external scheduler.
+Notifications use an outbox model. The project runs on **Vercel Pro** (confirmed
+2026-07-02). `vercel.json` keeps two crons: `/api/notifications/daily`
+(`30 6 * * *`), which internally calls `runBirthdayNotifications` /
+`runContractRenewalNotifications` plus the other daily SLA/digest jobs (vacation,
+marketing, outstation, recruitment, resignations, weekly-plan drift, Telegram HR
+digest); and `/api/notifications/process?limit=50` (`*/30 * * * *`), which drains the
+notification outbox faster than once a day via
+`src/lib/notifications/scheduled-processing.ts`. Sub-daily cron schedules hard-fail
+deployment on Vercel Hobby — keep the account on Pro (or fold outbox draining back
+into the daily cron / an external scheduler) before ever downgrading.
 
 ## Conventions
 
