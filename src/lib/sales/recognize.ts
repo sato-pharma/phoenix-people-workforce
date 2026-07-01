@@ -30,6 +30,16 @@ export function dominantPeriod(rows: CodedRow[]): string | null {
   return best;
 }
 
+// One distinct ignored product the user must explicitly review before importing.
+// Only rows whose reason === "ignore_mapped" are surfaced here — bonus/free-goods rows
+// are sheet-level flags and are never surfaced for review.
+export type DistinctIgnoredItem = {
+  raw: string;         // raw value from the sheet (product code or name column)
+  displayName: string; // best human-readable name: rawProductName → master name → raw
+  count: number;       // number of rows carrying this raw product
+  totalQty: number;    // sum of qty across those rows
+};
+
 export type NormalizePreview = {
   distributorCode: string;
   distributorName: string;
@@ -40,6 +50,8 @@ export type NormalizePreview = {
   unknownCustomers: DistinctUnknown[];
   unknownProducts: DistinctUnknown[];
   unknownTerritories: DistinctUnknown[];
+  // Items the user must explicitly confirm (ignore or include) before importing
+  ignoredItems: DistinctIgnoredItem[];
   // Surfaced to the UI for actionable callouts
   blankCustomerSkipped: number;
   blankCustomerErrors: number;
@@ -121,6 +133,26 @@ export function summarizePreview(distributorCode: string, distributorName: strin
   const periodCounts = new Map<string, number>();
   result.coded.forEach((r) => { if (r.invoiceDate) periodCounts.set(r.invoiceDate, (periodCounts.get(r.invoiceDate) ?? 0) + 1); });
   const distinct = distinctUnknowns(result.exceptions, products);
+
+  // Build a master-product lookup so we can show a friendly name when the sheet only has a code.
+  const masterNameByCode = new Map(products.map((p) => [normalizeCodeKey(p.code), p.name]));
+
+  // Deduplicate ignore_mapped rows by rawProduct — bonus rows are excluded intentionally.
+  const ignoredMap = new Map<string, DistinctIgnoredItem>();
+  for (const row of result.ignoredRows) {
+    if (row.reason !== "ignore_mapped") continue;
+    let entry = ignoredMap.get(row.rawProduct);
+    if (!entry) {
+      const displayName = row.rawProductName
+        || masterNameByCode.get(normalizeCodeKey(row.rawProduct))
+        || row.rawProduct;
+      entry = { raw: row.rawProduct, displayName, count: 0, totalQty: 0 };
+      ignoredMap.set(row.rawProduct, entry);
+    }
+    entry.count += 1;
+    entry.totalQty += Number.isFinite(row.qty) ? row.qty : 0;
+  }
+
   return {
     distributorCode,
     distributorName,
@@ -131,6 +163,7 @@ export function summarizePreview(distributorCode: string, distributorName: strin
     unknownCustomers: distinct.customers.slice(0, 500),
     unknownProducts: distinct.products.slice(0, 500),
     unknownTerritories: distinct.territories.slice(0, 500),
+    ignoredItems: [...ignoredMap.values()],
     blankCustomerSkipped: result.summary.blankCustomerSkipped,
     blankCustomerErrors: distinct.blankCustomerErrors,
     darkCount: distinct.darkCount,

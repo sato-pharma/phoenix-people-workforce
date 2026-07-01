@@ -111,6 +111,8 @@ export type NormalizeIgnoredRow = {
   rawProductName: string;
   rawRowNumber: number;
   qty: number;
+  // "ignore_mapped" = user explicitly mapped this product to IGNORE; "bonus" = distributor sheet flag
+  reason?: "ignore_mapped" | "bonus";
 };
 
 // A row the normalizer could not fully code — surfaced for one-time mapping (never dropped).
