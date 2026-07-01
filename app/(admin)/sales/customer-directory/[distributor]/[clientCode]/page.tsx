@@ -34,7 +34,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   let error: string | null = null;
   try {
     await assertPermission(access, "sales", "import");
-    detail = await loadCustomerSales({ clientCode: decodedClientCode, distributorCode: decodedDistributor });
+    detail = await loadCustomerSales({ clientCode: decodedClientCode, distributorCode: decodedDistributor }, access.role);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Failed to load customer sales.";
   }

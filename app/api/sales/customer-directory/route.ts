@@ -26,15 +26,18 @@ export async function GET(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const { searchParams } = new URL(request.url);
-    const data = await listCustomerDirectory({
-      areaCodes: codes(searchParams.get("area")),
-      brickCodes: codes(searchParams.get("brick")),
-      distributorCodes: codes(searchParams.get("distributor")),
-      fromPeriod: searchParams.get("from"),
-      regionCodes: codes(searchParams.get("region")),
-      search: searchParams.get("search") ?? "",
-      toPeriod: searchParams.get("to"),
-    });
+    const data = await listCustomerDirectory(
+      {
+        areaCodes: codes(searchParams.get("area")),
+        brickCodes: codes(searchParams.get("brick")),
+        distributorCodes: codes(searchParams.get("distributor")),
+        fromPeriod: searchParams.get("from"),
+        regionCodes: codes(searchParams.get("region")),
+        search: searchParams.get("search") ?? "",
+        toPeriod: searchParams.get("to"),
+      },
+      access.role,
+    );
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

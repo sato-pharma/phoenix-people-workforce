@@ -28,7 +28,7 @@ export default async function CustomerDirectoryPage() {
   try {
     await assertPermission(access, "sales", "import");
     // Single combined load builds the name maps once for both options and the list.
-    const initial = await loadCustomerDirectoryInitialData({});
+    const initial = await loadCustomerDirectoryInitialData({}, access.role);
     options = initial.options;
     initialResult = initial.result;
   } catch (error) {
