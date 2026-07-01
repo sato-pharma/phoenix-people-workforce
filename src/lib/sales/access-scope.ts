@@ -391,6 +391,20 @@ export function stripRestrictedRows<T extends { productCode?: string | null }>(
   });
 }
 
+/**
+ * Drop confidential-product rows from a raw master-data record (snake_case `product_code`,
+ * e.g. source_of_sales_products via listMasterRows). Used by the Database Mapping master-data
+ * routes, which read the raw DB shape directly rather than the camelCase Source-of-Sales shape
+ * `stripRestrictedRows` expects. Returns rows unchanged for CEO / Super Admin.
+ */
+export function stripRestrictedMasterProductRows<T extends Record<string, string | number | boolean | null>>(
+  rows: T[],
+  role: PhoenixRole,
+): T[] {
+  if (canViewRestrictedProducts(role)) return rows;
+  return rows.filter((row) => !isRestrictedProductCode(String(row.product_code ?? "")));
+}
+
 /** Drop rows whose product NAME is confidential (legacy pipeline). `enabled === false`
  *  (an allowed CEO/Super Admin viewer) returns the rows unchanged. Rows with an empty name
  *  pass through. Pure given the name set — unit-tested directly. */

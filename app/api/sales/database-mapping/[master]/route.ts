@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { stripRestrictedMasterProductRows } from "@/lib/sales/access-scope";
 import { isMasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows } from "@/lib/sales/master-data/list";
 import { addSingleMasterRow } from "@/lib/sales/master-data/import-service";
@@ -23,7 +24,9 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ success: false, error: "Unknown master table." }, { status: 404 });
     }
 
-    const data = await listMasterRows(master);
+    const rows = await listMasterRows(master);
+    // Confidential products (LA003 / LA004 / SS001) are listed only for CEO / Super Admin.
+    const data = master === "products" ? stripRestrictedMasterProductRows(rows, access.role) : rows;
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (isForbiddenError(error)) {
