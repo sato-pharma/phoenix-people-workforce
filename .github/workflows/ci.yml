@@ -50,7 +50,7 @@ jobs:
         run: npm run check:migrations
 
       - name: Detect docs-only pull request changes
-        id: docs-only-check
+        id: docs_only_check
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         with:
@@ -63,7 +63,7 @@ jobs:
               - '.github/PULL_REQUEST_TEMPLATE/**'
 
       - name: Test
-        if: github.event_name != 'pull_request' || steps.docs-only-check.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || steps.docs_only_check.outputs.docs_only != 'true'
         run: npm run test
 
       - name: Build
