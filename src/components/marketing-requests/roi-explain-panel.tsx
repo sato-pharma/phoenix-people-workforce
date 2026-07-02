@@ -231,7 +231,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                         <td className="px-3 py-1.5 font-mono font-bold text-[#0F172A]">{row.invoicePeriod}</td>
                         <td className="px-3 py-1.5 font-medium text-[#64748B]">{row.distributorCode}</td>
                         <td className="px-3 py-1.5 font-mono text-[#64748B]">{row.clientCode}</td>
-                        <td className="px-3 py-1.5 font-semibold text-[#334155]">{row.productCode}</td>
+                        <td className="px-3 py-1.5 font-semibold text-[#334155]">{row.productName}</td>
                         <td className="px-3 py-1.5 text-right font-semibold text-[#475569]">{units(row.qty)}</td>
                         <td className="px-3 py-1.5 text-right font-bold text-[#0F172A]">{money(row.valueCounted)}</td>
                         <td className="px-3 py-1.5">

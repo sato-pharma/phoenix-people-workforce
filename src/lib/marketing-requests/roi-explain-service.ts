@@ -188,6 +188,12 @@ export async function explainMarketingRequestRoi(
   const targetProductCodes = new Set(
     products.filter((product) => product.matchedToSos && product.sosProductCode).map((product) => String(product.sosProductCode).toUpperCase()),
   );
+  // Display name for the rebuilt ledger — never show the raw SoS code.
+  const nameBySosCode = new Map(
+    products
+      .filter((product) => product.matchedToSos && product.sosProductCode)
+      .map((product) => [String(product.sosProductCode).toUpperCase(), product.name] as const),
+  );
 
   // 5) Pharmacy presence — do the target codes appear in validated SoS under the rolled-up
   //    distributors within the window? Filtered to the target codes so the scan stays small.
@@ -225,6 +231,7 @@ export async function explainMarketingRequestRoi(
     distributorCode: row.distributorCode,
     clientCode: row.customerCode,
     productCode: row.productCode,
+    productName: row.productName,
     invoicePeriod: row.invoicePeriod,
     qty: row.qty,
     valueCounted: row.value,
@@ -284,6 +291,7 @@ export async function explainMarketingRequestRoi(
           distributorCode: String(row.distributor_code ?? "").trim(),
           clientCode: normClient,
           productCode: upperProduct,
+          productName: nameBySosCode.get(upperProduct) ?? upperProduct,
           invoicePeriod: String(row.invoice_period ?? "").trim(),
           qty,
           valueCounted: roundMarketingMoney(valueRaw),

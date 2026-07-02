@@ -34,6 +34,8 @@ export type RoiExplainLedgerRow = {
   distributorCode: string;
   clientCode: string;
   productCode: string;
+  /** display name — the ledger must always show this, never the raw SoS product code. */
+  productName: string;
   invoicePeriod: string;
   qty: number;
   valueCounted: number;

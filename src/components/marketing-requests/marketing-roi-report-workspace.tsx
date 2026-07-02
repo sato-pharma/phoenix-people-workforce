@@ -255,7 +255,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                           <td className="px-3 py-1.5 font-mono text-[#94A3B8]">{ledgerRow.sosRowId ?? "—"}</td>
                           <td className="px-3 py-1.5 font-mono font-bold text-[#0F172A]">{ledgerRow.invoicePeriod}</td>
                           <td className="px-3 py-1.5 font-mono text-[#64748B]">{ledgerRow.clientCode}</td>
-                          <td className="px-3 py-1.5 font-semibold text-[#334155]">{ledgerRow.productCode}</td>
+                          <td className="px-3 py-1.5 font-semibold text-[#334155]">{ledgerRow.productName}</td>
                           <td className="px-3 py-1.5 text-right font-semibold text-[#475569]">{units(ledgerRow.qty)}</td>
                           <td className="px-3 py-1.5 text-right font-bold text-[#0F172A]">{money(ledgerRow.valueCounted)}</td>
                           <td className="px-3 py-1.5 font-bold uppercase text-emerald-700">{ledgerRow.confidence}</td>
