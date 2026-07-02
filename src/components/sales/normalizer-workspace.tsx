@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Check, ClipboardPaste, Copy, Database, Download, History, Loader2, Save, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Check, CheckCircle2, ClipboardPaste, Copy, Database, Download, History, Layers, Loader2, MapPin, Package, Save, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
+
+type IconType = typeof Sparkles;
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -38,11 +40,11 @@ function CopyBtn({ text }: { text: string }) {
   if (!text) return null;
   return (
     <button
-      className="ml-1 inline-flex shrink-0 items-center text-slate-400 transition hover:text-[#1D4ED8]"
+      className="ml-1 inline-flex shrink-0 items-center text-slate-400 transition hover:text-orange-600"
       onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1000); } catch { /* clipboard blocked */ } }}
       title="Copy"
       type="button"
-    >{done ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}</button>
+    >{done ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}</button>
   );
 }
 
@@ -58,7 +60,7 @@ function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: str
   return (
     <div className="relative min-w-[240px]">
       <input
-        className="h-9 w-full rounded-lg border border-[#D8E0EA] bg-white px-2 pr-8 text-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+        className="h-9 w-full border border-slate-300 bg-white px-2 pr-8 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setOpen(true); setQuery(""); }}
@@ -67,17 +69,17 @@ function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: str
         value={open ? query : selected?.label ?? ""}
       />
       <button
-        className="absolute right-1.5 top-2 text-slate-400 transition hover:text-[#1D4ED8]"
+        className="absolute right-1.5 top-2 text-slate-400 transition hover:text-orange-600"
         onClick={async () => { try { const t = await navigator.clipboard.readText(); if (t) { setQuery(t); setOpen(true); inputRef.current?.focus(); } } catch { /* clipboard blocked */ } }}
         onMouseDown={(e) => e.preventDefault()}
         title="Paste to search"
         type="button"
       ><ClipboardPaste className="h-3.5 w-3.5" /></button>
       {open ? (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto border border-[#D8E0EA] bg-white shadow-lg">
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto border border-slate-300 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
           {filtered.map((o) => (
             <button
-              className={cn("block w-full px-2 py-1.5 text-left text-sm hover:bg-[#EEF3FE]", o.value === value && "bg-[#EEF3FE] font-semibold")}
+              className={cn("block w-full px-2 py-1.5 text-left text-sm hover:bg-orange-50", o.value === value && "bg-orange-50 font-semibold text-orange-700")}
               key={o.value}
               onMouseDown={(e) => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(""); }}
               type="button"
@@ -91,12 +93,12 @@ function ComboBox({ onChange, options, placeholder, value }: { onChange: (v: str
 }
 
 function ConfidenceBadge({ pct: p }: { pct: number }) {
-  const color = p >= 80
-    ? "bg-green-100 text-green-700 border-green-200"
+  const tone = p >= 80
+    ? { box: "border-emerald-200 bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" }
     : p >= 50
-    ? "bg-amber-100 text-amber-700 border-amber-200"
-    : "bg-red-100 text-red-600 border-red-200";
-  return <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold ${color}`}>{p}%</span>;
+    ? { box: "border-amber-200 bg-amber-50 text-amber-700", dot: "bg-amber-500" }
+    : { box: "border-rose-200 bg-rose-50 text-rose-600", dot: "bg-rose-500" };
+  return <span className={cn("inline-flex items-center gap-1 border px-1.5 py-0.5 text-xs font-semibold tabular-nums", tone.box)}><span aria-hidden="true" className={cn("h-1.5 w-1.5", tone.dot)} />{p}%</span>;
 }
 
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
@@ -266,25 +268,29 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
   const brickOptions = references.bricks.map((b) => ({ label: b.name, value: b.id }));
-  const selectClass = "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+  const selectClass = "h-11 w-full border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-60";
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">
       <AdminPageHero
-        badges={(<><AdminInsightChip>Auto-codes Product / Brick / Area / Region</AdminInsightChip><AdminInsightChip tone="orange">Drop the raw distributor file as-is</AdminInsightChip><Link className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D4ED8] hover:underline" href="/sales/mapping-database"><Database className="h-3.5 w-3.5" /> Mapping Database</Link><Link className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline" href="/sales/upload"><Upload className="h-3.5 w-3.5" /> Sales Upload</Link></>)}
+        badges={(<><AdminInsightChip>Auto-codes Product / Brick / Area / Region</AdminInsightChip><AdminInsightChip tone="orange">Drop the raw distributor file as-is</AdminInsightChip><Link className="inline-flex items-center gap-1 text-xs font-semibold text-orange-400 transition hover:text-orange-300 hover:underline" href="/sales/mapping-database"><Database className="h-3.5 w-3.5" /> Mapping Database</Link><Link className="inline-flex items-center gap-1 text-xs font-semibold text-white/70 transition hover:text-white hover:underline" href="/sales/upload"><Upload className="h-3.5 w-3.5" /> Sales Upload</Link></>)}
         description="Drop a raw distributor sheet untouched. The normalizer translates the distributor's own item and territory codes into Phoenix Product ID + Brick ID and derives Area + Region automatically. Map the few unknown codes once (in bulk) and they're remembered forever."
         eyebrow="Source Normalizer" icon={<Sparkles className="h-4 w-4" />} title="Source Normalizer"
       />
 
-      <div className="border border-[#1D4ED8]/30 bg-[#EEF3FE] p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2 bg-slate-900 px-4 py-3">
+          <span className="h-4 w-1 bg-orange-500" />
+          <p className="text-sm font-black uppercase tracking-wide text-white">Teach the dictionary from a cleaned file</p>
+          <span className="text-xs font-medium normal-case tracking-normal text-slate-400">(one-time per distributor)</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 p-4">
           <div className="flex-1 min-w-[260px]">
-            <p className="text-sm font-black text-[#1E3A8A]">Teach the dictionary from a cleaned file (one-time per distributor)</p>
-            <p className="mt-0.5 text-xs text-slate-600">Drop a file you already cleaned by hand (it has the raw codes + your Phoenix IDs side by side) for the distributor selected below. The system learns every raw → Phoenix translation at once, so future raw files auto-code. Insert-only — it never overwrites.</p>
+            <p className="text-xs text-slate-600">Drop a file you already cleaned by hand (it has the raw codes + your Phoenix IDs side by side) for the distributor selected below. The system learns every raw → Phoenix translation at once, so future raw files auto-code. Insert-only — it never overwrites.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#1D4ED8] bg-[#1D4ED8] px-4 text-sm font-bold text-white transition hover:bg-[#1E3A8A] disabled:opacity-50"
+              className="inline-flex h-10 shrink-0 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50"
               disabled={busy !== null}
               onClick={() => cleanFileRef.current?.click()}
               type="button"
@@ -292,7 +298,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               {busy === "bootstrap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Learn from cleaned file
             </button>
             <button
-              className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#1D4ED8] bg-white px-4 text-sm font-bold text-[#1D4ED8] transition hover:bg-[#EEF3FE] disabled:opacity-50"
+              className="inline-flex h-10 shrink-0 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
               disabled={busy !== null}
               onClick={() => void mineHistory()}
               title="Scan all previously imported rows for this distributor and save any new product or customer mappings"
@@ -316,7 +322,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>
-              <input accept=".xlsx,.xls" className="h-11 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3 py-2 text-xs" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} type="file" />
+              <input accept=".xlsx,.xls" className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} type="file" />
             </label>
             <Button className="gap-2" disabled={busy !== null || !file} onClick={() => void analyze()}>
               {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
@@ -335,27 +341,44 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: "Rows", value: s!.totalRows.toLocaleString() },
-                  { label: "Product coded", value: pct(s!.productResolved, s!.totalRows) },
-                  { label: "Brick coded", value: pct(s!.brickResolved, s!.totalRows) },
-                  { label: "Fully auto-coded", value: pct(s!.fullyCoded, s!.totalRows), strong: true },
-                ].map((k) => (
-                  <div className={cn("border border-[#E2E8F0] bg-white p-3", k.strong && "border-[#1D4ED8] bg-[#EEF3FE]")} key={k.label}>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
-                    <p className={cn("mt-1 text-lg font-black tabular-nums", k.strong ? "text-[#1D4ED8]" : "text-slate-900")}>{k.value}</p>
-                  </div>
-                ))}
+                {([
+                  { label: "Rows", value: s!.totalRows.toLocaleString(), icon: Layers },
+                  { label: "Product coded", value: pct(s!.productResolved, s!.totalRows), ratio: s!.totalRows ? s!.productResolved / s!.totalRows : 0, icon: Package },
+                  { label: "Brick coded", value: pct(s!.brickResolved, s!.totalRows), ratio: s!.totalRows ? s!.brickResolved / s!.totalRows : 0, icon: MapPin },
+                  { label: "Fully auto-coded", value: pct(s!.fullyCoded, s!.totalRows), ratio: s!.totalRows ? s!.fullyCoded / s!.totalRows : 0, icon: CheckCircle2, strong: true },
+                ] as { label: string; value: string; icon: IconType; ratio?: number; strong?: boolean }[]).map((k) => {
+                  const Icon = k.icon;
+                  return (
+                    <div className={cn("group relative overflow-hidden border border-slate-200 bg-gradient-to-br from-white to-slate-50/60 p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md", k.strong && "border-orange-200 from-orange-50 to-white")} key={k.label}>
+                      <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", k.strong ? "from-orange-500 via-orange-400 to-amber-300" : "from-slate-400 via-slate-300 to-slate-200")} />
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
+                          <p className={cn("mt-1 text-xl font-black tabular-nums", k.strong ? "text-orange-700" : "text-slate-900")}>{k.value}</p>
+                        </div>
+                        <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-colors", k.strong ? "text-orange-400" : "text-slate-300 group-hover:text-orange-400")} />
+                      </div>
+                      {k.ratio != null ? (
+                        <div className="mt-2.5 h-1 w-full overflow-hidden bg-slate-100">
+                          <div className={cn("h-full bg-gradient-to-r transition-all duration-500", k.strong ? "from-orange-500 to-amber-400" : "from-slate-400 to-slate-300")} style={{ width: `${Math.min(100, Math.max(0, k.ratio * 100)).toFixed(1)}%` }} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">Month: <b>{preview.period ?? "—"}</b></span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
+                  <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-900"><CalendarDays className="h-3.5 w-3.5 text-orange-500" />{preview.period ?? "—"}</span>
+                </div>
                 <div className="ml-auto flex flex-col items-end gap-1">
                   <div className="flex gap-2">
-                    <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:bg-slate-50 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("download", () => blobPost("/api/sales/normalizer/download", "phoenix-coded.xlsx"))} type="button">
+                    <button className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("download", () => blobPost("/api/sales/normalizer/download", "phoenix-coded.xlsx"))} type="button">
                       {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download coded XLSX
                     </button>
-                    <button className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import", async () => {
+                    <button className="inline-flex h-10 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import", async () => {
                       const res = await fetch("/api/sales/normalizer/import-validated", { body: fd(), method: "POST" });
                       const json = await res.json();
                       if (json.success) setNotice(`Imported ${json.data.importableRows} validated row(s) for ${json.data.period ?? "—"} into Source of Sales.`);
@@ -366,7 +389,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-400">
                     <span>Download → upload on Source of Sales (it now passes validation), or import straight here.</span>
-                    <button className="underline transition hover:text-slate-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
+                    <button className="underline transition hover:text-orange-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
                   </div>
                   {advanced ? (
                     <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => {
@@ -388,7 +411,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
               <div className="flex gap-1 border-b border-slate-200">
                 {([["coded", `Coded preview (${preview.sampleCoded.length})`], ["map", `Needs mapping — ${distinctCount} codes (${Math.max(0, s!.totalRows - s!.fullyCoded - s!.ignored).toLocaleString()} rows${s!.ignored ? `, ${s!.ignored.toLocaleString()} ignored` : ""})`]] as const).map(([key, label]) => (
-                  <button className={cn("border-b-2 px-3 py-2 text-sm font-semibold", tab === key ? "border-[#F97316] text-[#0B0B0B]" : "border-transparent text-slate-500")} key={key} onClick={() => setTab(key)} type="button">{label}</button>
+                  <button className={cn("-mb-px border-b-2 px-3.5 py-2 text-sm font-semibold transition-colors", tab === key ? "border-orange-500 text-slate-900" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900")} key={key} onClick={() => setTab(key)} type="button">{label}</button>
                 ))}
               </div>
 
@@ -398,14 +421,14 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     <thead className="bg-[#0B0B0B] text-[#F1F5F9]"><tr>{["Product ID", "Product", "Brick ID", "Brick", "Area", "Region", "Qty", "Customer"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
-                        <tr className={i % 2 ? "bg-[#F8FAFC]" : ""} key={i}>
-                          <td className="px-3 py-1.5 font-semibold text-slate-900">{r.productCode}</td>
+                        <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={i}>
+                          <td className="px-3 py-1.5 font-mono text-[13px] font-semibold text-slate-900">{r.productCode}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.productName}</td>
-                          <td className="px-3 py-1.5 font-semibold text-[#1D4ED8]">{r.brickId}</td>
+                          <td className="px-3 py-1.5 font-mono text-[13px] font-semibold text-slate-700">{r.brickId}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.brickName}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.areaCode}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.regionCode}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums">{r.qty}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{r.qty.toLocaleString()}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.clientName ?? ""}</td>
                         </tr>
                       ))}
@@ -414,25 +437,25 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2 border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                  <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-slate-50 p-4 shadow-sm">
                     <p className="text-xs text-slate-600">Pick the right Phoenix code for each unknown (suggestions are pre-filled), then <b>Save</b>. Or do it in Excel: download the list, fill the codes, upload it back.</p>
                     <div className="ml-auto flex flex-wrap gap-2">
-                      <button className="inline-flex h-9 items-center gap-2 border border-[#0B0B0B] bg-white px-3 text-xs font-bold text-[#0B0B0B] hover:bg-slate-50 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("template", () => blobPost("/api/sales/normalizer/mappings/template", "phoenix-unmapped.xlsx"))} type="button">
+                      <button className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("template", () => blobPost("/api/sales/normalizer/mappings/template", "phoenix-unmapped.xlsx"))} type="button">
                         {busy === "template" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download list (Excel)
                       </button>
-                      <button className="inline-flex h-9 items-center gap-2 border border-[#0B0B0B] bg-white px-3 text-xs font-bold text-[#0B0B0B] hover:bg-slate-50 disabled:opacity-50" disabled={busy !== null} onClick={() => mapFileRef.current?.click()} type="button">
+                      <button className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => mapFileRef.current?.click()} type="button">
                         {busy === "learn" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload filled list
                       </button>
                       <input accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void learnFromExcel(f); }} ref={mapFileRef} type="file" />
                       {aiEnabled ? (
-                        <button className="inline-flex h-9 items-center gap-2 border border-[#7C3AED] bg-[#7C3AED] px-3 text-xs font-bold text-white transition hover:bg-[#6D28D9] disabled:opacity-50" disabled={busy !== null} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the dropdowns" type="button">
+                        <button className="inline-flex h-9 items-center gap-2 border border-violet-600 bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the dropdowns" type="button">
                           {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
                         </button>
                       ) : null}
-                      <button className="inline-flex h-9 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-3 text-xs font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
+                      <button className="inline-flex h-9 items-center gap-2 border border-orange-600 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
                         {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save mappings
                       </button>
-                      <Link className="inline-flex h-9 items-center gap-1.5 border border-[#1D4ED8] bg-white px-3 text-xs font-bold text-[#1D4ED8] transition hover:bg-[#EEF3FE]" href="/sales/mapping-database">
+                      <Link className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800" href="/sales/mapping-database">
                         <Database className="h-4 w-4" /> Mapping Database <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </div>
@@ -440,15 +463,15 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
                   {preview.unknownProducts.length > 0 ? (
                     <div className="overflow-x-auto border border-[#E2E8F0]">
-                      <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown products ({preview.unknownProducts.length})</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownProducts.map((u) => (
-                            <tr className="border-t border-slate-100" key={u.raw}>
+                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
                               <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`p:${u.raw}`]: v }))} options={productOptions} placeholder="Type product or code…" value={picks[`p:${u.raw}`] ?? ""} />
                               </td>
@@ -461,14 +484,14 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
                   {preview.unknownTerritories.length > 0 ? (
                     <div className="overflow-x-auto border border-[#E2E8F0]">
-                      <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown territories ({preview.unknownTerritories.length})</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown territories ({preview.unknownTerritories.length})</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Raw territory", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownTerritories.map((u) => (
-                            <tr className="border-t border-slate-100" key={u.raw}>
+                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
                               <td className="px-3 py-1.5 text-slate-700"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`t:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`t:${u.raw}`] ?? ""} />
                               </td>
@@ -481,17 +504,17 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
                   {preview.unknownCustomers.length > 0 ? (
                     <div className="overflow-x-auto border border-[#E2E8F0]">
-                      <p className="bg-[#0B0B0B] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#FDBA74]">Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownCustomers.map((u) => (
-                            <tr className="border-t border-slate-100" key={u.raw}>
+                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
                               <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
                               <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[200px]">{u.rawAddress ? <span className="inline-flex items-center gap-0.5">{u.rawAddress}<CopyBtn text={u.rawAddress} /></span> : <span className="text-slate-300">—</span>}</td>
                               <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[140px]">{u.rawTerritory ? <span className="inline-flex items-center gap-0.5">{u.rawTerritory}<CopyBtn text={u.rawTerritory} /></span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{u.count}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
                               <td className="px-3 py-1.5">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
                               </td>
