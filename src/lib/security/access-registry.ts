@@ -312,6 +312,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-import/commit", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin import: persists the previewed Source of Sales upload after server-side validation." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-import/cancel", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Discards an abandoned large-file preview by deleting its temporary Storage object; persists no business data." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/master-workbook/export", permission: { resource: "sales", action: "export" } }),
+  // Flagship SoS BI workbook — the route additionally hard-gates to CEO / Super Admin via
+  // canExportSosDashboard() on top of the sales:export permission asserted here.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/sos-dashboard/export", permission: { resource: "sales", action: "export" } }),
   sessionApi({
     audit: { classification: "mutation", required: true },
     methods: ["POST"],
