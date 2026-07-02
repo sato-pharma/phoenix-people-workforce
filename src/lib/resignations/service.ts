@@ -1,5 +1,5 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canSeeEmployee, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { canSeeEmployee, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
@@ -1078,7 +1078,7 @@ export async function resignEmployeeAndOpenVacancy(
   hrId: string,
   input: EmployeeResignationInput,
   actor: string,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const employeeHrId = String(hrId || input.employeeHrId || "").trim();
   if (!employeeHrId) {
@@ -1113,6 +1113,11 @@ export async function resignEmployeeAndOpenVacancy(
     expectedNextStatus: "resignation_submitted",
     status: "new",
   });
+
+  const scopedAccess = access ?? systemAccessContext;
+  if (!canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${employee.hrId}.`);
+  }
 
   const rpcResult = await supabase.rpc("phx_resign_employee_and_open_vacancy", {
     p_actor: actor,

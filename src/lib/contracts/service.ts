@@ -457,7 +457,7 @@ async function notifyContractWorkflow(
 // and staging smoke is green.
 async function maybeRunNonRenewalTerminalLifecycle(
   record: ContractRenewalRecord,
-  access: Pick<AccessContext, "role"> | undefined,
+  access: AccessContext | undefined,
   actor: string,
 ) {
   if (!WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED) {
@@ -518,7 +518,7 @@ export async function runContractRenewalWorkflow(
   action: ContractRenewalAction,
   actor: string,
   input: {
-    access?: Pick<AccessContext, "role">;
+    access?: AccessContext;
     decisionReason?: string | null;
     newContractDocumentName?: string | null;
     newContractDocumentUrl?: string | null;
