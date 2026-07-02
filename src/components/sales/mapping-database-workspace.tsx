@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Database, Download, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
@@ -90,7 +90,15 @@ function MappingBulkBar({ templateHref, templateLabel, uploadUrl, uploadFields, 
 type MonthlyTab = "customers" | "products" | "territories";
 
 // ── Customers (per distributor, server-paginated + searchable) ──
-type CustomerRow = { customerCode: string; customerName: string; address: string; brickId: string; areaCode: string; regionCode: string };
+type CustomerRow = { customerCode: string; customerName: string; address: string; brickId: string; areaCode: string; regionCode: string; source?: string; confidence?: number | null };
+
+const SOURCE_FILTERS = [
+  { key: "", label: "All" },
+  { key: "auto", label: "Auto" },
+  { key: "normalizer", label: "Normalizer" },
+  { key: "manual", label: "Manual" },
+  { key: "admin-import", label: "Import" },
+] as const;
 
 function CustomersTab({ distributorCode, bricks }: { distributorCode: string; bricks: { id: string; name: string }[] }) {
   const brickOptions = bricks.map((b) => ({ code: b.id, name: b.name }));
@@ -98,6 +106,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({}); // customerCode -> new brickId
@@ -105,10 +114,10 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
   // add form
   const [addCode, setAddCode] = useState(""); const [addName, setAddName] = useState(""); const [addBrick, setAddBrick] = useState("");
 
-  const load = useCallback(async (nextOffset: number, q: string) => {
+  const load = useCallback(async (nextOffset: number, q: string, src?: string) => {
     setLoading(true); setError(null);
     try {
-      const url = `/api/sales/mapping-database/customer-map?distributor=${encodeURIComponent(distributorCode)}&search=${encodeURIComponent(q)}&limit=${PAGE}&offset=${nextOffset}`;
+      const url = `/api/sales/mapping-database/customer-map?distributor=${encodeURIComponent(distributorCode)}&search=${encodeURIComponent(q)}&limit=${PAGE}&offset=${nextOffset}&source=${encodeURIComponent(src ?? "")}`;
       const res = await fetch(url);
       const payload = await readJson<{ success: boolean; rows?: CustomerRow[]; total?: number; error?: string }>(res);
       if (!payload.success) { setError(payload.error ?? "Failed to load."); return; }
@@ -138,17 +147,30 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
         <input
           className="h-9 w-64 rounded-[6px] border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#FDBA74]"
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void load(0, search); }}
+          onKeyDown={(e) => { if (e.key === "Enter") void load(0, search, sourceFilter); }}
           placeholder="Search code / name / address"
           value={search}
         />
-        <Button className="h-9" onClick={() => void load(0, search)} type="button" variant="secondary">Search</Button>
+        <Button className="h-9" onClick={() => void load(0, search, sourceFilter)} type="button" variant="secondary">Search</Button>
         <span className="text-xs text-[#64748B]">{total.toLocaleString()} mapped</span>
+        <span className="ml-2 inline-flex items-center gap-1">
+          {SOURCE_FILTERS.map((f) => (
+            <button
+              className={cn(
+                "h-7 rounded-full border px-2.5 text-[11px] font-bold transition",
+                sourceFilter === f.key ? "border-[#F97316] bg-[#FFF3E8] text-[#C2410C]" : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]",
+              )}
+              key={f.key || "all"}
+              onClick={() => { setSourceFilter(f.key); void load(0, search, f.key); }}
+              type="button"
+            >{f.label}</button>
+          ))}
+        </span>
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> : null}
       </div>
 
       <MappingBulkBar
-        onImported={() => void load(0, search)}
+        onImported={() => void load(0, search, sourceFilter)}
         templateHref={`/api/sales/monthly-import/customer-mapping/template?distributor=${encodeURIComponent(distributorCode)}`}
         templateLabel="Download template (your current map)"
         uploadFields={{ distributorCode }}
@@ -172,7 +194,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
               <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={setAddBrick} options={brickOptions} placeholder="brick (B10…)" value={addBrick} /></div></td>
               <td className="px-3 py-2 text-right">
                 <Button className="h-8 gap-1 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
-                  onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: addCode.trim(), customerName: addName.trim(), brickId: addBrick }, "add")) { setAddCode(""); setAddName(""); setAddBrick(""); void load(offset, search); } }}
+                  onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: addCode.trim(), customerName: addName.trim(), brickId: addBrick }, "add")) { setAddCode(""); setAddName(""); setAddBrick(""); void load(offset, search, sourceFilter); } }}
                   type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
               </td>
             </tr>
@@ -184,17 +206,22 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
                   <td className="px-3 py-2">
                     <span className="block font-semibold text-[#0F172A]">{r.customerName || r.customerCode}</span>
                     <span className="block font-mono text-xs text-[#64748B]">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
+                    {r.source === "auto" ? (
+                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                        AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={(v) => setEdits((p) => ({ ...p, [r.customerCode]: v }))} options={brickOptions} placeholder="brick" value={editing} /></div></td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1.5">
                       {dirty ? (
                         <Button className="h-8 gap-1 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={busyKey === r.customerCode}
-                          onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: r.customerCode, customerName: r.customerName, address: r.address, brickId: editing }, r.customerCode)) void load(offset, search); }}
+                          onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: r.customerCode, customerName: r.customerName, address: r.address, brickId: editing }, r.customerCode)) void load(offset, search, sourceFilter); }}
                           type="button">{busyKey === r.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Save</Button>
                       ) : null}
                       <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.customerCode}
-                        onClick={async () => { if (confirm(`Delete mapping for ${r.customerCode}?`) && await post({ action: "delete", distributorCode, customerCode: r.customerCode }, r.customerCode)) void load(offset, search); }}
+                        onClick={async () => { if (confirm(`Delete mapping for ${r.customerCode}?`) && await post({ action: "delete", distributorCode, customerCode: r.customerCode }, r.customerCode)) void load(offset, search, sourceFilter); }}
                         type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   </td>
@@ -209,8 +236,8 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
       <div className="flex items-center justify-between text-xs text-[#64748B]">
         <span>Showing {rows.length ? offset + 1 : 0}–{offset + rows.length} of {total.toLocaleString()}</span>
         <div className="flex gap-2">
-          <Button className="h-8" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - PAGE), search)} type="button" variant="secondary">Prev</Button>
-          <Button className="h-8" disabled={offset + PAGE >= total || loading} onClick={() => void load(offset + PAGE, search)} type="button" variant="secondary">Next</Button>
+          <Button className="h-8" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - PAGE), search, sourceFilter)} type="button" variant="secondary">Prev</Button>
+          <Button className="h-8" disabled={offset + PAGE >= total || loading} onClick={() => void load(offset + PAGE, search, sourceFilter)} type="button" variant="secondary">Next</Button>
         </div>
       </div>
     </div>
