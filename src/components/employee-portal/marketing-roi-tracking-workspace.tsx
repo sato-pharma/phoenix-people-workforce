@@ -187,9 +187,9 @@ export function MarketingRoiTrackingWorkspace() {
           </div>
           {!isLoading && workspace.summary.total > 0 ? (
             <p className="mt-3 text-[12px] font-semibold text-slate-600">
-              Realized {money(workspace.summary.totalActualValue)} of {money(workspace.summary.totalRequiredValue)} required
+              Realized {money(workspace.summary.totalActualValue)} actual of {money(workspace.summary.totalRequiredValue)} required
               {" "}
-              <span className="text-slate-400">({percent(summaryCoverage)} overall)</span>
+              <span className="text-slate-400">({percent(summaryCoverage)} actual coverage)</span>
             </p>
           ) : null}
         </div>
@@ -235,10 +235,10 @@ export function MarketingRoiTrackingWorkspace() {
                   fields={[
                     { label: "Line", value: row.line ?? "-" },
                     { label: "ROI window", value: row.roiWindow ?? "-" },
-                    { label: "Required", value: money(row.requiredRoiValue) },
-                    { label: "Expected", value: money(row.expectedRoiValue) },
+                    { label: "Required (target)", value: money(row.requiredRoiValue) },
+                    { label: "Expected (forecast)", value: money(row.expectedRoiValue) },
                     { label: "Actual sales", value: money(row.actualSalesValue) },
-                    { label: "Coverage", value: row.hasSalesData ? percent(row.actualCoverageRatio) : "-" },
+                    { label: "Actual coverage", value: row.hasSalesData ? percent(row.actualCoverageRatio) : "-" },
                   ]}
                 />
                 <div className="mt-2">
@@ -254,10 +254,10 @@ export function MarketingRoiTrackingWorkspace() {
                   <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                   <th className="border-r border-slate-100 px-3 py-2.5">Line</th>
                   <th className="border-r border-slate-100 px-3 py-2.5">ROI Window</th>
-                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required ROI</th>
-                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected ROI</th>
+                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required (target)</th>
+                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected (forecast)</th>
                   <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual Sales</th>
-                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
+                  <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual coverage</th>
                   <th className="border-r border-slate-100 px-3 py-2.5">Attribution</th>
                   <th className="px-3 py-2.5">Status</th>
                 </tr>

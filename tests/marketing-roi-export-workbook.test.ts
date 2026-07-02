@@ -48,6 +48,8 @@ function sampleReport(): MarketingRoiReport {
         actualSalesValue: 12000,
         actualSalesUnits: 40,
         actualCoverageRatio: 1.2,
+        forecastCoverageRatio: 0.9,
+        dataCoverage: "complete",
         resultStatus: "on_track",
         attributionQuality: "exact_customer",
         hasSalesData: true,
