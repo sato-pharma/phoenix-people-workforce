@@ -190,6 +190,9 @@ function testSurfaceSourceGuards() {
   assert.ok(detailsIndex >= 0, "detail view must wrap the ledger in a collapsible <details> element");
   assert.ok(sosRowIdIndex > detailsIndex, "sosRowId must only render inside the collapsed <details> block");
   assert.doesNotMatch(workspace, /<details[^>]*\sopen\b/, "the Explain ROI ledger must be collapsed by default (no `open` attribute)");
+  // Products must always render by name — never the raw Source-of-Sales product code.
+  assert.match(workspace, /\{ledgerRow\.productName\}/, "the ledger must render the product NAME, never the code");
+  assert.doesNotMatch(workspace, /\{ledgerRow\.productCode\}/, "the ledger must never render the raw product code");
 
   const service = readFileSync("src/lib/marketing-requests/roi-business-report-service.ts", "utf8");
   assert.match(service, /getMarketingRoiReport\(/, "service must reuse the existing ROI report service, not reimplement attribution");
