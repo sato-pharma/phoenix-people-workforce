@@ -39,6 +39,22 @@ export function runWeeklyPlansHardeningTests() {
   assert.match(calendarServiceSource, /itemLimit: CALENDAR_ITEM_LIMIT/, "calendar API must return itemLimit");
   assert.match(calendarUiSource, /workspace\.hasMoreHeaders \|\| workspace\.hasMoreItems/, "calendar UI must warn when results are capped");
 
+  assert.doesNotMatch(
+    calendarServiceSource,
+    /rawPlanItems\.filter\(isAllowedCalendarOwner\)/,
+    "shared calendar must not return every allowed-owner item without a viewer line check",
+  );
+  assert.match(
+    calendarServiceSource,
+    /isCompanyWideViewer = access\.scope === "company" \|\| access\.scope === "system"/,
+    "shared calendar must gate company-wide visibility off access.scope, not a hardcoded role list",
+  );
+  assert.match(
+    calendarServiceSource,
+    /sameLine\(item\.lineName, viewer\?\.lineName\)/,
+    "shared calendar must restrict non-company-wide viewers to their own line",
+  );
+
   assert.match(workflowE2eSource, /EMPLOYEE_PLANS_PATH = "\/employee-portals\/plans"/, "submitter workflow must use employee portal route");
   assert.match(workflowE2eSource, /MANAGER_PLANS_PATH = "\/employee-portals\/plans"/, "Marketing Manager reviewer workflow must use employee portal route");
   assert.match(workflowE2eSource, /ADMIN_PLANS_PATH = "\/admin\/weekly-plans"/, "CEO and HR workflow must use admin route");
