@@ -97,7 +97,7 @@ async function fetchAllItems(viewAccess: AccessContext): Promise<ActionHubItem[]
   const planManagerAccess: AccessContext = { ...viewAccess, role: "Manager", scope: "team" };
   const settled = await Promise.allSettled([
     getVacationActionCenterData(viewAccess).catch(() => null),
-    getResignationsDashboardData().catch(() => null),
+    getResignationsDashboardData(viewAccess).catch(() => null),
     getManagerPendingExcuses(viewAccess).catch(() => null),
     listOutstationRequests().catch(() => null),
     getContractRenewalDashboardData(viewAccess).catch(() => null),

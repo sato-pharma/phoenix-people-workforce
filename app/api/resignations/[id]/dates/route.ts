@@ -67,7 +67,7 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       data: updated,
-      dashboard: await getResignationsDashboardData(),
+      dashboard: await getResignationsDashboardData(access),
     });
   } catch (error) {
     const { message, status } = resignationDatesApiError(error);

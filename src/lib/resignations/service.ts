@@ -519,6 +519,15 @@ export async function upsertPayrollResignationCandidates(input: {
   return payload.length;
 }
 
+function isCompanyResignationReader(access: AccessContext) {
+  return (
+    access.scope === "system" ||
+    access.scope === "company" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO"
+  );
+}
+
 export async function getResignationsDashboardData(access?: AccessContext): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
@@ -548,12 +557,13 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
       employeeStatus: employeesByHrId.get(record.employeeHrId.trim().toUpperCase())?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
-  const workflowRecords = access
-    ? allWorkflowRecords.filter((record) => {
+  const scopedAccess = access ?? systemAccessContext;
+  const workflowRecords = isCompanyResignationReader(scopedAccess)
+    ? allWorkflowRecords
+    : allWorkflowRecords.filter((record) => {
         const employee = employeesByHrId.get(record.employeeHrId.trim().toUpperCase());
-        return employee ? canSeeEmployee(access, employee) : false;
-      })
-    : allWorkflowRecords;
+        return employee ? canSeeEmployee(scopedAccess, employee) : false;
+      });
   const workflowHrIds = new Set(workflowRecords.map((record) => record.employeeHrId.trim().toUpperCase()));
   const legacyRecords = historicalEmployees
     .filter((employee) => !workflowHrIds.has(employee.hr_id.trim().toUpperCase()))
