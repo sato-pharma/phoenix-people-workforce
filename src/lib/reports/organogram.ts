@@ -1,6 +1,7 @@
 import {
   type AccessContext,
   normalizeHrId,
+  normalizeHrIdForAccess,
   normalizeLineName,
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
@@ -96,6 +97,44 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
     access.role === "Product Manager" ||
     access.role === "Group Product Manager"
   );
+}
+
+// Talent Acquisition holds `vacancies` permission for company-wide recruiting but is not
+// an organogram-visibility role, so it sits outside canAccessCompanyOrganogram.
+export function canAccessCompanyVacancies(access: AccessContext) {
+  return canAccessCompanyOrganogram(access) || access.role === "Talent Acquisition";
+}
+
+// District Manager sees only vacancies reporting directly to them (their own team's open
+// seats), matching getEmployeePortalVacancies' manager_hr_id scoping.
+export function isTeamScopedVacancyRole(access: AccessContext) {
+  return access.role === "District Manager";
+}
+
+function scopeVacancyReportToTeam(
+  report: VacancyReportData,
+  access: AccessContext,
+): VacancyReportData {
+  const managerKey = normalizeHrIdForAccess(access.hrId);
+  if (!managerKey) {
+    return emptyReport({
+      code: "team_unresolved",
+      message: "We couldn't resolve your HR ID to scope vacancy reports to your team.",
+    });
+  }
+
+  const matchesManager = (managerHrId: string | null | undefined) =>
+    normalizeHrIdForAccess(managerHrId) === managerKey;
+
+  const scopedReport = {
+    ...report,
+    organogramRows: applyOrganogramMirrorSafety(
+      report.organogramRows.filter((row) => matchesManager(row.managerHrId)),
+    ),
+    rows: report.rows.filter((row) => matchesManager(row.managerHrId)),
+  };
+
+  return { ...scopedReport, summary: recalculateSummary(scopedReport) };
 }
 
 export function scopeOrganogramReportData(
@@ -235,4 +274,45 @@ export async function getOrganogramReport(
   }
 
   return scoped;
+}
+
+/**
+ * The single scoped entry point for the vacancy report (`app/api/reports/vacancies`,
+ * the admin vacancies page, and the admin-shell workspace vacancies page). Classifies
+ * the caller's role into company-wide / line-scoped / team-scoped and filters
+ * accordingly — mirrors the getOrganogramReport pattern above, extended with the two
+ * roles unique to the `vacancies` permission (Talent Acquisition, District Manager).
+ */
+export async function getScopedVacancyReport(access: AccessContext): Promise<VacancyReportData> {
+  if (canAccessCompanyVacancies(access)) {
+    return getVacancyReport();
+  }
+
+  if (isLineScopedOrganogramRole(access)) {
+    const [report, lineNames] = await Promise.all([
+      getVacancyReport(),
+      resolveOrganogramLinesForEmployee(access),
+    ]);
+
+    if (!lineNames || lineNames.length === 0) {
+      return emptyReport({
+        code: "line_unresolved",
+        message:
+          "We couldn't resolve your line scope. Ask HR to set your `line_name` on the employee record so vacancies can be scoped to your line.",
+      });
+    }
+
+    return scopeOrganogramReportData(report, { lineNames, mode: "line" });
+  }
+
+  if (isTeamScopedVacancyRole(access)) {
+    const report = await getVacancyReport();
+    return scopeVacancyReportToTeam(report, access);
+  }
+
+  return emptyReport({
+    code: "vacancy_scope_denied",
+    message:
+      "Your role is not configured for vacancy report access. This is enforced server-side; navigation visibility is not the security boundary.",
+  });
 }
