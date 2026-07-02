@@ -16,6 +16,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
+import { conflictError } from "@/lib/http/api-errors";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -671,10 +672,12 @@ export async function decideExcuseRequestByToken(input: {
       updated_at: now,
     })
     .eq("id", input.requestId)
+    .eq("status", "pending_manager")
     .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!updated) throw conflictError("This excuse request has already been decided.");
 
   await getSupabaseAdmin()
     .from("v2_excuse_email_tokens")
@@ -756,10 +759,12 @@ export async function decideExcuseRequestAsManager(
       updated_at: now,
     })
     .eq("id", input.requestId)
+    .eq("status", "pending_manager")
     .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!updated) throw conflictError("This excuse request has already been decided.");
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
   await writeAuditLog({
@@ -851,10 +856,12 @@ export async function resubmitExcuseRequest(
       updated_at: now,
     })
     .eq("id", input.requestId)
+    .eq("status", "returned_to_employee")
     .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!updated) throw conflictError("Only returned excuse requests can be resubmitted.");
 
   const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
   await writeAuditLog({

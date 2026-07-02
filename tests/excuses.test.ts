@@ -216,6 +216,50 @@ export async function runExcusesTests() {
     "returned excuse resubmissions must wait for fresh manager and HR notification fan-out",
   );
 
+  // --- Race-condition guards: DB-level compare-and-swap on decision/resubmit updates ----
+  // The JS pre-checks above are only a fast-path — the real atomicity guarantee is the
+  // status guard on the UPDATE itself, so two concurrent decisions can't both "win".
+  assert.match(
+    serviceSource,
+    /import \{ conflictError \} from "@\/lib\/http\/api-errors"/,
+    "excuses service must import conflictError for DB-level conflict detection",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestByToken[\s\S]*?\.eq\("id", input\.requestId\)\s*\.eq\("status", "pending_manager"\)/,
+    "decideExcuseRequestByToken status UPDATE must be guarded by a DB-level status compare-and-swap",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestByToken[\s\S]*?\.maybeSingle\(\);\s*\n\s*if \(updateError\) throw updateError;\s*\n\s*if \(!updated\) throw conflictError\("This excuse request has already been decided\."\);/,
+    "decideExcuseRequestByToken must reject a lost status race with a conflict error instead of silently overwriting",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestAsManager[\s\S]*?\.eq\("id", input\.requestId\)\s*\.eq\("status", "pending_manager"\)/,
+    "decideExcuseRequestAsManager status UPDATE must be guarded by a DB-level status compare-and-swap",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestAsManager[\s\S]*?\.maybeSingle\(\);\s*\n\s*if \(updateError\) throw updateError;\s*\n\s*if \(!updated\) throw conflictError\("This excuse request has already been decided\."\);/,
+    "decideExcuseRequestAsManager must reject a lost status race with a conflict error instead of silently overwriting",
+  );
+  assert.match(
+    serviceSource,
+    /export async function resubmitExcuseRequest[\s\S]*?\.eq\("id", input\.requestId\)\s*\.eq\("status", "returned_to_employee"\)/,
+    "resubmitExcuseRequest status UPDATE must be guarded by a DB-level status compare-and-swap",
+  );
+  assert.match(
+    serviceSource,
+    /export async function resubmitExcuseRequest[\s\S]*?\.maybeSingle\(\);\s*\n\s*if \(updateError\) throw updateError;\s*\n\s*if \(!updated\) throw conflictError\("Only returned excuse requests can be resubmitted\."\);/,
+    "resubmitExcuseRequest must reject a lost status race with a conflict error instead of silently overwriting",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at"\)\s*\.single\(\)/,
+    "excuse decision/resubmit UPDATEs must use maybeSingle so a lost status race can be detected, not single()",
+  );
+
   // --- Telegram governance: both singular and plural module names must be allowed -------
   const telegramSource = readFileSync("src/lib/notifications/telegram-governance.ts", "utf8");
   assert.match(telegramSource, /module: "excuse"/, "telegram governance must allow the singular excuse module used by notifications");
