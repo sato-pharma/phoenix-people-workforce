@@ -28,12 +28,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable suggestions." }, { status: 400 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as { kind?: AiKind; unknowns?: AiUnknown[]; limit?: number };
+    const body = (await request.json().catch(() => ({}))) as { kind?: AiKind; unknowns?: AiUnknown[] };
     const kind: AiKind = body.kind === "territory" ? "territory" : body.kind === "customer" ? "customer" : "product";
-    // Per-category cap. Default 300 (Standard); the UI can request Double (600) or Triple (900).
-    // Clamp to [1, 900] so a crafted request can't ask for an unbounded batch.
-    const limit = Math.min(900, Math.max(1, Math.round(Number(body.limit)) || 300));
-    const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, limit);
+    const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, 300);
     if (unknowns.length === 0) return NextResponse.json({ success: true, data: { suggestions: [] } });
 
     const supabase = getSupabaseAdmin();
