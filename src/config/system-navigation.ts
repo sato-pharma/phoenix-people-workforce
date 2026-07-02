@@ -165,13 +165,13 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-marketing-requests",
     items: [
+      // Workspace shell for finance execution — Financial Advisor is the designated executor;
+      // Finance Manager monitors as an observer. SFE Manager also uses this workspace view.
+      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.fa_marketing_home", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"], exact: true },
+      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Finance Inbox", moduleId: "admin.workspace.fa_marketing_inbox", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"] },
       // Real ROI Dashboard — the Marketing ROI & Customer Intelligence BI dashboard
-      // (spend vs. realized sales, coverage gaps, customer impact). Had a Command Center
-      // duplicate for CEO/Super Admin/SFE Manager/PM/GPM/NSM that was intentionally removed,
-      // but every admin-sidebar entry point was dropped along with it. Restored here for the
-      // roles that actually operate in the admin shell (resolveNavigationMode === "admin");
-      // Product Manager / Group Product Manager / Marketing Manager are portal-mode roles and
-      // already reach the same dashboard via /employee-portals/roi in the portal nav.
+      // (spend vs. realized sales, coverage gaps, customer impact). Scoped to roles that operate
+      // in the admin shell; PM/GPM/Marketing Manager reach it via /employee-portals/roi instead.
       { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Super Admin", "CEO", "SFE Manager"] },
       // Merged in from the former standalone "Marketing Requests" section (org-wide admin
       // module for District Manager + Super Admin). moduleId pinned to the original
