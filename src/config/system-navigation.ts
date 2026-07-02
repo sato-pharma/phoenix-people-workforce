@@ -297,6 +297,7 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/import", icon: FileSpreadsheet, label: "Sales Import (Advanced)", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "SoS Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Database", permissions: [{ action: "import", resource: "sales" }] },
+      { href: "/admin/org-territory-mapping", icon: Network, label: "Org Territory Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/distributor-profiles", icon: Tags, label: "Distributor Profiles", permissions: [{ action: "import", resource: "sales" }] },

@@ -5,13 +5,12 @@ import { createOrgCode } from "../src/lib/imports/org-rule-engine.ts";
 
 function employeeRow(overrides: Record<string, unknown> = {}) {
   return {
-    Area: "Cairo",
+    Area: "Heliopolis",
     "Full Name": "Test Employee",
     HR_ID: "T-001",
     "Job Title": "Medical Representative",
     Line: "Pedia",
     Position: "Medical Representative",
-    Region: "Cairo",
     ...overrides,
   };
 }
@@ -38,12 +37,17 @@ export function runEmployeeImportSeatValidationTests() {
       existingState: {
         employeeOrgSeats: [
           {
-            areaCode: createOrgCode("Cairo"),
+            // Existing seats are loaded post-migration with the OFFICIAL area/line codes
+            // (public.areas.code / public.lines.code), not the old auto-slugs.
+            areaCode: "CA1",
             hrId: "T-000",
             jobTitle: "Medical Representative",
-            lineCode: createOrgCode("Pedia"),
+            lineCode: "PD",
             positionCode: createOrgCode("Medical Representative"),
-            regionName: "Cairo",
+            // This fixture doesn't provide regionCodeByLineArea, so the new row's region can't
+            // be derived either — keep both sides null so the seat key still lines up.
+            regionName: null,
+            regionCode: null,
           },
         ],
       },
@@ -56,9 +60,11 @@ export function runEmployeeImportSeatValidationTests() {
     true,
   );
 
+  // Region is derived from (line, area) now, not typed in — two rows only end up in different
+  // regions if they're in genuinely different areas.
   const differentRegion = validateEmployeeImportRows([
-    employeeRow({ HR_ID: "T-004", Region: "Cairo" }),
-    employeeRow({ HR_ID: "T-005", Region: "Giza" }),
+    employeeRow({ HR_ID: "T-004" }),
+    employeeRow({ HR_ID: "T-005", Area: "Giza - Giza Centers" }),
   ]);
 
   assert.equal(
@@ -96,15 +102,13 @@ export function runEmployeeImportSeatValidationTests() {
   );
 
   const duplicateCrmUsernameUpload = validateEmployeeImportRows([
-    employeeRow({ "CRM Username": "Rep.One", HR_ID: "T-007", Region: "Cairo" }),
+    employeeRow({ "CRM Username": "Rep.One", HR_ID: "T-007" }),
     employeeRow({
-      Area: "Giza",
+      Area: "Giza - Giza Centers",
       "CRM Username": "rep.one",
       "Full Name": "CRM Duplicate Rep",
       HR_ID: "T-008",
-      Line: "Derma",
       Position: "Senior Product Specialist",
-      Region: "Giza",
     }),
   ]);
 
