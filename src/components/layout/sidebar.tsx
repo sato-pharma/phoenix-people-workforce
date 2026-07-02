@@ -48,7 +48,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
@@ -683,10 +683,14 @@ function SidebarNav({
     [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, mode, permissionLookup],
   );
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const navInstanceId = useId();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  // Derived straight from the URL (not click-only state) so tab-scoped items
+  // (e.g. ?tab=queue&action=create-manager-expense) stay highlighted correctly
+  // across a page refresh or browser back/forward, not just after a click.
+  const activeTab = searchParams.get("action") ?? searchParams.get("tab");
   const [searchQuery, setSearchQuery] = useState("");
   const [railTip, setRailTip] = useState<{ label: string; top: number; left: number } | null>(null);
   const [sectionDragging, setSectionDragging] = useState(false);
@@ -741,8 +745,11 @@ function SidebarNav({
     writePins(pinsKey, next);
   }
 
-  function handleActivate(item: NavigationSectionItem) {
-    setActiveTab(item.activeTab ?? null);
+  function handleActivate(_item: NavigationSectionItem) {
+    // Close any active search filter so the just-navigated-to item isn't hidden
+    // behind a stale query (the sidebar no longer remounts on navigation, so this
+    // state must be cleared explicitly instead of relying on a fresh mount).
+    setSearchQuery("");
     onNavigate?.();
   }
 
@@ -1184,7 +1191,6 @@ export function Sidebar({
 }) {
   const isAdmin = navigationMode === "admin";
   const [rail, toggleRail] = useSidebarRail(navigationMode);
-  const pathname = usePathname();
   const railActive = isAdmin && rail;
   const [transitionsReady, setTransitionsReady] = useState(false);
   useEffect(() => {
@@ -1222,7 +1228,6 @@ export function Sidebar({
         <SidebarBrand currentRole={currentRole} mode={navigationMode} rail={railActive} />
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
-          key={pathname}
           currentRole={currentRole}
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           effectiveModuleIds={effectiveModuleIds}
