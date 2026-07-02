@@ -144,6 +144,39 @@ export function runPortalSosScopeTests() {
     "wrapper must trim Area options to the viewer's region scope",
   );
 
+  // ── Distributor scoping — no natural 1:1 region/line tag, so it's resolved via a dedicated
+  // scope-stable RPC (all-time, independent of the selected period) rather than a per-row field. ──
+  assert.ok(
+    wrapper.includes('supabase.rpc("phx_sos_distinct_distributors"'),
+    "wrapper must resolve allowedDistributorCodes via the scope-stable phx_sos_distinct_distributors RPC",
+  );
+  assert.ok(
+    /if \(error\) return new Set\(\);/.test(wrapper),
+    "distributor scope lookup must fail CLOSED (empty Set) on an RPC error, never fall back to unrestricted",
+  );
+  assert.ok(
+    wrapper.includes("const allowedDistributorCodes = await resolveAllowedDistributorCodes(lineKeys, regionCodes, salesScope);"),
+    "resolvePortalSosScope must resolve allowedDistributorCodes alongside lineKeys/regionCodes",
+  );
+  assert.ok(
+    wrapper.includes("allowedDistributorCodes.has(distributor.code.toUpperCase())"),
+    "trimFilterOptions must trim the distributor dropdown by allowedDistributorCodes, for parity with lines/regions/areas/products",
+  );
+
+  // The admin (non-portal) SoS route must ALSO enforce PM/GPM product lockdown (and RM's region
+  // subtree) by resolving the same portal scope when the caller is a portal-scoped role — otherwise
+  // a Product/Group Product Manager hitting the admin route directly would see every product in
+  // their line instead of just their assigned subset.
+  const adminRoute = readSource("../app/api/sales/sos-dashboard/route.ts");
+  assert.ok(
+    adminRoute.includes("isPortalSosRole(access.role)") && adminRoute.includes("resolvePortalSosScope(access)"),
+    "admin SoS route must resolve the portal scope for portal-scoped roles",
+  );
+  assert.ok(
+    adminRoute.includes("getSosDashboard(filters, access, options)"),
+    "admin SoS route must forward the resolved scope overrides into getSosDashboard",
+  );
+
   // Engine: byArea is built from the region-locked `detail` set, and the Area Coverage denominator
   // (masterAreas) is itself scoped to the viewer's regions — so a region-locked caller can never see
   // or be measured against areas outside his regions.
