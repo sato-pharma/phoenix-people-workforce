@@ -17,7 +17,7 @@ export async function POST(
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    assertPermission(access, "probation", "read");
+    await assertPermission(access, "probation", "read");
 
     const { submissionId } = await params;
     const body = await request.json();

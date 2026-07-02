@@ -183,6 +183,7 @@ import { runTitlePermissionGovernanceTests } from "./title-permission-governance
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
+import { runProbationFeedbackSecurityTests } from "./probation-feedback-security.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
 import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
@@ -441,6 +442,7 @@ await runTest("title permission governance", runTitlePermissionGovernanceTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("probation stabilization", runProbationStabilizationTests);
+await runTest("probation feedback security", runProbationFeedbackSecurityTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);

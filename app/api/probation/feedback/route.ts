@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    assertPermission(access, "probation", "update");
+    await assertPermission(access, "probation", "update");
 
     const body = await request.json();
     const { employeeHrId, feedbackText, recommendation } = body as {
