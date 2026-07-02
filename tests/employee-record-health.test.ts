@@ -50,6 +50,7 @@ const completeEmployee: EmployeeDirectoryRow = {
   positionId: 1,
   positionTitle: "Medical Representative",
   regionName: "Greater Cairo",
+  regionCode: null,
   resignationDate: null,
   residenceAddress: "1 Main Street",
   residenceArea: "Maadi",

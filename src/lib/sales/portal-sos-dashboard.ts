@@ -186,10 +186,18 @@ async function resolveRegionalManagerRegionCodes(
     ? new Set([...salesScope.allowedLineNames].map(normalizeLineKey))
     : null;
 
+  // employees.region_code (resolved per-line from line_area_region_map) is the reliable source
+  // for a subordinate's region; fall back to the legacy free-text region_name for anyone not yet
+  // backfilled. Resolve via the already-loaded region reference data rather than a fresh query.
+  const regionNameByCode = new Map(references.regions.map((region) => [region.regionCode, region.regionName]));
+  const resolveRegionName = (employee: { regionCode?: string | null; regionName?: string | null }) =>
+    (employee.regionCode ? regionNameByCode.get(employee.regionCode) : undefined) ?? employee.regionName ?? null;
+
   const regionNames = new Set<string>();
   // Include the RM's own region.
   const self = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === viewerKey);
-  if (self?.regionName) regionNames.add(canonicalizeRegionName(self.regionName));
+  const selfRegionName = self ? resolveRegionName(self) : null;
+  if (selfRegionName) regionNames.add(canonicalizeRegionName(selfRegionName));
 
   for (const employee of directory.employees) {
     const inHierarchy = isWithinManagerHierarchy({
@@ -206,7 +214,8 @@ async function resolveRegionalManagerRegionCodes(
       const officialKey = normalizeLineKey(bridgeEmployeeLineToOfficial(employee.lineName) ?? employee.lineName ?? "");
       if (!allowedLineKeys.has(officialKey)) continue;
     }
-    if (employee.regionName) regionNames.add(canonicalizeRegionName(employee.regionName));
+    const regionName = resolveRegionName(employee);
+    if (regionName) regionNames.add(canonicalizeRegionName(regionName));
   }
 
   return regionCodesForNames(regionNames, references);
