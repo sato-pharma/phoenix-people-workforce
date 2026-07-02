@@ -165,7 +165,6 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-marketing-requests",
     items: [
-      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Marketing Manager"] },
       { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.fa_marketing_home", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"], exact: true },
       { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.fa_marketing_inbox", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"] },
     ],
