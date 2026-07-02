@@ -13,7 +13,7 @@ type MappingReferences = { bricks: { id: string; name: string }[]; products: { c
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button className={cn("rounded-[6px] px-4 py-1.5 text-sm font-black transition", active ? "bg-[#0B0B0B] text-white" : "text-[#0F172A] hover:bg-[#FFF7ED]")} onClick={onClick} type="button">{children}</button>
+    <button className={cn("border px-4 py-2 text-sm font-black uppercase tracking-wide transition", active ? "border-slate-900 bg-slate-900 text-white" : "border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900")} onClick={onClick} type="button">{children}</button>
   );
 }
 
@@ -23,7 +23,7 @@ export function NormalizerTabs({ aiEnabled, distributors, references }: { aiEnab
   const [tab, setTab] = useState<"monthly" | "weekly">("monthly");
   return (
     <div className="space-y-4">
-      <div className="flex gap-1.5">
+      <div className="inline-flex gap-1 border border-slate-200 bg-white p-1 shadow-sm">
         <TabButton active={tab === "monthly"} onClick={() => setTab("monthly")}>Monthly Normalization</TabButton>
         <TabButton active={tab === "weekly"} onClick={() => setTab("weekly")}>Weekly Normalization</TabButton>
       </div>
