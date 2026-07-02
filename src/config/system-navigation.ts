@@ -171,17 +171,6 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Marketing & ROI",
   },
-  {
-    id: "workspace-sales-intelligence",
-    items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dash", moduleId: "admin.workspace.mm_sos_dashboard", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"], exact: true },
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", moduleId: "admin.workspace.mm_weekly_sales", permissions: [{ resource: "weekly_sales" }], roles: ["Marketing Manager"] },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Achievement Dash", moduleId: "admin.workspace.mm_monthly_sales", permissions: [{ resource: "sales" }], roles: ["Marketing Manager"] },
-      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", moduleId: "admin.workspace.mm_coaching_analytics", permissions: [{ resource: "coaching" }], roles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", moduleId: "admin.workspace.mm_double_visit", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Marketing Manager"] },
-    ],
-    label: "Sales Intelligence",
-  },
 
   // ── Tier 4: HR & People ───────────────────────────────────────────────────────
   // Items ordered: time-sensitive actions → headcount records → lifecycle events → compliance
