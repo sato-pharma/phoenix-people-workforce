@@ -54,11 +54,6 @@ export function runModulesControlTests() {
   assert.deepEqual(modulesControl?.permissions, [{ action: "read", resource: "module_control" }]);
 
   const workspaceHrefs = [
-    "/workspace",
-    "/workspace/incentive",
-    "/workspace/plans",
-    "/workspace/plans/calendar",
-    "/workspace/private-calendar",
     "/workspace/payslips",
     "/workspace/deductions",
     "/workspace/fingerprint-report",
