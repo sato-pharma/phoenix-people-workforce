@@ -11,6 +11,12 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    if (access.role !== "Super Admin" && access.scope !== "system") {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Locking or reopening a Monthly Sales period is restricted to the admin account." },
+        { status: 403 },
+      );
+    }
     await assertPermission(access, "sales", "import");
     const actorId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
