@@ -109,10 +109,14 @@ export async function runMarketingReviewRoutingTests() {
   assert.match(migration, /assigned_role = 'Financial Advisor'/, "finance step re-points to Financial Advisor");
   assert.match(migration, /step_code = 'finance_execution'/, "finance re-point targets the finance_execution step");
 
-  // ── Workspace marketing nav includes the finance roles ──────────────────────────────────────
-  assert.match(
+  // ── Workspace marketing pages are reachable, but deliberately not in the admin sidebar ──────
+  // Financial Advisor / Finance Manager / SFE Manager still land on and can use
+  // /workspace/marketing-requests(/inbox) directly (guard-level access above is unchanged,
+  // and Financial Advisor's landing path still points there) — the admin sidebar entries were
+  // removed by explicit product decision, so this only pins their absence from the nav config.
+  assert.doesNotMatch(
     source("src/config/system-navigation.ts"),
-    /workspace-marketing-requests[\s\S]{0,1000}"Financial Advisor"/,
-    "workspace marketing nav includes Financial Advisor",
+    /href: "\/workspace\/marketing-requests"/,
+    "workspace marketing pages are not linked from the admin sidebar",
   );
 }
