@@ -395,6 +395,18 @@ const adminNavigationSectionSeeds = [
     label: "Marketing Requests",
   },
 
+  // ── Tier 7b: Master data governance ──────────────────────────────────────────
+  // Standalone read-only master-data page. Deliberately NOT nested under the Marketing
+  // Requests or Customer Validation surfaces — it governs the customer↔pharmacy relationship
+  // on its own route. Phase 1 is company-wide oversight only (Super Admin + CEO).
+  {
+    id: "master-data",
+    items: [
+      { href: "/admin/customer-pharmacy-mapping", icon: Network, label: "Customer Pharmacy Mapping", roles: ["Super Admin", "CEO"] },
+    ],
+    label: "Master Data",
+  },
+
   // ── Tier 8: System administration ────────────────────────────────────────────
   // Items ordered: access control → system config → communication tools
   {
