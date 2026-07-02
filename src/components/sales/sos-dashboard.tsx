@@ -249,6 +249,7 @@ export function SosDashboard({
   const [areaMode, setAreaMode] = useState<MultiSelectFilterMode>("include");
   const [productMode, setProductMode] = useState<MultiSelectFilterMode>("include");
   const [moverTab, setMoverTab] = useState<"products" | "regions" | "distributors">("products");
+  const [yoyMoverTab, setYoyMoverTab] = useState<"products" | "regions" | "distributors">("products");
   // Confidential-by-default: starts OFF on every load, including for CEO/Super Admin. Only a
   // deliberate click reveals LA003/LA004/SS001 — mirrors the marketing-ROI report's toggle.
   const [revealRestricted, setRevealRestricted] = useState(false);
@@ -348,9 +349,22 @@ export function SosDashboard({
     }
   };
 
+  // Click-to-drill: clicking a region/area/distributor/product row toggles its code into the
+  // matching filter — reuses the exact same state the dropdowns write to, so the filter chip
+  // count, the queryKey refetch and the export link all stay in sync automatically.
+  const handleRowClick = (dimension: "regions" | "areas" | "distributors" | "products", code: string) => {
+    setFilters((current) => {
+      const list = current[dimension];
+      const next = list.includes(code) ? list.filter((existing) => existing !== code) : [...list, code];
+      return { ...current, [dimension]: next };
+    });
+  };
+
   const summary = data?.summary;
   const mom = data?.momComparison ?? null;
   const deltas = mom?.summaryDeltas ?? null;
+  const yoy = data?.yoyComparison ?? null;
+  const yoyDeltas = yoy?.summaryDeltas ?? null;
   const pareto = useMemo(() => data?.paretoProducts ?? [], [data]);
   const byDistributor = data?.byDistributor ?? [];
   const byRegion = data?.byRegion ?? [];
@@ -402,6 +416,20 @@ export function SosDashboard({
     }
     return map;
   }, [mom]);
+  const productYoyByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    if (yoy) {
+      for (const row of [...yoy.movers.products.gainers, ...yoy.movers.products.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
+    }
+    return map;
+  }, [yoy]);
+  const distributorYoyByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    if (yoy) {
+      for (const row of [...yoy.movers.distributors.gainers, ...yoy.movers.distributors.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
+    }
+    return map;
+  }, [yoy]);
 
   const activeFilterCount =
     filters.periods.length +
@@ -458,6 +486,8 @@ export function SosDashboard({
   const topDistributor = byDistributor[0];
   const priorLabel = mom ? periodProseLabel(mom.priorPeriod) : null;
   const movers = mom?.movers[moverTab] ?? null;
+  const yoyLabel = yoy ? periodProseLabel(yoy.priorPeriod) : null;
+  const yoyMovers = yoy?.movers[yoyMoverTab] ?? null;
 
   return (
     <div className={`space-y-6 pb-12 ${loading ? "pointer-events-none opacity-60" : ""}`}>
@@ -471,6 +501,7 @@ export function SosDashboard({
             <AdminInsightChip tone="orange">{periodsLabel(data?.selectedPeriods, data?.period ?? null)}</AdminInsightChip>
             {summary ? <AdminInsightChip tone="emerald">{compactEGP(summary.totalValue)}</AdminInsightChip> : null}
             {priorLabel ? <AdminInsightChip tone="slate">vs {priorLabel}</AdminInsightChip> : null}
+            {yoyLabel ? <AdminInsightChip tone="slate">YoY vs {yoyLabel}</AdminInsightChip> : null}
             {loading ? <AdminInsightChip tone="slate">Updating…</AdminInsightChip> : null}
           </>
         }
@@ -497,6 +528,12 @@ export function SosDashboard({
                 <p className={`mt-0.5 flex items-center gap-1 text-[11px] font-black ${deltas.totalValue.deltaPct >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                   {deltas.totalValue.deltaPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   {`${deltas.totalValue.deltaPct >= 0 ? "+" : ""}${(deltas.totalValue.deltaPct * 100).toFixed(1)}% MoM`}
+                </p>
+              ) : null}
+              {yoyDeltas?.totalValue.deltaPct != null ? (
+                <p className={`mt-0.5 flex items-center gap-1 text-[11px] font-black ${yoyDeltas.totalValue.deltaPct >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  {yoyDeltas.totalValue.deltaPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {`${yoyDeltas.totalValue.deltaPct >= 0 ? "+" : ""}${(yoyDeltas.totalValue.deltaPct * 100).toFixed(1)}% YoY`}
                 </p>
               ) : null}
             </div>
@@ -739,6 +776,43 @@ export function SosDashboard({
             </div>
           ) : null}
 
+          {/* Year-over-year momentum — compact strip, same shape as MoM but vs the same month last year */}
+          {yoy ? (
+            <div className="rounded-[6px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600"><Sparkles className="h-4 w-4" /></span>
+                  <div>
+                    <h3 className="text-sm font-black tracking-tight text-slate-900">Year-over-Year Momentum</h3>
+                    <p className="text-xs text-slate-500">{data?.period ? periodProseLabel(data.period) : "—"} vs {yoyLabel}</p>
+                  </div>
+                </div>
+                <div className="inline-flex gap-1 rounded-[6px] border border-slate-200 bg-slate-50 p-1">
+                  {([["products", "Products"], ["regions", "Regions"], ["distributors", "Distributors"]] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setYoyMoverTab(key)}
+                      className={`rounded-[4px] px-3 py-1.5 text-xs font-black transition ${yoyMoverTab === key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div>
+                  <p className="mb-2.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-emerald-700"><TrendingUp className="h-3.5 w-3.5" /> Top gainers</p>
+                  <MoverList rows={yoyMovers?.gainers ?? []} direction="up" />
+                </div>
+                <div>
+                  <p className="mb-2.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-rose-700"><TrendingDown className="h-3.5 w-3.5" /> Top decliners</p>
+                  <MoverList rows={yoyMovers?.decliners ?? []} direction="down" />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* Pareto / ABC */}
           {pareto.length > 0 ? (
             <ChartCard
@@ -812,7 +886,12 @@ export function SosDashboard({
               ) : (
                 <div className="space-y-3">
                   {byRegion.slice(0, 10).map((row) => (
-                    <div key={row.code} className="flex items-center gap-3">
+                    <div
+                      key={row.code}
+                      onClick={() => handleRowClick("regions", row.code)}
+                      className={`flex cursor-pointer items-center gap-3 rounded-[4px] px-1 py-0.5 transition hover:bg-orange-50 ${filters.regions.includes(row.code) ? "bg-orange-100" : ""}`}
+                      title={`Click to filter to ${row.label}`}
+                    >
                       <span className="w-28 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                       <div className="flex-1"><Bar2 value={row.value} max={regionMax} color="#0EA5E9" /></div>
                       <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
@@ -829,7 +908,12 @@ export function SosDashboard({
               ) : (
                 <div className="space-y-3">
                   {byArea.slice(0, 10).map((row) => (
-                    <div key={row.code} className="flex items-center gap-3">
+                    <div
+                      key={row.code}
+                      onClick={() => handleRowClick("areas", row.code)}
+                      className={`flex cursor-pointer items-center gap-3 rounded-[4px] px-1 py-0.5 transition hover:bg-orange-50 ${filters.areas.includes(row.code) ? "bg-orange-100" : ""}`}
+                      title={`Click to filter to ${row.label}`}
+                    >
                       <span className="w-28 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                       <div className="flex-1"><Bar2 value={row.value} max={areaMax} color="#8B5CF6" /></div>
                       <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
@@ -886,6 +970,7 @@ export function SosDashboard({
                     <SortableTh label="Distributor" sortKey="label" sort={distributorTable.sort} onSort={distributorTable.toggleSort} />
                     <SortableTh label="Value" sortKey="value" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">YoY Δ</th>
                     <SortableTh label="Units" sortKey="units" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <SortableTh label="Regions" sortKey="regions" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <SortableTh label="Areas" sortKey="areas" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
@@ -894,12 +979,19 @@ export function SosDashboard({
                 </thead>
                 <tbody className="divide-y divide-orange-100">
                   {distributorTable.rows.length === 0 ? (
-                    <TableNoResults colSpan={7} filtered={distributorTable.isFiltered} label="distributors" />
+                    <TableNoResults colSpan={8} filtered={distributorTable.isFiltered} label="distributors" />
                   ) : (
                     distributorTable.rows.map((row) => {
                       const momPct = distributorMomByCode.get(row.code.toUpperCase());
+                      const yoyPct = distributorYoyByCode.get(row.code.toUpperCase());
+                      const selected = filters.distributors.includes(row.code);
                       return (
-                        <tr key={row.code} className="transition hover:bg-orange-50/40">
+                        <tr
+                          key={row.code}
+                          onClick={() => handleRowClick("distributors", row.code)}
+                          className={`cursor-pointer transition hover:bg-orange-50/40 ${selected ? "bg-orange-100" : ""}`}
+                          title={`Click to filter to ${row.label}`}
+                        >
                           <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
                           <td className="px-3 py-2.5 text-right">
                             <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
@@ -907,6 +999,9 @@ export function SosDashboard({
                           </td>
                           <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                             {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {yoyPct == null ? "—" : `${yoyPct > 0 ? "+" : ""}${(yoyPct * 100).toFixed(1)}%`}
                           </td>
                           <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
                           <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.regions)}</td>
@@ -937,18 +1032,26 @@ export function SosDashboard({
                       <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wide">ABC</th>
                       <SortableTh label="Value" sortKey="value" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
                       <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">YoY Δ</th>
                       <SortableTh label="Units" sortKey="units" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-orange-100">
                     {productTable.rows.length === 0 ? (
-                      <TableNoResults colSpan={6} filtered={productTable.isFiltered} label="products" />
+                      <TableNoResults colSpan={7} filtered={productTable.isFiltered} label="products" />
                     ) : (
                       productTable.rows.map((row) => {
                         const abc = abcByCode.get(row.code.toUpperCase());
                         const momPct = productMomByCode.get(row.code.toUpperCase());
+                        const yoyPct = productYoyByCode.get(row.code.toUpperCase());
+                        const selected = filters.products.includes(row.code);
                         return (
-                          <tr key={row.code} className="transition hover:bg-orange-50/40">
+                          <tr
+                            key={row.code}
+                            onClick={() => handleRowClick("products", row.code)}
+                            className={`cursor-pointer transition hover:bg-orange-50/40 ${selected ? "bg-orange-100" : ""}`}
+                            title={`Click to filter to ${row.label}`}
+                          >
                             <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
                             <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.line ?? "—"}</td>
                             <td className="px-3 py-2.5 text-center">
@@ -966,6 +1069,9 @@ export function SosDashboard({
                             </td>
                             <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                               {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
+                            </td>
+                            <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {yoyPct == null ? "—" : `${yoyPct > 0 ? "+" : ""}${(yoyPct * 100).toFixed(1)}%`}
                             </td>
                             <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
                           </tr>

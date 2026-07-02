@@ -68,6 +68,7 @@ export async function GET(request: Request) {
     // the caller currently sees on screen (their reveal toggle state), never widens it.
     const data = await getSosDashboard(filters, access, {
       includeMomComparison: true,
+      includeYoY: true,
       includeDetailRows: true,
       revealRestrictedProducts: searchParams.get("includeRestricted") === "1",
     });
