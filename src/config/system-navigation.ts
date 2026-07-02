@@ -167,6 +167,17 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.fa_marketing_home", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"], exact: true },
       { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.fa_marketing_inbox", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"] },
+      // Merged in from the former standalone "Marketing Requests" section (org-wide admin
+      // module for District Manager + Super Admin). moduleId pinned to the original
+      // auto-generated value so existing Modules Control assignments keep working.
+      // ROI Dashboard is a READ-ONLY executive report — also surfaces to CEO for oversight.
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.marketing_requests.roi_dashboard.admin_marketing_requests_roi_tracking", roles: ["Super Admin", "CEO"] },
+      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.marketing_requests.customer_validation.admin_marketing_requests_validation", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.marketing_requests.marketing_requests.admin_marketing_requests", roles: ["District Manager", "Super Admin"], exact: true },
+      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.marketing_requests.approval_inbox.admin_marketing_requests_inbox", roles: ["District Manager", "Super Admin"] },
+      { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", moduleId: "admin.marketing_requests.customer_database.admin_marketing_requests_customer_database", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/bulk-upload", icon: FileUp, label: "Bulk Upload", moduleId: "admin.marketing_requests.bulk_upload.admin_marketing_requests_bulk_upload", roles: ["Super Admin"] },
+      { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", moduleId: "admin.marketing_requests.marketing_control.admin_marketing_requests_control", roles: systemAdministratorNavigationRoles },
     ],
     label: "Marketing & ROI",
   },
@@ -323,25 +334,6 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/analytics/reconciliation", icon: ChartColumnBig, label: "Reconciliation", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
     ],
     label: "Sales Analytics",
-  },
-
-  // ── Tier 7: Marketing ─────────────────────────────────────────────────────────
-  {
-    id: "marketing-requests",
-    items: [
-      // SFE Manager uses the de-duplicated /workspace/marketing-requests home, while Marketing
-      // Manager uses the employee-portal marketing request routes alongside PM/GPM. This org-wide
-      // admin module stays for District Manager + Super Admin only.
-      // ROI Dashboard is a READ-ONLY executive report — also surfaces to CEO for oversight.
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", roles: ["Super Admin", "CEO"] },
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", roles: ["District Manager", "Super Admin"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/bulk-upload", icon: FileUp, label: "Bulk Upload", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", roles: systemAdministratorNavigationRoles },
-    ],
-    label: "Marketing Requests",
   },
 
   // ── Tier 7b: Master data governance ──────────────────────────────────────────
