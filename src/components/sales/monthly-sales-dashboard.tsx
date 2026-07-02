@@ -489,7 +489,7 @@ export function MonthlySalesDashboard({
       <AdminPageHero
         eyebrow="Sales Intelligence"
         icon={<CalendarRange className="h-4 w-4" />}
-        title="Source of Sales Dashboard"
+        title="Achievement Dashboard"
         description="Approved Source of Sales data — targets, channel mix, territories and trends, fully filterable across every dimension."
         badges={
           <>
