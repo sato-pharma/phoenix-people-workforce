@@ -52,6 +52,7 @@ import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
 import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test.ts";
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
 import { runWeeklyPlansHardeningTests } from "./weekly-plans-hardening.test.ts";
+import { runWeeklyPlanCalendarOwnerScopeTests } from "./weekly-plan-calendar-owner-scope.test.ts";
 import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
@@ -323,6 +324,7 @@ await runTest("plan workweek + linkage (role-aware week, slots, new activity typ
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);
+await runTest("weekly plan calendar owner scope (DM hierarchy + MM/TrM line scope)", runWeeklyPlanCalendarOwnerScopeTests);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("action center weekly plans (approver inbox)", runActionCenterWeeklyPlansTests);

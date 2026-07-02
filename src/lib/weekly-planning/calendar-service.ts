@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
@@ -28,6 +29,10 @@ const ALLOWED_CALENDAR_OWNER_ROLES = new Set([
   "product manager",
   "group product manager",
   "territory manager",
+  "training manager",
+  "marketing manager",
+  "district manager",
+  "district sales manager",
 ]);
 
 type PlanCalendarHeaderRow = {
@@ -79,7 +84,7 @@ function isAllowedCalendarOwnerTitle(employeeJobTitle: string | null) {
   if (!role) return false;
   if ([...ALLOWED_CALENDAR_OWNER_ROLES].some((allowedRole) => role.includes(allowedRole))) return true;
   const tokens = role.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
-  const aliases = new Set(["nsm", "pm", "gpm", "tm"]);
+  const aliases = new Set(["nsm", "pm", "gpm", "tm", "dsm"]);
   if (tokens.some((token) => aliases.has(token))) return true;
   const hasManager = tokens.includes("manager");
   const hasTerritory = tokens.includes("territory");
@@ -92,10 +97,62 @@ function isAllowedCalendarOwner(item: PlanningCalendarPlanItem) {
   return ALLOWED_CALENDAR_OWNER_ROLES.has(title) || isAllowedCalendarOwnerTitle(item.employeeJobTitle);
 }
 
+/**
+ * District Manager plans need a stricter, hierarchy-based viewer rule (see
+ * `isPlanItemVisibleToViewer`) instead of the line-based rule every other
+ * recognized owner title gets, because a District Manager's `lineName` does not
+ * reliably align with which National Sales Manager they report to.
+ */
+function calendarOwnerScopeKind(employeeJobTitle: string | null): "line" | "hierarchy" {
+  const role = normalizeLowerText(employeeJobTitle);
+  const tokens = role.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const isDistrictManager =
+    role.includes("district manager") || role.includes("district sales manager") || tokens.includes("dsm");
+  return isDistrictManager ? "hierarchy" : "line";
+}
+
 function sameLine(left: string | null | undefined, right: string | null | undefined) {
   const a = cleanText(left).toLowerCase();
   const b = cleanText(right).toLowerCase();
   return Boolean(a && b && a === b);
+}
+
+/**
+ * Decides whether a viewer may see a given plan item on the shared planning
+ * calendar. Pure and side-effect free so it can be unit-tested directly with
+ * constructed fixtures instead of mocking Supabase.
+ *
+ * - Company-wide viewers (CEO / Super Admin / Finance Manager) and Head Office
+ *   line items are always visible.
+ * - An owner always sees their own submitted plan.
+ * - District Manager items are scoped to the reporting hierarchy
+ *   (`manager_hr_id` / vacant-seat continuity) — visible only to "his NSM" —
+ *   because a District Manager's `lineName` does not reliably align with which
+ *   NSM they report to. Deliberately does not climb further up the chain
+ *   (Regional Manager and above); that is out of scope for now.
+ * - Every other recognized owner title (NSM/PM/GPM/Territory Manager/Training
+ *   Manager/Marketing Manager) uses the standard same-line rule.
+ */
+export function isPlanItemVisibleToViewer(
+  item: PlanningCalendarPlanItem,
+  access: Pick<AccessContext, "scope" | "hrId">,
+  viewer: EmployeeDirectoryRow | null,
+  owner: EmployeeDirectoryRow | null,
+): boolean {
+  if (!isAllowedCalendarOwner(item)) return false;
+  const isCompanyWideViewer = access.scope === "company" || access.scope === "system";
+  if (isCompanyWideViewer) return true;
+  if (isHeadOfficeLine(item.lineName)) return true;
+
+  const viewerHrId = normalizeHrId(access.hrId);
+  if (viewerHrId && viewerHrId === normalizeHrId(item.employeeHrId)) return true;
+
+  if (calendarOwnerScopeKind(item.employeeJobTitle) === "hierarchy") {
+    if (!owner || !viewerHrId) return false;
+    return reportsToManagerSeat({ employee: owner, viewerCanonicalHrId: viewerHrId, canonicalize: normalizeHrId });
+  }
+
+  return sameLine(item.lineName, viewer?.lineName);
 }
 
 function isPlanningSchemaMissing(error: unknown) {
@@ -254,13 +311,9 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
-    const isCompanyWideViewer = access.scope === "company" || access.scope === "system";
-    const planItems = rawPlanItems.filter((item) => {
-      if (!isAllowedCalendarOwner(item)) return false;
-      if (isCompanyWideViewer) return true;
-      if (isHeadOfficeLine(item.lineName)) return true;
-      return sameLine(item.lineName, viewer?.lineName);
-    });
+    const planItems = rawPlanItems.filter((item) =>
+      isPlanItemVisibleToViewer(item, access, viewer, directoryByHrId.get(normalizeHrId(item.employeeHrId)) ?? null),
+    );
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));

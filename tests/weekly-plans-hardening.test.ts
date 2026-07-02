@@ -54,6 +54,16 @@ export function runWeeklyPlansHardeningTests() {
     /sameLine\(item\.lineName, viewer\?\.lineName\)/,
     "shared calendar must restrict non-company-wide viewers to their own line",
   );
+  assert.match(
+    calendarServiceSource,
+    /export function isPlanItemVisibleToViewer/,
+    "shared calendar must expose a pure per-item visibility function for testability",
+  );
+  assert.match(
+    calendarServiceSource,
+    /reportsToManagerSeat\(\{[\s\S]*?\}\)/,
+    "District Manager calendar items must be scoped via direct-report hierarchy, not line-matching",
+  );
 
   assert.match(workflowE2eSource, /EMPLOYEE_PLANS_PATH = "\/employee-portals\/plans"/, "submitter workflow must use employee portal route");
   assert.match(workflowE2eSource, /MANAGER_PLANS_PATH = "\/employee-portals\/plans"/, "Marketing Manager reviewer workflow must use employee portal route");
