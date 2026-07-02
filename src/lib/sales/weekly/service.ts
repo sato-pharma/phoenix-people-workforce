@@ -817,6 +817,12 @@ export async function loadWeeklyDashboard(filters?: {
 
   const weekGroupMembersObj = Object.fromEntries(weekGroupMap);
 
+  // Metadata scope for the early-return branches below, before any rows have been fetched: a
+  // restricted (non-full) tier that hits one of these "nothing to show" shortcuts has no visible
+  // rows to derive an in-scope distributor set from, so it must see an empty catalog here rather
+  // than the raw company-wide list — otherwise these shortcuts would leak it right back.
+  const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];
+
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
@@ -827,7 +833,7 @@ export async function loadWeeklyDashboard(filters?: {
     availableProducts: [],
     availableMonths: [],
     availableWeekNumbers: [],
-    distributors,
+    distributors: distributorsForEmpty,
     appliedFilters,
     kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
     compare: { salesValue: delta(0, null), salesUnits: delta(0, null), stockUnits: delta(0, null) },
@@ -1032,6 +1038,12 @@ export async function loadWeeklyDashboard(filters?: {
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true, canViewHeadOffice: false };
   const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
+  // Metadata scope: full tier already sees every distributor/batch; every other tier (product /
+  // territory / none) is bounded to the distributor codes that actually have at least one row
+  // visible after the scope redaction above — so the distributor dropdown and report "sources"
+  // list never reveal batches/file names outside the viewer's line/region/product scope.
+  const scopeVisibleDistributorCodes =
+    accessScope.tier === "full" ? null : new Set(visibleRows.map((row) => normalizeCode(row.distributorCode)));
   // Filters run AFTER access-scope redaction, so include/exclude can only narrow already-visible
   // rows — they can never re-expose the confidential LA003/LA004 products.
   // Export only: when excludeUnmapped is requested, drop rows whose product is not a properly mapped
@@ -1209,6 +1221,11 @@ export async function loadWeeklyDashboard(filters?: {
   // row-level refinements listed separately as applied filters.
   const sources = batches
     .filter((batch) => {
+      if (
+        scopeVisibleDistributorCodes &&
+        !scopeVisibleDistributorCodes.has(normalizeCode(String(batch.distributor_code ?? "")))
+      )
+        return false;
       if (!passesMultiFilter(distributor, normalizeCode(String(batch.distributor_code ?? "")))) return false;
       if (timeFilterActive) {
         if (!passesMultiFilter(cycleMonthFilter, normalizeText(String(batch.cycle_month ?? "")))) return false;
@@ -1242,7 +1259,9 @@ export async function loadWeeklyDashboard(filters?: {
     availableProducts,
     availableMonths,
     availableWeekNumbers,
-    distributors,
+    distributors: scopeVisibleDistributorCodes
+      ? distributors.filter((d) => scopeVisibleDistributorCodes.has(normalizeCode(d.code)))
+      : distributors,
     appliedFilters,
     kpis: {
       salesValue: Number(sum(weekRowsAdj, (row) => row.salesValue).toFixed(2)),
