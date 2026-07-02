@@ -1451,7 +1451,7 @@ export async function runResignationWorkflow(
   actor: string,
   note?: string | null,
   rejectedReason?: string | null,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1479,6 +1479,13 @@ export async function runResignationWorkflow(
     expectedNextStatus: expectedNextStatusByAction[action],
     status: currentStatus,
   });
+
+  const directory = await getEmployeeDirectory();
+  const employee = directory.employees.find((item) => item.hrId === row.employee_hr_id);
+  const scopedAccess = access ?? systemAccessContext;
+  if (!employee || !canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${row.employee_hr_id}.`);
+  }
 
   const now = new Date().toISOString();
   // Persist the canonical HR_ID (never a login token) so the Approvals Hub history matches.

@@ -199,6 +199,8 @@ import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.t
 import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
 import { runContractNonRenewalMigrationReadinessTests } from "./contract-non-renewal-migration-readiness.test.ts";
 import { runResignationScopeCheckTests } from "./resignation-scope-check.test.ts";
+import { runResignationWorkflowScopeCheckTests } from "./resignation-workflow-scope-check.test.ts";
+import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-workflow-scope-check.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
@@ -465,6 +467,8 @@ await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);
 await runTest("contract non-renewal migration readiness", runContractNonRenewalMigrationReadinessTests);
 await runTest("resignation employee scope check", runResignationScopeCheckTests);
+await runTest("resignation workflow scope check", runResignationWorkflowScopeCheckTests);
+await runTest("contract renewal workflow scope check", runContractRenewalWorkflowScopeCheckTests);
 await runTest("cv database", runCvDatabaseTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
