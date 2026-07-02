@@ -44,7 +44,10 @@ export async function requireAdminShellEmployeeWorkspaceAccess({
     redirect("/login");
   }
 
-  if (!canUseAdminShellEmployeeWorkspace(access.role) || !includesRole(allowedRoles, access.role)) {
+  if (
+    access.role !== "Super Admin" &&
+    (!canUseAdminShellEmployeeWorkspace(access.role) || !includesRole(allowedRoles, access.role))
+  ) {
     redirect(resolveLandingPathForRole(access.role));
   }
 
