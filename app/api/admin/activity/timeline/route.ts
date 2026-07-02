@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { buildActivityRange, getUserTimeline } from "@/lib/activity/service";
+import { assertCanViewEmployeeActivity, buildActivityRange, getUserTimeline } from "@/lib/activity/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     if (!hrId) {
       return NextResponse.json({ error: "validation_error", message: "hrId is required." }, { status: 400 });
     }
+    await assertCanViewEmployeeActivity(access, hrId);
 
     const range = buildActivityRange(days);
     const timeline = await getUserTimeline(hrId, range);
