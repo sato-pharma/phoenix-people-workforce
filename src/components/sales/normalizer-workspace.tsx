@@ -112,6 +112,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"coded" | "map">("coded");
   const [advanced, setAdvanced] = useState(false);
+  // AI suggest reach per category per press: 1× = 300 (default), 2× = 600, 3× = 900.
+  const [aiScale, setAiScale] = useState<1 | 2 | 3>(1);
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
 
@@ -202,7 +204,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       let filled = 0; let failed = false;
       for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"], ["customer", preview.unknownCustomers, "c"]] as const) {
         if (list.length === 0) continue;
-        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
+        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, limit: 300 * aiScale, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
         const json = await res.json();
         if (json.success) {
           const sugg = (json.data.suggestions ?? []) as { raw: string; code: string; confidence?: number }[];
@@ -448,9 +450,23 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                       </button>
                       <input accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void learnFromExcel(f); }} ref={mapFileRef} type="file" />
                       {aiEnabled ? (
-                        <button className="inline-flex h-9 items-center gap-2 border border-violet-600 bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the dropdowns" type="button">
-                          {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
-                        </button>
+                        <>
+                          <select
+                            aria-label="AI suggest reach per category"
+                            className="h-9 border border-violet-300 bg-white px-2 text-xs font-bold text-violet-700 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:opacity-50"
+                            disabled={busy !== null}
+                            onChange={(e) => setAiScale((Number(e.target.value) || 1) as 1 | 2 | 3)}
+                            title="How many unknowns per category the AI maps in one press (products / territories / customers each)"
+                            value={aiScale}
+                          >
+                            <option value={1}>Standard · 300/cat</option>
+                            <option value={2}>Double · 600/cat</option>
+                            <option value={3}>Triple · 900/cat</option>
+                          </select>
+                          <button className="inline-flex h-9 items-center gap-2 border border-violet-600 bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the dropdowns" type="button">
+                            {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
+                          </button>
+                        </>
                       ) : null}
                       <button className="inline-flex h-9 items-center gap-2 border border-orange-600 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
                         {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save mappings
