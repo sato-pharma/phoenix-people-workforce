@@ -70,7 +70,9 @@ export function resolveSummaryMonth(month: string | undefined): string {
  * field staff (medical reps, district managers) and exited employees are
  * excluded so they are not reported absent.
  */
-export async function getMonthlyAttendanceSummary(input: { month?: string } = {}): Promise<MonthlyAttendanceSummaryData> {
+export async function getMonthlyAttendanceSummary(
+  input: { month?: string; employeeHrIds?: string[] } = {},
+): Promise<MonthlyAttendanceSummaryData> {
   const month = resolveSummaryMonth(input.month);
   const [yearText, monthText] = month.split("-");
   const todayIso = cairoTodayIso();
@@ -101,9 +103,17 @@ export async function getMonthlyAttendanceSummary(input: { month?: string } = {}
     };
   }
 
-  const roster = await getAttendanceRoster({ dateFromIso: dateFrom, dateToIso: dateTo });
+  const fullRoster = await getAttendanceRoster({ dateFromIso: dateFrom, dateToIso: dateTo });
+  const scopeHrIds = input.employeeHrIds
+    ? new Set(input.employeeHrIds.map((id) => normalizeAttendanceHrId(id)).filter((value): value is string => Boolean(value)))
+    : null;
+  const roster = scopeHrIds ? fullRoster.filter((entry) => scopeHrIds.has(entry.hrId)) : fullRoster;
 
   const [report, context, leaveMap, policyRows, exceptionMap] = await Promise.all([
+    // Intentionally unscoped: only rows for hrIds present in the (already-scoped)
+    // `roster` are ever read out of this report below, and monthly-summary never
+    // reads `report.policyDetails`. Do not add employeeHrIds here — it would be
+    // redundant and this call feeds other unscoped internal aggregation elsewhere.
     getFingerprintAttendanceReport({ dateFrom, dateTo }),
     buildAttendanceCalendarContext({ dateFromIso: dateFrom, dateToIso: dateTo }),
     getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: roster.map((entry) => entry.hrId) }),

@@ -247,3 +247,31 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
     }))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
+
+/**
+ * hrIds `context` may see in bulk attendance exports/reports: `null` means no
+ * restriction (whole company). Mirrors `canViewEmployeeAttendanceReport`'s bypass
+ * (self / whole-company viewers / direct reports only) for list-scoped callers.
+ * Direct-report hrIds come back from `loadAttendanceDirectReports` normalized via
+ * permissions.normalizeHrId (lowercase) — re-normalize with normalizeAttendanceHrId
+ * (UPPERCASE) here since that's what fingerprint-report.ts/roster.ts compare against.
+ */
+export async function resolveAttendanceScopeHrIds(context: AccessContext): Promise<string[] | null> {
+  if (context.source === "guest" || context.scope === "none") {
+    throw new Error("Forbidden: attendance access denied.");
+  }
+  if (
+    context.scope === "system" ||
+    context.scope === "company" ||
+    context.role === "Super Admin" ||
+    context.role === "CEO"
+  ) {
+    return null;
+  }
+  const caller = normalizeAttendanceHrId(context.hrId);
+  if (!caller) {
+    throw new Error("Forbidden: attendance access denied.");
+  }
+  const directReports = await loadAttendanceDirectReports(caller);
+  return [caller, ...directReports.map((report) => normalizeAttendanceHrId(report.hrId) ?? report.hrId)];
+}

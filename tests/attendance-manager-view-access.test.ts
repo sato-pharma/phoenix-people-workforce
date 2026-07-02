@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { canViewEmployeeAttendanceReport } from "../src/lib/attendance/employee-attendance.ts";
+import { canViewEmployeeAttendanceReport, resolveAttendanceScopeHrIds } from "../src/lib/attendance/employee-attendance.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 /**
@@ -20,7 +20,7 @@ function ctx(overrides: Partial<AccessContext>): AccessContext {
   };
 }
 
-export function runAttendanceManagerViewAccessTests() {
+export async function runAttendanceManagerViewAccessTests() {
   const gpm = ctx({ hrId: "A-8", role: "Group Product Manager", scope: "line" });
 
   // Self — always.
@@ -69,4 +69,48 @@ export function runAttendanceManagerViewAccessTests() {
 
   // Missing identity — denied.
   assert.equal(canViewEmployeeAttendanceReport(ctx({ hrId: null }), { hrId: "B-155", managerHrId: "A-8" }), false);
+
+  // resolveAttendanceScopeHrIds — findings #19/#20 fix. Bypass branches only (whole
+  // company = null, no restriction); the direct-report expansion path hits Supabase
+  // via loadAttendanceDirectReports and isn't unit-testable here, same limitation as
+  // assertCanViewEmployeeAttendance above.
+  assert.equal(
+    await resolveAttendanceScopeHrIds(ctx({ scope: "system" })),
+    null,
+    "system scope must see the whole company",
+  );
+  assert.equal(
+    await resolveAttendanceScopeHrIds(ctx({ scope: "company" })),
+    null,
+    "company scope must see the whole company",
+  );
+  assert.equal(
+    await resolveAttendanceScopeHrIds(ctx({ hrId: "S-1", role: "Super Admin", scope: "line" })),
+    null,
+    "Super Admin must see the whole company regardless of nominal scope",
+  );
+  assert.equal(
+    await resolveAttendanceScopeHrIds(ctx({ hrId: "C-1", role: "CEO", scope: "line" })),
+    null,
+    "CEO must see the whole company regardless of nominal scope (matches its attendance:export grant)",
+  );
+
+  // Guest / no-scope — denied outright, never falls through to a direct-report lookup.
+  await assert.rejects(
+    () => resolveAttendanceScopeHrIds(ctx({ source: "guest" })),
+    /Forbidden/,
+    "guest source must be denied",
+  );
+  await assert.rejects(
+    () => resolveAttendanceScopeHrIds(ctx({ scope: "none" })),
+    /Forbidden/,
+    "no-scope must be denied",
+  );
+
+  // Missing identity on a non-bypass caller — denied rather than silently unrestricted.
+  await assert.rejects(
+    () => resolveAttendanceScopeHrIds(ctx({ hrId: null, role: "Manager", scope: "team" })),
+    /Forbidden/,
+    "missing hrId on a non-bypass caller must be denied",
+  );
 }

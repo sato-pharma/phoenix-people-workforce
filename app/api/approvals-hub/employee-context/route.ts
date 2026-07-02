@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { resolveAccessContext } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
-import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import { assertCanViewEmployeeAttendance, getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     if (!hrId) {
       return NextResponse.json({ error: "hrId is required" }, { status: 400 });
     }
+    await assertCanViewEmployeeAttendance(access, hrId);
 
     const today = new Date();
     const dateTo = today.toISOString().slice(0, 10);
@@ -72,6 +73,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ attendance, recentLeave, recentExcuses });
   } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Context unavailable" },
       { status: 500 },
