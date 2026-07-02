@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeftRight, CalendarRange, Download, ExternalLink, R
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MarketingRoiViewSales, MarketingRoiViewSalesAggregate } from "@/lib/marketing-requests/roi-report-types";
+import { MarketingRoiExplainPanel } from "@/components/marketing-requests/roi-explain-panel";
 import { cn } from "@/lib/utils";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -322,6 +323,9 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             ) : null}
           </>
         ) : null}
+
+        {/* Read-only ROI explainability for this request (loads independently of the sales table). */}
+        <MarketingRoiExplainPanel requestId={requestId} />
       </div>
     </WorkspaceErrorBoundary>
   );
