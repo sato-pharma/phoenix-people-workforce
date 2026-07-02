@@ -1,0 +1,272 @@
+import { googleGeocodeComponents, hasGoogleServerKey } from "@/lib/google-maps/server";
+import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { GOVERNORATE_TO_REGION, AMBIGUOUS_GOVERNORATES, type BrickCentroid } from "@/lib/sales/normalizer/geo-validate";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+// Brick centroid acquisition + lookup. A centroid is the approximate coordinate of a brick
+// territory, cached forever in `geo_locations` (source_type='brick_centroid', source_key=brick_id).
+// Two providers, best first:
+//   field_gps — median of real GPS captures from marketing_pharmacies linked to the brick via
+//               the pharmacy-code ↔ customer-map join (free, ground truth)
+//   google    — one-time geocode of "<brick_name>, <area_name>, Egypt"
+//
+// SANITY GATE: a google-geocoded centroid is stored with geocode_status='success' ONLY when its
+// governorate maps to the brick's own region (Sharkia passes for D2/D3 bricks). Anything else is
+// stored as 'region_mismatch' so it is visible in coverage stats but NEVER drives distance-based
+// confidence — a wrong centroid is worse than none.
+
+const SOURCE_TYPE = "brick_centroid";
+const GEOCODE_CONCURRENCY = 8;
+// Hard cap per build invocation — this is a one-time-ever cost (~1 geocode/brick); re-invoke to
+// continue where the previous run stopped.
+const MAX_GEOCODES_PER_BUILD = 600;
+
+const PAGE = 1000;
+
+export type BrickCentroidCoverage = {
+  totalBricks: number;
+  cached: number;
+  success: number;
+  mismatch: number;
+};
+
+function normalizeCodeForJoin(value: string): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function centroidPassesRegionGate(governorate: string | null, brickRegionCode: string): boolean {
+  const key = String(governorate ?? "").toLowerCase().trim();
+  if (!key) return false;
+  if (AMBIGUOUS_GOVERNORATES.has(key)) return brickRegionCode === "D2" || brickRegionCode === "D3";
+  return GOVERNORATE_TO_REGION[key] === brickRegionCode;
+}
+
+async function pageAll<T>(fetchPage: (from: number, to: number) => Promise<T[] | null>): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const rows = await fetchPage(from, from + PAGE - 1);
+    if (!rows || rows.length === 0) break;
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
+}
+
+// Free enrichment: brick → median of field-rep GPS captures of pharmacies mapped to that brick.
+async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; lng: number }>> {
+  const supabase = getSupabaseAdmin();
+  const result = new Map<string, { lat: number; lng: number }>();
+  try {
+    // customer_code (normalized) → brick_id
+    const mapRows = await pageAll<{ customer_code: string | null; brick_id: string | null }>(async (from, to) => {
+      const { data, error } = await supabase
+        .from("source_of_sales_customer_map")
+        .select("customer_code, brick_id")
+        .eq("active", true)
+        .not("brick_id", "is", null)
+        .range(from, to);
+      return error ? null : (data as { customer_code: string | null; brick_id: string | null }[] | null);
+    });
+    const brickByCode = new Map<string, string>();
+    for (const row of mapRows) {
+      const code = normalizeCodeForJoin(String(row.customer_code ?? ""));
+      const brick = String(row.brick_id ?? "").trim();
+      if (code && brick) brickByCode.set(code, brick);
+    }
+    if (brickByCode.size === 0) return result;
+
+    // pharmacy_id → normalized distributor pharmacy code
+    const codeRows = await pageAll<{ pharmacy_id: string | null; normalized_pharmacy_code: string | null }>(async (from, to) => {
+      const { data, error } = await supabase
+        .from("marketing_pharmacy_distributor_codes")
+        .select("pharmacy_id, normalized_pharmacy_code")
+        .eq("active", true)
+        .range(from, to);
+      return error ? null : (data as { pharmacy_id: string | null; normalized_pharmacy_code: string | null }[] | null);
+    });
+    const brickByPharmacyId = new Map<string, string>();
+    for (const row of codeRows) {
+      const brick = brickByCode.get(normalizeCodeForJoin(String(row.normalized_pharmacy_code ?? "")));
+      const pharmacyId = String(row.pharmacy_id ?? "");
+      if (brick && pharmacyId && !brickByPharmacyId.has(pharmacyId)) brickByPharmacyId.set(pharmacyId, brick);
+    }
+    if (brickByPharmacyId.size === 0) return result;
+
+    // GPS captures per brick
+    const gpsRows = await pageAll<{ id: string | null; captured_latitude: number | null; captured_longitude: number | null }>(async (from, to) => {
+      const { data, error } = await supabase
+        .from("marketing_pharmacies")
+        .select("id, captured_latitude, captured_longitude")
+        .not("captured_latitude", "is", null)
+        .not("captured_longitude", "is", null)
+        .range(from, to);
+      return error ? null : (data as { id: string | null; captured_latitude: number | null; captured_longitude: number | null }[] | null);
+    });
+    const capturesByBrick = new Map<string, { lats: number[]; lngs: number[] }>();
+    for (const row of gpsRows) {
+      const brick = brickByPharmacyId.get(String(row.id ?? ""));
+      if (!brick || row.captured_latitude == null || row.captured_longitude == null) continue;
+      let bucket = capturesByBrick.get(brick);
+      if (!bucket) { bucket = { lats: [], lngs: [] }; capturesByBrick.set(brick, bucket); }
+      bucket.lats.push(Number(row.captured_latitude));
+      bucket.lngs.push(Number(row.captured_longitude));
+    }
+    for (const [brick, bucket] of capturesByBrick) {
+      // Require >= 2 captures — a single point could be one mis-tagged pharmacy.
+      if (bucket.lats.length >= 2) result.set(brick, { lat: median(bucket.lats), lng: median(bucket.lngs) });
+    }
+  } catch {
+    // Marketing tables unavailable — enrichment contributes nothing, google pass still runs.
+  }
+  return result;
+}
+
+export async function getBrickCentroidCoverage(): Promise<BrickCentroidCoverage> {
+  const [refs, cachedRows] = await Promise.all([
+    loadSalesReferenceData(),
+    pageAll<{ geocode_status: string | null }>(async (from, to) => {
+      const { data, error } = await getSupabaseAdmin()
+        .from("geo_locations")
+        .select("geocode_status")
+        .eq("source_type", SOURCE_TYPE)
+        .range(from, to);
+      return error ? null : (data as { geocode_status: string | null }[] | null);
+    }),
+  ]);
+  const success = cachedRows.filter((r) => r.geocode_status === "success").length;
+  return {
+    cached: cachedRows.length,
+    mismatch: cachedRows.filter((r) => r.geocode_status === "region_mismatch").length,
+    success,
+    totalBricks: (refs.bricks ?? []).length,
+  };
+}
+
+export async function loadBrickCentroids(): Promise<Map<string, BrickCentroid>> {
+  const result = new Map<string, BrickCentroid>();
+  try {
+    const rows = await pageAll<{ source_key: string | null; latitude: number | null; longitude: number | null; city: string | null; area: string | null; geocode_status: string | null }>(async (from, to) => {
+      const { data, error } = await getSupabaseAdmin()
+        .from("geo_locations")
+        .select("source_key, latitude, longitude, city, area, geocode_status")
+        .eq("source_type", SOURCE_TYPE)
+        .range(from, to);
+      return error ? null : (data as never[] | null);
+    });
+    for (const row of rows) {
+      const key = String(row.source_key ?? "");
+      if (!key || row.latitude == null || row.longitude == null) continue;
+      result.set(key, {
+        governorate: row.city ?? null,
+        lat: Number(row.latitude),
+        lng: Number(row.longitude),
+        markaz: row.area ?? null,
+        status: String(row.geocode_status ?? ""),
+      });
+    }
+  } catch {
+    // Cache unavailable — callers fall back to markaz/governorate tiers.
+  }
+  return result;
+}
+
+export type BuildBrickCentroidsResult = {
+  fieldGps: number;
+  geocoded: number;
+  mismatched: number;
+  remaining: number;
+  skippedExisting: number;
+};
+
+export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> {
+  const supabase = getSupabaseAdmin();
+  const refs = await loadSalesReferenceData();
+  const bricks = refs.bricks ?? [];
+  const existing = await loadBrickCentroids();
+
+  const summary: BuildBrickCentroidsResult = { fieldGps: 0, geocoded: 0, mismatched: 0, remaining: 0, skippedExisting: 0 };
+
+  // Pass 1 — field-GPS enrichment (free). Overrides google centroids, never overrides field_gps.
+  const fieldGps = await collectFieldGpsCentroids();
+  const gpsUpserts: Record<string, unknown>[] = [];
+  for (const brick of bricks) {
+    const gps = fieldGps.get(brick.brickId);
+    if (!gps) continue;
+    gpsUpserts.push({
+      address_text: null,
+      area: null,
+      city: null,
+      geocode_provider: "field_gps",
+      geocode_status: "success",
+      label: brick.brickName || brick.brickId,
+      latitude: gps.lat,
+      longitude: gps.lng,
+      source_key: brick.brickId,
+      source_type: SOURCE_TYPE,
+    });
+    summary.fieldGps += 1;
+  }
+  if (gpsUpserts.length > 0) {
+    try {
+      await supabase.from("geo_locations").upsert(gpsUpserts, { onConflict: "source_type,source_key" });
+    } catch { /* best-effort */ }
+  }
+
+  // Pass 2 — google geocode for bricks still without any cached centroid.
+  if (!hasGoogleServerKey()) {
+    summary.remaining = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId)).length;
+    return summary;
+  }
+  const pending = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId));
+  const toGeocode = pending.slice(0, MAX_GEOCODES_PER_BUILD);
+  summary.skippedExisting = bricks.length - pending.length;
+
+  for (let index = 0; index < toGeocode.length; index += GEOCODE_CONCURRENCY) {
+    const batch = toGeocode.slice(index, index + GEOCODE_CONCURRENCY);
+    const geocoded = await Promise.all(
+      batch.map(async (brick) => {
+        const searchText = [brick.brickName, brick.areaName].map((s) => String(s ?? "").trim()).filter(Boolean).join(", ");
+        try {
+          return { brick, geo: await googleGeocodeComponents(searchText) };
+        } catch {
+          return { brick, geo: null };
+        }
+      }),
+    );
+    const upserts: Record<string, unknown>[] = [];
+    for (const { brick, geo } of geocoded) {
+      if (!geo) continue; // failures retry on the next build run
+      const passes = centroidPassesRegionGate(geo.governorate, brick.regionCode);
+      upserts.push({
+        address_text: null,
+        area: geo.markaz,
+        city: geo.governorate,
+        geocode_provider: "google",
+        geocode_status: passes ? "success" : "region_mismatch",
+        label: brick.brickName || brick.brickId,
+        latitude: geo.lat,
+        longitude: geo.lng,
+        source_key: brick.brickId,
+        source_type: SOURCE_TYPE,
+      });
+      if (passes) summary.geocoded += 1;
+      else summary.mismatched += 1;
+    }
+    if (upserts.length > 0) {
+      try {
+        await supabase.from("geo_locations").upsert(upserts, { onConflict: "source_type,source_key" });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  summary.remaining = Math.max(0, pending.length - toGeocode.length);
+  return summary;
+}
+
+export { centroidPassesRegionGate };

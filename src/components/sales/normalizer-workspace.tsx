@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowRight, CalendarDays, Check, CheckCircle2, ClipboardPaste, Copy, Database, Download, History, Layers, Loader2, MapPin, Package, Save, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type IconType = typeof Sparkles;
 
@@ -107,13 +107,38 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [preview, setPreview] = useState<Preview | null>(null);
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [aiConfidence, setAiConfidence] = useState<Record<string, number>>({});
+  const [aiOrigin, setAiOrigin] = useState<Record<string, { source: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"coded" | "map">("coded");
   const [advanced, setAdvanced] = useState(false);
+  const [geoCoverage, setGeoCoverage] = useState<{ totalBricks: number; cached: number; success: number; mismatch: number } | null>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/sales/normalizer/brick-centroids");
+        const json = await res.json().catch(() => null) as { data?: { totalBricks: number; cached: number; success: number; mismatch: number }; success?: boolean } | null;
+        if (json?.success && json.data) setGeoCoverage(json.data);
+      } catch { /* geo readiness line simply stays hidden */ }
+    })();
+  }, []);
+
+  async function buildGeoIndex() {
+    await run("centroids", async () => {
+      const res = await fetch("/api/sales/normalizer/brick-centroids", { method: "POST" });
+      const json = await res.json().catch(() => null) as { data?: { fieldGps: number; geocoded: number; mismatched: number; remaining: number }; error?: string; success?: boolean } | null;
+      if (!json?.success || !json.data) throw new Error(json?.error ?? "Geo index build failed.");
+      const d = json.data;
+      setNotice(`Geo index updated: ${d.fieldGps} from field GPS, ${d.geocoded} geocoded, ${d.mismatched} flagged for review, ${d.remaining} remaining${d.remaining > 0 ? " — click Build geo index again to continue" : ""}.`);
+      const cov = await fetch("/api/sales/normalizer/brick-centroids");
+      const covJson = await cov.json().catch(() => null) as { data?: { totalBricks: number; cached: number; success: number; mismatch: number }; success?: boolean } | null;
+      if (covJson?.success && covJson.data) setGeoCoverage(covJson.data);
+    });
+  }
 
   function fd(extra?: File) {
     const f = new FormData();
@@ -139,6 +164,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
         setPicks(seed);
         setAiConfidence({});
+        setAiOrigin({});
         return p;
       }
       if (!options.quietFailure) setError(json?.error ?? `Failed to analyze. (${res.status})`);
@@ -205,14 +231,19 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
         const json = await res.json();
         if (json.success) {
-          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string; confidence?: number }[];
+          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
           if (sugg.length) {
             setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
             filled += sugg.length;
             if (kind === "customer") {
               const newConf: Record<string, number> = {};
-              sugg.forEach((s) => { if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence; });
+              const newOrigin: Record<string, { source: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }> = {};
+              sugg.forEach((s) => {
+                if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
+                if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
+              });
               if (Object.keys(newConf).length) setAiConfidence((prev) => ({ ...prev, ...newConf }));
+              if (Object.keys(newOrigin).length) setAiOrigin((prev) => ({ ...prev, ...newOrigin }));
             }
           }
         } else { failed = true; if (json.error) setError(json.error); }
@@ -505,6 +536,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   {preview.unknownCustomers.length > 0 ? (
                     <div className="overflow-x-auto border border-[#E2E8F0]">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
+                      {geoCoverage ? (
+                        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                          <span className="inline-flex items-center gap-1.5 font-semibold"><MapPin aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />Geo readiness: {geoCoverage.success} / {geoCoverage.totalBricks} bricks located{geoCoverage.mismatch > 0 ? ` (${geoCoverage.mismatch} flagged)` : ""}</span>
+                          {geoCoverage.success < geoCoverage.totalBricks ? (
+                            <button className="inline-flex h-7 items-center gap-1.5 border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void buildGeoIndex()} title="Locate brick territories once so confidence can use real distances" type="button">
+                              {busy === "centroids" ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <MapPin aria-hidden="true" className="h-3.5 w-3.5" />}Build geo index
+                            </button>
+                          ) : <span className="font-semibold text-emerald-600">distance-level confidence active</span>}
+                        </div>
+                      ) : null}
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
@@ -519,9 +560,21 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
                               </td>
                               <td className="px-3 py-1.5 text-center">
-                                {aiConfidence[`c:${u.raw}`] != null
-                                  ? <ConfidenceBadge pct={aiConfidence[`c:${u.raw}`]} />
-                                  : <span className="text-slate-300">—</span>}
+                                {aiConfidence[`c:${u.raw}`] != null ? (
+                                  <span className="inline-flex flex-col items-center gap-0.5">
+                                    <ConfidenceBadge pct={aiConfidence[`c:${u.raw}`]} />
+                                    {aiOrigin[`c:${u.raw}`]?.source === "propagated" ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-600"
+                                        title={aiOrigin[`c:${u.raw}`]?.matchedFrom
+                                          ? `Matched from ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.distributorCode}/${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerCode} — ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerName}`
+                                          : "Matched from an existing mapping"}
+                                      >
+                                        <Layers aria-hidden="true" className="h-3 w-3" />known twin
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ) : <span className="text-slate-300">—</span>}
                               </td>
                             </tr>
                           ))}
