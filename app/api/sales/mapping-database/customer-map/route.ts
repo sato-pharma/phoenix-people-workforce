@@ -35,6 +35,7 @@ export async function GET(request: Request) {
       search: params.get("search") ?? "",
       limit: Number(params.get("limit")) || undefined,
       offset: Number(params.get("offset")) || undefined,
+      source: params.get("source") ?? "",
     });
     return NextResponse.json({ success: true, ...page });
   } catch (error) {
@@ -61,15 +62,16 @@ export async function POST(request: Request) {
       await deleteCustomerMapRow({ actorLoginId: actor(access), distributorCode, customerCode });
       return NextResponse.json({ success: true, message: "Mapping deleted." });
     }
-    await addCustomerMapRow({
+    const { backfilled } = await addCustomerMapRow({
       actorLoginId: actor(access),
       distributorCode,
       customerCode,
       customerName: body.customerName,
       address: body.address,
       brickId: String(body.brickId ?? "").trim(),
+      backfill: true,
     });
-    return NextResponse.json({ success: true, message: "Mapping saved." });
+    return NextResponse.json({ success: true, message: backfilled > 0 ? `Mapping saved — ${backfilled} historical row(s) healed.` : "Mapping saved." });
   } catch (error) {
     return fail(error, "Failed to save customer mapping.");
   }

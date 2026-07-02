@@ -17,6 +17,15 @@ type MappingReferences = { bricks: { id: string; name: string }[]; products: { c
 
 type CodedRow = { areaCode: string; brickId: string; brickName: string; productCode: string; productName: string; qty: number; regionCode: string; clientName: string | null };
 type Unknown = { raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; count: number; suggestionCode: string | null; suggestionLabel: string | null };
+type CustomerCluster = {
+  key: string;
+  kind: "geo" | "territory" | "none";
+  label: string;
+  governorate: string | null;
+  markaz: string | null;
+  members: { raw: string; rawName?: string; rawAddress?: string; rawTerritory?: string; count?: number }[];
+  suggestedBricks: { brickId: string; distanceKm: number | null }[];
+};
 type Preview = {
   distributorName: string; period: string | null;
   periods: { period: string; rows: number }[];
@@ -114,6 +123,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [tab, setTab] = useState<"coded" | "map">("coded");
   const [advanced, setAdvanced] = useState(false);
   const [geoCoverage, setGeoCoverage] = useState<{ totalBricks: number; cached: number; success: number; mismatch: number } | null>(null);
+  const [backfillHistory, setBackfillHistory] = useState(true);
+  const [clusterView, setClusterView] = useState(false);
+  const [clusters, setClusters] = useState<CustomerCluster[] | null>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
 
@@ -165,6 +177,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         setPicks(seed);
         setAiConfidence({});
         setAiOrigin({});
+        setClusters(null);
+        setClusterView(false);
         return p;
       }
       if (!options.quietFailure) setError(json?.error ?? `Failed to analyze. (${res.status})`);
@@ -193,20 +207,24 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
   async function saveMappings() {
     if (!preview) return;
-    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string }[] = [];
+    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string; confidence?: number }[] = [];
     preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c, distributorCode }); });
     preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c, distributorCode }); });
-    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode }); });
+    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode, confidence: aiConfidence[`c:${u.raw}`] }); });
     if (mappings.length === 0) { setError("Pick at least one Phoenix code to save."); return; }
     setBusy("save"); setError(null); setNotice(null);
     try {
-      const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ mappings }), headers: { "Content-Type": "application/json" }, method: "POST" });
-      const json = await res.json().catch(() => null) as { data?: { invalid?: number; saved?: number; skipped?: number }; error?: string; success?: boolean } | null;
+      const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ backfill: backfillHistory, mappings }), headers: { "Content-Type": "application/json" }, method: "POST" });
+      const json = await res.json().catch(() => null) as { data?: { backfilled?: number; invalid?: number; saved?: number; skipped?: number }; error?: string; success?: boolean } | null;
       if (!res.ok || !json?.success || !json.data) { setError(json?.error ?? `Save failed. (${res.status})`); return; }
       const saved = Number(json.data.saved ?? 0);
       const skipped = Number(json.data.skipped ?? 0);
       const invalid = Number(json.data.invalid ?? 0);
-      const detail = skipped || invalid ? ` ${skipped} skipped, ${invalid} invalid.` : "";
+      const backfilled = Number(json.data.backfilled ?? 0);
+      const detail = [
+        skipped || invalid ? ` ${skipped} skipped, ${invalid} invalid.` : "",
+        backfilled ? ` ${backfilled} historical row(s) healed.` : "",
+      ].join("");
       setNotice(`Saved ${saved} mapping(s). Refreshing coverage...`);
       const p = await analyze(true, { quietFailure: true });
       if (p) {
@@ -252,6 +270,79 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       else if (!failed) setNotice("AI found no confident matches — map them by hand.");
     } catch (e) { setError(e instanceof Error ? e.message : "AI suggest failed."); }
     finally { setBusy(null); }
+  }
+
+  async function autoMapCustomers() {
+    if (!preview || preview.unknownCustomers.length === 0) return;
+    setBusy("automap"); setError(null); setNotice(null);
+    try {
+      const res = await fetch("/api/sales/normalizer/mappings/auto-map", {
+        body: JSON.stringify({
+          distributorCode,
+          unknowns: preview.unknownCustomers.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null) as {
+        data?: {
+          applied?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
+          parked?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
+          backfilled?: number;
+          minConfidence?: number;
+        };
+        error?: string;
+        success?: boolean;
+      } | null;
+      if (!res.ok || !json?.success || !json.data) { setError(json?.error ?? `Auto-map failed. (${res.status})`); return; }
+      const applied = json.data.applied ?? [];
+      const parked = json.data.parked ?? [];
+      const backfilled = Number(json.data.backfilled ?? 0);
+      // Parked suggestions pre-fill the dropdowns for manual review; applied ones are saved already.
+      const newPicks: Record<string, string> = {};
+      const newConf: Record<string, number> = {};
+      const newOrigin: typeof aiOrigin = {};
+      for (const s of [...applied, ...parked]) {
+        newPicks[`c:${s.raw}`] = s.code;
+        if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
+        if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
+      }
+      if (Object.keys(newPicks).length) setPicks((p) => ({ ...p, ...newPicks }));
+      if (Object.keys(newConf).length) setAiConfidence((p) => ({ ...p, ...newConf }));
+      if (Object.keys(newOrigin).length) setAiOrigin((p) => ({ ...p, ...newOrigin }));
+      if (applied.length > 0) {
+        setNotice(`Auto-mapped ${applied.length} customer(s) (gate ≥${json.data.minConfidence ?? 95}%)${backfilled ? `, healed ${backfilled} historical row(s)` : ""}. ${parked.length} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
+        const p = await analyze(true, { quietFailure: true });
+        if (p) setNotice(`Auto-mapped ${applied.length} customer(s)${backfilled ? `, healed ${backfilled} historical row(s)` : ""}. ${p.unknownCustomers.length} customer(s) still need manual mapping.`);
+      } else {
+        setNotice(`Nothing cleared the auto-map gate — ${parked.length} suggestion(s) pre-filled for manual review instead.`);
+      }
+    } catch (e) { setError(requestErrorMessage(e, "Auto-map failed.")); }
+    finally { setBusy(null); }
+  }
+
+  async function loadClusters() {
+    if (!preview || preview.unknownCustomers.length === 0) return;
+    await run("clusters", async () => {
+      const res = await fetch("/api/sales/normalizer/mappings/clusters", {
+        body: JSON.stringify({ unknowns: preview.unknownCustomers.map((u) => ({ count: u.count, raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })) }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null) as { data?: { clusters: CustomerCluster[] }; error?: string; success?: boolean } | null;
+      if (!json?.success || !json.data) throw new Error(json?.error ?? "Clustering failed.");
+      setClusters(json.data.clusters);
+      setClusterView(true);
+    });
+  }
+
+  function assignClusterBrick(cluster: CustomerCluster, brickId: string) {
+    if (!brickId) return;
+    setPicks((p) => {
+      const next = { ...p };
+      cluster.members.forEach((m) => { next[`c:${m.raw}`] = brickId; });
+      return next;
+    });
   }
 
   async function learnFromCleaned(f: File) {
@@ -483,9 +574,18 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           {busy === "ai" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
                         </button>
                       ) : null}
+                      {aiEnabled && preview.unknownCustomers.length > 0 ? (
+                        <button className="inline-flex h-9 items-center gap-2 border border-emerald-600 bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void autoMapCustomers()} title="Apply only the suggestions that pass the multi-signal geographic gate — everything applied is listed and undoable" type="button">
+                          {busy === "automap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Auto-map high-confidence
+                        </button>
+                      ) : null}
                       <button className="inline-flex h-9 items-center gap-2 border border-orange-600 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null} onClick={() => void saveMappings()} type="button">
                         {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save mappings
                       </button>
+                      <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 px-1 text-xs font-semibold text-slate-600" title="When a customer mapping is saved, also fill the brick on already-imported rows that had no brick (never overwrites an existing brick)">
+                        <input checked={backfillHistory} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => setBackfillHistory(e.target.checked)} type="checkbox" />
+                        heal history
+                      </label>
                       <Link className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800" href="/sales/mapping-database">
                         <Database className="h-4 w-4" /> Mapping Database <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
@@ -536,16 +636,54 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   {preview.unknownCustomers.length > 0 ? (
                     <div className="overflow-x-auto border border-[#E2E8F0]">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
-                      {geoCoverage ? (
-                        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
-                          <span className="inline-flex items-center gap-1.5 font-semibold"><MapPin aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />Geo readiness: {geoCoverage.success} / {geoCoverage.totalBricks} bricks located{geoCoverage.mismatch > 0 ? ` (${geoCoverage.mismatch} flagged)` : ""}</span>
-                          {geoCoverage.success < geoCoverage.totalBricks ? (
-                            <button className="inline-flex h-7 items-center gap-1.5 border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void buildGeoIndex()} title="Locate brick territories once so confidence can use real distances" type="button">
-                              {busy === "centroids" ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <MapPin aria-hidden="true" className="h-3.5 w-3.5" />}Build geo index
-                            </button>
-                          ) : <span className="font-semibold text-emerald-600">distance-level confidence active</span>}
+                      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                        {geoCoverage ? (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 font-semibold"><MapPin aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />Geo readiness: {geoCoverage.success} / {geoCoverage.totalBricks} bricks located{geoCoverage.mismatch > 0 ? ` (${geoCoverage.mismatch} flagged)` : ""}</span>
+                            {geoCoverage.success < geoCoverage.totalBricks ? (
+                              <button className="inline-flex h-7 items-center gap-1.5 border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void buildGeoIndex()} title="Locate brick territories once so confidence can use real distances" type="button">
+                                {busy === "centroids" ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <MapPin aria-hidden="true" className="h-3.5 w-3.5" />}Build geo index
+                              </button>
+                            ) : <span className="font-semibold text-emerald-600">distance-level confidence active</span>}
+                          </>
+                        ) : null}
+                        <button className={cn("ml-auto inline-flex h-7 items-center gap-1.5 border px-2 text-xs font-bold transition disabled:opacity-50", clusterView ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100")} disabled={busy !== null} onClick={() => { if (clusterView) setClusterView(false); else void loadClusters(); }} title="Group unknowns by real location and assign one brick per group" type="button">
+                          {busy === "clusters" ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Layers aria-hidden="true" className="h-3.5 w-3.5" />}{clusterView ? "Flat view" : "Cluster view"}
+                        </button>
+                      </div>
+                      {clusterView && clusters ? (
+                        <div className="divide-y divide-slate-100">
+                          {clusters.map((c) => (
+                            <div className="px-3 py-2" key={c.key}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-bold text-slate-900">{c.label}</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
+                                {c.suggestedBricks.slice(0, 3).map((s) => (
+                                  <button className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
+                                    {s.brickId}{s.distanceKm != null ? ` · ${s.distanceKm}km` : ""}
+                                  </button>
+                                ))}
+                                <div className="w-64">
+                                  <ComboBox onChange={(v) => assignClusterBrick(c, v)} options={brickOptions} placeholder="Assign brick to whole group…" value="" />
+                                </div>
+                              </div>
+                              <div className="mt-1.5 space-y-1">
+                                {c.members.map((m) => (
+                                  <div className="flex flex-wrap items-center gap-2 pl-2 text-xs text-slate-600" key={m.raw}>
+                                    <span className="font-mono font-semibold text-slate-800">{m.raw}</span>
+                                    <span>{m.rawName}</span>
+                                    <div className="ml-auto w-56">
+                                      <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${m.raw}`]: v }))} options={brickOptions} placeholder="brick…" value={picks[`c:${m.raw}`] ?? ""} />
+                                    </div>
+                                    {aiConfidence[`c:${m.raw}`] != null ? <ConfidenceBadge pct={aiConfidence[`c:${m.raw}`]} /> : null}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : null}
+                      {!clusterView ? (
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
@@ -580,6 +718,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           ))}
                         </tbody>
                       </table>
+                      ) : null}
                     </div>
                   ) : null}
 

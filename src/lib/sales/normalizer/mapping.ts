@@ -115,10 +115,44 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
 
 // ── write path (insert-if-absent, validated against the masters) ──
 
-export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer" };
+export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer"; confidence?: number };
 export type InvalidEntry = { raw: string; type: string; reason: string };
 
-export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[] }> {
+export type SaveMappingsOptions = {
+  // Provenance for customer rows: 'auto' marks auto-applied mappings; default 'normalizer'.
+  source?: string;
+  // Login id recorded in mapped_by for customer rows (auto-apply records the clicking admin).
+  mappedBy?: string;
+  // Heal already-imported rows (brick_id IS NULL only) for each saved customer mapping via the
+  // sos_backfill_import_rows_from_customer_map RPC. Best-effort: a missing RPC (pre-migration)
+  // or per-row failure never fails the save.
+  backfill?: boolean;
+};
+
+// Hard cap: a bulk save larger than this skips backfill (run it separately) so one giant import
+// can't hammer the DB with thousands of sequential UPDATEs.
+export const BACKFILL_MAX_MAPPINGS = 2000;
+
+export async function backfillCustomerRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rows: { distributor_code: unknown; customer_code: unknown }[],
+): Promise<number> {
+  let backfilled = 0;
+  for (const row of rows) {
+    try {
+      const { data, error } = await supabase.rpc("sos_backfill_import_rows_from_customer_map", {
+        p_customer: String(row.customer_code ?? ""),
+        p_distributor: String(row.distributor_code ?? ""),
+      });
+      if (!error && typeof data === "number") backfilled += data;
+    } catch {
+      // RPC absent (pre-migration) or transient failure — the mapping itself is already saved.
+    }
+  }
+  return backfilled;
+}
+
+export async function saveMappings(mappings: MappingInput[], options?: SaveMappingsOptions): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[]; backfilled: number }> {
   // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
   // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
   // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
@@ -157,7 +191,20 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
       const ck = `${dist} ${normalizeCodeKey(raw)}`;
       if (haveCust.has(ck)) { skipped += 1; continue; }
       haveCust.add(ck);
-      customerRows.push({ distributor_code: dist, customer_code: raw, brick_id: brick.brickId, area_code: brick.areaCode, region_code: brick.regionCode, source: "normalizer", active: true });
+      const confidence = typeof mapping.confidence === "number"
+        ? Math.min(100, Math.max(0, Math.round(mapping.confidence)))
+        : null;
+      customerRows.push({
+        active: true,
+        area_code: brick.areaCode,
+        brick_id: brick.brickId,
+        confidence,
+        customer_code: raw,
+        distributor_code: dist,
+        mapped_by: options?.mappedBy ?? null,
+        region_code: brick.regionCode,
+        source: options?.source ?? "normalizer",
+      });
       continue;
     }
     const key = normalizeAliasKey(raw);
@@ -195,14 +242,29 @@ export async function saveMappings(mappings: MappingInput[]): Promise<{ saved: n
     if (error) throw failed("territory aliases", error);
     saved += data?.length ?? 0;
   }
+  let customerSaved = 0;
   if (customerRows.length) {
-    const { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code" }).select("id");
+    let { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code" }).select("id");
+    if (error && /confidence|mapped_by/i.test(error.message ?? "")) {
+      // Pre-migration deployment: retry without the provenance columns rather than failing the save.
+      const stripped = customerRows.map(({ confidence: _c, mapped_by: _m, ...rest }) => rest);
+      ({ data, error } = await supabase.from("source_of_sales_customer_map").upsert(stripped, { onConflict: "distributor_code,customer_code" }).select("id"));
+    }
     if (error) throw failed("customer map", error);
-    saved += data?.length ?? 0;
+    customerSaved = data?.length ?? 0;
+    saved += customerSaved;
   }
   // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
   skipped += productRows.length + territoryRows.length + customerRows.length - saved;
-  return { saved, skipped, invalid, invalidEntries };
+
+  let backfilled = 0;
+  if (options?.backfill && customerSaved > 0 && customerRows.length <= BACKFILL_MAX_MAPPINGS) {
+    backfilled = await backfillCustomerRows(
+      supabase,
+      customerRows.map((r) => ({ customer_code: r.customer_code, distributor_code: r.distributor_code })),
+    );
+  }
+  return { saved, skipped, invalid, invalidEntries, backfilled };
 }
 
 // ── Single-row mapping CRUD (Mapping Database page) ──

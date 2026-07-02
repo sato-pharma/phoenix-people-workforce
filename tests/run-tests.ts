@@ -80,6 +80,8 @@ import { runSalesDistributorImportTests } from "./sales-distributor-import.test.
 import { runCustomerNormalizeTests } from "./customer-normalize.test.ts";
 import { runPharmacyGeoValidateTests } from "./pharmacy-geo-validate.test.ts";
 import { runCustomerPropagationTests } from "./customer-propagation.test.ts";
+import { runSosAutoApplyTests } from "./sos-auto-apply.test.ts";
+import { runCustomerClustersTests } from "./customer-clusters.test.ts";
 import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
@@ -362,6 +364,8 @@ await runTest("sales distributor import", runSalesDistributorImportTests);
 await runTest("customer normalize + pharmacy chains", runCustomerNormalizeTests);
 await runTest("pharmacy geo validate (distance tiers)", runPharmacyGeoValidateTests);
 await runTest("customer cross-distributor propagation", runCustomerPropagationTests);
+await runTest("sos auto-apply gate", runSosAutoApplyTests);
+await runTest("customer location clusters", runCustomerClustersTests);
 await runTest("weekly sales import", runWeeklySalesImportTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
