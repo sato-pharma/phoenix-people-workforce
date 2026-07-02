@@ -155,17 +155,6 @@ const adminNavigationSectionSeeds = [
 
   // ── Tier 2: Personal workspace (admin-shell employee roles) ──────────────────
   {
-    id: "workspace-my-workspace",
-    items: [
-      { href: "/workspace", icon: LayoutDashboard, label: "My Dashboard", moduleId: "admin.workspace.my_dashboard", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
-      { href: "/workspace/incentive", icon: Sparkles, label: "Incentive", moduleId: "admin.workspace.incentive", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/plans", icon: CalendarDays, label: "Weekly / Monthly Plan", moduleId: "admin.workspace.weekly_monthly_plan", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles, exact: true },
-      { href: "/workspace/plans/calendar", icon: CalendarRange, label: "Planning Calendar", moduleId: "admin.workspace.planning_calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/private-calendar", icon: CalendarCheck, label: "Private Calendar", moduleId: "admin.workspace.private_calendar", permissions: [{ resource: "employee_profile", action: "read" }], roles: adminShellEmployeeRoles },
-    ],
-    label: "My Workspace",
-  },
-  {
     id: "workspace-payroll",
     items: [
       { href: "/workspace/payslips", icon: ScrollText, label: "Payslips", moduleId: "admin.workspace.payslips", permissions: [{ resource: "payslips", action: "read" }], roles: adminShellEmployeeRoles },
