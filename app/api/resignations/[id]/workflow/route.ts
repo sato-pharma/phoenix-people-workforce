@@ -54,7 +54,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Resignation record not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: updated, dashboard: await getResignationsDashboardData() });
+    return NextResponse.json({ success: true, data: updated, dashboard: await getResignationsDashboardData(access) });
   } catch (error) {
     const message = resignationErrorMessage(error);
     if (isForbiddenError(error)) {

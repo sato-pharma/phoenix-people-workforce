@@ -171,6 +171,7 @@ import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-val
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts";
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
+import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
@@ -456,6 +457,7 @@ await runTest("employee import seat validation", runEmployeeImportSeatValidation
 await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
+await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
 await runTest("access identity hardening", runAccessIdentityHardeningTests);

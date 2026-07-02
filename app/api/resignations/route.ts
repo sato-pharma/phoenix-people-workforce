@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "resignations", "read");
-    return NextResponse.json(await getResignationsDashboardData());
+    return NextResponse.json(await getResignationsDashboardData(access));
   } catch (error) {
     const { message, status } = resignationsApiError(error);
     return NextResponse.json({ error: "resignations_load_failed", message }, { status });
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
     await createResignation(payload.resignation, actor, access);
-    return NextResponse.json(await getResignationsDashboardData());
+    return NextResponse.json(await getResignationsDashboardData(access));
   } catch (error) {
     const { message, status } = resignationsApiError(error);
     return NextResponse.json({ error: "resignation_create_failed", message }, { status });
