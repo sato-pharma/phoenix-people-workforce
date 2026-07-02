@@ -21,6 +21,89 @@ export function runNotificationGovernanceHardeningTests() {
   const outstationSource = source("src/lib/outstation/service.ts");
   const vacationSource = source("src/lib/vacation/service.ts");
   const accessRegistrySource = source("src/lib/security/access-registry.ts");
+  const offersSource = source("src/lib/offers/service.ts");
+  const internalMessagesSource = source("src/lib/internal-messages/service.ts");
+  const payrollExpensesSource = source("src/lib/payroll/expenses.ts");
+  const highRiskDigestSource = source("src/lib/outstation/high-risk-digest.ts");
+
+  // Finding #39: explicit-recipient resolution must batch the employees/app_auth_users
+  // lookups with a single .in("hr_id", ...) query per table instead of issuing one
+  // Supabase round trip per HR_ID (N+1).
+  assertContains(
+    policySource,
+    /async function candidatesByHrIds\(hrIds: string\[\]\)/,
+    "resolver must expose a batched multi-HR_ID candidate lookup",
+  );
+  assertContains(
+    policySource,
+    /\.from\("employees"\)\s*\n?\s*\.select\("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status"\)\s*\n?\s*\.in\("hr_id",\s*normalized\)/,
+    "batched candidate lookup must fetch employees via a single .in() query",
+  );
+  assertContains(
+    policySource,
+    /\.from\("app_auth_users"\)\s*\n?\s*\.select\("login_id,hr_id,name,auth_email,role,is_active,line,manager_hr_id"\)\s*\n?\s*\.in\("hr_id",\s*normalized\)/,
+    "batched candidate lookup must fetch app_auth_users via a single .in() query",
+  );
+  assertContains(
+    policySource,
+    /const candidateMap = await candidatesByHrIds\(hrIds\);/,
+    "explicit recipient resolution must use the batched lookup, not per-ID Promise.all",
+  );
+  assertNotContains(
+    policySource,
+    /const candidates = await Promise\.all\(hrIds\.map\(\(hrId\) => candidateByHrId\(hrId\)\)\);/,
+    "explicit recipient resolution must not issue one Supabase query pair per HR_ID (N+1)",
+  );
+
+  // Finding #40: fire-and-forget notification sends must never swallow their failure
+  // silently — every guarded send logs (console + Sentry) via the shared helper.
+  assertContains(
+    systemSource,
+    /export function logNotificationSendFailure\(context: string, error: unknown\)/,
+    "system module must expose a shared logger for best-effort notification-send failures",
+  );
+  assertContains(
+    systemSource,
+    /Sentry\.captureException\(error,\s*\{\s*tags:\s*\{\s*component:\s*"notifications",\s*context\s*\}\s*\}\)/,
+    "shared failure logger must report to Sentry, not just console",
+  );
+  assertContains(
+    systemSource,
+    /logNotificationSendFailure\("system\.telegramRetryExhaustionFallback",\s*error\)/,
+    "telegram retry-exhaustion fallback must log its swallowed failure",
+  );
+  assertContains(
+    offersSource,
+    /logNotificationSendFailure\("offers\.recordCandidateDecision\.accepted",\s*error\)/,
+    "offer candidate-accepted HR notification must log its swallowed failure",
+  );
+  assertContains(
+    offersSource,
+    /logNotificationSendFailure\("offers\.recordCandidateDecision\.rejected",\s*error\)/,
+    "offer candidate-rejected HR notification must log its swallowed failure",
+  );
+  assertContains(
+    offersSource,
+    /logNotificationSendFailure\("offers\.approveAcceptedOffer\.hireApproved",\s*error\)/,
+    "hire-approved notification must log its swallowed failure",
+  );
+  assertContains(
+    internalMessagesSource,
+    /logNotificationSendFailure\("internalMessages\.sendInternalMessage",\s*error\)/,
+    "internal-message-sent notification must log its swallowed failure",
+  );
+  assertContains(
+    payrollExpensesSource,
+    /logNotificationSendFailure\("payroll\.notifyExpensesAddedToPayroll",\s*error\)/,
+    "added-to-payroll notification dispatch must log via the shared helper",
+  );
+  assertContains(
+    highRiskDigestSource,
+    /logNotificationSendFailure\("outstation\.highRiskDigest",\s*error\)/,
+    "outstation high-risk digest failure must be logged, not only returned as { ok: false }",
+  );
+  assertNotContains(offersSource, /\.catch\(\(\) => undefined\)/, "offers notification sends must not swallow errors without logging");
+  assertNotContains(internalMessagesSource, /\.catch\(\(\) => undefined\)/, "internal message notification send must not swallow errors without logging");
 
   assertContains(
     policySource,
