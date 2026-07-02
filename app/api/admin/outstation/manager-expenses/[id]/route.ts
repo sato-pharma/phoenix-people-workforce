@@ -17,9 +17,19 @@ function isOutstationPayrollLockError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
 }
 
+function isOutstationConcurrencyConflictError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("state changed");
+}
+
 function managerExpenseStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
-  if (isOutstationPayrollLockError(error) || isWorkflowRegistryTransitionError(error)) return 409;
+  if (
+    isOutstationPayrollLockError(error) ||
+    isOutstationConcurrencyConflictError(error) ||
+    isWorkflowRegistryTransitionError(error)
+  ) {
+    return 409;
+  }
   return 500;
 }
 
