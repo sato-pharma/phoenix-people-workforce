@@ -45,6 +45,15 @@ export function canViewHeadOfficeLine(role: PhoenixRole): boolean {
   return role === "CEO" || role === "Super Admin";
 }
 
+/**
+ * The admin Source-of-Sales BI workbook export is CEO / Super Admin only (same lock class as
+ * the restricted products). One predicate shared by the /sales page (Export button visibility)
+ * and the export route (hard gate) so the two can never drift.
+ */
+export function canExportSosDashboard(role: PhoenixRole): boolean {
+  return role === "CEO" || role === "Super Admin";
+}
+
 /** Case/whitespace-insensitive keys that identify the confidential Head Office line. */
 const HEAD_OFFICE_LINE_KEYS = new Set(["head office", "headoffice", "office", "hq"]);
 

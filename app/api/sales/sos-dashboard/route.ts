@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { getSosDashboard, type SosDashboardFilters, type SosScopeOverrides } from "@/lib/sales/sos-dashboard";
+import { getSosDashboard, type SosDashboardFilters, type SosDashboardOptions } from "@/lib/sales/sos-dashboard";
 import { isPortalSosRole, resolvePortalSosScope } from "@/lib/sales/portal-sos-dashboard";
 
 export const runtime = "nodejs";
@@ -42,17 +42,21 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filters: SosDashboardFilters = {
       period: firstValue(searchParams.get("period")),
+      periods: splitList(searchParams.get("periods")),
       line: firstValue(searchParams.get("line")),
+      lines: splitList(searchParams.get("lines")),
       distributors: splitList(searchParams.get("distributors")),
       regions: splitList(searchParams.get("regions")),
       areas: splitList(searchParams.get("areas")),
       products: splitList(searchParams.get("products")),
     };
 
-    let options: SosScopeOverrides | undefined;
+    // MoM comparison is an admin-dashboard feature (one extra pushed-down detail RPC);
+    // scope overrides for portal roles are layered on top exactly as before.
+    const options: SosDashboardOptions = { includeMomComparison: true };
     if (isPortalSosRole(access.role)) {
       const scope = await resolvePortalSosScope(access);
-      options = { allowedProductCodes: scope.allowedProductCodes };
+      options.allowedProductCodes = scope.allowedProductCodes;
       if (scope.regionOverride !== undefined) options.allowedRegionCodes = scope.regionOverride;
     }
 
