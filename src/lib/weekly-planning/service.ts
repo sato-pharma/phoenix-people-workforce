@@ -954,6 +954,40 @@ async function rpcCancelPlan(input: {
 // (migration 20260617090000). The previous recordReturnNotes() helper was
 // retired with the atomicity rewire and no longer has a caller.
 
+async function rpcRequestEditPlan(input: {
+  access: AccessContext;
+  expectedRevision: number;
+  planId: string;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_request_edit", {
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
+async function rpcDecideEditRequest(input: {
+  access: AccessContext;
+  comment?: string | null;
+  decision: "approve" | "reject";
+  expectedRevision: number;
+  planId: string;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_decide_edit_request", {
+    p_actor_hr_id: input.access.hrId,
+    p_actor_login_id: input.access.loginId ?? null,
+    p_actor_role: input.access.role,
+    p_comment: input.comment ?? null,
+    p_decision: input.decision,
+    p_expected_revision: input.expectedRevision,
+    p_plan_id: input.planId,
+  });
+  if (error) rethrowWeeklyPlanRpcError(error);
+}
+
 async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>) {
   const hrIds = Array.from(new Set(recipients.map((recipient) => normalizeHrId(recipient.hrId)).filter(Boolean)));
   const output = new Map<string, string>();
@@ -2368,4 +2402,60 @@ export async function bulkDecideEmployeePlans(
     }
   }
   return results;
+}
+
+export async function requestEditEmployeePlan(access: AccessContext, planId: string) {
+  await assertPermission(access, "weekly_plans", "update");
+  const plan = await loadPlanRow(planId);
+  assertPlanOwner(access, plan);
+  if (plan.status !== "submitted") {
+    throw new Error("Forbidden: edit can only be requested on a submitted plan.");
+  }
+  await rpcRequestEditPlan({ access, expectedRevision: plan.revision, planId });
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: "edit_requested" },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan edit requested by employee`,
+  });
+  return mapPlan(await loadPlanRow(planId));
+}
+
+export async function decideEditRequest(
+  access: AccessContext,
+  planId: string,
+  input: { decision: "approve" | "reject"; comment?: string | null },
+) {
+  const plan = await loadPlanRow(planId);
+  if (plan.status !== "edit_requested") {
+    throw new Error("This plan does not have a pending edit request.");
+  }
+  // Only the direct manager or Super Admin can decide.
+  await assertManagerReviewer(access, plan);
+  // Direct managers must leave a reason when rejecting; higher-level reviewers
+  // (Super Admin) may reject silently.
+  const isDirectManager = hrIdsMatch(access.hrId, plan.manager_hr_id);
+  if (input.decision === "reject" && isDirectManager && !String(input.comment ?? "").trim()) {
+    throw new Error("A reason is required when rejecting an edit request as the direct manager.");
+  }
+  await rpcDecideEditRequest({
+    access,
+    comment: input.comment,
+    decision: input.decision,
+    expectedRevision: plan.revision,
+    planId,
+  });
+  const action = input.decision === "approve" ? "approve_edit_request" : "reject_edit_request";
+  const nextStatus = input.decision === "approve" ? "draft" : "submitted";
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: planId,
+    entityType: "weekly_plan",
+    newValues: { status: nextStatus },
+    oldValues: { status: plan.status },
+    summary: `${plan.plan_kind} plan decision: ${action}`,
+  });
+  return mapPlan(await loadPlanRow(planId));
 }
