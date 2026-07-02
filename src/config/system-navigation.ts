@@ -165,15 +165,18 @@ const adminNavigationSectionSeeds = [
   {
     id: "workspace-marketing-requests",
     items: [
-      { href: "/workspace/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.workspace.fa_marketing_home", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"], exact: true },
-      { href: "/workspace/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.workspace.fa_marketing_inbox", roles: ["SFE Manager", "Financial Advisor", "Finance Manager"] },
+      // Real ROI Dashboard — the Marketing ROI & Customer Intelligence BI dashboard
+      // (spend vs. realized sales, coverage gaps, customer impact). Scoped to roles that operate
+      // in the admin shell; PM/GPM/Marketing Manager reach it via /employee-portals/roi instead.
+      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Super Admin", "CEO", "SFE Manager"] },
       // Merged in from the former standalone "Marketing Requests" section (org-wide admin
       // module for District Manager + Super Admin). moduleId pinned to the original
       // auto-generated value so existing Modules Control assignments keep working.
-      // ROI Dashboard is a READ-ONLY executive report — also surfaces to CEO for oversight.
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.marketing_requests.roi_dashboard.admin_marketing_requests_roi_tracking", roles: ["Super Admin", "CEO"] },
+      // ROI Tracking is a READ-ONLY executive report (filter/audit individual marketing
+      // requests) — also surfaces to CEO for oversight.
+      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.marketing_requests.roi_dashboard.admin_marketing_requests_roi_tracking", roles: ["Super Admin", "CEO"] },
       // Standalone, business-friendly ROI report (browse by requester/customer) — deliberately
-      // separate from the technical ROI Dashboard above; same read-only access as that report.
+      // separate from ROI Tracking above; same read-only access as that report.
       { href: "/admin/marketing-roi-report", icon: ClipboardList, label: "Marketing ROI Report", moduleId: "admin.marketing_requests.roi_business_report.admin_marketing_roi_report", roles: ["Super Admin", "CEO"] },
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.marketing_requests.customer_validation.admin_marketing_requests_validation", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.marketing_requests.marketing_requests.admin_marketing_requests", roles: ["District Manager", "Super Admin"], exact: true },
