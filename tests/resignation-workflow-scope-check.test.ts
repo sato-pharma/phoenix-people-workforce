@@ -56,16 +56,19 @@ export async function runResignationWorkflowScopeCheckTests() {
     "the scope check failure must throw an error prefixed with \"Forbidden:\" (matches isForbiddenError convention)",
   );
 
-  // (e) the scope check resolves the employee via getEmployeeDirectory() and matches by
-  // row.employee_hr_id — the same HR ID the row was loaded and transitioned under.
+  // (e) the scope check resolves the employee via getEmployeeDirectoryRows({ includeInactive:
+  // true }), NOT getEmployeeDirectory() -- the latter silently excludes any employee whose status
+  // isn't "active", which would make the scope check throw Forbidden for every caller (including
+  // Super Admin) once a resignation's employee is no longer active. Matches by row.employee_hr_id
+  // — the same HR ID the row was loaded and transitioned under.
   assert.match(
     fnBody,
-    /const directory = await getEmployeeDirectory\(\);/,
-    "runResignationWorkflow must resolve the employee via getEmployeeDirectory()",
+    /const directory = await getEmployeeDirectoryRows\(\{\s*includeInactive:\s*true\s*\}\);/,
+    "runResignationWorkflow must resolve the employee via getEmployeeDirectoryRows({ includeInactive: true }), not getEmployeeDirectory()",
   );
   assert.match(
     fnBody,
-    /directory\.employees\.find\(\(item\) => item\.hrId === row\.employee_hr_id\)/,
+    /directory\.find\(\(item\) => item\.hrId === row\.employee_hr_id\)/,
     "the employee lookup must match against row.employee_hr_id (the resignation record's own employee)",
   );
 

@@ -1480,10 +1480,14 @@ export async function runResignationWorkflow(
     status: currentStatus,
   });
 
-  const directory = await getEmployeeDirectory();
-  const employee = directory.employees.find((item) => item.hrId === row.employee_hr_id);
+  // getEmployeeDirectory() excludes inactive/terminated employees with no way to opt back in,
+  // but resignation actions (approve/complete/etc) routinely target an employee whose status has
+  // already flipped -- use the inactive-inclusive lookup so the scope check itself doesn't throw
+  // a false Forbidden for every caller (including Super Admin) once that happens.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const employee = directory.find((item) => item.hrId === row.employee_hr_id) ?? { hrId: row.employee_hr_id, managerHrId: null };
   const scopedAccess = access ?? systemAccessContext;
-  if (!employee || !canSeeEmployee(scopedAccess, employee)) {
+  if (!canSeeEmployee(scopedAccess, employee)) {
     throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${row.employee_hr_id}.`);
   }
 
