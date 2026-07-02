@@ -53,7 +53,12 @@ export async function GET(request: Request) {
 
     // MoM comparison is an admin-dashboard feature (one extra pushed-down detail RPC);
     // scope overrides for portal roles are layered on top exactly as before.
-    const options: SosDashboardOptions = { includeMomComparison: true };
+    // Confidential-by-default: the client can REQUEST the reveal, but getSosDashboard re-validates
+    // it against the caller's role — a non-CEO/Super-Admin request for includeRestricted is a no-op.
+    const options: SosDashboardOptions = {
+      includeMomComparison: true,
+      revealRestrictedProducts: searchParams.get("includeRestricted") === "1",
+    };
     if (isPortalSosRole(access.role)) {
       const scope = await resolvePortalSosScope(access);
       options.allowedProductCodes = scope.allowedProductCodes;
