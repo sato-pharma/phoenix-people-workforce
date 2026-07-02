@@ -254,7 +254,13 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
-    const planItems = rawPlanItems.filter(isAllowedCalendarOwner);
+    const isCompanyWideViewer = access.scope === "company" || access.scope === "system";
+    const planItems = rawPlanItems.filter((item) => {
+      if (!isAllowedCalendarOwner(item)) return false;
+      if (isCompanyWideViewer) return true;
+      if (isHeadOfficeLine(item.lineName)) return true;
+      return sameLine(item.lineName, viewer?.lineName);
+    });
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
