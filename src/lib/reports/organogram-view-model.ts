@@ -545,6 +545,13 @@ export function filterOrganogramRows(
 ) {
   const managerHrIdsToKeep = new Set<string>();
   const officeDescendantHrIdsToKeep = new Set<string>();
+  const rowsByHrId = new Map<string, OrganogramRow>();
+
+  for (const row of rows) {
+    const key = normalizeHrIdKey(row.hrId);
+    if (key) rowsByHrId.set(key, row);
+  }
+
   const selectedLineKey = effectiveLineFilter.trim().toLowerCase();
   const isOfficeSelected = selectedLineKey === "office" || selectedLineKey === "head office";
   const selectedLineRows = effectiveLineFilter
@@ -558,7 +565,7 @@ export function filterOrganogramRows(
 
   if (effectiveLineFilter) {
     let frontier = selectedLineRows
-      .map((row) => row.managerHrId)
+      .map((row) => normalizeHrIdKey(row.managerHrId))
       .filter((value): value is string => Boolean(value));
 
     while (frontier.length > 0) {
@@ -569,8 +576,8 @@ export function filterOrganogramRows(
 
         managerHrIdsToKeep.add(managerHrId);
 
-        const managerRow = rows.find((row) => row.hrId === managerHrId);
-        if (managerRow?.managerHrId) nextFrontier.push(managerRow.managerHrId);
+        const nextManagerHrId = normalizeHrIdKey(rowsByHrId.get(managerHrId)?.managerHrId);
+        if (nextManagerHrId) nextFrontier.push(nextManagerHrId);
       }
 
       frontier = nextFrontier;
@@ -580,13 +587,13 @@ export function filterOrganogramRows(
       const officeManagerHrIds = new Set(
         rows
           .filter((row) => normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) && !isChiefExecutive(row))
-          .map((row) => row.hrId),
+          .map((row) => normalizeHrIdKey(row.hrId)),
       );
 
       for (const row of rows) {
         if (normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || isChiefExecutive(row)) continue;
 
-        let managerHrId: string | null | undefined = row.managerHrId;
+        let managerHrId = normalizeHrIdKey(row.managerHrId);
         const visited = new Set<string>();
 
         while (managerHrId) {
@@ -598,7 +605,7 @@ export function filterOrganogramRows(
           if (visited.has(managerHrId)) break;
 
           visited.add(managerHrId);
-          managerHrId = rows.find((candidate) => candidate.hrId === managerHrId)?.managerHrId ?? null;
+          managerHrId = normalizeHrIdKey(rowsByHrId.get(managerHrId)?.managerHrId);
         }
       }
     }
@@ -608,7 +615,7 @@ export function filterOrganogramRows(
     const keepLeadershipChain =
       Boolean(effectiveLineFilter) &&
       (isChiefExecutive(row) ||
-        managerHrIdsToKeep.has(row.hrId) ||
+        managerHrIdsToKeep.has(normalizeHrIdKey(row.hrId)) ||
         officeDescendantHrIdsToKeep.has(row.hrId));
     const matchesSelectedLine =
       !effectiveLineFilter ||
@@ -641,7 +648,7 @@ export function filterOrganogramRows(
     while (managerHrId && !visited.has(managerHrId)) {
       visited.add(managerHrId);
       keepHrIds.add(managerHrId);
-      const managerRow = rows.find((row) => normalizeHrIdKey(row.hrId) === managerHrId);
+      const managerRow = rowsByHrId.get(managerHrId);
       managerHrId = normalizeHrIdKey(managerRow?.managerHrId);
     }
   }
@@ -657,7 +664,7 @@ export function filterOrganogramRows(
       }
 
       visited.add(managerHrId);
-      managerHrId = normalizeHrIdKey(rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId);
+      managerHrId = normalizeHrIdKey(rowsByHrId.get(managerHrId)?.managerHrId);
     }
   }
 
