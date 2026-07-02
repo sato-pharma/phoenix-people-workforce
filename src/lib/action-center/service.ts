@@ -9,6 +9,7 @@ import {
   getManagerPendingExcuses,
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
+import { canUseAdminOutstationWorkspace } from "@/lib/outstation/admin-access";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
 import {
   getEmployeePlansWorkspace,
@@ -374,14 +375,19 @@ export async function getAwaitingMyActionItems(
   audience: ActionInboxAudience,
 ): Promise<ActionHubItem[]> {
   // Marketing is intentionally excluded everywhere — it keeps its own dedicated inbox.
-  // Outstation and resignations: admin-only (unscoped company-wide aggregates).
+  // Outstation: admin-only AND restricted to real approval authority — listOutstationRequests()
+  // is an unscoped company-wide read, and only Super Admin can act on these requests
+  // (see canUseAdminOutstationWorkspace). Other admin-shell roles (Finance Manager, CEO, etc.)
+  // must not see items in an "awaiting my action" inbox they cannot act on.
+  // Resignations: admin-only (unscoped company-wide aggregates).
   // Contract renewal: always included — already access-scoped via canSeeContractRow(access, employee).
-  const includeAdminSources = audience === "admin";
+  const includeOutstationAdminSource =
+    audience === "admin" && canUseAdminOutstationWorkspace(access, "approve");
   const settled = await Promise.allSettled([
     getVacationActionCenterData(access).catch(() => null),
     getManagerPendingExcuses(access).catch(() => null),
     getResignationsDashboardData(access).catch(() => null),
-    includeAdminSources ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
+    includeOutstationAdminSource ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     getContractRenewalDashboardData(access).catch(() => null),
     getPlansAwaitingAction(access).catch(() => null),
   ]);
