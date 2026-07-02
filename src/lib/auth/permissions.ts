@@ -1,5 +1,5 @@
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -801,22 +801,9 @@ export function normalizeHrId(value: string | null | undefined) {
   return canonicalHrIdKey(value);
 }
 
-export function normalizeHrIdForAccess(value: string | null | undefined) {
-  const normalized = normalizeHrId(value);
-  return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;
-}
-
-function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
-  const a = normalizeHrId(left);
-  const b = normalizeHrId(right);
-  if (a && b && a === b) return true;
-
-  const canonicalLeft = normalizeHrIdForAccess(left);
-  const canonicalRight = normalizeHrIdForAccess(right);
-  return Boolean(
-    canonicalLeft && canonicalRight && canonicalLeft === canonicalRight,
-  );
-}
+// Client-safe (no server deps) — defined in hr-id.ts and re-exported here so
+// existing server-side importers of this module keep working unchanged.
+export { hrIdsMatch, normalizeHrIdForAccess };
 
 export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "hrId" | "loginId">> | null | undefined) {
   if (!context) return null;

@@ -9,7 +9,7 @@
  * empty list rather than crashing the page.
  */
 
-import { assertPermission, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -20,12 +20,6 @@ export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
 const SUPPORT_ADMIN_REVIEW_URL = "/admin/notifications";
 
 type HrRecipient = { email: string | null; hrId: string | null; userId: string | null };
-
-function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
-  const a = normalizeHrId(left);
-  const b = normalizeHrId(right);
-  return Boolean(a) && a === b;
-}
 
 /**
  * Resolve the HR team that should be alerted when an employee opens a support
@@ -118,12 +112,12 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
     );
   }
 
-  recipients = recipients.filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
+  recipients = recipients.filter((recipient) => !hrIdsMatch(recipient.hrId, request.hrId));
 
   if (recipients.length === 0) {
     try {
       const fallback = await resolveSuperAdminFallbackRecipients();
-      const filtered = fallback.filter((recipient) => !sameHrId(recipient.hrId, request.hrId));
+      const filtered = fallback.filter((recipient) => !hrIdsMatch(recipient.hrId, request.hrId));
       if (filtered.length > 0) {
         recipients = filtered;
         fellBackToSuperAdmin = true;

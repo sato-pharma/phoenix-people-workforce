@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { hrIdsMatch } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
@@ -980,14 +980,10 @@ export function PlansWorkspace({
   // (assertManagerReviewer / assertCeoReviewer) so the UI never hides an action the
   // API would actually allow.
   const isSuperAdminReviewer = access.role === "Super Admin" || access.scope === "system";
-  const sameHrId = (a: string | null | undefined, b: string | null | undefined) => {
-    const left = canonicalHrIdKey(a);
-    return Boolean(left && left === canonicalHrIdKey(b));
-  };
   const managerQueue = plans.filter(
     (item) =>
       item.status === "submitted" &&
-      (isSuperAdminReviewer || sameHrId(item.managerHrId, access.hrId)),
+      (isSuperAdminReviewer || hrIdsMatch(item.managerHrId, access.hrId)),
   );
   const ceoQueue = plans.filter(
     (item) =>

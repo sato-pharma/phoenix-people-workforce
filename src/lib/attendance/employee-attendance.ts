@@ -5,7 +5,7 @@ import { compactDeductionHrId } from "@/lib/deductions-governance/service";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
-import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 
 export type EmployeeAttendanceSummary = {
@@ -123,13 +123,6 @@ export async function getEmployeeAttendanceData(
 
 // ─── Manager view: who may see whose fingerprint report ─────────────────────
 
-/** Exact, normalized HR_ID equality (never substring — avoids B-1 vs B-10 leakage). */
-function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
-  const a = normalizeHrId(left);
-  const b = normalizeHrId(right);
-  return Boolean(a) && a === b;
-}
-
 export type AttendanceViewTarget = {
   hrId: string;
   managerHrId: string | null;
@@ -160,7 +153,7 @@ export function canViewEmployeeAttendanceReport(
   const targetHrId = normalizeHrId(target.hrId);
   if (!caller || !targetHrId) return false;
 
-  if (sameHrId(caller, targetHrId)) return true; // self
+  if (hrIdsMatch(caller, targetHrId)) return true; // self
 
   // Whole-company visibility (CEO / Super Admin / company-or-system scope).
   if (
@@ -173,7 +166,7 @@ export function canViewEmployeeAttendanceReport(
   }
 
   // Otherwise: direct reports only.
-  return sameHrId(caller, target.managerHrId);
+  return hrIdsMatch(caller, target.managerHrId);
 }
 
 /**
@@ -230,7 +223,7 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
     employment_status: string | null;
     manager_hr_id: string | null;
   }>)
-    .filter((row) => sameHrId(row.manager_hr_id, normalized))
+    .filter((row) => hrIdsMatch(row.manager_hr_id, normalized))
     .filter((row) => !isTerminalEmploymentStatus(row.employment_status))
     .filter((row) =>
       isAttendanceTracked({
