@@ -245,6 +245,8 @@ type Ctx = {
   /** True when detailRows exist → reconstructable numbers become live formulas. */
   hasLeaf: boolean;
   mom: SosMomComparison | null;
+  yoy: SosMomComparison | null;
+  yoyPeriod: string | null;
 };
 
 /** Live SUMIFS when the leaf grain exists, otherwise the server-computed value. */
@@ -358,6 +360,82 @@ function buildMomMovers(ctx: Ctx) {
   [34, 20, 18, 16, 11].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
   sheet.freeze(3, 0);
   applyPrintSetup(sheet, "MoM Movers", ctx.generatedAt, ncols, Math.max(5, lastUsed));
+}
+
+// ── YoY Movers (structurally identical to MoM Movers — same month last year instead of last month) ─
+function buildYoyMovers(ctx: Ctx) {
+  const sheet = ctx.wb.addSheet("YoY Movers");
+  sheet.view = { showGridLines: false };
+  const cfp = makeCfPriority();
+  const ncols = 5;
+  bandHeader(sheet, ncols, "Year-over-Year Movers", ctx.subtitle);
+  addNavLink(sheet, 1, ncols + 1);
+  let row = 4;
+  let lastUsed = 5;
+
+  if (!ctx.yoy) {
+    noteRow(sheet, 5, (ctx.data.selectedPeriods?.length ?? 0) > 1
+      ? "Multi-month selection — year-over-year comparison applies to single-month views only."
+      : "No same-month-last-year period exists yet — year-over-year comparison unavailable.");
+  } else {
+    const yoy = ctx.yoy;
+    const writeMovers = (title: string, movers: SosMoverRow[]) => {
+      row = sectionTitle(sheet, row, ncols, title);
+      const headerRow = row;
+      ["Name", `Prev (${ctx.yoyPeriod ?? "—"})`, `Curr (${ctx.period})`, "Δ value", "Δ %"].forEach((h, i) => {
+        sheet.setValue(headerRow, i + 1, h); sheet.setStyle(headerRow, i + 1, i === 0 ? headerStyle : headerRightStyle);
+      });
+      row += 1;
+      if (movers.length === 0) { noteRow(sheet, row, "None."); lastUsed = row; row += 2; return; }
+      const first = row;
+      movers.forEach((m, i) => {
+        const zebra = i % 2 === 1;
+        sheet.setValue(row, 1, cleanText(m.label)); sheet.setStyle(row, 1, textCell(false, zebra));
+        sheet.setValue(row, 2, m.prevValue); sheet.setStyle(row, 2, numCell(F_VALUE, zebra));
+        sheet.setValue(row, 3, m.value); sheet.setStyle(row, 3, numCell(F_VALUE, zebra));
+        sheet.setValue(row, 4, m.delta); sheet.setStyle(row, 4, numCell(F_VALUE, zebra));
+        sheet.setValue(row, 5, m.deltaPct); sheet.setStyle(row, 5, numCell(F_PCT, zebra));
+        row += 1;
+      });
+      const lastRow = row - 1;
+      try {
+        sheet.addConditionalFormat({ sqref: `C${first}:C${lastRow}`, type: "dataBar", dataBar: { type: "dataBar", color: ORANGE, showValue: true }, priority: cfp() });
+        sheet.addConditionalFormat({ sqref: `D${first}:D${lastRow}`, type: "cellIs", operator: "greaterThan", formula: "0", style: { font: { color: GREEN, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
+        sheet.addConditionalFormat({ sqref: `D${first}:D${lastRow}`, type: "cellIs", operator: "lessThan", formula: "0", style: { font: { color: RED, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
+      } catch { /* cosmetic */ }
+      lastUsed = lastRow;
+      row += 1;
+    };
+    writeMovers("Top product gainers", yoy.movers.products.gainers);
+    writeMovers("Top product decliners", yoy.movers.products.decliners);
+    writeMovers("Top region gainers", yoy.movers.regions.gainers);
+    writeMovers("Top region decliners", yoy.movers.regions.decliners);
+    writeMovers("Top distributor gainers", yoy.movers.distributors.gainers);
+    writeMovers("Top distributor decliners", yoy.movers.distributors.decliners);
+
+    const writeNewLost = (title: string, rows: SosNewLostRow[], valueHeader: string) => {
+      if (rows.length === 0) return;
+      row = sectionTitle(sheet, row, ncols, title);
+      const headerRow = row;
+      ["Name", valueHeader].forEach((h, i) => { sheet.setValue(headerRow, i + 1, cleanText(h)); sheet.setStyle(headerRow, i + 1, i === 0 ? headerStyle : headerRightStyle); });
+      row += 1;
+      rows.forEach((r, i) => {
+        const zebra = i % 2 === 1;
+        sheet.setValue(row, 1, cleanText(r.label)); sheet.setStyle(row, 1, textCell(false, zebra));
+        sheet.setValue(row, 2, r.value); sheet.setStyle(row, 2, numCell(F_VALUE, zebra));
+        row += 1;
+      });
+      lastUsed = row - 1;
+      row += 1;
+    };
+    writeNewLost(`New products in ${ctx.period}`, yoy.newProducts, "Value (EGP)");
+    writeNewLost(`Products with no sales in ${ctx.period} (had sales in ${yoy.priorPeriod})`, yoy.lostProducts, `Value in ${yoy.priorPeriod} (EGP)`);
+    writeNewLost(`Newly covered areas in ${ctx.period}`, yoy.newAreas, "Value (EGP)");
+    writeNewLost(`Areas lost in ${ctx.period} (had sales in ${yoy.priorPeriod})`, yoy.lostAreas, `Value in ${yoy.priorPeriod} (EGP)`);
+  }
+  [34, 20, 18, 16, 11].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+  sheet.freeze(3, 0);
+  applyPrintSetup(sheet, "YoY Movers", ctx.generatedAt, ncols, Math.max(5, lastUsed));
 }
 
 // ── Trend (6-month value + units; deltas are in-sheet formulas; REPT bar) ─────────
@@ -1064,6 +1142,7 @@ function buildReportInfo(ctx: Ctx, generatedBy: string, filterSummary: string, l
     ["Period(s)", ctx.period],
     ["Months in scope", (ctx.data.selectedPeriods ?? []).join(", ") || ctx.data.period || "—"],
     ["Prior period (MoM)", ctx.priorPeriod ?? "— (no prior validated period)"],
+    ["Prior period (YoY)", ctx.yoyPeriod ?? "— (no same-month-last-year period)"],
     ["Scope", "CEO / Super Admin — full company"],
     [
       "Confidential products (LA003 / LA004 / SS001)",
@@ -1182,29 +1261,30 @@ function buildDashboardCover(
     dash.setStyle(bandRow, col, { font: { bold: true, size: 11, color: ORANGE, name: "Calibri" }, fill: fill(SLATE_800), alignment: { vertical: "center", indent: 1 } });
     for (let c = col + 1; c < col + span; c += 1) dash.setStyle(bandRow, c, { fill: fill(SLATE_800) });
   };
-  miniTitle(1, 4, `Headline KPIs — ${ctx.period}${ctx.priorPeriod ? ` vs ${ctx.priorPeriod}` : ""}`);
+  miniTitle(1, 5, `Headline KPIs — ${ctx.period}${ctx.priorPeriod ? ` vs ${ctx.priorPeriod}` : ""}`);
   miniTitle(6, 7, "Executive insights");
 
   const kpiHeader = bandRow + 1;
-  ["KPI", "Value", `Prior (${ctx.priorPeriod ?? "—"})`, "MoM Δ %"].forEach((h, i) => {
+  ["KPI", "Value", `Prior (${ctx.priorPeriod ?? "—"})`, "MoM Δ %", "YoY Δ %"].forEach((h, i) => {
     dash.setValue(kpiHeader, i + 1, h); dash.setStyle(kpiHeader, i + 1, i === 0 ? headerStyle : headerRightStyle);
   });
   let row = kpiHeader + 1;
   const d = ctx.mom?.summaryDeltas ?? null;
-  const kpis: { label: string; fmt: string; live?: string; value: number; prior: number | null; deltaPct: number | null }[] = [
-    { label: "Total value (EGP)", fmt: F_VALUE, live: `SUM(${valRange})`, value: data.summary.totalValue, prior: d?.totalValue.previous ?? null, deltaPct: d?.totalValue.deltaPct ?? null },
-    { label: "Total units", fmt: F_UNITS, live: `SUM(${unitRange})`, value: data.summary.totalUnits, prior: d?.totalUnits.previous ?? null, deltaPct: d?.totalUnits.deltaPct ?? null },
-    { label: "Avg price / unit (EGP)", fmt: F_VALUE, live: div0(`SUM(${valRange})`, `SUM(${unitRange})`), value: data.summary.avgPricePerUnit, prior: d?.avgPricePerUnit.previous ?? null, deltaPct: d?.avgPricePerUnit.deltaPct ?? null },
-    { label: "Direct value (EGP)", fmt: F_VALUE, live: sumifs1("Value", ctx.last, [["Channel", "Direct"]]), value: data.summary.directValue, prior: null, deltaPct: null },
-    { label: "Distributor value (EGP)", fmt: F_VALUE, live: sumifs1("Value", ctx.last, [["Channel", "Distributor"]]), value: data.summary.distributorValue, prior: null, deltaPct: null },
-    { label: "Direct share %", fmt: F_PCT, value: data.summary.directShare, prior: d?.directShare.previous ?? null, deltaPct: d?.directShare.deltaPct ?? null },
-    { label: "Distributors", fmt: F_UNITS, value: data.summary.distributorCount, prior: d?.distributorCount.previous ?? null, deltaPct: d?.distributorCount.deltaPct ?? null },
-    { label: "Products", fmt: F_UNITS, value: data.summary.productCount, prior: d?.productCount.previous ?? null, deltaPct: d?.productCount.deltaPct ?? null },
-    { label: "Customers", fmt: F_UNITS, value: data.summary.customerCount, prior: null, deltaPct: null },
-    { label: "Areas reached", fmt: F_UNITS, value: data.summary.areasReached, prior: d?.areasReached.previous ?? null, deltaPct: d?.areasReached.deltaPct ?? null },
-    { label: "Total areas (scope)", fmt: F_UNITS, value: data.summary.totalAreas, prior: null, deltaPct: null },
-    { label: "Bricks reached", fmt: F_UNITS, value: data.summary.bricksReached, prior: null, deltaPct: null },
-    { label: "Total bricks (scope)", fmt: F_UNITS, value: data.summary.totalBricks, prior: null, deltaPct: null },
+  const y = ctx.yoy?.summaryDeltas ?? null;
+  const kpis: { label: string; fmt: string; live?: string; value: number; prior: number | null; deltaPct: number | null; yoyDeltaPct: number | null }[] = [
+    { label: "Total value (EGP)", fmt: F_VALUE, live: `SUM(${valRange})`, value: data.summary.totalValue, prior: d?.totalValue.previous ?? null, deltaPct: d?.totalValue.deltaPct ?? null, yoyDeltaPct: y?.totalValue.deltaPct ?? null },
+    { label: "Total units", fmt: F_UNITS, live: `SUM(${unitRange})`, value: data.summary.totalUnits, prior: d?.totalUnits.previous ?? null, deltaPct: d?.totalUnits.deltaPct ?? null, yoyDeltaPct: y?.totalUnits.deltaPct ?? null },
+    { label: "Avg price / unit (EGP)", fmt: F_VALUE, live: div0(`SUM(${valRange})`, `SUM(${unitRange})`), value: data.summary.avgPricePerUnit, prior: d?.avgPricePerUnit.previous ?? null, deltaPct: d?.avgPricePerUnit.deltaPct ?? null, yoyDeltaPct: y?.avgPricePerUnit.deltaPct ?? null },
+    { label: "Direct value (EGP)", fmt: F_VALUE, live: sumifs1("Value", ctx.last, [["Channel", "Direct"]]), value: data.summary.directValue, prior: null, deltaPct: null, yoyDeltaPct: null },
+    { label: "Distributor value (EGP)", fmt: F_VALUE, live: sumifs1("Value", ctx.last, [["Channel", "Distributor"]]), value: data.summary.distributorValue, prior: null, deltaPct: null, yoyDeltaPct: null },
+    { label: "Direct share %", fmt: F_PCT, value: data.summary.directShare, prior: d?.directShare.previous ?? null, deltaPct: d?.directShare.deltaPct ?? null, yoyDeltaPct: y?.directShare.deltaPct ?? null },
+    { label: "Distributors", fmt: F_UNITS, value: data.summary.distributorCount, prior: d?.distributorCount.previous ?? null, deltaPct: d?.distributorCount.deltaPct ?? null, yoyDeltaPct: y?.distributorCount.deltaPct ?? null },
+    { label: "Products", fmt: F_UNITS, value: data.summary.productCount, prior: d?.productCount.previous ?? null, deltaPct: d?.productCount.deltaPct ?? null, yoyDeltaPct: y?.productCount.deltaPct ?? null },
+    { label: "Customers", fmt: F_UNITS, value: data.summary.customerCount, prior: null, deltaPct: null, yoyDeltaPct: null },
+    { label: "Areas reached", fmt: F_UNITS, value: data.summary.areasReached, prior: d?.areasReached.previous ?? null, deltaPct: d?.areasReached.deltaPct ?? null, yoyDeltaPct: y?.areasReached.deltaPct ?? null },
+    { label: "Total areas (scope)", fmt: F_UNITS, value: data.summary.totalAreas, prior: null, deltaPct: null, yoyDeltaPct: null },
+    { label: "Bricks reached", fmt: F_UNITS, value: data.summary.bricksReached, prior: null, deltaPct: null, yoyDeltaPct: null },
+    { label: "Total bricks (scope)", fmt: F_UNITS, value: data.summary.totalBricks, prior: null, deltaPct: null, yoyDeltaPct: null },
   ];
   const kpiFirst = row;
   kpis.forEach((k, i) => {
@@ -1216,12 +1296,16 @@ function buildDashboardCover(
     dash.setStyle(row, 3, numCell(k.fmt, zebra));
     if (typeof k.deltaPct === "number") dash.setValue(row, 4, k.deltaPct);
     dash.setStyle(row, 4, numCell(F_PCT, zebra));
+    if (typeof k.yoyDeltaPct === "number") dash.setValue(row, 5, k.yoyDeltaPct);
+    dash.setStyle(row, 5, numCell(F_PCT, zebra));
     row += 1;
   });
   const kpiLast = row - 1;
   try {
     dash.addConditionalFormat({ sqref: `D${kpiFirst}:D${kpiLast}`, type: "cellIs", operator: "greaterThan", formula: "0", style: { font: { color: GREEN, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
     dash.addConditionalFormat({ sqref: `D${kpiFirst}:D${kpiLast}`, type: "cellIs", operator: "lessThan", formula: "0", style: { font: { color: RED, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
+    dash.addConditionalFormat({ sqref: `E${kpiFirst}:E${kpiLast}`, type: "cellIs", operator: "greaterThan", formula: "0", style: { font: { color: GREEN, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
+    dash.addConditionalFormat({ sqref: `E${kpiFirst}:E${kpiLast}`, type: "cellIs", operator: "lessThan", formula: "0", style: { font: { color: RED, bold: true, name: "Calibri", size: 10.5 } }, priority: cfp() });
   } catch { /* cosmetic */ }
 
   // Executive insights — placed to the RIGHT of the KPI table (col F = tone, G–L = text), same
@@ -1290,6 +1374,7 @@ function buildDashboardCover(
   // Contents panel — clickable HYPERLINK() index of every visible sheet.
   const contents: { name: string; desc: string }[] = [
     { name: "MoM Movers", desc: "Month-over-month gainers, decliners, new & lost." },
+    { name: "YoY Movers", desc: "Year-over-year gainers, decliners, new & lost." },
     { name: "Trend", desc: "6-month value and units trajectory." },
     { name: "Region x Product", desc: "Heat-mapped value matrix (top 20 products)." },
     { name: "Pareto ABC", desc: "80/20 product ranking with ABC classes." },
@@ -1351,6 +1436,8 @@ export async function buildSosBiWorkbook(input: SosBiWorkbookInput): Promise<Buf
   const leafRows = data.detailRows ?? [];
   const mom = data.momComparison ?? null;
   const priorPeriod = mom?.priorPeriod ?? null;
+  const yoy = data.yoyComparison ?? null;
+  const yoyPeriod = yoy?.priorPeriod ?? null;
 
   // Period label reflects the full selection: one month → "2026-06"; several →
   // "3 months (2026-06 … 2026-04)". momComparison is null for multi-month views.
@@ -1366,7 +1453,7 @@ export async function buildSosBiWorkbook(input: SosBiWorkbookInput): Promise<Buf
 
   const dash = wb.addSheet("Dashboard"); // created first (leftmost), populated last
   const last = buildDataSheet(wb, leafRows, data.trend);
-  const ctx: Ctx = { wb, data, subtitle, period, priorPeriod, generatedAt, last, hasLeaf: leafRows.length > 0, mom };
+  const ctx: Ctx = { wb, data, subtitle, period, priorPeriod, generatedAt, last, hasLeaf: leafRows.length > 0, mom, yoy, yoyPeriod };
 
   // MoM Δ% lookup maps (plain payload numbers — the prior month is not in the Data grain).
   const momPctByCode = (movers: SosMoverRow[] | undefined): Map<string, number> => {
@@ -1382,6 +1469,7 @@ export async function buildSosBiWorkbook(input: SosBiWorkbookInput): Promise<Buf
   const months = [...(data.selectedPeriods ?? [])].sort();
 
   buildMomMovers(ctx);
+  buildYoyMovers(ctx);
   buildTrend(ctx);
   buildHeatMatrix(ctx, {
     sheetName: "Region x Product",

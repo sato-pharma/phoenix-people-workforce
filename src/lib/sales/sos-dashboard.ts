@@ -19,6 +19,7 @@ import {
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { shiftPeriod } from "@/lib/sales/periods";
 import {
   computeContribution,
   computeDelta,
@@ -132,6 +133,13 @@ export type SosDashboardData = {
    * payload is byte-identical to before this field existed.
    */
   momComparison?: SosMomComparison | null;
+  /**
+   * Year-over-year intelligence vs the same month last year. Present only when the caller
+   * passes `options.includeYoY`; `null` means it was requested but no same-month-last-year
+   * period exists yet (or the selection spans more than one month). Same shape as
+   * `momComparison` — the type is agnostic to "prior = last month" vs "prior = last year".
+   */
+  yoyComparison?: SosMomComparison | null;
   /** Pareto / ABC classification of byProduct. Computed only with `includeMomComparison`. */
   paretoProducts?: SosParetoRow[];
   /** Scoped leaf rows for the BI export's hidden Data sheet. Only with `includeDetailRows`. */
@@ -241,6 +249,14 @@ export type SosScopeOverrides = {
 export type SosDashboardOptions = SosScopeOverrides & {
   /** Compute momComparison + paretoProducts (one extra pushed-down prior-period detail RPC). */
   includeMomComparison?: boolean;
+  /**
+   * Compute yoyComparison vs the same month last year (one extra pushed-down detail RPC).
+   * Structurally identical to momComparison — same delta/movers/contribution/new-lost math,
+   * just against `shiftPeriod(selectedPeriod, 12)` instead of the prior month. Only meaningful
+   * for a single-month selection with that prior-year month present in availablePeriods;
+   * otherwise yoyComparison is null (never a fabricated/partial comparison).
+   */
+  includeYoY?: boolean;
   /** Attach the keepExec-filtered leaf rows (detailRows) for the BI export's Data sheet. */
   includeDetailRows?: boolean;
   /**
@@ -500,6 +516,23 @@ export async function getSosDashboard(
           ]),
         );
 
+  // Year-over-year: the same month last year, fetched through the SAME pushed-down detail RPC —
+  // structurally identical to the MoM prior-period fetch above, just shifted 12 months instead of
+  // 1. Same single-month guard (a multi-month YoY comparison would be as misleading as MoM's).
+  const yoyPeriodCandidate = options?.includeYoY && isSingleMonth ? shiftPeriod(selectedPeriod, 12) : null;
+  const yoyPeriod = yoyPeriodCandidate && availableSet.has(yoyPeriodCandidate) ? yoyPeriodCandidate : null;
+  const yoyDetailRowsPromise =
+    !yoyPeriod || trendForcedEmpty
+      ? emptyRpcRows
+      : safeRpcAll("phx_exec_distributor_product (YoY period)", () =>
+          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), [
+            "distributor_code",
+            "region_code",
+            "area_code",
+            "product_code",
+          ]),
+        );
+
   // Head-Office confidentiality for the geography aggregates: brick/customer rows carry no
   // product/line dimension, so the Head-Office contribution can only be stripped INSIDE the RPC
   // (LA003/LA004/SS001 are already hard-excluded in the SQL bodies since 20260702130000). Pass
@@ -519,12 +552,13 @@ export async function getSosDashboard(
         ).then((arrays) => arrays.flat())
       : emptyRpcRows;
 
-  const [detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw] = await Promise.all([
+  const [detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw] = await Promise.all([
     detailRowsPromise,
     trendResultPromise,
     fetchGeo("phx_exec_brick", ["distributor_code", "region_code", "area_code", "brick_id"]),
     fetchGeo("phx_exec_customers", ["client_code", "distributor_code"]),
     priorDetailRowsPromise,
+    yoyDetailRowsPromise,
   ]);
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
@@ -573,6 +607,8 @@ export async function getSosDashboard(
   const detail = (detailRows as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
   // Prior-period leaf rows for the MoM layer — same mapping, same keepExec (period-agnostic).
   const priorDetail = (priorDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  // Same-month-last-year leaf rows for the YoY layer — same mapping, same keepExec.
+  const yoyDetail = (yoyDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
 
   const totalValue = detail.reduce((sum, row) => sum + row.value, 0);
   const totalUnits = detail.reduce((sum, row) => sum + row.units, 0);
@@ -837,6 +873,68 @@ export async function getSosDashboard(
     }
   }
 
+  // ── Year-over-year layer (admin dashboard + BI export only) ──────────────────────────────
+  // Structurally identical to the MoM block above — same pure presentation math, just comparing
+  // against the same month last year (yoyDetail/yoyPeriod) instead of the prior month.
+  let yoyComparison: SosMomComparison | null | undefined = undefined;
+  if (options?.includeYoY) {
+    if (!yoyPeriod) {
+      yoyComparison = null;
+    } else {
+      const yoyTotalValue = yoyDetail.reduce((sum, row) => sum + row.value, 0);
+      const yoyTotalUnits = yoyDetail.reduce((sum, row) => sum + row.units, 0);
+      const yoyByProduct = groupByProduct(yoyDetail, yoyTotalValue);
+      const yoyByRegion = groupByRegion(yoyDetail, yoyTotalValue);
+      const yoyByArea = groupByArea(yoyDetail, yoyTotalValue);
+      const yoyByDistributor = group(
+        yoyDetail,
+        (row) => row.distributorCode,
+        (code) => distributorLabel.get(code) ?? code,
+        () => null,
+        yoyTotalValue,
+      );
+      const yoyDirectValue = yoyDetail
+        .filter((row) => isDirect(row.distributorCode))
+        .reduce((sum, row) => sum + row.value, 0);
+      const yoyAreasReached = new Set(
+        yoyDetail.map((row) => row.areaCode).filter((code) => code && code !== "DIRECT"),
+      ).size;
+      const yoyDistributorCount = new Set(yoyDetail.map((row) => row.distributorCode).filter(Boolean)).size;
+      const yoyProductCount = new Set(yoyDetail.map((row) => row.productCode).filter(Boolean)).size;
+      const isRealArea = (row: { code: string }) => row.code !== "DIRECT";
+      const newLostProductsYoy = computeNewAndLost(byProduct, yoyByProduct);
+      const newLostAreasYoy = computeNewAndLost(byArea.filter(isRealArea), yoyByArea.filter(isRealArea));
+      yoyComparison = {
+        priorPeriod: yoyPeriod,
+        summaryDeltas: {
+          totalValue: computeDelta(totalValue, yoyTotalValue),
+          totalUnits: computeDelta(totalUnits, yoyTotalUnits),
+          avgPricePerUnit: computeDelta(
+            summary.avgPricePerUnit,
+            yoyTotalUnits > 0 ? yoyTotalValue / yoyTotalUnits : 0,
+          ),
+          distributorCount: computeDelta(summary.distributorCount, yoyDistributorCount),
+          productCount: computeDelta(summary.productCount, yoyProductCount),
+          directShare: computeDelta(summary.directShare, share(yoyDirectValue, yoyTotalValue)),
+          areasReached: computeDelta(summary.areasReached, yoyAreasReached),
+        },
+        movers: {
+          products: computeMovers(byProduct, yoyByProduct),
+          regions: computeMovers(byRegion, yoyByRegion),
+          distributors: computeMovers(byDistributor, yoyByDistributor),
+        },
+        contribution: {
+          products: computeContribution(byProduct, yoyByProduct),
+          regions: computeContribution(byRegion, yoyByRegion),
+        },
+        newProducts: newLostProductsYoy.added,
+        lostProducts: newLostProductsYoy.removed,
+        newAreas: newLostAreasYoy.added,
+        lostAreas: newLostAreasYoy.removed,
+      };
+    }
+  }
+
   // Leaf rows for the BI export's hidden Data sheet — the exact rows behind every on-screen
   // aggregate (already scoped + confidential-stripped by keepExec), labeled via the masters.
   const detailLeafRows: SosDetailLeafRow[] | undefined = options?.includeDetailRows
@@ -890,6 +988,7 @@ export async function getSosDashboard(
       mom: momComparison ?? null,
     }),
     momComparison,
+    yoyComparison,
     paretoProducts,
     detailRows: detailLeafRows,
     restrictedRevealed: canSeeRestricted,

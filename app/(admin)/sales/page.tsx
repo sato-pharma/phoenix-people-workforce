@@ -40,7 +40,7 @@ async function SosDashboardContent({ accessContext }: { accessContext: AccessCon
   try {
     // Confidential products stay excluded on the initial load even for CEO/Super Admin —
     // omitting revealRestrictedProducts here is what makes the dashboard default-off.
-    initialData = await getSosDashboard({}, accessContext, { includeMomComparison: true });
+    initialData = await getSosDashboard({}, accessContext, { includeMomComparison: true, includeYoY: true });
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Source of Sales dashboard.";
   }

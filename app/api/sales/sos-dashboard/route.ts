@@ -57,6 +57,7 @@ export async function GET(request: Request) {
     // it against the caller's role — a non-CEO/Super-Admin request for includeRestricted is a no-op.
     const options: SosDashboardOptions = {
       includeMomComparison: true,
+      includeYoY: true,
       revealRestrictedProducts: searchParams.get("includeRestricted") === "1",
     };
     if (isPortalSosRole(access.role)) {

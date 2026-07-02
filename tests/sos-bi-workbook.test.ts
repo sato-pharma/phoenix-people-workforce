@@ -134,6 +134,34 @@ function fixture(): SosDashboardData {
       newAreas: [],
       lostAreas: [{ code: "A3", label: "Area 3", value: 300 }],
     },
+    yoyComparison: {
+      priorPeriod: "2025-06",
+      summaryDeltas: {
+        totalValue: { current: 10_000, previous: 8_000, delta: 2_000, deltaPct: 2_000 / 8_000 },
+        totalUnits: { current: 1_000, previous: 850, delta: 150, deltaPct: 150 / 850 },
+        avgPricePerUnit: { current: 10, previous: 9.41, delta: 0.59, deltaPct: 0.063 },
+        distributorCount: { current: 2, previous: 1, delta: 1, deltaPct: 1 },
+        productCount: { current: 2, previous: 2, delta: 0, deltaPct: 0 },
+        directShare: { current: 0.2, previous: 0.15, delta: 0.05, deltaPct: 0.33 },
+        areasReached: { current: 2, previous: 2, delta: 0, deltaPct: 0 },
+      },
+      movers: {
+        products: {
+          gainers: [{ code: "SAG", label: "Saginkgo", value: 7_000, prevValue: 5_000, delta: 2_000, deltaPct: 0.4 }],
+          decliners: [],
+        },
+        regions: { gainers: [], decliners: [] },
+        distributors: { gainers: [], decliners: [] },
+      },
+      contribution: {
+        products: [{ code: "SAG", label: "Saginkgo", value: 7_000, prevValue: 5_000, delta: 2_000, contribution: 1 }],
+        regions: [],
+      },
+      newProducts: [],
+      lostProducts: [],
+      newAreas: [],
+      lostAreas: [],
+    },
     paretoProducts: [
       { code: "SAG", label: "Saginkgo", line: "Pedia", value: 7_000, units: 700, share: 0.7, cumulativeShare: 0.7, abcClass: "A" },
       { code: "ROY", label: nastyName, line: "Pedia", value: 3_000, units: 300, share: 0.3, cumulativeShare: 1, abcClass: "C" },
@@ -147,7 +175,7 @@ function fixture(): SosDashboardData {
 }
 
 const EXPECTED_SHEETS = [
-  "Dashboard", "MoM Movers", "Trend", "Region x Product", "Pareto ABC",
+  "Dashboard", "MoM Movers", "YoY Movers", "Trend", "Region x Product", "Pareto ABC",
   "Distributor x Product", "Product x Month",
   "Region x Distributor", "Line x Region", "Area x Product",
   "Region Pareto", "Growth Contribution",
@@ -205,6 +233,7 @@ export async function runSosBiWorkbookTests() {
   // Fields absent entirely (portal-shaped payload, flags off) must also not throw.
   const bare = { ...fixture() };
   delete bare.momComparison;
+  delete bare.yoyComparison;
   delete bare.paretoProducts;
   delete bare.detailRows;
   const bareBuffer = await buildSosBiWorkbook({ data: bare, generatedBy: "PHX-1", generatedAt: GENERATED_AT, filterSummary: "—" });
