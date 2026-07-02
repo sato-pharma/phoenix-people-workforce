@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    assertPermission(access, "probation", "read");
+    await assertPermission(access, "probation", "read");
 
     const rows = await getAggregateFeedbackReport(access);
     return NextResponse.json({ rows }, { headers: { "Cache-Control": "no-store" } });
