@@ -3153,6 +3153,9 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   if (input.request.status !== "pending_manager") {
     throw new Error("This vacation request already has a final decision.");
   }
+  if ((input.decision === "reject" || input.decision === "return") && !text(input.decisionComment)) {
+    throw new Error(input.decision === "return" ? "A return reason is required." : "A rejection reason is required.");
+  }
 
   const directory = await getEmployeeDirectory();
   let balance: VacationBalanceSnapshot = input.request;
