@@ -5,7 +5,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { sendJobOfferEmail } from "@/lib/offers/email";
 import { getOfferTemplate } from "@/lib/offers/templates";
 import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
@@ -1860,7 +1860,7 @@ export async function decideOffer(
         recordId: offer.id,
         title: "Offer accepted",
       }),
-    ]).catch(() => undefined);
+    ]).catch((error) => logNotificationSendFailure("offers.recordCandidateDecision.accepted", error));
   } else {
     void createSystemNotification({
       actionUrl: "/offers",
@@ -1891,7 +1891,7 @@ export async function decideOffer(
       priority: "high",
       recordId: offer.id,
       title: "Offer rejected",
-    }).catch(() => undefined);
+    }).catch((error) => logNotificationSendFailure("offers.recordCandidateDecision.rejected", error));
   }
 
   invalidateExecutiveDashboardCache("offer candidate decision", ["offers", "recruitment"]);
@@ -2010,7 +2010,7 @@ export async function approveAcceptedOffer(
     recordId: offer.id,
     subjectHrId: employeeHrId,
     title: "Hire approved",
-  }).catch(() => undefined);
+  }).catch((error) => logNotificationSendFailure("offers.approveAcceptedOffer.hireApproved", error));
   invalidateExecutiveDashboardCache("accepted offer approved", ["offers", "recruitment", "employees", "vacancies", "payroll", "probation"]);
 
   return {
