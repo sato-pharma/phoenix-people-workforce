@@ -243,6 +243,7 @@ import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
+import { runActivityManagerViewAccessTests } from "./activity-manager-view-access.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runWorldRoomRealtimeTests } from "./world-room-realtime.test.ts";
@@ -512,6 +513,7 @@ await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);
 await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests);
 await runTest("activity tracking", runActivityTrackingTests);
+await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("world room realtime session", runWorldRoomRealtimeTests);

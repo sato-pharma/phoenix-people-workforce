@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { normalizeHrId } from "@/lib/auth/permissions";
+import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import {
   ACTIVE_VIEW_CAP_SECONDS,
   cappedDwellSeconds,
@@ -751,7 +751,76 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
   };
 }
 
-// ── Per-person timeline ──────────────────────────────────────────────────────
+// ── Per-person timeline: who may view whose activity ─────────────────────────
+
+/** Exact, normalized HR_ID equality (never substring — avoids B-1 vs B-10 leakage). */
+function sameHrId(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeHrId(left);
+  const b = normalizeHrId(right);
+  return Boolean(a) && a === b;
+}
+
+export type ActivityViewTarget = {
+  hrId: string;
+  managerHrId: string | null;
+};
+
+/**
+ * Whether `context` may view the activity timeline of `target`.
+ *
+ *  - self — always.
+ *  - whole-company viewers (Super Admin, CEO, or company/system scope) — anyone.
+ *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
+ *
+ * Defense-in-depth alongside the `user_activity:read` permission gate (currently
+ * hardcoded Super-Admin-only): keeps per-employee access scoped even if that
+ * resource permission is ever widened via role_permission_overrides.
+ */
+export function canViewEmployeeActivity(context: AccessContext, target: ActivityViewTarget): boolean {
+  if (context.source === "guest" || context.scope === "none") return false;
+  const caller = normalizeHrId(context.hrId);
+  const targetHrId = normalizeHrId(target.hrId);
+  if (!caller || !targetHrId) return false;
+
+  if (sameHrId(caller, targetHrId)) return true; // self
+
+  if (
+    context.scope === "system" ||
+    context.scope === "company" ||
+    context.role === "Super Admin" ||
+    context.role === "CEO"
+  ) {
+    return true;
+  }
+
+  return sameHrId(caller, target.managerHrId);
+}
+
+/**
+ * Throws `Forbidden: ...` unless `context` may view `targetHrId`'s activity timeline.
+ * Resolves the target's manager from the DB only when needed (not self / not
+ * company-wide), so the common self path stays a single fast in-memory check.
+ */
+export async function assertCanViewEmployeeActivity(context: AccessContext, targetHrId: string): Promise<void> {
+  const caller = normalizeHrId(context.hrId);
+  const target = normalizeHrId(targetHrId);
+  if (!caller || !target) {
+    throw new Error("Forbidden: activity access denied.");
+  }
+  if (canViewEmployeeActivity(context, { hrId: target, managerHrId: null })) {
+    return;
+  }
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("employees")
+    .select("manager_hr_id")
+    .eq("hr_id", target.toUpperCase())
+    .maybeSingle();
+  const managerHrId = (data as { manager_hr_id: string | null } | null)?.manager_hr_id ?? null;
+  if (!canViewEmployeeActivity(context, { hrId: target, managerHrId })) {
+    throw new Error(`Forbidden: ${context.role} cannot view activity for another employee.`);
+  }
+}
 
 export async function getUserTimeline(targetHrId: string, range: ActivityRange): Promise<UserTimeline | null> {
   const hrId = normalizeHrId(targetHrId);
