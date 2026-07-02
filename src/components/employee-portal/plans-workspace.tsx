@@ -16,8 +16,10 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  Clock,
   Download,
   FileText,
+  Pencil,
   Plus,
   RotateCcw,
   Send,
@@ -128,6 +130,7 @@ const statusLabels: Record<EmployeePlanStatus, string> = {
   ceo_returned: "CEO returned",
   details_requested: "Details Required",
   draft: "Draft",
+  edit_requested: "Edit requested",
   final_approved: "Final approved",
   hr_acknowledged: "HR acknowledged",
   manager_approved: "Manager approved",
@@ -710,7 +713,7 @@ function statusTone(status: EmployeePlanStatus) {
   if (status === "details_requested") return "border-orange-300 bg-orange-50 text-orange-700";
   if (status === "final_approved" || status === "hr_acknowledged")
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "submitted" || status === "manager_approved")
+  if (status === "submitted" || status === "edit_requested" || status === "manager_approved")
     return "border-sky-200 bg-sky-50 text-sky-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
@@ -985,6 +988,11 @@ export function PlansWorkspace({
       item.status === "submitted" &&
       (isSuperAdminReviewer || hrIdsMatch(item.managerHrId, access.hrId)),
   );
+  const editRequestQueue = plans.filter(
+    (item) =>
+      item.status === "edit_requested" &&
+      (isSuperAdminReviewer || hrIdsMatch(item.managerHrId, access.hrId)),
+  );
   const ceoQueue = plans.filter(
     (item) =>
       item.status === "manager_approved" &&
@@ -997,6 +1005,7 @@ export function PlansWorkspace({
   );
   const canEdit = planCanEdit(plan) && workspace.canSubmitPlans;
   const periodLocked = Boolean(plan);
+  const isOwnPlan = plan != null && ownPlans.some((p) => p.id === plan.id);
   const dayGroups = useMemo(() => groupDraftRows(rows), [rows]);
   const dayGroupByDate = useMemo(
     () => new Map(dayGroups.map((group) => [group.activityDate, group])),
@@ -1434,6 +1443,29 @@ export function PlansWorkspace({
     setMessage("Decision recorded.");
   }
 
+  async function requestPlanEdit(planId: string) {
+    const response = await fetch(`/api/weekly-plans/${planId}/request-edit`, {
+      body: JSON.stringify({}),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message ?? "Request failed.");
+    setMessage("Edit request sent to your manager.");
+  }
+
+  async function decideEditRequestAction(planId: string, decision: "approve" | "reject") {
+    const response = await fetch(`/api/weekly-plans/${planId}/edit-request-decision`, {
+      body: JSON.stringify({ comment, decision }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
+    setComment("");
+    setMessage(decision === "approve" ? "Edit approved — employee can now revise." : "Edit request rejected.");
+  }
+
   async function doBulkApprove(planIds: string[]) {
     const response = await fetch("/api/weekly-plans/decisions/batch", {
       body: JSON.stringify({ action: "manager_approve", planIds }),
@@ -1846,6 +1878,15 @@ export function PlansWorkspace({
             comment={comment}
             isPending={isPending}
             onComment={setComment}
+            onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
+            plans={editRequestQueue}
+            title="Edit Requests"
+            type="edit_request"
+          />
+          <ReviewCard
+            comment={comment}
+            isPending={isPending}
+            onComment={setComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
             onReturnNote={updateReturnNote}
             plans={ceoQueue}
@@ -1872,22 +1913,41 @@ export function PlansWorkspace({
               className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
               style={{ bottom: actionBarBottom }}
             >
-              <Button
-                className="flex-1"
-                disabled={isPending || !canEdit || noPlanRows}
-                onClick={() => runAction(() => submitPlan(false))}
-                variant="secondary"
-              >
-                Save draft
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={isPending || submitBlocked}
-                onClick={() => runAction(() => submitPlan(true))}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Submit
-              </Button>
+              {isOwnPlan && plan?.status === "edit_requested" ? (
+                <span className="flex flex-1 items-center justify-center gap-1.5 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  Edit request pending
+                </span>
+              ) : isOwnPlan && plan?.status === "submitted" ? (
+                <Button
+                  className="flex-1"
+                  disabled={isPending}
+                  onClick={() => runAction(() => requestPlanEdit(plan.id))}
+                  variant="secondary"
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Request to Edit
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    className="flex-1"
+                    disabled={isPending || !canEdit || noPlanRows}
+                    onClick={() => runAction(() => submitPlan(false))}
+                    variant="secondary"
+                  >
+                    Save draft
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={isPending || submitBlocked}
+                    onClick={() => runAction(() => submitPlan(true))}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Submit
+                  </Button>
+                </>
+              )}
             </div>,
             document.body,
           )
@@ -2419,6 +2479,22 @@ export function PlansWorkspace({
                 </span>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
+                {isOwnPlan && plan?.status === "edit_requested" ? (
+                  <span className="inline-flex items-center gap-1.5 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
+                    <Clock className="h-4 w-4" />
+                    Edit request pending manager approval
+                  </span>
+                ) : null}
+                {isOwnPlan && plan?.status === "submitted" ? (
+                  <Button
+                    disabled={isPending}
+                    onClick={() => runAction(() => requestPlanEdit(plan.id))}
+                    variant="secondary"
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Request to Edit
+                  </Button>
+                ) : null}
                 <Button
                   disabled={isPending || !canEdit || noPlanRows}
                   onClick={() => runAction(() => submitPlan(false))}
@@ -2460,6 +2536,17 @@ export function PlansWorkspace({
                 returnNotes={returnNotes}
                 title="Manager Review"
                 type="manager"
+              />
+            ) : null}
+            {editRequestQueue.length > 0 ? (
+              <ReviewCard
+                comment={comment}
+                isPending={isPending}
+                onComment={setComment}
+                onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
+                plans={editRequestQueue}
+                title="Edit Requests"
+                type="edit_request"
               />
             ) : null}
             {ceoQueue.length > 0 ? (
@@ -2504,6 +2591,7 @@ const TIMELINE_STEPS: Array<{ icon: typeof FileText; label: string }> = [
 function timelineReachedIndex(status: EmployeePlanStatus): number {
   switch (status) {
     case "submitted":
+    case "edit_requested":
       return 1;
     case "manager_approved":
       return 2;
@@ -3312,7 +3400,7 @@ function ReviewCard({
   plans: EmployeePlan[];
   returnNotes?: Record<string, Record<string, string>>;
   title: string;
-  type: "ceo" | "hr" | "manager";
+  type: "ceo" | "edit_request" | "hr" | "manager";
 }) {
   // F1 — bulk selection state (manager only)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -3371,10 +3459,16 @@ function ReviewCard({
               <textarea
                 className="mt-3 min-h-20 w-full border border-slate-200 p-2 text-sm"
                 onChange={(e) => onComment(e.target.value)}
-                placeholder={type === "hr" ? "Acknowledgement note" : "Comment for reject/return"}
+                placeholder={
+                  type === "hr"
+                    ? "Acknowledgement note"
+                    : type === "edit_request"
+                      ? "Reason (required if you are the direct manager rejecting)"
+                      : "Comment for reject/return"
+                }
                 value={comment}
               />
-              {type !== "hr" ? (
+              {type !== "hr" && type !== "edit_request" ? (
                 <div className="mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2">
                   {p.items.map((item) => (
                     <label className="block" key={item.id}>
@@ -3391,14 +3485,35 @@ function ReviewCard({
                   ))}
                 </div>
               ) : null}
-              {type !== "hr" && comment.trim().length === 0 ? (
+              {type !== "hr" && type !== "edit_request" && comment.trim().length === 0 ? (
                 <p className="mt-2 text-xs font-semibold text-amber-700">
                   A comment is required to return or reject a plan.
+                </p>
+              ) : null}
+              {type === "edit_request" ? (
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  A reason is required only if you are the direct manager and are rejecting.
                 </p>
               ) : null}
               {/* F5 — Decision history */}
               <PlanDecisionTimeline decisions={p.decisions} />
               <div className="mt-3 flex flex-wrap gap-2">
+                {type === "edit_request" ? (
+                  <>
+                    <Button disabled={isPending} onClick={() => onDecision(p.id, "approve")}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Approve Edit
+                    </Button>
+                    <Button
+                      disabled={isPending}
+                      onClick={() => onDecision(p.id, "reject")}
+                      variant="destructive"
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
                 {type === "manager" ? (
                   <>
                     <Button disabled={isPending} onClick={() => onDecision(p.id, "manager_approve")}>
