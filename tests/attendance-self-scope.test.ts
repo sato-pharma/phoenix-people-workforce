@@ -88,4 +88,46 @@ export function runAttendanceSelfScopeTests() {
     "deduction generation must require company/system scope",
   );
   assert.match(generateRoute, /actor:\s*access\.hrId/, "deduction generation must record the real actor");
+
+  // 6. Finding #15 regression guard: approvals-hub/employee-context must not let a
+  //    caller-supplied hrId bypass ownership — it must scope via
+  //    assertCanViewEmployeeAttendance and surface denial as 403, not a raw 500.
+  const employeeContextRoute = readFileSync("app/api/approvals-hub/employee-context/route.ts", "utf8");
+  assert.match(
+    employeeContextRoute,
+    /assertCanViewEmployeeAttendance\(access,\s*hrId\)/,
+    "employee-context route must scope hrId via assertCanViewEmployeeAttendance",
+  );
+  assert.match(
+    employeeContextRoute,
+    /isForbiddenError\(error\)/,
+    "employee-context route must map Forbidden errors to 403",
+  );
+
+  // 7. Findings #19/#20 regression guard: both attendance export routes must resolve
+  //    the caller's viewable hrId scope and pass it into the report/summary builders,
+  //    so a non-privileged caller can no longer get an unscoped, full-company export.
+  const fingerprintExportRoute = readFileSync("app/api/attendance/fingerprint-report/export/route.ts", "utf8");
+  assert.match(
+    fingerprintExportRoute,
+    /resolveAttendanceScopeHrIds\(access\)/,
+    "fingerprint report export route must resolve the caller's attendance scope",
+  );
+  assert.match(
+    fingerprintExportRoute,
+    /getFingerprintAttendanceReport\(\{[^}]*employeeHrIds:\s*scopeHrIds/,
+    "fingerprint report export route must pass employeeHrIds scope into getFingerprintAttendanceReport",
+  );
+
+  const monthlySummaryExportRoute = readFileSync("app/api/attendance/monthly-summary/export/route.ts", "utf8");
+  assert.match(
+    monthlySummaryExportRoute,
+    /resolveAttendanceScopeHrIds\(access\)/,
+    "monthly summary export route must resolve the caller's attendance scope",
+  );
+  assert.match(
+    monthlySummaryExportRoute,
+    /getMonthlyAttendanceSummary\(\{[^}]*employeeHrIds:\s*scopeHrIds/,
+    "monthly summary export route must pass employeeHrIds scope into getMonthlyAttendanceSummary",
+  );
 }
