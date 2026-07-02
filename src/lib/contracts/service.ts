@@ -561,6 +561,14 @@ export async function runContractRenewalWorkflow(
     status: existing.status,
   });
 
+  const contractEmployees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const contractEmployee = contractEmployees.find(
+    (item) => cleanHrId(item.hrId) === cleanHrId(existing.employee_hr_id),
+  );
+  if (!contractEmployee || !canSeeContractRow(input.access, contractEmployee)) {
+    throw new ContractRenewalValidationError(`Forbidden: cannot access employee ${existing.employee_hr_id}.`);
+  }
+
   // Persist the canonical HR_ID (never a login token like "admin-HR") into decision_by /
   // manager_reviewed_by / hr_reviewed_by, so the decision is correctly attributed and the
   // Approvals Hub history matches. The RPC writes p_actor verbatim into those columns.
