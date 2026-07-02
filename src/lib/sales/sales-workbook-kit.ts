@@ -105,9 +105,9 @@ function setColumnWidth(sheet: ExcelJS.Worksheet, index: number, width: number) 
   column.width = Math.max(column.width ?? 9, width);
 }
 
-export function applyDataBar(sheet: ExcelJS.Worksheet, ref: string) {
+export function applyDataBar(sheet: ExcelJS.Worksheet, ref: string, priority = 1) {
   try {
-    const rule = { cfvo: [{ type: "min" as const }, { type: "max" as const }], color: { argb: ORANGE }, gradient: false, priority: 1, showValue: true, type: "dataBar" as const };
+    const rule = { cfvo: [{ type: "min" as const }, { type: "max" as const }], color: { argb: ORANGE }, gradient: false, priority, showValue: true, type: "dataBar" as const };
     sheet.addConditionalFormatting({ ref, rules: [rule] });
   } catch {
     // data-bars are optional cosmetics — never fail the export over them.
