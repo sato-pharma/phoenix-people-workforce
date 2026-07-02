@@ -1,4 +1,4 @@
-import { resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
@@ -23,15 +23,6 @@ import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacat
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { ContractRow } from "@/lib/contracts/types";
-
-// Case-insensitive HR_ID equality (matches the `.ilike` comparisons used across the
-// domain services). Guards each source so a manager viewing their own list never sees
-// a direct report's request leak in.
-function sameHrId(a: string | null | undefined, b: string | null | undefined): boolean {
-  const norm = (v: string | null | undefined) => String(v ?? "").trim().toUpperCase();
-  const left = norm(a);
-  return left.length > 0 && left === norm(b);
-}
 
 // Normalize any module's raw status token into a small set of display tones.
 function toTone(status: string): MyRequestStatusTone {
@@ -165,7 +156,7 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
 
   if (vacation.status === "fulfilled" && vacation.value) {
     for (const row of vacation.value.rows) {
-      if (sameHrId(row.employeeHrId, hrId)) items.push(mapVacation(row));
+      if (hrIdsMatch(row.employeeHrId, hrId)) items.push(mapVacation(row));
     }
   }
   if (excuse.status === "fulfilled" && excuse.value) {
@@ -173,12 +164,12 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
   }
   if (outstation.status === "fulfilled" && outstation.value) {
     for (const row of outstation.value) {
-      if (sameHrId(row.employeeHrId, hrId)) items.push(mapOutstation(row));
+      if (hrIdsMatch(row.employeeHrId, hrId)) items.push(mapOutstation(row));
     }
   }
   if (plans.status === "fulfilled" && plans.value) {
     for (const row of plans.value.plans) {
-      if (sameHrId(row.employeeHrId, hrId)) items.push(mapPlan(row));
+      if (hrIdsMatch(row.employeeHrId, hrId)) items.push(mapPlan(row));
     }
   }
   if (resignations.status === "fulfilled" && resignations.value) {
@@ -426,7 +417,7 @@ export async function getAwaitingMyActionItems(
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   // Never surface a requester's own submission in their own action inbox — the CEO
   // role can submit requests and those should only appear in "My Requests", not here.
-  return items.filter((item) => !sameHrId(item.employeeHrId, access.hrId));
+  return items.filter((item) => !hrIdsMatch(item.employeeHrId, access.hrId));
 }
 
 /**

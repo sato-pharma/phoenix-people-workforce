@@ -40,7 +40,7 @@ export function runSupportRequestsNotificationsTests() {
   assert.match(service, /priority: "high"/, "a new support ticket is action-required (high priority)");
   assert.match(service, /eventType: "support_request_created"/, "support notification eventType");
   assert.match(service, /support_request:\$\{request\.id\}:created:/, "support notification must carry a per-recipient idempotency key");
-  assert.match(service, /!sameHrId\(recipient\.hrId, request\.hrId\)/, "the submitter must not be notified of their own ticket");
+  assert.match(service, /!hrIdsMatch\(recipient\.hrId, request\.hrId\)/, "the submitter must not be notified of their own ticket");
 
   // ── Failure isolation: notifying HR must never break ticket creation ───────────────
   assert.match(service, /Promise\.allSettled/, "HR fan-out must use allSettled");
