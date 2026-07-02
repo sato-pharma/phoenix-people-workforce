@@ -48,7 +48,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import {
-  adminShellEmployeeRoles,
   type NavigationMode,
   type PermissionAction,
   type PermissionResource,
