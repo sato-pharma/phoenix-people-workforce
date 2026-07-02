@@ -90,6 +90,13 @@ export type SosDashboardData = {
   selectedPeriods: string[];
   availablePeriods: string[];
   filters: SosFilterOptions;
+  /**
+   * True only when this response actually includes the confidential products (LA003/LA004/SS001)
+   * — i.e. the caller both requested `revealRestrictedProducts` AND holds a CEO/Super-Admin role.
+   * Reflects the engine's own decision, not the client's toggle state, so the UI/export footer can
+   * never mis-state what a payload contains.
+   */
+  restrictedRevealed: boolean;
   summary: {
     totalValue: number;
     totalUnits: number;
@@ -236,6 +243,14 @@ export type SosDashboardOptions = SosScopeOverrides & {
   includeMomComparison?: boolean;
   /** Attach the keepExec-filtered leaf rows (detailRows) for the BI export's Data sheet. */
   includeDetailRows?: boolean;
+  /**
+   * Explicit CEO/Super-Admin opt-in to reveal the confidential products (LA003/LA004/SS001) in
+   * this response. Confidential-by-default: omitting this (or a non-CEO/SA role requesting it)
+   * keeps them excluded — the same fail-closed AND as every other restricted-data gate in this
+   * file. Mirrors the marketing-ROI report's `includeRestricted` toggle (src/lib/marketing-requests
+   * /roi-report-service.ts) — same UX, same server-side re-validation against the caller's role.
+   */
+  revealRestrictedProducts?: boolean;
 };
 
 export async function getSosDashboard(
@@ -244,7 +259,11 @@ export async function getSosDashboard(
   options?: SosDashboardOptions,
 ): Promise<SosDashboardData> {
   const supabase = getSupabaseAdmin();
-  const canSeeRestricted = canViewRestrictedProducts(accessContext.role);
+  // Confidential products are excluded by default even for CEO/Super Admin — revealing them
+  // requires an explicit per-request opt-in (the UI toggle), re-validated here against the
+  // caller's role so a tampered request can never widen visibility past what the role allows.
+  const canRevealRestricted = canViewRestrictedProducts(accessContext.role);
+  const canSeeRestricted = options?.revealRestrictedProducts === true && canRevealRestricted;
   // Head Office line + its products are confidential — CEO / Super Admin only. Stripped below
   // from rows, filter options and the trend for every other role (incl. company-scope SFE).
   const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
@@ -347,7 +366,7 @@ export async function getSosDashboard(
   };
 
   if (!selectedPeriod) {
-    return emptyDashboard(filterOptions, totalAreas);
+    return emptyDashboard(filterOptions, totalAreas, canSeeRestricted);
   }
 
   // Trend window = the most-recent N months, always including every selected period (so a selection
@@ -873,6 +892,7 @@ export async function getSosDashboard(
     momComparison,
     paretoProducts,
     detailRows: detailLeafRows,
+    restrictedRevealed: canSeeRestricted,
   };
 }
 
@@ -919,12 +939,13 @@ function buildInsights(input: {
   return out;
 }
 
-function emptyDashboard(filters: SosFilterOptions, totalAreas: number): SosDashboardData {
+function emptyDashboard(filters: SosFilterOptions, totalAreas: number, restrictedRevealed: boolean): SosDashboardData {
   return {
     period: null,
     selectedPeriods: [],
     availablePeriods: filters.periods,
     filters,
+    restrictedRevealed,
     summary: {
       totalValue: 0,
       totalUnits: 0,

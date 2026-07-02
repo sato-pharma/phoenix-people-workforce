@@ -61,6 +61,7 @@ function fixture(): SosDashboardData {
     selectedPeriods: ["2026-06"],
     availablePeriods: ["2026-06", "2026-05"],
     filters: { periods: ["2026-06", "2026-05"], lines: ["Pedia"], distributors: [], regions: [], areas: [], products: [] },
+    restrictedRevealed: true,
     summary: {
       totalValue: 10_000,
       totalUnits: 1_000,

@@ -9,6 +9,8 @@ import {
   Boxes,
   Building2,
   Download,
+  Eye,
+  EyeOff,
   Filter,
   Gauge,
   Layers,
@@ -227,10 +229,13 @@ export function SosDashboard({
   initialData,
   initialError,
   canExport = false,
+  canRevealRestricted = false,
 }: {
   initialData: SosDashboardData | null;
   initialError: string | null;
   canExport?: boolean;
+  /** CEO / Super Admin only — governs whether the confidential-reveal toggle renders at all. */
+  canRevealRestricted?: boolean;
 }) {
   const [data, setData] = useState<SosDashboardData | null>(initialData);
   const [error, setError] = useState<string | null>(initialError);
@@ -244,9 +249,16 @@ export function SosDashboard({
   const [areaMode, setAreaMode] = useState<MultiSelectFilterMode>("include");
   const [productMode, setProductMode] = useState<MultiSelectFilterMode>("include");
   const [moverTab, setMoverTab] = useState<"products" | "regions" | "distributors">("products");
+  // Confidential-by-default: starts OFF on every load, including for CEO/Super Admin. Only a
+  // deliberate click reveals LA003/LA004/SS001 — mirrors the marketing-ROI report's toggle.
+  const [revealRestricted, setRevealRestricted] = useState(false);
 
-  // Stable filter option lists, captured once from the unfiltered server load.
-  const [options] = useState(
+  // Filter option lists — start from the unfiltered server load, then resync whenever a fresh
+  // response arrives. The universe here depends only on scope + the reveal toggle (never on the
+  // currently-active distributor/region/product selections), so refreshing it can never cause the
+  // "picking a filter collapses the other dropdowns" problem multi-select filters normally guard
+  // against — it only ever changes when the reveal toggle flips.
+  const [options, setOptions] = useState(
     () =>
       initialData?.filters ?? {
         periods: [],
@@ -277,8 +289,12 @@ export function SosDashboard({
     if (region.length) params.set("regions", region.join(","));
     if (area.length) params.set("areas", area.join(","));
     if (product.length) params.set("products", product.join(","));
+    // Only ever sent when the caller can actually reveal (canRevealRestricted gates the toggle's
+    // very existence below) — but the server re-validates against the role regardless, so this
+    // can never widen visibility even if tampered with.
+    if (revealRestricted) params.set("includeRestricted", "1");
     return params.toString();
-  }, [filters, options, periodOptions, lineOptions, periodMode, lineMode, distMode, regionMode, areaMode, productMode]);
+  }, [filters, options, periodOptions, lineOptions, periodMode, lineMode, distMode, regionMode, areaMode, productMode, revealRestricted]);
 
   const didMount = useRef(false);
   useEffect(() => {
@@ -293,6 +309,9 @@ export function SosDashboard({
         const payload = (await response.json()) as { success: boolean; data?: SosDashboardData; error?: string };
         if (!response.ok || !payload.success || !payload.data) throw new Error(payload.error ?? "Failed to load source-of-sales dashboard.");
         setData(payload.data);
+        // Resync the filter-option universe (e.g. toggling reveal adds LA003/LA004/SS001 to the
+        // Products dropdown so a CEO can filter down to them, not just see them in aggregates).
+        setOptions(payload.data.filters);
         setError(null);
       })
       .catch((fetchError: unknown) => {
@@ -511,6 +530,7 @@ export function SosDashboard({
                 setRegionMode("include");
                 setProductMode("include");
                 setAreaMode("include");
+                setRevealRestricted(false);
               }}
               className="inline-flex items-center gap-1.5 rounded-[6px] border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:text-orange-600"
             >
@@ -575,6 +595,20 @@ export function SosDashboard({
             onModeChange={setProductMode}
           />
         </div>
+
+        {/* Confidential-by-default: excluded unless a CEO/Super Admin explicitly reveals them. */}
+        {canRevealRestricted ? (
+          <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-[5px] border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-bold text-amber-800 transition hover:border-amber-300">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[#F97316]"
+              checked={revealRestricted}
+              onChange={(event) => setRevealRestricted(event.target.checked)}
+            />
+            {revealRestricted ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            Include confidential products (LA003 / LA004 / SS001)
+          </label>
+        ) : null}
       </div>
 
       {error ? (
@@ -1046,7 +1080,11 @@ export function SosDashboard({
 
           <p className="px-1 text-center text-xs text-slate-400">
             Source-of-Sales distributor invoices for {periodsLabel(data?.selectedPeriods, data?.period ?? null)}
-            {priorLabel ? ` (compared with ${priorLabel})` : ""}. Confidential products are hidden unless you are CEO / Super Admin.
+            {priorLabel ? ` (compared with ${priorLabel})` : ""}.{" "}
+            {data?.restrictedRevealed
+              ? "Confidential products (LA003 / LA004 / SS001) are included in this view."
+              : "Confidential products are excluded by default" +
+                (canRevealRestricted ? " — use the toggle above to reveal them." : ".")}
           </p>
         </>
       ) : null}
