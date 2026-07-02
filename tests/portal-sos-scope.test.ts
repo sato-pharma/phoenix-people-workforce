@@ -185,7 +185,7 @@ export function runPortalSosScopeTests() {
     "engine must scope the area-coverage denominator (masterAreas) to the viewer's regions",
   );
   assert.ok(
-    /const byArea = group\(\s*detail,/.test(engine),
+    /const byArea = groupByArea\(detail, totalValue\)/.test(engine),
     "engine byArea must be grouped from the region-locked detail rows",
   );
   // Single-region viewers get a "top area" insight instead of the useless "top region = 100%".

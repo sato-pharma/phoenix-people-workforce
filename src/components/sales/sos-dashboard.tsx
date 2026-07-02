@@ -2,18 +2,26 @@
 
 import {
   Activity,
+  ArrowDownRight,
+  ArrowUpRight,
   Banknote,
   BarChart3,
   Boxes,
   Building2,
+  Download,
   Filter,
   Gauge,
   Layers,
   Lightbulb,
+  Loader2,
   MapPinned,
+  Minus,
   Network,
   PackageSearch,
   RotateCcw,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
   Truck,
   Users,
 } from "lucide-react";
@@ -24,7 +32,6 @@ import {
   AdminCallout,
   AdminInsightChip,
   AdminPageHero,
-  AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
@@ -32,20 +39,28 @@ import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/m
 import { SortableTh, TableNoResults, TableSearchInput, useSortableTable, visibleMax } from "@/components/ui/sortable-table";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format";
 import { periodProseLabel } from "@/lib/sales/periods";
-import type { SosCustomerRow, SosDashboardData, SosDistributorRow, SosGroupRow, SosOption } from "@/lib/sales/sos-dashboard";
+import type {
+  SosCustomerRow,
+  SosDashboardData,
+  SosDelta,
+  SosDistributorRow,
+  SosGroupRow,
+  SosMoverRow,
+  SosOption,
+} from "@/lib/sales/sos-dashboard";
 
 const CHANNEL_COLORS = ["#F97316", "#0EA5E9", "#8B5CF6", "#10B981", "#F43F5E", "#FACC15", "#14B8A6", "#64748B", "#EC4899", "#22D3EE"];
 
 type Filters = {
-  period: string;
-  line: string;
+  periods: string[];
+  lines: string[];
   distributors: string[];
   regions: string[];
   areas: string[];
   products: string[];
 };
 
-const EMPTY_FILTERS: Filters = { period: "", line: "", distributors: [], regions: [], areas: [], products: [] };
+const EMPTY_FILTERS: Filters = { periods: [], lines: [], distributors: [], regions: [], areas: [], products: [] };
 
 function compactEGP(value: number): string {
   const abs = Math.abs(value);
@@ -75,9 +90,9 @@ function ChartCard({
   className?: string;
 }) {
   return (
-    <div className={`rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ${className ?? ""}`}>
+    <div className={`rounded-[6px] border border-slate-200 bg-white p-5 shadow-sm ${className ?? ""}`}>
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600">{icon}</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600">{icon}</span>
         <div>
           <h3 className="text-sm font-black tracking-tight text-slate-900">{title}</h3>
           <p className="text-xs text-slate-500">{subtitle}</p>
@@ -91,20 +106,23 @@ function ChartCard({
 function ValueTooltip({ active, payload, label }: { active?: boolean; payload?: Array<Record<string, unknown>>; label?: unknown }) {
   if (!active || !payload || payload.length === 0) return null;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+    <div className="rounded-[6px] border border-slate-200 bg-white p-3 shadow-xl">
       <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{String(label ?? "")}</p>
       <div className="space-y-1.5">
         {payload.map((entry, index) => {
           const name = String(entry.name ?? "");
           const raw = Number(entry.value ?? 0);
           const isUnits = /unit/i.test(name);
+          const isPct = /%|share|cumulative/i.test(name);
           return (
             <div key={index} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: String(entry.color ?? "#94A3B8") }} />
                 <span className="text-[11px] font-bold text-slate-600">{name}:</span>
               </div>
-              <span className="text-[11px] font-black text-slate-900">{isUnits ? formatNumber(raw) : formatCurrency(raw)}</span>
+              <span className="text-[11px] font-black text-slate-900">
+                {isPct ? `${raw.toFixed(1)}%` : isUnits ? formatNumber(raw) : formatCurrency(raw)}
+              </span>
             </div>
           );
         })}
@@ -113,37 +131,11 @@ function ValueTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
-function FilterSelect({
-  label,
-  icon,
-  value,
-  options,
-  onChange,
-  render,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  value: string;
-  options: string[];
-  onChange: (next: string) => void;
-  render?: (value: string) => string;
-}) {
-  return (
-    <label className="flex h-[58px] cursor-pointer flex-col justify-center rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition focus-within:border-[#FDBA74] hover:border-[#FDBA74]">
-      <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
-        {icon}
-        {label}
-      </span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full truncate bg-transparent text-sm font-black text-[#0F172A] outline-none">
-        <option value="">All</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {render ? render(option) : option}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+/** Prose label for the month(s) in scope: one → "June 2026"; several → "3 months (Jun–Apr 2026)". */
+function periodsLabel(selected: string[] | undefined, primary: string | null): string {
+  if (selected && selected.length > 1) return `${selected.length} months`;
+  const one = selected && selected.length === 1 ? selected[0] : primary;
+  return one ? periodProseLabel(one) : "No data";
 }
 
 function Bar2({ value, max, color }: { value: number; max: number; color: string }) {
@@ -155,15 +147,103 @@ function Bar2({ value, max, color }: { value: number; max: number; color: string
   );
 }
 
-export function SosDashboard({ initialData, initialError }: { initialData: SosDashboardData | null; initialError: string | null }) {
+/** ▲ / ▼ / — chip vs the prior month. Hidden entirely when there is no comparison. */
+function DeltaChip({ delta, invert = false }: { delta: SosDelta | null | undefined; invert?: boolean }) {
+  if (!delta || delta.deltaPct == null) return null;
+  const pct = delta.deltaPct;
+  const flat = Math.abs(pct) < 0.0005;
+  const good = invert ? pct < 0 : pct > 0;
+  const tone = flat
+    ? "border-slate-200 bg-slate-50 text-slate-500"
+    : good
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-rose-200 bg-rose-50 text-rose-700";
+  const Icon = flat ? Minus : pct > 0 ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex items-center gap-0.5 rounded-[4px] border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${tone}`}>
+      <Icon className="h-3 w-3" />
+      {`${Math.abs(pct * 100).toFixed(1)}%`}
+    </span>
+  );
+}
+
+/** Command-center KPI tile: square, white, thin orange top rule, slate-900 uppercase label,
+ *  large tabular number, inline MoM delta chip, muted sub-line. Matches the black hero. */
+function KpiTile({
+  label,
+  icon,
+  value,
+  sub,
+  delta,
+  invertDelta = false,
+  emphasis = false,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  sub: string;
+  delta?: SosDelta | null;
+  invertDelta?: boolean;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className="group relative overflow-hidden border border-slate-200 bg-white p-4 shadow-sm transition hover:border-orange-300 hover:shadow-md">
+      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-[3px] ${emphasis ? "bg-orange-500" : "bg-slate-900 group-hover:bg-orange-500"} transition-colors`} />
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+        <span className={`shrink-0 ${emphasis ? "text-orange-500" : "text-slate-300 group-hover:text-orange-400"} transition-colors`}>{icon}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-2xl font-black tabular-nums leading-none text-slate-900">{value}</span>
+        <DeltaChip delta={delta} invert={invertDelta} />
+      </div>
+      <p className="mt-1.5 text-[11px] font-semibold text-slate-400 whitespace-nowrap">{sub}</p>
+    </div>
+  );
+}
+
+function MoverList({ rows, direction }: { rows: SosMoverRow[]; direction: "up" | "down" }) {
+  if (rows.length === 0) {
+    return <p className="py-6 text-center text-xs text-slate-400">No {direction === "up" ? "gainers" : "decliners"} vs prior month.</p>;
+  }
+  const max = Math.max(...rows.map((row) => Math.abs(row.delta)), 1);
+  return (
+    <div className="space-y-2.5">
+      {rows.map((row) => (
+        <div key={row.code} className="flex items-center gap-3">
+          <span className="w-32 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
+          <div className="flex-1"><Bar2 value={Math.abs(row.delta)} max={max} color={direction === "up" ? "#10B981" : "#F43F5E"} /></div>
+          <span className="w-20 shrink-0 text-right text-xs font-black text-slate-900 whitespace-nowrap">{compactEGP(row.value)}</span>
+          <span className={`w-16 shrink-0 text-right text-[11px] font-black tabular-nums whitespace-nowrap ${direction === "up" ? "text-emerald-600" : "text-rose-600"}`}>
+            {`${row.deltaPct > 0 ? "+" : ""}${(row.deltaPct * 100).toFixed(1)}%`}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SosDashboard({
+  initialData,
+  initialError,
+  canExport = false,
+}: {
+  initialData: SosDashboardData | null;
+  initialError: string | null;
+  canExport?: boolean;
+}) {
   const [data, setData] = useState<SosDashboardData | null>(initialData);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [periodMode, setPeriodMode] = useState<MultiSelectFilterMode>("include");
+  const [lineMode, setLineMode] = useState<MultiSelectFilterMode>("include");
   const [distMode, setDistMode] = useState<MultiSelectFilterMode>("include");
   const [regionMode, setRegionMode] = useState<MultiSelectFilterMode>("include");
   const [areaMode, setAreaMode] = useState<MultiSelectFilterMode>("include");
   const [productMode, setProductMode] = useState<MultiSelectFilterMode>("include");
+  const [moverTab, setMoverTab] = useState<"products" | "regions" | "distributors">("products");
 
   // Stable filter option lists, captured once from the unfiltered server load.
   const [options] = useState(
@@ -177,21 +257,28 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
         products: [],
       },
   );
+  const lineOptions = useMemo(() => options.lines.map((line) => ({ code: line, label: line })), [options.lines]);
+  const periodOptions = useMemo(
+    () => options.periods.map((period) => ({ code: period, label: periodProseLabel(period) })),
+    [options.periods],
+  );
 
   const queryKey = useMemo(() => {
     const params = new URLSearchParams();
-    if (filters.period) params.set("period", filters.period);
-    if (filters.line) params.set("line", filters.line);
+    const periods = effectiveList(periodOptions, filters.periods, periodMode);
+    const lines = effectiveList(lineOptions, filters.lines, lineMode);
     const dist = effectiveList(options.distributors, filters.distributors, distMode);
     const region = effectiveList(options.regions, filters.regions, regionMode);
     const area = effectiveList(options.areas, filters.areas, areaMode);
     const product = effectiveList(options.products, filters.products, productMode);
+    if (periods.length) params.set("periods", periods.join(","));
+    if (lines.length) params.set("lines", lines.join(","));
     if (dist.length) params.set("distributors", dist.join(","));
     if (region.length) params.set("regions", region.join(","));
     if (area.length) params.set("areas", area.join(","));
     if (product.length) params.set("products", product.join(","));
     return params.toString();
-  }, [filters, options, distMode, regionMode, areaMode, productMode]);
+  }, [filters, options, periodOptions, lineOptions, periodMode, lineMode, distMode, regionMode, areaMode, productMode]);
 
   const didMount = useRef(false);
   useEffect(() => {
@@ -216,7 +303,36 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
     return () => controller.abort();
   }, [queryKey]);
 
+  const handleExport = async () => {
+    setDownloading(true);
+    try {
+      const response = await fetch(`/api/sales/sos-dashboard/export?${queryKey}`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(payload?.message ?? payload?.error ?? "Export failed.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "phoenix-sos-dashboard.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Export failed.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const summary = data?.summary;
+  const mom = data?.momComparison ?? null;
+  const deltas = mom?.summaryDeltas ?? null;
+  const pareto = useMemo(() => data?.paretoProducts ?? [], [data]);
   const byDistributor = data?.byDistributor ?? [];
   const byRegion = data?.byRegion ?? [];
   const byProduct = data?.byProduct ?? [];
@@ -233,13 +349,48 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
     () => trend.map((point) => ({ period: periodProseLabel(point.period), Value: Math.round(point.value), Units: Math.round(point.units) })),
     [trend],
   );
+  const paretoChartData = useMemo(
+    () =>
+      pareto.slice(0, 30).map((row) => ({
+        name: row.label,
+        Value: Math.round(row.value),
+        "Cumulative %": Number((row.cumulativeShare * 100).toFixed(1)),
+        abc: row.abcClass,
+      })),
+    [pareto],
+  );
+  const abcCounts = useMemo(() => {
+    const counts = { A: 0, B: 0, C: 0 };
+    for (const row of pareto) counts[row.abcClass] += 1;
+    return counts;
+  }, [pareto]);
+  const abcByCode = useMemo(() => {
+    const map = new Map<string, "A" | "B" | "C">();
+    for (const row of pareto) map.set(row.code.toUpperCase(), row.abcClass);
+    return map;
+  }, [pareto]);
+  const productMomByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    if (mom) {
+      for (const row of [...mom.movers.products.gainers, ...mom.movers.products.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
+    }
+    return map;
+  }, [mom]);
+  const distributorMomByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    if (mom) {
+      for (const row of [...mom.movers.distributors.gainers, ...mom.movers.distributors.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
+    }
+    return map;
+  }, [mom]);
 
   const activeFilterCount =
+    filters.periods.length +
+    filters.lines.length +
     filters.distributors.length +
     filters.regions.length +
     filters.areas.length +
-    filters.products.length +
-    [filters.period, filters.line].filter(Boolean).length;
+    filters.products.length;
 
   const distributorTable = useSortableTable<SosDistributorRow>(byDistributor, {
     columns: [
@@ -286,37 +437,63 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
 
   const hasData = !error && !!summary && summary.totalValue > 0;
   const topDistributor = byDistributor[0];
+  const priorLabel = mom ? periodProseLabel(mom.priorPeriod) : null;
+  const movers = mom?.movers[moverTab] ?? null;
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={`space-y-6 pb-12 ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <AdminPageHero
         eyebrow="Sales Intelligence"
         icon={<Network className="h-4 w-4" />}
         title="Source of Sales Dashboard"
-        description="Actual sales performance from distributor uploads — channel mix, regional breakdown, product rankings, top customers, and value trends over time."
+        description="Actual sales performance from distributor uploads — month-over-month momentum, channel mix, regional breakdown, Pareto product rankings, top customers, and value trends over time."
         badges={
           <>
-            <AdminInsightChip tone="orange">{data?.period ? periodProseLabel(data.period) : "No data"}</AdminInsightChip>
+            <AdminInsightChip tone="orange">{periodsLabel(data?.selectedPeriods, data?.period ?? null)}</AdminInsightChip>
             {summary ? <AdminInsightChip tone="emerald">{compactEGP(summary.totalValue)}</AdminInsightChip> : null}
+            {priorLabel ? <AdminInsightChip tone="slate">vs {priorLabel}</AdminInsightChip> : null}
             {loading ? <AdminInsightChip tone="slate">Updating…</AdminInsightChip> : null}
           </>
         }
+        actions={
+          canExport ? (
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={downloading || loading || !hasData}
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+              title="Download the full BI workbook with the current filters applied (CEO / Super Admin)"
+            >
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {downloading ? "Preparing…" : "Export BI Workbook"}
+            </button>
+          ) : undefined
+        }
         aside={
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+            <div className="rounded-[6px] border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-300">Total Value</p>
               <p className="mt-1 text-xl font-black text-white">{summary ? compactEGP(summary.totalValue) : "—"}</p>
+              {deltas?.totalValue.deltaPct != null ? (
+                <p className={`mt-0.5 flex items-center gap-1 text-[11px] font-black ${deltas.totalValue.deltaPct >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  {deltas.totalValue.deltaPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {`${deltas.totalValue.deltaPct >= 0 ? "+" : ""}${(deltas.totalValue.deltaPct * 100).toFixed(1)}% MoM`}
+                </p>
+              ) : null}
             </div>
-            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+            <div className="rounded-[6px] border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-300">Top Distributor</p>
-              <p className="mt-1 truncate text-sm font-black text-white">{topDistributor?.label ?? "—"}</p>
+              <p className="mt-1 text-sm font-black text-white whitespace-nowrap">{topDistributor?.label ?? "—"}</p>
+              {topDistributor ? (
+                <p className="mt-0.5 text-[11px] font-bold text-slate-300">{formatPercent(topDistributor.share, { digits: 1 })} of value</p>
+              ) : null}
             </div>
           </div>
         }
       />
 
       {/* Filters */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+      <div className="rounded-[6px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-black text-slate-900">
             <Filter className="h-4 w-4 text-orange-500" />
@@ -328,27 +505,39 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
               type="button"
               onClick={() => {
                 setFilters(EMPTY_FILTERS);
+                setPeriodMode("include");
+                setLineMode("include");
                 setDistMode("include");
                 setRegionMode("include");
-                setAreaMode("include");
                 setProductMode("include");
+                setAreaMode("include");
               }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:text-orange-600"
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:text-orange-600"
             >
               <RotateCcw className="h-3.5 w-3.5" /> Reset all
             </button>
           ) : null}
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <FilterSelect
-            label="Month"
+          <MultiSelectFilter
+            label="Months"
             icon={<BarChart3 className="h-3 w-3" />}
-            value={filters.period}
-            options={options.periods}
-            onChange={(next) => setFilters((current) => ({ ...current, period: next }))}
-            render={(value) => periodProseLabel(value)}
+            options={periodOptions}
+            selected={filters.periods}
+            mode={periodMode}
+            onSelectedChange={(next) => setFilters((current) => ({ ...current, periods: next }))}
+            onModeChange={setPeriodMode}
+            allLabel="Latest month"
           />
-          <FilterSelect label="Line" icon={<Layers className="h-3 w-3" />} value={filters.line} options={options.lines} onChange={(next) => setFilters((current) => ({ ...current, line: next }))} />
+          <MultiSelectFilter
+            label="Lines"
+            icon={<Layers className="h-3 w-3" />}
+            options={lineOptions}
+            selected={filters.lines}
+            mode={lineMode}
+            onSelectedChange={(next) => setFilters((current) => ({ ...current, lines: next }))}
+            onModeChange={setLineMode}
+          />
           <MultiSelectFilter
             label="Distributors"
             icon={<Truck className="h-3 w-3" />}
@@ -408,21 +597,22 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
 
       {hasData && summary ? (
         <>
-          {/* KPI grid */}
+          {/* KPI grid — command-center tiles; each carries its month-over-month delta when a prior month exists */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <AdminStatCard tone="orange" icon={<Banknote className="h-5 w-5" />} label="Total Value" value={compactEGP(summary.totalValue)} description={formatCurrency(summary.totalValue)} />
-            <AdminStatCard tone="violet" icon={<Boxes className="h-5 w-5" />} label="Total Units" value={formatNumber(summary.totalUnits)} description="invoiced units" />
-            <AdminStatCard tone="blue" icon={<Gauge className="h-5 w-5" />} label="Avg Price / Unit" value={compactEGP(summary.avgPricePerUnit)} description="value ÷ units" />
-            <AdminStatCard tone="emerald" icon={<Truck className="h-5 w-5" />} label="Distributors" value={formatNumber(summary.distributorCount)} description="active channels" />
-            <AdminStatCard tone="blue" icon={<PackageSearch className="h-5 w-5" />} label="Products" value={formatNumber(summary.productCount)} description="SKUs sold" />
-            <AdminStatCard tone="violet" icon={<Users className="h-5 w-5" />} label="Customers" value={formatNumber(summary.customerCount)} description="distributor clients" />
-            <AdminStatCard tone="orange" icon={<Building2 className="h-5 w-5" />} label="Direct Share" value={formatPercent(summary.directShare, { digits: 1 })} description={`${compactEGP(summary.directValue)} direct`} />
-            <AdminStatCard
-              tone={summary.totalAreas > 0 && summary.areasReached / summary.totalAreas >= 0.75 ? "emerald" : "orange"}
-              icon={<MapPinned className="h-5 w-5" />}
+            <KpiTile emphasis label="Total Value" icon={<Banknote className="h-4 w-4" />} value={compactEGP(summary.totalValue)} sub={formatCurrency(summary.totalValue)} delta={deltas?.totalValue} />
+            <KpiTile label="Total Units" icon={<Boxes className="h-4 w-4" />} value={formatNumber(summary.totalUnits)} sub="invoiced units" delta={deltas?.totalUnits} />
+            <KpiTile label="Avg Price / Unit" icon={<Gauge className="h-4 w-4" />} value={compactEGP(summary.avgPricePerUnit)} sub="value ÷ units" delta={deltas?.avgPricePerUnit} />
+            <KpiTile label="Distributors" icon={<Truck className="h-4 w-4" />} value={formatNumber(summary.distributorCount)} sub="active channels" delta={deltas?.distributorCount} />
+            <KpiTile label="Products" icon={<PackageSearch className="h-4 w-4" />} value={formatNumber(summary.productCount)} sub="SKUs sold" delta={deltas?.productCount} />
+            <KpiTile label="Customers" icon={<Users className="h-4 w-4" />} value={formatNumber(summary.customerCount)} sub="distributor clients" />
+            <KpiTile label="Direct Share" icon={<Building2 className="h-4 w-4" />} value={formatPercent(summary.directShare, { digits: 1 })} sub={`${compactEGP(summary.directValue)} direct`} delta={deltas?.directShare} />
+            <KpiTile
+              emphasis={summary.totalAreas > 0 && summary.areasReached / summary.totalAreas >= 0.75}
               label="Area Coverage"
+              icon={<MapPinned className="h-4 w-4" />}
               value={`${summary.areasReached}/${summary.totalAreas}`}
-              description={`${summary.bricksReached} bricks reached`}
+              sub={`${summary.bricksReached} bricks reached`}
+              delta={deltas?.areasReached}
             />
           </div>
 
@@ -441,6 +631,105 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
               </ComposedChart>
             </SafeResponsiveContainer>
           </ChartCard>
+
+          {/* Month-over-month momentum */}
+          {mom ? (
+            <div className="rounded-[6px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-[6px] bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600"><Sparkles className="h-4 w-4" /></span>
+                  <div>
+                    <h3 className="text-sm font-black tracking-tight text-slate-900">Month-over-Month Momentum</h3>
+                    <p className="text-xs text-slate-500">{data?.period ? periodProseLabel(data.period) : "—"} vs {priorLabel}</p>
+                  </div>
+                </div>
+                <div className="inline-flex gap-1 rounded-[6px] border border-slate-200 bg-slate-50 p-1">
+                  {([["products", "Products"], ["regions", "Regions"], ["distributors", "Distributors"]] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMoverTab(key)}
+                      className={`rounded-[4px] px-3 py-1.5 text-xs font-black transition ${moverTab === key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div>
+                  <p className="mb-2.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-emerald-700"><TrendingUp className="h-3.5 w-3.5" /> Top gainers</p>
+                  <MoverList rows={movers?.gainers ?? []} direction="up" />
+                </div>
+                <div>
+                  <p className="mb-2.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-rose-700"><TrendingDown className="h-3.5 w-3.5" /> Top decliners</p>
+                  <MoverList rows={movers?.decliners ?? []} direction="down" />
+                </div>
+              </div>
+              {(mom.newProducts.length > 0 || mom.lostProducts.length > 0 || mom.newAreas.length > 0 || mom.lostAreas.length > 0) ? (
+                <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 lg:grid-cols-2">
+                  {mom.newProducts.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-emerald-700">New products:</span>
+                      {mom.newProducts.map((row) => (
+                        <span key={row.code} className="rounded-[4px] border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700" title={compactEGP(row.value)}>{row.label}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {mom.lostProducts.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-rose-700">No sales this month:</span>
+                      {mom.lostProducts.map((row) => (
+                        <span key={row.code} className="rounded-[4px] border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700" title={`${compactEGP(row.value)} in ${priorLabel}`}>{row.label}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {mom.newAreas.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-emerald-700">Newly covered areas:</span>
+                      {mom.newAreas.map((row) => (
+                        <span key={row.code} className="rounded-[4px] border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">{row.label}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {mom.lostAreas.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-rose-700">Areas lost:</span>
+                      {mom.lostAreas.map((row) => (
+                        <span key={row.code} className="rounded-[4px] border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">{row.label}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Pareto / ABC */}
+          {pareto.length > 0 ? (
+            <ChartCard
+              title="Product Pareto — ABC"
+              subtitle={`Class A: ${abcCounts.A} product(s) = 80% of value · B: ${abcCounts.B} · C: ${abcCounts.C}${pareto.length > 30 ? ` — chart shows top 30 of ${pareto.length}` : ""}`}
+              icon={<Activity className="h-4 w-4" />}
+            >
+              <SafeResponsiveContainer minHeight={300}>
+                <ComposedChart data={paretoChartData} margin={{ top: 8, right: 8, bottom: 40, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} interval={0} angle={-35} textAnchor="end" height={70} />
+                  <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={44} tickFormatter={(v: number) => compactEGP(v)} />
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: "#94A3B8" }} width={36} tickFormatter={(v: number) => `${v}%`} />
+                  <Tooltip content={<ValueTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                  <Bar yAxisId="left" dataKey="Value" radius={[3, 3, 0, 0]} barSize={16}>
+                    {paretoChartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.abc === "A" ? "#F97316" : entry.abc === "B" ? "#FDBA74" : "#E2E8F0"} />
+                    ))}
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="Cumulative %" stroke="#0F172A" strokeWidth={2.5} dot={{ r: 2.5, fill: "#0F172A" }} />
+                </ComposedChart>
+              </SafeResponsiveContainer>
+            </ChartCard>
+          ) : null}
 
           {/* Channel + Distributor mix donuts */}
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -490,7 +779,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                 <div className="space-y-3">
                   {byRegion.slice(0, 10).map((row) => (
                     <div key={row.code} className="flex items-center gap-3">
-                      <span className="w-28 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
+                      <span className="w-28 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                       <div className="flex-1"><Bar2 value={row.value} max={regionMax} color="#0EA5E9" /></div>
                       <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
                       <span className="w-12 shrink-0 text-right text-[11px] font-bold text-slate-500">{formatPercent(row.share, { digits: 0 })}</span>
@@ -507,7 +796,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                 <div className="space-y-3">
                   {byArea.slice(0, 10).map((row) => (
                     <div key={row.code} className="flex items-center gap-3">
-                      <span className="w-28 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
+                      <span className="w-28 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                       <div className="flex-1"><Bar2 value={row.value} max={areaMax} color="#8B5CF6" /></div>
                       <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
                       <span className="w-12 shrink-0 text-right text-[11px] font-bold text-slate-500">{formatPercent(row.share, { digits: 0 })}</span>
@@ -540,7 +829,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {whiteSpaceAreas.map((row) => (
-                      <span key={row.code} className="rounded-md border border-rose-200 bg-rose-50/60 px-2.5 py-1 text-xs font-bold text-rose-700" title={row.region ?? undefined}>
+                      <span key={row.code} className="rounded-[4px] border border-rose-200 bg-rose-50/60 px-2.5 py-1 text-xs font-bold text-rose-700" title={row.region ?? undefined}>
                         {row.label}
                       </span>
                     ))}
@@ -553,7 +842,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
           {/* Distributor table */}
           <AdminTableShell
             title="Distributor Performance"
-            description="Channels ranked by value, with reach across regions / areas / products"
+            description="Channels ranked by value, with month-over-month delta and reach across regions / areas / products"
             action={<TableSearchInput value={distributorTable.query} onChange={distributorTable.setQuery} onClear={distributorTable.clearQuery} placeholder="Search distributors…" className="w-full sm:w-64" />}
           >
             <div className="overflow-x-auto">
@@ -562,29 +851,36 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                   <tr>
                     <SortableTh label="Distributor" sortKey="label" sort={distributorTable.sort} onSort={distributorTable.toggleSort} />
                     <SortableTh label="Value" sortKey="value" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
+                    <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
                     <SortableTh label="Units" sortKey="units" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <SortableTh label="Regions" sortKey="regions" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <SortableTh label="Areas" sortKey="areas" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                     <SortableTh label="Products" sortKey="products" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-orange-100">
                   {distributorTable.rows.length === 0 ? (
-                    <TableNoResults colSpan={6} filtered={distributorTable.isFiltered} label="distributors" />
+                    <TableNoResults colSpan={7} filtered={distributorTable.isFiltered} label="distributors" />
                   ) : (
-                    distributorTable.rows.map((row) => (
-                      <tr key={row.code} className="transition hover:bg-orange-50/40">
-                        <td className="px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
-                          <Bar2 value={row.value} max={distMax} color="#F97316" />
-                        </td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.regions)}</td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.areas)}</td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.products)}</td>
-                      </tr>
-                    ))
+                    distributorTable.rows.map((row) => {
+                      const momPct = distributorMomByCode.get(row.code.toUpperCase());
+                      return (
+                        <tr key={row.code} className="transition hover:bg-orange-50/40">
+                          <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
+                            <Bar2 value={row.value} max={distMax} color="#F97316" />
+                          </td>
+                          <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
+                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.regions)}</td>
+                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.areas)}</td>
+                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.products)}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -595,7 +891,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <AdminTableShell
               title="Product Performance"
-              description="Products ranked by distributor value"
+              description="Products ranked by distributor value, with ABC class and month-over-month delta"
               action={<TableSearchInput value={productTable.query} onChange={productTable.setQuery} onClear={productTable.clearQuery} placeholder="Search products…" className="w-full sm:w-56" />}
             >
               <div className="max-h-[460px] overflow-auto">
@@ -604,25 +900,43 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                     <tr>
                       <SortableTh label="Product" sortKey="label" sort={productTable.sort} onSort={productTable.toggleSort} />
                       <SortableTh label="Line" sortKey="line" sort={productTable.sort} onSort={productTable.toggleSort} />
+                      <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wide">ABC</th>
                       <SortableTh label="Value" sortKey="value" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
+                      <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
                       <SortableTh label="Units" sortKey="units" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-orange-100">
                     {productTable.rows.length === 0 ? (
-                      <TableNoResults colSpan={4} filtered={productTable.isFiltered} label="products" />
+                      <TableNoResults colSpan={6} filtered={productTable.isFiltered} label="products" />
                     ) : (
-                      productTable.rows.map((row) => (
-                        <tr key={row.code} className="transition hover:bg-orange-50/40">
-                          <td className="px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{row.line ?? "—"}</td>
-                          <td className="px-3 py-2.5 text-right">
-                            <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
-                            <Bar2 value={row.value} max={productMax} color="#8B5CF6" />
-                          </td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
-                        </tr>
-                      ))
+                      productTable.rows.map((row) => {
+                        const abc = abcByCode.get(row.code.toUpperCase());
+                        const momPct = productMomByCode.get(row.code.toUpperCase());
+                        return (
+                          <tr key={row.code} className="transition hover:bg-orange-50/40">
+                            <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                            <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.line ?? "—"}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              {abc ? (
+                                <span className={`inline-flex h-5 w-5 items-center justify-center rounded-[4px] text-[10px] font-black ${abc === "A" ? "bg-orange-100 text-orange-700" : abc === "B" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                                  {abc}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
+                              <Bar2 value={row.value} max={productMax} color="#8B5CF6" />
+                            </td>
+                            <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -644,15 +958,15 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
                       <SortableTh label="Value" sortKey="value" sort={customerTable.sort} onSort={customerTable.toggleSort} align="right" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-orange-100">
                     {customerTable.rows.length === 0 ? (
                       <TableNoResults colSpan={4} filtered={customerTable.isFiltered} label="customers" />
                     ) : (
                       customerTable.rows.map((row) => (
                         <tr key={`${row.distributor}-${row.code}`} className="transition hover:bg-orange-50/40">
-                          <td className="px-3 py-2.5 font-bold text-slate-900">{row.name}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{row.distributor}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{row.region}</td>
+                          <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.name}</td>
+                          <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.distributor}</td>
+                          <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.region}</td>
                           <td className="px-3 py-2.5 text-right font-black text-slate-900">{compactEGP(row.value)}</td>
                         </tr>
                       ))
@@ -669,7 +983,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {topBricks.map((row) => (
                   <div key={row.code} className="flex items-center gap-3">
-                    <span className="w-32 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
+                    <span className="w-32 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                     <div className="flex-1"><Bar2 value={row.value} max={brickMax} color="#10B981" /></div>
                     <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
                   </div>
@@ -684,7 +998,7 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {bottomBricks.map((row) => (
                   <div key={row.code} className="flex items-center gap-3">
-                    <span className="w-32 shrink-0 truncate text-xs font-bold text-slate-700" title={row.label}>{row.label}</span>
+                    <span className="w-32 shrink-0 text-xs font-bold text-slate-700 whitespace-nowrap" title={row.label}>{row.label}</span>
                     <div className="flex-1"><Bar2 value={row.value} max={brickBottomMax} color="#F97316" /></div>
                     <span className="w-24 shrink-0 text-right text-xs font-black text-slate-900">{compactEGP(row.value)}</span>
                   </div>
@@ -731,7 +1045,8 @@ export function SosDashboard({ initialData, initialError }: { initialData: SosDa
           ) : null}
 
           <p className="px-1 text-center text-xs text-slate-400">
-            Source-of-Sales distributor invoices for {data?.period ? periodProseLabel(data.period) : "—"}. Confidential products are hidden unless you are CEO / Super Admin.
+            Source-of-Sales distributor invoices for {periodsLabel(data?.selectedPeriods, data?.period ?? null)}
+            {priorLabel ? ` (compared with ${priorLabel})` : ""}. Confidential products are hidden unless you are CEO / Super Admin.
           </p>
         </>
       ) : null}
