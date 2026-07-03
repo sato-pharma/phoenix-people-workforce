@@ -744,7 +744,7 @@ export function OrgChartTree({
             No manager lanes found for this line.
           </div>
         ) : (
-          <div className="mt-6 space-y-8 overflow-x-auto pb-2">
+          <div className="mt-6 space-y-8 pb-2">
             {/* Tier 1 — DSMs reporting directly to the NSM */}
             {directDsms.length > 0 ? (
               <div>
@@ -755,8 +755,8 @@ export function OrgChartTree({
                   textClassName="text-slate-500"
                 />
                 <div
-                  className="grid min-w-max gap-3"
-                  style={{ gridTemplateColumns: `repeat(${directDsms.length}, minmax(240px, 1fr))` }}
+                  className="grid gap-3"
+                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
                 >
                   {directDsms.map((group, index) => {
                     const laneKey = group.dsm
@@ -779,7 +779,6 @@ export function OrgChartTree({
             {/* Tier 2 — each RSM banner + its child DSM lanes */}
             {rsmGroups.map((group, index) => {
               const childLanes = group.childLanes ?? [];
-              const childCount = Math.max(childLanes.length, 1);
               const laneKey = group.rsm ? `t2-${rowKey(group.rsm)}-${index}` : `t2-${group.name}-${index}`;
               const groupVacancies = childLanes.reduce(
                 (total, lane) =>
@@ -826,8 +825,8 @@ export function OrgChartTree({
                       </div>
                     </div>
                     <div
-                      className="grid min-w-max gap-3 bg-orange-50/30 p-3"
-                      style={{ gridTemplateColumns: `repeat(${childCount}, minmax(240px, 1fr))` }}
+                      className="grid gap-3 bg-orange-50/30 p-3"
+                      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
                     >
                       {childLanes.length > 0 ? (
                         childLanes.map((lane, laneIndex) => (
@@ -860,8 +859,8 @@ export function OrgChartTree({
                   textClassName="text-slate-500"
                 />
                 <div
-                  className="grid min-w-max gap-3"
-                  style={{ gridTemplateColumns: `repeat(${otherGroups.length}, minmax(240px, 1fr))` }}
+                  className="grid gap-3"
+                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
                 >
                   {otherGroups.map((group, index) => {
                     const laneKey = `other-${group.name}-${index}`;
