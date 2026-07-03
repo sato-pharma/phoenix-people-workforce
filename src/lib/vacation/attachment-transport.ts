@@ -8,16 +8,25 @@ import { vacationAttachmentBucket, type VacationAttachmentUpload } from "@/lib/v
 // function body. The request then references the pending object by storage path. This resolver
 // downloads that object into the same VacationAttachmentUpload shape the small-file multipart path
 // already produces, so every existing validation/upload/audit code path in service.ts is unchanged.
-export async function resolvePendingVacationAttachment(storagePath: string): Promise<VacationAttachmentUpload> {
+export async function resolvePendingVacationAttachment(
+  storagePath: string,
+  meta: { contentType?: string | null; fileName?: string | null } = {},
+): Promise<VacationAttachmentUpload> {
   const { data, error } = await getSupabaseAdmin().storage.from(vacationAttachmentBucket).download(storagePath);
   if (error || !data) {
     throw new Error("Uploaded file was not found in storage. Please re-upload.");
   }
   const bytes = Buffer.from(await data.arrayBuffer());
-  const fileName = storagePath.split("/").pop() || "upload";
+  // Prefer the original client-reported content type / name — the exact same source the direct
+  // multipart path uses (browser File.type / File.name) — so the attachment validators behave
+  // identically regardless of transport. Only fall back to the stored object's type and the storage
+  // path basename if the client metadata is somehow absent, never silently downgrading a real image
+  // to application/octet-stream (which the compensatory image-only validator would reject).
+  const contentType = (meta.contentType && meta.contentType.trim()) || data.type || "application/octet-stream";
+  const fileName = (meta.fileName && meta.fileName.trim()) || storagePath.split("/").pop() || "upload";
   return {
     bytes,
-    contentType: data.type || "application/octet-stream",
+    contentType,
     fileName,
     size: bytes.length,
   };
