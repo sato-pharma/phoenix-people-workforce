@@ -26,7 +26,7 @@
 
 - Production application: `https://phoenix-workforce.vercel.app`
 - Vercel project: `phoenix-workforce`
-- Vercel scope: `phoenix-workspace-s-projects`
+- Vercel scope: `phoenix-hr-workspace-s-projects`
 - Staging Supabase project ref: `izhmxvgiktiafqusolot`
 - Production Supabase project ref: `ozucdzovmcqvepbozvqf`
 
@@ -154,7 +154,7 @@ git diff --cached
 ## Preview, CI, And Production Verification
 
 - For runtime changes, inspect the newest deployment for the branch; do not trust an older pasted URL.
-- Use `vercel ls phoenix-workforce --scope phoenix-workspace-s-projects` when the CLI is available, or use the authoritative Vercel integration.
+- Use `vercel ls phoenix-workforce --scope phoenix-hr-workspace-s-projects` when the CLI is available, or use the authoritative Vercel integration.
 - A PR is merge-ready only when required CI passes, the relevant preview is Ready, changed workflows pass smoke testing, and required staging migrations are verified.
 - When a page fails, capture the visible error, browser console, relevant network/API response, deployment logs, and database/RLS evidence before proposing a fix.
 - After a runtime-impacting production deployment, verify `https://phoenix-workforce.vercel.app`, smoke-test the changed workflow, and inspect production logs.
