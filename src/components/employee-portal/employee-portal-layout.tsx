@@ -39,6 +39,7 @@ import {
   Inbox,
   Target,
   CalendarRange,
+  MapPinned,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -143,6 +144,7 @@ function buildEmployeePortalSections({
   showMarketingCustomerDatabaseTab = false,
   showMarketingControlTab = false,
   showMarketingRoiTrackingTab = false,
+  showMarketingCoverageReportTab = false,
   showMyPerformanceTab: _showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
@@ -222,6 +224,7 @@ function buildEmployeePortalSections({
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/marketing-requests/roi-tracking", label: "ROI Tracking", icon: ChartColumnBig }] : []),
+        ...(showMarketingCoverageReportTab ? [{ href: "/employee-portals/marketing-requests/coverage-report", label: "Coverage Report", icon: MapPinned }] : []),
         ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
       ],
     },

@@ -127,7 +127,13 @@ jobs:
         run: npx next typegen
 
       - name: Typecheck
+        # tsc --noEmit over this many files can exceed Node's default old-space
+        # heap ceiling on the standard GitHub-hosted runner and crash with an
+        # OOM before reporting any diagnostics (not a type error). Raise the
+        # heap limit rather than let the runner's default silently cap it.
         run: npm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
   preview-smoke:
     runs-on: ubuntu-latest

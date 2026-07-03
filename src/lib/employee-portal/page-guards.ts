@@ -4,12 +4,13 @@ import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   canUseEmployeePortalMarketingControl,
+  canUseEmployeePortalMarketingCoverageReport,
   canUseEmployeePortalMarketingCustomerDatabase,
   canUseEmployeePortalMarketingRequests,
   canUseEmployeePortalMarketingRoiTracking,
 } from "@/lib/employee-portal/navigation";
 
-type EmployeePortalMarketingPage = "requests" | "inbox" | "control" | "customer-database" | "roi-tracking";
+type EmployeePortalMarketingPage = "requests" | "inbox" | "control" | "customer-database" | "roi-tracking" | "coverage-report";
 
 export async function assertEmployeePortalMarketingPageAccess(page: EmployeePortalMarketingPage) {
   const access = await resolveAccessContextFromPage();
@@ -21,13 +22,15 @@ export async function assertEmployeePortalMarketingPageAccess(page: EmployeePort
   const canAccess =
     page === "roi-tracking"
       ? canUseEmployeePortalMarketingRoiTracking(access.role)
-      : page === "control"
-        ? canUseEmployeePortalMarketingControl(access.role)
-        : page === "customer-database"
-          ? canUseEmployeePortalMarketingCustomerDatabase(access.role)
-          : page === "inbox"
-            ? canUseEmployeePortalMarketingRequests(access.role)
-            : canUseEmployeePortalMarketingRequests(access.role);
+      : page === "coverage-report"
+        ? canUseEmployeePortalMarketingCoverageReport(access.role)
+        : page === "control"
+          ? canUseEmployeePortalMarketingControl(access.role)
+          : page === "customer-database"
+            ? canUseEmployeePortalMarketingCustomerDatabase(access.role)
+            : page === "inbox"
+              ? canUseEmployeePortalMarketingRequests(access.role)
+              : canUseEmployeePortalMarketingRequests(access.role);
 
   if (!canAccess) {
     redirect("/employee-portals");
