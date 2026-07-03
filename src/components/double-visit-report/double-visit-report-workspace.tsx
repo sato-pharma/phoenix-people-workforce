@@ -145,6 +145,7 @@ export function DoubleVisitReportWorkspace({
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState(ALL);
   const [lineFilter, setLineFilter] = useState(ALL);
+  const [visitKindFilter, setVisitKindFilter] = useState(ALL);
   // "?visitor=me" deep link (from the landing-page trend block) resolves to the viewer's own
   // display label the first time it's seen among this range's rows — falls back to ALL if the
   // viewer performed no visits in the default range (nothing to pre-filter to).
@@ -162,6 +163,7 @@ export function DoubleVisitReportWorkspace({
       if (areaFilter !== ALL && row.areaName !== areaFilter) return false;
       if (lineFilter !== ALL && row.lineName !== lineFilter) return false;
       if (visitorFilter !== ALL && (row.doubleVisitorName ?? row.doubleVisitorHrId) !== visitorFilter) return false;
+      if (visitKindFilter !== ALL && row.visitKind !== visitKindFilter) return false;
       if (!term) return true;
       return (
         (row.visitedName ?? "").toLowerCase().includes(term) ||
@@ -169,7 +171,7 @@ export function DoubleVisitReportWorkspace({
         (row.visitedHrId ?? "").toLowerCase().includes(term)
       );
     });
-  }, [data.rows, search, areaFilter, lineFilter, visitorFilter]);
+  }, [data.rows, search, areaFilter, lineFilter, visitorFilter, visitKindFilter]);
 
   const neverVisitedRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -187,7 +189,7 @@ export function DoubleVisitReportWorkspace({
     return data.probation.filter((row) => row.name.toLowerCase().includes(term) || row.hrId.toLowerCase().includes(term));
   }, [data.probation, search]);
 
-  const logSort = useSort<DoubleVisitReportRow, "date" | "visitor" | "visited" | "area" | "line" | "period" | "visits">(
+  const logSort = useSort<DoubleVisitReportRow, "date" | "visitor" | "visited" | "area" | "line" | "period" | "visits" | "kind">(
     logRows,
     (row, key) => {
       switch (key) {
@@ -198,6 +200,7 @@ export function DoubleVisitReportWorkspace({
         case "line": return row.lineName ?? "";
         case "period": return row.period;
         case "visits": return row.visitCount;
+        case "kind": return row.visitKind;
       }
     },
     "date",
@@ -239,6 +242,7 @@ export function DoubleVisitReportWorkspace({
           { key: "area", label: "Area" },
           { key: "line", label: "Line" },
           { key: "period", label: "Period" },
+          { key: "kind", label: "Type" },
           { key: "visits", label: "Visits", numeric: true },
         ]
       : tab === "neverVisited"
@@ -269,6 +273,7 @@ export function DoubleVisitReportWorkspace({
           area: row.areaName ?? "—",
           line: row.lineName ?? "—",
           period: row.period,
+          kind: row.visitKind,
           visits: row.visitCount,
         }))
       : tab === "neverVisited"
@@ -364,6 +369,16 @@ export function DoubleVisitReportWorkspace({
                 <option key={visitor} value={visitor}>{visitor}</option>
               ))}
             </select>
+            <select
+              value={visitKindFilter}
+              onChange={(event) => setVisitKindFilter(event.target.value)}
+              className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700"
+            >
+              <option value={ALL}>Regular + Campaign</option>
+              {data.filters.visitKinds.map((kind) => (
+                <option key={kind} value={kind}>{kind}</option>
+              ))}
+            </select>
           </>
         )}
         {tab === "neverVisited" && (
@@ -384,7 +399,11 @@ export function DoubleVisitReportWorkspace({
 
       {tab === "log" && (
         <div className="overflow-x-auto border border-slate-200 bg-white">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <p className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+            <span className="font-bold text-slate-700">Type</span> shows whether the source system logged this as a Regular field visit
+            or a Campaign/other activity. Both count toward totals — this column and filter are for visibility, not exclusion.
+          </p>
+          <table className="w-full min-w-[940px] text-left text-sm">
             <thead className="bg-slate-900">
               <tr>
                 <SortHeader label="Date" sortKey="date" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
@@ -393,12 +412,13 @@ export function DoubleVisitReportWorkspace({
                 <SortHeader label="Area" sortKey="area" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                 <SortHeader label="Line" sortKey="line" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                 <SortHeader label="Period" sortKey="period" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                <SortHeader label="Type" sortKey="kind" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                 <SortHeader label="Visits" sortKey="visits" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} align="right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-orange-100">
               {logSort.sorted.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
+                <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
               ) : (
                 logSort.sorted.map((row, index) => (
                   <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
@@ -408,6 +428,16 @@ export function DoubleVisitReportWorkspace({
                     <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
                     <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
                     <td className="px-3 py-2.5">{row.period}</td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={cn(
+                          "inline-flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                          row.visitKind === "Regular" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                        )}
+                      >
+                        {row.visitKind}
+                      </span>
+                    </td>
                     <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.visitCount}</td>
                   </tr>
                 ))

@@ -11,7 +11,7 @@ import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports3
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
-import type { ProbationDvState } from "@/lib/probation/types";
+import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -41,6 +41,10 @@ import type {
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusRosterEntry,
   DoubleVisitFocusTrendPoint,
+  DoubleVisitIntegrityImportSummary,
+  DoubleVisitIntegrityIssue,
+  DoubleVisitIntegrityIssueType,
+  DoubleVisitIntegrityReport,
   DoubleVisitPortalFocus,
   DoubleVisitPreview,
   DoubleVisitReportData,
@@ -1410,7 +1414,10 @@ export async function getDoubleVisitDashboardData(input: {
 // needs history the publish/supersede model does not retain as "published" at any one time.
 
 const NEVER_VISITED_FLAG_DAYS = 45;
-const FOCUS_TREND_MONTHS = 3;
+// Double-visit tracking in this system starts January 2026 (earliest activity_date in
+// double_visit_rows) — the trend is anchored there rather than a rolling window so a manager's
+// full history is visible, not just an arbitrary recent slice.
+const FOCUS_TREND_START_MONTH = "2026-01";
 const FOCUS_NEGLECTED_DISPLAY_LIMIT = 8;
 const FOCUS_PROBATION_DISPLAY_LIMIT = 8;
 
@@ -1422,16 +1429,78 @@ const PROBATION_DV_FIELD_BY_ROLE: Partial<Record<string, keyof ProbationDvState>
   "Training Manager": "tm_dv_done",
 };
 
-function focusMonthBuckets(count: number, asOf = new Date()) {
+function focusMonthBuckets(startMonth: string, asOf = new Date()) {
+  const [startYear, startMonthNum] = startMonth.split("-").map(Number);
+  const end = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
   const buckets: { month: string; label: string }[] = [];
-  for (let i = count - 1; i >= 0; i -= 1) {
-    const d = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - i, 1));
+  let cursor = new Date(Date.UTC(startYear, startMonthNum - 1, 1));
+  while (cursor <= end) {
     buckets.push({
-      label: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
-      month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+      label: cursor.toLocaleString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }),
+      month: `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`,
     });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
   }
   return buckets;
+}
+
+// iReports360 visits carry a visitType (0 = regular field coverage; other codes are Campaign,
+// Conference, etc. — see field-workforce-compliance/ireports360-source.ts). That distinction is
+// preserved verbatim in raw_payload on import but was never surfaced here. Owner decision: keep
+// counting every visit kind toward totals, but make the split visible rather than hiding it.
+// Excel-sourced rows have no such concept — that manual workflow only ever records regular
+// field double-visits, so they're always "Regular".
+function deriveVisitKind(row: Pick<DoubleVisitDbRow, "source_type" | "raw_payload">): string {
+  if (row.source_type !== "ireports360") return "Regular";
+  const payload = row.raw_payload as { visitType?: number; visitTypeDescription?: string | null } | null;
+  if (payload?.visitType === 0) return "Regular";
+  return nullableText(payload?.visitTypeDescription ?? null) ?? "Non-Regular";
+}
+
+type DoubleVisitFocusRawRow = {
+  activity_date: string;
+  double_visitor_hr_id: string | null;
+  visit_count: number | null;
+  visited_employee_hr_id: string | null;
+};
+
+// Paginated fetch across the WHOLE table (no import-status gate, no HR_ID equality filter in
+// SQL) — HR_ID matching happens client-side via canonicalHrIdKey so alias/format drift can't
+// silently drop rows the way a raw .eq()/.in() would. PostgREST caps a single response at
+// db-max-rows (~1000), so this must page through rather than trust one large .limit().
+async function paginateDoubleVisitRows<T>(select: string): Promise<T[]> {
+  const pageSize = 1000;
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(rowsTable)
+      .select(select)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (schemaMissing(error)) break;
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
+    const page = (data ?? []) as unknown as T[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+async function fetchAllDoubleVisitRows(select: string): Promise<DoubleVisitFocusRawRow[]> {
+  return paginateDoubleVisitRows<DoubleVisitFocusRawRow>(select);
+}
+
+// A double visit is always manager -> Medical Rep — a manager's own probation record (e.g. a
+// newly-hired Regional Manager) can never carry a DV status and must never appear in a DV-scoped
+// probation watchlist. Prefer the canonical isMedicalRep() against the matched directory row;
+// ProbationRow only carries a flat job_title, so fall back to the same pattern against that.
+function isMedicalRepProbationRow(row: Pick<ProbationRow, "hr_id" | "job_title">, employees: EmployeeDirectoryRow[]) {
+  const key = canonicalHrIdKey(row.hr_id);
+  const employee = key ? employees.find((e) => canonicalHrIdKey(e.hrId) === key) : undefined;
+  if (employee) return isMedicalRep(employee);
+  return /medical\s*rep|medical\s*representative/i.test(row.job_title ?? "");
 }
 
 function buildScopeSummarySentence(total: number, covered: number, neglected: DoubleVisitFocusRosterEntry[]) {
@@ -1453,29 +1522,30 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
   const viewerKey = normalizedHrKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId);
   const viewer = viewerKey ? employees.find((employee) => normalizedHrKey(employee.hrId) === viewerKey) ?? null : null;
-  const viewerHrIdUpper = (viewer?.hrId ?? access.hrId ?? "").toUpperCase();
+  // Canonical (alias-table + symbol-stripped) key — NOT a raw .toUpperCase() equality check.
+  // double_visit_rows is populated from external imports (Excel / iReports360) whose HR_ID
+  // formatting can drift from the directory's current canonical form (old aliases, missing
+  // hyphens, casing). A raw exact-match query silently dropped those rows and undercounted —
+  // every other reader in this file (filterRowsForAccess, buildManagerSummariesDetailed) already
+  // avoids that by matching on canonicalHrIdKey/normalizedHrKey; this now does the same.
+  const viewerCanonicalKey = canonicalHrIdKey(viewer?.hrId ?? access.hrId ?? null);
 
-  const buckets = focusMonthBuckets(FOCUS_TREND_MONTHS);
+  const buckets = focusMonthBuckets(FOCUS_TREND_START_MONTH);
   const trendStart = `${buckets[0].month}-01`;
 
-  const [trendRowsResult, everVisitedResult, probationRows] = await Promise.all([
-    viewerHrIdUpper
-      ? getSupabaseAdmin()
-          .from(rowsTable)
-          .select("activity_date, visit_count")
-          .eq("double_visitor_hr_id", viewerHrIdUpper)
-          .gte("activity_date", trendStart)
-          .limit(5000)
-      : Promise.resolve({ data: [], error: null }),
-    viewerHrIdUpper
-      ? getSupabaseAdmin().from(rowsTable).select("visited_employee_hr_id").eq("double_visitor_hr_id", viewerHrIdUpper).limit(10000)
-      : Promise.resolve({ data: [], error: null }),
+  const [allDvRows, probationRows] = await Promise.all([
+    fetchAllDoubleVisitRows("double_visitor_hr_id, visited_employee_hr_id, activity_date, visit_count"),
     getProbationRows(access).catch(() => []),
   ]);
+  const medicalRepProbationRows = probationRows.filter((row) => isMedicalRepProbationRow(row, employees));
+  const ownRows = viewerCanonicalKey
+    ? allDvRows.filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
+    : [];
 
   // Block 1 — viewer's own monthly DV trend (own performed visits only, per owner decision).
   const countByMonth = new Map<string, number>();
-  for (const row of (trendRowsResult.data ?? []) as Array<{ activity_date: string; visit_count: number | null }>) {
+  for (const row of ownRows) {
+    if (row.activity_date < trendStart) continue;
     const month = row.activity_date.slice(0, 7);
     countByMonth.set(month, (countByMonth.get(month) ?? 0) + asNumber(row.visit_count));
   }
@@ -1487,9 +1557,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
 
   // Block 2 — scope coverage: which in-scope MRs has the viewer EVER personally double-visited.
   const visitedKeys = new Set(
-    ((everVisitedResult.data ?? []) as Array<{ visited_employee_hr_id: string | null }>)
-      .map((row) => canonicalHrIdKey(row.visited_employee_hr_id))
-      .filter((key): key is string => Boolean(key)),
+    ownRows.map((row) => canonicalHrIdKey(row.visited_employee_hr_id)).filter((key): key is string => Boolean(key)),
   );
   const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
   const roster = scopedEmployees.filter((employee) => {
@@ -1527,22 +1595,16 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   }
 
   // Block 3 — probation watchlist. dv_state reflects the viewer's own tier (dm/nsm/pm_gpm/tm);
-  // Regional Manager has no dedicated probation DV checkbox, so it falls back to a raw DV count.
+  // Regional Manager has no dedicated probation DV checkbox, so it falls back to a raw DV count
+  // (any double-visitor, matched the same canonical way as everything else in this function).
   const dvField = PROBATION_DV_FIELD_BY_ROLE[role];
   const dvCountByHrId = new Map<string, number>();
-  if (probationRows.length > 0) {
-    const probationHrIdsUpper = Array.from(new Set(probationRows.map((row) => row.hr_id.toUpperCase())));
-    const { data } = await getSupabaseAdmin()
-      .from(rowsTable)
-      .select("visited_employee_hr_id, visit_count")
-      .in("visited_employee_hr_id", probationHrIdsUpper);
-    for (const row of (data ?? []) as Array<{ visited_employee_hr_id: string | null; visit_count: number | null }>) {
-      const key = canonicalHrIdKey(row.visited_employee_hr_id);
-      if (!key) continue;
-      dvCountByHrId.set(key, (dvCountByHrId.get(key) ?? 0) + asNumber(row.visit_count));
-    }
+  for (const row of allDvRows) {
+    const key = canonicalHrIdKey(row.visited_employee_hr_id);
+    if (!key) continue;
+    dvCountByHrId.set(key, (dvCountByHrId.get(key) ?? 0) + asNumber(row.visit_count));
   }
-  const probationAll: DoubleVisitFocusProbationEntry[] = probationRows
+  const probationAll: DoubleVisitFocusProbationEntry[] = medicalRepProbationRows
     .map((row) => {
       const key = canonicalHrIdKey(row.hr_id);
       return {
@@ -1582,7 +1644,7 @@ export async function getDoubleVisitReportData(input: {
       asOfDate: today,
       dateFrom,
       dateTo,
-      filters: { areas: [], doubleVisitors: [], lines: [] },
+      filters: { areas: [], doubleVisitors: [], lines: [], visitKinds: [] },
       neverVisited: [],
       probation: [],
       rows: [],
@@ -1648,6 +1710,7 @@ export async function getDoubleVisitReportData(input: {
         visitedHrId: nullableText(row.visited_employee_hr_id),
         visitedName: nullableText(row.visited_employee_name),
         visitedStatus: row.visited_employee_status as DoubleVisitVisitedEmployeeStatus,
+        visitKind: deriveVisitKind(row),
       } satisfies DoubleVisitReportRow;
     })
     .sort((a, b) => b.activityDate.localeCompare(a.activityDate));
@@ -1675,7 +1738,9 @@ export async function getDoubleVisitReportData(input: {
     })
     .sort((a, b) => (b.daysSinceHire ?? -1) - (a.daysSinceHire ?? -1));
 
-  const probationRowsRaw = await getProbationRows(input.access).catch(() => []);
+  const probationRowsRaw = (await getProbationRows(input.access).catch(() => [])).filter((row) =>
+    isMedicalRepProbationRow(row, employees),
+  );
   const dvField = PROBATION_DV_FIELD_BY_ROLE[input.access.role ?? ""];
   const probationDvCountByKey = new Map<string, number>();
   for (const row of scopedRows) {
@@ -1701,12 +1766,13 @@ export async function getDoubleVisitReportData(input: {
   const doubleVisitors = Array.from(
     new Set(rows.map((row) => row.doubleVisitorName ?? row.doubleVisitorHrId).filter((value): value is string => Boolean(value))),
   ).sort();
+  const visitKinds = Array.from(new Set(rows.map((row) => row.visitKind))).sort();
 
   return {
     asOfDate: today,
     dateFrom,
     dateTo,
-    filters: { areas, doubleVisitors, lines },
+    filters: { areas, doubleVisitors, lines, visitKinds },
     neverVisited,
     probation,
     rows,
@@ -2049,4 +2115,151 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
   }
 
   return workbook;
+}
+
+// ── Data Integrity Report (admin-only) ──────────────────────────────────────────
+//
+// Every double-visit row that could NOT be confidently counted or attributed — so an admin
+// can see and decide on each one, instead of it silently vanishing from every manager-facing
+// number. Company-wide and unscoped by design (a data-quality audit, not a personal/team view),
+// so it is gated to Super Admin only — the one role with full (not just read/export) authority
+// over this data in the permission matrix.
+
+type DoubleVisitIntegrityRawRow = {
+  activity_date: string;
+  area_name: string | null;
+  double_visitor_hr_id: string | null;
+  double_visitor_name: string | null;
+  id: string;
+  import_id: string;
+  line_name: string | null;
+  source_type: DoubleVisitSourceType;
+  visit_count: number | null;
+  visited_employee_hr_id: string | null;
+  visited_employee_name: string | null;
+  visited_employee_status: string;
+};
+
+const INTEGRITY_ISSUE_LABELS: Record<DoubleVisitIntegrityIssueType, string> = {
+  double_visitor_unmapped: "Double visitor could not be matched to an employee — who performed this visit is unknown.",
+  visited_blank_or_unmapped: "Visited person has no usable HR ID and could not be matched to an employee.",
+  visited_is_manager: "Visited person is actually a manager, not a Medical Rep — a double visit is always manager → Medical Rep.",
+  visited_resigned: "Visited employee has since resigned.",
+  visited_vacant_seat: "Visit was recorded against a vacant seat/territory, not a real employee.",
+};
+
+function emptyIntegrityCounts(): Record<DoubleVisitIntegrityIssueType, number> {
+  return {
+    double_visitor_unmapped: 0,
+    visited_blank_or_unmapped: 0,
+    visited_is_manager: 0,
+    visited_resigned: 0,
+    visited_vacant_seat: 0,
+  };
+}
+
+export async function getDoubleVisitDataIntegrityReport(access: AccessContext): Promise<DoubleVisitIntegrityReport> {
+  if (access.role !== "Super Admin") {
+    throw new Error("Forbidden: only Super Admin can view the Double Visit Data Integrity report.");
+  }
+  if (!(await isDoubleVisitSchemaReady())) {
+    return {
+      asOfDate: todayIso(),
+      countsByType: emptyIntegrityCounts(),
+      importSummaries: [],
+      issues: [],
+      schemaReady: false,
+      totalRowsScanned: 0,
+    };
+  }
+
+  const [rawRows, employees, imports] = await Promise.all([
+    paginateDoubleVisitRows<DoubleVisitIntegrityRawRow>(
+      "id, activity_date, area_name, double_visitor_hr_id, double_visitor_name, import_id, line_name, source_type, visit_count, visited_employee_hr_id, visited_employee_name, visited_employee_status",
+    ),
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    listDoubleVisitImports(500),
+  ]);
+
+  const managerHrIdKeys = new Set(
+    employees
+      .filter((employee) => resolveDvRole(employee) !== null)
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const importByIdMap = new Map(imports.map((importRow) => [importRow.id, importRow]));
+
+  const issues: DoubleVisitIntegrityIssue[] = [];
+  const countsByType = emptyIntegrityCounts();
+
+  for (const row of rawRows) {
+    const doubleVisitorRaw = nullableText(row.double_visitor_hr_id);
+    let issueType: DoubleVisitIntegrityIssueType | null = null;
+
+    if (!doubleVisitorRaw || doubleVisitorRaw.toUpperCase().startsWith("CRM:")) {
+      issueType = "double_visitor_unmapped";
+    } else if (row.visited_employee_status === "blank_hr_id" || row.visited_employee_status === "unmapped") {
+      issueType = "visited_blank_or_unmapped";
+    } else if (row.visited_employee_status === "vacant") {
+      issueType = "visited_vacant_seat";
+    } else if (row.visited_employee_status === "resigned") {
+      issueType = "visited_resigned";
+    } else {
+      // Re-derived regardless of stored status: the non_mr guard was added after some rows were
+      // already imported as 'active_mapped', so trusting the stored status alone would miss them.
+      const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
+      if (row.visited_employee_status === "non_mr" || (visitedKey && managerHrIdKeys.has(visitedKey))) {
+        issueType = "visited_is_manager";
+      }
+    }
+
+    if (!issueType) continue;
+    countsByType[issueType] += 1;
+    const importInfo = importByIdMap.get(row.import_id);
+    issues.push({
+      activityDate: row.activity_date,
+      areaName: nullableText(row.area_name),
+      doubleVisitorHrIdRaw: doubleVisitorRaw,
+      doubleVisitorName: nullableText(row.double_visitor_name),
+      id: row.id,
+      issueLabel: INTEGRITY_ISSUE_LABELS[issueType],
+      issueType,
+      lineName: nullableText(row.line_name),
+      sourceFilename: importInfo?.sourceFilename ?? null,
+      sourceType: row.source_type,
+      visitCount: asNumber(row.visit_count),
+      visitedHrIdRaw: nullableText(row.visited_employee_hr_id),
+      visitedName: nullableText(row.visited_employee_name),
+      visitedStatus: row.visited_employee_status as DoubleVisitVisitedEmployeeStatus,
+    });
+  }
+  issues.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
+
+  const importSummaries: DoubleVisitIntegrityImportSummary[] = imports
+    .filter(
+      (importRow) =>
+        importRow.duplicateWarningCount > 0 || importRow.vacantOrUnmappedVisitCount > 0 || importRow.missingVisitedHrIdCount > 0,
+    )
+    .map((importRow) => ({
+      dateFrom: importRow.dateFrom,
+      dateTo: importRow.dateTo,
+      duplicateWarningCount: importRow.duplicateWarningCount,
+      id: importRow.id,
+      missingVisitedHrIdCount: importRow.missingVisitedHrIdCount,
+      sourceFilename: importRow.sourceFilename,
+      sourceType: importRow.sourceType,
+      status: importRow.status,
+      totalRows: importRow.totalRows,
+      uploadedAt: importRow.uploadedAt,
+      vacantOrUnmappedVisitCount: importRow.vacantOrUnmappedVisitCount,
+    }));
+
+  return {
+    asOfDate: todayIso(),
+    countsByType,
+    importSummaries,
+    issues,
+    schemaReady: true,
+    totalRowsScanned: rawRows.length,
+  };
 }

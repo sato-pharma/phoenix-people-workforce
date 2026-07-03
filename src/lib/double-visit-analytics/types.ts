@@ -346,6 +346,13 @@ export type DoubleVisitReportRow = {
   visitedHrId: string | null;
   visitedName: string | null;
   visitedStatus: DoubleVisitVisitedEmployeeStatus;
+  /**
+   * "Regular" (iReports360 visitType 0, or any Excel-sourced row — that workflow has no other
+   * concept), the CRM's own label for a non-regular visit (e.g. "Campaign"/"Conference"), or
+   * "Non-Regular" when the type is present but undescribed. All visit kinds still count toward
+   * totals — this is for visibility, not filtering (owner decision).
+   */
+  visitKind: string;
 };
 
 export type DoubleVisitReportData = {
@@ -356,9 +363,61 @@ export type DoubleVisitReportData = {
     areas: string[];
     doubleVisitors: string[];
     lines: string[];
+    visitKinds: string[];
   };
   neverVisited: DoubleVisitFocusRosterEntry[];
   probation: DoubleVisitFocusProbationEntry[];
   rows: DoubleVisitReportRow[];
   schemaReady: boolean;
+};
+
+// ── Data Integrity Report (admin-only): every visit that could NOT be confidently
+// counted or attributed, so HR can decide what to do with each one instead of it
+// silently vanishing from every manager-facing number. ──────────────────────────
+
+export type DoubleVisitIntegrityIssueType =
+  | "double_visitor_unmapped"
+  | "visited_blank_or_unmapped"
+  | "visited_vacant_seat"
+  | "visited_resigned"
+  | "visited_is_manager";
+
+export type DoubleVisitIntegrityIssue = {
+  activityDate: string;
+  areaName: string | null;
+  doubleVisitorHrIdRaw: string | null;
+  doubleVisitorName: string | null;
+  id: string;
+  issueLabel: string;
+  issueType: DoubleVisitIntegrityIssueType;
+  lineName: string | null;
+  sourceFilename: string | null;
+  sourceType: DoubleVisitSourceType;
+  visitCount: number;
+  visitedHrIdRaw: string | null;
+  visitedName: string | null;
+  visitedStatus: DoubleVisitVisitedEmployeeStatus;
+};
+
+export type DoubleVisitIntegrityImportSummary = {
+  dateFrom: string;
+  dateTo: string;
+  duplicateWarningCount: number;
+  id: string;
+  missingVisitedHrIdCount: number;
+  sourceFilename: string;
+  sourceType: DoubleVisitSourceType;
+  status: DoubleVisitImportStatus;
+  totalRows: number;
+  uploadedAt: string;
+  vacantOrUnmappedVisitCount: number;
+};
+
+export type DoubleVisitIntegrityReport = {
+  asOfDate: string;
+  countsByType: Record<DoubleVisitIntegrityIssueType, number>;
+  importSummaries: DoubleVisitIntegrityImportSummary[];
+  issues: DoubleVisitIntegrityIssue[];
+  schemaReady: boolean;
+  totalRowsScanned: number;
 };
