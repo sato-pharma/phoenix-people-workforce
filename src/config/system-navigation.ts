@@ -3,6 +3,7 @@ import {
   Archive,
   BellRing,
   BriefcaseBusiness,
+  Building2,
   CalendarCheck,
   CalendarClock,
   CalendarDays,
@@ -351,6 +352,9 @@ const adminNavigationSectionSeeds = [
     id: "master-data",
     items: [
       { href: "/admin/customer-pharmacy-mapping", icon: Network, label: "Customer Pharmacy Mapping", roles: ["Super Admin", "CEO"] },
+      // Read-only Phase 1 candidate-review report — detects possible same-pharmacy duplicates
+      // across distributors. Suggestion-only; no merge/create/approve actions yet.
+      { href: "/admin/pharmacy-master", icon: Building2, label: "Pharmacy Master", roles: ["Super Admin", "CEO"] },
     ],
     label: "Master Data",
   },
