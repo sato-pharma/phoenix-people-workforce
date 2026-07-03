@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { assertPermission, getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
 import { parseDateOnly } from "@/lib/date-only";
-import { resolveAccessContext } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
@@ -1611,19 +1611,47 @@ async function buildStyledTemplate(
 }
 
 export async function GET(request: Request) {
-  const access = await resolveAccessContext(request);
-  await assertPermission(access, "payroll", "read");
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "payroll", "read");
 
-  const url = new URL(request.url);
-  const now = new Date();
-  const ready = url.searchParams.get("ready") === "1";
-  const upload = url.searchParams.get("upload") === "1";
-  const month = numberParam(url.searchParams.get("month"), now.getMonth() + 1);
-  const year = numberParam(url.searchParams.get("year"), now.getFullYear());
+    const url = new URL(request.url);
+    const now = new Date();
+    const ready = url.searchParams.get("ready") === "1";
+    const upload = url.searchParams.get("upload") === "1";
+    const month = numberParam(url.searchParams.get("month"), now.getMonth() + 1);
+    const year = numberParam(url.searchParams.get("year"), now.getFullYear());
 
-  if (upload) {
-    if (getPayrollScope(access) !== "COMPANY") {
-      return new Response("Forbidden", { status: 403 });
+    if (upload) {
+      if (getPayrollScope(access) !== "COMPANY") {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      try {
+        assertValidPayrollPeriod(month, year);
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: "invalid_payroll_period",
+            message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          },
+          { status: 400 },
+        );
+      }
+
+      const workbook = await createFallbackWorkbook(await buildUploadRows(month, year), month, year);
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return new Response(buffer, {
+        headers: {
+          "Content-Disposition": 'attachment; filename="phoenix-salary-upload-template.xlsx"',
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
+    }
+
+    if (!ready) {
+      return exactTemplateResponse();
     }
 
     try {
@@ -1638,49 +1666,30 @@ export async function GET(request: Request) {
       );
     }
 
-    const workbook = await createFallbackWorkbook(await buildUploadRows(month, year), month, year);
+    if (ready && getPayrollScope(access) !== "COMPANY") {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    const workbook = ready
+      ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year, { formulas: true })
+      : await buildStyledTemplate(month, year, ready, access);
     const buffer = await workbook.xlsx.writeBuffer();
+    const filename = ready
+      ? `phoenix-ready-payroll-${year}-${String(month).padStart(2, "0")}.xlsx`
+      : "phoenix-payroll-template.xlsx";
 
     return new Response(buffer, {
       headers: {
-        "Content-Disposition": 'attachment; filename="phoenix-salary-upload-template.xlsx"',
+        "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });
-  }
-
-  if (!ready) {
-    return exactTemplateResponse();
-  }
-
-  try {
-    assertValidPayrollPeriod(month, year);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: "invalid_payroll_period",
-        message: error instanceof Error ? error.message : "Payroll period is invalid.",
-      },
-      { status: 400 },
-    );
+    const message = error instanceof Error ? error.message : "Payroll template request failed.";
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+
+    return NextResponse.json({ error: "payroll_template_failed", message }, { status: 500 });
   }
-
-  if (ready && getPayrollScope(access) !== "COMPANY") {
-    return new Response("Forbidden", { status: 403 });
-  }
-
-  const workbook = ready
-    ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year, { formulas: true })
-    : await buildStyledTemplate(month, year, ready, access);
-  const buffer = await workbook.xlsx.writeBuffer();
-  const filename = ready
-    ? `phoenix-ready-payroll-${year}-${String(month).padStart(2, "0")}.xlsx`
-    : "phoenix-payroll-template.xlsx";
-
-  return new Response(buffer, {
-    headers: {
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    },
-  });
 }
