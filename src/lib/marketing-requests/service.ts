@@ -867,6 +867,32 @@ function marketingProductMatchesRequesterLine(product: MarketingProductDbRow, re
   return resolvedProductLineName === resolvedRequesterLineName;
 }
 
+/** True when a product's code is in a per-user product_scope_override allowlist. */
+function productCodeInScope(code: string | null | undefined, allowedProductCodes: Set<string> | null): boolean {
+  if (!allowedProductCodes) return false;
+  const normalized = (code ?? "").trim().toUpperCase();
+  return normalized ? allowedProductCodes.has(normalized) : false;
+}
+
+/** Build the uppercased product-code allowlist from a raw product_scope_override (null = no restriction). */
+function toProductCodeSet(raw: string[] | null): Set<string> | null {
+  return raw === null ? null : new Set(raw.map((code) => code.trim().toUpperCase()));
+}
+
+// A requester may use a product if it is on their assigned line OR its code is in their
+// product_scope_override. The override is additive (a UNION), so it only ever GRANTS extra
+// products (e.g. a Product Manager whose one Anti-infective product sits outside their Pedia
+// home line) and never narrows the line-based default — existing single-line requesters and
+// requesters whose override codes already fall inside their own line are unaffected.
+function marketingProductAllowedForRequester(
+  product: MarketingProductDbRow,
+  requester: MarketingRequesterLine | null,
+  allowedProductCodes: Set<string> | null,
+): boolean {
+  if (requester && marketingProductMatchesRequesterLine(product, requester)) return true;
+  return productCodeInScope(product.product_code, allowedProductCodes);
+}
+
 function assertMarketingActor(access: AccessContext) {
   const actorHrId = resolveEmployeeIdentityId(access);
   if (!actorHrId) {
@@ -910,17 +936,21 @@ export function buildMarketingDraftProductScope(params: {
   access: AccessContext;
   productRows: MarketingProductDbRow[];
   requester: MarketingRequesterLine | null;
+  /** Per-user product_scope_override (uppercased codes). Additive — grants products outside the
+   *  requester's line (e.g. a PM's one Anti-infective product) without narrowing the line default. */
+  allowedProductCodes?: Set<string> | null;
 }): MarketingDraftProductScope {
   const { access, productRows, requester } = params;
+  const allowedProductCodes = params.allowedProductCodes ?? null;
   const unrestrictedProductLines = canUseAnyMarketingProductLine(access);
-  const canCreateDraft = unrestrictedProductLines || requester !== null;
+  const canCreateDraft = unrestrictedProductLines || requester !== null || allowedProductCodes !== null;
 
   let products: MarketingProduct[] = [];
   if (unrestrictedProductLines) {
     products = productRows.map(mapMarketingProduct);
-  } else if (requester) {
+  } else if (requester || allowedProductCodes) {
     products = productRows
-      .filter((product) => marketingProductMatchesRequesterLine(product, requester))
+      .filter((product) => marketingProductAllowedForRequester(product, requester, allowedProductCodes))
       .map(mapMarketingProduct);
   }
 
@@ -1166,6 +1196,8 @@ export function prepareMarketingRequestDraft(params: {
   requestType: MarketingRequestTypeDbRow;
   requester: Pick<EmployeeDirectoryRow, "areaId" | "hrId" | "lineId" | "managerHrId"> & { lineName?: string | null };
   unrestrictedProductLines?: boolean;
+  /** Additive per-user product allowlist (product_scope_override) — see marketingProductAllowedForRequester. */
+  allowedProductCodes?: Set<string> | null;
 }): PreparedMarketingRequestDraft {
   const normalized = normalizeMarketingRequestDraftInput(params.input);
   if (!normalized.customerId) throw validationError("Customer is required.");
@@ -1183,14 +1215,16 @@ export function prepareMarketingRequestDraft(params: {
   if (missingProduct) {
     throw notFoundError(`Product ${missingProduct.productId} was not found or is inactive.`, "product_not_found");
   }
+  const allowedProductCodes = params.allowedProductCodes ?? null;
   const requesterLineId = params.requester.lineId ?? null;
   const requesterLineName = normalizeScopeText(params.requester.lineName);
-  if (requesterLineId === null && !requesterLineName && !params.unrestrictedProductLines) {
+  if (requesterLineId === null && !requesterLineName && !params.unrestrictedProductLines && !allowedProductCodes) {
     throw validationError("Requester product line is not assigned. Please contact HR.", "requester_line_not_assigned");
   }
   const outsideRequesterLine = normalized.products.find((product) => {
     const row = productRowsById.get(product.productId);
-    return !params.unrestrictedProductLines && row && !marketingProductMatchesRequesterLine(row, params.requester);
+    return !params.unrestrictedProductLines && row &&
+      !marketingProductAllowedForRequester(row, params.requester, allowedProductCodes);
   });
   if (outsideRequesterLine) {
     throw validationError("Marketing requests can only include products from your assigned line.", "product_line_not_allowed");
@@ -1214,9 +1248,25 @@ export function prepareMarketingRequestDraft(params: {
   });
   const requesterHrId = String(params.requester.hrId);
   const areaId = (normalized.areaId ?? Number(params.customer.area_id ?? params.requester.areaId ?? 0)) || null;
+  // A requester with an additive product override can span lines, so tag the request with the
+  // line of its products when they are unambiguously single-line (a request is single-line in
+  // practice), falling back to the requester's own line. Guarded to override users, so every
+  // existing (non-override) requester keeps the exact requester-line tag as before.
+  const requestProductLineId = (() => {
+    const lineIds = new Set(
+      normalized.products
+        .map((product) => productRowsById.get(product.productId)?.line_id)
+        .filter((value): value is number | string => value !== null && value !== undefined)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value)),
+    );
+    return lineIds.size === 1 ? [...lineIds][0] : null;
+  })();
   const lineId = params.unrestrictedProductLines
     ? (normalized.lineId ?? Number(params.customer.line_id ?? requesterLineId ?? 0)) || null
-    : requesterLineId;
+    : allowedProductCodes
+      ? (requestProductLineId ?? requesterLineId)
+      : requesterLineId;
   const managerHrId = cleanText(params.customer.manager_hr_id) ?? cleanText(params.requester.managerHrId);
   const pharmacyCodesById = new Map((params.pharmacyCodes ?? []).map((code) => [code.id, code]));
 
@@ -3482,6 +3532,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     access,
     productRows: (productsResult.data ?? []) as MarketingProductDbRow[],
     requester,
+    allowedProductCodes,
   });
   // The personal "Marketing Requests" workspace (Create / Approved / Tracking tabs) is a
   // *my own requests* surface. Company-wide oversight roles (Marketing Manager, SFE Manager,
@@ -3624,6 +3675,7 @@ export async function createMarketingRequestDraft(
   const supabase = options.supabase ?? getSupabaseAdmin();
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
   const requester = findRequester(access, employeeRows);
+  const allowedProductCodes = toProductCodeSet(await getUserProductScopeOverride(access.loginId ?? ""));
   const normalized = normalizeMarketingRequestDraftInput(input);
 
   const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes] = await Promise.all([
@@ -3679,6 +3731,7 @@ export async function createMarketingRequestDraft(
     requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
     requester,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
+    allowedProductCodes,
   });
 
   const requestInsert = await supabase
@@ -3809,6 +3862,7 @@ export async function resubmitReturnedMarketingRequest(
   const supabase = getSupabaseAdmin();
   const employeeRows = await loadEmployeeDirectoryRows();
   const requester = findRequester(access, employeeRows);
+  const allowedProductCodes = toProductCodeSet(await getUserProductScopeOverride(access.loginId ?? ""));
 
   const existing = await loadMarketingRequestById(supabase, requestId);
   if (existing.status !== "returned") {
@@ -3847,6 +3901,7 @@ export async function resubmitReturnedMarketingRequest(
     requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
     requester,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
+    allowedProductCodes,
   });
 
   const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
