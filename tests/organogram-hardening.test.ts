@@ -347,6 +347,31 @@ export function runOrganogramHardeningTests() {
   assert.equal(scoped.summary.linesAffected, 1);
   assert.equal(scoped.summary.openVacancies, 1);
 
+  // Multi-line override path keeps both allowed lines PLUS the upward management chain, so a
+  // cross-line manager (e.g. a Head Office Marketing Manager above a two-line Product Manager)
+  // still renders instead of orphaning the subtree. Unrelated lines stay excluded.
+  const multiLineScoped = scopeOrganogramReportData(
+    {
+      organogramRows: [
+        row({ hrId: "PM-PEDIA", lineName: "Pedia", managerHrId: "GPM-PEDIA" }),
+        row({ hrId: "GPM-PEDIA", lineName: "Pedia", managerHrId: "MKT-MGR" }),
+        row({ hrId: "MKT-MGR", lineName: "Head Office", managerHrId: "AA" }),
+        row({ hrId: "AF-REP", lineName: "Anti infective", managerHrId: "GPM-PEDIA" }),
+        row({ hrId: "CNS-REP", lineName: "CNS", managerHrId: "GPM-CNS" }),
+      ],
+      rows: [],
+      summary: { areasAffected: 0, linesAffected: 0, openVacancies: 0, positionsAffected: 0, totalVacancies: 0 },
+    } satisfies VacancyReportData,
+    { lineNames: ["Pedia", "Anti infective"], mode: "line" },
+  );
+  const multiLineKept = multiLineScoped.organogramRows.map((item) => item.hrId).sort();
+  assert.deepEqual(
+    multiLineKept,
+    ["AF-REP", "GPM-PEDIA", "MKT-MGR", "PM-PEDIA"],
+    "multi-line scope keeps both lines' employees plus the cross-line management chain (Head Office Marketing Manager)",
+  );
+  assert.equal(multiLineKept.includes("CNS-REP"), false, "an unrelated line's employees stay excluded");
+
   assert.equal(
     districtBucketMatches(
       row({ areaName: "New Cairo", regionName: "Cairo", teamName: "Nasr City" }),
