@@ -6,6 +6,7 @@ import {
   type ExportColumn,
   type ExportRow,
 } from "@/lib/export/table-workbook";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,9 @@ function fileName(title: string) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     if (!access.loginId && !access.hrId) {
       return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
