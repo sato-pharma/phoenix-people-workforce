@@ -1,25 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type {
+  CustomerPharmacyCustomerType,
+  CustomerPharmacyLinkSummary,
   CustomerPharmacyReadiness,
   CustomerPharmacyReadinessBucket,
   CustomerPharmacyReadinessRow,
-  CustomerPharmacyCustomerType,
   CustomerPharmacyValidationStatus,
 } from "@/lib/customer-pharmacy-mapping/readiness";
 import { cn } from "@/lib/utils";
 
 // This component is intentionally standalone. It shares no state, props, or rendering with the
 // Customer Validation workspace (`marketing-validation-workspace.tsx`) and talks only to the
-// dedicated `/api/customer-pharmacy-mapping` endpoint. Read-only: no editing, matching, or writes.
+// dedicated `/api/customer-pharmacy-mapping` endpoints. It supports exactly two mutations —
+// approve and reject a pending link — both via `/api/customer-pharmacy-mapping/[id]/decision`.
+// No delete, no bulk actions, no merge logic, no automatic matching.
 
 type BucketFilter = "all" | CustomerPharmacyReadinessBucket;
 type TypeFilter = "all" | CustomerPharmacyCustomerType;
-type InferredFilter = "all" | "inferred";
+type LinkFlagFilter = "all" | "inferred" | "rejected";
+type LinkDecision = "approve" | "reject";
 
 const EMPTY_READINESS: CustomerPharmacyReadiness = {
   rows: [],
@@ -63,6 +71,24 @@ function titleCase(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }
 
+async function fetchReadinessPayload(): Promise<CustomerPharmacyReadiness> {
+  const response = await fetch("/api/customer-pharmacy-mapping", { headers: { accept: "application/json" } });
+  const payload = (await response.json().catch(() => null)) as
+    | (CustomerPharmacyReadiness & { message?: string; error?: string })
+    | null;
+  if (!response.ok) {
+    throw new Error(payload?.message || "Failed to load customer pharmacy mapping.");
+  }
+  return { rows: payload?.rows ?? [], summary: payload?.summary ?? EMPTY_READINESS.summary };
+}
+
+type DecisionTarget = {
+  linkId: string;
+  customerName: string;
+  pharmacyName: string;
+  decision: LinkDecision;
+};
+
 type SummaryCardProps = {
   label: string;
   value: number;
@@ -97,30 +123,18 @@ export function CustomerPharmacyMappingWorkspace() {
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<BucketFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [inferredFilter, setInferredFilter] = useState<InferredFilter>("all");
+  const [linkFlagFilter, setLinkFlagFilter] = useState<LinkFlagFilter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [decisionTarget, setDecisionTarget] = useState<DecisionTarget | null>(null);
 
   useEffect(() => {
     // Runs once on mount; initial state is already { loading: true, error: null },
     // so no synchronous setState reset is needed here (avoids cascading renders).
     let cancelled = false;
 
-    fetch("/api/customer-pharmacy-mapping", { headers: { accept: "application/json" } })
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => null)) as
-          | (CustomerPharmacyReadiness & { message?: string; error?: string })
-          | null;
-        if (!response.ok) {
-          throw new Error(payload?.message || "Failed to load customer pharmacy mapping.");
-        }
-        return payload;
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        setReadiness({
-          rows: payload?.rows ?? [],
-          summary: payload?.summary ?? EMPTY_READINESS.summary,
-        });
+    fetchReadinessPayload()
+      .then((data) => {
+        if (!cancelled) setReadiness(data);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -135,19 +149,30 @@ export function CustomerPharmacyMappingWorkspace() {
     };
   }, []);
 
+  const refreshReadiness = useCallback(async () => {
+    try {
+      const data = await fetchReadinessPayload();
+      setReadiness(data);
+    } catch {
+      // The mutation already reported success/failure to the user; keep showing the last
+      // known-good table rather than replacing it with an error on a background refresh.
+    }
+  }, []);
+
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
     return readiness.rows.filter((row) => {
       if (bucketFilter !== "all" && row.bucket !== bucketFilter) return false;
       if (typeFilter !== "all" && row.customerType !== typeFilter) return false;
-      if (inferredFilter === "inferred" && row.inferredLinkCount === 0) return false;
+      if (linkFlagFilter === "inferred" && row.inferredLinkCount === 0) return false;
+      if (linkFlagFilter === "rejected" && row.rejectedLinkCount === 0) return false;
       if (term.length > 0) {
         const haystack = `${row.customerName} ${row.customerCode ?? ""}`.toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       return true;
     });
-  }, [readiness.rows, search, bucketFilter, typeFilter, inferredFilter]);
+  }, [readiness.rows, search, bucketFilter, typeFilter, linkFlagFilter]);
 
   function toggleExpanded(customerId: string) {
     setExpanded((prev) => {
@@ -243,13 +268,14 @@ export function CustomerPharmacyMappingWorkspace() {
             ))}
           </select>
           <select
-            value={inferredFilter}
-            onChange={(event) => setInferredFilter(event.target.value as InferredFilter)}
-            aria-label="Filter by inferred links"
+            value={linkFlagFilter}
+            onChange={(event) => setLinkFlagFilter(event.target.value as LinkFlagFilter)}
+            aria-label="Filter by link flags"
             className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-text"
           >
             <option value="all">All links</option>
-            <option value="inferred">Has inferred links</option>
+            <option value="inferred">Inferred historical links</option>
+            <option value="rejected">Rejected links</option>
           </select>
         </div>
       </div>
@@ -289,12 +315,31 @@ export function CustomerPharmacyMappingWorkspace() {
                   row={row}
                   expanded={expanded.has(row.customerId)}
                   onToggle={() => toggleExpanded(row.customerId)}
+                  onRequestDecision={(link, decision) =>
+                    setDecisionTarget({
+                      linkId: link.linkId,
+                      customerName: row.customerName,
+                      pharmacyName: link.pharmacyName,
+                      decision,
+                    })
+                  }
                 />
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {decisionTarget ? (
+        <LinkDecisionDialog
+          target={decisionTarget}
+          onClose={() => setDecisionTarget(null)}
+          onDecided={() => {
+            setDecisionTarget(null);
+            void refreshReadiness();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -303,9 +348,10 @@ type CustomerRowProps = {
   row: CustomerPharmacyReadinessRow;
   expanded: boolean;
   onToggle: () => void;
+  onRequestDecision: (link: CustomerPharmacyLinkSummary, decision: LinkDecision) => void;
 };
 
-function CustomerRow({ row, expanded, onToggle }: CustomerRowProps) {
+function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRowProps) {
   const canExpand = row.totalLinkCount > 0;
 
   return (
@@ -367,7 +413,7 @@ function CustomerRow({ row, expanded, onToggle }: CustomerRowProps) {
                       code {link.distributorPharmacyCode}
                     </span>
                   ) : null}
-                  <span className="ml-auto flex items-center gap-1.5">
+                  <span className="ml-auto flex flex-wrap items-center gap-1.5">
                     <Badge variant={statusBadgeVariant(link.validationStatus)}>
                       {STATUS_LABELS[link.validationStatus]}
                     </Badge>
@@ -375,6 +421,26 @@ function CustomerRow({ row, expanded, onToggle }: CustomerRowProps) {
                       <Badge variant="neutral" title="Inferred from historical marketing requests">
                         Inferred — not GPS field-validated
                       </Badge>
+                    ) : null}
+                    {link.validationStatus === "pending" ? (
+                      <span className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="default"
+                          className="px-2.5 py-1 text-xs"
+                          onClick={() => onRequestDecision(link, "approve")}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="px-2.5 py-1 text-xs"
+                          onClick={() => onRequestDecision(link, "reject")}
+                        >
+                          Reject
+                        </Button>
+                      </span>
                     ) : null}
                   </span>
                 </div>
@@ -385,4 +451,130 @@ function CustomerRow({ row, expanded, onToggle }: CustomerRowProps) {
       ) : null}
     </>
   );
+}
+
+type LinkDecisionDialogProps = {
+  target: DecisionTarget;
+  onClose: () => void;
+  onDecided: () => void;
+};
+
+function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogProps) {
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const dialogRef = useDialogA11y({ open: true, onClose });
+
+  const isApprove = target.decision === "approve";
+  const title = isApprove ? "Approve Customer Pharmacy Link" : "Reject Customer Pharmacy Link";
+  const noteLabel = isApprove ? "Validation notes (optional)" : "Rejection reason (required)";
+  const confirmLabel = isApprove ? "Approve link" : "Reject link";
+
+  async function handleConfirm() {
+    const trimmed = note.trim();
+    if (!isApprove && trimmed.length === 0) {
+      setRequestError("A rejection reason is required.");
+      return;
+    }
+
+    setSubmitting(true);
+    setRequestError(null);
+    try {
+      const response = await fetch(
+        `/api/customer-pharmacy-mapping/${encodeURIComponent(target.linkId)}/decision`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            isApprove ? { decision: "approve", notes: trimmed } : { decision: "reject", reason: trimmed },
+          ),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string; success?: boolean }
+        | null;
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.message || "Failed to record the decision.");
+      }
+      onDecided();
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : "Failed to record the decision.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const modal = (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="w-full max-w-md overflow-hidden bg-white shadow-2xl sm:rounded-none"
+      >
+        <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
+          <h2 className="text-sm font-black uppercase tracking-wide text-white">{title}</h2>
+          <button aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white" type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <p className="font-semibold text-slate-900">{target.customerName}</p>
+            <p className="text-slate-600">{target.pharmacyName}</p>
+          </div>
+
+          <p className="text-sm text-slate-600">
+            This link will move from <span className="font-semibold">Pending</span> to{" "}
+            <span className="font-semibold">{isApprove ? "System validated" : "Rejected"}</span>.
+            {!isApprove ? " It will not be deleted." : ""}
+          </p>
+
+          <div>
+            <label
+              htmlFor="link-decision-note"
+              className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-600"
+            >
+              {noteLabel}
+            </label>
+            <textarea
+              id="link-decision-note"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              rows={3}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text"
+              placeholder={
+                isApprove ? "Optional context for the audit trail…" : "Explain why this link is being rejected…"
+              }
+            />
+          </div>
+
+          {requestError ? <p className="text-sm font-medium text-rose-600">{requestError}</p> : null}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-50"
+            type="button"
+          >
+            Cancel
+          </button>
+          <Button
+            type="button"
+            variant={isApprove ? "default" : "destructive"}
+            disabled={submitting}
+            onClick={handleConfirm}
+          >
+            {submitting ? "Submitting…" : confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
 }
