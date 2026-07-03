@@ -2,10 +2,12 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { loadFieldWorkforceComplianceArchive } from "@/lib/field-workforce-compliance/archive";
 import type {
   FieldWorkforceArchiveDetail,
+  FieldWorkforceArchiveListItem,
   FieldWorkforceCoverageStatus,
   FieldWorkforceDecisionReason,
   FieldWorkforceDecisionStatus,
   FieldWorkforceFinalAction,
+  FieldWorkforcePreviewResult,
   FieldWorkforceRecommendation,
   FieldWorkforceRecommendationsReport,
   FieldWorkforceRecommendationSourceType,
@@ -90,7 +92,7 @@ export type FieldWorkforceDecisionRow = {
   existing_coverage_status: FieldWorkforceCoverageStatus;
   hr_note: string;
   id: string;
-  import_id: string;
+  import_id: string | null;
   month_key: string;
   recommendation_key: string;
   recommendation_reason: string;
@@ -540,7 +542,7 @@ export function assertNoFieldWorkforceApprovedDecisionConflict(input: {
 
   const candidateDateKey = normalizedDateKey(input.recommendation.dates);
   const conflict = input.existingRows.some((row) =>
-    row.import_id === input.recommendation.importId &&
+    row.month_key === input.recommendation.monthKey &&
     row.employee_code === input.recommendation.employeeCode &&
     row.recommendation_key !== input.recommendation.recommendationKey &&
     isApprovedFinalActionStatus(row.decision_status) &&
@@ -555,6 +557,26 @@ async function loadDecisionRows(importId: string) {
     .from(decisionsTable)
     .select("*")
     .eq("import_id", importId);
+  if (error) throw error;
+  return (data ?? []) as FieldWorkforceDecisionRow[];
+}
+
+/**
+ * Decision rows for a live (mirror-sourced) month, keyed by month_key since a live month
+ * has no import_id to key off. Deliberately NOT filtered to import_id IS NULL: once the
+ * month_key+recommendation_key unique index is in place, a decision made against an
+ * Excel-archived view of this month and a decision made against the live-mirror view of
+ * the same month collide onto the same row when the recommendation_key matches (same
+ * employee/dates/type) — they're the same real-world HR decision, just reached via two
+ * different UI paths. Excluding import_id-carrying rows here would hide that existing
+ * decision and risk the live-path upsert silently orphaning it (see the import_id
+ * preservation in saveFieldWorkforceRecommendationDecisionForLiveMonth below).
+ */
+async function loadDecisionRowsByMonthKey(monthKey: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from(decisionsTable)
+    .select("*")
+    .eq("month_key", monthKey);
   if (error) throw error;
   return (data ?? []) as FieldWorkforceDecisionRow[];
 }
@@ -616,6 +638,55 @@ export function buildFieldWorkforceRecommendationsReportFromArchive(
     leaveRecommendations: generated.leaveRecommendations,
     payrollRecommendations: generated.payrollRecommendations,
   };
+}
+
+/**
+ * Fabricates an archive-shaped object for a live (mirror-sourced) month, which has no
+ * field_workforce_compliance_imports row. Only used internally so the existing
+ * buildFieldWorkforceRecommendationsReportFromArchive/buildRecommendation code — which
+ * only ever reads archive.id (threaded through as an opaque importId string) and
+ * archive.monthKey — can run unchanged for live months. Never persisted; status is a
+ * filler value from the existing union (the live path never displays it — the UI branches
+ * on sourceMode instead).
+ */
+function buildSyntheticArchiveForLiveMonth(
+  preview: FieldWorkforcePreviewResult,
+  monthKey: string,
+): FieldWorkforceArchiveListItem {
+  return {
+    employeeCount: preview.metadata.employeeCount,
+    highSeverityCount: preview.severityCounts.High,
+    id: `live:${monthKey}`,
+    month: preview.metadata.month,
+    monthKey,
+    reviewCandidateCount: preview.reviewCandidates.length,
+    sheetName: preview.metadata.sheetName,
+    sourceFilename: preview.metadata.fileName,
+    status: "archived",
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: "ireports360_visits_mirror",
+    year: preview.metadata.year,
+  };
+}
+
+/**
+ * Recommendations report for a live (mirror-sourced) month — same shape and generation
+ * logic as buildFieldWorkforceRecommendationsReportFromArchive, but sourced from a preview
+ * that was just computed live from the visits mirror rather than an archived import row.
+ */
+export async function buildFieldWorkforceRecommendationsReportForLiveMonth(input: {
+  monthKey: string;
+  preview: FieldWorkforcePreviewResult;
+}): Promise<FieldWorkforceRecommendationsReport> {
+  const archiveDetail: FieldWorkforceArchiveDetail = {
+    archive: buildSyntheticArchiveForLiveMonth(input.preview, input.monthKey),
+    preview: input.preview,
+  };
+  const [decisionRows, leaveCoverage] = await Promise.all([
+    loadDecisionRowsByMonthKey(input.monthKey),
+    loadApprovedLeaveCoverageForArchive(archiveDetail),
+  ]);
+  return buildFieldWorkforceRecommendationsReportFromArchive(archiveDetail, decisionRows, leaveCoverage);
 }
 
 export async function getFieldWorkforceRecommendationsReport(input: {
@@ -724,7 +795,7 @@ export async function saveFieldWorkforceRecommendationDecision(input: {
   const { error } = await getSupabaseAdmin()
     .from(decisionsTable)
     .upsert(payload, {
-      onConflict: "import_id,recommendation_key",
+      onConflict: "month_key,recommendation_key",
     });
   if (error) throw error;
 
@@ -756,5 +827,123 @@ export async function saveFieldWorkforceRecommendationDecision(input: {
   return getFieldWorkforceRecommendationsReport({
     actorLoginId: input.actorLoginId,
     archiveId: input.archiveId,
+  });
+}
+
+/**
+ * Decision save for a live (mirror-sourced) month — parallel to
+ * saveFieldWorkforceRecommendationDecision, but keyed by month_key/preview instead of an
+ * archiveId, since a live month has no field_workforce_compliance_imports row. The caller
+ * (the API route) already has the freshly-built preview, so it's passed in rather than
+ * re-fetched here.
+ */
+export async function saveFieldWorkforceRecommendationDecisionForLiveMonth(input: {
+  actorLoginId: string;
+  decisionReason: string;
+  decisionStatus: FieldWorkforceDecisionStatus;
+  hrNote: string;
+  monthKey: string;
+  preview: FieldWorkforcePreviewResult;
+  recommendationKey: string;
+}): Promise<FieldWorkforceRecommendationsReport> {
+  if (!fieldWorkforceDecisionStatuses.includes(input.decisionStatus)) {
+    throw new Error("Unsupported Field Workforce Compliance decision status.");
+  }
+
+  const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({
+    monthKey: input.monthKey,
+    preview: input.preview,
+  });
+
+  const recommendations = [
+    ...report.leaveRecommendations,
+    ...report.payrollRecommendations,
+  ];
+  const recommendation = recommendations.find((item) => item.recommendationKey === input.recommendationKey);
+  if (!recommendation) throw new FieldWorkforceRecommendationNotFoundError(input.recommendationKey);
+  assertFieldWorkforceDecisionStatusAllowed({
+    decisionStatus: input.decisionStatus,
+    recommendationType: recommendation.recommendationType,
+  });
+  assertFieldWorkforceDecisionReasonAllowed({
+    decisionReason: input.decisionReason,
+    decisionStatus: input.decisionStatus,
+    hrNote: input.hrNote,
+  });
+
+  const existingRows = await loadDecisionRowsByMonthKey(input.monthKey);
+  assertNoFieldWorkforceApprovedDecisionConflict({
+    decisionStatus: input.decisionStatus,
+    existingRows,
+    recommendation,
+  });
+  const existing = existingRows.find((row) => row.recommendation_key === input.recommendationKey) ?? null;
+  const hasDecision = input.decisionStatus !== "Pending";
+  const now = new Date().toISOString();
+  const decisionReason = hasDecision ? input.decisionReason.trim() as FieldWorkforceDecisionReason : "";
+  const isResolved = input.decisionStatus === "Resolved";
+  const payload = {
+    dates: recommendation.dates,
+    days_count: recommendation.daysCount,
+    decided_at: hasDecision ? now : null,
+    decided_by: hasDecision ? input.actorLoginId : null,
+    decision_reason: decisionReason,
+    decision_status: input.decisionStatus,
+    employee_code: recommendation.employeeCode,
+    employee_name: recommendation.employeeName,
+    estimated_amount: recommendation.estimatedAmount,
+    existing_coverage_status: recommendation.existingCoverageStatus,
+    hr_note: input.hrNote.trim(),
+    // Preserve an existing Excel-archived decision's import_id if this exact
+    // (month_key, recommendation_key) was already decided from that path — the live and
+    // Excel views of the same month share one decision domain post-migration, so this
+    // must not silently null out a real import_id on conflict.
+    import_id: existing?.import_id ?? null,
+    month_key: input.monthKey,
+    recommendation_key: input.recommendationKey,
+    recommendation_reason: recommendation.recommendationReason,
+    recommendation_type: recommendation.recommendationType,
+    resolved_at: isResolved ? now : null,
+    resolved_by: isResolved ? input.actorLoginId : null,
+    severity: recommendation.severity,
+    source_type: recommendation.sourceType,
+    updated_at: now,
+  };
+
+  const { error } = await getSupabaseAdmin()
+    .from(decisionsTable)
+    .upsert(payload, {
+      onConflict: "month_key,recommendation_key",
+    });
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: input.monthKey,
+    entityType: "field_workforce_compliance_import",
+    newValues: {
+      decisionReason: payload.decision_reason,
+      decisionStatus: input.decisionStatus,
+      hrNote: payload.hr_note,
+      recommendationKey: input.recommendationKey,
+      recommendationType: recommendation.recommendationType,
+    },
+    oldValues: existing ? {
+      decisionReason: existing.decision_reason ?? "",
+      decisionStatus: existing.decision_status,
+      hrNote: existing.hr_note,
+    } : null,
+    summary: existing
+      ? input.decisionStatus === "Disputed" || input.decisionStatus === "Resolved" || existing.decision_status === "Disputed"
+        ? "Field Workforce Compliance dispute/review status changed."
+        : (existing.decision_reason ?? "") !== payload.decision_reason
+          ? "Field Workforce Compliance decision reason updated."
+          : "Field Workforce Compliance HR decision changed."
+      : "Field Workforce Compliance recommendation decision created.",
+  });
+
+  return buildFieldWorkforceRecommendationsReportForLiveMonth({
+    monthKey: input.monthKey,
+    preview: input.preview,
   });
 }
