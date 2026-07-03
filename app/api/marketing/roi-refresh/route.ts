@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
  *  Awaits the Supabase function (up to ~45s); returns when the refresh run completes. */
 export async function POST(request: NextRequest) {
   try {
-    assertSameOriginMutation(request);
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
     if (!REFRESH_ALLOWED_ROLES.has(access.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
