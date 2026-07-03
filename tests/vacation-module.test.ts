@@ -286,6 +286,8 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /fetchVacationEventsForRequests\(report\.rows\.map/);
   assert.doesNotMatch(serviceSource, /Promise\.all\(report\.rows\.map\(\(row\) => getVacationRequestTimeline/);
   assert.match(serviceSource, /Separation of duties requires a different HR or Super Admin actor/);
+  assert.match(serviceSource, /async function hasAlternateHrApprover\(excludeHrId: string \| null\)/);
+  assert.match(serviceSource, /hr_self_acknowledged_sole_admin_exception/);
   assert.match(serviceSource, /vacationRetentionPolicyDefaults/);
   assert.match(serviceSource, /runVacationRetentionPurge/);
   assert.match(serviceSource, /runVacationSlaDaily/);
