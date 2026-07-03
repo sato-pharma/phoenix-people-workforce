@@ -34,12 +34,17 @@ export type VisitsSyncRun = {
   trigger: VisitsSyncTrigger;
 };
 
+export type VisitsReportAgentFilter = {
+  hrId: string;
+  name: string;
+};
+
 export type VisitsReportData = {
   configured: boolean;
   dateFrom: string;
   dateTo: string;
   filters: {
-    agents: string[];
+    agents: VisitsReportAgentFilter[];
   };
   latestSyncRuns: VisitsSyncRun[];
   page: number;

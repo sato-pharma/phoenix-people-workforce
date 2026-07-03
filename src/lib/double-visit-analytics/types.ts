@@ -151,7 +151,7 @@ export type DoubleVisitLogEntry = {
   visitedStatus: DoubleVisitVisitedEmployeeStatus;
 };
 
-export type DoubleVisitRoleCode = "DSM" | "GPM" | "NSM" | "PM" | "RM" | "TM";
+export type DoubleVisitRoleCode = "DSM" | "GPM" | "MM" | "NSM" | "PM" | "RM" | "SFE" | "TM";
 
 // Personal-effort lens: one row per double-visitor (what THIS manager personally did),
 // distinct from DoubleVisitExecutiveManagerReport which measures DVs received by a team.

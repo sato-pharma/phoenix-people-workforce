@@ -1,11 +1,12 @@
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
+import { buildAndSaveDoubleVisitFromMirror } from "@/lib/double-visit-analytics/service";
 import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -16,8 +17,12 @@ function isAuthorized(request: Request) {
 }
 
 async function runSync() {
-  const result = await runScheduledIReports360Sync();
-  return NextResponse.json({ success: true, ...result });
+  const mirrorSync = await runScheduledIReports360Sync();
+  // Rebuild the official Double Visit Analytics snapshot from the now-fresh mirror. Only reached
+  // if the mirror sync above succeeded (it throws on failure, which short-circuits this call) —
+  // never rebuild the official snapshot from a mirror sync we know just failed.
+  const doubleVisitSync = await buildAndSaveDoubleVisitFromMirror();
+  return NextResponse.json({ doubleVisitSync, success: true, ...mirrorSync });
 }
 
 export async function GET(request: Request) {
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
       {
         schedule: { type: "crontab", value: "0 9,12,19 * * *" },
         checkinMargin: 30,
-        maxRuntime: 120,
+        maxRuntime: 180,
         timezone: "Etc/UTC",
       },
     );
