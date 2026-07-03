@@ -106,25 +106,30 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
   return summary;
 }
 
+// Base-36 hash of the FULL input string (never a truncated substring), so two
+// distinct DB-unique codes can't collapse to the same suffix just because they
+// share a common tail. This matters concretely for resignation vacancy codes:
+// the timestamp segment is YYYYMMDDHHMMSS (14 digits), so slicing the last 6
+// digits keeps only HH:MM:SS and discards the date entirely — two resignations
+// on different dates at the same clock time would otherwise produce an
+// identical label, and since sanitizeOrganogramVacancyCodes rewrites both hrId
+// and vacancyCode to that label, the two rows would collide under the same
+// rowKey and one would silently vanish from the chart. Base-36 also packs far
+// more entropy per character than base-10 (36^6 ≈ 2.2B vs 10^6 = 1M values),
+// shrinking the residual birthday-paradox collision risk for the ~1M+ space.
+function hashSuffix(input: string, length = 6): string {
+  let hash = 0;
+  for (const char of input) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return hash.toString(36).toUpperCase().padStart(length, "0").slice(-length);
+}
+
 export function publicVacancyLabel(vacancyCode: string | null | undefined) {
   const raw = String(vacancyCode ?? "").trim();
-  const legacyResignationMatch = raw.match(/^resignation_([^_]+)_(\d{8,})$/i);
-  const generatedResignationMatch = raw.match(/^resignation_vac_(\d{8,})(?:_([a-z0-9]+))?$/i);
-  const resignationStamp = generatedResignationMatch?.[1] ?? legacyResignationMatch?.[2];
-
-  if (resignationStamp) {
-    return `VAC-RES-${resignationStamp.slice(-6)}`;
-  }
 
   if (/^resignation/i.test(raw)) {
-    const compact = normalizeCode(raw).replace(/[^A-Z0-9]+/g, "");
-    let hash = 0;
-
-    for (const char of compact) {
-      hash = (hash * 31 + char.charCodeAt(0)) % 1000000;
-    }
-
-    return `VAC-RES-${String(hash).padStart(6, "0")}`;
+    return `VAC-RES-${hashSuffix(raw)}`;
   }
 
   const vacancyMatch = raw.match(/^vacancy_(?:vac_)?(\d+)/i);
@@ -134,8 +139,7 @@ export function publicVacancyLabel(vacancyCode: string | null | undefined) {
   }
 
   if (raw.length > 18 && !raw.toUpperCase().startsWith("VAC-")) {
-    const compact = normalizeCode(raw).replace(/[^A-Z0-9]+/g, "");
-    return compact ? `VAC-${compact.slice(-6)}` : raw;
+    return raw ? `VAC-${hashSuffix(raw)}` : raw;
   }
 
   return raw;
@@ -209,7 +213,15 @@ function exactEmployeeFilledSlotKey(row: OrganogramReportRow) {
 }
 
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
-  const filledSlots = new Set<string>();
+  // Count active employees per slot key rather than a boolean "filled" flag.
+  // organogramPositionSlotKey has no per-seat instance number, so two
+  // co-located seats of the same title/manager/line/area/team/department
+  // (e.g. 2 budgeted DSM headcount on one team, one filled, one open) share
+  // an identical key. N active employees on a key can plausibly explain away
+  // at most N same-key vacancies as "already filled, stale record" — any
+  // vacancy beyond that count is a genuinely open additional seat and must
+  // not be suppressed just because the key collides with a filled one.
+  const filledSlotCounts = new Map<string, number>();
 
   for (const row of rows) {
     if (row.type !== "employee") continue;
@@ -218,10 +230,11 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
 
     const slotKey = exactEmployeeFilledSlotKey(row);
     if (slotKey) {
-      filledSlots.add(slotKey);
+      filledSlotCounts.set(slotKey, (filledSlotCounts.get(slotKey) ?? 0) + 1);
     }
   }
 
+  const suppressedSlotCounts = new Map<string, number>();
   const seenOpenVacancySlots = new Set<string>();
 
   return rows.filter((row) => {
@@ -233,7 +246,14 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     if (normalizeText(row.status) && normalizeText(row.status) !== "open") return false;
 
     const slotKey = exactEmployeeFilledSlotKey(row);
-    if (slotKey && filledSlots.has(slotKey)) return false;
+    if (slotKey) {
+      const filledCount = filledSlotCounts.get(slotKey) ?? 0;
+      const suppressedSoFar = suppressedSlotCounts.get(slotKey) ?? 0;
+      if (suppressedSoFar < filledCount) {
+        suppressedSlotCounts.set(slotKey, suppressedSoFar + 1);
+        return false;
+      }
+    }
 
     const vacancyCodeKey = normalizeCode(row.vacancyCode ?? row.hrId);
     if (vacancyCodeKey) {
