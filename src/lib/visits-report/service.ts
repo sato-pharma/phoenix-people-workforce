@@ -1,4 +1,5 @@
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { refreshFieldWorkforceComplianceLiveSnapshotsForRange } from "@/lib/field-workforce-compliance/live-snapshots";
 import {
   iReports360GetCheckins,
   iReports360GetVisits,
@@ -206,6 +207,7 @@ export async function syncIReports360Visits(input: {
 }): Promise<{
   checkinsFetched: number;
   checkinsUpserted: number;
+  fieldWorkforceComplianceRefresh: { refreshed: string[]; warnings: string[] };
   rowsFetched: number;
   rowsUpserted: number;
   runId: string;
@@ -261,7 +263,16 @@ export async function syncIReports360Visits(input: {
       .from(syncRunsTable)
       .update({ completed_at: new Date().toISOString(), rows_fetched: visits.length, rows_upserted: visitsUpserted, status: "success" })
       .eq("id", runId);
-    return { checkinsFetched: checkins.length, checkinsUpserted, rowsFetched: visits.length, rowsUpserted: visitsUpserted, runId };
+
+    // Best-effort: keep Field Workforce Compliance's per-month snapshots current for whatever
+    // this sync just touched. Never throws (see the function's own doc comment) — a snapshot
+    // recompute failure must not turn an otherwise-successful visits sync into an error.
+    const fieldWorkforceComplianceRefresh = await refreshFieldWorkforceComplianceLiveSnapshotsForRange({
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+    });
+
+    return { checkinsFetched: checkins.length, checkinsUpserted, fieldWorkforceComplianceRefresh, rowsFetched: visits.length, rowsUpserted: visitsUpserted, runId };
   } catch (error) {
     await supabase
       .from(syncRunsTable)
