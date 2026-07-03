@@ -8,7 +8,6 @@ import {
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sales Intelligence — centralized, server-side access scope.
@@ -64,11 +63,16 @@ export function isHeadOfficeLine(line: string | null | undefined): boolean {
 
 /**
  * Head-office department heads whose OWN line is not a product line (e.g. Marketing Manager, who
- * sits on the Head Office line while the PM/GPM they supervise sit on the business lines). For
- * these, a "same own line" sales scope resolves to nothing, so we scope their sales/ROI to the
- * product lines of their DIRECT REPORTS (one level) instead — the lines their department owns.
+ * sits on the Head Office line). Their sales/ROI scope is the FIXED set of product lines their
+ * department oversees — not their own line, and not merely the lines of whoever currently reports
+ * to them (a marketing line with no PM assigned yet, e.g. CNS, must still be covered).
  */
-const HEAD_OFFICE_REPORTS_LINE_SALES_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
+const MARKETING_OVERSIGHT_LINE_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
+
+/** The Marketing department's product lines, as Source-of-Sales official line names (see the
+ *  `lines` table: Anti infective / Pedia / CNS). Head Office is excluded — it carries no product
+ *  sales. Update this set if the Marketing department's line portfolio changes. */
+const MARKETING_OVERSIGHT_OFFICIAL_LINES = ["Anti infective", "Pedia", "CNS"] as const;
 
 export function isRestrictedProductCode(code: string | null | undefined): boolean {
   if (!code) return false;
@@ -194,9 +198,10 @@ type ComputeScopeInput = {
   viewerLineName: string | null;
   viewerRegionName: string | null;
   includeRestricted: boolean;
-  /** Product lines a head-office manager inherits from their direct reports (raw employee line
-   *  names; bridged to official lines here). Merged into the LINE-scope allowed-line set. */
-  reportLineNames?: string[];
+  /** Official product lines a head-office department head oversees (e.g. a Marketing Manager
+   *  oversees Anti infective / Pedia / CNS). When non-empty, these REPLACE the viewer's own-line
+   *  scope, because a head-office line (e.g. "Head Office") is not a product line. */
+  overseenLineNames?: string[];
   /** Per-user product code allowlist (from product_scope_override). null = no restriction. */
   allowedProductCodes?: Set<string> | null;
 };
@@ -247,17 +252,18 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
     };
   }
 
-  // Every non-company sales role is bounded to its own line. A missing line fails closed
-  // (empty set → no rows) rather than leaking the whole company.
+  // A head-office department head whose own line is not a product line (e.g. a Marketing Manager on
+  // the Head Office line) instead oversees an EXPLICIT set of department product lines — when
+  // provided, that set REPLACES the own-line scope, so the head-office line never collapses the
+  // scope to empty. Everyone else is bounded to their own line; a missing line fails closed (empty
+  // set → no rows) rather than leaking the whole company.
+  const overseen = (input.overseenLineNames ?? [])
+    .map((line) => bridgeEmployeeLineToOfficial(line))
+    .filter((line): line is string => Boolean(line));
   const officialLine = bridgeEmployeeLineToOfficial(viewerLineName);
-  const allowedLineNames = new Set<string>(officialLine ? [officialLine] : []);
-  // Head-office department heads (e.g. Marketing Manager) sit on a line that is NOT a product line,
-  // so their own line bridges to nothing. Add the product lines of their direct reports (PM/GPM) so
-  // the dashboard reflects the lines their department actually owns instead of resolving to empty.
-  for (const reportLine of input.reportLineNames ?? []) {
-    const bridged = bridgeEmployeeLineToOfficial(reportLine);
-    if (bridged) allowedLineNames.add(bridged);
-  }
+  const allowedLineNames = overseen.length > 0
+    ? new Set<string>(overseen)
+    : new Set<string>(officialLine ? [officialLine] : []);
 
   // HIERARCHY (Regional Manager), TEAM (District Manager) and SELF (Medical Rep) are further
   // narrowed to the viewer's region when we know it — the tightest level the data reliably
@@ -334,10 +340,16 @@ export async function resolveSalesAccessScope(
     });
   }
 
+  // Head-office department heads (e.g. Marketing Manager) oversee a fixed set of department product
+  // lines rather than their own (head-office) line. This is a constant, so it covers a marketing
+  // line even when no one currently reports from it (e.g. CNS with no PM assigned).
+  const overseenLineNames = MARKETING_OVERSIGHT_LINE_ROLES.has(ctx.role)
+    ? [...MARKETING_OVERSIGHT_OFFICIAL_LINES]
+    : [];
+
   const currentHrId = resolveEmployeeIdentityId(ctx);
   let viewerLineName: string | null = null;
   let viewerRegionName: string | null = null;
-  let reportLineNames: string[] = [];
   if (currentHrId) {
     const [directory, regionNameByCode] = await Promise.all([
       getEmployeeDirectory(),
@@ -348,23 +360,6 @@ export async function resolveSalesAccessScope(
     );
     viewerLineName = viewer?.lineName ?? null;
     viewerRegionName = resolveViewerRegionName(viewer, regionNameByCode);
-
-    // Head-office department heads (e.g. Marketing Manager) supervise PM/GPM who sit on the
-    // business lines. Their own line is not a product line, so scope their sales/ROI to the
-    // product lines of their DIRECT REPORTS (one level, seat-continuity aware).
-    if (HEAD_OFFICE_REPORTS_LINE_SALES_ROLES.has(ctx.role)) {
-      const viewerCanonical = normalizeIdentity(currentHrId);
-      reportLineNames = directory.employees
-        .filter((employee) =>
-          reportsToManagerSeat({
-            employee,
-            viewerCanonicalHrId: viewerCanonical,
-            canonicalize: (value) => normalizeIdentity(value) || null,
-          }),
-        )
-        .map((employee) => employee.lineName)
-        .filter((lineName): lineName is string => Boolean(lineName));
-    }
   }
 
   return computeSalesAccessScope({
@@ -373,7 +368,7 @@ export async function resolveSalesAccessScope(
     viewerLineName,
     viewerRegionName,
     includeRestricted: opts?.includeRestricted ?? false,
-    reportLineNames,
+    overseenLineNames,
     allowedProductCodes,
   });
 }
