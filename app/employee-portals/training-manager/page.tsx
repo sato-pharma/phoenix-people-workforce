@@ -10,6 +10,7 @@ import {
   PremiumNavTile,
   QuickActions,
 } from "@/components/employee-portal/portal-command-center";
+import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -130,6 +131,8 @@ export default async function TrainingManagerOverviewPage() {
           />
         </div>
       </div>
+
+      <DoubleVisitFocusSection focus={snapshot.dvFocus} />
 
       {/* Team Operations */}
       <div className="overflow-hidden border border-slate-200">
