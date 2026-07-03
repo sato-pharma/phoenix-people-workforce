@@ -48,7 +48,15 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Check routes
@@ -61,8 +69,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .next
-          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'package-lock.json') }}
-          restore-keys: nextjs-build-
+          # Must include every file that can change build output, not just app/src —
+          # a change to next.config.ts or proxy.ts (CSP/security headers!) that isn't
+          # hashed here would silently restore a stale cache instead of rebuilding.
+          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'public/**', 'package-lock.json', 'next.config.ts', 'proxy.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'tsconfig.json') }}
 
       - name: Test
         run: npm run test
@@ -92,8 +102,23 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      - name: Restore ESLint cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .eslintcache
+          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'package-lock.json') }}
+          restore-keys: eslintcache-
 
       - name: Lint
         run: npm run lint
@@ -119,7 +144,15 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Download build artifact
@@ -129,6 +162,7 @@ jobs:
           path: .next
 
       - name: Cache Playwright browsers
+        id: playwright-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -136,7 +170,11 @@ jobs:
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run Playwright login smoke test
         run: npm run test:e2e:smoke
@@ -173,10 +211,19 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Cache Playwright browsers
+        id: playwright-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -184,7 +231,11 @@ jobs:
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run full Playwright E2E suite
         run: npm run test:e2e -- -j 4
