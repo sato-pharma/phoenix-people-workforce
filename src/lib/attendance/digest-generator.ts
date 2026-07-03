@@ -32,6 +32,10 @@ export type DigestLineStatus = "late" | "short_hours" | "missing_punch";
 export type DigestLineDraft = {
   dateIso: string;
   status: DigestLineStatus;
+  /** First punch of the day, minutes since local midnight. Null if no punch. */
+  checkInMinutes: number | null;
+  /** Last punch of the day, minutes since local midnight. Null if only one punch or no punch. */
+  checkOutMinutes: number | null;
   lateMinutes: number;
   shortMinutes: number;
   workedMinutes: number;
@@ -107,9 +111,16 @@ export function buildEmployeeWeekDigest(input: {
     // a line (missing-punch carries 0 days — it awaits the A-13 → HR → COO chain).
     if (result.status === "Complete") continue;
 
+    // A single visible punch makes firstPunchMinutes === lastPunchMinutes (same
+    // punch reused as both) — that is not a real checkout event, so it must
+    // read as "no checkout" rather than misleadingly repeating the check-in.
+    const hasRealCheckout = day.visiblePunchCount >= 2;
+
     lines.push({
       dateIso: day.dateIso,
       status: toLineStatus(result.status),
+      checkInMinutes: day.firstPunchMinutes,
+      checkOutMinutes: hasRealCheckout ? day.lastPunchMinutes : null,
       lateMinutes: result.lateMinutes,
       shortMinutes: result.shortMinutes,
       workedMinutes: result.workedMinutes,
