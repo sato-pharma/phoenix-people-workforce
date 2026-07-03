@@ -4,7 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { listFieldWorkforceComplianceArchives } from "@/lib/field-workforce-compliance/archive";
-import { getFieldWorkforceRecommendationsReport } from "@/lib/field-workforce-compliance/recommendations";
+import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
+import {
+  buildFieldWorkforceRecommendationsReportForLiveMonth,
+  getFieldWorkforceRecommendationsReport,
+} from "@/lib/field-workforce-compliance/recommendations";
+import type { FieldWorkforceRecommendationsReport } from "@/lib/field-workforce-compliance/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeMonthKey } from "../candidate-key.ts";
 import {
@@ -30,7 +35,7 @@ export type ApprovedFwcDecisionStatus = (typeof APPROVED_FWC_DECISION_STATUSES)[
 
 export type FieldWorkforceApprovedDecisionRow = {
   id: string;
-  import_id: string;
+  import_id: string | null;
   recommendation_key: string;
   recommendation_type: string;
   source_type: string | null;
@@ -115,7 +120,10 @@ function coerceRow(raw: Record<string, unknown>): FieldWorkforceApprovedDecision
   }
   return {
     id: asString(raw.id) ?? "",
-    import_id: asString(raw.import_id) ?? "",
+    // null for live (mirror-sourced) months, which have no field_workforce_compliance_imports
+    // row to reference. Do not fall back to "" here — that would make an absent import_id
+    // indistinguishable from a real-but-empty string downstream.
+    import_id: asString(raw.import_id),
     recommendation_key: asString(raw.recommendation_key) ?? "",
     recommendation_type: asString(raw.recommendation_type) ?? "",
     source_type: asString(raw.source_type),
@@ -208,7 +216,10 @@ export function toDeductionCandidateDraft(
     severity: row.severity ?? null,
   };
 
-  const sourceRecordId = `${row.import_id}:${row.recommendation_key}`;
+  // import_id is null for live (mirror-sourced) months — fall back to month_key so this
+  // never collapses to the literal string "null:<key>", which would be a malformed,
+  // non-unique audit-trail value for every live-mirror-sourced approved decision.
+  const sourceRecordId = `${row.import_id ?? row.month_key}:${row.recommendation_key}`;
   const hierarchySnapshot = options?.hierarchySnapshot ?? {};
   const holidayContext = row.holiday_context ?? null;
 
@@ -382,6 +393,56 @@ export async function syncFieldWorkforceApprovedDecisions(input: {
   };
 }
 
+/**
+ * Pure mapping shared by the archive-scoped and live-month-scoped no-activity syncs:
+ * turns a recommendations report's no-activity payroll recommendations into drafts.
+ * recommendation.importId is always a non-null string here (a real archive id or the
+ * synthetic "live:<monthKey>" sentinel from buildSyntheticArchiveForLiveMonth), so no
+ * null-fallback is needed the way toDeductionCandidateDraft needs one for import_id.
+ */
+function draftsFromNoActivityRecommendations(report: FieldWorkforceRecommendationsReport): DeductionCandidateDraft[] {
+  const drafts: DeductionCandidateDraft[] = [];
+  for (const recommendation of report.payrollRecommendations) {
+    if (recommendation.sourceType !== "no_activity_candidate") continue;
+    const [yearStr, monthStr] = recommendation.monthKey.split("-");
+    const year = Number.parseInt(yearStr, 10);
+    const month = Number.parseInt(monthStr, 10);
+    drafts.push({
+      sourceModule: "FIELD_WORKFORCE",
+      sourceRecordId: `${recommendation.importId}:${recommendation.recommendationKey}:pending`,
+      employeeCode: recommendation.employeeCode,
+      employeeName: recommendation.employeeName,
+      monthKey: recommendation.monthKey,
+      month,
+      year,
+      deductionType: "no_activity",
+      deductionUnit: "days",
+      deductionValue: recommendation.daysCount,
+      estimatedAmount: null,
+      calculationStatus: "requires_payroll_review",
+      severity: recommendation.severity,
+      reason: "Field Workforce Compliance no-activity absence candidate",
+      evidence: {
+        archiveId: recommendation.importId,
+        existingCoverageStatus: recommendation.existingCoverageStatus,
+        recommendationKey: recommendation.recommendationKey,
+        recommendationReason: recommendation.recommendationReason,
+        sourceType: recommendation.sourceType,
+      },
+      holidayContext: recommendation.holidayContext,
+      dates: recommendation.dates,
+      hierarchySnapshot: {
+        areaName: recommendation.areaName,
+        lineName: recommendation.lineName,
+        managerName: recommendation.managerName,
+        roleName: recommendation.roleName,
+        teamName: recommendation.teamName,
+      },
+    });
+  }
+  return drafts;
+}
+
 export async function syncFieldWorkforceNoActivityCandidates(input: {
   archiveId?: string;
   monthKey?: string;
@@ -417,44 +478,7 @@ export async function syncFieldWorkforceNoActivityCandidates(input: {
       warnings.push(`FWC archive ${archive.id}: report not found.`);
       continue;
     }
-    for (const recommendation of report.payrollRecommendations) {
-      if (recommendation.sourceType !== "no_activity_candidate") continue;
-      const [yearStr, monthStr] = recommendation.monthKey.split("-");
-      const year = Number.parseInt(yearStr, 10);
-      const month = Number.parseInt(monthStr, 10);
-      drafts.push({
-        sourceModule: "FIELD_WORKFORCE",
-        sourceRecordId: `${recommendation.importId}:${recommendation.recommendationKey}:pending`,
-        employeeCode: recommendation.employeeCode,
-        employeeName: recommendation.employeeName,
-        monthKey: recommendation.monthKey,
-        month,
-        year,
-        deductionType: "no_activity",
-        deductionUnit: "days",
-        deductionValue: recommendation.daysCount,
-        estimatedAmount: null,
-        calculationStatus: "requires_payroll_review",
-        severity: recommendation.severity,
-        reason: "Field Workforce Compliance no-activity absence candidate",
-        evidence: {
-          archiveId: recommendation.importId,
-          existingCoverageStatus: recommendation.existingCoverageStatus,
-          recommendationKey: recommendation.recommendationKey,
-          recommendationReason: recommendation.recommendationReason,
-          sourceType: recommendation.sourceType,
-        },
-        holidayContext: recommendation.holidayContext,
-        dates: recommendation.dates,
-        hierarchySnapshot: {
-          areaName: recommendation.areaName,
-          lineName: recommendation.lineName,
-          managerName: recommendation.managerName,
-          roleName: recommendation.roleName,
-          teamName: recommendation.teamName,
-        },
-      });
-    }
+    drafts.push(...draftsFromNoActivityRecommendations(report));
   }
 
   const inserted = await insertDeductionCandidateDrafts({
@@ -468,5 +492,47 @@ export async function syncFieldWorkforceNoActivityCandidates(input: {
     created: inserted.created,
     skippedExisting: inserted.skippedExisting,
     warnings: [...warnings, ...inserted.warnings],
+  };
+}
+
+/**
+ * Live-month sibling of syncFieldWorkforceNoActivityCandidates. The archive-scoped version
+ * only ever sees Excel-archived months (it iterates listFieldWorkforceComplianceArchives());
+ * live (mirror-sourced) months never get an imports row, so without this sibling the
+ * payroll-deduction-candidate generator would silently never run for CRM-sourced months
+ * post-migration. Builds the month's preview from the visits mirror, computes its
+ * recommendations report the same way the live-month API route does, and reuses the same
+ * insert-only drafts pipeline.
+ */
+export async function syncFieldWorkforceNoActivityCandidatesForLiveMonth(input: {
+  createdBy: string;
+  month: number;
+  year: number;
+}): Promise<FwcSyncResult> {
+  if (typeof input.createdBy !== "string" || !input.createdBy.trim()) {
+    throw new Error("syncFieldWorkforceNoActivityCandidatesForLiveMonth requires createdBy");
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({
+    month: input.month,
+    todayIso,
+    year: input.year,
+  });
+  const monthKey = normalizeMonthKey(`${input.year}-${String(input.month).padStart(2, "0")}`);
+  const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview });
+  const drafts = draftsFromNoActivityRecommendations(report);
+
+  const inserted = await insertDeductionCandidateDrafts({
+    createdBy: input.createdBy,
+    drafts,
+    sourceLabel: "Field Workforce Compliance no-activity (live)",
+  });
+
+  return {
+    sourceTotal: drafts.length,
+    created: inserted.created,
+    skippedExisting: inserted.skippedExisting,
+    warnings: inserted.warnings,
   };
 }

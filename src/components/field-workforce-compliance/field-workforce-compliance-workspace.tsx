@@ -57,9 +57,15 @@ type PreviewResponse = {
   errors?: FieldWorkforceValidationIssue[];
   error?: string;
   message?: string;
+  mirrorLastSyncedAt?: string | null;
   success: boolean;
   warnings?: FieldWorkforceValidationIssue[];
 };
+
+/** Which path produced the currently-shown `result`: an ad-hoc Excel upload preview (not
+ * yet archived), an opened/saved Excel archive (handled entirely by ArchivedMonthsPanel's
+ * own state), or a live view computed from the visits-report mirror for a chosen month. */
+type SourceMode = "excel-preview" | "live-mirror";
 
 type ArchiveListResponse = {
   data?: FieldWorkforceArchiveListItem[];
@@ -106,7 +112,7 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "queue", label: "Review Queue" },
   { id: "summary", label: "Monthly Summary" },
   { id: "diagnostics", label: "Diagnostics" },
-  { id: "archives", label: "Archived Months" },
+  { id: "archives", label: "Excel Archives" },
   { id: "comparison", label: "Comparison" },
 ];
 
@@ -114,6 +120,16 @@ const reviewWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = workspac
 const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   ...reviewWorkspaceTabs,
   { id: "recommendations", label: "Recommendations" },
+];
+// Main (non-archive) tab bar: same as workspaceTabs but with Recommendations inserted
+// before the Excel-specific tabs, so recommendations for a live-mirror month are reachable
+// without archiving first. Built from reviewWorkspaceTabs (not workspaceTabs directly) to
+// avoid double-counting "recommendations" in archiveWorkspaceTabs above.
+const mainWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
+  ...reviewWorkspaceTabs,
+  { id: "recommendations", label: "Recommendations" },
+  { id: "archives", label: "Excel Archives" },
+  { id: "comparison", label: "Comparison" },
 ];
 
 const severityOptions: Array<"All" | FieldWorkforceSeverity> = ["All", "High", "Review", "Medium", "Low"];
@@ -1939,11 +1955,7 @@ function ArchivedMonthsPanel({
   );
 }
 
-export function FieldWorkforceComplianceWorkspace({
-  ireports360Configured,
-}: {
-  ireports360Configured: boolean;
-}) {
+export function FieldWorkforceComplianceWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -1970,6 +1982,9 @@ export function FieldWorkforceComplianceWorkspace({
   const [crmMonth, setCrmMonth] = useState(() => new Date().getMonth() + 1);
   const [crmYear, setCrmYear] = useState(() => new Date().getFullYear());
   const [isImportingCrm, setIsImportingCrm] = useState(false);
+  const [sourceMode, setSourceMode] = useState<SourceMode | null>(null);
+  const [liveMirrorMonth, setLiveMirrorMonth] = useState<{ month: number; year: number } | null>(null);
+  const [mirrorLastSyncedAt, setMirrorLastSyncedAt] = useState<string | null>(null);
   const crmYearOptions = useMemo(() => {
     const current = new Date().getFullYear();
     return [current + 1, current, current - 1, current - 2];
@@ -2023,6 +2038,15 @@ export function FieldWorkforceComplianceWorkspace({
     if (tab === "comparison" && !comparisonReport && !isLoadingComparison) {
       void loadComparison();
     }
+    if (
+      tab === "recommendations" &&
+      sourceMode === "live-mirror" &&
+      liveMirrorMonth &&
+      !recommendationsReport &&
+      !isLoadingRecommendations
+    ) {
+      void loadLiveMirrorRecommendations(liveMirrorMonth.month, liveMirrorMonth.year);
+    }
   }
 
   async function loadRecommendations(archiveId: string, auditFinalReportView = false) {
@@ -2045,6 +2069,27 @@ export function FieldWorkforceComplianceWorkspace({
     }
   }
 
+  async function loadLiveMirrorRecommendations(month: number, year: number) {
+    setIsLoadingRecommendations(true);
+    setRecommendationsError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/field-workforce-compliance/preview-from-visits-report/recommendations?month=${month}&year=${year}`,
+        { method: "GET" },
+      );
+      const payload = await readJsonResponse<RecommendationsResponse>(response);
+      if (payload.success && payload.data) {
+        setRecommendationsReport(payload.data);
+      } else {
+        setRecommendationsError(payload.message ?? payload.error ?? "Recommendations could not be loaded.");
+      }
+    } catch (error) {
+      setRecommendationsError(error instanceof Error ? error.message : "Recommendations could not be loaded.");
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  }
+
   async function handlePreview() {
     if (!selectedFile || isPreviewing) return;
     setIsPreviewing(true);
@@ -2054,6 +2099,11 @@ export function FieldWorkforceComplianceWorkspace({
     setMessage(null);
     setArchiveMessage(null);
     setArchiveError(null);
+    setSourceMode("excel-preview");
+    setLiveMirrorMonth(null);
+    setRecommendationsReport(null);
+    setRecommendationsMessage(null);
+    setRecommendationsError(null);
 
     const formData = new FormData();
     formData.append("file", selectedFile);
@@ -2080,7 +2130,10 @@ export function FieldWorkforceComplianceWorkspace({
     }
   }
 
-  async function handleImportFromIReports360() {
+  /** Computes this month's compliance live from the iReports360 visits mirror
+   * (visits-report's synced table) — not a live CRM call. Nothing is archived; the view
+   * always reflects whatever visits-report has synced so far. */
+  async function handleLoadFromVisitsReport() {
     if (isImportingCrm || isPreviewing) return;
     setIsImportingCrm(true);
     setResult(null);
@@ -2090,9 +2143,12 @@ export function FieldWorkforceComplianceWorkspace({
     setArchiveMessage(null);
     setArchiveError(null);
     setSelectedFile(null);
+    setRecommendationsReport(null);
+    setRecommendationsMessage(null);
+    setRecommendationsError(null);
 
     try {
-      const response = await fetch("/api/admin/field-workforce-compliance/import-from-ireports360", {
+      const response = await fetch("/api/admin/field-workforce-compliance/preview-from-visits-report", {
         body: JSON.stringify({ month: crmMonth, year: crmYear }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -2102,13 +2158,16 @@ export function FieldWorkforceComplianceWorkspace({
       setWarnings(payload.warnings ?? payload.data?.warnings ?? []);
       if (payload.success && payload.data) {
         setResult(payload.data);
+        setSourceMode("live-mirror");
+        setLiveMirrorMonth({ month: crmMonth, year: crmYear });
+        setMirrorLastSyncedAt(payload.mirrorLastSyncedAt ?? null);
         setActiveTab("timeline");
       } else {
         setActiveTab("overview");
-        setMessage(payload.message ?? payload.error ?? "iReports360 import failed.");
+        setMessage(payload.message ?? payload.error ?? "Loading from the visits mirror failed.");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "iReports360 import failed.");
+      setMessage(error instanceof Error ? error.message : "Loading from the visits mirror failed.");
     } finally {
       setIsImportingCrm(false);
     }
@@ -2193,13 +2252,27 @@ export function FieldWorkforceComplianceWorkspace({
     setRecommendationsMessage(null);
     setRecommendationsError(null);
     try {
-      const response = await fetch(`/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`, {
-        body: JSON.stringify({
-          decisionReason,
-          decisionStatus,
-          hrNote,
-          recommendationKey: recommendation.recommendationKey,
-        }),
+      const isLiveMirror = sourceMode === "live-mirror" && liveMirrorMonth !== null;
+      const url = isLiveMirror
+        ? "/api/admin/field-workforce-compliance/preview-from-visits-report/recommendations"
+        : `/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`;
+      const body = isLiveMirror
+        ? {
+            decisionReason,
+            decisionStatus,
+            hrNote,
+            month: liveMirrorMonth!.month,
+            recommendationKey: recommendation.recommendationKey,
+            year: liveMirrorMonth!.year,
+          }
+        : {
+            decisionReason,
+            decisionStatus,
+            hrNote,
+            recommendationKey: recommendation.recommendationKey,
+          };
+      const response = await fetch(url, {
+        body: JSON.stringify(body),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
@@ -2315,56 +2388,49 @@ export function FieldWorkforceComplianceWorkspace({
         </AdminTableShell>
 
         <AdminTableShell
-          description="Pull the month's field activity straight from iReports360 — no manual file needed. Read-only; nothing is archived until you choose Save Archived Month."
-          title="Live Import (iReports360)"
+          description="Compute this month's field activity from the synced iReports360 visits mirror. Always reflects the latest sync; nothing is archived automatically. Recommendations for a mirror month can still be reviewed and decided under the Recommendations tab below."
+          title="Live View (Visits Mirror)"
         >
-          {ireports360Configured ? (
-            <div className="flex flex-wrap items-end gap-3 p-4">
-              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                Month
-                <SearchableSelect
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                  value={crmMonth}
-                  onChange={(event) => setCrmMonth(Number(event.target.value))}
-                >
-                  {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
-                    <option key={monthValue} value={monthValue}>{monthValue}</option>
-                  ))}
-                </SearchableSelect>
-              </label>
-              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                Year
-                <SearchableSelect
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                  value={crmYear}
-                  onChange={(event) => setCrmYear(Number(event.target.value))}
-                >
-                  {crmYearOptions.map((yearValue) => (
-                    <option key={yearValue} value={yearValue}>{yearValue}</option>
-                  ))}
-                </SearchableSelect>
-              </label>
-              <Button
-                className="gap-2 rounded-xl font-black"
-                disabled={isImportingCrm || isPreviewing}
-                type="button"
-                onClick={() => void handleImportFromIReports360()}
+          <div className="flex flex-wrap items-end gap-3 p-4">
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              Month
+              <SearchableSelect
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                value={crmMonth}
+                onChange={(event) => setCrmMonth(Number(event.target.value))}
               >
-                {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                Import from iReports360
-              </Button>
-            </div>
-          ) : (
-            <div className="p-4">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-                <p className="font-black">Live import is not configured on this server.</p>
-                <p className="mt-1 text-amber-800">
-                  The iReports360 connection settings are not set in this environment, so one-click monthly imports are unavailable.
-                  Use the manual Excel upload above for now, and contact your administrator to enable the live connection.
-                </p>
-              </div>
-            </div>
-          )}
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
+                  <option key={monthValue} value={monthValue}>{monthValue}</option>
+                ))}
+              </SearchableSelect>
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              Year
+              <SearchableSelect
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                value={crmYear}
+                onChange={(event) => setCrmYear(Number(event.target.value))}
+              >
+                {crmYearOptions.map((yearValue) => (
+                  <option key={yearValue} value={yearValue}>{yearValue}</option>
+                ))}
+              </SearchableSelect>
+            </label>
+            <Button
+              className="gap-2 rounded-xl font-black"
+              disabled={isImportingCrm || isPreviewing}
+              type="button"
+              onClick={() => void handleLoadFromVisitsReport()}
+            >
+              {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              Load from Visits Mirror
+            </Button>
+            {sourceMode === "live-mirror" && mirrorLastSyncedAt ? (
+              <span className="text-xs font-semibold text-slate-500">
+                Visits mirror last synced {displayDateTime(mirrorLastSyncedAt)}
+              </span>
+            ) : null}
+          </div>
         </AdminTableShell>
 
         {message ? (
@@ -2400,7 +2466,7 @@ export function FieldWorkforceComplianceWorkspace({
         <ValidationIssues issues={errors} title="Preview blocked" tone="danger" />
         <ValidationIssues issues={warnings} title="Preview warnings" tone="warning" />
 
-        <WorkspaceTabs activeTab={activeTab} onChange={handleWorkspaceTabChange} />
+        <WorkspaceTabs activeTab={activeTab} tabs={mainWorkspaceTabs} onChange={handleWorkspaceTabChange} />
         {activeTab === "archives" ? (
           <ArchivedMonthsPanel
             archiveActiveTab={archiveActiveTab}
@@ -2425,6 +2491,22 @@ export function FieldWorkforceComplianceWorkspace({
             report={comparisonReport}
             onRefresh={() => void loadComparison()}
           />
+        ) : activeTab === "recommendations" ? (
+          sourceMode === "live-mirror" && liveMirrorMonth ? (
+            <RecommendationsPanel
+              isLoading={isLoadingRecommendations}
+              isSavingDecisionKey={isSavingDecisionKey}
+              report={recommendationsReport}
+              onRefresh={() => void loadLiveMirrorRecommendations(liveMirrorMonth.month, liveMirrorMonth.year)}
+              onSaveDecision={(recommendation, decisionStatus, hrNote, decisionReason) => void handleSaveDecision(recommendation, decisionStatus, hrNote, decisionReason)}
+            />
+          ) : (
+            <Card className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <p className="mx-auto max-w-xl text-sm leading-6 text-slate-500">
+                Load a month with &quot;Load from Visits Mirror&quot; above to review and decide recommendations here, or open a saved month from the Excel Archives tab.
+              </p>
+            </Card>
+          )
         ) : result ? (
           <>
             <ReviewWorkspacePanels
