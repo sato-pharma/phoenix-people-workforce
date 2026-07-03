@@ -9,6 +9,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { applyOrganogramMirrorSafety } from "@/lib/reports/organogram-safety";
 import {
   getVacancyReport,
+  isEmployeeVisibleInOrganogram,
   type OrganogramReportRow,
   type VacancyReportData,
   type VacancyReportDiagnostic,
@@ -42,18 +43,18 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
-function canAccessHeadOffice(access: AccessContext) {
+export function canAccessHeadOffice(access: AccessContext) {
   return access.role === "Super Admin" || access.role === "CEO" || access.scope === "system";
 }
 
-function isHeadOfficeRow(row: { lineName: string | null | undefined }) {
+// Head Office (line_id = 4) serves all lines and is CEO/Super-Admin-only. Detect
+// it by the canonical numeric line_id first (rename-safe), falling back to the
+// line-name variants for rows whose id isn't populated.
+const HEAD_OFFICE_LINE_ID = 4;
+export function isHeadOfficeRow(row: { lineId?: number | null; lineName: string | null | undefined }) {
+  if (row.lineId === HEAD_OFFICE_LINE_ID) return true;
   const line = row.lineName?.trim().toLowerCase();
   return line === "office" || line === "head office";
-}
-
-function activeOrganogramStatus(status: string | null | undefined) {
-  const normalized = String(status ?? "active").trim().toLowerCase();
-  return normalized === "active" || normalized === "on_leave";
 }
 
 function lineMatches(actual: string | null | undefined, expected: string | null | undefined) {
@@ -73,6 +74,18 @@ function recalculateSummary(report: VacancyReportData): VacancyReportData["summa
     positionsAffected: uniqueCount(openRows.map((row) => row.positionTitle ?? row.jobTitle)),
     totalVacancies: report.rows.length,
   };
+}
+
+// Shared Head Office suppression so the organogram and the vacancies report apply
+// the exact same boundary for non-privileged company viewers.
+function stripHeadOfficeRows(report: VacancyReportData): VacancyReportData {
+  const filtered = {
+    ...report,
+    organogramRows: report.organogramRows.filter((row) => !isHeadOfficeRow(row)),
+    rows: report.rows.filter((row) => !isHeadOfficeRow(row)),
+  };
+
+  return { ...filtered, summary: recalculateSummary(filtered) };
 }
 
 export function canAccessCompanyOrganogram(access: AccessContext) {
@@ -228,9 +241,8 @@ export async function resolveOrganogramLineForEmployee(access: AccessContext) {
   const currentEmployee = directory.employees.find(
     (employee) =>
       normalizeHrId(employee.hrId) === currentHrId &&
-      activeOrganogramStatus(employee.employmentStatus) &&
-      employee.organogramVisible !== false &&
-      employee.payrollEligible !== false,
+      isEmployeeVisibleInOrganogram(employee.employmentStatus) &&
+      employee.organogramVisible !== false,
   );
 
   return currentEmployee?.lineName?.trim() || null;
@@ -290,12 +302,7 @@ export async function getOrganogramReport(
   const scoped = scopeOrganogramReportData(report, options);
 
   if (options.mode === "company" && !canAccessHeadOffice(access)) {
-    const filtered = {
-      ...scoped,
-      organogramRows: scoped.organogramRows.filter((r) => !isHeadOfficeRow(r)),
-      rows: scoped.rows.filter((r) => !isHeadOfficeRow(r)),
-    };
-    return { ...filtered, summary: recalculateSummary(filtered) };
+    return stripHeadOfficeRows(scoped);
   }
 
   return scoped;
@@ -310,7 +317,15 @@ export async function getOrganogramReport(
  */
 export async function getScopedVacancyReport(access: AccessContext): Promise<VacancyReportData> {
   if (canAccessCompanyVacancies(access)) {
-    return getVacancyReport();
+    const report = await getVacancyReport();
+    // Mirror the organogram's Head Office boundary: company-org roles without
+    // head-office access (Marketing / Training Manager) must not see Head Office
+    // vacancies either. Talent Acquisition recruits for Head Office, so it is
+    // unaffected; privileged roles (CEO / Super Admin / system) see everything.
+    if (canAccessCompanyOrganogram(access) && !canAccessHeadOffice(access)) {
+      return stripHeadOfficeRows(report);
+    }
+    return report;
   }
 
   if (isLineScopedOrganogramRole(access)) {
