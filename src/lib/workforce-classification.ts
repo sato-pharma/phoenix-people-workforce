@@ -1,3 +1,5 @@
+import { hrIdsMatch } from "@/lib/hr-id";
+
 export type EmployeeNodeType =
   | "active_employee"
   | "historical_record"
@@ -222,10 +224,9 @@ export function isApprovedOthersSalesBucket(source: {
   line?: string | null;
 }) {
   const expectedHrId = otherBucketForLine(source.line);
-  const hrId = normalize(source.employeeHrId);
 
   return Boolean(
-    (expectedHrId && hrId === expectedHrId) ||
+    (expectedHrId && hrIdsMatch(source.employeeHrId, expectedHrId)) ||
       isOthersText(source.employeeLookupKey) ||
       isOthersText(source.employeeName)
   );

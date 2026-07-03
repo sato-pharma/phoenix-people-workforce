@@ -1,4 +1,5 @@
-﻿import {
+﻿import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
+import {
   createEmployeeColumnLookup,
   requiredEmployeeImportFields,
 } from "@/lib/imports/employee-column-map";
@@ -713,6 +714,7 @@ export function validateEmployeeImportRows(
   const crmIdCounts = new Map<string, number>();
   const crmUsernameCounts = new Map<string, number>();
   const hrIdCounts = new Map<string, number>();
+  const hrIdDisplayByCanonicalKey = new Map<string, string>();
 
   for (const field of missingRequiredColumns) {
     validationErrors.push({
@@ -731,7 +733,11 @@ export function validateEmployeeImportRows(
         message: "Employee row is missing HR_ID.",
       });
     } else if (record.rowType === "employee" && record.hrId) {
-      hrIdCounts.set(record.hrId, (hrIdCounts.get(record.hrId) ?? 0) + 1);
+      const hrIdKey = canonicalHrIdKey(record.hrId)!;
+      hrIdCounts.set(hrIdKey, (hrIdCounts.get(hrIdKey) ?? 0) + 1);
+      if (!hrIdDisplayByCanonicalKey.has(hrIdKey)) {
+        hrIdDisplayByCanonicalKey.set(hrIdKey, record.hrId);
+      }
     }
 
     const crmIdKey = normalizeCrmIdKey(record.crmId);
@@ -816,7 +822,7 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.rowType === "employee" && record.managerHrId && record.hrId === record.managerHrId) {
+    if (record.rowType === "employee" && record.managerHrId && hrIdsMatch(record.hrId, record.managerHrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "managerHrId",
@@ -1010,7 +1016,7 @@ export function validateEmployeeImportRows(
 
   const duplicateHrIds = Array.from(hrIdCounts.entries())
     .filter(([, count]) => count > 1)
-    .map(([hrId]) => hrId);
+    .map(([hrIdKey]) => hrIdDisplayByCanonicalKey.get(hrIdKey) ?? hrIdKey);
   const duplicateCrmIds = new Set(
     Array.from(crmIdCounts.entries())
       .filter(([, count]) => count > 1)
@@ -1022,11 +1028,23 @@ export function validateEmployeeImportRows(
       .map(([crmUsername]) => crmUsername),
   );
 
-  const duplicateHrIdSet = new Set(duplicateHrIds);
+  const duplicateHrIdSet = new Set(
+    Array.from(hrIdCounts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([hrIdKey]) => hrIdKey),
+  );
   const existingCrmIdToHrId = options.existingState?.crmIdToHrId ?? new Map<string, string>();
   const existingCrmUsernameToHrId = options.existingState?.crmUsernameToHrId ?? new Map<string, string>();
-  const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
-  const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds ?? terminalEmployeeHrIds;
+  const canonicalHrIdSet = (source: Iterable<string> | undefined) =>
+    new Set(
+      Array.from(source ?? [])
+        .map((hrId) => canonicalHrIdKey(hrId))
+        .filter((hrId): hrId is string => Boolean(hrId)),
+    );
+  const terminalEmployeeHrIds = canonicalHrIdSet(options.existingState?.terminalEmployeeHrIds);
+  const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds
+    ? canonicalHrIdSet(options.existingState.protectedLifecycleHrIds)
+    : terminalEmployeeHrIds;
   const uploadedSeatOwners = new Map<string, EmployeeImportRecord>();
   const existingSeatOwners = new Map<string, string>();
 
@@ -1060,7 +1078,7 @@ export function validateEmployeeImportRows(
   }
 
   for (const record of records) {
-    if (record.hrId && duplicateHrIdSet.has(record.hrId)) {
+    if (record.hrId && duplicateHrIdSet.has(canonicalHrIdKey(record.hrId)!)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "hrId",
@@ -1069,7 +1087,7 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.hrId && protectedLifecycleHrIds.has(record.hrId)) {
+    if (record.hrId && protectedLifecycleHrIds.has(canonicalHrIdKey(record.hrId)!)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "hrId",
@@ -1089,7 +1107,7 @@ export function validateEmployeeImportRows(
     }
 
     const existingCrmOwner = crmIdKey ? existingCrmIdToHrId.get(crmIdKey) : null;
-    if (record.hrId && existingCrmOwner && existingCrmOwner !== record.hrId) {
+    if (record.hrId && existingCrmOwner && !hrIdsMatch(existingCrmOwner, record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "crmId",
@@ -1109,7 +1127,7 @@ export function validateEmployeeImportRows(
     }
 
     const existingCrmUsernameOwner = crmUsernameKey ? existingCrmUsernameToHrId.get(crmUsernameKey) : null;
-    if (record.hrId && existingCrmUsernameOwner && existingCrmUsernameOwner !== record.hrId) {
+    if (record.hrId && existingCrmUsernameOwner && !hrIdsMatch(existingCrmUsernameOwner, record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "crmUsername",
@@ -1123,7 +1141,7 @@ export function validateEmployeeImportRows(
       const existingSeatOwner = seatKey ? existingSeatOwners.get(seatKey) : null;
       const uploadedSeatOwner = seatKey ? uploadedSeatOwners.get(seatKey) : null;
 
-      if (seatKey && uploadedSeatOwner && uploadedSeatOwner.hrId !== record.hrId) {
+      if (seatKey && uploadedSeatOwner && !hrIdsMatch(uploadedSeatOwner.hrId, record.hrId)) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field: "area",
@@ -1134,7 +1152,7 @@ export function validateEmployeeImportRows(
         uploadedSeatOwners.set(seatKey, record);
       }
 
-      if (record.hrId && existingSeatOwner && existingSeatOwner !== record.hrId) {
+      if (record.hrId && existingSeatOwner && !hrIdsMatch(existingSeatOwner, record.hrId)) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field: "area",
@@ -1145,18 +1163,18 @@ export function validateEmployeeImportRows(
     }
   }
 
-  const fileHrIds = new Set(
+  const fileHrIds = canonicalHrIdSet(
     records.flatMap((record) =>
       record.rowType === "employee" && record.hrId ? [record.hrId] : [],
     ),
   );
-  const databaseManagerHrIds = options.existingState?.managerHrIds ?? new Set<string>();
+  const databaseManagerHrIds = canonicalHrIdSet(options.existingState?.managerHrIds);
 
   for (const record of records) {
     if (
       record.managerHrId &&
-      !fileHrIds.has(record.managerHrId) &&
-      !databaseManagerHrIds.has(record.managerHrId)
+      !fileHrIds.has(canonicalHrIdKey(record.managerHrId)!) &&
+      !databaseManagerHrIds.has(canonicalHrIdKey(record.managerHrId)!)
     ) {
       validationErrors.push({
         rowNumber: record.rowNumber,
@@ -1182,7 +1200,7 @@ export function validateEmployeeImportRows(
       !failedRowNumbers.has(record.rowNumber) &&
       missingRequiredColumns.length === 0,
   );
-  const existingEmployeeHrIds = options.existingState?.employeeHrIds ?? new Set<string>();
+  const existingEmployeeHrIds = canonicalHrIdSet(options.existingState?.employeeHrIds);
   const importableEmployeeRecords = importableRecords.filter(isEmployeeRecord);
   const vacantPositionsToCreate =
     importableRecords.filter(isVacantPositionRecord);
@@ -1205,10 +1223,10 @@ export function validateEmployeeImportRows(
     missingRequiredColumns,
     duplicateHrIds,
     rowsToInsert: importableEmployeeRecords.filter(
-      (record) => record.hrId && !existingEmployeeHrIds.has(record.hrId),
+      (record) => record.hrId && !existingEmployeeHrIds.has(canonicalHrIdKey(record.hrId)!),
     ),
     rowsToUpdate: importableEmployeeRecords.filter(
-      (record) => record.hrId && existingEmployeeHrIds.has(record.hrId),
+      (record) => record.hrId && existingEmployeeHrIds.has(canonicalHrIdKey(record.hrId)!),
     ),
     vacantPositionsToCreate,
     organizationEntitiesToCreate,
