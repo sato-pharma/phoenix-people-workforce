@@ -37,6 +37,7 @@ import {
   type ManagerLane,
   type MemberNode,
   type OrganogramRow,
+  type TopManagerLane,
   buildMemberTree,
   buildOrganogramLanes,
   emptyText,
@@ -95,6 +96,22 @@ function formatHireDate(value: string | null | undefined) {
 
 function countDescendants(node: MemberNode): number {
   return node.children.reduce((total, child) => total + 1 + countDescendants(child), 0);
+}
+
+/**
+ * Stable per-lane identity key for a DSM/RSM-anchored lane. Prefers the lane's
+ * manager/vacancy-slot identity (already unique via rowKey) over the array
+ * position, so collapse state doesn't cross-bind onto a different lane when
+ * the underlying rows are reordered or filtered (e.g. by search). Falls back
+ * to a positional key only for the rare lane with neither a dsm nor an rsm.
+ */
+function tierLaneKey(tier: "t1" | "t2", group: TopManagerLane, index: number) {
+  const identity = group.dsm ?? group.rsm ?? null;
+  return identity ? `${tier}-${rowKey(identity)}` : `${tier}-${group.name}-${index}`;
+}
+
+function childLaneKey(parentKey: string, lane: ManagerLane, index: number) {
+  return lane.dsm ? `${parentKey}-child-${rowKey(lane.dsm)}` : `${parentKey}-child-${lane.name}-${index}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -236,6 +253,7 @@ function MemberBranch({
     <li
       aria-expanded={hasChildren ? !isCollapsed : undefined}
       aria-level={level}
+      aria-selected={false}
       className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80"
       role="treeitem"
     >
@@ -672,12 +690,10 @@ export function OrgChartTree({
   // Every collapsible top-level lane key — mirrors the keys the tiers below use —
   // so "Collapse all" can fold every lane in one click.
   const collapsibleLaneKeys = [
-    ...directDsms.map((group, index) =>
-      group.dsm ? `t1-${rowKey(group.dsm)}-${index}` : `t1-${group.name}-${index}`,
-    ),
+    ...directDsms.map((group, index) => tierLaneKey("t1", group, index)),
     ...rsmGroups.flatMap((group, index) => {
-      const laneKey = group.rsm ? `t2-${rowKey(group.rsm)}-${index}` : `t2-${group.name}-${index}`;
-      return (group.childLanes ?? []).map((_, laneIndex) => `${laneKey}-child-${laneIndex}`);
+      const laneKey = tierLaneKey("t2", group, index);
+      return (group.childLanes ?? []).map((lane, laneIndex) => childLaneKey(laneKey, lane, laneIndex));
     }),
     ...otherGroups.map((group, index) => `other-${group.name}-${index}`),
   ];
@@ -838,9 +854,7 @@ export function OrgChartTree({
                   style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
                 >
                   {directDsms.map((group, index) => {
-                    const laneKey = group.dsm
-                      ? `t1-${rowKey(group.dsm)}-${index}`
-                      : `t1-${group.name}-${index}`;
+                    const laneKey = tierLaneKey("t1", group, index);
                     return (
                       <ManagerLane
                         collapsedKeys={collapsedKeys}
@@ -858,7 +872,7 @@ export function OrgChartTree({
             {/* Tier 2 — each RSM banner + its child DSM lanes */}
             {rsmGroups.map((group, index) => {
               const childLanes = group.childLanes ?? [];
-              const laneKey = group.rsm ? `t2-${rowKey(group.rsm)}-${index}` : `t2-${group.name}-${index}`;
+              const laneKey = tierLaneKey("t2", group, index);
               const groupVacancies = childLanes.reduce(
                 (total, lane) =>
                   total +
@@ -908,15 +922,18 @@ export function OrgChartTree({
                       style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
                     >
                       {childLanes.length > 0 ? (
-                        childLanes.map((lane, laneIndex) => (
-                          <ManagerLane
-                            collapsedKeys={collapsedKeys}
-                            group={lane}
-                            key={`${laneKey}-child-${laneIndex}`}
-                            laneKey={`${laneKey}-child-${laneIndex}`}
-                            onToggle={toggle}
-                          />
-                        ))
+                        childLanes.map((lane, laneIndex) => {
+                          const childKey = childLaneKey(laneKey, lane, laneIndex);
+                          return (
+                            <ManagerLane
+                              collapsedKeys={collapsedKeys}
+                              group={lane}
+                              key={childKey}
+                              laneKey={childKey}
+                              onToggle={toggle}
+                            />
+                          );
+                        })
                       ) : (
                         <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-[11px] text-slate-400">
                           No DSM lanes under this regional manager.

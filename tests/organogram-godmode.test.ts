@@ -6,14 +6,25 @@ import {
   classifyOrganogramStructureLevel,
 } from "../src/lib/reports/organogram-safety.ts";
 import {
+  buildMemberTree,
   buildOrganogramLanes,
   isChiefExecutive,
   isDistrictSalesManager,
   isMedicalRep,
   normalizeHrIdKey,
+  type MemberNode,
 } from "../src/lib/reports/organogram-view-model.ts";
 import { canAccessHeadOffice, isHeadOfficeRow } from "../src/lib/reports/organogram.ts";
 import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
+
+function findNode(nodes: MemberNode[], hrId: string): MemberNode | undefined {
+  for (const node of nodes) {
+    if (node.row.hrId === hrId) return node;
+    const found = findNode(node.children, hrId);
+    if (found) return found;
+  }
+  return undefined;
+}
 
 // Behavioral regression coverage for the organogram "god-mode" fixes. Unlike the
 // source-string assertions in organogram-hardening.test.ts, these exercise the real
@@ -132,4 +143,18 @@ export function runOrganogramGodmodeTests() {
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), false);
   assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
+
+  // MD-9 — a member's node key must depend only on their identity, never on
+  // their position in the input array, or a re-sorted/re-filtered render
+  // (e.g. after a search) can cross-bind a collapsed node onto a different
+  // person. Reproduce with the SAME three people fed in two different orders.
+  const manager = row({ hrId: "M-1", positionTitle: "District Sales Manager" });
+  const alice = row({ displayName: "Alice", fullName: "Alice", hrId: "P-1", managerHrId: "M-1" });
+  const bob = row({ displayName: "Bob", fullName: "Bob", hrId: "P-2", managerHrId: "M-1" });
+  const treeOrderA = buildMemberTree([manager, alice, bob]);
+  const treeOrderB = buildMemberTree([manager, bob, alice]);
+  const bobKeyOrderA = findNode(treeOrderA, "P-2")?.key;
+  const bobKeyOrderB = findNode(treeOrderB, "P-2")?.key;
+  assert.ok(bobKeyOrderA && bobKeyOrderB);
+  assert.equal(bobKeyOrderA, bobKeyOrderB);
 }
