@@ -711,4 +711,66 @@ export async function runMarketingRequestServiceTests() {
   assert.equal(sfeScope.products.length, 3, "an unrestricted oversight role sees every product line");
   assert.equal(sfeScope.requesterLineName, "All product lines", "unrestricted scope labels all product lines");
   assert.equal(sfeScope.requesterLineId, null, "unrestricted scope without a requester has no line id");
+
+  /* ---------------------------------------------------------------------- */
+  /* Additive product_scope_override: a PM (e.g. B-155) covering one product  */
+  /* per line may see + create for a product outside their own line, without  */
+  /* narrowing their line default or affecting anyone with no override.       */
+  /* ---------------------------------------------------------------------- */
+
+  const codedProducts = [
+    { active: true, factory_price: 6, id: 1, line: "Anti infective", line_id: 7, product_code: "SA001", product_name: "Saginko" },
+    { active: true, factory_price: 9, id: 3, line: "Neuro", line_id: 9, product_code: "NX001", product_name: "Neurox" },
+  ];
+
+  // Picker: requester is on line 7; the override grants a line-9 product code. The result is a
+  // UNION — the requester's own line (id 1) plus the granted cross-line product (id 3).
+  const overridePickerScope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "MR001", role: "Product Manager" }),
+    productRows: codedProducts,
+    requester,
+    allowedProductCodes: new Set(["NX001"]),
+  });
+  assert.deepEqual(
+    overridePickerScope.products.map((product) => product.id).sort((a, b) => a - b),
+    [1, 3],
+    "product override adds the cross-line product (union) without dropping the requester-line default",
+  );
+
+  // Submit: the same requester may submit the granted cross-line product, and the request is
+  // tagged with the PRODUCT's line (9) — not the requester line (7) or the customer line (8).
+  const overrideSubmit = prepareMarketingRequestDraft({
+    customer,
+    input: { ...baseInput, products: [{ productId: 3, quantity: 500 }] },
+    pharmacyCodes: [
+      { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
+    ],
+    products: [
+      { active: true, factory_price: 9, id: 3, line: "Neuro", line_id: 9, product_code: "NX001", product_name: "Neurox" },
+    ],
+    requestType,
+    requester,
+    allowedProductCodes: new Set(["NX001"]),
+  });
+  assert.equal(overrideSubmit.requestRow.line_id, 9, "override request is tagged with the product's line, not the requester/customer line");
+
+  // No-override regression guard: the SAME cross-line product is rejected without the override,
+  // so the additive grant is strictly override-gated (A-8/A-10 and normal PMs are unaffected).
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        input: { ...baseInput, products: [{ productId: 3, quantity: 500 }] },
+        pharmacyCodes: [
+          { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
+        ],
+        products: [
+          { active: true, factory_price: 9, id: 3, line: "Neuro", line_id: 9, product_code: "NX001", product_name: "Neurox" },
+        ],
+        requestType,
+        requester,
+      }),
+    /assigned line/i,
+    "without a product override a cross-line product stays rejected",
+  );
 }

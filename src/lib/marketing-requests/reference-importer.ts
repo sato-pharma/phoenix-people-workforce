@@ -358,6 +358,46 @@ async function upsertInBatches<T>(
   }
 }
 
+export type SalesProductCodeLookup = {
+  line: string | null;
+  normalizedName: string;
+  productCode: string;
+};
+
+// Known product-name spelling drift between the marketing reference workbook and the
+// Source-of-Sales catalog (same product, different source file). Keyed by the marketing side's
+// normalized name -> the sales side's normalized name, so reconciliation still matches. Mirrors
+// the PRODUCT_LINE_TEXT_ALIASES pattern already used for line-name drift in
+// marketing-requests/service.ts.
+const MARKETING_PRODUCT_NAME_ALIASES: Record<string, string> = {
+  "tebofrtin drops": "tebofotin drops", // phoenix products.xlsx typo; sales catalog has "Tebofotin drops".
+};
+
+/**
+ * Reconcile marketing product codes against the Source-of-Sales catalog. Sales is the reference
+ * for product codes (source_of_sales_products.product_code is what product_scope_override
+ * matches in sales dashboards), so a marketing product whose normalized name (or a known alias)
+ * matches a sales product on the same line takes over that sales product_code instead of a
+ * freshly generated MKT_PRD#### code — one code identifies the product in both catalogs. A
+ * product with no sales match (marketing-only) keeps its generated code unchanged.
+ */
+export function reconcileProductCodesWithSalesCatalog(
+  products: MarketingProductSeed[],
+  salesProducts: SalesProductCodeLookup[],
+): MarketingProductSeed[] {
+  const salesCodeByKey = new Map<string, string>();
+  for (const sales of salesProducts) {
+    const key = `${normalizeMarketingLookupKey(sales.line)}::${sales.normalizedName}`;
+    salesCodeByKey.set(key, sales.productCode);
+  }
+  return products.map((product) => {
+    const line = normalizeMarketingLookupKey(product.line);
+    const aliasedName = MARKETING_PRODUCT_NAME_ALIASES[product.normalizedName] ?? product.normalizedName;
+    const salesCode = salesCodeByKey.get(`${line}::${aliasedName}`);
+    return salesCode ? { ...product, productCode: salesCode } : product;
+  });
+}
+
 export async function seedMarketingReferenceData(
   options: SeedOptions,
 ): Promise<MarketingReferenceImportResult> {
@@ -368,8 +408,21 @@ export async function seedMarketingReferenceData(
     productsPath: options.productsPath,
   });
 
+  const { data: salesProductRows, error: salesProductsError } = await supabase
+    .from("source_of_sales_products")
+    .select("product_code, normalized_product_name, line");
+  if (salesProductsError) throw salesProductsError;
+  const salesProducts: SalesProductCodeLookup[] = (salesProductRows ?? []).map((row) => {
+    const typed = row as { line: string | null; normalized_product_name: string | null; product_code: string };
+    return {
+      line: typed.line,
+      normalizedName: String(typed.normalized_product_name ?? ""),
+      productCode: typed.product_code,
+    };
+  });
+
   const distributorRows = parsed.distributors.map(toDistributorDbRow);
-  const productRows = parsed.products.map(toProductDbRow);
+  const productRows = reconcileProductCodesWithSalesCatalog(parsed.products, salesProducts).map(toProductDbRow);
 
   await upsertInBatches(distributorRows, batchSize, async (batch) => {
     const { error } = await supabase

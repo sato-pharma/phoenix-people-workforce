@@ -66,6 +66,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -584,14 +585,31 @@ function isOrgWidePlanningEmployee(employee: EmployeeDirectoryRow | null, fallba
   return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "Training Manager";
 }
 
-async function medicalRepOptionsForEmployee(employee: EmployeeDirectoryRow | null, orgWide = false) {
+async function medicalRepOptionsForEmployee(
+  employee: EmployeeDirectoryRow | null,
+  orgWide = false,
+  allowedLineNames: string[] | null = null,
+) {
   if (!employee) return [];
   const directory = await getEmployeeDirectory();
+  // When the plan owner has a multi-line scope override (e.g. a Product Manager
+  // covering both Pedia and Anti infective), the double-visit rep pool must span
+  // every scoped line, not just the single line on their own employee row. With
+  // no override we keep the historical same-line behaviour, so normal PMs are
+  // unaffected.
+  const overrideLineKeys = allowedLineNames && allowedLineNames.length > 0
+    ? new Set(allowedLineNames.map((line) => normalizedName(line)).filter(Boolean))
+    : null;
   return directory.employees
     .filter((candidate) => candidate.hrId !== employee.hrId)
     .filter(isActiveEmployee)
     .filter(isMedicalRepEmployee)
-    .filter((candidate) => orgWide || isSameLine(candidate, employee))
+    .filter((candidate) =>
+      orgWide ||
+      (overrideLineKeys
+        ? overrideLineKeys.has(normalizedName(candidate.lineName))
+        : isSameLine(candidate, employee)),
+    )
     .map((candidate) => ({
       areaName: candidate.areaName,
       fullName: candidate.fullName,
@@ -1319,7 +1337,11 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
-  const medicalRepOptions = await medicalRepOptionsForEmployee(employee, isOrgWidePlanningEmployee(employee, access.role));
+  const medicalRepOptions = await medicalRepOptionsForEmployee(
+    employee,
+    isOrgWidePlanningEmployee(employee, access.role),
+    await resolveViewerAllowedLines(access),
+  );
   const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
 
   try {
@@ -2016,7 +2038,11 @@ export async function createEmployeePlan(access: AccessContext, input: {
     input.items,
     period.periodStartDate,
     period.periodEndDate,
-    await medicalRepOptionsForEmployee(employee, isOrgWidePlanningEmployee(employee, access.role)),
+    await medicalRepOptionsForEmployee(
+      employee,
+      isOrgWidePlanningEmployee(employee, access.role),
+      await resolveViewerAllowedLines(access),
+    ),
     { submit: Boolean(input.submit) },
   );
   if (input.submit) {
@@ -2098,7 +2124,11 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       input.items,
       existing.period_start_date,
       existing.period_end_date,
-      await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
+      await medicalRepOptionsForEmployee(
+        owner,
+        isOrgWidePlanningEmployee(owner, access.role),
+        await resolveViewerAllowedLines(access),
+      ),
       { submit: Boolean(input.submit) },
     );
     if (input.submit) {
@@ -2163,7 +2193,11 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     input.items,
     existing.period_start_date,
     existing.period_end_date,
-    await medicalRepOptionsForEmployee(owner, isOrgWidePlanningEmployee(owner, access.role)),
+    await medicalRepOptionsForEmployee(
+      owner,
+      isOrgWidePlanningEmployee(owner, access.role),
+      await resolveViewerAllowedLines(access),
+    ),
     { submit: Boolean(input.submit) },
   );
   if (input.submit) {
