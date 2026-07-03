@@ -85,12 +85,18 @@ export async function POST(request: Request) {
       const sickAttachmentStoragePath = formText(body, "sickAttachmentStoragePath");
       if (!sickAttachment && sickAttachmentStoragePath) {
         pendingAttachmentPaths.push(sickAttachmentStoragePath);
-        sickAttachment = await resolvePendingVacationAttachment(sickAttachmentStoragePath);
+        sickAttachment = await resolvePendingVacationAttachment(sickAttachmentStoragePath, {
+          contentType: formText(body, "sickAttachmentContentType"),
+          fileName: formText(body, "sickAttachmentFileName"),
+        });
       }
       const compensatoryAttachmentStoragePath = formText(body, "compensatoryAttachmentStoragePath");
       if (!compensatoryAttachment && compensatoryAttachmentStoragePath) {
         pendingAttachmentPaths.push(compensatoryAttachmentStoragePath);
-        compensatoryAttachment = await resolvePendingVacationAttachment(compensatoryAttachmentStoragePath);
+        compensatoryAttachment = await resolvePendingVacationAttachment(compensatoryAttachmentStoragePath, {
+          contentType: formText(body, "compensatoryAttachmentContentType"),
+          fileName: formText(body, "compensatoryAttachmentFileName"),
+        });
       }
     }
 
