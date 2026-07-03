@@ -1317,6 +1317,30 @@ function acceptedRequiredEvidenceReviewerHrIds(request: VacationRequestRecord) {
     .filter((value): value is string => Boolean(value));
 }
 
+// The evidence-review/acknowledgement separation-of-duties guard requires a second HR/Super
+// Admin account to exist at all. Small orgs can have exactly one such account, which would make
+// sick/compensatory leave permanently unapprovable. Owner-approved exception (2026-07-04): only
+// enforce the guard when a real alternate account is available; fail closed (keep enforcing) if
+// the lookup errors, since that's safer than silently allowing self-acknowledgement.
+async function hasAlternateHrApprover(excludeHrId: string | null) {
+  const excluded = canonicalHrId(excludeHrId);
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("app_auth_users")
+      .select("hr_id")
+      .eq("role", "Super Admin")
+      .eq("is_active", true);
+    if (error) throw error;
+    return (data ?? []).some((row) => {
+      const hrId = canonicalHrId(text((row as Record<string, unknown>).hr_id));
+      return Boolean(hrId) && hrId !== excluded;
+    });
+  } catch (error) {
+    console.error("[vacation] alternate HR approver lookup failed; enforcing separation of duties", error);
+    return true;
+  }
+}
+
 function mapVacationEvent(row: VacationEventDbRow): VacationTimelineEvent {
   const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
     ? row.metadata as Record<string, unknown>
@@ -2878,7 +2902,17 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     }
     const reviewerHrId = canonicalHrId(input.actorHrId);
     if (reviewerHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(reviewerHrId)) {
-      throw new Error("Separation of duties requires a different HR or Super Admin actor to acknowledge after evidence review.");
+      if (await hasAlternateHrApprover(reviewerHrId)) {
+        throw new Error("Separation of duties requires a different HR or Super Admin actor to acknowledge after evidence review.");
+      }
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "hr_self_acknowledged_sole_admin_exception",
+        message: "HR acknowledged after reviewing the evidence themselves: no other active HR/Super Admin account exists to satisfy separation of duties.",
+        metadata: { evidenceReviewerHrId: reviewerHrId },
+        requestId: input.request.id,
+      });
     }
   }
 
@@ -3190,7 +3224,17 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     }
     const actorHrId = canonicalHrId(input.actorHrId);
     if (actorHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(actorHrId)) {
-      throw new Error("Separation of duties requires a different HR or Super Admin actor to make the final approval after evidence review.");
+      if (await hasAlternateHrApprover(actorHrId)) {
+        throw new Error("Separation of duties requires a different HR or Super Admin actor to make the final approval after evidence review.");
+      }
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "hr_self_acknowledged_sole_admin_exception",
+        message: "HR gave the final approval after reviewing the evidence themselves: no other active HR/Super Admin account exists to satisfy separation of duties.",
+        metadata: { evidenceReviewerHrId: actorHrId },
+        requestId: input.request.id,
+      });
     }
   }
 
