@@ -1,6 +1,7 @@
 import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -13,6 +14,7 @@ export type EmployeePortalNavVisibility = {
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
   showMarketingRoiTrackingTab?: boolean;
+  showMarketingCoverageReportTab?: boolean;
   showMyPerformanceTab?: boolean;
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
@@ -146,6 +148,19 @@ export function canUseEmployeePortalMarketingRoiTracking(
   return marketingRequestRoles.has(resolvePortalRole(roleLabel, accessRole));
 }
 
+/**
+ * Broader than ROI Tracking's own role set: the Marketing Coverage Report is
+ * deliberately open to the whole marketing/sales hierarchy INCLUDING Finance
+ * Manager and Financial Advisor (scoped to their own subtree server-side — see
+ * coverage-report-scope.ts), not just marketingRequestRoles.
+ */
+export function canUseEmployeePortalMarketingCoverageReport(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return canViewMarketingCoverageReport(resolvePortalRole(roleLabel, accessRole));
+}
+
 export function resolveEmployeePortalNavVisibility(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
@@ -185,6 +200,7 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
+  const showMarketingCoverageReportTab = canUseEmployeePortalMarketingCoverageReport(resolvedRole);
   const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
   const showPlansTab = [
     "Product Manager",
@@ -222,6 +238,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingInboxTab,
     showMarketingRequestsTab,
     showMarketingRoiTrackingTab,
+    showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,

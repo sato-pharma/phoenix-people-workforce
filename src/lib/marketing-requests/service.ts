@@ -710,7 +710,7 @@ export function resolveStoredEmployeeHrId(
   return resolveStoredHrId(value, byHrId);
 }
 
-function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {
+export function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {
   if (!viewer || !target) return true;
 
   if (viewer.departmentId !== null && target.departmentId !== null) {
@@ -726,7 +726,7 @@ function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target
   return true;
 }
 
-function reportsUpToViewer(input: {
+export function reportsUpToViewer(input: {
   employeesByHrId: Map<string, EmployeeDirectoryRow>;
   targetHrId: string | null;
   viewerHrId: string | null;

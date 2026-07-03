@@ -74,9 +74,9 @@ export function isRestrictedMarketingProduct(
   return key.length > 0 && restrictedNames.has(key);
 }
 
-type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
+export type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
 
-type RoiRequestRow = {
+export type RoiRequestRow = {
   id: string;
   request_code: string;
   requester_hr_id: string;
@@ -91,7 +91,7 @@ type RoiRequestRow = {
   required_roi_value: number | string | null;
 };
 
-type MappedRoiRequest = {
+export type MappedRoiRequest = {
   id: string;
   requestCode: string;
   requesterHrId: string;
@@ -114,12 +114,12 @@ const APPROVED_STATUSES = new Set<MarketingRoiReportRow["status"]>([
   "finance_hold",
 ]);
 
-function toNum(value: unknown): number {
+export function toNum(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function chunk<T>(items: T[], size = 400): T[][] {
+export function chunk<T>(items: T[], size = 400): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
@@ -132,13 +132,13 @@ function chunk<T>(items: T[], size = 400): T[][] {
  * timeout) and which stage raised it. Forbidden (access-control) throws are expected control-flow
  * and are deliberately NOT logged as errors.
  */
-function logRoiServiceFailure(stage: string, error: unknown, meta?: Record<string, unknown>): void {
+export function logRoiServiceFailure(stage: string, error: unknown, meta?: Record<string, unknown>): void {
   if (errorMessageOf(error).toLowerCase().startsWith("forbidden:")) return;
   console.error(`[marketing-roi] ${stage} failed`, describeUnexpectedError(error), meta ? JSON.stringify(meta) : "");
 }
 
 /** Load every row of `table` for the given request ids (chunked .in()). */
-async function loadByRequestIds<T>(
+export async function loadByRequestIds<T>(
   supabase: SupabaseAdmin,
   table: string,
   columns: string,
@@ -154,7 +154,7 @@ async function loadByRequestIds<T>(
   return out;
 }
 
-function mapRoiRequest(row: RoiRequestRow): MappedRoiRequest {
+export function mapRoiRequest(row: RoiRequestRow): MappedRoiRequest {
   const estimatedCost = toNum(row.estimated_cost);
   const roiDurationMonths = Math.max(1, Number(row.roi_duration_months) || 1);
   return {
@@ -176,7 +176,7 @@ function mapRoiRequest(row: RoiRequestRow): MappedRoiRequest {
 }
 
 /** Walk the requester's manager chain and capture the first DM / NSM / RSM seat. */
-function resolveChainSeats(
+export function resolveChainSeats(
   requesterHrId: string,
   byHrId: Map<string, EmployeeDirectoryRow>,
 ): {
@@ -280,7 +280,7 @@ function getCachedRoiIndex(access: AccessContext, revealRestricted: boolean): Pr
 }
 
 /** PM/GPM product ownership (§A default = by their employees.line_id). */
-async function resolveOwnedProductScope(
+export async function resolveOwnedProductScope(
   supabase: SupabaseAdmin,
   access: AccessContext,
   byHrId: Map<string, EmployeeDirectoryRow>,
@@ -306,7 +306,7 @@ async function resolveOwnedProductScope(
   return { ownedProductCodes, ownedLineNames };
 }
 
-async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promise<string | null> {
+export async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promise<string | null> {
   // Prefer the dedicated helper (fast, exact). Fall back to a bounded row read if the
   // function is not applied to this database yet.
   try {
@@ -689,7 +689,7 @@ function matchesNonRoiFilters(entry: MarketingRoiRequestIndexEntry, filters: Roi
   return entryMatchesRoiFilters(entry, filters);
 }
 
-type ActualsRow = {
+export type ActualsRow = {
   request_id: string;
   actual_value: number | string | null;
   actual_units: number | string | null;
@@ -697,7 +697,7 @@ type ActualsRow = {
   attribution_quality?: string | null;
 };
 
-async function loadActuals(
+export async function loadActuals(
   supabase: SupabaseAdmin,
   requestIds: string[],
   excludeCodes: string[],
@@ -1010,7 +1010,7 @@ function mapPreset(row: PresetDbRow): MarketingRoiPreset {
   };
 }
 
-function presetOwnerHrId(access: AccessContext): string {
+export function presetOwnerHrId(access: AccessContext): string {
   assertMarketingWorkspaceAccess(access);
   // employees(hr_id) FK is case-sensitive — store/compare the canonical (uppercase) HR_ID.
   const owner = resolveStoredEmployeeHrId(access.hrId);
@@ -1091,7 +1091,7 @@ export async function deleteMarketingRoiPreset(access: AccessContext, id: string
 export async function writeMarketingRoiExportAudit(input: {
   access: AccessContext;
   exportId: string;
-  kind: "report" | "request";
+  kind: "report" | "request" | "coverage_report";
   requestId?: string | null;
   filterJson: Record<string, unknown>;
   rowCount: number;

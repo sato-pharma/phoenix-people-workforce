@@ -181,6 +181,12 @@ const adminNavigationSectionSeeds = [
       // Standalone, business-friendly ROI report (browse by requester/customer) — deliberately
       // separate from ROI Tracking above; same read-only access as that report.
       { href: "/admin/marketing-roi-report", icon: ClipboardList, label: "Marketing ROI Report", moduleId: "admin.marketing_requests.roi_business_report.admin_marketing_roi_report", roles: ["Super Admin", "CEO"] },
+      // Hierarchy-scoped drill-down: filter requests, see premium KPI totals, expand any
+      // request to its target pharmacies (incl. zero-sales) with a Super-Admin-only link to
+      // each pharmacy's full sales history. Broadly open to the whole marketing/sales
+      // hierarchy — admin shell stays narrow (mirrors ROI Tracking's own precedent); every
+      // other eligible role reaches it via the employee-portal shell instead.
+      { href: "/admin/marketing-requests/coverage-report", icon: MapPinned, label: "Marketing Coverage Report", moduleId: "admin.marketing_requests.coverage_report.admin_marketing_requests_coverage_report", roles: ["Super Admin", "CEO"] },
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.marketing_requests.customer_validation.admin_marketing_requests_validation", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.marketing_requests.marketing_requests.admin_marketing_requests", roles: ["District Manager", "Super Admin"], exact: true },
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.marketing_requests.approval_inbox.admin_marketing_requests_inbox", roles: ["District Manager", "Super Admin"] },
@@ -526,6 +532,25 @@ const employeePortalNavigationSectionSeeds = [
           "Group Product Manager",
           "Marketing Manager",
           "SFE Manager",
+          "CEO",
+          "Super Admin",
+        ],
+      },
+      {
+        href: "/employee-portals/marketing-requests/coverage-report",
+        icon: MapPinned,
+        label: "Marketing Coverage Report",
+        roles: [
+          "Medical Rep",
+          "District Manager",
+          "Regional Manager",
+          "National Sales Manager",
+          "Product Manager",
+          "Group Product Manager",
+          "Marketing Manager",
+          "SFE Manager",
+          "Finance Manager",
+          "Financial Advisor",
           "CEO",
           "Super Admin",
         ],

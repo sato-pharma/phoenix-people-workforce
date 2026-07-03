@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewMarketingCoverageReportInAdminShell } from "@/lib/marketing-requests/coverage-report-access";
 
 export async function assertMarketingAdminPageAccess(options?: {
   customerDatabase?: boolean;
@@ -38,5 +39,20 @@ export async function assertMarketingAdminPageAccess(options?: {
     redirect("/employee-portals/marketing-requests");
   }
 
+  return access;
+}
+
+/**
+ * The Marketing Coverage Report's admin-shell gate is intentionally narrower
+ * than assertMarketingAdminPageAccess's role sets (which are shaped for the
+ * workflow pages) — mirrors ROI Tracking's own admin-nav precedent (Super Admin
+ * + CEO only). Every other unrestricted role (SFE Manager, Marketing Manager)
+ * still sees the same unrestricted data, just via the employee-portal shell.
+ */
+export async function assertMarketingCoverageReportAdminPageAccess() {
+  const access = await resolveAccessContextFromPage();
+  if (!canViewMarketingCoverageReportInAdminShell(access.role)) {
+    redirect("/employee-portals/marketing-requests/coverage-report");
+  }
   return access;
 }

@@ -425,3 +425,100 @@ export type MarketingRoiViewSales = {
   salesDataAsOf: string | null;
   generatedAtIso: string;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Marketing Coverage Report — composed extensions.
+//
+// A separate, broader-access report over the same underlying requests. Everything
+// here is COMPOSED on top of the ROI Tracking types above (never a union-edit of
+// them), so ROI Tracking's contract can never drift because of this report:
+//  - company-wide visibility is narrower (CEO / Super Admin / SFE Manager /
+//    Marketing Manager only — Finance Manager/Financial Advisor are scoped here,
+//    unlike ROI Tracking);
+//  - two extra filter dimensions (area, requester tier);
+//  - two extra KPI counts (distinct target pharmacies, distinct customers).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Keys for the 2 filter dimensions this report adds on top of the shared RoiFilterKey set. */
+export type MarketingCoverageFilterKey = RoiFilterKey | "area" | "requesterTier";
+
+export type MarketingCoverageFilterState = RoiFilterState & {
+  /** requester's employees.area (via areas.name), not a marketing_requests column. */
+  area: string[];
+  /** requester's OWN job-function classification (Medical Rep / District Manager /
+   *  Regional Manager / National Sales Manager / …), not the downstream DM/NSM/RSM
+   *  chain seats the shared `dm`/`nsm`/`rsm` dimensions already filter by. */
+  requesterTier: string[];
+};
+
+export function emptyMarketingCoverageFilterState(): MarketingCoverageFilterState {
+  return { ...emptyRoiFilterState(), area: [], requesterTier: [] };
+}
+
+/** Same dimension shape as RoiFilterDimension, keyed by the wider coverage key set. */
+export type CoverageFilterDimension = Omit<RoiFilterDimension, "key"> & { key: MarketingCoverageFilterKey };
+
+export type MarketingCoverageFilterOptions = {
+  dimensions: CoverageFilterDimension[];
+  visibleRequestCount: number;
+  canRevealRestricted: boolean;
+};
+
+/** MarketingRoiRequestIndexEntry + the 2 extra facet fields this report filters by. */
+export type MarketingCoverageRequestIndexEntry = MarketingRoiRequestIndexEntry & {
+  areaName: string | null;
+  requesterTier: string | null;
+};
+
+export type MarketingCoverageFilterFacets = {
+  entries: MarketingCoverageRequestIndexEntry[];
+  canRevealRestricted: boolean;
+  totalCount: number;
+};
+
+/** MarketingRoiReportRow + the fields this report's KPI/detail layer needs:
+ *  areaName/requesterTier (display + already-applied filter context), customerId
+ *  (identity key for the distinct-customer KPI, display name alone can collide),
+ *  pharmacyKeys (identity keys for the distinct-pharmacy KPI). */
+export type MarketingCoverageReportRow = MarketingRoiReportRow & {
+  areaName: string | null;
+  requesterTier: string | null;
+  customerId: string;
+  pharmacyKeys: string[];
+};
+
+/** MarketingRoiKpiBand + the 2 counts unique to this report. */
+export type MarketingCoverageKpiBand = MarketingRoiKpiBand & {
+  distinctPharmacyCount: number;
+  distinctCustomerCount: number;
+};
+
+export type MarketingCoverageReport = {
+  rows: MarketingCoverageReportRow[];
+  kpi: MarketingCoverageKpiBand;
+  appliedFilters: MarketingCoverageFilterState;
+  autoAppliedByDimension: Partial<Record<MarketingCoverageFilterKey, string[]>>;
+  includedRestricted: boolean;
+  generatedAtIso: string;
+};
+
+export type MarketingCoveragePreset = {
+  id: string;
+  name: string;
+  filters: MarketingCoverageFilterState;
+  isDefault: boolean;
+  updatedAt: string;
+};
+
+/** One target pharmacy row in a request's accordion detail. Always present for
+ *  every pharmacy the request targets — `hasSalesRows: false` + zero value/units
+ *  when nothing matched, never omitted. */
+export type MarketingCoveragePharmacyRow = {
+  pharmacyCode: string;
+  pharmacyName: string;
+  distributorName: string | null;
+  parentDistributorCode: string | null;
+  salesValue: number;
+  salesUnits: number;
+  hasSalesRows: boolean;
+};
