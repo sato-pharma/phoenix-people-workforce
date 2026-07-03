@@ -261,9 +261,13 @@ export function buildMemberTree(members: OrganogramRow[]) {
   );
   const parentByNodeKey = new Map<string, string>();
   const nodesByHrId = new Map<string, MemberNode[]>();
-  const nodes = members.map((member, index) => ({
+  // rowKey (type+hrId+sourceRowNumber) is already a stable per-person identity;
+  // an appended array index would make the key (and therefore collapse state)
+  // depend on position, so a reordered/filtered render could cross-bind a
+  // collapsed node onto a different person.
+  const nodes = members.map((member) => ({
     children: [],
-    key: `${rowKey(member)}-${index}`,
+    key: rowKey(member),
     row: member,
   }) satisfies MemberNode);
 
