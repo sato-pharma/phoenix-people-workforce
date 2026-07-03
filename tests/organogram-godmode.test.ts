@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 
+import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import {
   calculateOrganogramStructureKpis,
   classifyOrganogramStructureLevel,
@@ -11,6 +12,7 @@ import {
   isMedicalRep,
   normalizeHrIdKey,
 } from "../src/lib/reports/organogram-view-model.ts";
+import { canAccessHeadOffice, isHeadOfficeRow } from "../src/lib/reports/organogram.ts";
 import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
 
 // Behavioral regression coverage for the organogram "god-mode" fixes. Unlike the
@@ -42,6 +44,10 @@ function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
     vacancyCode: null,
     ...overrides,
   };
+}
+
+function ctx(role: string, scope = "company"): AccessContext {
+  return { hrId: "X", loginId: "X", role, scope, source: "session" } as unknown as AccessContext;
 }
 
 export function runOrganogramGodmodeTests() {
@@ -106,4 +112,24 @@ export function runOrganogramGodmodeTests() {
     }
   }
   assert.equal(rendered.has("R-9"), true);
+
+  // H-3 — Head Office is detected by the canonical line_id=4 first, with the
+  // line-name variants as a fallback; a null-line row is NOT treated as Head
+  // Office (so it cannot masquerade as one).
+  assert.equal(isHeadOfficeRow({ lineId: 4, lineName: null }), true);
+  assert.equal(isHeadOfficeRow({ lineId: null, lineName: "Head Office" }), true);
+  assert.equal(isHeadOfficeRow({ lineId: null, lineName: "office" }), true);
+  assert.equal(isHeadOfficeRow({ lineId: 1, lineName: "Pedia" }), false);
+  assert.equal(isHeadOfficeRow({ lineId: null, lineName: null }), false);
+
+  // H-5 — only CEO / Super Admin / system scope may see Head Office. Company-org
+  // roles (Marketing / Training Manager) and Talent Acquisition may not, so the
+  // vacancies route strips Head Office for them exactly like the organogram.
+  assert.equal(canAccessHeadOffice(ctx("CEO")), true);
+  assert.equal(canAccessHeadOffice(ctx("Super Admin")), true);
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager", "system")), true);
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
+  assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);
+  assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), false);
+  assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
 }
