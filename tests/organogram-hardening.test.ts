@@ -18,6 +18,7 @@ function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
     areaName: "Cairo",
     departmentId: 1,
     departmentName: "Sales",
+    displayName: "Employee",
     fullName: "Employee",
     hireDate: "2026-01-01",
     hrId: "E-1",

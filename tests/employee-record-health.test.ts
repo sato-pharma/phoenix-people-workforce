@@ -25,6 +25,8 @@ const completeEmployee: EmployeeDirectoryRow = {
   employmentStatus: "active",
   extraCostOfLiving: 100,
   fullName: "Employee One",
+  displayName: "Employee One",
+  nickname: null,
   fuelAllowance: 100,
   gender: "male",
   grossSalary: 1200,
