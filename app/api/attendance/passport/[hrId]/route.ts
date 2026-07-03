@@ -20,7 +20,10 @@ export async function GET(request: Request, context: { params: Promise<{ hrId: s
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
 
-    return NextResponse.json(await getAttendancePassport(hrId));
+    // Even if the viewer is also an admin, viewing their OWN record must
+    // never leak a digest still under review (or one that was voided before
+    // it ever sent) — the same concealment rule the portal enforces.
+    return NextResponse.json(await getAttendancePassport(hrId, { viewerIsSelf: isSelf }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
