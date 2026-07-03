@@ -45,6 +45,7 @@ import { runAttendanceManagerViewAccessTests } from "./attendance-manager-view-a
 import { runAttendanceFlexibleHoursTests } from "./attendance-flexible-hours.test.ts";
 import { runAttendanceDigestCycleTests } from "./attendance-digest-cycle.test.ts";
 import { runAttendanceDigestReconcileTests } from "./attendance-digest-reconcile.test.ts";
+import { runAttendanceDigestGeneratorTests } from "./attendance-digest-generator.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
@@ -335,6 +336,7 @@ await runTest("attendance manager view access (self + direct reports)", runAtten
 await runTest("attendance flexible-hours engine", runAttendanceFlexibleHoursTests);
 await runTest("attendance digest cycle + week tiling", runAttendanceDigestCycleTests);
 await runTest("attendance digest reconciliation gating", runAttendanceDigestReconcileTests);
+await runTest("attendance digest generator (build week)", runAttendanceDigestGeneratorTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("company holidays", runCompanyHolidaysTests);
