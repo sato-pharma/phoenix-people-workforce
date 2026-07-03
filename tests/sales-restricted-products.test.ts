@@ -155,39 +155,40 @@ export async function runSalesRestrictedProductsTests() {
     "non-privileged dashboard roles exclude exactly the restricted set",
   );
 
-  // ── Head-office department head sales scope (Marketing Manager → reports' product lines) ──
-  // The MM sits on the Head Office line, which is NOT a product line, so a "same own line" scope
-  // resolves to nothing. The scope must instead cover the product lines of the MM's direct reports
-  // (PM/GPM). reportLineNames carries those raw employee line names (bridged to official lines here).
-  const mmReportsScope = computeSalesAccessScope({
+  // ── Head-office department head sales scope (Marketing Manager → marketing product lines) ──
+  // The MM sits on the Head Office line, which is NOT a product line. Its scope is the FIXED set of
+  // marketing department product lines (Anti infective / Pedia / CNS), passed as overseenLineNames,
+  // which REPLACES the non-product own line — covering CNS even with no PM currently assigned to it.
+  const mmScope = computeSalesAccessScope({
     role: "Marketing Manager",
     businessScope: "LINE",
-    viewerLineName: null, // head-office line bridges to no product line
+    viewerLineName: "Head Office", // a head-office line is not a product line
     viewerRegionName: null,
     includeRestricted: false,
-    reportLineNames: ["Pedia", "Zeta Line"],
+    overseenLineNames: ["Anti infective", "Pedia", "CNS"],
   });
   assert.deepEqual(
-    [...(mmReportsScope.allowedLineNames ?? [])].sort(),
-    ["Pedia", "Zeta Line"].sort(),
-    "MM sales/ROI scope = the bridged product lines of its direct reports",
+    [...(mmScope.allowedLineNames ?? [])].sort(),
+    ["Anti infective", "CNS", "Pedia"],
+    "MM sales/ROI scope = the marketing product lines (overseenLineNames replaces the non-product own line)",
   );
   assert.deepEqual(
-    [...mmReportsScope.excludedProductCodes].sort(),
+    [...mmScope.excludedProductCodes].sort(),
     [...RESTRICTED_PRODUCT_CODES].sort(),
     "MM (not a restricted-product role) still excludes the confidential products regardless of line scope",
   );
-  // Regression guard: without the reports' lines, a head-office MM resolves to NO lines (the bug).
-  const mmOwnLineOnly = computeSalesAccessScope({
+  // Regression guard: without overseenLineNames the MM falls back to its own Head Office line, which
+  // carries no product sales (the empty-dashboard bug the explicit marketing-line scope closes).
+  const mmNoOverseen = computeSalesAccessScope({
     role: "Marketing Manager",
     businessScope: "LINE",
-    viewerLineName: null,
+    viewerLineName: "Head Office",
     viewerRegionName: null,
     includeRestricted: false,
   });
-  assert.equal(
-    mmOwnLineOnly.allowedLineNames?.size,
-    0,
-    "without reports' lines the head-office MM resolves to an empty line set (documents the bug the fix closes)",
+  assert.deepEqual(
+    [...(mmNoOverseen.allowedLineNames ?? [])],
+    ["Head Office"],
+    "without overseen lines the MM falls back to the (product-less) Head Office line — documents the bug",
   );
 }

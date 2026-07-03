@@ -188,15 +188,30 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
-  // MM mirrors GPM on every nav surface EXCEPT the Incentive tab, which is intentionally hidden
-  // from Marketing Manager (navigation.ts: baseShowIncentiveTab excludes MM). Compare with that
-  // one field normalized, then assert the deliberate divergence on both sides.
+  // MM mirrors GPM on every nav surface EXCEPT two intentional differences:
+  // - Incentive stays hidden from Marketing Manager per portal policy
+  // - Attendance Analytics is visible for team attendance oversight
   assert.deepEqual(
-    { ...marketingManagerDefault, showIncentiveTab: null },
-    { ...groupProductManagerDefault, showIncentiveTab: null },
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (except the hidden Incentive tab)",
+    {
+      ...marketingManagerDefault,
+      showIncentiveTab: groupProductManagerDefault.showIncentiveTab,
+      showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
+    },
+    groupProductManagerDefault,
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab and the Attendance Analytics tab)",
   );
   assert.equal(groupProductManagerDefault.showIncentiveTab, true, "Group Product Manager still sees Incentive (only MM is hidden)");
+  assert.equal(marketingManagerDefault.showIncentiveTab, false, "Marketing Manager should NOT see Incentive (hidden from MM per portal policy)");
+  assert.equal(
+    marketingManagerDefault.showFingerprintReportTab,
+    true,
+    "Marketing Manager additionally gets the Attendance Analytics tab (team attendance oversight)",
+  );
+  assert.equal(
+    groupProductManagerDefault.showFingerprintReportTab,
+    false,
+    "Group Product Manager does not get the Attendance Analytics tab",
+  );
   assert.equal(marketingManagerDefault.showMyPerformanceTab, true, "Marketing Manager sees Sales Dashboard like GPM");
   assert.equal(marketingManagerDefault.showPlansTab, true, "Marketing Manager should see plans like PM/GPM");
   assert.equal(marketingManagerDefault.showVacanciesTab, true, "Marketing Manager should see Vacancies like PM/GPM");
