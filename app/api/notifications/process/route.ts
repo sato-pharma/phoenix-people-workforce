@@ -23,7 +23,7 @@ async function runNotificationOutbox(limit: number) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "read");
+    await assertPermission(access, "admin", "update");
 
     const body = await request.json().catch(() => ({}));
     const requestedLimit = Number(body?.limit ?? 10);
