@@ -89,7 +89,7 @@ export async function getEmployeeAttendanceData(
     if (s === "Complete") summary.completeDays++;
     else if (s === "Late" || s === "Early leave") summary.lateDays++;
     else if (s === "Short day") summary.shortDays++;
-    else if (s === "Absence" || s === "Single punch") summary.absentDays++;
+    else if (s === "Single punch") summary.absentDays++;
     if (s === "Exception") summary.exceptionDays++;
 
     const dd = parseFloat(row.deductionDays);

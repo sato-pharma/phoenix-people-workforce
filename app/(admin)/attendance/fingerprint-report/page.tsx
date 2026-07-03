@@ -35,7 +35,7 @@ export default async function AttendanceFingerprintReportPage({ searchParams }: 
   try {
     initialData = await getFingerprintAttendanceReport(filters);
   } catch (error) {
-    initialError = error instanceof Error ? error.message : "My Attendance report failed to load.";
+    initialError = error instanceof Error ? error.message : "Fingerprint attendance report failed to load.";
   }
 
   const reportKey = [

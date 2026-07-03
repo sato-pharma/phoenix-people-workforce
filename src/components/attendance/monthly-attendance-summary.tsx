@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart2, CalendarCheck, CalendarX2, Clock4, Download, UsersRound, Wallet } from "lucide-react";
+import { CalendarCheck, CalendarX2, Clock4, Download, UsersRound, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -15,18 +15,9 @@ import { Button } from "@/components/ui/button";
 import { attendanceMonthlyCycleNote, type MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
 
 type Props = {
-  canGenerateCandidates: boolean;
   initialData: MonthlyAttendanceSummaryData | null;
   initialError: string | null;
   month: string;
-};
-
-type GenerateResult = {
-  employees: number;
-  generated: number;
-  monthKey: string;
-  skipped: number;
-  updated: number;
 };
 
 function absentTone(absentDays: number) {
@@ -35,12 +26,9 @@ function absentTone(absentDays: number) {
   return "text-rose-700";
 }
 
-export function MonthlyAttendanceSummary({ canGenerateCandidates, initialData, initialError, month }: Props) {
+export function MonthlyAttendanceSummary({ initialData, initialError, month }: Props) {
   const router = useRouter();
   const [selectedMonth, setSelectedMonth] = useState(month);
-  const [generating, setGenerating] = useState(false);
-  const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
-  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const rows = initialData?.rows ?? [];
   const totals = initialData?.totals ?? {
@@ -55,24 +43,6 @@ export function MonthlyAttendanceSummary({ canGenerateCandidates, initialData, i
 
   function applyMonth() {
     router.push(`/attendance/monthly-summary?month=${encodeURIComponent(selectedMonth)}`);
-  }
-
-  function runGenerate() {
-    setGenerating(true);
-    setGenerateResult(null);
-    setGenerateError(null);
-    fetch("/api/attendance/generate-deduction-candidates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message ?? "Generation failed.");
-        setGenerateResult(data as GenerateResult);
-      })
-      .catch((err) => setGenerateError(err instanceof Error ? err.message : "Failed."))
-      .finally(() => setGenerating(false));
   }
 
   return (
@@ -221,29 +191,6 @@ export function MonthlyAttendanceSummary({ canGenerateCandidates, initialData, i
           </table>
         </div>
       </AdminTableShell>
-
-      {canGenerateCandidates ? (
-        <AdminTableShell
-          description="Lock this month's attendance deductions and push them to the payroll governance queue. Approved exceptions are excluded automatically; re-running updates existing candidates safely."
-          title="Month Closing — Generate Payroll Candidates"
-        >
-          <div className="space-y-4 p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button className="h-10 gap-2" disabled={generating} type="button" onClick={runGenerate}>
-                <BarChart2 className="h-4 w-4" />
-                {generating ? "Generating…" : `Generate Payroll Candidates for ${month}`}
-              </Button>
-            </div>
-            {generateResult ? (
-              <AdminCallout tone="neutral">
-                Generated <strong>{generateResult.generated}</strong> new + updated <strong>{generateResult.updated}</strong> existing candidates for <strong>{generateResult.employees}</strong> employees in {generateResult.monthKey} ({generateResult.skipped} skipped — no violations).{" "}
-                <a className="font-semibold underline hover:text-orange-600" href="/payroll">View in Deductions Governance →</a>
-              </AdminCallout>
-            ) : null}
-            {generateError ? <AdminCallout tone="danger">{generateError}</AdminCallout> : null}
-          </div>
-        </AdminTableShell>
-      ) : null}
     </div>
   );
 }
