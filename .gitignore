@@ -11,6 +11,8 @@ output/playwright-report/
 *.log
 .playwright-mcp/
 tests/e2e/.auth/
+tests/synthetic/.auth/
+tests/synthetic/report/
 .vercel/
 tsconfig.tsbuildinfo
 _junk/
@@ -39,6 +41,16 @@ Phoenix Workforce/
 output/
 outputs/
 supabase-export/
+
+# Orphaned design-reference/superseded assets, untracked 2026-07-03 — confirmed
+# zero references in app/ or src/ before removal. Kept on disk locally, not re-added.
+public/brand/phoenix-dashboard-reference.png
+public/brand/phoenix-brand-board.png
+public/brand/phoenix-ui-reference.png
+public/brand/phoenix-sidebar-square.png
+public/brand/identity-photo-frame.png
+public/brand/phoenix-admin-intelligence-badge.png
+public/people/ceo-anwar-gaweesh.png
 
 # Local tool screenshots
 .codex-artifacts/
