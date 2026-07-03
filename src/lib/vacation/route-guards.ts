@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
-export const vacationUploadMaxBytes = 10 * 1024 * 1024;
+export const vacationUploadMaxBytes = 20 * 1024 * 1024;
 export const vacationExportMaxRows = 5000;
 
 export function rejectOversizedVacationUploadRequest(request: Request) {
@@ -11,7 +11,7 @@ export function rejectOversizedVacationUploadRequest(request: Request) {
     return NextResponse.json(
       {
         error: "vacation_attachment_too_large",
-        message: "Vacation evidence uploads are limited to 10MB.",
+        message: "Vacation evidence uploads are limited to 20MB.",
         success: false,
       },
       { status: 413 },
@@ -25,7 +25,7 @@ export function rejectOversizedVacationFile(file: File | null | undefined) {
   return NextResponse.json(
     {
       error: "vacation_attachment_too_large",
-      message: "Vacation evidence uploads are limited to 10MB.",
+      message: "Vacation evidence uploads are limited to 20MB.",
       success: false,
     },
     { status: 413 },
