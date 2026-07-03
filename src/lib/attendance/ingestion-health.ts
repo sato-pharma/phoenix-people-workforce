@@ -114,6 +114,37 @@ export async function getAttendanceIngestionHealth(): Promise<AttendanceIngestio
   };
 }
 
+/**
+ * Company-wide device-outage dates within a range: expected working days
+ * where literally NO employee has a punch (by punch_time, Cairo-local
+ * calendar day) — a signal strong enough to trust, since it's implausible
+ * every employee coincidentally skipped the device the same day. Used by the
+ * weekly-digest generator's device-outage fail-safe (digest-reconcile.ts) so
+ * a device/sync outage never becomes a false missing-punch or false
+ * field-punch-anomaly for anyone.
+ */
+export async function getCompanyWideOutageDates(dateFromIso: string, dateToIso: string): Promise<Set<string>> {
+  const context = await buildAttendanceCalendarContext({ dateFromIso, dateToIso });
+  const expectedWorkingDates = listIsoDatesInRange(dateFromIso, dateToIso).filter(
+    (dateIso) => classifyAttendanceDay({ context, dateIso }).isExpectedWorkingDay,
+  );
+  if (expectedWorkingDates.length === 0) return new Set();
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_raw_punches")
+    .select("punch_time")
+    .gte("punch_time", `${dateFromIso}T00:00:00.000Z`)
+    .lt("punch_time", `${shiftIsoDate(dateToIso, 1)}T00:00:00.000Z`);
+  if (error) throw new Error(`Company-wide punch lookup failed: ${error.message}`);
+
+  const datesWithAnyPunch = new Set(
+    ((data ?? []) as Array<{ punch_time: string }>).map((row) => localDateKey(new Date(row.punch_time))),
+  );
+
+  return new Set(expectedWorkingDates.filter((dateIso) => !datesWithAnyPunch.has(dateIso)));
+}
+
 export type AttendanceIngestionAlertResult = {
   error?: string;
   notified: boolean;

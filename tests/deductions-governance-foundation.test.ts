@@ -247,7 +247,10 @@ export async function runDeductionsGovernanceFoundationTests(): Promise<void> {
         `decision status "${status}" must be present`,
       );
     }
-    assert.equal(deductionDecisionReasons.length, 14, "expected 14 decision reasons");
+    // 17 = original 14 + 3 attendance-settlement system reasons ("Employee
+    // confirmed", "Employee did not respond (auto-confirmed)", "Dispute
+    // reviewed and rejected") added for recordSystemApprovedAttendanceDecision.
+    assert.equal(deductionDecisionReasons.length, 17, "expected 17 decision reasons");
   }
 
   // Sanity: hashStable is stable and hex

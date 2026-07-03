@@ -28,6 +28,7 @@ import {
 } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
+import { getCompanyWideOutageDates } from "@/lib/attendance/ingestion-health";
 import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
 import { loadEmployeeDayPunchMinutes, type EmployeeDayPunches } from "@/lib/attendance/punch-minutes";
 import {
@@ -84,11 +85,22 @@ type ScopedEmployee = {
   policy: AttendanceFlexPolicyGroupDbRow;
 };
 
+export type ComputeSettlementWeekDigestsResult = {
+  results: EmployeeWeekDigestResult[];
+  /** Employees whose data couldn't be trusted this run — held, not guessed at. Never silently dropped; the caller must log these. */
+  skipped: DigestGenerationSkip[];
+};
+
 /**
  * Compute (but do not persist) one settlement week's digest for every employee
  * whose resolved active policy has flexible-hours fields configured. Read-only.
+ *
+ * Fail-closed on bad data: a per-employee failure (missing/broken data) never
+ * blocks the rest of the week's generation, and never produces a digest built
+ * on data that couldn't be verified — that employee is held (skipped) and
+ * reported back, not guessed at.
  */
-export async function computeSettlementWeekDigests(week: SettlementWeek): Promise<EmployeeWeekDigestResult[]> {
+export async function computeSettlementWeekDigests(week: SettlementWeek): Promise<ComputeSettlementWeekDigestsResult> {
   const supabase = getSupabaseAdmin();
 
   const [roster, flexPolicies] = await Promise.all([
@@ -108,7 +120,7 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
     if (!policy || policy.required_minutes == null) continue;
     scoped.push({ hrId: employee.hrId, jobTitle: employee.jobTitle, tier: policy.judgment_mode, policy });
   }
-  if (scoped.length === 0) return [];
+  if (scoped.length === 0) return { results: [], skipped: [] };
 
   const hrIds = scoped.map((employee) => employee.hrId);
 
@@ -117,7 +129,7 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
   // since the DB column's actual casing is not guaranteed to match (a
   // recurring bug class in this codebase). Mirrors the pattern already used in
   // fingerprint-report.ts and roster.ts.
-  const [employeeResult, ruleResult, context, leaveMap, excuseMap, exceptionMap, planMap, punchMap] = await Promise.all([
+  const [employeeResult, ruleResult, context, leaveMap, excuseMap, exceptionMap, planMap, punchMap, outageDates] = await Promise.all([
     supabase.from("employees").select("hr_id,base_salary"),
     supabase
       .from("attendance_policy_rules")
@@ -129,6 +141,9 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
     getAttendanceExceptionMap(hrIds, week.startIso, week.endIso),
     getPlanOfficeDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
     loadEmployeeDayPunchMinutes({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+    // Device-outage fail-safe: a day with zero punches company-wide never
+    // becomes a false missing-punch/field-punch-anomaly for anyone.
+    getCompanyWideOutageDates(week.startIso, week.endIso),
   ]);
 
   if (employeeResult.error) throw employeeResult.error;
@@ -144,62 +159,75 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
   const dates = listIsoDatesInRange(week.startIso, week.endIso);
   const results: EmployeeWeekDigestResult[] = [];
 
+  const skipped: DigestGenerationSkip[] = [];
+
   for (const employee of scoped) {
-    const policy = employee.policy;
-    const scheduledStartMinutes = timeToMinutes(policy.scheduled_start) ?? 9 * 60;
-    const config: FlexibleHoursConfig = {
-      scheduledStartMinutes,
-      flexCeilingMinutes: scheduledStartMinutes + (policy.flex_minutes ?? 0),
-      requiredMinutes: policy.required_minutes!,
-    };
-    const lateBrackets = bracketsForEventType(rules, policy.id, "late");
-    const shortBrackets = bracketsForEventType(rules, policy.id, "short_hours");
+    // Fail-closed on bad data: one employee's bad/incomplete data must never
+    // block the whole week's generation for everyone else, and must never
+    // produce a digest built on data we couldn't trust — it's simply skipped
+    // (held) and logged for follow-up, never silently guessed at.
+    try {
+      const policy = employee.policy;
+      const scheduledStartMinutes = timeToMinutes(policy.scheduled_start) ?? 9 * 60;
+      const config: FlexibleHoursConfig = {
+        scheduledStartMinutes,
+        flexCeilingMinutes: scheduledStartMinutes + (policy.flex_minutes ?? 0),
+        requiredMinutes: policy.required_minutes!,
+      };
+      const lateBrackets = bracketsForEventType(rules, policy.id, "late");
+      const shortBrackets = bracketsForEventType(rules, policy.id, "short_hours");
 
-    const leaveDates = leaveMap.get(employee.hrId) ?? new Set<string>();
-    const excuseDates = excuseMap.get(employee.hrId) ?? new Set<string>();
-    const officeDates = planMap.get(employee.hrId) ?? new Map<string, boolean>();
-    const punches = punchMap.get(employee.hrId) ?? new Map<string, EmployeeDayPunches>();
+      const leaveDates = leaveMap.get(employee.hrId) ?? new Set<string>();
+      const excuseDates = excuseMap.get(employee.hrId) ?? new Set<string>();
+      const officeDates = planMap.get(employee.hrId) ?? new Map<string, boolean>();
+      const punches = punchMap.get(employee.hrId) ?? new Map<string, EmployeeDayPunches>();
 
-    const days: DigestDayInput[] = [];
-    for (const dateIso of dates) {
-      const classification = classifyAttendanceDay({
-        context,
-        dateIso,
-        jobTitle: employee.jobTitle,
-        workingWeekdays: policy.working_weekdays,
-      });
-      // Future days are not part of a digest yet — nothing to reconcile.
-      if (classification.isFuture) continue;
+      const days: DigestDayInput[] = [];
+      for (const dateIso of dates) {
+        const classification = classifyAttendanceDay({
+          context,
+          dateIso,
+          jobTitle: employee.jobTitle,
+          workingWeekdays: policy.working_weekdays,
+        });
+        // Future days are not part of a digest yet — nothing to reconcile.
+        if (classification.isFuture) continue;
 
-      const hasApprovedException = exceptionMap.get(`${employee.hrId}|${dateIso}`)?.status === "approved";
-      const punchInfo = punches.get(dateIso);
+        const hasApprovedException = exceptionMap.get(`${employee.hrId}|${dateIso}`)?.status === "approved";
+        const punchInfo = punches.get(dateIso);
 
-      days.push({
-        dateIso,
-        reconcile: {
-          tier: employee.tier,
-          isWorkingDay: !classification.isWeeklyOff,
-          isHoliday: classification.isHoliday,
-          hasApprovedLeave: leaveDates.has(dateIso) || hasApprovedException,
-          hasApprovedExcuse: excuseDates.has(dateIso),
-          planSaysOffice: officeDates.get(dateIso) ?? null,
-          hasPunch: (punchInfo?.visiblePunchCount ?? 0) > 0,
-        },
-        firstPunchMinutes: punchInfo?.firstPunchMinutes ?? null,
-        lastPunchMinutes: punchInfo?.lastPunchMinutes ?? null,
-        visiblePunchCount: punchInfo?.visiblePunchCount ?? 0,
-        config,
-        lateBrackets,
-        shortBrackets,
-      });
+        days.push({
+          dateIso,
+          reconcile: {
+            tier: employee.tier,
+            isWorkingDay: !classification.isWeeklyOff,
+            isHoliday: classification.isHoliday,
+            hasApprovedLeave: leaveDates.has(dateIso) || hasApprovedException,
+            hasApprovedExcuse: excuseDates.has(dateIso),
+            planSaysOffice: officeDates.get(dateIso) ?? null,
+            hasPunch: (punchInfo?.visiblePunchCount ?? 0) > 0,
+            deviceOutage: outageDates.has(dateIso),
+          },
+          firstPunchMinutes: punchInfo?.firstPunchMinutes ?? null,
+          lastPunchMinutes: punchInfo?.lastPunchMinutes ?? null,
+          visiblePunchCount: punchInfo?.visiblePunchCount ?? 0,
+          config,
+          lateBrackets,
+          shortBrackets,
+        });
+      }
+
+      const digest = buildEmployeeWeekDigest({ baseSalary: salaryByHrId.get(employee.hrId) ?? null, days });
+      results.push({ employeeHrId: employee.hrId, tier: employee.tier, ...digest });
+    } catch (error) {
+      skipped.push({ employeeHrId: employee.hrId, reason: error instanceof Error ? error.message : String(error) });
     }
-
-    const digest = buildEmployeeWeekDigest({ baseSalary: salaryByHrId.get(employee.hrId) ?? null, days });
-    results.push({ employeeHrId: employee.hrId, tier: employee.tier, ...digest });
   }
 
-  return results;
+  return { results, skipped };
 }
+
+export type DigestGenerationSkip = { employeeHrId: string; reason: string };
 
 /**
  * Persist a computed batch of weekly digests: creates or updates the digest
