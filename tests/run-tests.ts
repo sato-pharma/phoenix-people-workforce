@@ -268,6 +268,7 @@ import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independ
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
+import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -554,6 +555,7 @@ await runTest("analytics filter independence (no cross-dimension leakage)", runA
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
+await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
