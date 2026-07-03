@@ -7,7 +7,6 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarX2,
-  ChartColumnBig,
   CheckCircle2,
   ClipboardCheck,
   Layers,
@@ -23,8 +22,10 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
+import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-command-center";
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -336,7 +337,7 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
 /* ── Private command center layouts ─────────────────────────────── */
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
@@ -386,107 +387,9 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
-      {/* ── SALES INTELLIGENCE ────────────────────────────────────── */}
-      <div className="overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
-        {/* header */}
-        <div className="relative flex items-center justify-between bg-[#0b1f3a] px-4 py-3 sm:px-6 sm:py-4">
-          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-[#f47b20]/60 via-[#f47b20]/20 to-transparent" />
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
-            <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Sales Intelligence</h2>
-          </div>
-          <TrendingUp className="h-4 w-4 text-[#f47b20]/60" />
-        </div>
-        {/* Source of Sales — consolidated distributor sell-in dashboard */}
-        <div className="grid grid-cols-1">
-          {([
-            { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales", sub: "Distributor sell-in across your scope — value, units, regions, products", primary: true },
-          ] as const).map(({ href, icon: Icon, label, sub, primary }) => (
-            <Link key={href} href={href}
-              className="group relative flex flex-row items-center gap-3 overflow-hidden border-b border-slate-100 bg-white px-4 py-3 last:border-b-0 transition-all duration-200 hover:bg-[#0b1f3a] sm:flex-col sm:items-start sm:gap-3 sm:border-b-0 sm:border-r sm:p-6"
-            >
-              <div className="absolute inset-x-0 top-0 h-0 bg-[#f47b20] transition-all duration-300 group-hover:h-[3px]" />
-              <div className={`flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-200 sm:h-11 sm:w-11 ${primary ? "bg-[#f47b20]" : "border border-slate-200 bg-slate-50 group-hover:border-[#f47b20]/40 group-hover:bg-[#f47b20]/10"}`}>
-                <Icon className={`h-4 w-4 transition-colors sm:h-5 sm:w-5 ${primary ? "text-white" : "text-slate-400 group-hover:text-[#f47b20]"}`} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-900 transition-colors group-hover:text-white">{label}</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-slate-500 transition-colors group-hover:text-slate-400">{sub}</p>
-              </div>
-              <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-[#f47b20] sm:hidden" />
-              <div className="hidden items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#f47b20] opacity-0 transition-all duration-200 group-hover:opacity-100 sm:flex">
-                Open <ArrowRight className="h-3 w-3" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* ── MARKETING & WORKSPACE ─────────────────────────────────── */}
-      <div className="overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
-        <div className="relative flex items-center justify-between bg-[#0b1f3a] px-4 py-3 sm:px-6 sm:py-4">
-          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-[#f47b20]/60 via-[#f47b20]/20 to-transparent" />
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
-            <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Marketing &amp; Workspace</h2>
-          </div>
-          <Send className="h-4 w-4 text-[#f47b20]/60" />
-        </div>
-        <div className="divide-y divide-slate-100 bg-white">
-          {([
-            { href: "/employee-portals/plans", icon: CalendarDays, label: "My Plans", sub: "Weekly and monthly field activity planning", num: "01" },
-            { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing Requests", sub: "Submit and track promotional investments", num: "02" },
-            { href: "/employee-portals/roi", icon: Target, label: "ROI Intelligence", sub: "Measure return on marketing spend", num: "03" },
-            { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", sub: "Team coaching performance overview", num: "04" },
-          ] as const).map(({ href, icon: Icon, label, sub, num }) => (
-            <Link key={href} href={href}
-              className="group relative flex items-center gap-2 overflow-hidden px-3 py-2 transition-all duration-150 hover:bg-[#fdf5ee] sm:gap-5 sm:px-6 sm:py-4"
-            >
-              <div className="absolute inset-y-0 left-0 w-0 bg-[#f47b20] transition-all duration-200 group-hover:w-[3px]" />
-              <span className="w-6 shrink-0 text-[11px] font-black tabular-nums text-[#f47b20]/40 transition-colors group-hover:text-[#f47b20]">{num}</span>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 transition-all duration-150 group-hover:border-[#f47b20]/40 group-hover:bg-[#f47b20]/8">
-                <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f47b20]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-slate-900">{label}</p>
-                <p className="text-[11px] text-slate-500">{sub}</p>
-              </div>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-all duration-150 group-hover:translate-x-1 group-hover:text-[#f47b20]" />
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* ── UPCOMING PAY DATES ────────────────────────────────────── */}
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
-        </div>
-        {pmMarketing && pmMarketing.upcoming.length > 0 ? (
-          <div className="divide-y divide-slate-100 bg-white">
-            {pmMarketing.upcoming.map((row) => (
-              <Link
-                key={row.id}
-                href="/employee-portals/marketing-requests"
-                className="group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-orange-50"
-              >
-                <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
-                <div className="min-w-0 flex-1">
-                  <p className="whitespace-nowrap text-sm font-semibold text-slate-900">{row.requestCode}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {new Date(row.payDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                  </p>
-                </div>
-                <span className="shrink-0 text-sm font-bold text-slate-700">{egp(row.estimatedCost)}</span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="bg-white px-5 py-6 text-sm text-slate-500">No approved marketing requests paying out soon.</p>
-        )}
-      </div>
-
       <InsightPreviewPanel note="Campaign and ROI recommendations for your line are coming soon." />
+
+      <DoubleVisitFocusSection focus={dvFocus} />
 
       {/* ── STATUS ────────────────────────────────────────────────── */}
       {totalPending > 0 ? (
@@ -1009,6 +912,8 @@ export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHome
       return <DsmCommandCenter snapshot={snapshot} />;
     case "National Sales Manager":
       return <NsmCommandCenter snapshot={snapshot} />;
+    case "Regional Manager":
+      return <RmCommandCenter snapshot={snapshot} />;
   }
   if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;

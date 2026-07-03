@@ -20,6 +20,7 @@ import {
   egp,
 } from "@/components/employee-portal/portal-command-center";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 
 function monthLabel(ym: string) {
@@ -28,7 +29,7 @@ function monthLabel(ym: string) {
 }
 
 export function DsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, dsmTeam } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, dsmTeam, dvFocus } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
 
@@ -118,6 +119,8 @@ export function DsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       </div>
 
       <InsightPreviewPanel note="Coverage and coaching recommendations for your team are coming soon." />
+
+      <DoubleVisitFocusSection focus={dvFocus} />
 
       <div className="overflow-hidden border border-slate-200">
         <div className="bg-slate-900 px-5 py-3">
