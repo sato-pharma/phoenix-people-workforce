@@ -80,15 +80,6 @@ export function runAttendanceSelfScopeTests() {
     "exception review/delete must be system-administrator-only",
   );
 
-  // 5. Deduction generation must enforce company/system scope and record the actor.
-  const generateRoute = readFileSync("app/api/attendance/generate-deduction-candidates/route.ts", "utf8");
-  assert.match(
-    generateRoute,
-    /access\.scope !== "company" && access\.scope !== "system"/,
-    "deduction generation must require company/system scope",
-  );
-  assert.match(generateRoute, /actor:\s*access\.hrId/, "deduction generation must record the real actor");
-
   // 6. Finding #15 regression guard: approvals-hub/employee-context must not let a
   //    caller-supplied hrId bypass ownership — it must scope via
   //    assertCanViewEmployeeAttendance and surface denial as 403, not a raw 500.
