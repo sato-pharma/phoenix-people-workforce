@@ -234,6 +234,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
       { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
       { href: "/attendance/settlement-dashboard", icon: ChartColumnBig, label: "Settlement Dashboard", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/attendance/digest-review", icon: ShieldAlert, label: "Weekly Digest Review", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
       { href: "/attendance/disputes", icon: ShieldCheck, label: "Dispute Review", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
       // No role restriction: the standing verifier (e.g. an Office Coordinator)
       // and the CEO are both real steps in this chain and neither is

@@ -86,11 +86,10 @@ export async function runMarketingPremiumNotificationTests() {
   const templates = source("src/lib/email-templates/service.ts");
   assert.match(templates, /"productsTable"/, "productsTable must be a registered placeholder");
   assert.match(templates, /"estimatedCost"/, "estimatedCost must be a registered placeholder");
-  assert.match(
-    templates,
-    /new Set\(\["planTable", "productsTable", "returnCallout", "scoreTable"\]\)/,
-    "productsTable + returnCallout + scoreTable must be raw-HTML block tokens",
-  );
+  const htmlBlockTokensLine = templates.match(/const htmlBlockTokens: ReadonlySet<string> = new Set\(\[([^\]]+)\]\);/)?.[1] ?? "";
+  for (const token of ["planTable", "productsTable", "returnCallout", "scoreTable"]) {
+    assert.ok(htmlBlockTokensLine.includes(`"${token}"`), `${token} must be a raw-HTML block token`);
+  }
   assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
   assert.match(templates, /\{\{estimatedCost\}\}/, "marketing_request body must render {{estimatedCost}}");
 

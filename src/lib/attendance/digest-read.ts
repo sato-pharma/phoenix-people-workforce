@@ -28,7 +28,7 @@ export type DigestSummaryView = {
   weekIndex: number;
   weekStart: string;
   weekEnd: string;
-  status: "draft" | "sent" | "settled" | "auto_confirmed" | "void";
+  status: "draft" | "pending_admin_review" | "sent" | "settled" | "auto_confirmed" | "void";
   sentAt: string | null;
   autoConfirmAt: string | null;
   totalDeductionDays: number;
@@ -88,7 +88,15 @@ function mapDigest(row: Record<string, unknown>): DigestSummaryView {
   };
 }
 
-/** An employee's own digests, most recent cycle/week first. */
+// None of these ever reaches the employee: 'draft' hasn't been decided
+// (clean-send or admin-review) yet; 'pending_admin_review' means a real
+// deduction was found and is sitting with the System Administrator / HR
+// Manager; 'void' means an admin cancelled a pending-review digest before it
+// ever sent (the only place this status is ever set — see voidDigestReview).
+// In every case the employee must never see or infer that the stage existed.
+const EMPLOYEE_HIDDEN_STATUSES = ["draft", "pending_admin_review", "void"] as const;
+
+/** An employee's own digests, most recent cycle/week first. Never includes a digest still awaiting admin review. */
 export async function listMyDigests(employeeHrId: string, limit = 12): Promise<DigestSummaryView[]> {
   const hrId = normalizeAttendanceHrId(employeeHrId);
   if (!hrId) return [];
@@ -98,13 +106,14 @@ export async function listMyDigests(employeeHrId: string, limit = 12): Promise<D
     .from("attendance_weekly_digests")
     .select("id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
     .eq("employee_hr_id", hrId)
+    .not("status", "in", `(${EMPLOYEE_HIDDEN_STATUSES.join(",")})`)
     .order("week_start", { ascending: false })
     .limit(limit);
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map(mapDigest);
 }
 
-/** One digest + its lines, scoped to the owning employee (never cross-employee). */
+/** One digest + its lines, scoped to the owning employee (never cross-employee, never a digest still awaiting admin review). */
 export async function getDigestDetailForEmployee(
   digestId: number,
   employeeHrId: string,
@@ -118,6 +127,7 @@ export async function getDigestDetailForEmployee(
     .select("id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
     .eq("id", digestId)
     .eq("employee_hr_id", hrId)
+    .not("status", "in", `(${EMPLOYEE_HIDDEN_STATUSES.join(",")})`)
     .maybeSingle();
   if (digestError) throw digestError;
   if (!digestRow) return null;
@@ -205,4 +215,64 @@ export async function isAuthorizedDisputeReviewer(hrId: string | null, isSuperAd
   if (!normalized) return false;
   const settings = await getDigestSettings();
   return settings.approverHrIds.includes(normalized);
+}
+
+export type PendingDigestReviewView = DigestSummaryView & {
+  employeeHrId: string;
+  employeeName: string;
+  lines: DigestLineView[];
+};
+
+/**
+ * Every digest currently held for admin review — a real deduction was found
+ * but it has NOT reached the employee yet. This is the admin's whole-company
+ * queue, distinct from listMyDigests (self) and listOpenDisputes (post-send).
+ */
+export async function listPendingDigestReviews(): Promise<PendingDigestReviewView[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: digestRows, error: digestError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
+    .eq("status", "pending_admin_review")
+    .order("week_start", { ascending: true });
+  if (digestError) throw digestError;
+  const digests = (digestRows ?? []) as Array<Record<string, unknown>>;
+  if (digests.length === 0) return [];
+
+  const digestIds = digests.map((row) => Number(row.id));
+  const { data: lineRows, error: linesError } = await supabase
+    .from("attendance_digest_lines")
+    .select("id,digest_id,work_date,status,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
+    .in("digest_id", digestIds)
+    .order("work_date", { ascending: true });
+  if (linesError) throw linesError;
+  const linesByDigest = new Map<number, DigestLineView[]>();
+  for (const row of (lineRows ?? []) as Array<Record<string, unknown>>) {
+    const digestId = Number(row.digest_id);
+    const list = linesByDigest.get(digestId) ?? [];
+    list.push(mapLine(row));
+    linesByDigest.set(digestId, list);
+  }
+
+  const employeeHrIds = Array.from(new Set(digests.map((row) => String(row.employee_hr_id))));
+  const { data: employeeRows, error: employeeError } = await supabase
+    .from("employees")
+    .select("hr_id,full_name")
+    .in("hr_id", employeeHrIds);
+  if (employeeError) throw employeeError;
+  const nameByHrId = new Map<string, string>();
+  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
+    const hrId = normalizeAttendanceHrId(row.hr_id);
+    if (hrId) nameByHrId.set(hrId, row.full_name?.trim() || row.hr_id);
+  }
+
+  return digests.map((row) => {
+    const employeeHrId = String(row.employee_hr_id);
+    return {
+      ...mapDigest(row),
+      employeeHrId,
+      employeeName: nameByHrId.get(normalizeAttendanceHrId(employeeHrId) ?? "") ?? employeeHrId,
+      lines: linesByDigest.get(Number(row.id)) ?? [],
+    };
+  });
 }

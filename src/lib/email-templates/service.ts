@@ -43,10 +43,12 @@ export const emailTemplateKeys = [
   "recruitment_update",
   "coaching_report",
   "payroll_update",
+  "attendance_digest",
   "general",
 ] as const;
 
 export const EMAIL_TEMPLATE_KEYS = {
+  ATTENDANCE_DIGEST: "attendance_digest",
   BIRTHDAY: "birthday",
   COACHING_REPORT: "coaching_report",
   EXCUSE_DECISION: "excuse_decision",
@@ -108,6 +110,11 @@ export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptio
 export type EmailTemplateContext = {
   amount?: string | null;
   area?: string | null;
+  /** Pre-rendered HTML deduction table (day/date, value, quantity, reason) for the attendance_digest template. */
+  digestTable?: string | null;
+  digestTableText?: string | null;
+  /** Formatted date range for the settlement week, e.g. "2026-06-24 to 2026-06-30". */
+  weekLabel?: string | null;
   candidateName?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
@@ -384,6 +391,9 @@ const placeholderHints = [
   "vacationType",
   // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
   "planTable",
+  // Pre-rendered HTML deduction table + week date range (attendance_digest only).
+  "digestTable",
+  "weekLabel",
   // Coaching score table for the coaching_report template.
   "scoreTable",
   // Marketing-request editable tokens. Scalars fill per request; productsTable + returnCallout
@@ -412,6 +422,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   recruitment_update: emptyRules(["hr", "recruiter"], []),
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
   payroll_update: emptyRules(["admin"], ["finance"]),
+  attendance_digest: emptyRules(["employee"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
@@ -576,6 +587,18 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "payroll_update",
     templateName: "Payroll Update",
+  },
+  attendance_digest: {
+    bodyHtml: "<p>{{summary}}</p>{{digestTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{digestTable}}\n\n{{status}}",
+    closingText: "Open Phoenix Workforce to confirm or dispute.",
+    description: "Weekly attendance digest sent to an employee after admin review, showing any deductible days.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Your weekly attendance digest is ready.",
+    subject: "Weekly attendance digest — {{weekLabel}}",
+    templateKey: "attendance_digest",
+    templateName: "Weekly Attendance Digest",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -828,6 +851,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   recruitment_update: "Recruitment",
   coaching_report: "Employee Lifecycle",
   payroll_update: "General",
+  attendance_digest: "General",
   weekly_plans: "General",
   outstation: "General",
   interview_feedback: "Recruitment",
@@ -931,7 +955,7 @@ function escapeHtml(value: unknown) {
  * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
  * the security authority. In text fields these tokens resolve to their text projection.
  */
-const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable"]);
+const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable", "digestTable"]);
 
 function interpolate(
   template: string,
@@ -1901,6 +1925,9 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     nextStep: text(input.nextStep),
     planTable: text(input.planTable),
     planTableText: text(input.planTableText),
+    digestTable: text(input.digestTable),
+    digestTableText: text(input.digestTableText),
+    weekLabel: text(input.weekLabel),
     scoreTable: text(input.scoreTable),
     scoreTableText: text(input.scoreTableText),
     recipientName,
@@ -1955,6 +1982,7 @@ export function renderEmailTemplate(
   const bodyTextVariables = {
     ...variables,
     planTable: variables.planTableText,
+    digestTable: variables.digestTableText,
     scoreTable: variables.scoreTableText,
     productsTable: variables.productsTableText,
     returnCallout: variables.returnCalloutText,
@@ -1962,6 +1990,7 @@ export function renderEmailTemplate(
   const inlineVariables = {
     ...variables,
     planTable: "",
+    digestTable: "",
     productsTable: "",
     returnCallout: "",
     scoreTable: "",
@@ -2066,6 +2095,35 @@ function buildSampleCoachingScoreTable(): { scoreTable: string; scoreTableText: 
   };
 }
 
+function sampleDigestContext(): Partial<EmailTemplateContext> {
+  return { weekLabel: "2026-06-24 to 2026-06-30", ...buildSampleDigestTable() };
+}
+
+function buildSampleDigestTable(): { digestTable: string; digestTableText: string } {
+  const cell = "border:1px solid #e2e8f0;padding:8px 10px;font-size:13px;text-align:left";
+  const cellR = `${cell};text-align:right`;
+  const head = "background-color:#0f172a;color:#ffffff;padding:8px 10px;font-size:12px;text-align:left";
+  const headR = `${head};text-align:right`;
+  const rows: Array<{ date: string; value: string; qty: string; reason: string }> = [
+    { date: "Mon, 24 Jun 2026", value: "150.00 EGP", qty: "0.25", reason: "Late 20 min but completed the required hours — penalty halved." },
+  ];
+  return {
+    digestTable: [
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">',
+      `<thead><tr><th style="${head}">Day</th><th style="${headR}">Deduction Value</th><th style="${headR}">Quantity</th></tr></thead>`,
+      `<tbody>${rows
+        .map(
+          (row) =>
+            `<tr><td style="${cell}">${row.date}</td><td style="${cellR}">${row.value}</td><td style="${cellR}">${row.qty}</td></tr>` +
+            `<tr><td colspan="3" style="${cell};border-top:none;color:#64748b;font-size:12px;">${row.reason}</td></tr>`,
+        )
+        .join("")}</tbody>`,
+      "</table>",
+    ].join(""),
+    digestTableText: rows.map((row) => `- ${row.date}: ${row.value}, ${row.qty} day(s) — ${row.reason}`).join("\n"),
+  };
+}
+
 function buildSamplePlanTable(): { planTable: string; planTableText: string } {
   const cell = "border:1px solid #E5E7EB;padding:8px 10px;font-size:13px;text-align:left";
   const head = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:8px 10px;font-size:12px;text-align:left";
@@ -2116,6 +2174,8 @@ export async function previewTemplate(templateKey: string, input: {
     context = { ...input.context, ...sampleCoachingScoreContext() };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST && !text(input.context?.productsTable).includes("<table")) {
     context = { ...sampleMarketingContext(), ...input.context };
+  } else if (templateKey === EMAIL_TEMPLATE_KEYS.ATTENDANCE_DIGEST && !text(input.context?.digestTable).includes("<table")) {
+    context = { ...sampleDigestContext(), ...input.context };
   }
   const rendered = renderEmailTemplate(draft, context, recipients);
   return {
@@ -2279,10 +2339,12 @@ export async function sendTemplateTestEmail(input: {
     subject: "Phoenix Workforce test email",
     summary: "This is a test email rendered from the current template draft.",
     vacationType: "Annual Leave",
+    weekLabel: "2026-06-24 to 2026-06-30",
     // Test sends have no real plan submission - the demo table shows what {{planTable}}
     // renders as (mirrors previewTemplate).
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.COACHING_REPORT ? buildSampleCoachingScoreTable() : {}),
+    ...(key === EMAIL_TEMPLATE_KEYS.ATTENDANCE_DIGEST ? buildSampleDigestTable() : {}),
     ...(input.context ?? {}),
   };
   const rendered = renderEmailTemplate(draft, context, [{ email: to, name: context.recipientName }]);
