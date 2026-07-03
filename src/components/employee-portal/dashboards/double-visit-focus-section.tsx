@@ -24,21 +24,23 @@ function DvTrendBlock({ trend, reportHref }: { trend: DoubleVisitFocusTrendPoint
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       {total === 0 ? (
-        <p className="px-5 py-6 text-sm text-slate-500">You haven&apos;t logged a double visit in the last {trend.length} months.</p>
+        <p className="px-5 py-6 text-sm text-slate-500">You haven&apos;t logged a double visit since {trend[0]?.label ?? "tracking began"}.</p>
       ) : (
-        <div className="flex items-end gap-4 px-5 pb-2 pt-5 sm:gap-6 sm:px-6">
-          {trend.map((point) => (
-            <div key={point.month} className="flex flex-1 flex-col items-center gap-2">
-              <span className="text-sm font-black text-slate-900">{point.count}</span>
-              <div className="flex h-24 w-full items-end bg-slate-100">
-                <div
-                  className="w-full bg-orange-500"
-                  style={{ height: `${Math.max(point.count > 0 ? 6 : 0, Math.round((point.count / max) * 100))}%` }}
-                />
+        <div className="overflow-x-auto px-5 pb-2 pt-5 sm:px-6">
+          <div className="flex items-end gap-4 sm:gap-6" style={{ minWidth: `${trend.length * 44}px` }}>
+            {trend.map((point) => (
+              <div key={point.month} className="flex w-9 shrink-0 flex-col items-center gap-2 sm:w-11">
+                <span className="text-sm font-black text-slate-900">{point.count}</span>
+                <div className="flex h-24 w-full items-end bg-slate-100">
+                  <div
+                    className="w-full bg-orange-500"
+                    style={{ height: `${Math.max(point.count > 0 ? 6 : 0, Math.round((point.count / max) * 100))}%` }}
+                  />
+                </div>
+                <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">{point.label}</span>
               </div>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{point.label}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
       <Link
