@@ -18,6 +18,19 @@ function formatDate(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function formatClock(minutes: number | null): string {
+  if (minutes === null) return "—";
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours}h ${remainder}m`;
+}
+
 function initDrafts(digest: PendingDigestReviewView): Record<number, LineDraft> {
   const drafts: Record<number, LineDraft> = {};
   for (const line of digest.lines) {
@@ -136,6 +149,11 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
                       return (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" key={line.id}>
                           <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{formatDate(line.workDate)} &middot; {line.status.replace("_", " ")}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            Check-in {formatClock(line.checkInMinutes)} &middot; Check-out {formatClock(line.checkOutMinutes)} &middot; Worked {formatDuration(line.workedMinutes)}
+                            {line.lateMinutes > 0 ? ` · ${line.lateMinutes} min late` : ""}
+                            {line.shortMinutes > 0 ? ` · ${line.shortMinutes} min short` : ""}
+                          </p>
                           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                             <label className="block space-y-1">
                               <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Days</span>
@@ -171,10 +189,16 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
                         </div>
                       );
                     })}
-                    {digest.lines.filter((line) => line.status === "missing_punch").length > 0 ? (
-                      <p className="text-xs font-semibold text-slate-500">
-                        + {digest.lines.filter((line) => line.status === "missing_punch").length} missing-punch day(s) — zero EGP, handled separately.
-                      </p>
+                    {digest.lines.filter((line) => line.deductionDays <= 0).length > 0 ? (
+                      <div className="space-y-1 rounded-lg border border-dashed border-slate-200 bg-white p-3">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">No deduction — for reference</p>
+                        {digest.lines.filter((line) => line.deductionDays <= 0).map((line) => (
+                          <p className="text-xs font-semibold text-slate-500" key={line.id}>
+                            {formatDate(line.workDate)} &middot; {line.status.replace("_", " ")} &middot; Check-in {formatClock(line.checkInMinutes)} &middot; Check-out {formatClock(line.checkOutMinutes)}
+                            {line.status === "missing_punch" ? " — only one punch, held for verification" : ` · Worked ${formatDuration(line.workedMinutes)}`}
+                          </p>
+                        ))}
+                      </div>
                     ) : null}
                   </div>
 
