@@ -4,6 +4,7 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import {
   calculateOrganogramStructureKpis,
   classifyOrganogramStructureLevel,
+  suppressFilledVacancyRows,
 } from "../src/lib/reports/organogram-safety.ts";
 import {
   buildMemberTree,
@@ -12,10 +13,13 @@ import {
   isDistrictSalesManager,
   isMedicalRep,
   normalizeHrIdKey,
+  reportsUpTo,
   type MemberNode,
 } from "../src/lib/reports/organogram-view-model.ts";
 import { canAccessHeadOffice, isHeadOfficeRow } from "../src/lib/reports/organogram.ts";
 import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import type { SeatContinuitySubject } from "../src/lib/workforce/hierarchy-resolver.ts";
 
 function findNode(nodes: MemberNode[], hrId: string): MemberNode | undefined {
   for (const node of nodes) {
@@ -55,6 +59,17 @@ function row(overrides: Partial<OrganogramReportRow>): OrganogramReportRow {
     vacancyCode: null,
     ...overrides,
   };
+}
+
+function toIndex(rows: OrganogramReportRow[]): Map<string, SeatContinuitySubject> {
+  const index = new Map<string, SeatContinuitySubject>();
+  for (const r of rows) {
+    const key = canonicalHrIdKey(r.hrId);
+    if (key) {
+      index.set(key, { managerHrId: r.managerHrId, pendingManagerReplacementForHrId: r.managerReplacementForHrId });
+    }
+  }
+  return index;
 }
 
 function ctx(role: string, scope = "company"): AccessContext {
@@ -157,4 +172,180 @@ export function runOrganogramGodmodeTests() {
   const bobKeyOrderB = findNode(treeOrderB, "P-2")?.key;
   assert.ok(bobKeyOrderA && bobKeyOrderB);
   assert.equal(bobKeyOrderA, bobKeyOrderB);
+
+  // H-2 — reportsUpTo now delegates to hierarchy-resolver's isWithinManagerHierarchy
+  // over a canonical-HR_ID map instead of an O(rows) linear scan per climb step.
+  // Prove a 3-level climb (rep -> DSM -> RSM -> NSM) still resolves correctly
+  // through the new Map-based API, and that a report held for a vacant seat
+  // (marker only, no manager_hr_id yet) is recognized at the FIRST node checked,
+  // not just via the separate single-level reportsToVacantReplacementOwner path.
+  const chainNsm = row({ hrId: "N-2", managerHrId: "AA", positionTitle: "National Sales Manager" });
+  const chainRsm = row({ hrId: "S-1", managerHrId: "N-2", positionTitle: "Regional Sales Manager" });
+  const chainDsm = row({ hrId: "D-1", managerHrId: "S-1", positionTitle: "District Sales Manager" });
+  const chainRep = row({ hrId: "R-2", managerHrId: "D-1", positionTitle: "Medical Representative" });
+  const chainIndex = toIndex([chainNsm, chainRsm, chainDsm, chainRep]);
+  assert.equal(reportsUpTo(chainRep, chainDsm, chainIndex), true);
+  assert.equal(reportsUpTo(chainRep, chainRsm, chainIndex), true);
+  assert.equal(reportsUpTo(chainRep, chainNsm, chainIndex), true);
+  assert.equal(reportsUpTo(chainRep, row({ hrId: "UNRELATED" }), chainIndex), false);
+
+  const heldOnlyByMarker = row({
+    hrId: "R-3",
+    managerHrId: null,
+    managerReplacementForHrId: "D-DEPARTED",
+  });
+  const heldIndex = toIndex([heldOnlyByMarker]);
+  assert.equal(
+    reportsUpTo(heldOnlyByMarker, row({ hrId: "D-DEPARTED" }), heldIndex),
+    true,
+  );
+
+  // H-2 cycle safety — a circular manager_hr_id chain (DSM A reports to DSM B,
+  // B reports back to A) must not hang a climb FROM a report under that cycle;
+  // the resolver's own visited-set guard must stop it deterministically.
+  const cycleDsmA = row({ hrId: "CYC-A", managerHrId: "CYC-B", positionTitle: "District Sales Manager" });
+  const cycleDsmB = row({ hrId: "CYC-B", managerHrId: "CYC-A", positionTitle: "District Sales Manager" });
+  const cycleRep = row({ hrId: "CYC-R", managerHrId: "CYC-A", positionTitle: "Medical Representative" });
+  const cycleIndex = toIndex([cycleDsmA, cycleDsmB, cycleRep]);
+  assert.equal(reportsUpTo(cycleRep, row({ hrId: "UNRELATED-2" }), cycleIndex), false);
+  // End-to-end through the public API too, in case the lane builder's own
+  // grouping loops (not just the resolver climb) could re-introduce a hang.
+  const cycleLanes = buildOrganogramLanes([cycleDsmA, cycleDsmB, cycleRep]);
+  assert.ok(Array.isArray(cycleLanes.groups));
+
+  // MD-6 — two vacant broad-Cairo DSM slots in the same line must NOT
+  // auto-assign an ambiguous Cairo rep to either one via the geographic
+  // fallback (that decision was previously deterministic-but-arbitrary: the
+  // slot whose position_id string happened to sort first via localeCompare
+  // always won, e.g. "position:id:201" sorts before "position:id:99"). The
+  // rep must fall through to the unassigned/fallback bucket instead of
+  // landing in ONE specific lane every time for no principled reason.
+  const cairoNsm = row({ hrId: "NSM-CAIRO", positionTitle: "National Sales Manager", managerHrId: "AA" });
+  const vacDsmHighId = row({
+    areaId: null,
+    areaName: "Cairo",
+    hrId: "vacancy_dsm_A",
+    managerHrId: "NSM-CAIRO",
+    positionId: 201,
+    positionTitle: "District Sales Manager",
+    regionName: "Cairo",
+    status: "open",
+    teamId: null,
+    teamName: null,
+    type: "vacancy",
+    vacancyCode: "vacancy_dsm_A",
+  });
+  const vacDsmLowId = row({
+    areaId: null,
+    areaName: "Cairo",
+    hrId: "vacancy_dsm_B",
+    managerHrId: "NSM-CAIRO",
+    positionId: 99,
+    positionTitle: "District Sales Manager",
+    regionName: "Cairo",
+    status: "open",
+    teamId: null,
+    teamName: null,
+    type: "vacancy",
+    vacancyCode: "vacancy_dsm_B",
+  });
+  const ambiguousCairoRep = row({
+    areaName: "Nasr City",
+    hrId: "MR-AMBIG",
+    lineName: "Pedia",
+    managerHrId: "NSM-CAIRO",
+    positionTitle: "Medical Representative",
+    regionName: "Cairo",
+    teamName: "Nasr City",
+  });
+  const ambiguousLanes = buildOrganogramLanes([cairoNsm, vacDsmHighId, vacDsmLowId, ambiguousCairoRep]);
+  const repLandedInADsmLane = ambiguousLanes.groups.some(
+    (group) => group.dsm && group.members.some((member) => member.hrId === "MR-AMBIG"),
+  );
+  assert.equal(repLandedInADsmLane, false);
+
+  // MD-8 — co-located seats of the same title sharing identical slot metadata
+  // (manager/line/area/team/position/department, with no per-seat instance
+  // identifier to tell them apart). N active employees on a slot key can
+  // plausibly explain away at most N same-key vacancies as stale duplicates;
+  // when vacancies OUTNUMBER employees on a key, the excess is provably a
+  // genuine additional opening, not a guess. (The irreducible 1-employee/
+  // 1-vacancy case is a real data-model limitation — nothing in the row
+  // shape distinguishes "this vacancy is the same seat, now filled" from "a
+  // different co-located seat", so guessing either way would be unsafe; that
+  // case still suppresses, unchanged, and is intentionally not addressed
+  // here — see the second assertion below.)
+  const dsmSlot = {
+    areaId: 30,
+    areaName: "Nasr City",
+    departmentId: 1,
+    departmentName: "Sales",
+    lineId: 1,
+    managerHrId: "RSM-1",
+    positionId: 500,
+    positionTitle: "District Sales Manager",
+    teamId: 40,
+    teamName: "Nasr City Team",
+  };
+  const coLocatedActiveDsm = row({ ...dsmSlot, hrId: "DSM-ACTIVE-1" });
+  const coLocatedVacancyA = row({
+    ...dsmSlot,
+    hrId: "vacancy_dsm_seat_a",
+    status: "open",
+    type: "vacancy",
+    vacancyCode: "vacancy_dsm_seat_a",
+  });
+  const coLocatedVacancyB = row({
+    ...dsmSlot,
+    hrId: "vacancy_dsm_seat_b",
+    status: "open",
+    type: "vacancy",
+    vacancyCode: "vacancy_dsm_seat_b",
+  });
+  // 1 employee + 2 vacancies sharing a key: exactly 1 suppressed (explained
+  // away as the employee's own now-filled seat), 1 survives as a genuine
+  // second opening. Which specific one survives is unspecified (filter order
+  // decides), so assert the COUNT, not which hrId.
+  const twoVacanciesOneEmployee = suppressFilledVacancyRows([
+    coLocatedActiveDsm,
+    coLocatedVacancyA,
+    coLocatedVacancyB,
+  ]);
+  assert.equal(twoVacanciesOneEmployee.filter((r) => r.type === "vacancy").length, 1);
+
+  // The irreducible 1-vs-1 case: unchanged, still suppresses (documented
+  // limitation above, not a regression).
+  const oneVacancyOneEmployee = suppressFilledVacancyRows([coLocatedActiveDsm, coLocatedVacancyA]);
+  assert.equal(oneVacancyOneEmployee.some((r) => r.type === "vacancy"), false);
+
+  // 0 employees + 2 vacancies sharing a key: both survive untouched (no
+  // employee at all to suppress anything).
+  const noEmployeesTwoVacancies = suppressFilledVacancyRows([coLocatedVacancyA, coLocatedVacancyB]);
+  assert.equal(noEmployeesTwoVacancies.filter((r) => r.type === "vacancy").length, 2);
+
+  // LO-9 — a dangling manager reference (managerHrId set, but no row with
+  // that hrId exists in scope) is counted, not silently absorbed into the
+  // Unassigned/fallback buckets with no signal that something is wrong. A
+  // normal report to a real-but-non-sales-structure manager (e.g. a Finance
+  // Manager) must NOT be counted — that's expected, fine data.
+  const validNonSalesManager = row({
+    hrId: "FIN-1",
+    positionTitle: "Finance Manager",
+  });
+  const reportsToRealManager = row({
+    hrId: "FIN-RPT-1",
+    managerHrId: "FIN-1",
+    positionTitle: "Financial Advisor",
+  });
+  const reportsToDanglingManager = row({
+    hrId: "ORPHAN-1",
+    managerHrId: "GHOST-MANAGER-DOES-NOT-EXIST",
+    positionTitle: "Medical Representative",
+  });
+  const diagnosticLanes = buildOrganogramLanes([
+    validNonSalesManager,
+    reportsToRealManager,
+    reportsToDanglingManager,
+  ]);
+  assert.equal(diagnosticLanes.unresolvedManagerCount, 1);
 }
