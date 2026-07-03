@@ -208,6 +208,28 @@ export function PendingCountsUnavailable() {
 
 /* ── ProfileIntelBar ─────────────────────────────────────────────── */
 
+function IntelField({
+  icon: Icon,
+  label,
+  value,
+  className = "",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex min-w-0 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3 w-3 shrink-0 text-[#f47b20]" />
+        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      </div>
+      <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{value}</span>
+    </div>
+  );
+}
+
 export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
   const { employee, hrContract } = shell;
   const hireDateLabel = hrContract.hireDate
@@ -218,40 +240,20 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
     <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
       <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
-      <div className="relative flex flex-col">
-        {/* Row 1 — Line + Joined */}
+      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one line. */}
+      <div className="relative flex flex-col sm:flex-row sm:divide-x sm:divide-white/[0.06]">
         {(employee.line || hireDateLabel) && (
-          <div className="flex border-b border-white/[0.06]">
+          <div className="flex divide-x divide-white/[0.06] border-b border-white/[0.06] sm:contents sm:border-b-0">
             {employee.line && (
-              <div className="flex min-w-0 flex-1 flex-col gap-1 border-r border-white/[0.06] px-4 py-3 sm:px-7 sm:py-4">
-                <div className="flex items-center gap-1.5">
-                  <Layers className="h-3 w-3 shrink-0 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Line</span>
-                </div>
-                <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{employee.line}</span>
-              </div>
+              <IntelField icon={Layers} label="Line" value={employee.line} className="flex-1 sm:flex-none sm:shrink-0" />
             )}
             {hireDateLabel && (
-              <div className="flex min-w-0 flex-1 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4">
-                <div className="flex items-center gap-1.5">
-                  <CalendarDays className="h-3 w-3 shrink-0 text-[#f47b20]" />
-                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Joined</span>
-                </div>
-                <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{hireDateLabel}</span>
-              </div>
+              <IntelField icon={CalendarDays} label="Joined" value={hireDateLabel} className="flex-1 sm:flex-none sm:shrink-0" />
             )}
           </div>
         )}
-        {/* Row 2 — Reports To */}
         {employee.manager && (
-          <div className="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-7 sm:py-4">
-            <div className="flex shrink-0 items-center gap-1.5">
-              <User className="h-3 w-3 shrink-0 text-[#f47b20]" />
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Reports To</span>
-            </div>
-            <div className="h-3 w-px shrink-0 bg-white/[0.12]" />
-            <span className="min-w-0 whitespace-nowrap text-sm font-black text-white sm:text-base">{employee.manager}</span>
-          </div>
+          <IntelField icon={User} label="Reports To" value={employee.manager} className="sm:min-w-0 sm:flex-1" />
         )}
       </div>
     </div>
