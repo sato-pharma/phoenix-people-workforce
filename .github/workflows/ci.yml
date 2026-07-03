@@ -73,7 +73,6 @@ jobs:
           # a change to next.config.ts or proxy.ts (CSP/security headers!) that isn't
           # hashed here would silently restore a stale cache instead of rebuilding.
           key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'public/**', 'package-lock.json', 'next.config.ts', 'proxy.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'tsconfig.json') }}
-          restore-keys: nextjs-build-
 
       - name: Test
         run: npm run test
