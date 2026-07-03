@@ -408,7 +408,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
     return {
       dsm: primaryDsm,
       members,
-      name: primaryDsm.fullName,
+      name: primaryDsm.displayName,
       title: primaryDsm.positionTitle ?? primaryDsm.jobTitle ?? "District Sales Manager",
     };
   });
@@ -427,7 +427,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       childLanes,
       dsm: null,
       members: [],
-      name: rsm.fullName,
+      name: rsm.displayName,
       rsm,
       title: rsm.positionTitle ?? rsm.jobTitle ?? "Regional Sales Manager",
     };
@@ -460,7 +460,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
     return {
       dsm: null,
       members,
-      name: primaryManager.fullName,
+      name: primaryManager.displayName,
       title: primaryManager.positionTitle ?? primaryManager.jobTitle ?? "Marketing Manager",
     };
   });

@@ -157,11 +157,11 @@ function PersonNode({
           isVacancy ? "bg-orange-400" : "bg-slate-300",
         )}
       />
-      <Avatar name={row.fullName} vacancy={isVacancy} />
+      <Avatar name={row.displayName} vacancy={isVacancy} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="whitespace-normal break-words text-[12px] font-bold leading-tight text-slate-900">
-            {isVacancy ? "Open Vacancy" : formatEmployeeDisplayName(row.fullName)}
+            {isVacancy ? "Open Vacancy" : formatEmployeeDisplayName(row.displayName)}
           </p>
           {isVacancy ? (
             <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-orange-700">
@@ -643,7 +643,7 @@ export function OrgChartTree({
     return {
       ...lanes,
       laneLeaderName: lanes.lineLeader
-        ? formatEmployeeDisplayName(lanes.lineLeader.fullName)
+        ? formatEmployeeDisplayName(lanes.lineLeader.displayName)
         : (lineName ?? "Line Leadership"),
     };
   }, [rows, lineName]);
@@ -710,7 +710,7 @@ export function OrgChartTree({
             }
             name={
               chiefExecutive
-                ? formatEmployeeDisplayName(chiefExecutive.fullName)
+                ? formatEmployeeDisplayName(chiefExecutive.displayName)
                 : "Executive Leadership"
             }
             tone="dark"
