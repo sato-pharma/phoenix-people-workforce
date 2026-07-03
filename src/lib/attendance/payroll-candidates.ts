@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
 
 export type GenerateCandidatesResult = {
   employees: number;
@@ -80,9 +81,10 @@ export async function generateAttendanceDeductionCandidates(
     const shortDays = deductionRows.filter((r) => r.status === "Short day").length;
 
     const baseSalary = salaryMap.get(hrId) ?? null;
-    const estimatedAmount = baseSalary != null
-      ? Math.round((baseSalary / 30) * totalDeductionDays * 100) / 100
-      : null;
+    const estimatedAmount = calculateDeductionAmountFromBaseSalary({
+      baseSalary,
+      deductionDays: totalDeductionDays,
+    });
 
     const candidateKey = `ATTENDANCE_DEVICE:${hrId}:${monthKey}`;
 
