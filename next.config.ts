@@ -83,11 +83,19 @@ const securityHeaders = [
 // For uploads > 4 MB, use the signed-URL pattern (see src/lib/uploads/ and the
 // sales-imports Supabase bucket).
 const nextConfig: NextConfig = {
+  // `typecheck` already runs as a required, separate step ahead of `build` in both
+  // npm run check:harden / ci and the required `lint-typecheck` CI job. Next.js 16
+  // has no built-in ESLint-during-build integration anymore (no `eslint` NextConfig
+  // key), so only the redundant type-check needs disabling here. Do NOT remove this
+  // without also confirming typecheck still gates merges/deploys some other way.
+  typescript: { ignoreBuildErrors: true },
   experimental: {
-    // Tree-shake large barrel imports so only the icons/charts/primitives a
-    // component actually uses land in its client chunk (these are imported
-    // across 100+ client components).
-    optimizePackageImports: ["lucide-react", "recharts", "radix-ui"],
+    // Tree-shake large barrel imports so only the icons/charts a component
+    // actually uses land in its client chunk (lucide-react alone is imported
+    // across 240+ files). "radix-ui" was removed: audited 2026-07-03, zero
+    // import sites in app/ or src/ — this project's UI primitives are
+    // hand-rolled, not radix wrappers, so it was dead config.
+    optimizePackageImports: ["lucide-react", "recharts"],
   },
   allowedDevOrigins: [
     "192.168.1.45",
@@ -125,10 +133,14 @@ export default withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
-  // Upload a larger set of source maps for prettier stack traces (increases build time)
+  // Upload a larger set of source maps for prettier stack traces (increases build time).
+  // Gated on `CI` (set by GitHub Actions and Vercel builds) as well as the auth token,
+  // so a developer's local `.env.local` happening to carry a real token never causes
+  // `npm run build` on a laptop to upload source maps to Sentry — only real CI/deploy
+  // builds should do that.
   sourcemaps: {
     deleteSourcemapsAfterUpload: true,
-    disable: !process.env.SENTRY_AUTH_TOKEN,
+    disable: !process.env.SENTRY_AUTH_TOKEN || !process.env.CI,
   },
   widenClientFileUpload: true,
 

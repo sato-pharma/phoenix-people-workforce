@@ -270,10 +270,15 @@ import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 
+const testDurationsMs: { name: string; durationMs: number }[] = [];
+
 async function runTest(name: string, execute: () => void | Promise<void>) {
+  const startedAt = performance.now();
   try {
     await execute();
-    console.log(`PASS ${name}`);
+    const durationMs = performance.now() - startedAt;
+    testDurationsMs.push({ name, durationMs });
+    console.log(`PASS ${name} (${durationMs.toFixed(0)}ms)`);
   } catch (error) {
     console.error(`FAIL ${name}`);
     throw error;
@@ -551,3 +556,10 @@ await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeT
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
+
+const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
+const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
+console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
+for (const t of slowest) {
+  console.log(`  ${t.durationMs.toFixed(0)}ms  ${t.name}`);
+}

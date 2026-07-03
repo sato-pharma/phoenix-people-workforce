@@ -14,6 +14,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    // Speeds up warm/incremental re-checks on this single large project by skipping
+    // deep re-analysis of files that only changed indirectly. Audited 2026-07-03:
+    // does not affect cold-run time (CI is always cold), only local warm re-typechecks.
+    "assumeChangesOnlyAffectDirectDependencies": true,
     "plugins": [
       {
         "name": "next"
@@ -37,6 +41,13 @@
     "phoenix-architecture",
     "phoenix-system-export",
     ".claude",
+    // ".codex-worktrees" and "_wt-*" hold full checkouts of other branches used for
+    // parallel sessions (see AGENTS.md "Session And Worktree Safety"). Without these,
+    // tsc walks every duplicate copy too — confirmed ~12x the file count and ~9x the
+    // typecheck time locally. Do not remove without confirming no in-repo worktree
+    // naming pattern is left unmatched.
+    ".codex-worktrees",
+    "_wt-*",
     "scripts/tmp",
     "supabase/.temp"
   ]
