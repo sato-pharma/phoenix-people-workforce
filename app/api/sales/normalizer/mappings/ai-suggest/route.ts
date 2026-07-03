@@ -9,6 +9,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Customer kind runs the full pipeline (customer-map load + AI batches + up to 150 live
+// geocodes) — identical work to the auto-map route. Without the extended budget a first-time
+// run (nothing cached yet) overran the default limit and Vercel returned its non-JSON error
+// page, which surfaced to the operator as "Unexpected token 'A' … is not valid JSON".
+export const maxDuration = 300;
 
 // Suggest-only: match unknown product / territory / customer rows to Phoenix products / bricks.
 // Returns {raw, code, confidence?, source?, matchedFrom?, signals?} pairs the client uses to
