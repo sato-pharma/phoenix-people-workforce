@@ -285,6 +285,7 @@ const adminNavigationSectionSeeds = [
       // entries (same href) for the admin-shell-employee Marketing Manager.
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], excludedRoles: ["Marketing Manager"] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/admin/visits-report", icon: FileSpreadsheet, label: "Visits Report", roles: ["Super Admin"] },
       { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
       { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
     ],
